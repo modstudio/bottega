@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
+  checkLegBodyLine,
+  formatCheckLegBodyLine,
   formatFailingLegTailHeading,
   formatGateFailureDetail,
   formatGateFailureLeg,
@@ -47,6 +49,9 @@ test('unchecked line writer and parser share the exact protocol', () => {
 })
 
 test('worker-check footer writers and parsers share the exact line grammar', () => {
+  expect(
+    checkLegBodyLine(formatCheckLegBodyLine('orchestrator', 'typecheck failed'), 'orchestrator'),
+  ).toBe('typecheck failed')
   expect(parseFailingLegTailHeading(formatFailingLegTailHeading('orchestrator', 2))).toEqual({
     leg: 'orchestrator',
     exitCode: 2,

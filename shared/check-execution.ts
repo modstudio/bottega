@@ -8,6 +8,15 @@ export const UNCHECKED_LINE_PREFIX = 'unchecked: '
 const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
 export const GATE_FAILURES_MARKER = 'gate failures:'
 
+export function formatCheckLegBodyLine(leg: string, line: string): string {
+  return `[${leg}] ${line}`
+}
+
+export function checkLegBodyLine(line: string, leg: string): string | null {
+  const prefix = formatCheckLegBodyLine(leg, '')
+  return line.startsWith(prefix) ? line.slice(prefix.length) : null
+}
+
 export function formatFailingLegTailHeading(leg: string, exitCode: number): string {
   return `[${leg}] ${FAILING_LEG_TAIL_MARKER}${exitCode})`
 }

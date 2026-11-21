@@ -173,7 +173,8 @@ function rejectContradictedDone<FailureKind extends string>(
   inputs: FinalizationInputs<FailureKind>,
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
-  if (inputs.reply?.status !== 'done' || !inputs.contractRefusal) return decision
+  if (inputs.reply?.status !== 'done' || !inputs.contractRefusal || decision.status !== 'ok')
+    return decision
   return { status: 'failed', failureKind: 'contract', error: inputs.contractRefusal }
 }
 

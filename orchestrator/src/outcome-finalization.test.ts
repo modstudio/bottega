@@ -109,23 +109,6 @@ describe('worker reply finalization', () => {
     expect(result.error).toContain('orchestrator')
   })
 
-  test('a recorded check contradiction makes a done reply a contract failure', () => {
-    const result = finalizeWorkerReply({
-      reply: reply({ status: 'done' }),
-      measuredFiles: ['changed.ts'],
-      turnChanged: true,
-      status: 'ok',
-      failureKind: null,
-      error: null,
-      contractRefusal: 'worker check failed at the reply HEAD',
-    })
-    expect(result).toMatchObject({
-      status: 'failed',
-      failureKind: 'contract',
-      error: 'worker check failed at the reply HEAD',
-    })
-  })
-
   test('an empty done reply keeps a worker-check contract refusal', () => {
     const result = finalizeWorkerReply({
       reply: reply({ status: 'done', files_changed: [], tests: { ran: false } }),
@@ -142,6 +125,26 @@ describe('worker reply finalization', () => {
       error: 'worker check failed at the reply content',
     })
   })
+
+  test.each(['truncated', 'timeout'])(
+    'a %s failure is not overwritten by a worker-check refusal',
+    (failureKind) => {
+      const result = finalizeWorkerReply({
+        reply: reply({ status: 'done' }),
+        measuredFiles: ['changed.ts'],
+        turnChanged: true,
+        status: 'failed',
+        failureKind,
+        error: `${failureKind} first`,
+        contractRefusal: 'worker check failed at the reply content',
+      })
+      expect(result).toMatchObject({
+        status: 'failed',
+        failureKind,
+        error: `${failureKind} first`,
+      })
+    },
+  )
 
   test('done with no turn-local change keeps ok and records the earlier-work note', () => {
     const result = classify(

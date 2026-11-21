@@ -10,6 +10,7 @@ import { changeViewPlan } from '../shared/change-view.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
+  formatCheckLegBodyLine,
   formatFailingLegTailHeading,
   GATE_FAILURES_MARKER,
   UNCHECKED_EXIT_CODE,
@@ -404,7 +405,7 @@ function recordPumpedLine(
   tailLines: number,
   onDrop?: () => void,
 ) {
-  const prefixed = name ? `[${name}] ${line}` : line
+  const prefixed = name ? formatCheckLegBodyLine(name, line) : line
   if (!raw) {
     if (error) console.error(prefixed)
     else console.log(prefixed)

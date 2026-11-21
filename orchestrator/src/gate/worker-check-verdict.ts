@@ -1,6 +1,7 @@
 // concern: worker reply check evidence
 
 import {
+  checkLegBodyLine,
   GATE_FAILURES_MARKER,
   parseFailingLegTailHeading,
   parseGateFailureFooterLine,
@@ -12,18 +13,16 @@ export type WorkerCheckFailure = {
 }
 
 export type WorkerCheckCandidate = {
-  recordId: string
   number: number
   headCommit: string | null
   treeId: string | null
-  requestedAt: string
   exitCode: number | null
   timedOut: boolean | null
   failures: readonly WorkerCheckFailure[]
 }
 
 export type WorkerCheckVerdict =
-  | { kind: 'none'; replyHead: string | null }
+  | { kind: 'none' }
   | { kind: 'passed'; replyHead: string; number: number }
   | {
       kind: 'failed'
@@ -38,11 +37,11 @@ export function decideWorkerCheckVerdict(
   replyTree: string | null,
   latest: WorkerCheckCandidate | null,
 ): WorkerCheckVerdict {
-  if (!replyHead) return { kind: 'none', replyHead }
+  if (!replyHead) return { kind: 'none' }
   const matchesReply =
     latest !== null &&
     (latest.headCommit === replyHead || (replyTree !== null && latest.treeId === replyTree))
-  if (!latest || !matchesReply) return { kind: 'none', replyHead }
+  if (!latest || !matchesReply) return { kind: 'none' }
   return latest.exitCode === 0 && latest.timedOut === false
     ? { kind: 'passed', replyHead, number: latest.number }
     : {
@@ -92,7 +91,7 @@ function recordedLegTail(lines: readonly string[], leg: string): string[] {
   if (marker < 0) return []
   const tail: string[] = []
   for (const line of lines.slice(marker + 1)) {
-    if (!line.startsWith(`[${leg}] `)) break
+    if (checkLegBodyLine(line, leg) === null) break
     tail.push(line)
   }
   return tail

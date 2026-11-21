@@ -10,11 +10,9 @@ const head = '1234567890abcdef1234567890abcdef12345678'
 
 function check(overrides: Partial<WorkerCheckCandidate> = {}): WorkerCheckCandidate {
   return {
-    recordId: '01990000-0000-7000-8000-000000000001',
     number: 41,
     headCommit: head,
     treeId: null,
-    requestedAt: '2026-11-20T10:00:00.000Z',
     exitCode: 0,
     timedOut: false,
     failures: [],
