@@ -7,6 +7,7 @@ export const cleanupBoundarySpecs = [
       '../database/db.ts',
       '../record/record-task-flow-contract.ts',
       '../workflow/project-task-list.ts',
+      '../workflow/project-task-lookup.ts',
       '../workflow/task-flow-store.ts',
       '../workflow/task-read-port.ts',
       '../workflow/workflow-child-facts.ts',

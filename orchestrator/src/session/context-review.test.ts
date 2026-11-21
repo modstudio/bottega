@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { installTaskReader, type TaskReadPort, type TaskReadRow } from '../workflow/task-read-port.ts'
+import {
+  installTaskReader,
+  type TaskReadPort,
+  type TaskReadRow,
+} from '../workflow/task-read-port.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { seedCurrentWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
 import { reviewContext } from './context-review.ts'

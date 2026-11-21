@@ -2,10 +2,14 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { boardClaimTake } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { installTaskReader, type TaskReadPort, type TaskReadRow } from '../workflow/task-read-port.ts'
+import {
+  installTaskReader,
+  type TaskReadPort,
+  type TaskReadRow,
+} from '../workflow/task-read-port.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
-import { composeWorkflow } from '../workflow/workflows.ts'
 import { seedCurrentWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
+import { composeWorkflow } from '../workflow/workflows.ts'
 import { sessionEpicWork } from './session-epic-work.ts'
 
 const STOP_RECORD_TASK_CALL_LIMIT = 4
@@ -122,8 +126,6 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
     { operation: 'list', status: 'review' },
     { operation: 'lookup' },
   ])
-  expect(surfaces).toEqual([
-    expect.objectContaining({ epic: 'DEV-1', open: ['DEV-3'], queue: [] }),
-  ])
+  expect(surfaces).toEqual([expect.objectContaining({ epic: 'DEV-1', open: ['DEV-3'], queue: [] })])
   installTaskReader(undefined as never)
 })
