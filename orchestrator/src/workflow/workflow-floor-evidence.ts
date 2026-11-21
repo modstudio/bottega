@@ -2,15 +2,13 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
-import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
@@ -31,6 +29,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
+import { taskReader } from './task-read-port.ts'
 import type {
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
@@ -95,7 +94,7 @@ export type CursorIdentity = {
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
-  runHasArtifacts: runHasRecordedArtifacts,
+  readTaskDocument: (value, scope) => taskReader().document(value, scope),
   viewPullRequest: viewPullRequestInProject,
   readOriginUrl: (project) => {
     const row = projectByName(project)
@@ -103,20 +102,6 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
     return gitText(row.path, ['remote', 'get-url', 'origin'])
   },
 })
-
-function runHasRecordedArtifacts(
-  runId: string,
-  runsDir = resolveRunsDirectory(process.env),
-): boolean {
-  const recordId = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(runId)?.record_id
-  if (!recordId) return false
-  const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = runScratchReplyPath(recordId, runsDir)
-  if (existsSync(reply)) return true
-  return existsSync(artifacts) && readdirSync(artifacts).length > 0
-}
 
 export async function gatherRuling(
   id: number,
@@ -480,19 +465,52 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-  runHasArtifacts: (runId: string) => boolean,
 ): Promise<{ ref: string; exists: boolean }> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
-  const runOk = run !== null && runHasArtifacts(run.record_id)
   if (run) {
     const binding = loadRunBinding(run.record_id, d)
     if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
     await requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
-    return { ref: String(id), exists: runOk }
+    return { ref: String(id), exists: true }
   }
   throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+}
+
+async function resolveTaskDocumentArtifact(
+  ref: Extract<ArtifactRef, { kind: 'task-document' }>,
+  raw: string,
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+): Promise<{ ref: string; exists: boolean }> {
+  if (ref.key !== identity.workflowKey)
+    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
+  if (!ports.readTaskDocument)
+    throw new Error(
+      `--artifact ${raw} needs a ${PLATFORM_SLUG} task document read and no reader was provided`,
+    )
+  try {
+    await invokeFloorEvidencePort(
+      ports,
+      'readTaskDocument',
+      ports.readTaskDocument,
+      `${ref.key}/${ref.number}`,
+      {
+        project: identity.project,
+        ...(identity.workflowTaskRecordId
+          ? { recordId: identity.workflowTaskRecordId }
+          : {}),
+      },
+    )
+  } catch (error) {
+    rethrowFloorEvidencePortMiss(error)
+    if (!(error instanceof Error) || !error.message.startsWith('no task document ')) throw error
+    throw new Error(
+      `--artifact ${raw} does not exist for this cursor's task ${identity.workflowKey}`,
+    )
+  }
+  return { ref: `${ref.key}/${ref.number}`, exists: true }
 }
 
 function resolveTaskArtifact(
@@ -578,8 +596,9 @@ async function resolveArtifact(
       identity,
       binding.cursorId,
       d,
-      ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
+  if (ref.kind === 'task-document')
+    return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'commit') {
     const project = projectByName(identity.project, d)
@@ -626,7 +645,7 @@ async function resolveArtifact(
     await requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
-      exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),
+      exists: true,
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')

@@ -24,7 +24,6 @@ const testPorts = {
     statusCategory: 'done' as const,
     commentIds: [],
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => ({
     project: 'fixture',
     branch: 'work',

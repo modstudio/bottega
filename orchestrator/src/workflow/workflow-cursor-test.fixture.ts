@@ -148,7 +148,6 @@ export const testPorts = {
     statusCategory: 'done' as const,
     commentIds: [1],
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({
     state: 'MERGED',

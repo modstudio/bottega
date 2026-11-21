@@ -19,7 +19,6 @@ const ports: FloorEvidencePorts = {
     statusCategory: 'done' as const,
     commentIds: [1],
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => {
     throw new Error('checkout evidence was not expected')
   },

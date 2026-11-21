@@ -11,11 +11,14 @@ import type { NoteFloorEvidence } from './workflow-task-open-with-notes-floor.ts
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
+  readTaskDocument?: (
+    value: string,
+    scope: { project: string; recordId?: string },
+  ) => Promise<{ id: string; label: string }>
   readNote?: (
     project: string,
     reference: string,
   ) => Promise<Pick<NoteFloorEvidence, 'recordId' | 'label' | 'promotedTask' | 'staleAt'> | null>
-  runHasArtifacts?: (runId: string) => boolean
   resolveCheckout?: (
     cwd: string,
     headCommit: string | null,
@@ -35,7 +38,7 @@ export type FloorEvidencePorts = {
 
 export const MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS = 16
 
-type ExternalPort = Exclude<keyof FloorEvidencePorts, 'runHasArtifacts'>
+type ExternalPort = keyof FloorEvidencePorts
 type RecordedCall = { ok: true; value: unknown } | { ok: false; error: unknown }
 type MissingCall = {
   port: ExternalPort
@@ -93,6 +96,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
   const wrapped: ReplayingPorts = { ...real, [REPLAY]: context }
   for (const port of [
     'readTask',
+    'readTaskDocument',
     'readNote',
     'resolveCheckout',
     'viewPullRequest',

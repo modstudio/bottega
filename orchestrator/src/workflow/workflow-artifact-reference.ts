@@ -16,6 +16,7 @@ export type ArtifactRef =
   | { kind: 'probe'; recordId: string }
   | { kind: 'exec'; recordId: string }
   | { kind: 'doc'; address: string }
+  | { kind: 'task-document'; key: string; number: number }
   | { kind: 'run'; id: string }
   | { kind: 'review-read'; recordId: string }
   | { kind: 'attached-text'; id: string }
@@ -61,8 +62,7 @@ function artifactRefFromPointer(
     return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
   if (parsed.kind === 'commit') return parsed
   if (parsed.kind === 'run') return runArtifactRef(parsed, source)
-  if (parsed.kind === 'task-document')
-    return { error: `--artifact ${source} must use a doc: reference for a document` }
+  if (parsed.kind === 'task-document') return parsed
   return parsed.kind === 'attached-text'
     ? { kind: 'attached-text', id: parsed.recordId }
     : { kind: parsed.kind, recordId: parsed.recordId }
