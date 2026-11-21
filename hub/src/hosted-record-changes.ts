@@ -71,7 +71,7 @@ const READABLE_HUB_CHANGES = {
     if (!ids.length) return new Map<string, HostedNote>()
     return byId(
       rows<HostedNote>(
-        await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${spaceId}::uuid AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
+        await tx`SELECT hub_note.*,number::int number,revision::int revision FROM hub_note WHERE space_id=${spaceId}::uuid AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
       ).map(hostedNotePullSerializers.hub_note),
     )
   },

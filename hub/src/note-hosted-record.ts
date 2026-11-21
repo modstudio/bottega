@@ -18,11 +18,27 @@ import {
   type PushedNoteAcknowledgement,
 } from './push-contract.ts'
 
+export function decodeHostedNoteRevision(note: string, value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  const decoded =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value)
+        ? Number(value)
+        : Number.NaN
+  if (Number.isSafeInteger(decoded) && decoded >= 0) return decoded
+  const displayed = JSON.stringify(value) ?? String(value)
+  throw new Error(
+    `note ${note} has invalid hosted revision ${displayed}; run \`${PLATFORM_SLUG} record doctor\`, then retry`,
+  )
+}
+
 export function noteRowFromHosted(row: HostedNote): NoteRow {
+  const label = formatNoteLabel(row.project, row.number)
   return {
     record_id: row.id,
     number: row.number,
-    label: formatNoteLabel(row.project, row.number),
+    label,
     project: row.project,
     project_record_id: row.projectId ?? null,
     text: row.text,
@@ -35,7 +51,7 @@ export function noteRowFromHosted(row: HostedNote): NoteRow {
     stale_reason: row.stale_reason,
     promoted_task: row.promoted_task,
     promoted_task_record_id: row.promoted_task_id ?? null,
-    revision: row.revision,
+    revision: decodeHostedNoteRevision(label, row.revision),
   }
 }
 
