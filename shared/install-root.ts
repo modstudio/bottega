@@ -85,6 +85,8 @@ export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironmen
   if (embeddedDistributionManifest()) return dirname(process.execPath)
   const override = env[INSTALL_HOME_ENV]
   if (override && isAbsolute(override)) return override
+  const checkoutRoot = compiledCheckoutRoot(env)
+  if (checkoutRoot) return checkoutRoot
   let directory = fromDirectory
   for (;;) {
     if (isInstallationRoot(directory)) return directory
@@ -115,7 +117,7 @@ function compiledCheckoutRoot(env: InstallEnvironment): string | null {
   })
   if (decision) return decision
   throw new Error(
-    `compiled checkout CLI requires ${CHECKOUT_ROOT_ENV} to name an absolute ${PLATFORM_NAME} checkout root; launch it through the checkout launcher script`,
+    `compiled checkout CLI requires ${CHECKOUT_ROOT_ENV} to name an absolute ${PLATFORM_NAME} checkout root; run it through bin/${PLATFORM_SLUG}`,
   )
 }
 

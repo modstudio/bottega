@@ -90,6 +90,12 @@ async function probeConfinedTools(
     input.environment,
     input.forceSource,
   )
+  if (input.forceSource) {
+    if (runEnvironment.BOTTEGA_CLI_BINARY)
+      throw new Error('forced source guard unexpectedly selected BOTTEGA_CLI_BINARY')
+  } else if (!runEnvironment.BOTTEGA_CLI_BINARY) {
+    throw new Error('host judged the checkout binary not current')
+  }
   const outside = fixtureProject('outside-project', 'outside-project', input.cwd)
   const profile = runtime.sandbox.readonlyLensProfile({
     worktree: input.cwd,
