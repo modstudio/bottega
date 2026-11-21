@@ -79,7 +79,8 @@ beforeEach(() => {
   forgetConfigReadMemo()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0))
   forgetConfigReadMemo()
   server.stop(true)
   installRecordSessionRunner(null)
