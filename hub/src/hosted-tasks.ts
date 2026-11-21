@@ -1,5 +1,6 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
@@ -86,7 +87,7 @@ export async function lookupHostedTasks(
       WITH RECURSIVE selected AS (
         SELECT t.* FROM hub_task t
         WHERE t.space_id=${identity.spaceId}::uuid AND t.project_name=${project}
-          AND t.key IN (SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb))
+          AND t.key IN (SELECT jsonb_array_elements_text(${bindJsonb(tx, keys)}))
           AND t.deleted_at IS NULL
         UNION
         SELECT parent.* FROM hub_task parent JOIN selected child ON child.parent_id=parent.id

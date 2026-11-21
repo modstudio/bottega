@@ -25,11 +25,12 @@ export async function sessionEpicWork(session: string, database: Database = db()
     })
     if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
       continue
-    const tasks = (
+    const listedTasks = (
       await Promise.all(
         SESSION_STOP_TASK_STATUSES.map((status) => readProjectTaskList(project, { status })),
       )
     ).flat()
+    const tasks = [...new Map(listedTasks.map((task) => [task.record_id, task])).values()]
     const facts = await gatherChildTaskFacts(database, project, tasks)
     const claims = liveChildClaims(database, project).filter(
       ({ holder_session }) => holder_session === session,
