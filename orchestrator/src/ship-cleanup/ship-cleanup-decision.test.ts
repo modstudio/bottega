@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { disposalTaskState } from '../branch/branch-disposal-decision.ts'
 import {
   type BranchStateDecision,
   decidePruneEligibility,
   isProbeOnlyMint,
 } from '../branch/branch-state.ts'
+import type { TaskStatusObservation } from '../branch/task-status-observation.ts'
 import {
   decideShipCleanup,
   decideShipCleanupKeptItem,
@@ -238,6 +240,93 @@ test('kept-item ownership requires the holding path to match the caller landing 
   expect(
     decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/sibling' }, '/trees/landing'),
   ).toEqual({ ...fact, owner: 'other' })
+})
+
+test.each([
+  ['done', 'done'],
+  ['dropped', 'dropped'],
+] as const)('a superseded task sibling is residue after its task is %s', (_name, category) => {
+  const observation: TaskStatusObservation = {
+    raw: category,
+    category,
+    lastSeen: null,
+    verified: true,
+    detail: category,
+  }
+  const kept = decideShipCleanupKeptItem(
+    {
+      item: 'branch DEV-1392-c2',
+      branch: 'DEV-1392-c2',
+      reason: 'superseded',
+      reasonKind: 'landing-not-proved',
+      holdingPath: null,
+    },
+    null,
+    {
+      shippedBranch: 'DEV-1392-c3',
+      taskKey: 'DEV-1392',
+      taskState: disposalTaskState(observation),
+    },
+  )
+
+  expect(kept.owner).toBe('other')
+  expect(decideShipCleanupVerdict({ kept: [kept], errors: [] })).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [kept],
+  })
+})
+
+test('a superseded sibling of an open task is reported without residue', () => {
+  const observation: TaskStatusObservation = {
+    raw: 'in progress',
+    category: 'moving',
+    lastSeen: null,
+    verified: true,
+    detail: 'in progress',
+  }
+  const kept = decideShipCleanupKeptItem(
+    {
+      item: 'branch DEV-1392-c2',
+      branch: 'DEV-1392-c2',
+      reason: 'superseded',
+      reasonKind: 'landing-not-proved',
+      holdingPath: null,
+    },
+    null,
+    {
+      shippedBranch: 'DEV-1392-c3',
+      taskKey: 'DEV-1392',
+      taskState: disposalTaskState(observation),
+    },
+  )
+
+  expect(kept).toMatchObject({ owner: 'task-sibling', taskKey: 'DEV-1392' })
+  expect(decideShipCleanupVerdict({ kept: [kept], errors: [] })).toEqual({
+    clean: true,
+    residue: [],
+  })
+})
+
+test('an open task does not exempt a kept branch for another reason', () => {
+  const kept = decideShipCleanupKeptItem(
+    {
+      item: 'branch DEV-1392-c2',
+      branch: 'DEV-1392-c2',
+      reason: 'unlanded',
+      reasonKind: 'landing-not-proved',
+      holdingPath: null,
+    },
+    null,
+    {
+      shippedBranch: 'DEV-1392-c3',
+      taskKey: 'DEV-1392',
+      taskState: 'open',
+    },
+  )
+
+  expect(kept.owner).toBe('other')
+  expect(decideShipCleanupVerdict({ kept: [kept], errors: [] }).clean).toBe(false)
 })
 
 test('caller-group holders are caller-owned while foreign holders remain residue', () => {

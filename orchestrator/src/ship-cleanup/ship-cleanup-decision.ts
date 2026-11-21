@@ -37,27 +37,48 @@ export type ShipCleanupRunFact = {
   worktree: string | null
 }
 
-type ShipCleanupKeptOwner = 'caller-landing-tree' | 'caller-process-group' | 'other'
+type ShipCleanupKeptOwner =
+  | 'caller-landing-tree'
+  | 'caller-process-group'
+  | 'task-sibling'
+  | 'other'
 
 export type ShipCleanupKeptItem = {
   item: string
   reason: string
   reasonKind: ShipCleanupKeptReasonKind
   owner: ShipCleanupKeptOwner
+  taskKey?: string
   remedy?: string
   callerGroupHolderPids?: readonly number[]
 }
 
 export type ShipCleanupKeptFact = Omit<ShipCleanupKeptItem, 'owner'> & {
   holdingPath: string | null
+  branch?: string
+}
+
+type ShipCleanupTaskContext = {
+  shippedBranch: string
+  taskKey: string
+  taskState: 'open' | 'closed'
 }
 
 /** Assign ownership when the item is held by the command's tree or its proved process group. */
 export function decideShipCleanupKeptItem(
   fact: ShipCleanupKeptFact,
   callerLandingTreePath: string | null,
+  task?: ShipCleanupTaskContext,
 ): ShipCleanupKeptItem {
-  const { holdingPath, ...item } = fact
+  const { holdingPath, branch, ...item } = fact
+  if (
+    branch !== undefined &&
+    item.reason === 'superseded' &&
+    branch !== task?.shippedBranch &&
+    task?.taskState === 'open'
+  ) {
+    return { ...item, owner: 'task-sibling', taskKey: task.taskKey }
+  }
   return {
     ...item,
     owner: item.callerGroupHolderPids
