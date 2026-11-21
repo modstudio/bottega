@@ -44,6 +44,8 @@ import {
   decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
+  isTaskSiblingKeepReason,
+  reportedShipCleanupItems,
   type ShipCleanupKeptItem,
   type ShipCleanupRunDecision,
   type ShipCleanupRunFact,
@@ -119,7 +121,7 @@ export type ShipCleanupDependencies = {
   remove(path: string): void
   reclaimProcesses(paths: readonly string[]): RemovedTreeProcessCleanup
   reclaimCompose(trees: readonly RemovedRunTree[]): RemovedTreeDockerCleanup
-  observeTaskStatus?(key: string | null, project: string): Promise<TaskStatusObservation>
+  observeTaskStatus(key: string | null, project: string): Promise<TaskStatusObservation>
 }
 
 type ShipCleanupCloseOutResult = Awaited<ReturnType<ShipCleanupDependencies['closeOut']>>
@@ -751,8 +753,8 @@ async function observeCleanupTaskState(
   taskBranches: ReturnType<typeof taskCleanupPlan>['branches'],
   adapter: ShipCleanupDependencies,
 ): Promise<'open' | 'closed' | null> {
-  if (!taskBranches.keep.some((item) => item.reason === 'superseded')) return null
-  return disposalTaskState(await (adapter.observeTaskStatus ?? observeTaskStatus)(taskKey, project))
+  if (!taskBranches.keep.some((item) => isTaskSiblingKeepReason(item.reason))) return null
+  return disposalTaskState(await adapter.observeTaskStatus(taskKey, project))
 }
 
 export async function shipCleanup(
@@ -867,7 +869,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
     lines.push(deployFromLine(report))
   }
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
-  for (const item of report.kept.filter((item) => item.owner === 'task-sibling'))
+  for (const item of reportedShipCleanupItems(report))
     lines.push(formatShipCleanupReportedItem(item))
   for (const item of report.kept.filter(
     (item) => item.owner !== 'other' && item.owner !== 'task-sibling',
@@ -886,7 +888,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
 }
 
 export function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
-  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; dispose after close: ${item.remedy}` : ''}`
+  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; cleared by: ${item.remedy}` : ''}`
 }
 
 function formatCallerOwnedKeptItem(item: ShipCleanupKeptItem): string {

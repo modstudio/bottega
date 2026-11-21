@@ -2,10 +2,11 @@
 /** Names the action that clears a branch kept by the prune classifier. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { TaskBranchKeepReason } from '../ship-cleanup/ship-cleanup-decision.ts'
 
 /** Return the operator remedy for one prune refusal. */
 export function branchVerdictRemedy(
-  reason: 'throwaway' | 'superseded' | 'unlanded' | 'unknown',
+  reason: TaskBranchKeepReason,
   project: string,
   branch: string,
   key: string | null,

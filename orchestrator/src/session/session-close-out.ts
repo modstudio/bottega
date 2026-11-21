@@ -23,7 +23,11 @@ import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
-import { formatShipCleanupReportedItem, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import {
+  reportedShipCleanupItems,
+  type ShipCleanupKeptItem,
+} from '../ship-cleanup/ship-cleanup-decision.ts'
+import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import type { TaskFlowOpenSessionStageRow as OpenCursor } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import { releaseSessionCursors } from './session-close-out-cursors.ts'
@@ -599,11 +603,15 @@ function recordMechanicalFailure(
 async function applyMechanicalAction(
   action: SessionMechanicalAction,
   database: Database,
-): Promise<{ releasedRunId: string | null; reported: string[] }> {
+): Promise<
+  | { kind: 'released'; runId: string }
+  | { kind: 'reported'; items: readonly ShipCleanupKeptItem[] }
+  | { kind: 'complete' }
+> {
   if (action.kind === 'close-run') {
     const result = await closeOutRun(action.runId, { intent: 'requested' })
     await throwUnlessReleased(result)
-    return { releasedRunId: result.runId, reported: [] }
+    return { kind: 'released', runId: result.runId }
   }
   if (action.kind === 'remove-tree') {
     const path = canonicalPath(action.path)
@@ -613,7 +621,7 @@ async function applyMechanicalAction(
       )
     const result = await closeOutRun(action.runId, { intent: 'requested' })
     await throwUnlessReleased(result)
-    return { releasedRunId: result.runId, reported: [] }
+    return { kind: 'released', runId: result.runId }
   }
   if (action.kind === 'ship-cleanup') {
     const result = await shipCleanup(action.branch, { project: action.project })
@@ -622,12 +630,7 @@ async function applyMechanicalAction(
         result.errors.map((error) => error.detail).join('; ') ||
           result.kept.map((item) => item.reason).join('; '),
       )
-    return {
-      releasedRunId: null,
-      reported: result.kept
-        .filter((item) => item.owner === 'task-sibling')
-        .map(formatShipCleanupReportedItem),
-    }
+    return { kind: 'reported', items: reportedShipCleanupItems(result) }
   }
   if (action.kind === 'prune-branch') {
     const result = pruneBranch({ project: action.project, branch: action.branch })
@@ -637,7 +640,7 @@ async function applyMechanicalAction(
           '; ',
         ),
       )
-    return { releasedRunId: null, reported: [] }
+    return { kind: 'complete' }
   }
   reconcileAbsentClaims({
     dryRun: false,
@@ -646,7 +649,11 @@ async function applyMechanicalAction(
     trust: observeGrokTrustHeadings(),
     database,
   })
-  return { releasedRunId: null, reported: [] }
+  return { kind: 'complete' }
+}
+
+function formatReportedTaskSibling(item: ShipCleanupKeptItem): string {
+  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; cleared by: ${item.remedy}` : ''}`
 }
 
 function liveRunProcessItem(
@@ -814,8 +821,9 @@ async function applySessionMechanicalActions(
     }
     try {
       const result = await applyMechanicalAction(action, database)
-      if (result.releasedRunId) releasedRoots.push(result.releasedRunId)
-      report.reported.push(...result.reported)
+      if (result.kind === 'released') releasedRoots.push(result.runId)
+      if (result.kind === 'reported')
+        report.reported.push(...result.items.map(formatReportedTaskSibling))
       report.mechanical.push(label)
     } catch (cause) {
       recordMechanicalFailure(report, label, session, cause)
@@ -942,14 +950,10 @@ export async function closeOutSession(
   return report
 }
 
-function appendReportedLines(lines: string[], reported: readonly string[]): void {
-  lines.push(...reported)
-}
-
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
   const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
-  appendReportedLines(lines, report.reported)
+  lines.push(...report.reported)
   for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.parked) lines.push(`parked: ${item}`)
   for (const item of report.process)

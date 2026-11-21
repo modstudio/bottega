@@ -101,7 +101,7 @@ export type BranchPruneReport = {
   }[]
   operator: {
     branch: string
-    state: 'unlanded' | 'unknown'
+    state: 'superseded' | 'unlanded' | 'unknown'
     commitsNotOnTrunk: number
     command: string
   }[]
@@ -569,7 +569,8 @@ function listOperatorBranch(
   report: BranchPruneReport,
   key: string | null,
 ): boolean {
-  if (row.state !== 'unlanded' && row.state !== 'unknown') return false
+  if (row.state !== 'superseded' && row.state !== 'unlanded' && row.state !== 'unknown')
+    return false
   const eligibility = decidePruneEligibility({
     state: row.state,
     probeOnly: row.probeOnly,
@@ -583,7 +584,10 @@ function listOperatorBranch(
       branch: row.branch,
       state: row.state,
       commitsNotOnTrunk: row.commitsNotOnTrunk,
-      command: `git branch -D ${row.branch}`,
+      command:
+        row.state === 'superseded'
+          ? branchVerdictRemedy('superseded', report.project, row.branch, key)
+          : `git branch -D ${row.branch}`,
     })
   }
   keepTaskBranch(report, row.branch, eligibility.reason, key)
