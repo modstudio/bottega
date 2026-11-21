@@ -166,6 +166,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
         freshness?.trackerRead
           ? {
               ...shown,
+              tracker_updated_at: freshness.trackerUpdatedAt,
               tracker_comments_verifiable: freshness.commentsVerifiable,
               tracker_comment_ids: freshness.commentIds,
             }

@@ -19,6 +19,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
@@ -76,15 +77,14 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listStages(input: {
-      project?: string
-      sessionId?: string
-      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-    }): Promise<TaskFlowListedStageRow[]> {
+    async listStages(
+      input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>,
+    ): Promise<TaskFlowListedStageRow[]> {
       const selector = {
         states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
+        ...(input.workflowKeys ? { workflowKeys: input.workflowKeys } : {}),
       }
       const items = input.project
         ? await read.list(selector, input.project)

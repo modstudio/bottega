@@ -30,6 +30,7 @@ const ports: FloorEvidencePorts = {
   readTask: (key) => ({
     recordId: `task-${key}`,
     key,
+    updatedAt: '2026-09-02',
     status: 'done',
     statusCategory: 'done',
     commentIds: ['4', '01a10c8d-164d-71e9-b8a9-a59f15256556'],

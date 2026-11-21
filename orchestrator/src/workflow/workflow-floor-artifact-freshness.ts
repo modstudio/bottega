@@ -5,6 +5,7 @@ import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 
 export type MutableArtifactKind =
   | 'doc'
+  | 'task'
   | 'task comment'
   | 'task document'
   | 'note'
@@ -28,13 +29,31 @@ export function requireMutableArtifactFreshness(
   if (refusal) throw new Error(refusal)
 }
 
-export function timedTaskCommentFreshnessNotice(
-  writtenAt: string | undefined,
+type TimedArtifactNotice = { kind: MutableArtifactKind; untimed: string }
+
+const TASK_FRESHNESS_NOTICE: TimedArtifactNotice = {
+  kind: 'task',
+  untimed: 'freshness unchecked: the tracker returns no task update time',
+}
+
+const TASK_COMMENT_FRESHNESS_NOTICE: TimedArtifactNotice = {
+  kind: 'task comment',
+  untimed: 'freshness unchecked: external tracker returns no comment time',
+}
+
+function timedArtifactFreshnessNotice(
+  config: TimedArtifactNotice,
+  writtenAt: string | null | undefined,
   stepActivatedAt: string,
 ): string | null {
-  // External trackers expose comment ids without timestamps, so only timed comments get freshness.
-  if (writtenAt) requireMutableArtifactFreshness('task comment', writtenAt, stepActivatedAt)
-  return writtenAt ? null : 'freshness unchecked: external tracker returns no comment time'
+  if (writtenAt) requireMutableArtifactFreshness(config.kind, writtenAt, stepActivatedAt)
+  return writtenAt ? null : config.untimed
+}
+
+export const TIMED_FRESHNESS = {
+  task: TASK_FRESHNESS_NOTICE,
+  taskComment: TASK_COMMENT_FRESHNESS_NOTICE,
+  notice: timedArtifactFreshnessNotice,
 }
 
 export function requireAttachedTextFreshness(

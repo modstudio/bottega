@@ -26,6 +26,14 @@ type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = RecordTaskFlowIntentInput<K> &
   CursorOwnerIntentShape<K>
 
+export type TaskFlowStageListInput<State extends string> = {
+  project?: string
+  sessionId?: string
+  /** An empty list matches no stages. */
+  workflowKeys?: readonly string[]
+  states: readonly [State, ...State[]]
+}
+
 export type TaskFlowStageCursorRow = {
   id: number
   record_id: string

@@ -6,9 +6,10 @@ import { decodeTaskFlowStageListCursor, type TaskFlowStageListCursor } from './r
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
+export const TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX = 100
 export const TASK_FLOW_PRESENCE_BATCH_MAX = 500
 export const TASK_FLOW_STAGE_SUMMARY_BATCH_MAX = 200
-export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
+export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, workflowKeys, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; workflowKeys accepts at most ${TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX} values and limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
@@ -296,6 +297,7 @@ export const taskFlowStageListQuerySchema = z
     workflow: z.string().min(1).optional(),
     mode: z.string().min(1).optional(),
     workflowKey: z.string().min(1).optional(),
+    workflowKeys: z.array(z.string().min(1)).max(TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX).optional(),
     keyless: trueFlag,
     primaryInstance: trueFlag,
     taskId: z.string().uuid().optional(),
@@ -328,6 +330,7 @@ export const taskFlowStageListQuerySchema = z
       value.workflow === undefined &&
       value.mode === undefined &&
       value.workflowKey === undefined &&
+      value.workflowKeys === undefined &&
       value.keyless === undefined &&
       value.primaryInstance === undefined &&
       value.taskId === undefined &&
