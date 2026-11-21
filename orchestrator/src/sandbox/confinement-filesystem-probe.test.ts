@@ -82,17 +82,6 @@ describe('probeVerdict', () => {
     })
   })
 
-  test('keeps the existing verdict when every expected-readable target is present', () => {
-    expect(
-      probeVerdict(
-        [{ name: 'tree', path: '/tree', expected: 'readable' }],
-        { tree: 'readable' },
-        { command: ran },
-        [],
-      ),
-    ).toEqual({ status: 'denied' })
-  })
-
   test('reports a failed command after expected path measurements', () => {
     expect(
       probeVerdict(

@@ -159,19 +159,19 @@ export function probeVerdict(
   missingExpectedReadableTargets: readonly string[] = [],
 ): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
   let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
+  const missingTargetReason =
+    missingExpectedReadableTargets.length > 0
+      ? `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
+      : null
   if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
-    const missingTargetReason =
-      missingExpectedReadableTargets.length > 0
-        ? `; expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
-        : ''
     filesystemVerdict = {
       status: 'readable',
-      reason: `one or more denied paths were unexpectedly readable${missingTargetReason}`,
+      reason: `one or more denied paths were unexpectedly readable${missingTargetReason ? `; ${missingTargetReason}` : ''}`,
     }
-  } else if (missingExpectedReadableTargets.length > 0) {
+  } else if (missingTargetReason) {
     filesystemVerdict = {
       status: 'not covered',
-      reason: `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`,
+      reason: missingTargetReason,
     }
   } else if (targets.some(({ name }) => paths[name] === 'not covered')) {
     filesystemVerdict = {
@@ -845,7 +845,7 @@ function createProbeFixture(root: string) {
 
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const probeParent = process.env.BOTTEGA_SCRATCH ?? tmpdir()
+  const probeParent = tmpdir()
   mkdirSync(probeParent, { recursive: true })
   const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
