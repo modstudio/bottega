@@ -134,7 +134,11 @@ async function pushEvidence(
   return outcomes
 }
 
-async function listAllHostedTasks(url: SQL, identity: Parameters<typeof listHostedTasks>[1]) {
+async function listAllHostedTasks(
+  url: SQL,
+  identity: Parameters<typeof listHostedTasks>[1],
+  includeDeleted = false,
+) {
   type Page = Awaited<ReturnType<typeof listHostedTasks>>
   const rows = {
     tasks: [] as Page['tasks'],
@@ -144,7 +148,10 @@ async function listAllHostedTasks(url: SQL, identity: Parameters<typeof listHost
   }
   let cursor: string | undefined
   for (;;) {
-    const page = await listHostedTasks(url, identity, cursor ? { cursor } : {})
+    const page = await listHostedTasks(url, identity, {
+      includeDeleted,
+      ...(cursor ? { cursor } : {}),
+    })
     rows.tasks.push(...page.tasks)
     rows.comments.push(...page.comments)
     rows.documents.push(...page.documents)
@@ -1433,9 +1440,13 @@ try {
     ])
     const visible = await listAllHostedTasks(actorUrl, identity)
     if (visible.tasks.length !== 2) throw new Error('mirror re-push was not idempotent')
-    if (visible.documents.some((row) => row.id === document.id))
-      throw new Error('soft-deleted document was visible in the default list')
-    if (visible.statusEvents.length !== 1)
+    if (visible.comments.length || visible.documents.length || visible.statusEvents.length)
+      throw new Error('default task list returned child streams')
+    const changes = await listAllHostedTasks(actorUrl, identity, true)
+    const deletedDocument = changes.documents.find((row) => row.id === document.id)
+    if (!deletedDocument?.deleted_at)
+      throw new Error('task change feed did not carry the soft-deleted document')
+    if (changes.statusEvents.length !== 1)
       throw new Error('status patch did not append exactly one event')
     await admin`UPDATE hub_task SET next_document_number=9 WHERE id=${created.id}::uuid`
     await pushEvidence(actorUrl, identity, [
@@ -1558,14 +1569,16 @@ try {
 
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')
-    const other = await listAllHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B })
+    const otherTaskIdentity = { userId: USER, spaceId: SPACE_B }
+    const other = await listAllHostedTasks(actorUrl, otherTaskIdentity)
+    if (other.tasks.length) throw new Error('another space observed hosted tasks')
+    const otherChanges = await listAllHostedTasks(actorUrl, otherTaskIdentity, true)
     if (
-      other.tasks.length ||
-      other.comments.length ||
-      other.documents.length ||
-      other.statusEvents.length
+      otherChanges.comments.length ||
+      otherChanges.documents.length ||
+      otherChanges.statusEvents.length
     )
-      throw new Error('another space observed hosted tasks')
+      throw new Error('another space observed hosted task child streams')
 
     const noteStamp = '2026-09-17T12:20:00.000Z'
     await mirrorHostedNotes(actorUrl, identity, {
