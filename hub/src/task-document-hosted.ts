@@ -1,14 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import { projects } from './projects.ts'
-import { showHostedTask } from './task-hosted-record.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import type { TaskDocument, TaskDocumentSummary } from './task-document-types.ts'
+import { showHostedTask } from './task-hosted-record.ts'
 import { type TaskScope, taskKeyPrefix } from './task-identity.ts'
-import {
-  type HostedTaskWriteOptions,
-  taskWriteDecision,
-} from './task-write-destination.ts'
+import { type HostedTaskWriteOptions, taskWriteDecision } from './task-write-destination.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -92,9 +89,7 @@ export async function resolveHostedTaskDocument(
       : projects()
     if (
       possibleProjects.length > 0 &&
-      possibleProjects.every(
-        (project) => !usesHostedRecord(project.name, hosted),
-      )
+      possibleProjects.every((project) => !usesHostedRecord(project.name, hosted))
     )
       return null
     throw new Error(

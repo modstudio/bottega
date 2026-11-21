@@ -55,11 +55,13 @@ export type OutboxEntry = {
   kept_values: string | null
 }
 
-export const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+export const DIRECT_RECORD_TABLE_NAMES = [
   HOSTED_DOCUMENT_TABLE,
   HOSTED_NOTE_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
-])
+] as const
+export type DirectRecordTable = (typeof DIRECT_RECORD_TABLE_NAMES)[number]
+export const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set(DIRECT_RECORD_TABLE_NAMES)
 
 export function mergeQueuedHostedChange(
   prior: {

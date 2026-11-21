@@ -88,4 +88,3 @@ function reportHostedEditDelivery(result: HostedEditDelivery): void {
       `hosted change saved and queued: ${result.reason}; inspect it with \`${PLATFORM_SLUG} record outbox\``,
     )
 }
-

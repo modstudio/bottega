@@ -12,6 +12,7 @@ import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_DAY_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_NOTE_TABLE,
@@ -35,6 +36,7 @@ const hostedOnly = '01990000-0000-7000-8000-000000008514'
 const inFlightId = '01990000-0000-7000-8000-000000008515'
 const noteId = '01990000-0000-7000-8000-000000008517'
 const acknowledgementId = '01990000-0000-7000-8000-000000008518'
+const documentId = '01990000-0000-7000-8000-000000008526'
 const projectA = '01990000-0000-7000-8000-000000008519'
 const projectB = '01990000-0000-7000-8000-000000008520'
 const pageIds = [
@@ -109,6 +111,18 @@ function insertMachineTask(id: string, key: string, project: string) {
          VALUES (?,?,?,?,?, 'open','open','local',?,?)`,
       )
       .run(id, key, project, projectId, key, at, at)
+  })
+}
+
+function insertMachineDocument(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,1,'Plan','body','v1',?,?)`,
+      )
+      .run(id, taskKey, taskId, at, at)
   })
 }
 
@@ -369,6 +383,40 @@ test('a machine-only acknowledgement posts directly and leaves no outbox row', a
   expect(listHostedOutbox()).toEqual([])
   expect((await listIds(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)).ids).toContain(acknowledgementId)
   expect(report.ok).toBeTrue()
+})
+
+test('direct document and acknowledgement repairs send in separate table batches', async () => {
+  insertMachineTask(taskA, 'DEV-1', 'workshop')
+  insertMachineDocument(documentId, taskA, 'DEV-1')
+  insertMachineNote(noteId)
+  insertMachineAcknowledgement(acknowledgementId)
+  await applyOn(spaceA, [
+    {
+      table: HOSTED_TASK_TABLE,
+      id: taskA,
+      op: 'upsert',
+      row: hostedTaskRow(taskA, 'DEV-1', 'workshop'),
+    },
+  ])
+  await insertHostedNote(noteId)
+  const posts: HostedPushChange[][] = []
+
+  const report = await runPush(true, (changes) => posts.push(changes))
+
+  expect(posts).toEqual([
+    [expect.objectContaining({ table: HOSTED_DOCUMENT_TABLE, id: documentId, op: 'upsert' })],
+    [
+      expect.objectContaining({
+        table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+        id: acknowledgementId,
+        op: 'upsert',
+      }),
+    ],
+  ])
+  expect(report.drain?.sent).toBe(2)
+  expect(listHostedOutbox()).toEqual([])
+  expect((await listIds(HOSTED_DOCUMENT_TABLE)).ids).toContain(documentId)
+  expect((await listIds(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)).ids).toContain(acknowledgementId)
 })
 
 test('a hosted delete is only-on-machine and --repair restores it through the outbox', async () => {

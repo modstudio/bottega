@@ -3,7 +3,9 @@ import { db, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
+  DIRECT_RECORD_TABLE_NAMES,
   DIRECT_RECORD_TABLES,
+  type DirectRecordTable,
   drainHostedOutbox,
   type HostedOutboxReport,
   queueHostedChange,
@@ -65,6 +67,21 @@ type Options = {
 
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+const DIRECT_REPAIR_COPY = {
+  [HOSTED_DOCUMENT_TABLE]: {
+    subject: 'task document repair',
+    conflictRemedy: `${PLATFORM_SLUG} record pull`,
+  },
+  [HOSTED_NOTE_TABLE]: {
+    subject: 'note acknowledgement repair',
+    conflictRemedy: `${PLATFORM_SLUG} note list`,
+  },
+  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
+    subject: 'note acknowledgement repair',
+    conflictRemedy: `${PLATFORM_SLUG} note list`,
+  },
+} as const satisfies Record<DirectRecordTable, { subject: string; conflictRemedy: string }>
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
@@ -253,9 +270,10 @@ async function sendDirectRepairs(
   )
   let sent = 0
   for (const space of spaces) {
-    const changes = space.tables.flatMap((table) =>
-      table.machineOnly.flatMap((id) => {
-        const candidate = directCandidates.get(`${table.table}:${id}`)
+    for (const directTable of DIRECT_RECORD_TABLE_NAMES) {
+      const table = space.tables.find((candidate) => candidate.table === directTable)
+      const changes = (table?.machineOnly ?? []).flatMap((id) => {
+        const candidate = directCandidates.get(`${directTable}:${id}`)
         if (!candidate) return []
         const loaded = loadOutboxChange(db(), {
           table_name: candidate.table,
@@ -266,15 +284,16 @@ async function sendDirectRepairs(
         if (!loaded)
           throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
         return [loaded.change]
-      }),
-    )
-    if (!changes.length) continue
-    await sendHostedChanges('note acknowledgement repair', [changes], {
-      ...requestOptions,
-      recordSpace: space.spaceId,
-      conflictRemedy: `${PLATFORM_SLUG} note list`,
-    })
-    sent += changes.length
+      })
+      if (!changes.length) continue
+      const copy = DIRECT_REPAIR_COPY[directTable]
+      await sendHostedChanges(copy.subject, [changes], {
+        ...requestOptions,
+        recordSpace: space.spaceId,
+        conflictRemedy: copy.conflictRemedy,
+      })
+      sent += changes.length
+    }
   }
   return sent
 }

@@ -27,11 +27,7 @@ import {
 } from './task.ts'
 import { hostedGetTask } from './task-client.ts'
 import { taskBodyVersion } from './task-detail.ts'
-import {
-  createTaskDocument,
-  getLocalTaskDocument,
-  updateTaskDocument,
-} from './task-document.ts'
+import { createTaskDocument, getLocalTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
