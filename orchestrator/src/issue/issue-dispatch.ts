@@ -6,13 +6,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/trackers.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
-import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
+import {
+  type ProjectTaskListReader,
+  readLiveProjectTasks,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
@@ -287,11 +290,7 @@ export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
   reader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<FiledIssueQueueState> {
-  const rows = (
-    await Promise.all(
-      LIVE_TASK_STATUS_CATEGORIES.map((status) => reader(PLATFORM_SLUG, { status })),
-    )
-  ).flat()
+  const rows = await readLiveProjectTasks(reader, PLATFORM_SLUG)
   const filedRows: FiledIssueTaskRow[] = [
     ...new Map(rows.map((task) => [`${task.project}\0${task.key}`, task])).values(),
   ].map((task) => ({

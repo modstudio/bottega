@@ -39,7 +39,7 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
-import { listLocalTasks, showLocalTask } from './task-local-read.ts'
+import { listLocalTasks, lookupLocalTasks, showLocalTask } from './task-local-read.ts'
 import { taskRecordFromRows } from './task-record.ts'
 import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
@@ -519,29 +519,7 @@ export async function listTasks(
 export async function lookupTasks(project: string, keys: string[]): Promise<HostedTaskLookupRow[]> {
   if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
     return hostedLookupTasks(project, keys, hostedTaskWriteOptions(project))
-  const found = new Map<string, HostedTaskLookupRow>()
-  let pending = [...new Set(keys.map((key) => key.toUpperCase()))]
-  while (pending.length) {
-    const placeholders = pending.map(() => '?').join(',')
-    const rows = db()
-      .query<TaskRow, string[]>(
-        `SELECT * FROM task WHERE project=? AND key IN (${placeholders}) ORDER BY key`,
-      )
-      .all(project, ...pending)
-    pending = []
-    for (const row of rows) {
-      if (found.has(row.record_id)) continue
-      const hasChildren =
-        db()
-          .query<{ found: number }, [string]>(
-            'SELECT 1 found FROM task WHERE parent_record_id=? LIMIT 1',
-          )
-          .get(row.record_id) !== null
-      found.set(row.record_id, { ...row, has_children: hasChildren })
-      if (row.parent_key) pending.push(row.parent_key)
-    }
-  }
-  return [...found.values()]
+  return lookupLocalTasks(project, keys)
 }
 
 export async function showTask(

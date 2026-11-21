@@ -50,7 +50,67 @@ test('task lookup client refuses an old server with its deploy remedy', async ()
       baseUrl: 'https://hub.example.test',
       token: 'test',
       recordSpace: 'space-a',
-      fetch: async () => Response.json({ error: 'not found' }, { status: 404 }),
+      fetch: async () =>
+        Response.json({ error: 'lookup route not deployed on this record API' }, { status: 404 }),
     }),
-  ).rejects.toThrow('hosted task lookup is unavailable; run `scripts/deploy/hosted api` and retry')
+  ).rejects.toThrow(
+    'hosted task lookup is unavailable: hosted hub refused the request (404): lookup route not deployed on this record API',
+  )
+})
+
+test('task lookup client preserves a non-route refusal containing not found', async () => {
+  await expect(
+    hostedLookupTasks('workshop', ['DEV-1'], {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      recordSpace: 'space-a',
+      fetch: async () => Response.json({ error: 'project not found' }, { status: 400 }),
+    }),
+  ).rejects.toThrow('hosted hub refused the request (400): project not found')
+})
+
+test('task lookup client chunks over-limit requests and deduplicates rows across chunks', async () => {
+  const keys = Array.from({ length: TASK_LOOKUP_KEY_LIMIT + 1 }, (_, index) => `DEV-${index + 1}`)
+  let posts = 0
+  const found = await hostedLookupTasks('workshop', keys, {
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    recordSpace: 'space-a',
+    fetch: async (_input, init) => {
+      posts++
+      const body = JSON.parse(String(init?.body)) as { keys: string[] }
+      return Response.json({
+        tasks: [
+          ...body.keys.map((key) => ({
+            record_id: `record-${key}`,
+            key,
+            project: 'workshop',
+            title: key,
+            parent_key: null,
+            status: 'open',
+            status_category: 'open',
+            opened_at: null,
+            last_seen: null,
+            has_children: false,
+          })),
+          {
+            record_id: 'shared-ancestor',
+            key: 'DEV-ROOT',
+            project: 'workshop',
+            title: 'Shared ancestor',
+            parent_key: null,
+            status: 'open',
+            status_category: 'open',
+            opened_at: null,
+            last_seen: null,
+            has_children: true,
+          },
+        ],
+      })
+    },
+  })
+
+  expect(posts).toBe(2)
+  expect(keys.every((key) => found.some((row) => row.key === key))).toBe(true)
+  expect(found.filter((row) => row.record_id === 'shared-ancestor')).toHaveLength(1)
 })

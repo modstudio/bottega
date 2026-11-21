@@ -5,6 +5,8 @@ import {
 
 export type { HostedRequestSafety } from '../../shared/record-remedies.ts'
 
+export type HostedRefusalError = Error & { status?: number }
+
 type HostedRefusal = {
   status?: number
   statusText?: string
@@ -27,7 +29,7 @@ function retryStatement(refusal: HostedRefusal): string {
   return hostedRequestSafetyStatement(refusal.safety)
 }
 
-export function hostedRefusalError(refusal: HostedRefusal): Error {
+export function hostedRefusalError(refusal: HostedRefusal): HostedRefusalError {
   const body = objectBody(refusal.body)
   const status = refusal.status === undefined ? 'network error' : String(refusal.status)
   const detail =
@@ -46,5 +48,8 @@ export function hostedRefusalError(refusal: HostedRefusal): Error {
   ]
     .filter((value): value is string => value !== null)
     .map((value) => value.replace(/[.\s]+$/, ''))
-  return new Error(`hosted hub refused the request (${status}): ${detail}. ${remedies.join('. ')}`)
+  return Object.assign(
+    new Error(`hosted hub refused the request (${status}): ${detail}. ${remedies.join('. ')}`),
+    { status: refusal.status },
+  )
 }

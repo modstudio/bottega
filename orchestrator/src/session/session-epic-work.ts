@@ -2,11 +2,10 @@
 /** Gathers the epic queue surface for one live session without changing claims. */
 
 import type { Database } from 'bun:sqlite'
-import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/trackers.ts'
 import { boardLiveClaimProjectsForSession } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
-import { readProjectTaskList } from '../workflow/project-task-list.ts'
+import { readLiveProjectTasks, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-child-facts.ts'
@@ -25,11 +24,7 @@ export async function sessionEpicWork(session: string, database: Database = db()
     })
     if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
       continue
-    const listedTasks = (
-      await Promise.all(
-        LIVE_TASK_STATUS_CATEGORIES.map((status) => readProjectTaskList(project, { status })),
-      )
-    ).flat()
+    const listedTasks = await readLiveProjectTasks(readProjectTaskList, project)
     const listedKeys = [...new Set(listedTasks.map((task) => task.key))]
     const tasks = await lookupProjectTasks(project, listedKeys)
     const facts = await gatherChildTaskFacts(database, project, tasks)

@@ -523,6 +523,7 @@ describe('local-authoritative task writes', () => {
     expect(found.find(({ key }) => key === parent.key)?.has_children).toBe(true)
     expect(found.find(({ key }) => key === leaf.key)?.has_children).toBe(false)
     expect(found.some(({ key }) => key === 'BET-999999')).toBe(false)
+    expect(found.every((row) => !('body' in row) && !('source' in row))).toBe(true)
   })
 
   test('mints the next key, then update close and comment write hub.db', async () => {

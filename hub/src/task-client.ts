@@ -335,10 +335,15 @@ export async function hostedLookupTasks(
       for (const task of result.tasks) tasks.set(task.record_id, task)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (/\b(404|405)\b|not found|method not allowed/i.test(message))
-        throw new Error(`hosted task lookup is unavailable; ${TASK_LOOKUP_DEPLOY_REMEDY}`, {
-          cause: error,
-        })
+      const refusalStatus =
+        error instanceof Error && 'status' in error && typeof error.status === 'number'
+          ? error.status
+          : undefined
+      if (refusalStatus === 404 || refusalStatus === 405)
+        throw new Error(
+          `hosted task lookup is unavailable: ${message}; ${TASK_LOOKUP_DEPLOY_REMEDY}`,
+          { cause: error },
+        )
       throw error
     }
   }
