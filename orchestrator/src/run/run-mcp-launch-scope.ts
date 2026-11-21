@@ -2,10 +2,19 @@
 /** The MCP servers one worker launch attaches, before any harness renders them. */
 import type { Agent } from '../agent/agents.ts'
 import { literalCredentialFindings, literalCredentialLines } from '../mcp/mcp-credential-literal.ts'
-import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/mcp-probe.ts'
+import {
+  type McpServerConfig,
+  mcpConfigAllowlist,
+  readMcpConfig,
+  readMcpConfigResult,
+} from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
+  type HeaderMismatchDiagnostic,
+  headerMismatchFindings,
+  headerMismatchScopeLine,
+  mergeMcpSetupHeader,
   type ProjectMcpSelection,
   projectMcpWithheldLine,
   selectProjectMcpServers,
@@ -62,13 +71,31 @@ function launchSelectionFacts(input: {
   writerProxy: WriterProxyDecision
 }): {
   config: Record<string, McpServerConfig>
+  headerMismatches: HeaderMismatchDiagnostic[]
   project: Project | null
   selection: ProjectMcpSelection | null
 } {
   const config = readMcpConfig(input.cwd)
   const project = projectAt(input.callerCwd)
+  const checkoutRead =
+    input.usingMcp && project && project.path !== input.cwd
+      ? readMcpConfigResult(project.path)
+      : null
+  const headerMismatches: HeaderMismatchDiagnostic[] =
+    checkoutRead?.ok === true
+      ? headerMismatchFindings(config, checkoutRead.config)
+      : checkoutRead && checkoutRead.reason !== 'missing'
+        ? [
+            {
+              checkoutConfigPath: checkoutRead.path,
+              reason: checkoutRead.reason,
+              remedy: `fix or remove ${checkoutRead.path}, then rerun`,
+            },
+          ]
+        : []
   return {
     config,
+    headerMismatches,
     project,
     selection: launchProjectSelection(
       input.usingMcp,
@@ -123,6 +150,25 @@ export function withheldScopeLine(
   return projectMcpWithheldLine(harness, selection?.withheld ?? [])
 }
 
+/** Merge every visible project MCP scope diagnostic into one launch header. */
+export function mergeLaunchMcpScopeLines(
+  header: string | null,
+  transport: string,
+  harness: string,
+  scope: {
+    projectSelection: ProjectMcpSelection | null
+    headerMismatches: HeaderMismatchDiagnostic[]
+    credentialLines: string[]
+  },
+): string | null {
+  const lines = [
+    withheldScopeLine(transport, harness, scope.projectSelection),
+    ...scope.headerMismatches.map(headerMismatchScopeLine),
+    ...scope.credentialLines,
+  ]
+  return lines.reduce<string | null>((current, line) => mergeMcpSetupHeader(current, line), header)
+}
+
 /** Decide every MCP scope one launch needs from the tree, the register and the job shape. */
 export function workerMcpLaunchScope(input: {
   agent: Agent
@@ -138,6 +184,7 @@ export function workerMcpLaunchScope(input: {
   const writerProxy = writerProxyRoute(harness, input.transport)
   const {
     config,
+    headerMismatches,
     project,
     selection: projectSelection,
   } = launchSelectionFacts({
@@ -146,6 +193,7 @@ export function workerMcpLaunchScope(input: {
   })
   return {
     config,
+    headerMismatches,
     codex: codexProjectServersFromSelection(projectSelection, input.agent.name, input.transport),
     grok:
       grokReaderServersForRun(

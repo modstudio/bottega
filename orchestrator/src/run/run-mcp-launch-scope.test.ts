@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -16,6 +16,7 @@ import {
 } from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
+  mergeLaunchMcpScopeLines,
   PROJECT_MCP_ACP_WRITER_ADVICE,
   projectSelectionForLaunch,
   withheldScopeLine,
@@ -41,7 +42,7 @@ const launch = (
   transport: string,
   usingMcp: boolean,
   cwd: string,
-  opts?: { writesJob?: boolean; hasProjectTree?: boolean },
+  opts?: { writesJob?: boolean; hasProjectTree?: boolean; callerCwd?: string },
 ) =>
   workerMcpLaunchScope({
     agent: { name: agent, harness: agent } as Agent,
@@ -49,7 +50,7 @@ const launch = (
     usingMcp,
     writesJob: opts?.writesJob ?? true,
     hasProjectTree: opts?.hasProjectTree ?? true,
-    callerCwd: cwd,
+    callerCwd: opts?.callerCwd ?? cwd,
     cwd,
     connection: null,
   })
@@ -70,6 +71,74 @@ test('a writing launch reads the tree and names the same direct server for every
   const goose = launch('goose', 'acp', true, cwd)
   expect(goose.projectSelection).toEqual(codex.projectSelection)
   expect(goose.codex).toBeNull()
+})
+
+test('an MCP launch reports checkout header names missing from its tree config', () => {
+  const checkout = tree({
+    tracker: {
+      url: 'https://checkout.test/mcp',
+      headers: { Authorization: 'FAKE_FIXTURE_HEADER_VALUE' },
+    },
+  })
+  execFileSync('git', ['init', '--quiet'], { cwd: checkout })
+  const cwd = join(checkout, '.claude', 'worktrees', 'header-mismatch')
+  mkdirSync(cwd, { recursive: true })
+  writeFileSync(
+    join(cwd, '.mcp.json'),
+    JSON.stringify({ mcpServers: { tracker: { url: 'https://tree.test/mcp' } } }),
+  )
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'header-mismatch-fixture',
+    path: checkout,
+    settings: {},
+  })
+
+  const scope = launch('codex', 'cli', true, cwd, { callerCwd: checkout })
+  expect(scope.headerMismatches).toEqual([
+    {
+      server: 'tracker',
+      headerNames: ['Authorization'],
+      remedy:
+        "regenerate the tree's MCP config after the tree .env exists, or declare mcp.writer_tools for the server",
+    },
+  ])
+  expect(JSON.stringify(scope.headerMismatches)).not.toContain('FAKE_FIXTURE_HEADER_VALUE')
+  const header = mergeLaunchMcpScopeLines(null, 'cli', 'codex', scope)
+  expect(header).toContain(
+    'MCP scope: tracker tree config lacks checkout header names Authorization',
+  )
+  expect(header).not.toContain('FAKE_FIXTURE_HEADER_VALUE')
+  expect(launch('codex', 'cli', false, cwd, { callerCwd: checkout }).headerMismatches).toEqual([])
+})
+
+test('an MCP launch reports an invalid checkout config instead of an empty comparison', () => {
+  const checkout = mkdtempSync(join(tmpdir(), 'orch-mcp-checkout-invalid-'))
+  roots.push(checkout)
+  writeFileSync(join(checkout, '.mcp.json'), '{not valid json')
+  execFileSync('git', ['init', '--quiet'], { cwd: checkout })
+  const cwd = join(checkout, '.claude', 'worktrees', 'invalid-checkout-config')
+  mkdirSync(cwd, { recursive: true })
+  writeFileSync(join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: {} }))
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'invalid-checkout-config-fixture',
+    path: checkout,
+    settings: {},
+  })
+
+  const scope = launch('codex', 'cli', true, cwd, { callerCwd: checkout })
+  const checkoutConfigPath = join(checkout, '.mcp.json')
+  expect(scope.headerMismatches).toEqual([
+    {
+      checkoutConfigPath,
+      reason: 'invalid',
+      remedy: `fix or remove ${checkoutConfigPath}, then rerun`,
+    },
+  ])
+  expect(mergeLaunchMcpScopeLines(null, 'cli', 'codex', scope)).toBe(
+    `MCP scope: could not check checkout MCP config ${checkoutConfigPath}: invalid; fix or remove ${checkoutConfigPath}, then rerun`,
+  )
 })
 
 test('inline credentials are withheld from the selection rather than rendered', () => {

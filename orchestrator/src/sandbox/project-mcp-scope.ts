@@ -24,6 +24,23 @@ import {
 
 export type { ProjectMcpWithheld }
 
+export type HeaderMismatchFinding = {
+  server: string
+  headerNames: string[]
+  remedy: string
+}
+
+type HeaderMismatchCheckFailure = {
+  checkoutConfigPath: string
+  reason: 'unreadable' | 'invalid'
+  remedy: string
+}
+
+export type HeaderMismatchDiagnostic = HeaderMismatchFinding | HeaderMismatchCheckFailure
+
+export const HEADER_MISMATCH_REMEDY =
+  "regenerate the tree's MCP config after the tree .env exists, or declare mcp.writer_tools for the server"
+
 export const PROJECT_MCP_WRITER_WITHHELD_REASON =
   'inline env/headers, a headersHelper, or no launch definition'
 
@@ -49,12 +66,15 @@ export function projectMcpWriterRemedy(project: { name: string; path: string } |
  * The platform's own MCP identities. A project configuration never occupies
  * them: a project server named like the worker channel could shadow it.
  */
+const PLATFORM_MCP_SERVER_NAMES = new Set<string>(READER_PLATFORM_MCP_SERVERS)
+
 function withoutPlatformServers(read: McpConfigReadResult): McpConfigReadResult {
   if (!read.ok) return read
-  const platform = new Set<string>(READER_PLATFORM_MCP_SERVERS)
   return {
     ...read,
-    config: Object.fromEntries(Object.entries(read.config).filter(([name]) => !platform.has(name))),
+    config: Object.fromEntries(
+      Object.entries(read.config).filter(([name]) => !PLATFORM_MCP_SERVER_NAMES.has(name)),
+    ),
   }
 }
 
@@ -78,6 +98,33 @@ function projectMcpWriterWithholds(config: McpServerConfig): boolean {
       config.headersHelper ||
       (!config.url && !config.command),
   )
+}
+
+/** Header names a checkout server declares but the tree's matching entry lacks. */
+export function headerMismatchFindings(
+  tree: Record<string, McpServerConfig>,
+  checkout: Record<string, McpServerConfig>,
+): HeaderMismatchFinding[] {
+  const findings: HeaderMismatchFinding[] = []
+  for (const server of Object.keys(checkout).sort()) {
+    if (PLATFORM_MCP_SERVER_NAMES.has(server)) continue
+    const treeEntry = tree[server]
+    if (!treeEntry) continue
+    const treeHeaderNames = new Set(Object.keys(treeEntry.headers ?? {}))
+    const headerNames = Object.keys(checkout[server]?.headers ?? {})
+      .filter((name) => !treeHeaderNames.has(name))
+      .sort()
+    if (headerNames.length) findings.push({ server, headerNames, remedy: HEADER_MISMATCH_REMEDY })
+  }
+  return findings
+}
+
+/** The sentence shared by visible scope output and a strict-mode refusal. */
+export function headerMismatchSentence(finding: HeaderMismatchDiagnostic): string {
+  if ('checkoutConfigPath' in finding) {
+    return `could not check checkout MCP config ${finding.checkoutConfigPath}: ${finding.reason}`
+  }
+  return `${finding.server} tree config lacks checkout header names ${finding.headerNames.join(', ')}`
 }
 
 /** Which project servers attach to one run, and how a harness must reach them. */
@@ -273,6 +320,11 @@ export function projectMcpWithheldLine(
   return `MCP scope: ${harness} withheld ${withheld
     .map((entry) => `${entry.name} (${entry.reason}${entry.advice ? `; ${entry.advice}` : ''})`)
     .join(', ')}`
+}
+
+/** The visible checkout-versus-tree header-name mismatch for one project server. */
+export function headerMismatchScopeLine(finding: HeaderMismatchDiagnostic): string {
+  return `MCP scope: ${headerMismatchSentence(finding)}; ${finding.remedy}`
 }
 
 /**

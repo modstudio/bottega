@@ -145,7 +145,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
     environment: {},
     grokEnvironment: {},
     includeStore: true,
-    mcpLaunch: { codex: null, grok: proxies, projectSelection: null },
+    mcpLaunch: { codex: null, grok: proxies, projectSelection: null, headerMismatches: [] },
     mcpMode: null,
     project: null,
   })
@@ -180,7 +180,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
     environment: {},
     grokEnvironment: {},
     includeStore: false,
-    mcpLaunch: { codex: null, grok: null, projectSelection: null },
+    mcpLaunch: { codex: null, grok: null, projectSelection: null, headerMismatches: [] },
     mcpMode: null,
     project: null,
   })
@@ -211,7 +211,12 @@ function starshipLaunch(input: {
     environment: {},
     grokEnvironment: {},
     includeStore: false,
-    mcpLaunch: { codex: null, grok: null, projectSelection: input.projectSelection },
+    mcpLaunch: {
+      codex: null,
+      grok: null,
+      projectSelection: input.projectSelection,
+      headerMismatches: [],
+    },
     mcpMode: input.mcpMode,
     project: input.project,
   })
