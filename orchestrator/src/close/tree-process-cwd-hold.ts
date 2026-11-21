@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { processTableSnapshot, processWorkingDirectories } from '../resources/process-inventory.ts'
 import { ancestorChain } from '../resources/session-process-anchoring.ts'
-import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
+import { treeProcessCwdDecision, treeProcessCwdExcludedPids } from './tree-process-cwd-decision.ts'
 
 function realWorkingDirectories(values: ReadonlyMap<number, string>): {
   values: Map<number, string>
@@ -45,10 +45,15 @@ export function treeProcessCwdHold(input: {
     processSnapshot.error || processSnapshot.facts.length === 0
       ? []
       : ancestorChain(process.pid, processSnapshot.facts)
+  const excludedPids = treeProcessCwdExcludedPids({
+    facts: processSnapshot.error ? [] : processSnapshot.facts,
+    processPid: process.pid,
+    ancestorPids: ancestors,
+  })
   const decision = treeProcessCwdDecision({
     treePaths: [...new Set([realTreePath, recordedTreeSpelling])],
     cwdByPid: cwds.values,
-    excludedPids: new Set([process.pid, ...ancestors]),
+    excludedPids,
     scanError: observed.error ?? scanError,
   })
   if (decision.action === 'proceed') return null

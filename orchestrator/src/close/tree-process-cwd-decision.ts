@@ -3,6 +3,23 @@
 
 import { workingDirectoryIsInsideTree } from '../worktree/removal-working-directory.ts'
 
+type ProcessGroupFact = { pid: number; pgid: number }
+
+/** Exclude this command, its ancestors, and peers from the caller's process group. */
+export function treeProcessCwdExcludedPids(input: {
+  facts: readonly ProcessGroupFact[]
+  processPid: number
+  ancestorPids: readonly number[]
+}): ReadonlySet<number> {
+  const excluded = new Set([input.processPid, ...input.ancestorPids])
+  const processGroup = input.facts.find(({ pid }) => pid === input.processPid)?.pgid
+  if (processGroup === undefined || processGroup === 1) return excluded
+  for (const fact of input.facts) {
+    if (fact.pgid === processGroup) excluded.add(fact.pid)
+  }
+  return excluded
+}
+
 export type TreeProcessCwdDecision =
   | { action: 'proceed' }
   | { action: 'hold'; reason: { kind: 'scan-error'; cause: string } }

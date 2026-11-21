@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
+import { treeProcessCwdDecision, treeProcessCwdExcludedPids } from './tree-process-cwd-decision.ts'
 
 const decide = (
   cwdByPid: ReadonlyMap<number, string>,
@@ -69,5 +69,46 @@ describe('tree process cwd decision', () => {
         treePaths: ['/physical/tree', '/recorded/tree'],
       }),
     ).toMatchObject({ action: 'hold' })
+  })
+})
+
+describe('tree process cwd exclusions', () => {
+  const excluded = (facts: { pid: number; pgid: number }[]) =>
+    treeProcessCwdExcludedPids({ facts, processPid: 20, ancestorPids: [10, 1] })
+
+  test('proceeds when a same-process-group sibling is inside the tree', () => {
+    const excludedPids = excluded([
+      { pid: 20, pgid: 10 },
+      { pid: 21, pgid: 10 },
+    ])
+
+    expect(decide(new Map([[21, '/real/tree']]), { excludedPids })).toEqual({
+      action: 'proceed',
+    })
+  })
+
+  test('holds when a different-process-group process is inside the tree', () => {
+    const excludedPids = excluded([
+      { pid: 20, pgid: 10 },
+      { pid: 21, pgid: 21 },
+    ])
+
+    expect(decide(new Map([[21, '/real/tree']]), { excludedPids })).toEqual({
+      action: 'hold',
+      reason: { kind: 'processes', processes: [{ pid: 21, cwd: '/real/tree' }] },
+    })
+  })
+
+  test('excludes only self and ancestors when the command process group is unavailable', () => {
+    expect([...excluded([{ pid: 21, pgid: 10 }])]).toEqual([20, 10, 1])
+  })
+
+  test('excludes only self and ancestors when the command process group is init', () => {
+    expect([
+      ...excluded([
+        { pid: 20, pgid: 1 },
+        { pid: 21, pgid: 1 },
+      ]),
+    ]).toEqual([20, 10, 1])
   })
 })
