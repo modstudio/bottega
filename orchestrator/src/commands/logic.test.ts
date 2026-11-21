@@ -64,6 +64,61 @@ test('answer refuses a question-sibling option instead of recording it as ruling
   )
 })
 
+test('answer honors a typed value before or after the positional run id', async () => {
+  const answerValueFor = async (valueBeforeId: boolean) => {
+    const recordId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      session: sessionId(),
+    })
+    const number = db()
+      .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+      .get(recordId)!.number
+    db()
+      .query(
+        `INSERT INTO question
+          (record_id,number,run_record_id,asked_at,question,kind,typed_options)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-21',
+                 'Which option?','choice',?)`,
+      )
+      .run(newRecordId(), recordId, JSON.stringify([{ name: 'Use task comment' }, { name: 'Ask' }]))
+    const program = new Command().exitOverride()
+    register(program)
+    const argv = valueBeforeId
+      ? [
+          'node',
+          'orch',
+          'answer',
+          '--value',
+          'Use task comment',
+          '--record-only',
+          String(number),
+          'Use the task comment.',
+        ]
+      : [
+          'node',
+          'orch',
+          'answer',
+          String(number),
+          '--value',
+          'Use task comment',
+          '--record-only',
+          'Use the task comment.',
+        ]
+    setRawArgv(argv.slice(2))
+    await program.parseAsync(argv)
+    return db()
+      .query<{ answer_value: string }, [string]>(
+        'SELECT answer_value FROM question WHERE run_record_id=?',
+      )
+      .get(recordId)!.answer_value
+  }
+
+  expect(await answerValueFor(true)).toBe('"Use task comment"')
+  expect(await answerValueFor(false)).toBe('"Use task comment"')
+})
+
 test('answer records a late ruling on a closed cursor question without moving its cursor', async () => {
   const suffix = newRecordId().slice(-8)
   const project = `late-ruling-${suffix}`
@@ -161,6 +216,40 @@ test('tell derives refusals from newly registered owner options', async () => {
   await expect(program.parseAsync(argv)).rejects.toThrow(
     `--dry-run is not an option of run tell; see ${PLATFORM_SLUG} run --help`,
   )
+})
+
+test('relay honors its note option before the positional run id', async () => {
+  const recordId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: sessionId(),
+  })
+  const questionId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO question (record_id,number,run_record_id,asked_at,question)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-21','Which option?')`,
+    )
+    .run(questionId, recordId)
+  const number = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(recordId)!.number
+  const program = new Command().exitOverride()
+  register(program)
+  const argv = ['node', 'orch', 'relay', '--note', 'Needs operator judgment', String(number)]
+  setRawArgv(argv.slice(2))
+
+  await program.parseAsync(argv)
+
+  expect(
+    db()
+      .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
+      .get(questionId),
+  ).toMatchObject({
+    awaiting_operator_at: expect.any(String),
+    relayed_by: expect.any(String),
+  })
 })
 
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {

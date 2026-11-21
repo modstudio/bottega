@@ -12,6 +12,8 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
+import { unresolvedHubTaskKeyRefusal } from './workflow-cursor-format.ts'
+import { workflowCursorProjectUsesHubTracker } from './workflow-cursor-project.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -264,6 +266,12 @@ async function attachWorkflowTextUnchecked(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): Promise<string> {
+  if (
+    identity.key &&
+    workflowCursorProjectUsesHubTracker(identity.project, d) &&
+    context.taskRecordId === null
+  )
+    throw new Error(unresolvedHubTaskKeyRefusal(identity.key))
   if (identity.key && context.taskRecordId)
     await linkWorkflowTaskLabel(
       d,

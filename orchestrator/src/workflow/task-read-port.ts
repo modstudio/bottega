@@ -60,9 +60,11 @@ export type TaskReadPort = {
 
 let installedTaskReader: TaskReadPort | undefined
 
-/** Install the task reader used by every orchestrator read in this process. */
-export function installTaskReader(port: TaskReadPort): void {
+/** Install the task reader used by every orchestrator read in this process and return its prior state. */
+export function installTaskReader(port: TaskReadPort | undefined): TaskReadPort | undefined {
+  const previous = installedTaskReader
   installedTaskReader = port
+  return previous
 }
 
 /** Refuse instead of silently falling back to a CLI spawn. */

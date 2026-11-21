@@ -68,6 +68,7 @@ export type RunControlPresentation = {
 type ContinueRunDependencies = {
   renewTaskClaim?: RenewTaskClaim
   binding?: { cursorRecordId: string; stepSlug: string }
+  reportDetached?: (childId: string, jobName: string) => Promise<void>
 }
 
 export type HarnessHandoff = {
@@ -854,6 +855,7 @@ export async function continueRun(
       continuationMessage: messageBinding,
     },
   })
+  await dependencies.reportDetached?.(childId, row.job)
   recordContinuationTreeSource(childId, branchSource, treePlan)
   auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)
   await renewContinuedRunClaim(dependencies, row)

@@ -15,6 +15,7 @@ import {
 } from './workflow-floor-evidence.fixture.ts'
 import { gatherRuling } from './workflow-floor-evidence.ts'
 import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
+import { decideFloorSatisfaction } from './workflow-floor.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 test(
@@ -66,6 +67,29 @@ const operatorRulingFloor = {
   requirePullRequest: false,
   operatorRuling: true,
 } as const
+const trackerTransitionFloor = {
+  ...operatorRulingFloor,
+  kind: 'tracker-transition',
+  operatorRuling: false,
+  expectedStatus: 'done',
+} as const
+const commandExitFloor = {
+  ...operatorRulingFloor,
+  kind: 'command-exit',
+  operatorRuling: false,
+} as const
+
+const decide = (
+  floors: Parameters<typeof decideFloorSatisfaction>[0]['floors'],
+  evidence: Parameters<typeof decideFloorSatisfaction>[0]['evidence'],
+) =>
+  decideFloorSatisfaction({
+    floors,
+    evidence,
+    enforcement: 'floors',
+    finishing: false,
+    openObligations: [],
+  })
 
 test('gathers the stranded-question remedy through operator-floor evidence', async () => {
   const d = database()
@@ -356,6 +380,8 @@ test('a foreign architect gate is refused and a matching architect gate is allow
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
@@ -465,6 +491,8 @@ test('a foreign probe is refused and a matching probe is allowed', async () => {
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--artifact probe:1 cwd project is other, not this cursor's fixture")
 
@@ -501,6 +529,8 @@ test('exec evidence is branch-bound and carries its exit code', async () => {
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--artifact exec:1 cwd project is other, not this cursor's fixture")
 
@@ -594,8 +624,48 @@ test('exec evidence refuses a post-command head outside the change', async () =>
         {
           resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow('--artifact exec:1 head_commit does not belong to DEV-977-work or its recorded landing')
+})
+
+test('tracker-transition ignores command checkout provenance and uses its own task remedy', async () => {
+  const d = database()
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}','["true"]','/other','foreign-tip',0,'','2026-09-01','exec')`,
+  ).run()
+  const wrongCheckout = {
+    resolveCheckout: () => ({
+      project: 'other',
+      branch: 'other-branch',
+      checkoutPath: '/other',
+      headIsTipOrAncestor: false,
+      landingBranch: 'main',
+    }),
+  }
+
+  const withoutTask = await gather(
+    d,
+    { artifacts: ['exec:1'] },
+    wrongCheckout,
+    identity,
+    [trackerTransitionFloor],
+  )
+  expect(decide([trackerTransitionFloor], withoutTask)).toEqual({
+    action: 'refuse',
+    message: 'floor tracker-transition is unmet; pass --task <KEY> reading back as done',
+  })
+
+  const withTask = await gather(
+    d,
+    { task: 'DEV-977' },
+    wrongCheckout,
+    identity,
+    [trackerTransitionFloor],
+  )
+  expect(decide([trackerTransitionFloor], withTask).action).toBe('allow')
 })
 
 test('a pr-create exec whose output URL cannot be judged is gathered as a condition', async () => {

@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
@@ -16,6 +16,14 @@ import { composeWorkflow } from './workflows.ts'
 
 const database = testDatabaseFixture((d) => {
   seedCurrentWorkflowTreeFixture(d, ['plan-task'], 'epic child service fixture')
+})
+
+let previousTaskReader: TaskReadPort | undefined
+beforeEach(() => {
+  previousTaskReader = installTaskReader(undefined)
+})
+afterEach(() => {
+  installTaskReader(previousTaskReader)
 })
 
 const row = (key: string, parentKey: string | null): TaskReadRow => ({

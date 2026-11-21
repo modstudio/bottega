@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { CommanderError } from 'commander'
@@ -27,6 +27,7 @@ import {
   run,
   usesReadOnlyStoreHandle,
 } from './program.ts'
+import { write } from '../commands/support.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
@@ -214,6 +215,36 @@ test('an unknown command keeps exit 2 and migration drain refusals carry their d
   expect(exitCodeFor(new MigrationDrainRefusalError(refusal('draining')))).toBe(
     MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
   )
+})
+
+test('run drains output written before a command action throws', async () => {
+  const command = program.command('write-then-throw-fixture').action(() => {
+    write('started turn 44\n')
+    throw new Error('post-write failure')
+  })
+  const chunks: string[] = []
+  const stdout = spyOn(process.stdout, 'write').mockImplementation(
+    ((chunk: string | Uint8Array, encodingOrCallback?: unknown, callback?: unknown) => {
+      chunks.push(String(chunk))
+      const done =
+        typeof encodingOrCallback === 'function'
+          ? encodingOrCallback
+          : typeof callback === 'function'
+            ? callback
+            : undefined
+      done?.()
+      return true
+    }) as typeof process.stdout.write,
+  )
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await run(['write-then-throw-fixture'])).toBe(1)
+    expect(chunks.join('')).toBe('started turn 44\n')
+  } finally {
+    stdout.mockRestore()
+    error.mockRestore()
+    program.commands.splice(program.commands.indexOf(command), 1)
+  }
 })
 
 test('run query verbs use the read-only store handle', () => {

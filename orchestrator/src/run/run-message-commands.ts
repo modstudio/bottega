@@ -359,6 +359,19 @@ export async function continueCommand(
     turn: 'continue',
     ...admission,
   })
+  let detachedReported = false
+  const reportDetached =
+    flags.detach || !flags.follow
+      ? async (childId: string, jobName: string) => {
+          await dependencies.reportContinuedRun(
+            childId,
+            jobName,
+            flags,
+            controlPresentation(presentation),
+          )
+          detachedReported = true
+        }
+      : undefined
   const resumed = await dependencies.continueRun(
     id,
     message,
@@ -367,16 +380,18 @@ export async function continueCommand(
     {
       renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim,
       binding: admissionResult.binding,
+      reportDetached,
     },
   )
   ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
     resumed.childId,
     admissionResult.warning,
   )
-  await dependencies.reportContinuedRun(
-    resumed.childId,
-    resumed.job,
-    flags,
-    controlPresentation(presentation),
-  )
+  if (!detachedReported)
+    await dependencies.reportContinuedRun(
+      resumed.childId,
+      resumed.job,
+      flags,
+      controlPresentation(presentation),
+    )
 }
