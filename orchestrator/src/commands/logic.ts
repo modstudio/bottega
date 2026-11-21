@@ -153,8 +153,10 @@ const runGateCommand = async (): Promise<void> => {
   )
   presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
 }
-const reparsedArgs = (positionals: unknown[], options: OptionValues): string[] =>
-  [...productArgv('reparse', [], options).slice(1), ...values(positionals)]
+const reparsedArgs = (positionals: unknown[], options: OptionValues): string[] => [
+  ...productArgv('reparse', [], options).slice(1),
+  ...values(positionals),
+]
 const tellByIdentifier = (
   id: string,
   message: unknown[],
@@ -200,8 +202,12 @@ const answerByIdentifier = async (
   )
 }
 const relayByIdentifier = async (id: string, command: Command, options: OptionValues) =>
-  relayCommand(localRunId(id), reparsedArgs(command.args.slice(1), options), options.note, presentation, (question) =>
-    resolveQuestionIdentifier(db(), question),
+  relayCommand(
+    localRunId(id),
+    reparsedArgs(command.args.slice(1), options),
+    options.note,
+    presentation,
+    (question) => resolveQuestionIdentifier(db(), question),
   )
 const resultByIdentifier = (id: string, options: OptionValues) =>
   resultCommand(

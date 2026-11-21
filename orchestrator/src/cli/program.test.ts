@@ -223,23 +223,30 @@ test('run drains output written before a command action throws', async () => {
     throw new Error('post-write failure')
   })
   const chunks: string[] = []
-  const stdout = spyOn(process.stdout, 'write').mockImplementation(
-    ((chunk: string | Uint8Array, encodingOrCallback?: unknown, callback?: unknown) => {
-      chunks.push(String(chunk))
-      const done =
-        typeof encodingOrCallback === 'function'
-          ? encodingOrCallback
-          : typeof callback === 'function'
-            ? callback
-            : undefined
+  let delivered = false
+  const stdout = spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+    encodingOrCallback?: unknown,
+    callback?: unknown,
+  ) => {
+    chunks.push(String(chunk))
+    const done =
+      typeof encodingOrCallback === 'function'
+        ? encodingOrCallback
+        : typeof callback === 'function'
+          ? callback
+          : undefined
+    setTimeout(() => {
+      delivered = true
       done?.()
-      return true
-    }) as typeof process.stdout.write,
-  )
+    }, 0)
+    return true
+  }) as typeof process.stdout.write)
   const error = spyOn(console, 'error').mockImplementation(() => {})
   try {
     expect(await run(['write-then-throw-fixture'])).toBe(1)
     expect(chunks.join('')).toBe('started turn 44\n')
+    expect(delivered).toBeTrue()
   } finally {
     stdout.mockRestore()
     error.mockRestore()

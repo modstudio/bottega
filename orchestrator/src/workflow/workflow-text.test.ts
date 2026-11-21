@@ -269,19 +269,31 @@ describe('workflow text lifecycle', () => {
     }
 
     await expect(
-      attachWorkflowText(identity, undefined, 'unknown task body', {
-        ...context,
-        taskRecordId: null,
-      }, d),
+      attachWorkflowText(
+        identity,
+        undefined,
+        'unknown task body',
+        {
+          ...context,
+          taskRecordId: null,
+        },
+        d,
+      ),
     ).rejects.toThrow(
       `task key DEV-404 names no task in hub; check it with \`${PLATFORM_SLUG} task show DEV-404\` or file the task first`,
     )
     await expect(
-      attachWorkflowText(identity, undefined, 'known task body', {
-        ...context,
-        taskRecordId: 'task-dev-404',
-        taskStatusCategory: 'open',
-      }, d),
+      attachWorkflowText(
+        identity,
+        undefined,
+        'known task body',
+        {
+          ...context,
+          taskRecordId: 'task-dev-404',
+          taskStatusCategory: 'open',
+        },
+        d,
+      ),
     ).rejects.toThrow('workflow has no live cursor; fetch its current step first')
   })
 

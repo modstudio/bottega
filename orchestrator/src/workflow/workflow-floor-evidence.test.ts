@@ -646,25 +646,17 @@ test('tracker-transition ignores command checkout provenance and uses its own ta
     }),
   }
 
-  const withoutTask = await gather(
-    d,
-    { artifacts: ['exec:1'] },
-    wrongCheckout,
-    identity,
-    [trackerTransitionFloor],
-  )
+  const withoutTask = await gather(d, { artifacts: ['exec:1'] }, wrongCheckout, identity, [
+    trackerTransitionFloor,
+  ])
   expect(decide([trackerTransitionFloor], withoutTask)).toEqual({
     action: 'refuse',
     message: 'floor tracker-transition is unmet; pass --task <KEY> reading back as done',
   })
 
-  const withTask = await gather(
-    d,
-    { task: 'DEV-977' },
-    wrongCheckout,
-    identity,
-    [trackerTransitionFloor],
-  )
+  const withTask = await gather(d, { task: 'DEV-977' }, wrongCheckout, identity, [
+    trackerTransitionFloor,
+  ])
   expect(decide([trackerTransitionFloor], withTask).action).toBe('allow')
 })
 
