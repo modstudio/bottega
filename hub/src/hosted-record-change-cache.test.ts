@@ -314,6 +314,60 @@ test('a cursor compare-and-set mismatch aborts the page', async () => {
   expect(stored('collect.hosted-record-changes.cursor')).toBe('concurrent')
 })
 
+test('a failed record change names its table and record id and keeps the original cause', async () => {
+  seedFeed()
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,title,source,first_seen,last_seen)
+         VALUES ('task-for-bad-document','DEV-9','one','bad document','local',?,?)`,
+      )
+      .run(at, at),
+  )
+  const recordId = 'bad-document-record-id'
+  let thrown: unknown
+  try {
+    await pullHostedChanges({
+      ...options,
+      fetch: route({
+        feed: () =>
+          page('after', [
+            {
+              table: 'hub_task_document',
+              id: recordId,
+              space: 'space-one',
+              op: 'upsert',
+              row: {
+                id: recordId,
+                task_key: 'DEV-9',
+                task_id: 'task-for-bad-document',
+                project_name: 'one',
+                number: null,
+                role: null,
+                title: 'bad document',
+                body: '',
+                version: 'v1',
+                created_at: at,
+                updated_at: at,
+                deleted_at: null,
+              },
+            },
+          ]),
+      }),
+      registeredProjects: registered,
+    })
+  } catch (error) {
+    thrown = error
+  }
+
+  expect(thrown).toBeInstanceOf(Error)
+  expect((thrown as Error).message).toContain(
+    `hosted task change hub_task_document ${recordId}: live task document ${recordId}`,
+  )
+  expect((thrown as Error).cause).toBeInstanceOf(Error)
+  expect(((thrown as Error).cause as Error).message).toContain('has no number')
+})
+
 test('a 410 during follow restarts once from a fresh horizon', async () => {
   writeTransaction((conn) => {
     conn

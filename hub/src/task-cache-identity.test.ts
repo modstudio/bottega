@@ -2,6 +2,7 @@ import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { queueHostedChange } from './outbox.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
 
 const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
@@ -183,6 +184,120 @@ test('pulled document refuses a number held by another UUID', () => {
     ),
   ).toThrow(
     `DEV-1/1 belongs to UUID existing-document, not incoming UUID incoming-document; run \`${PLATFORM_SLUG} task doc list DEV-1\``,
+  )
+})
+
+function applyRoleCollision(incomingId: string) {
+  applyHostedTaskChanges({
+    tasks: [],
+    comments: [],
+    documents: [
+      {
+        id: incomingId,
+        task_key: 'DEV-1',
+        task_id: TASK_A,
+        project_name: 'workshop',
+        number: 2,
+        role: 'handoff',
+        title: 'incoming',
+        body: 'incoming body',
+        version: 'incoming-version',
+        created_at: AT,
+        updated_at: AT,
+        deleted_at: null,
+      },
+    ],
+    statusEvents: [],
+    cursor: AT,
+  })
+  return db()
+    .query<{ record_id: string; role: string | null }, []>(
+      `SELECT record_id,role FROM task_document ORDER BY number`,
+    )
+    .all()
+}
+
+function seedRoleHolder(recordId: string) {
+  seedTask(TASK_A, 'DEV-1')
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+         VALUES (?,'DEV-1',?,1,'handoff','existing','body','v1',?,?)`,
+      )
+      .run(recordId, TASK_A, AT, AT),
+  )
+}
+
+test('record role collision demotes the local holder and applies the incoming document', () => {
+  seedRoleHolder('existing-document')
+
+  let stored: ReturnType<typeof applyRoleCollision> | undefined
+  expect(() => {
+    stored = applyRoleCollision('incoming-document')
+  }).not.toThrow()
+  expect(stored).toEqual([
+    { record_id: 'existing-document', role: null },
+    { record_id: 'incoming-document', role: 'handoff' },
+  ])
+})
+
+test('record role collision removes the pending role while preserving other document edits', () => {
+  for (const [recordId, fields, expected] of [
+    ['role-and-title', ['role', 'title'], ['title']],
+    ['role-only', ['role'], null],
+    ['full-row', null, ['title', 'body', 'version']],
+  ] as const) {
+    resetFixtureStore()
+    seedRoleHolder(recordId)
+    writeTransaction((conn) =>
+      queueHostedChange(conn, 'hub_task_document', recordId, 'upsert', AT, fields),
+    )
+
+    expect(applyRoleCollision(`incoming-${recordId}`)[0]).toEqual({
+      record_id: recordId,
+      role: null,
+    })
+    const stored = db()
+      .query<{ fields: string | null }, [string]>(
+        `SELECT fields FROM hosted_outbox
+         WHERE table_name='hub_task_document' AND row_id=?`,
+      )
+      .get(recordId)
+    expect(stored ? JSON.parse(stored.fields!) : null).toEqual(expected)
+  }
+})
+
+test('a failed snapshot row names its family, table, and record id', () => {
+  seedTask(TASK_A, 'DEV-1')
+  const recordId = 'snapshot-document-without-number'
+
+  expect(() =>
+    applyHostedTaskChanges({
+      tasks: [],
+      comments: [],
+      documents: [
+        {
+          id: recordId,
+          task_key: 'DEV-1',
+          task_id: TASK_A,
+          project_name: 'workshop',
+          number: null,
+          role: null,
+          title: 'invalid',
+          body: '',
+          version: 'v1',
+          created_at: AT,
+          updated_at: AT,
+          deleted_at: null,
+        },
+      ],
+      statusEvents: [],
+      cursor: AT,
+    }),
+  ).toThrow(
+    `hosted task change hub_task_document ${recordId}: live task document ${recordId} for task DEV-1 has no number`,
   )
 })
 

@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import {
+  applyHostedRow,
   classifyHostedChangeDelete,
   classifyHostedChangeUpsert,
   type HostedChangeFamily,
@@ -153,7 +154,7 @@ function applyDeleteChange(
   else counts.deletesApplied += 1
 }
 
-function applyOneChange(
+function applyOneChangeUnchecked(
   conn: Database,
   change: HostedPreparedChange,
   spaceId: string,
@@ -208,6 +209,18 @@ function applyOneChange(
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else counts.upsertsChanged += 1
+}
+
+function applyOneChange(
+  conn: Database,
+  change: HostedPreparedChange,
+  spaceId: string,
+  family: HostedChangeFamily,
+  counts: SpaceCounts,
+) {
+  applyHostedRow(family.failureLabel, change.table, change.id, () =>
+    applyOneChangeUnchecked(conn, change, spaceId, family, counts),
+  )
 }
 
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'

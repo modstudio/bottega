@@ -27,6 +27,8 @@ import {
   taskPullSpaces,
 } from './task-project-space.ts'
 
+const TASK_CHANGE_FAILURE_LABEL = 'hosted task change'
+
 const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
 
 function pageParentStates(page: HostedPreparedChangePage) {
@@ -104,13 +106,17 @@ async function prepareTaskParents(
   return {
     apply: [...fetched.values()].map(
       (task) => (conn: Database) =>
-        applyHostedTaskRows(conn, {
-          tasks: [task],
-          comments: [],
-          documents: [],
-          statusEvents: [],
-          cursor: '',
-        }),
+        applyHostedTaskRows(
+          conn,
+          {
+            tasks: [task],
+            comments: [],
+            documents: [],
+            statusEvents: [],
+            cursor: '',
+          },
+          TASK_CHANGE_FAILURE_LABEL,
+        ),
     ),
     skippedForAbsentParent: absent,
   }
@@ -129,7 +135,7 @@ export function createHostedTaskChangeFamily(
       return {
         cursor: snapshot.cursor,
         more: snapshot.more ?? false,
-        apply: (conn) => applyHostedTaskRows(conn, snapshot),
+        apply: (conn) => applyHostedTaskRows(conn, snapshot, TASK_CHANGE_FAILURE_LABEL),
       }
     },
     preparePage: prepareTaskParents,
@@ -148,6 +154,6 @@ export function createHostedTaskChangeFamily(
     delete: (conn, table, id) => deleteHostedChangeRow(conn, table as HostedTaskChangeTable, id),
     finish: reconcileParentRecordIds,
     reportAbsentParentSkips: true,
-    failureLabel: 'hosted task change',
+    failureLabel: TASK_CHANGE_FAILURE_LABEL,
   }
 }

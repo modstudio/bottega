@@ -167,6 +167,35 @@ export function queueHostedChange(
     )
 }
 
+export function removeQueuedHostedChangeField(
+  conn: Database,
+  table: string,
+  rowId: string,
+  field: string,
+  fullRowFields: readonly string[],
+): void {
+  const entry = conn
+    .query<{ id: string; fields: string | null }, [string, string]>(
+      `SELECT id,fields FROM hosted_outbox
+       WHERE table_name=? AND row_id=? AND operation='upsert'`,
+    )
+    .get(table, rowId)
+  if (!entry) return
+  const fields = (entry.fields === null ? fullRowFields : JSON.parse(entry.fields)).filter(
+    (queued: string) => queued !== field,
+  )
+  if (!fields.length) {
+    conn.query(`DELETE FROM hosted_outbox WHERE id=?`).run(entry.id)
+    return
+  }
+  conn
+    .query(
+      `UPDATE hosted_outbox SET fields=?,generation=generation+1,attempts=0,last_error=NULL,
+       quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL WHERE id=?`,
+    )
+    .run(JSON.stringify(fields), entry.id)
+}
+
 export function adoptPendingHostedRow(
   conn: Database,
   table: string,
