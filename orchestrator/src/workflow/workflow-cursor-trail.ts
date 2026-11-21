@@ -23,7 +23,16 @@ export type ArgumentReboundEvent = {
   at: string
 }
 
-export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
+export type CursorRepinnedEvent = {
+  event: 'repinned'
+  workflow: { from: number; to: number }
+  catalogue: { from: number; to: number }
+  reason: string
+  callerSession: string
+  at: string
+}
+
+export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent | CursorRepinnedEvent
 
 export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
@@ -37,6 +46,9 @@ export function completedWorkflowSummary(name: string, entries: CursorTrailEntry
 
 export const hasClosedStep = (trail: string): boolean =>
   (JSON.parse(trail) as CursorTrailEntry[]).some(isClosedStep)
+
+export const closedStepsFromTrail = (trail: string): ClosedStep[] =>
+  (JSON.parse(trail) as CursorTrailEntry[]).filter(isClosedStep)
 
 /** Floor input that requires a ruling answered after this step's last re-entry close. */
 export function reentryBoundFloorInput(

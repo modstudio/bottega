@@ -2,6 +2,7 @@
 /** Keeps public cursor notices and command/tool handle syntax consistent. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { CursorRepinnedEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 
 export const WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS = 120
@@ -154,6 +155,7 @@ export function renderWorkflowCursorLine(row: {
   question?: string | null
   question_number?: number | null
   obligations?: string
+  closed?: string
   handed_off_from_number?: number | null
   handed_off_from_workflow?: string | null
 }): string {
@@ -165,5 +167,11 @@ export function renderWorkflowCursorLine(row: {
     row.handed_off_from_number && row.handed_off_from_workflow
       ? ` handed off from ${row.handed_off_from_workflow} cursor ${row.handed_off_from_number}`
       : ''
-  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${handoff}${question}${obligations}`
+  const repinned = (JSON.parse(row.closed ?? '[]') as CursorTrailEntry[]).findLast(
+    (entry): entry is CursorRepinnedEvent => 'event' in entry && entry.event === 'repinned',
+  )
+  const repin = repinned
+    ? ` repinned workflow ${repinned.workflow.from}->${repinned.workflow.to} catalogue ${repinned.catalogue.from}->${repinned.catalogue.to}`
+    : ''
+  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${repin}${handoff}${question}${obligations}`
 }

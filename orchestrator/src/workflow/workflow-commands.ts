@@ -70,6 +70,7 @@ import {
   checkResolvedWorkflowRendering,
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
+import { repinWorkflowCursor } from './workflow-repin.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskLookup, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -561,6 +562,24 @@ export async function abandonCommand(
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
+}
+
+export async function repinCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  if (cursor === undefined) throw new Error('--cursor is required')
+  const context = cliWorkflowCursorContext()
+  const { selectedRow } = await cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    `${PLATFORM_SLUG} workflow repin`,
+  )
+  const result = await repinWorkflowCursor({
+    row: selectedRow!,
+    reason: flagValue(argv, 'reason') ?? '',
+    context,
+  })
+  print(result, result.summary)
 }
 
 export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {

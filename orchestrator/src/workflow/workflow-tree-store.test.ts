@@ -425,11 +425,13 @@ describe('importWorkflowTree', () => {
       d,
     )
     const closeTask = composed.steps.find(({ slug }) => slug === 'close-task')!
-    const floors = decideCloseFloors(closeTask, undefined)
+    const doneFloors = decideCloseFloors(closeTask, 'done')
+    const partialFloors = decideCloseFloors(closeTask, 'partial')
 
-    expect(floors).toMatchObject([
+    expect(doneFloors).toMatchObject([
       { kind: 'tracker-transition', expectedStatus: 'done', requirePullRequest: true },
     ])
+    expect(partialFloors).toMatchObject([{ kind: 'task-open-with-notes' }])
   })
 
   test(`array-mcp ship steps render ${PLATFORM_SLUG} status and workflow evidence verbs`, async () => {

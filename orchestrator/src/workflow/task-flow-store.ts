@@ -290,6 +290,16 @@ export function taskFlowReadStore(
   return resolveTaskFlowReadStore(database, client)
 }
 
+/** Returns the open workflow question, if any, that prevents changing this cursor. */
+export async function openWorkflowQuestionForCursor(
+  store: TaskFlowReadStore,
+  cursorRecordId: string,
+): Promise<TaskFlowWaitingQuestionRow | undefined> {
+  return (await store.waitingWorkflowQuestions()).find(
+    (question) => question.workflow_cursor_record_id === cursorRecordId,
+  )
+}
+
 /** Count local task-flow rows while deciding whether a local project row can be removed. */
 export async function localTaskFlowProjectReferenceCounts(
   database: Database,

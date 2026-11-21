@@ -77,6 +77,7 @@ import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { registerWorkflowContextTools } from './mcp-workflow-context-tools.ts'
 import { registerWorkflowHandoffTool } from './mcp-workflow-handoff.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
+import { registerWorkflowRepinTool } from './mcp-workflow-repin.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
@@ -660,6 +661,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
 
   registerWorkflowContextTools(server, ports)
   registerWorkflowHandoffTool(server, ports, text)
+  registerWorkflowRepinTool(server, text)
 
   server.registerTool(
     'abandon_workflow',

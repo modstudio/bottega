@@ -97,6 +97,10 @@ export type RecordTaskFlowClient = {
     input: TaskFlowIntentInput<'stage-update'>,
     destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
+  repinTaskFlow?(
+    input: TaskFlowIntentInput<'repin'>,
+    destination: RecordWriteDestination,
+  ): Promise<TaskFlowWriteResult>
   advanceTaskFlow?(
     input: TaskFlowIntentInput<'advance'>,
     destination: RecordWriteDestination,
@@ -271,6 +275,8 @@ function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
         (body) => taskFlowWriteResultSchema.parse(body),
         destination,
       ),
+    repinTaskFlow: (input, destination) =>
+      write(request, 'repin', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
     advanceTaskFlow: (input, destination) =>
       write(
         request,

@@ -454,6 +454,7 @@ POST /v1/questions/:intent
 POST /v1/task-flow/import
 POST /v1/task-flow/compose
 POST /v1/task-flow/stage-update
+POST /v1/task-flow/repin
 POST /v1/task-flow/advance
 POST /v1/task-flow/await-ruling
 POST /v1/task-flow/abandon

@@ -20,6 +20,32 @@ const row = {
 }
 
 describe('workflow cursor line', () => {
+  test('shows the latest repin versions', () => {
+    const line = renderWorkflowCursorLine({
+      id: 12,
+      workflow_slug: 'fix-defect',
+      mode_slug: 'single',
+      workflow_key: 'DEV-12',
+      project: 'fixture',
+      ordinal: 2,
+      total_steps: 4,
+      step_slug: 'close-task',
+      state: 'running',
+      next_slug: 'finished',
+      closed: JSON.stringify([
+        {
+          event: 'repinned',
+          workflow: { from: 3, to: 4 },
+          catalogue: { from: 8, to: 9 },
+          reason: 'new close outcome',
+          callerSession: 'session-one',
+          at: '2026-11-20T00:00:00.000Z',
+        },
+      ]),
+    })
+    expect(line).toContain('repinned workflow 3->4 catalogue 8->9')
+  })
+
   test('a foreign owner notice names the owner and the keyed compose takeover', () => {
     expect(
       foreignCursorOwnerNotice(

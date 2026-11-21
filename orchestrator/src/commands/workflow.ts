@@ -24,6 +24,7 @@ import {
   queueChildCommand,
   recordEvidenceCommand,
   renderCheckCommand,
+  repinCommand,
   retireCatalogueCommand,
   retireWorkflowCommand,
   ruleCommand,
@@ -126,7 +127,7 @@ function workflowRegistration(
     .allowExcessArguments(true)
     .action(() => {
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | handoff | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | handoff | repin | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
       )
     })
   return { workflow, workflowPresentation, handlerOptions, output }
@@ -534,6 +535,20 @@ function registerWorkflowCursorAdmin({
     .action((options) => cursorsCommand(workflowArgv('cursors', [], options), output(options)))
 }
 
+function registerWorkflowRepin({ workflow, output }: WorkflowRegistration): void {
+  jsonOption(
+    reasonOption(
+      workflow
+        .command('repin')
+        .description('re-point an open cursor to the current production workflow and catalogue')
+        .requiredOption('--cursor <value>', 'select this workflow cursor')
+        .option('--project <value>', 'select this registered project'),
+    ),
+  )
+    .allowExcessArguments(false)
+    .action((options) => repinCommand(workflowArgv('repin', [], options), output(options)))
+}
+
 function registerWorkflowChildCommands({
   workflow,
   workflowPresentation,
@@ -755,6 +770,7 @@ export function registerWorkflowCommands(
   registerWorkflowAdvancement(registration)
   registerWorkflowStepActionCommands(registration.workflow)
   registerWorkflowRulings(registration)
+  registerWorkflowRepin(registration)
   registerWorkflowCursorAdmin(registration)
   registerWorkflowChildCommands(registration)
   registerWorkflowTreeCommands(registration)

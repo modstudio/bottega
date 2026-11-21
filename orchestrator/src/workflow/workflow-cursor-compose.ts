@@ -40,6 +40,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
+import { closedStepsFromTrail } from './workflow-cursor-trail.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import {
   closeExploreForLifecycle,
@@ -104,7 +105,7 @@ export async function graduatingExploreCursor(input: {
     ? {
         cursor: row.id,
         recordId: row.record_id,
-        closedSteps: JSON.parse(row.closed).length,
+        closedSteps: closedStepsFromTrail(row.closed).length,
         hasOpenQuestion: row.question_number !== null,
         attachedText: (
           await taskFlowReadStore(input.database, input.taskFlowClient).textsForStage(row.record_id)

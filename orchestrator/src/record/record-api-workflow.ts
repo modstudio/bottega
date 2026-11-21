@@ -118,6 +118,10 @@ function registerTaskFlowWriteRoutes(
       registerTaskFlowWriteRoute(app, deps, ports, 'stage-update', (body) =>
         taskFlowIntentSchemas['stage-update'].safeParse(body),
       ),
+    repin: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'repin', (body) =>
+        taskFlowIntentSchemas.repin.safeParse(body),
+      ),
     advance: () =>
       registerTaskFlowWriteRoute(app, deps, ports, 'advance', (body) =>
         taskFlowIntentSchemas.advance.safeParse(body),

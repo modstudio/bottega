@@ -1,7 +1,13 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { taskFlowRevisionRefusal } from './task-flow-store-sqlite-write.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
@@ -40,6 +46,56 @@ async function stage(d: Database) {
   return (await taskFlowReadStore(d).stageByHandle('fixture', composed.cursor!.id))!
 }
 
+function repinPayload(
+  row: Awaited<ReturnType<typeof stage>>,
+  catalogueVersionId = row.catalogue_version_record_id,
+): TaskFlowIntentInput<'repin'> {
+  return {
+    requestId: newRecordId(),
+    expected: {
+      sessionId: row.session_id,
+      state: row.state,
+      activeOrdinal: row.ordinal,
+      workflowVersionId: row.workflow_version_record_id,
+      catalogueVersionId: row.catalogue_version_record_id,
+      noPendingAwait: true,
+      noOpenWorkflowQuestion: true,
+    },
+    stage: {
+      id: row.record_id,
+      expectedRevision: row.revision,
+      values: {
+        workflowVersionId: row.workflow_version_record_id,
+        catalogueVersionId,
+        totalSteps: row.total_steps,
+        closedStepNotes: JSON.parse(row.closed) as unknown[],
+        updatedAt: row.updated_at,
+      },
+    },
+  }
+}
+
+function nextCatalogueVersion(d: Database, suffix: string): string {
+  const production = productionStepCatalogue(d).definition
+  const draft = setStepCatalogueLocal(
+    {
+      ...production,
+      steps: production.steps.map((step, index) =>
+        index === 0 ? { ...step, body: `${step.body}\n${suffix}` } : step,
+      ),
+    },
+    suffix,
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(draft.n, suffix, 'test', d)
+  return d
+    .query<{ record_id: string }, [number]>(
+      'SELECT record_id FROM step_catalogue_version WHERE n=? AND superseded_at IS NULL',
+    )
+    .get(draft.n)!.record_id
+}
+
 test('intent writes refuse every stale expected revision', async () => {
   const d = database()
   const row = await stage(d)
@@ -48,6 +104,23 @@ test('intent writes refuse every stale expected revision', async () => {
   const cases = [
     ['compose', { requestId: row.record_id, stageChanges: [mutation] }],
     ['stage-update', { requestId: row.record_id, stages: [mutation] }],
+    [
+      'repin',
+      {
+        requestId: row.record_id,
+        expected: repinPayload(row).expected,
+        stage: {
+          ...mutation,
+          values: {
+            workflowVersionId: row.workflow_version_record_id,
+            catalogueVersionId: row.catalogue_version_record_id,
+            totalSteps: row.total_steps,
+            closedStepNotes: [],
+            updatedAt: row.updated_at,
+          },
+        },
+      },
+    ],
     ['advance', { requestId: row.record_id, stage: mutation }],
     ['await-ruling', { requestId: row.record_id, stage: mutation }],
     ['abandon', { requestId: row.record_id, stage: mutation }],
@@ -64,6 +137,50 @@ test('intent writes refuse every stale expected revision', async () => {
   ] as const
   for (const [intent, payload] of cases)
     expect(() => taskFlowLocalStore(d).write(intent, payload as never)).toThrow('rerun the command')
+})
+
+test('repin refuses when the cursor advances between decision and write', async () => {
+  const d = database()
+  const row = await stage(d)
+  const payload = repinPayload(row)
+  d.query('UPDATE workflow_cursor SET ordinal=ordinal+1 WHERE record_id=?').run(row.record_id)
+
+  expect(() => taskFlowLocalStore(d).write('repin', payload)).toThrow(
+    `workflow cursor ${row.id} ordinal changed from 1 to 2; rerun ${PLATFORM_SLUG} workflow repin`,
+  )
+})
+
+test('repin refuses when the old catalogue version changes before the write', async () => {
+  const d = database()
+  const row = await stage(d)
+  const payload = repinPayload(row)
+  const changed = nextCatalogueVersion(d, 'changed before repin write')
+  d.query('UPDATE workflow_cursor SET catalogue_version_record_id=? WHERE record_id=?').run(
+    changed,
+    row.record_id,
+  )
+
+  expect(() => taskFlowLocalStore(d).write('repin', payload)).toThrow(
+    `workflow cursor ${row.id} pinned catalogue version changed; rerun ${PLATFORM_SLUG} workflow repin`,
+  )
+})
+
+test('repin stores the compared targets when production moves after the decision', async () => {
+  const d = database()
+  const row = await stage(d)
+  const target = nextCatalogueVersion(d, 'compared repin target')
+  const payload = repinPayload(row, target)
+  const newerProduction = nextCatalogueVersion(d, 'production moved after repin decision')
+
+  taskFlowLocalStore(d).write('repin', payload)
+
+  const stored = d
+    .query<{ catalogue_version_record_id: string }, [string]>(
+      'SELECT catalogue_version_record_id FROM workflow_cursor WHERE record_id=?',
+    )
+    .get(row.record_id)!
+  expect(stored.catalogue_version_record_id).toBe(target)
+  expect(stored.catalogue_version_record_id).not.toBe(newerProduction)
 })
 
 test('intent writes use applied revisions and otherwise compute the next revision', async () => {
@@ -131,6 +248,7 @@ test('revision refusal names the declared intent and stale row kind', () => {
     ['compose', 'stage', 'stage-id', 'workflow stage stage-id changed while composing'],
     ['compose', 'cursor', 12, 'workflow cursor 12 changed while composing'],
     ['stage-update', 'cursor', 13, 'workflow cursor 13 changed while applying a stage update'],
+    ['repin', 'cursor', 19, 'workflow cursor 19 changed while being repinned'],
     ['advance', 'flow', 'flow-id', 'task flow flow-id changed while advancing'],
     ['advance', 'cursor', 14, 'workflow cursor 14 changed while advancing'],
     ['await-ruling', 'cursor', 15, 'workflow cursor 15 changed while awaiting a ruling'],
