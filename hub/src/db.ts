@@ -120,10 +120,20 @@ export function hubStoreAccess(
   })
 }
 
+/** Choose the store whose write permission a transaction must judge. */
+export function hubWriteStorePath(
+  databaseFilename: string | undefined,
+  liveStorePath: string,
+): string | null {
+  if (databaseFilename === '' || databaseFilename === ':memory:') return null
+  return databaseFilename ?? liveStorePath
+}
+
 const restrictedActor = linkedCheckout || classifyCaller(process.env).kind === 'worker'
 
-function assertHubStoreWritable(): void {
-  if (hubStoreAccess(restrictedActor, DB_PATH).writesRefused)
+function assertHubStoreWritable(database?: Database): void {
+  const storePath = hubWriteStorePath(database?.filename, DB_PATH)
+  if (storePath !== null && hubStoreAccess(restrictedActor, storePath).writesRefused)
     throw new Error(restrictedActorWriteRefusal())
 }
 
@@ -342,7 +352,7 @@ export async function hubDatabaseLockHolder(
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
   if (databaseAccess.active()) throw new Error('refusing a write from a read-only command')
-  assertHubStoreWritable()
+  assertHubStoreWritable(database)
   const target = database ?? db()
   const conn = refuseOrReloadStaleSchema(target, true)
   const depth = writeDepth.get(conn) ?? 0

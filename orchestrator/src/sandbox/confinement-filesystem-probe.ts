@@ -156,19 +156,27 @@ export function probeVerdict(
   targets: readonly AccessTarget[],
   paths: Record<string, FilesystemProbeAccess>,
   commands: Record<string, CommandProbe>,
+  missingExpectedReadableTargets: readonly string[] = [],
 ): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
   let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
-  if (targets.some(({ name }) => paths[name] === 'not covered')) {
+  const missingTargetReason =
+    missingExpectedReadableTargets.length > 0
+      ? `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
+      : null
+  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
+    filesystemVerdict = {
+      status: 'readable',
+      reason: `one or more denied paths were unexpectedly readable${missingTargetReason ? `; ${missingTargetReason}` : ''}`,
+    }
+  } else if (missingTargetReason) {
+    filesystemVerdict = {
+      status: 'not covered',
+      reason: missingTargetReason,
+    }
+  } else if (targets.some(({ name }) => paths[name] === 'not covered')) {
     filesystemVerdict = {
       status: 'not covered',
       reason: 'one or more filesystem probe output lines were missing',
-    }
-  } else if (
-    targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')
-  ) {
-    filesystemVerdict = {
-      status: 'readable',
-      reason: 'one or more denied paths were unexpectedly readable',
     }
   } else if (targets.some(({ name, expected }) => paths[name] !== expected)) {
     filesystemVerdict = {
@@ -398,6 +406,7 @@ async function launchProbe(
   scratchDir: string,
   hubOpenMode: string,
   commandLabel: string,
+  missingExpectedReadableTargets: readonly string[],
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const result = await runFilesystemAccessProbe(profile, targets, environment, scratchDir)
@@ -420,7 +429,7 @@ async function launchProbe(
     const commands = { [commandLabel]: command }
     return {
       family,
-      ...probeVerdict(targets, paths, commands),
+      ...probeVerdict(targets, paths, commands, missingExpectedReadableTargets),
       paths,
       commands,
     }
@@ -444,6 +453,7 @@ async function launchWorkflowProbe(
   scratchDir: string,
   hubOpenMode: string,
   commandLabel: string,
+  missingExpectedReadableTargets: readonly string[],
 ): Promise<ConfinementFilesystemProbeRow> {
   const row = await launchProbe(
     'workflow probe',
@@ -454,6 +464,7 @@ async function launchWorkflowProbe(
     scratchDir,
     hubOpenMode,
     commandLabel,
+    missingExpectedReadableTargets,
   )
   try {
     const network = await launchWorkflowNetworkProbe(profile, environment, scratchDir)
@@ -711,6 +722,20 @@ function probeAccessTargets(input: {
   return targets
 }
 
+function runningInstallAccessTarget(runningInstall: RunningInstallLayout): AccessTarget {
+  return runningInstall.kind === 'checkout'
+    ? {
+        name: 'running package.json',
+        path: join(runningInstall.root, 'package.json'),
+        expected: 'readable',
+      }
+    : {
+        name: 'running executable',
+        path: installationExecutable(runningInstall.root, runningInstall.kind),
+        expected: 'readable',
+      }
+}
+
 function createProbeTaskFixture(
   hubWriter: Database,
   orchestratorDatabase: string,
@@ -767,11 +792,7 @@ function createProbeFixture(root: string) {
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'fixture')
   }
-  targets.push({
-    name: 'running package.json',
-    path: join(runningInstall.root, 'package.json'),
-    expected: 'readable',
-  })
+  targets.push(runningInstallAccessTarget(runningInstall))
   mkdirSync(runtimeDir, { recursive: true })
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
@@ -824,7 +845,7 @@ function createProbeFixture(root: string) {
 
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const probeParent = process.env.BOTTEGA_SCRATCH ?? resolveStatePaths(process.env).orchestratorRuns
+  const probeParent = tmpdir()
   mkdirSync(probeParent, { recursive: true })
   const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
@@ -833,6 +854,9 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
     const fixture = createProbeFixture(root)
     hubWriter = fixture.hubWriter
     const { common } = fixture
+    const missingExpectedReadableTargets = fixture.targets
+      .filter(({ path, expected }) => expected === 'readable' && !existsSync(path))
+      .map(({ name }) => name)
     process.env[STATE_HOME_ENV] = fixture.stateRoot
     const launch = (
       family: Parameters<typeof launchProbe>[0],
@@ -847,6 +871,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         common.scratchDir,
         fixture.hubOpenMode,
         fixture.commandLabel,
+        missingExpectedReadableTargets,
       )
     return [
       await launch('goose', readonlyLensProfile({ ...common, agent: 'goose' })),
@@ -876,6 +901,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         common.scratchDir,
         fixture.hubOpenMode,
         fixture.commandLabel,
+        missingExpectedReadableTargets,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
