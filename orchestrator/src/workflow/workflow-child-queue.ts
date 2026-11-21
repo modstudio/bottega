@@ -11,6 +11,7 @@ export type ChildTaskFact = {
   parentKey: string | null
   number: number
   statusCategory: string | null
+  hasChildren?: boolean
   cursorEverComposed: boolean
   cursorNumber: number | null
   cursorState: string | null
@@ -94,7 +95,7 @@ export function childQueueState(
   const queueable = tasks.filter(
     (task) =>
       descendants.has(task.key) &&
-      !childCount.has(task.key) &&
+      !(task.hasChildren ?? childCount.has(task.key)) &&
       task.statusCategory !== 'done' &&
       task.statusCategory !== 'dropped' &&
       !task.cursorEverComposed &&

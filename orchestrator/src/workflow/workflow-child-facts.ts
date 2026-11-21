@@ -52,6 +52,7 @@ export async function gatherChildTaskFacts(
       parentKey: task.parent_key ?? null,
       number: Number(/(\d+)$/.exec(task.key)?.[1] ?? Number.MAX_SAFE_INTEGER),
       statusCategory: task.status_category ?? null,
+      hasChildren: task.has_children,
       cursorEverComposed: cursors.has(task.key),
       cursorNumber: cursors.get(task.key)?.number ?? null,
       cursorState: cursors.get(task.key)?.state ?? null,

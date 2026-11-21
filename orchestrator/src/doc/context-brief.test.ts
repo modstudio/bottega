@@ -8,6 +8,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
+import { installTaskReader, type TaskReadPort, type TaskReadRow } from '../workflow/task-read-port.ts'
 import { installHostedWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
 import {
   type ContextBrief,
@@ -19,6 +20,8 @@ import {
   storedBriefHolders,
   workingKeysForBrief,
 } from './context-brief.ts'
+
+const BRIEF_RECORD_TASK_CALL_LIMIT = 4
 
 const item = (
   holder: string,
@@ -412,6 +415,77 @@ test('contextBrief uses the session cursor rows for holders and in flight', asyn
   expect(rendered).toContain(`cursor ${own.cursor!.id} explore · idle 0m`)
   expect(rendered).not.toContain(`cursor ${foreign.cursor!.id} explore`)
   expect(rendered).not.toContain('workflow abandon')
+})
+
+test('contextBrief drives lookup and filtered queue reads within its task-call budget', async () => {
+  const session = 'context-brief-task-read-guard'
+  const project = 'context-brief-task-read-project'
+  const calls: Array<{ operation: 'list' | 'lookup'; status?: string }> = []
+  const tasks: TaskReadRow[] = Array.from({ length: 600 }, (_, index) => ({
+    key: `DEV-${index + 1}`,
+    record_id: `task-${index + 1}`,
+    project,
+    title: 'ordinary task',
+    parent_key: null,
+    source: 'fixture',
+    status: 'open',
+    status_category: 'open',
+    last_seen: null,
+    body: null,
+    opened_at: null,
+    has_children: false,
+  }))
+  const port: TaskReadPort = {
+    async list(filters = {}) {
+      calls.push({ operation: 'list', status: filters.status })
+      if (!filters.status) throw new Error('unfiltered project task scan on a hook path')
+      return []
+    },
+    async lookup(selectedProject, keys) {
+      calls.push({ operation: 'lookup' })
+      return tasks.filter((task) => task.project === selectedProject && keys.includes(task.key))
+    },
+    show: async () => {
+      throw new Error('not used')
+    },
+    duplicates: async () => [],
+    documents: async () => [],
+    document: async () => {
+      throw new Error('not used')
+    },
+  }
+  installTaskReader(port)
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/context-brief-task-read','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"}}')`,
+    )
+    .run(newRecordId(), project)
+  installHostedWorkflowTreeFixture(project, newRecordId(), resolve(process.cwd(), '..'))
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session },
+    undefined,
+    {},
+    {},
+  )
+  db()
+    .query('UPDATE workflow_cursor SET workflow_key=?,task_record_id=? WHERE number=?')
+    .run('DEV-1', 'task-1', opened.cursor!.id)
+
+  await contextBrief(session, '/context-brief-task-read')
+
+  expect(calls).toHaveLength(BRIEF_RECORD_TASK_CALL_LIMIT)
+  expect(calls).toEqual([
+    { operation: 'lookup' },
+    { operation: 'list', status: 'open' },
+    { operation: 'list', status: 'active' },
+    { operation: 'list', status: 'review' },
+  ])
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
