@@ -47,6 +47,9 @@ export function completedWorkflowSummary(name: string, entries: CursorTrailEntry
 export const hasClosedStep = (trail: string): boolean =>
   (JSON.parse(trail) as CursorTrailEntry[]).some(isClosedStep)
 
+export const closedStepsFromTrail = (trail: string): ClosedStep[] =>
+  (JSON.parse(trail) as CursorTrailEntry[]).filter(isClosedStep)
+
 /** Floor input that requires a ruling answered after this step's last re-entry close. */
 export function reentryBoundFloorInput(
   requireRuling: boolean,

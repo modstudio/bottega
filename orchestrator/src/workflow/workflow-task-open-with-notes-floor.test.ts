@@ -114,3 +114,77 @@ test('task-open-with-notes requiring a pull request accepts only a merged pull r
   })
   expect(result(true)).toMatchObject({ action: 'allow' })
 })
+
+test('task-open-with-notes reports an unrecorded pull request with its recording remedy', () => {
+  const result = decideFloorSatisfaction({
+    floors: [{ ...taskOpenWithNotes, requirePullRequest: true }],
+    evidence: {
+      task: {
+        key: 'DEV-977',
+        status: 'open',
+        statusCategory: 'open',
+        mergedPullRequest: null,
+        pullRequestUnavailable: {
+          kind: 'unrecorded',
+          reason: 'no pull request is recorded for task branch DEV-977-work',
+          branch: 'DEV-977-work',
+        },
+        trackerStates: {},
+      },
+      notes: [
+        {
+          reference: `${PLATFORM_SLUG}#2817`,
+          recordId: '00000000-0000-4000-8000-000000000014',
+          label: `${PLATFORM_SLUG}#2817`,
+          promotedTask: 'DEV-977',
+          staleAt: null,
+        },
+      ],
+    },
+    workflowKey: 'DEV-977',
+    enforcement: 'floors',
+    finishing: false,
+    openObligations: [],
+  })
+
+  expect(result).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining(
+      `${PLATFORM_SLUG} tree branch landed DEV-977-work --pr <number>`,
+    ),
+  })
+})
+
+test('task-open-with-notes reports an unreadable pull request with its retry remedy', () => {
+  const result = decideFloorSatisfaction({
+    floors: [{ ...taskOpenWithNotes, requirePullRequest: true }],
+    evidence: {
+      task: {
+        key: 'DEV-977',
+        status: 'open',
+        statusCategory: 'open',
+        mergedPullRequest: null,
+        pullRequestUnavailable: { kind: 'read-error', reason: 'gh unavailable' },
+        trackerStates: {},
+      },
+      notes: [
+        {
+          reference: `${PLATFORM_SLUG}#2817`,
+          recordId: '00000000-0000-4000-8000-000000000014',
+          label: `${PLATFORM_SLUG}#2817`,
+          promotedTask: 'DEV-977',
+          staleAt: null,
+        },
+      ],
+    },
+    workflowKey: 'DEV-977',
+    enforcement: 'floors',
+    finishing: false,
+    openObligations: [],
+  })
+
+  expect(result).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining('gh unavailable; rerun the close when GitHub is reachable'),
+  })
+})

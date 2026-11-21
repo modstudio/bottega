@@ -27,4 +27,4 @@ When it is `ask`, either release rungs remain ({{shipTo.remainingText}}) and thi
 
 Pass `--outcome done` on the done, review and ask paths above.
 
-Pass `--outcome partial` when the pull request has merged but notes attached to `{{key}}` remain open work. Leave `{{key}}` in its current open, active or review state. Record the pull request link on the task. Close this step with `--task {{key}}` and one `--artifact note:<record-id|project#n>` for every open note attached to the task.
+Pass `--outcome partial` when the pull request has merged but notes attached to `{{key}}` remain open work. Leave `{{key}}` in its current open, active or review state. Record the pull request link on the task. Close this step with `--task {{key}}` and one `--artifact note:<record-id>` or `--artifact note:<project>#<number>` for every open note attached to the task.

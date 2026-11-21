@@ -21,9 +21,9 @@ import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import {
+  closedStepsFromTrail,
   type CursorRepinnedEvent,
   type CursorTrailEntry,
-  isClosedStep,
 } from './workflow-cursor-trail.ts'
 import { decideCloseFloors } from './workflow-floor.ts'
 import {
@@ -41,16 +41,12 @@ const repinClosedSteps = (
   oldComposition: ReturnType<typeof composeWorkflow>,
   nextComposition: ReturnType<typeof composeWorkflow>,
 ): RepinClosedStep[] =>
-  trail.filter(isClosedStep).map((entry) => ({
+  trail.map((entry) => ({
     ordinal: entry.n,
     slug: entry.slug,
     ...(entry.outcome ? { outcome: entry.outcome } : {}),
-    oldFloors: decideCloseFloors(oldComposition.steps[entry.n - 1]!, entry.outcome).map(
-      (floor) => floor.kind,
-    ),
-    newFloors: decideCloseFloors(nextComposition.steps[entry.n - 1]!, entry.outcome).map(
-      (floor) => floor.kind,
-    ),
+    oldFloors: decideCloseFloors(oldComposition.steps[entry.n - 1]!, entry.outcome),
+    newFloors: decideCloseFloors(nextComposition.steps[entry.n - 1]!, entry.outcome),
   }))
 
 export async function repinWorkflowCursor(input: {
@@ -73,6 +69,7 @@ export async function repinWorkflowCursor(input: {
     cursorAutonomy(input.row),
   )
   const trail = JSON.parse(input.row.closed) as CursorTrailEntry[]
+  const closedSteps = closedStepsFromTrail(input.row.closed)
   const openQuestion = await openWorkflowQuestionForCursor(
     taskFlowReadStore(d, input.context.taskFlowClient),
     input.row.record_id,
@@ -82,7 +79,7 @@ export async function repinWorkflowCursor(input: {
     oldSteps: repinSteps(oldComposition),
     newSteps: repinSteps(nextComposition),
     currentOrdinal: input.row.ordinal,
-    closedSteps: repinClosedSteps(trail, oldComposition, nextComposition),
+    closedSteps: repinClosedSteps(closedSteps, oldComposition, nextComposition),
     holderSession: input.row.session_id,
     callerSession: input.context.session ?? null,
     callerIsOperator: isOperatorSession(input.context.session ?? null),

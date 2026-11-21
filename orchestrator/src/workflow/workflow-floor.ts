@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import {
   type NoteFloorEvidence,
+  pullRequestRequirement,
   taskOpenWithNotesFailures,
   taskOpenWithNotesMet,
 } from './workflow-task-open-with-notes-floor.ts'
@@ -615,7 +616,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
       task.statusCategory !== expectedCategory)
   )
     return false
-  return !floor.requirePullRequest || task.mergedPullRequest === true
+  return !floor.requirePullRequest || pullRequestRequirement(task).met
 }
 
 function floorIsMet(
@@ -658,10 +659,8 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
     ? `${floor.expectedStatus} (category ${expectedCategory})`
     : floor.expectedStatus
   const unavailable =
-    floor.requirePullRequest && evidence.task?.pullRequestUnavailable
-      ? evidence.task.pullRequestUnavailable.kind === 'unrecorded'
-        ? `; pull request merge state could not be established: ${evidence.task.pullRequestUnavailable.reason}; record it with: ${PLATFORM_SLUG} tree branch landed ${evidence.task.pullRequestUnavailable.branch} --pr <number>`
-        : `; pull request merge state could not be established: ${evidence.task.pullRequestUnavailable.reason}; rerun the close when GitHub is reachable`
+    floor.requirePullRequest && evidence.task
+      ? pullRequestRequirement(evidence.task).trackerSuffix
       : ''
   const expectation = evidence.task
     ? `; ${trackerReadback(evidence.task)}; expected ${expected}${pullRequest}`

@@ -5,13 +5,24 @@ import {
   type RepinClosedStep,
   type RepinStep,
 } from './workflow-repin-decision.ts'
+import type { Floor, FloorKind } from './workflow-floor.ts'
+
+const floor = (kind: FloorKind, overrides: Partial<Floor> = {}): Floor => ({
+  kind,
+  deferrable: false,
+  expectedExitCode: 0,
+  expectedStatus: 'done',
+  requirePullRequest: false,
+  operatorRuling: false,
+  ...overrides,
+})
 
 const closedSteps: RepinClosedStep[] = [
   {
     ordinal: 1,
     slug: 'plan',
-    oldFloors: ['recorded-artifact'],
-    newFloors: ['recorded-artifact'],
+    oldFloors: [floor('recorded-artifact')],
+    newFloors: [floor('recorded-artifact')],
   },
 ]
 const oldSteps: RepinStep[] = [{ slug: 'plan' }, { slug: 'close-task' }, { slug: 'later' }]
@@ -44,9 +55,14 @@ test('repin refuses a floor added to an already-closed step', () => {
     decideWorkflowRepin({
       ...input,
       newSteps: [oldSteps[0]!, oldSteps[1]!, oldSteps[2]!],
-      closedSteps: [{ ...closedSteps[0]!, newFloors: ['recorded-artifact', 'ruling'] }],
+      closedSteps: [
+        {
+          ...closedSteps[0]!,
+          newFloors: [floor('recorded-artifact'), floor('ruling')],
+        },
+      ],
     }),
-  ).toMatchObject({ action: 'refuse', message: expect.stringContaining('adds floor ruling') })
+  ).toMatchObject({ action: 'refuse', message: expect.stringContaining('floor ruling added') })
 })
 
 test('repin allows current-step floor changes and later-step changes', () => {
@@ -67,14 +83,36 @@ test('repin refuses an outcome floor added to a closed step', () => {
           ordinal: 1,
           slug: 'plan',
           outcome: 'accepted',
-          oldFloors: ['recorded-artifact'],
-          newFloors: ['recorded-artifact', 'ruling'],
+          oldFloors: [floor('recorded-artifact')],
+          newFloors: [floor('recorded-artifact'), floor('ruling')],
         },
       ],
     }),
   ).toMatchObject({
     action: 'refuse',
-    message: expect.stringContaining('step 1 plan outcome accepted adds floor ruling'),
+    message: expect.stringContaining('step 1 plan outcome accepted floor ruling added'),
+  })
+})
+
+test('repin refuses a changed attribute on a floor of an already-closed step', () => {
+  expect(
+    decideWorkflowRepin({
+      ...input,
+      closedSteps: [
+        {
+          ordinal: 1,
+          slug: 'plan',
+          outcome: 'partial',
+          oldFloors: [floor('task-open-with-notes')],
+          newFloors: [floor('task-open-with-notes', { requirePullRequest: true })],
+        },
+      ],
+    }),
+  ).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining(
+      'step 1 plan outcome partial floor task-open-with-notes differs in requirePullRequest',
+    ),
   })
 })
 
