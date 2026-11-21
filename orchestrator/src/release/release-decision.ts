@@ -1,8 +1,8 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
-import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 
 export type ReleaseRuntimeConfigGuardDecision =
