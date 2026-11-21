@@ -340,6 +340,9 @@ test("a turn's guard or retained ref makes its terminal root planned", async () 
   ])
   expect(report.errors).toEqual([])
   expect(report.verdict).toEqual({ clean: true, residue: 0 })
+  const reported = 'reported: branch DEV-1392-c2: superseded; stays until open task DEV-1392 closes'
+  report.reported.push(reported)
+  expect(formatSessionCloseOut(report)).toContain(reported)
   expect(formatSessionCloseOut(report)).toContain(
     'owned items would be released by the 3 planned action(s); session would then be clean',
   )

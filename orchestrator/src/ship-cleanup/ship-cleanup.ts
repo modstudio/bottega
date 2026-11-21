@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { disposalTaskState } from '../branch/branch-disposal-decision.ts'
 import { readBranchLandingRecords } from '../branch/branch-landing-records.ts'
 import { branchVerdictRemedy } from '../branch/branch-prune-remedy.ts'
 import {
@@ -20,6 +21,7 @@ import {
   pruneBranch,
 } from '../branch/branches.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
+import { observeTaskStatus, type TaskStatusObservation } from '../branch/task-status-observation.ts'
 import {
   type RemovedRunTree,
   type RemovedTreeDockerCleanup,
@@ -42,9 +44,11 @@ import {
   decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
+  isTaskSiblingKeepReason,
   type ShipCleanupKeptItem,
   type ShipCleanupRunDecision,
   type ShipCleanupRunFact,
+  reportedShipCleanupItems as selectReportedShipCleanupItems,
 } from './ship-cleanup-decision.ts'
 
 type RunRow = {
@@ -117,6 +121,7 @@ export type ShipCleanupDependencies = {
   remove(path: string): void
   reclaimProcesses(paths: readonly string[]): RemovedTreeProcessCleanup
   reclaimCompose(trees: readonly RemovedRunTree[]): RemovedTreeDockerCleanup
+  observeTaskStatus(key: string | null, project: string): Promise<TaskStatusObservation>
 }
 
 type ShipCleanupCloseOutResult = Awaited<ReturnType<ShipCleanupDependencies['closeOut']>>
@@ -150,6 +155,7 @@ const dependencies: ShipCleanupDependencies = {
   remove: (path) => rmSync(path, { recursive: true, force: true }),
   reclaimProcesses: reclaimRemovedTreeProcesses,
   reclaimCompose: reclaimRemovedTreeDockerResources,
+  observeTaskStatus,
 }
 
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
@@ -741,6 +747,16 @@ function closableWorktreePaths(decisions: readonly ShipCleanupRunDecision[]): st
   ]
 }
 
+async function observeCleanupTaskState(
+  taskKey: string | null,
+  project: string,
+  taskBranches: ReturnType<typeof taskCleanupPlan>['branches'],
+  adapter: ShipCleanupDependencies,
+): Promise<'open' | 'closed' | null> {
+  if (!taskBranches.keep.some((item) => isTaskSiblingKeepReason(item.reason))) return null
+  return disposalTaskState(await adapter.observeTaskStatus(taskKey, project))
+}
+
 export async function shipCleanup(
   branch: string,
   options: ShipCleanupOptions = {},
@@ -778,12 +794,9 @@ export async function shipCleanup(
     adapter,
   })
   const decisions = decideShipCleanup(taskKey ?? '', landedBranches, landingMergedAt, facts)
-  const report = emptyReport(
-    project.name,
-    branch,
-    project.settings.trunk?.trim() || null,
-    project.path,
-  )
+  const taskState = await observeCleanupTaskState(taskKey, project.name, taskBranches, adapter)
+  const landingBranch = project.settings.trunk?.trim() || null
+  const report = emptyReport(project.name, branch, landingBranch, project.path)
   const callerLandingTreePath = callerLandingTree(decisions, adapter)
   reportKeptRuns(decisions, report, callerLandingTreePath)
   const worktreePaths = closableWorktreePaths(decisions)
@@ -812,12 +825,14 @@ export async function shipCleanup(
       decideShipCleanupKeptItem(
         {
           item: `branch ${item.branch}`,
+          branch: item.branch,
           reason: item.reason,
           reasonKind: 'landing-not-proved' as const,
           holdingPath: null,
           remedy: branchVerdictRemedy(item.reason, report.project, item.branch, taskKey),
         },
         callerLandingTreePath,
+        taskKey && taskState ? { shippedBranch: branch, taskKey, taskState } : undefined,
       ),
     ),
   )
@@ -854,7 +869,11 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
     lines.push(deployFromLine(report))
   }
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
-  for (const item of report.kept.filter((item) => item.owner !== 'other'))
+  for (const item of reportedShipCleanupItems(report))
+    lines.push(formatShipCleanupReportedItem(item))
+  for (const item of report.kept.filter(
+    (item) => item.owner !== 'other' && item.owner !== 'task-sibling',
+  ))
     lines.push(formatCallerOwnedKeptItem(item))
   for (const item of report.verdict.residue) {
     lines.push(
@@ -866,6 +885,16 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   }
   if (!report.verdict.residue.length && !report.errors.length) lines.push('kept: none')
   return lines.join('\n')
+}
+
+export function reportedShipCleanupItems(
+  report: Pick<ShipCleanupReport, 'kept'>,
+): readonly ShipCleanupKeptItem[] {
+  return selectReportedShipCleanupItems(report)
+}
+
+export function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
+  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; remedy after task closes: ${item.remedy}` : ''}`
 }
 
 function formatCallerOwnedKeptItem(item: ShipCleanupKeptItem): string {

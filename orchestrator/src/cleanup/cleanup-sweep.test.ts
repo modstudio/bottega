@@ -36,6 +36,7 @@ function closeOutReport(session: string, clean = true): SessionCloseOutReport {
       contextItems: [],
     },
     mechanical: [],
+    reported: [],
     kept: [],
     parked: [],
     process: clean

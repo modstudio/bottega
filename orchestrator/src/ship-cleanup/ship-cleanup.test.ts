@@ -15,6 +15,14 @@ import {
   shipCleanup,
 } from './ship-cleanup.ts'
 
+const observeOpenTask: ShipCleanupDependencies['observeTaskStatus'] = async () => ({
+  raw: 'in progress',
+  category: 'moving',
+  lastSeen: null,
+  verified: true,
+  detail: 'in progress',
+})
+
 test('ship cleanup output names each released tree and where to deploy from', async () => {
   const report: ShipCleanupReport = {
     project: 'ship-fixture',
@@ -236,6 +244,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', asy
   const closed: string[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
+    observeTaskStatus: observeOpenTask,
     observeBranchRef: () => ({ outcome: 'present' }),
     landingState: () => ({
       state: 'landed',
@@ -358,6 +367,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     throw new Error('cleanup should not start')
   }
   const dependencies: ShipCleanupDependencies = {
+    observeTaskStatus: observeOpenTask,
     observeBranchRef: () => ({ outcome: 'present' }),
     landingState: () => ({
       state: 'landed',
@@ -394,6 +404,7 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
   addRun(project, { branch: gone, mintedBranch: gone, judged: true })
   const pruned: string[] = []
   const dependencies: ShipCleanupDependencies = {
+    observeTaskStatus: observeOpenTask,
     observeBranchRef: (_path, branch) => ({
       outcome: branch === gone ? 'absent' : 'present',
     }),
@@ -431,6 +442,7 @@ test('ship cleanup rerun after the branch is gone stays clean', async () => {
   addLanding(project)
   let branchPresent = true
   const dependencies: ShipCleanupDependencies = {
+    observeTaskStatus: observeOpenTask,
     observeBranchRef: () => ({ outcome: branchPresent ? 'present' : 'absent' }),
     landingState: () => ({ state: 'unlanded' }),
     closeOut: () => ({ outcome: 'absent', detail: 'already absent' }),
@@ -483,6 +495,8 @@ async function landingTreeCleanup(input: {
     holdingPath?: string | null
   }[]
   siblingBranch?: { branch: string; worktree: string }
+  siblingState?: 'superseded' | 'unlanded'
+  taskCategory?: 'moving' | 'done'
 }): Promise<{
   report: Awaited<ReturnType<typeof shipCleanup>>
   landingTree: string
@@ -508,11 +522,21 @@ async function landingTreeCleanup(input: {
   const removedTrees: string[] = []
   const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
-    observeBranchRef: () => ({ outcome: 'present' }),
-    landingState: () => ({
-      state: 'landed',
-      landedBy: { type: 'patch-equivalent', form: 'squash' },
+    observeTaskStatus: async () => ({
+      raw: input.taskCategory ?? 'moving',
+      category: input.taskCategory ?? 'moving',
+      lastSeen: null,
+      verified: true,
+      detail: input.taskCategory ?? 'moving',
     }),
+    observeBranchRef: () => ({ outcome: 'present' }),
+    landingState: (_project, branch) =>
+      branch === input.siblingBranch?.branch && input.siblingState
+        ? { state: input.siblingState }
+        : {
+            state: 'landed',
+            landedBy: { type: 'patch-equivalent', form: 'squash' },
+          },
     closeOut: (id) => {
       closed.push(id)
       return input.closeOutResult ?? { outcome: 'released', detail: 'released' }
@@ -547,6 +571,36 @@ async function landingTreeCleanup(input: {
     closed,
   }
 }
+
+test.each([
+  ['moving', true, 'task-sibling'],
+  ['done', false, 'other'],
+] as const)(
+  'ship cleanup wires a superseded sibling through a %s task observation',
+  async (taskCategory, clean, owner) => {
+    const sibling = 'DEV-1392-c2'
+    const result = await landingTreeCleanup({
+      siblingBranch: { branch: sibling, worktree: '/trees/sibling' },
+      siblingState: 'superseded',
+      taskCategory,
+    })
+    const item = expect.objectContaining({
+      item: `branch ${sibling}`,
+      reason: 'superseded',
+      owner,
+    })
+
+    expect(result.report.kept).toContainEqual(item)
+    expect(result.report.removed.branches).not.toContain(sibling)
+    expect(result.report.verdict.clean).toBe(clean)
+    if (clean) {
+      expect(result.report.verdict.residue).toEqual([])
+      expect(formatShipCleanup(result.report)).toContain(`reported: branch ${sibling}: superseded`)
+    } else {
+      expect(result.report.verdict.residue).toContainEqual(item)
+    }
+  },
+)
 
 test('ship cleanup keeps its current landing tree and checked-out branch without failure', async () => {
   const result = await landingTreeCleanup({

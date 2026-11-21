@@ -5,6 +5,7 @@ import {
   type BranchStateDecision,
   decideMintedBranchVerdict,
   isProbeOnlyMint,
+  type MintedBranchVerdict,
 } from '../branch/branch-state.ts'
 import {
   decideUnjudgedRunRemedy,
@@ -37,27 +38,61 @@ export type ShipCleanupRunFact = {
   worktree: string | null
 }
 
-type ShipCleanupKeptOwner = 'caller-landing-tree' | 'caller-process-group' | 'other'
+type ShipCleanupKeptOwner =
+  | 'caller-landing-tree'
+  | 'caller-process-group'
+  | 'task-sibling'
+  | 'other'
 
 export type ShipCleanupKeptItem = {
   item: string
   reason: string
   reasonKind: ShipCleanupKeptReasonKind
   owner: ShipCleanupKeptOwner
+  taskKey?: string
   remedy?: string
   callerGroupHolderPids?: readonly number[]
 }
 
 export type ShipCleanupKeptFact = Omit<ShipCleanupKeptItem, 'owner'> & {
   holdingPath: string | null
+  branch?: string
+}
+
+type ShipCleanupTaskContext = {
+  shippedBranch: string
+  taskKey: string
+  taskState: 'open' | 'closed'
+}
+
+type TaskBranchKeepReason =
+  | 'throwaway'
+  | Extract<MintedBranchVerdict, { verdict: 'keep' }>['reason']
+
+const TASK_SIBLING_KEEP_REASONS = [
+  'superseded',
+  'unlanded',
+] as const satisfies readonly TaskBranchKeepReason[]
+
+export function isTaskSiblingKeepReason(reason: string): reason is 'superseded' | 'unlanded' {
+  return (TASK_SIBLING_KEEP_REASONS as readonly string[]).includes(reason)
 }
 
 /** Assign ownership when the item is held by the command's tree or its proved process group. */
 export function decideShipCleanupKeptItem(
   fact: ShipCleanupKeptFact,
   callerLandingTreePath: string | null,
+  task?: ShipCleanupTaskContext,
 ): ShipCleanupKeptItem {
-  const { holdingPath, ...item } = fact
+  const { holdingPath, branch, ...item } = fact
+  if (
+    branch !== undefined &&
+    isTaskSiblingKeepReason(item.reason) &&
+    branch !== task?.shippedBranch &&
+    task?.taskState === 'open'
+  ) {
+    return { ...item, owner: 'task-sibling', taskKey: task.taskKey }
+  }
   return {
     ...item,
     owner: item.callerGroupHolderPids
@@ -97,6 +132,12 @@ export function decideShipCleanupVerdict(report: ShipCleanupResidueReport): Ship
   return { clean: false, reason: 'unexpected-kept-item', residue }
 }
 
+export function reportedShipCleanupItems(
+  report: Pick<ShipCleanupResidueReport, 'kept'>,
+): readonly ShipCleanupKeptItem[] {
+  return report.kept.filter((item) => item.owner === 'task-sibling')
+}
+
 /** Select proved task branches and report every unproved run-minted sibling. */
 export function decideTaskBranchesToPrune(
   taskKey: string,
@@ -106,7 +147,7 @@ export function decideTaskBranchesToPrune(
 ): {
   delete: string[]
   landingProof: string[]
-  keep: { branch: string; reason: 'throwaway' | 'superseded' | 'unlanded' | 'unknown' }[]
+  keep: { branch: string; reason: TaskBranchKeepReason }[]
   gone: string[]
 } {
   const branches = [
