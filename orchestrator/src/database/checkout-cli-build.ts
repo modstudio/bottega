@@ -17,7 +17,9 @@ import { gitAt } from '../../../shared/git.ts'
 import { INSTALL_HOME_ENV, installationIdentity } from '../../../shared/install-root.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import {
-  WORKER_RUNTIME_ASSETS,
+  CHECKOUT_CLI_RUNTIME_ASSETS,
+  formatCheckoutCliStamp,
+  stampValues,
   workerRuntimeAssetPaths,
 } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
@@ -60,22 +62,9 @@ function checkoutHead(checkoutRoot: string): string {
   return result.stdout.trim()
 }
 
-function stampValues(path: string): Record<string, string> {
-  return Object.fromEntries(
-    readFileSync(path, 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => {
-        const separator = line.indexOf('=')
-        return separator < 1 ? ['', ''] : [line.slice(0, separator), line.slice(separator + 1)]
-      })
-      .filter(([key]) => key),
-  )
-}
-
 /** Re-hash a published build and its lockfile against the stamp written last. */
 export function verifyCheckoutCliBuild(build: CheckoutCliBuildResult): void {
-  const stamp = stampValues(build.stamp)
+  const stamp = stampValues(readFileSync(build.stamp, 'utf8'))
   const metadata = statSync(build.binary)
   const expected = {
     head: build.head,
@@ -104,10 +93,11 @@ export function buildCheckoutCli(
     [INSTALL_HOME_ENV]: checkoutRoot,
   })
   if (identity.kind !== 'checkout') throw new Error('checkout CLI build requires a checkout')
-  const [binary, stamp] = workerRuntimeAssetPaths(resolveStateRoot(environment), identity.version, {
-    checkoutCli: WORKER_RUNTIME_ASSETS.checkoutCli,
-    checkoutCliStamp: WORKER_RUNTIME_ASSETS.checkoutCliStamp,
-  })
+  const [binary, stamp] = workerRuntimeAssetPaths(
+    resolveStateRoot(environment),
+    identity.version,
+    CHECKOUT_CLI_RUNTIME_ASSETS,
+  )
   if (!binary || !stamp) throw new Error('checkout CLI runtime assets are not declared')
   const destination = dirname(binary)
   mkdirSync(destination, { recursive: true })
@@ -146,9 +136,14 @@ export function buildCheckoutCli(
     const size = metadata.size
     const mtime = Math.trunc(metadata.mtimeMs / 1_000)
     const inode = metadata.ino
-    const contents =
-      `head=${head}\nlock=${lockHash}\nbinary=${binaryHash}\n` +
-      `size=${size}\nmtime=${mtime}\ninode=${inode}\n`
+    const contents = formatCheckoutCliStamp({
+      head,
+      lock: lockHash,
+      binary: binaryHash,
+      size,
+      mtime,
+      inode,
+    })
     writeFileSync(temporaryStamp, contents, { mode: 0o600 })
     renameSync(temporaryBinary, binary)
     renameSync(temporaryStamp, stamp)

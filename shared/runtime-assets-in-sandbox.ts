@@ -17,6 +17,41 @@ export const WORKER_RUNTIME_ASSETS = {
   checkoutCliStamp: join(CHECKOUT_CLI_DIRECTORY, `${PLATFORM_SLUG}.stamp`),
 } as const
 
+/** The exact runtime asset subset published and read for a compiled checkout CLI. */
+export const CHECKOUT_CLI_RUNTIME_ASSETS = {
+  checkoutCli: WORKER_RUNTIME_ASSETS.checkoutCli,
+  checkoutCliStamp: WORKER_RUNTIME_ASSETS.checkoutCliStamp,
+} as const
+
+const CHECKOUT_CLI_STAMP_KEYS = ['head', 'lock', 'binary', 'size', 'mtime', 'inode'] as const
+
+export type CheckoutCliStampKey = (typeof CHECKOUT_CLI_STAMP_KEYS)[number]
+export type CheckoutCliStamp = Record<CheckoutCliStampKey, string | number>
+
+/**
+ * Format the compiled checkout CLI stamp. `bin/bottega` is the intentional
+ * second reader of the size, mtime and inode lines because POSIX sh cannot
+ * import this TypeScript owner.
+ */
+export function formatCheckoutCliStamp(values: CheckoutCliStamp): string {
+  return `${CHECKOUT_CLI_STAMP_KEYS.map((key) => `${key}=${values[key]}`).join('\n')}\n`
+}
+
+/** Parse the declared compiled checkout CLI stamp fields from text. */
+export function stampValues(contents: string): Partial<Record<CheckoutCliStampKey, string>> {
+  const knownKeys = new Set<string>(CHECKOUT_CLI_STAMP_KEYS)
+  return Object.fromEntries(
+    contents
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const separator = line.indexOf('=')
+        return separator < 1 ? ['', ''] : [line.slice(0, separator), line.slice(separator + 1)]
+      })
+      .filter(([key]) => knownKeys.has(key)),
+  )
+}
+
 function safeRuntimeAsset(entry: string, versionRoot: string): string {
   if (
     entry.length === 0 ||

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { formatCheckoutCliStamp } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { checkoutCliBuildFailure, verifyCheckoutCliBuild } from './checkout-cli-build.ts'
 
 function hash(path: string): string {
@@ -32,8 +33,14 @@ test('published checkout CLI verification covers hashes and launch metadata', ()
     }
     writeFileSync(
       stamp,
-      `head=${build.head}\nlock=${build.lockHash}\nbinary=${build.binaryHash}\n` +
-        `size=${build.size}\nmtime=${build.mtime}\ninode=${build.inode}\n`,
+      formatCheckoutCliStamp({
+        head: build.head,
+        lock: build.lockHash,
+        binary: build.binaryHash,
+        size: build.size,
+        mtime: build.mtime,
+        inode: build.inode,
+      }),
     )
     expect(() => verifyCheckoutCliBuild(build)).not.toThrow()
     writeFileSync(binary, 'tampered compiled bytes')

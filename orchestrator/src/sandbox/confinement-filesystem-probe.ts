@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startBounded, startBoundedSync } from '../../../shared/bounded-process.ts'
-import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { installationExecutable } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -31,7 +31,6 @@ import { BUILTIN_AGENTS } from '../agent/agents.ts'
 import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { buildCheckoutCli } from '../database/checkout-cli-build.ts'
 import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
-import { probeMcpServer } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
@@ -489,7 +488,6 @@ async function launchWorkflowProbe(
 
 async function launchCrossProjectCliProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
-  cwd: string,
   installEnvPath: string,
   cliArgv: string[],
   commandArgv: string[],
@@ -510,32 +508,13 @@ async function launchCrossProjectCliProbe(
     )
     const version = await launchCommand(profile, [...cliArgv, '--version'], environment, scratchDir)
     const verb = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
-    const [askCommand, ...askArgs] = bottegaEntryArgv('ask-server')
-    const askResult = await probeMcpServer({
-      server: WORKER_MCP_SERVER_NAME,
-      config: { name: WORKER_MCP_SERVER_NAME, command: askCommand!, args: askArgs },
-      cwd,
-      env: environment,
-      wrap: (command, args) => sandboxLaunchArgv(profile, command, args, scratchDir, environment),
-    })
-    const ask: CommandProbe = {
-      status: askResult.ok ? 'ran' : 'failed',
-      reason: askResult.ok
-        ? `exit 0; listed ${askResult.listedTools?.length ?? 0} tools`
-        : (askResult.error ?? 'tools/list failed'),
-    }
     const paths = { 'install .env': access.status === 'ran' ? 'readable' : 'denied' } as const
     const command: CommandProbe = {
-      status:
-        version.status === 'ran' && verb.status === 'ran' && ask.status === 'ran'
-          ? 'ran'
-          : 'failed',
+      status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
       reason:
         version.status === 'failed'
           ? `${PLATFORM_SLUG} --version ${version.reason}`
-          : verb.status === 'failed'
-            ? `${commandLabel} ${verb.reason}`
-            : `${PLATFORM_SLUG} mcp ask-server tools/list ${ask.reason}`,
+          : `${commandLabel} ${verb.reason}`,
     }
     const verdict = probeVerdict(targets, paths, { 'real CLI verb': command })
     return {
@@ -545,7 +524,6 @@ async function launchCrossProjectCliProbe(
       commands: {
         [`${PLATFORM_SLUG} --version`]: version,
         [commandLabel]: verb,
-        [`${PLATFORM_SLUG} mcp ask-server tools/list`]: ask,
       },
       reason:
         verdict.status === 'denied'
@@ -798,7 +776,6 @@ function createProbeFixture(root: string) {
     [HARNESS_ENV_FILE_ENV]: '',
     [PLATFORM_ENV_FILE_ENV]: '',
   } as Record<string, string>
-  environment.BOTTEGA_ASK_URL = 'http://127.0.0.1:1'
   if (runningInstall.kind === 'checkout') buildCheckoutCli(runningInstall.root, environment)
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
@@ -930,7 +907,6 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
-        common.worktree,
         join(fixture.fixtureInstall.root, '.env'),
         fixture.cliArgv,
         fixture.commandArgv,

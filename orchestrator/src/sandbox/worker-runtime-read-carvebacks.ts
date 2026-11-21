@@ -4,7 +4,7 @@ import type { DistributionManifest } from '../../../shared/distribution-manifest
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
 import {
-  WORKER_RUNTIME_ASSETS,
+  CHECKOUT_CLI_RUNTIME_ASSETS,
   workerRuntimeAssetPaths,
 } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
@@ -18,8 +18,5 @@ export function workerRuntimeReadCarvebacks(
   if (manifest) return workerRuntimeAssetPaths(stateRoot, manifest.version)
   const identity = runningInstallationIdentity(import.meta.dir, environment)
   if (identity.kind !== 'checkout') return []
-  return workerRuntimeAssetPaths(stateRoot, identity.version, {
-    checkoutCli: WORKER_RUNTIME_ASSETS.checkoutCli,
-    checkoutCliStamp: WORKER_RUNTIME_ASSETS.checkoutCliStamp,
-  })
+  return workerRuntimeAssetPaths(stateRoot, identity.version, CHECKOUT_CLI_RUNTIME_ASSETS)
 }

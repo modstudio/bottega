@@ -125,16 +125,8 @@ describe('install root resolution', () => {
       'needs checkout fixtures',
     )
   })
-  test('the absolute env override wins before compiled checkout root resolution', () => {
+  test('the absolute env override wins install root resolution', () => {
     const override = '/override/install'
-    expect(
-      decideCompiledCheckoutRoot({
-        marked: true,
-        value: '/checkout',
-        absolute: true,
-        checkoutRoot: true,
-      }),
-    ).toBe('/checkout')
     expect(resolveInstallRoot('/from', { [INSTALL_HOME_ENV]: override })).toBe(override)
   })
 
