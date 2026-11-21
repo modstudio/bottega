@@ -60,7 +60,7 @@ test("a task document follows the cursor's task record when its key changes", as
   ).toEqual({ ref: 'DEV-1/1', exists: true })
 })
 
-test("a task document on another task record is refused", async () => {
+test('a task document on another task record is refused', async () => {
   const readTaskDocument = async (value: string) => ({
     id: 'document-id',
     label: value,
