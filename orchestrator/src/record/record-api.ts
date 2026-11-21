@@ -77,8 +77,8 @@ import type { RecordCanonImportInput, RecordCanonImportResult } from './record-c
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
 import type {
-  RecordContextItem,
   RecordContextHolderKind,
+  RecordContextItem,
   RecordContextItemHolderGroup,
   RecordContextItemInput,
 } from './record-context-items.ts'

@@ -3,8 +3,8 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  splitContextHolder,
   type StoredContextItem,
+  splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { parsePointerReference } from '../../../shared/reference.ts'
 import {
