@@ -38,6 +38,7 @@ export const workflowAutonomyModules: WorkflowAutonomyModule[] = [
     '../../../shared/ship-to.ts',
   ]),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
+    '../../../shared/bounded-fetch.ts',
     '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',
     'bun:sqlite',

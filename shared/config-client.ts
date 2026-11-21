@@ -1,3 +1,10 @@
+import { hostedApiFetch } from './bounded-fetch.ts'
+import { BoundExceededError } from './call-budgets.ts'
+import {
+  clearConfigReadMemo,
+  isMemoizedConfigRead,
+  memoizedConfigRead,
+} from './config-read-memo.ts'
 import type {
   CredentialEnvironment,
   CredentialMetadataFields,
@@ -10,6 +17,7 @@ import { resolveRecordApiUrl } from './record-api-url.ts'
 import { tracedRecordFetch } from './record-call-trace.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
+import { RECORD_WHOAMI_ROUTE } from './record-routes.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 
 export const CURRENT_DATA_KEY_PATH = '/v1/config/data-keys/current'
@@ -33,7 +41,7 @@ export class ConfigClientError extends Error {
       reason === 'not-configured'
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
-          ? `hosted config route ${route} is unreachable`
+          ? `hosted config route ${route} is unreachable${refusal ? `: ${refusal}` : ''}`
           : details?.url && details.contentType
             ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
             : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
@@ -428,6 +436,8 @@ function createConfigClient(
   storedToken = false,
 ) {
   const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
+    const requestToken = storedToken ? readRecordSessionToken() : token
+    if (!requestToken) throw new ConfigClientError('not-configured', route)
     const send = async (bearer: string | null) => {
       if (!bearer) throw new ConfigClientError('not-configured', route)
       const headers = recordRequestHeaders({
@@ -464,29 +474,52 @@ function createConfigClient(
           error,
         })
         if (signal?.aborted) throw signal.reason
-        throw new ConfigClientError('unreachable', route)
+        throw new ConfigClientError(
+          'unreachable',
+          route,
+          undefined,
+          error instanceof BoundExceededError ? { error: error.message } : undefined,
+        )
       }
     }
-    const response = storedToken
-      ? await sendWithStoredRecordSessionToken(send, { signal: init.signal ?? signal })
-      : await send(token)
-    const body = await jsonBody(response, `${baseUrl}${route}`)
-    if (!body.ok)
-      throw new ConfigClientError('response', route, response.status, {
-        url: body.url,
-        contentType: body.contentType,
-      })
-    if (!response.ok) {
-      const refusal =
-        body.value && typeof body.value === 'object' && !Array.isArray(body.value)
-          ? (body.value as Record<string, unknown>)
-          : {}
-      throw new ConfigClientError('response', route, response.status, {
-        error: typeof refusal.error === 'string' ? refusal.error : undefined,
-        remedy: typeof refusal.remedy === 'string' ? refusal.remedy : undefined,
-      })
+    const load = async () => {
+      const response = storedToken
+        ? await sendWithStoredRecordSessionToken(send, { signal: init.signal ?? signal })
+        : await send(token)
+      const body = await jsonBody(response, `${baseUrl}${route}`)
+      if (!body.ok)
+        throw new ConfigClientError('response', route, response.status, {
+          url: body.url,
+          contentType: body.contentType,
+        })
+      if (!response.ok) {
+        const refusal =
+          body.value && typeof body.value === 'object' && !Array.isArray(body.value)
+            ? (body.value as Record<string, unknown>)
+            : {}
+        throw new ConfigClientError('response', route, response.status, {
+          error: typeof refusal.error === 'string' ? refusal.error : undefined,
+          remedy: typeof refusal.remedy === 'string' ? refusal.remedy : undefined,
+        })
+      }
+      return body.value as T
     }
-    return body.value as T
+    const method = init.method?.toUpperCase() ?? 'GET'
+    if (method !== 'GET') {
+      clearConfigReadMemo(transport, baseUrl, requestToken)
+      return load().finally(() => clearConfigReadMemo(transport, baseUrl, requestToken))
+    }
+    if (isMemoizedConfigRead(route))
+      return memoizedConfigRead(
+        transport,
+        baseUrl,
+        requestToken,
+        route,
+        init.destinationSpaceId,
+        init.projectId,
+        load,
+      )
+    return load()
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {
@@ -495,13 +528,13 @@ function createConfigClient(
     ...configSecretDeleteClient(request),
     ...credentialPreferenceClient(request),
     ...configKeyClient(request, query),
-    whoami: () => request<ConfigIdentity>('/v1/whoami'),
+    whoami: () => request<ConfigIdentity>(RECORD_WHOAMI_ROUTE),
   }
 }
 
 export function configClient(
   env: Record<string, string | undefined> = process.env,
-  transport: Transport = fetch,
+  transport: Transport = hostedApiFetch,
   token?: string | null,
   signal?: AbortSignal,
   recorder?: ConfigCallOutcomeRecorder,

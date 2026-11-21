@@ -90,6 +90,9 @@ export const sharedModules: ArchitectureModule[] = [
     './settings-permission-lists.ts',
   ]),
   module('shared/config-client.ts', [
+    './bounded-fetch.ts',
+    './call-budgets.ts',
+    './config-read-memo.ts',
     './credential.ts',
     './hosted-call-observation.ts',
     './http-json.ts',
@@ -98,7 +101,10 @@ export const sharedModules: ArchitectureModule[] = [
     './record-session.ts',
     './record-request-headers.ts',
     './record-remedies.ts',
+    './record-routes.ts',
   ]),
+  module('shared/config-read-memo.ts', ['./record-routes.ts']),
+  module('shared/record-routes.ts', []),
   module('shared/record-request-headers.ts', ['./record-caller.ts']),
   module('shared/hosted-call-observation.ts', []),
   module('shared/record-call-trace.ts', ['./brand.ts', './hosted-server.ts']),
@@ -149,6 +155,7 @@ export const sharedModules: ArchitectureModule[] = [
     './trust-log-head.ts',
   ]),
   module('shared/hosted-secrets.ts', [
+    './bounded-fetch.ts',
     './config-client.ts',
     './hosted-config-space.ts',
     './hosted-secret-opening.ts',

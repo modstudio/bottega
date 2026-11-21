@@ -1,3 +1,4 @@
+import { hostedApiFetch } from './bounded-fetch.ts'
 import {
   type ConfigClient,
   ConfigClientError,
@@ -57,7 +58,7 @@ const SECRET_SCOPES = ['user', 'space'] as const
 type OneSecret = { value?: string; sealedEmpty: boolean }
 
 async function defaults(signal?: AbortSignal): Promise<Dependencies> {
-  const client = configClient(process.env, fetch, undefined, signal)
+  const client = configClient(process.env, hostedApiFetch, undefined, signal)
   const pair = readMachineKey()
   if (!pair) throw new HostedSecretError('*', 'machine-key-missing')
   const identity = await hostedIdentity(client)

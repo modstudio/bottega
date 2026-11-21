@@ -2,6 +2,7 @@
 /** Gathers workflow-autonomy scopes from the project, machine, hosted config, and cursor. */
 
 import type { Database } from 'bun:sqlite'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { isDeadlineAbort } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -182,7 +183,7 @@ export async function resolveProjectAutonomy(
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] = [],
   session: AutonomySettings = {},
   clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
-    configClient(process.env, fetch, undefined, signal, recordConfigCallOutcome),
+    configClient(process.env, hostedApiFetch, undefined, signal, recordConfigCallOutcome),
   d: Database = db(),
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,

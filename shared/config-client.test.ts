@@ -1,4 +1,8 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { BoundExceededError } from './call-budgets.ts'
 import {
   type ConfigCallObservation,
   type ConfigClient,
@@ -7,6 +11,8 @@ import {
 } from './config-client.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 import { CALLER_HEADER_NAME, withRecordCaller } from './record-caller.ts'
+import { forgetRecordSessionToken, writeRecordSessionToken } from './record-session.ts'
+import { recordSessionPath, recordSessionStampPath, STATE_HOME_ENV } from './state-directory.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
   expect(() =>
@@ -72,6 +78,28 @@ test('config client preserves a JSON refusal error and remedy', async () => {
   })
 })
 
+test('config client preserves a hosted transport bound and its remedy', async () => {
+  const bound = new BoundExceededError(
+    'https://record.test/v1/whoami',
+    'hosted-api',
+    'deadline',
+    30_000,
+  )
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => {
+      throw bound
+    },
+    'test',
+  )
+
+  await expect(client.whoami()).rejects.toMatchObject({
+    reason: 'unreachable',
+    error: bound.message,
+  })
+  await expect(client.whoami()).rejects.toThrow(bound.message)
+})
+
 test('config client sends the active caller header', async () => {
   let caller: string | null = null
   const client = configClient(
@@ -90,6 +118,44 @@ test('config client sends the active caller header', async () => {
 
   await withRecordCaller('cli:machine/config/secret/list', () => client.whoami())
   expect(caller as string | null).toBe('cli:machine/config/secret/list')
+})
+
+test('stored-token config client keys memoized reads on the current session', async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), 'config-client-session-'))
+  const originalStateHome = process.env[STATE_HOME_ENV]
+  const originalKeyStore = process.env.BOTTEGA_KEYSTORE
+  const authorizations: string[] = []
+  try {
+    process.env[STATE_HOME_ENV] = stateHome
+    process.env.BOTTEGA_KEYSTORE = 'file'
+    writeRecordSessionToken('first-token')
+    const client = configClient(
+      { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+      async (_input, init) => {
+        authorizations.push(new Headers(init?.headers).get('authorization') ?? '')
+        return Response.json({
+          user: { id: authorizations.length === 1 ? 'first-user' : 'second-user' },
+          activeSpaceId: null,
+          personalSpaceId: null,
+          memberships: [],
+        })
+      },
+    )
+
+    await expect(client.whoami()).resolves.toMatchObject({ user: { id: 'first-user' } })
+    writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+    writeFileSync(recordSessionStampPath(process.env), 'externally-changed', { mode: 0o600 })
+    await expect(client.whoami()).resolves.toMatchObject({ user: { id: 'second-user' } })
+
+    expect(authorizations).toEqual(['Bearer first-token', 'Bearer second-token'])
+  } finally {
+    forgetRecordSessionToken()
+    rmSync(stateHome, { recursive: true, force: true })
+    if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = originalStateHome
+    if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
+    else process.env.BOTTEGA_KEYSTORE = originalKeyStore
+  }
 })
 
 test('config client decodes a machine signing public key', async () => {

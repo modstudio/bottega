@@ -1,6 +1,7 @@
 // concern: operator-credential
 /** Resolves Bottega's own project-bound operator credentials with explicit env overrides. */
 
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
@@ -29,7 +30,7 @@ async function resolveStoredOperatorCredential(
   identity: OperatorCredentialIdentity,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  const client = configClient(process.env, fetch, undefined, signal)
+  const client = configClient(process.env, hostedApiFetch, undefined, signal)
   return resolveProjectOperatorCredential(platformProject(), identity, client)
 }
 

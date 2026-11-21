@@ -8,8 +8,6 @@ import {
 } from '../../../shared/record-project-contract.ts'
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
-export const RECORD_WHOAMI_ROUTE = '/v1/whoami'
-
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordWriteDestination = { destinationSpaceId: string }
 export type RecordApiAuthentication = {

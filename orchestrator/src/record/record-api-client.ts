@@ -1,7 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { hostedApiFetch as apiFetch } from '../../../shared/bounded-fetch.ts'
 import type {
   DocAudience,
   DocAudiences,
@@ -63,7 +63,10 @@ import type { RecordContextItemInput } from './record-context-items.ts'
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
-import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
+import {
+  markRecordIdentityChanged,
+  sendWithStoredRecordSessionToken,
+} from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -98,7 +101,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
-import { markRecordIdentityMemoChanged, selectRecordApiTransport } from './record-identity-memo.ts'
+import { selectRecordApiTransport as selectTransport } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -567,7 +570,7 @@ export async function recordApiRequest<T>(
     destinationSpaceId?: string
   } = {},
   authentication?: RecordApiAuthentication,
-  transport: typeof fetch = hostedApiFetch,
+  transport: typeof fetch = apiFetch,
 ): Promise<T> {
   throwIfRecordApiRequestRefused()
   const readToken = async () =>
@@ -730,12 +733,14 @@ export function authenticatedRecordApiClient(
   return recordApiClient((path, init) => recordApiRequest(path, init, authentication))
 }
 
-export function recordApiClient(request = recordApiRequest): RecordApiClient {
+export function recordApiClient(request = recordApiRequest, transport = apiFetch): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  return recordApiClientOver(selectRecordApiTransport(request, recordApiRequest, recordApiBaseUrl))
+  return recordApiClientOver(
+    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport),
+  )
 }
 
 export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
@@ -934,11 +939,7 @@ function recordIdentityAndSpaceClient(
   request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   const changingRequest: RecordClientRequest = async (path, init) => {
-    try {
-      return await request(path, init)
-    } finally {
-      markRecordIdentityMemoChanged()
-    }
+    return request(path, init).finally(markRecordIdentityChanged)
   }
   return {
     createOrganization: (input) =>

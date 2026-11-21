@@ -239,6 +239,7 @@ export const settingsModules: SettingsModule[] = [
     './credential-presentation.ts',
   ]),
   module('orchestrator/src/config/operator-credential.ts', [
+    '../../../shared/bounded-fetch.ts',
     '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
@@ -264,6 +265,7 @@ export const settingsModules: SettingsModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/config/hosted-config-call-outcome.ts', [
+    '../../../shared/bounded-fetch.ts',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
     '../hosted-call-outcome.ts',
