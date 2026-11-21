@@ -260,7 +260,7 @@ const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   worker: leg.worker,
   suite: leg.suite.map(({ argv, unitTests }) => {
     const cwd = `${root}${leg.directory}`
-    if (unitTests && argv[0] === 'bun') checkForwardedPackageTestScript(cwd, argv)
+    if (isBunUnitTestCommand({ argv, unitTests })) checkForwardedPackageTestScript(cwd, argv)
     return {
       cwd,
       unitTests,

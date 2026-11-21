@@ -18,7 +18,7 @@ export function checkSuiteTestTimeoutArguments(
   commands: readonly SuiteCommand[],
   ci: boolean,
 ): void {
-  const timeout = `--timeout=${CI_TEST_HANG_TIMEOUT_MS}`
+  const timeout = gateTestTimeoutArguments(true)[0]!
   for (const command of commands) {
     if (!isBunUnitTestCommand(command)) continue
     const carriesTimeout = command.argv.includes(timeout)
