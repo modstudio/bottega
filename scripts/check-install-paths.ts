@@ -191,7 +191,9 @@ function isRemedyFindingExemption(node: ts.Node, path: string): boolean {
   for (let current: ts.Node | undefined = node; current; current = current.parent) {
     if (
       ts.isFunctionDeclaration(current) &&
-      ['installationExecutable', 'resolveInstallationPaths'].includes(current.name?.text ?? '')
+      ['compiledCheckoutRoot', 'installationExecutable', 'resolveInstallationPaths'].includes(
+        current.name?.text ?? '',
+      )
     ) {
       return true
     }
