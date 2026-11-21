@@ -139,9 +139,9 @@ export async function launchHeadlessBrowserProbe(
 
   const profileDirectory = join(scratchDir, 'headless-browser-profile')
   const temporaryDirectory = join(scratchDir, 'headless-browser-tmp')
-  mkdirSync(profileDirectory, { recursive: true })
-  mkdirSync(temporaryDirectory, { recursive: true })
   try {
+    mkdirSync(profileDirectory, { recursive: true })
+    mkdirSync(temporaryDirectory, { recursive: true })
     const argv = await sandboxLaunchArgv(
       profile,
       executable,
