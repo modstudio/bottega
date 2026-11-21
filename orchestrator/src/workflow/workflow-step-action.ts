@@ -123,9 +123,11 @@ export type StepLandMergeOptions = {
   depth?: string
 }
 
+export type StepLandAction = 'pr-create' | 'pr-merge'
+
 async function authorizeLandAction(
   cursor: number,
-  required: 'pr-create' | 'pr-merge',
+  required: StepLandAction,
   read: StepActionRead = stepActionTarget,
 ): Promise<void> {
   const target = await read(cursor)

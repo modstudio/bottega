@@ -10,8 +10,13 @@ export const pullRequestModuleSpecs = [
       '../database/db.ts',
       '../project/projects.ts',
       '../question-store/question-store-read.ts',
+      '../workflow/workflow-step-action.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts'],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../workflow/workflow-step-action.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',

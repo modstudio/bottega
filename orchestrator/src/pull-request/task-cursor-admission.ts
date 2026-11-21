@@ -9,8 +9,7 @@ import { classifyCaller, resolveCallerIdentity } from '../caller-classification.
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-
-type PullRequestAction = 'pr-create' | 'pr-merge'
+import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 
 type HeldTaskCursor = {
   number: number
@@ -35,7 +34,7 @@ export function decidePullRequestTaskCursorAdmission(input: {
     (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
   )
   if (matching.length) {
-    const required: PullRequestAction = input.command === 'pr create' ? 'pr-create' : 'pr-merge'
+    const required: StepLandAction = input.command === 'pr create' ? 'pr-create' : 'pr-merge'
     if (matching.some((cursor) => cursor.actions.includes(required))) return { kind: 'allow' }
     return {
       kind: 'refuse',
