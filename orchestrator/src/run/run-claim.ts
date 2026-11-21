@@ -363,7 +363,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
-  runProjectId = links.projectRecordId
+  runProjectId = opts.projectRecordId ?? links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const binding = inheritedRunBinding(opts.resume?.parent, opts.binding)

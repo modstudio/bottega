@@ -5,14 +5,13 @@ import { workerReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { projectByName } from '../project/projects.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import { admitNewRunReference } from '../run/run-task-reference.ts'
 import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
   CANON_EVALS,
-  canonEvalProbeRunReference,
+  canonEvalProbeRunOptions,
   canonEvalsReport,
   failingCanonEvalSlugs,
   latestCanonEvals,
@@ -189,16 +188,25 @@ describe('behavioral canon evals', () => {
   })
 
   test('a canon eval probe records its question in the evaluated project record space', async () => {
+    const projectId = addProject(
+      'canon-eval-probe-question',
+      '/registered/canon-eval-probe-question',
+    )
     const project = {
+      recordId: projectId,
       name: 'canon-eval-probe-question',
       path: '/registered/canon-eval-probe-question',
     }
-    const projectId = addProject(project.name, project.path)
-    const reference = canonEvalProbeRunReference(project)
-    const runProjectId = projectByName(reference.repo)?.recordId ?? null
+    const options = canonEvalProbeRunOptions({
+      ev: { job: 'implement', prompt: 'Ask for the unresolved choice.', slug: 'probe-question' },
+      project,
+      agent: 'codex',
+      repo: '/projectless/canon-eval-scratch',
+      pack: undefined,
+    })
     const links = await admitNewRunReference({
-      projectName: reference.repo,
-      projectRecordId: runProjectId,
+      projectName: null,
+      projectRecordId: null,
       key: null,
       cwd: null,
       launchCwd: '/projectless/canon-eval-scratch',
@@ -209,8 +217,7 @@ describe('behavioral canon evals', () => {
       job: 'implement',
       status: 'running',
       probe: 1,
-      repo: reference.repo,
-      projectRecordId: links.projectRecordId,
+      projectRecordId: options.projectRecordId ?? links.projectRecordId,
     })
 
     await recordTerminalQuestions(runId, [
@@ -225,6 +232,7 @@ describe('behavioral canon evals', () => {
     expect(await questionsForRun(db(), runId)).toEqual([
       expect.objectContaining({ project_record_id: projectId }),
     ])
+    expect(options).not.toHaveProperty('repo')
   })
 
   test('a canon eval probe without project attribution hits the record-space refusal', async () => {

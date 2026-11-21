@@ -29,6 +29,7 @@ import {
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
+import type { RunOptions } from '../run/run-options.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
@@ -368,9 +369,25 @@ function evalPack(
   return { pack, canonSha: decision.canonSha }
 }
 
-/** Attribute a scratch probe to the registered project whose canon it evaluates. */
-export function canonEvalProbeRunReference(project: CanonEvalProject): { repo: string } {
-  return { repo: project.name }
+/** Build a scratch probe whose run row, but not its preflight or lens, carries the eval project. */
+export function canonEvalProbeRunOptions(input: {
+  ev: Pick<CanonEval, 'job' | 'prompt' | 'slug'>
+  project: CanonEvalProject
+  agent: string
+  repo: string
+  pack: RunOptions['canonPack']
+}): RunOptions {
+  return {
+    job: input.ev.job,
+    prompt: input.ev.prompt,
+    agent: input.agent,
+    probe: true,
+    cwd: input.repo,
+    projectRecordId: input.project.recordId,
+    canonPack: input.pack,
+    lens: JOBS[input.ev.job]?.findings ? CANON_EVAL_LENS : undefined,
+    label: `canon-eval:${input.ev.slug}`,
+  }
 }
 
 /** Compile the pack an eval would receive without creating or running its scratch repository. */
@@ -607,17 +624,7 @@ export async function runCanonEvals(opts: {
           continue
         }
         const result = await runCanonEvalAttempt(
-          {
-            job: ev.job,
-            prompt: ev.prompt,
-            agent,
-            probe: true,
-            cwd: repo,
-            ...canonEvalProbeRunReference(project),
-            canonPack: pack,
-            lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
-            label: `canon-eval:${ev.slug}`,
-          },
+          canonEvalProbeRunOptions({ ev, project, agent, repo, pack }),
           (id) => {
             runId = id
           },

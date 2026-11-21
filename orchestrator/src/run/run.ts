@@ -40,7 +40,13 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import { projectAt, projectByName, projectsIncludingRetired, stackAt } from '../project/projects.ts'
+import {
+  projectAt,
+  projectByName,
+  projectByRecordId,
+  projectsIncludingRetired,
+  stackAt,
+} from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -162,6 +168,9 @@ export async function run(
   const { resume, declaredDeliverables, timeoutMinutes } = inheritedRunDispatch(opts)
   const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const requestedTransport = resolveRunTransport(opts)
+  if (opts.projectRecordId && !projectByRecordId(opts.projectRecordId)) {
+    throw new Error(`unknown project record ${JSON.stringify(opts.projectRecordId)}`)
+  }
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
   const reviewTarget =
@@ -274,7 +283,8 @@ export async function run(
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
+  const namedRunProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
+  const runProjectId = opts.projectRecordId ?? namedRunProjectId
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
     try {
@@ -287,7 +297,7 @@ export async function run(
       else {
         const links = await admitNewRunReference({
           projectName: runProjectName,
-          projectRecordId: runProjectId,
+          projectRecordId: namedRunProjectId,
           key: opts.key ?? null,
           cwd: callerCwd,
           launchCwd: callerCwd,
@@ -298,7 +308,7 @@ export async function run(
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: links.projectRecordId,
+          projectRecordId: opts.projectRecordId ?? links.projectRecordId,
           taskRecordId: links.taskRecordId,
           probe: Boolean(opts.probe),
           cwd: callerCwd,
@@ -324,7 +334,7 @@ export async function run(
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
-    projectRecordId: runProjectId,
+    projectRecordId: namedRunProjectId,
     key: rt.attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd }),
     repoJob,
     callerCwd,
@@ -514,7 +524,7 @@ export async function run(
     writesJob,
     repoJob,
     runProjectName,
-    runProjectId,
+    runProjectId: namedRunProjectId,
     reason,
     vendorSession,
     pack,
