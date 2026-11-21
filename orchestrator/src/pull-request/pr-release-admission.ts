@@ -2,14 +2,12 @@
 /** Gathers a pull request's release facts and refuses required rungs before landing. */
 
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
-import {
-  decidePullRequestReleaseAdmission,
-  type RequiredRungDecision,
-  requiredRungDecision,
-} from '../release/release-required.ts'
+import { type RequiredRungDecision, requiredRungDecision } from '../release/release-required.ts'
+import { requiredMergeCommand } from './pr-post-landing-payload.ts'
 
 export type PullRequestReleaseFacts = {
   number: number
@@ -26,12 +24,59 @@ export type PullRequestReleaseDecisionAdapter = {
   ): RequiredRungDecision
 }
 
+export type PullRequestReleaseAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
+
+export function projectCanRequireExplicitRelease(project: Project): boolean {
+  return (project.settings.release?.rungs ?? []).some(
+    (rung) => rung.requiredWhenChanged !== undefined || (rung.entryPoints?.length ?? 0) > 0,
+  )
+}
+
+export function decidePullRequestReleaseAdmission(input: {
+  decision: RequiredRungDecision
+  releaseRequired: boolean
+  target: string
+  depth?: string
+}): PullRequestReleaseAdmission {
+  if (!input.decision.decided) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing merge: required release rungs could not be decided: ${input.decision.error}`,
+          {
+            kind: 'edit',
+            text: requiredMergeCommand(input.target, input.depth, false),
+          },
+        ),
+      ),
+    }
+  }
+  const explicitlyRequired = input.decision.rungs
+    .filter(({ required, requiredBy }) => required && requiredBy === 'explicit')
+    .map(({ rung }) => rung)
+  if (input.releaseRequired || explicitlyRequired.length === 0) return { kind: 'allow' }
+  return {
+    kind: 'refuse',
+    message: renderRefusal(
+      refusal(
+        `refusing merge: ${
+          explicitlyRequired.length === 1 ? 'release rung' : 'release rungs'
+        } ${explicitlyRequired.join(', ')} required by this pull request`,
+        { kind: 'edit', text: requiredMergeCommand(input.target, input.depth) },
+      ),
+    ),
+  }
+}
+
 export function pullRequestReleaseDecisionAtHead(
   project: Project,
   cwd: string,
   pullRequest: PullRequestReleaseFacts,
   depth?: string,
 ): RequiredRungDecision {
+  if (!projectCanRequireExplicitRelease(project))
+    return { decided: true, required: [], rungs: [], error: null }
   const environment = targetGitEnvironment(cwd)
   git(['fetch', 'origin', pullRequest.baseBranch], cwd, environment, ' during release base fetch')
   const remoteBase = `refs/remotes/origin/${pullRequest.baseBranch}`
@@ -59,6 +104,7 @@ export function pullRequestReleaseDecisionAtHead(
 }
 
 export function assertPullRequestReleaseAdmission(input: {
+  target: string
   project: Project
   cwd: string
   pullRequest: PullRequestReleaseFacts
@@ -75,9 +121,11 @@ export function assertPullRequestReleaseAdmission(input: {
   const admission = decidePullRequestReleaseAdmission({
     decision,
     releaseRequired: input.releaseRequired,
+    target: input.target,
+    depth: input.depth,
   })
   if (admission.kind === 'refuse') {
-    throw new Error(admission.message.replace('<n>', String(input.pullRequest.number)))
+    throw new Error(admission.message)
   }
   return decision
 }

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { HOSTED_API_RUNG_RELEASE_COMMAND } from './outbox-held-contract.ts'
+import { HOSTED_API_RELEASE_COMMAND } from './outbox-held-contract.ts'
 import { recordQuestionClient } from './record-api-client-question.ts'
 
 function clientReturning(body: unknown) {
@@ -13,7 +13,7 @@ test('open-for-session refuses rows from a hosted API without step_actions', asy
   const client = clientReturning({ items: [{ workflow_slug: 'ship-task' }] })
   await expect(
     client.readQuestions!({ read: 'open-for-session', sessionId: 'session-1' }),
-  ).rejects.toThrow(HOSTED_API_RUNG_RELEASE_COMMAND)
+  ).rejects.toThrow(HOSTED_API_RELEASE_COMMAND)
 })
 
 test('open-for-session parses rows whose step_actions are string arrays', async () => {

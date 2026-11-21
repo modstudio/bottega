@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
@@ -77,35 +76,6 @@ export const RELEASE_REQUIREMENT_SOURCES = ['explicit', 'reach'] as const
 export type RequiredRungDecision =
   | { decided: true; required: string[]; rungs: ReleaseRungPlan[]; error: null }
   | { decided: false; required: string[]; rungs: ReleaseRungPlan[]; error: string }
-
-export type PullRequestReleaseAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
-
-export function decidePullRequestReleaseAdmission(input: {
-  decision: RequiredRungDecision
-  releaseRequired: boolean
-}): PullRequestReleaseAdmission {
-  if (!input.decision.decided) {
-    return {
-      kind: 'refuse',
-      message: `refusing merge: required release rungs could not be decided: ${input.decision.error}`,
-    }
-  }
-  if (input.releaseRequired || input.decision.required.length === 0) return { kind: 'allow' }
-  return {
-    kind: 'refuse',
-    message: renderRefusal(
-      refusal(
-        `refusing merge: ${
-          input.decision.required.length === 1 ? 'release rung' : 'release rungs'
-        } ${input.decision.required.join(', ')} required by this pull request`,
-        {
-          kind: 'edit',
-          text: `${PLATFORM_SLUG} pr merge <n> --release-required`,
-        },
-      ),
-    ),
-  }
-}
 
 function notRequiredReason(
   rung: RequiredReleaseRung,

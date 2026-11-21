@@ -72,6 +72,7 @@ import {
 import {
   assertPullRequestReleaseAdmission,
   type PullRequestReleaseDecisionAdapter,
+  projectCanRequireExplicitRelease,
   pullRequestReleaseDecisionAtHead,
 } from './pr-release-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
@@ -892,7 +893,9 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
-      preMergeReleaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
+      const releaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
+      if (projectCanRequireExplicitRelease(input.project))
+        preMergeReleaseDecision = releaseDecision
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {

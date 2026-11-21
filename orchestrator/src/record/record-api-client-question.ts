@@ -5,7 +5,7 @@ import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
 } from '../question-store/run-question-write-guard.ts'
-import { HOSTED_API_RUNG_RELEASE_COMMAND } from './outbox-held-contract.ts'
+import { HOSTED_API_RELEASE_COMMAND } from './outbox-held-contract.ts'
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -43,7 +43,7 @@ function questionReadResponseSchema(input: QuestionReadInput, body: unknown): Qu
     )
   if (!valid) {
     throw new Error(
-      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RUNG_RELEASE_COMMAND}`,
+      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RELEASE_COMMAND}`,
     )
   }
   return response

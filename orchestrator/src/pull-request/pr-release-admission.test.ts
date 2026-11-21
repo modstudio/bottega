@@ -1,24 +1,108 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
-import { assertPullRequestReleaseAdmission } from './pr-release-admission.ts'
+import type { ReleaseRungPlan, RequiredRungDecision } from '../release/release-required.ts'
+import {
+  decidePullRequestReleaseAdmission,
+  pullRequestReleaseDecisionAtHead,
+} from './pr-release-admission.ts'
 
-test('a required release decision runs once and refuses before landing without the flag', () => {
-  let decisions = 0
-  const project = { name: 'fixture', path: '/fixture' } as Project
-  expect(() =>
-    assertPullRequestReleaseAdmission({
-      project,
-      cwd: '/fixture',
-      pullRequest: { number: 42, headCommit: 'head', baseBranch: 'main' },
-      adapter: {
-        releaseDecision: () => {
-          decisions++
-          return { decided: true, required: ['hosted-api'], rungs: [], error: null }
-        },
-      },
+function plan(rung: string, requiredBy: ReleaseRungPlan['requiredBy']): ReleaseRungPlan {
+  return {
+    rung,
+    branch: 'main',
+    required: true,
+    requiredBy,
+    reason: null,
+    declaresLive: true,
+    declaresDeploy: true,
+  }
+}
+
+function decided(...rungs: ReleaseRungPlan[]): RequiredRungDecision {
+  return {
+    decided: true,
+    required: rungs.map(({ rung }) => rung),
+    rungs,
+    error: null,
+  }
+}
+
+describe('decidePullRequestReleaseAdmission', () => {
+  test('refuses explicit rungs without the flag and preserves depth in the remedy', () => {
+    const admission = decidePullRequestReleaseAdmission({
+      decision: decided(plan('hosted-api', 'explicit'), plan('hub', 'explicit')),
       releaseRequired: false,
+      target: '42',
+      depth: 'staging',
+    })
+    expect(admission.kind).toBe('refuse')
+    if (admission.kind === 'allow') return
+    expect(admission.message).toContain('hosted-api, hub')
+    expect(admission.message).toContain(
+      `${PLATFORM_SLUG} pr merge 42 --release-required --depth staging`,
+    )
+  })
+
+  test('allows explicit rungs with the flag', () => {
+    expect(
+      decidePullRequestReleaseAdmission({
+        decision: decided(plan('hosted-api', 'explicit')),
+        releaseRequired: true,
+        target: '42',
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('allows a change that requires no release rung', () => {
+    expect(
+      decidePullRequestReleaseAdmission({
+        decision: decided(),
+        releaseRequired: false,
+        target: '42',
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('allows a reach-only rung without the flag', () => {
+    expect(
+      decidePullRequestReleaseAdmission({
+        decision: decided(plan('production', 'reach')),
+        releaseRequired: false,
+        target: '42',
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('refuses an errored decision with its cause and the original merge command', () => {
+    const admission = decidePullRequestReleaseAdmission({
+      decision: { decided: false, required: [], rungs: [], error: 'closure build failed' },
+      releaseRequired: true,
+      target: 'DEV-2555',
+      depth: 'staging',
+    })
+    expect(admission.kind).toBe('refuse')
+    if (admission.kind === 'allow') return
+    expect(admission.message).toContain('closure build failed')
+    expect(admission.message).toContain(
+      `cleared by: ${PLATFORM_SLUG} pr merge DEV-2555 --depth staging`,
+    )
+  })
+})
+
+test('a project without explicit release requirements returns before changed-path git work', () => {
+  const project = {
+    path: '/fixture',
+    settings: {
+      trunk: 'main',
+      release: { rungs: [{ name: 'production', branch: 'main' }] },
+    },
+  } as Project
+  expect(
+    pullRequestReleaseDecisionAtHead(project, '/path/that/does/not/exist', {
+      number: 42,
+      headCommit: 'head',
+      baseBranch: 'main',
     }),
-  ).toThrow(`${PLATFORM_SLUG} pr merge 42 --release-required`)
-  expect(decisions).toBe(1)
+  ).toEqual({ decided: true, required: [], rungs: [], error: null })
 })

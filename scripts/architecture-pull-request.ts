@@ -26,10 +26,12 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/pr-release-admission.ts',
     allowed: [
       '../../../shared/git-path-list.ts',
+      '../../../shared/refusal.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../release/release-entry-closure.ts',
       '../release/release-required.ts',
+      './pr-post-landing-payload.ts',
     ],
     typeOnlyAllowed: ['../project/projects.ts'],
   },

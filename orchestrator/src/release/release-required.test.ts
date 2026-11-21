@@ -3,11 +3,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
 import { releaseProofDecision } from './release-decision.ts'
 import {
-  decidePullRequestReleaseAdmission,
   decideRequiredRungs,
   formatRequiredReleaseReport,
   type RequiredReleaseRunner,
-  type RequiredRungDecision,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
@@ -54,51 +52,6 @@ const runner = (overrides: Partial<RequiredReleaseRunner> = {}): RequiredRelease
   contains: () => false,
   release: () => successfulRelease(),
   ...overrides,
-})
-
-describe('decidePullRequestReleaseAdmission', () => {
-  const decided = (required: string[]): RequiredRungDecision => ({
-    decided: true,
-    required,
-    rungs: [],
-    error: null,
-  })
-
-  test('refuses required rungs without the release flag', () => {
-    const admission = decidePullRequestReleaseAdmission({
-      decision: decided(['hosted-api', 'hub']),
-      releaseRequired: false,
-    })
-    expect(admission.kind).toBe('refuse')
-    if (admission.kind === 'allow') return
-    expect(admission.message).toContain('hosted-api, hub')
-    expect(admission.message).toContain(`${PLATFORM_SLUG} pr merge <n> --release-required`)
-  })
-
-  test('allows required rungs with the release flag', () => {
-    expect(
-      decidePullRequestReleaseAdmission({
-        decision: decided(['hosted-api']),
-        releaseRequired: true,
-      }),
-    ).toEqual({ kind: 'allow' })
-  })
-
-  test('allows a change that requires no release rung', () => {
-    expect(
-      decidePullRequestReleaseAdmission({ decision: decided([]), releaseRequired: false }),
-    ).toEqual({ kind: 'allow' })
-  })
-
-  test('refuses an errored rung decision with its cause', () => {
-    const admission = decidePullRequestReleaseAdmission({
-      decision: { decided: false, required: [], rungs: [], error: 'closure build failed' },
-      releaseRequired: true,
-    })
-    expect(admission.kind).toBe('refuse')
-    if (admission.kind === 'allow') return
-    expect(admission.message).toContain('closure build failed')
-  })
 })
 
 describe('decideRequiredRungs', () => {
