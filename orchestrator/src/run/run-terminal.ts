@@ -297,6 +297,16 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
+function workerCheckReplyFacts(input: TerminalInput) {
+  return terminalReplyFacts({
+    database: db(),
+    runId: input.claim.id,
+    writesJob: input.writesJob,
+    worktreePath: input.worktree?.path ?? null,
+    measurementScope: input.provisionedMcpConfig,
+  })
+}
+
 function terminalUsageSnapshot(input: TerminalInput, name: string) {
   return {
     contextProfile: input.contextProfile ?? null,
@@ -765,13 +775,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-  const replyFacts = terminalReplyFacts({
-    database: db(),
-    runId: input.claim.id,
-    writesJob: input.writesJob,
-    worktreePath: input.worktree?.path ?? null,
-    measurementScope: input.provisionedMcpConfig,
-  })
+  const replyFacts = workerCheckReplyFacts(input)
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,

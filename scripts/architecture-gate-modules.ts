@@ -14,6 +14,13 @@ const module = (file: string, allowed: string[]): GateModule => ({
 })
 
 export const gateModules: GateModule[] = [
+  module('orchestrator/src/collect/worker-check-presentation.ts', [
+    'bun:sqlite',
+    '../gate/worker-check-omissions.ts',
+    '../gate/worker-check-result.ts',
+    '../gate/worker-check-verdict.ts',
+    './result-output.ts',
+  ]),
   module('orchestrator/src/collect/result-output.ts', [
     '../gate/gate-decision.ts',
     '../run/run-test-outcome.ts',

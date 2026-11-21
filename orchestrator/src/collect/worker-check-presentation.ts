@@ -11,13 +11,14 @@ import { lastWorkerCheckNotRunBlock } from './result-output.ts'
 
 export function presentWorkerCheckResult(
   database: Database,
-  runRecordId: string,
-  replyHead: string | null,
+  run: { result_member_record_id: string; reply_head: string | null },
   error: (value: string) => void,
 ): void {
-  const execution = latestFinishedWorkerCheckExecution(runRecordId, database)
+  const execution = latestFinishedWorkerCheckExecution(run.result_member_record_id, database)
   error(
-    workerCheckVerdictLine(recordedWorkerCheckVerdictFromExecution(database, execution, replyHead)),
+    workerCheckVerdictLine(
+      recordedWorkerCheckVerdictFromExecution(database, execution, run.reply_head),
+    ),
   )
   const unchecked = execution ? uncheckedChecksForGateExecution(execution.record_id, database) : []
   const omissions = lastWorkerCheckNotRunBlock(unchecked)

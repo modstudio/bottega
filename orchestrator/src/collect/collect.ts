@@ -779,9 +779,7 @@ export async function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  presentWorkerCheckResult(database, row.result_member_record_id, row.reply_head, (value) =>
-    presentation.error(value),
-  )
+  presentWorkerCheckResult(database, row, (value) => presentation.error(value))
   presentCollectedOutput(row, output, outcome.ok, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
