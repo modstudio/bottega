@@ -29,6 +29,7 @@ import {
   dispatchObligationRefusal,
   type EarlierStepRunEvidence,
   judgingObligationRefusal,
+  type LandedEarlierStepRunEvidence,
   type StepRunObligation,
   type WorkflowRunChainEvidence,
 } from './workflow-run-obligation.ts'
@@ -160,6 +161,7 @@ export type ValidatedEvidence = {
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
   earlierStepRuns?: EarlierStepRunEvidence[]
+  landedEarlierStepRuns?: LandedEarlierStepRunEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
   metDispatchWaiverFacts?: DispatchWaiverFact[]
 }
@@ -1010,6 +1012,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     step: input.step,
     dispatchRuns: input.evidence.dispatchRuns,
     earlierStepRuns: input.evidence.earlierStepRuns,
+    landedEarlierStepRuns: input.evidence.landedEarlierStepRuns,
     judgedRuns: input.evidence.judgedRuns,
   }
   const dispatchRefusal = dispatchObligationRefusal(obligationInput)

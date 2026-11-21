@@ -144,6 +144,34 @@ function discoveredBranchBinding(
   return decision.action === 'no-op' ? {} : { branch: runBranch }
 }
 
+function latestCursorImplementBranch(database: Database, cursorRecordId: string): string | null {
+  return (
+    database
+      .query<{ branch: string }, [string]>(
+        `WITH latest_chain AS (
+           SELECT root.record_id
+             FROM run root
+            WHERE root.parent_run_record_id IS NULL
+              AND root.job='implement'
+              AND EXISTS (
+                SELECT 1 FROM run bound
+                 WHERE (bound.record_id=root.record_id OR bound.parent_run_record_id=root.record_id)
+                   AND bound.cursor_record_id=?
+              )
+            ORDER BY root.number DESC
+            LIMIT 1
+         )
+         SELECT COALESCE(turn.branch,turn.branch_kept) AS branch
+           FROM run turn JOIN latest_chain
+             ON turn.record_id=latest_chain.record_id
+             OR turn.parent_run_record_id=latest_chain.record_id
+          ORDER BY turn.turn DESC,turn.number DESC
+          LIMIT 1`,
+      )
+      .get(cursorRecordId)?.branch ?? null
+  )
+}
+
 /** Merge lifecycle-discovered arguments and persist them through the task-flow stage-update port. */
 export async function bindCursorArguments(
   input: {
@@ -221,10 +249,13 @@ export async function bindRecordedRunCursorArguments(
     .get(runRecordId)
   if (!run) return { action: 'unbound' }
   if (JOBS[run.job]?.needs.writesRepo !== true) return { action: 'no-op' }
+  const branch = run.cursor_record_id
+    ? latestCursorImplementBranch(database, run.cursor_record_id)
+    : null
   return bindCursorArguments(
     {
       cursorRecordId: run.cursor_record_id,
-      branch: run.branch,
+      branch,
       worktree: run.worktree,
     },
     database,
