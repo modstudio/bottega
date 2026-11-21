@@ -43,6 +43,20 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
+    lookup: async (_project, keys) => {
+      const found = new Map<string, TaskReadRow & { has_children: boolean }>()
+      for (const key of keys) {
+        let task = byKey.get(key)
+        while (task && !found.has(task.key)) {
+          found.set(task.key, {
+            ...task,
+            has_children: tasks.some((candidate) => candidate.parent_key === task!.key),
+          })
+          task = task.parent_key ? byKey.get(task.parent_key) : undefined
+        }
+      }
+      return [...found.values()]
+    },
     list: async ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
     show: async (key) => ({ task: byKey.get(key)! }),
     duplicates: async () => [],

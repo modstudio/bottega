@@ -20,3 +20,16 @@ export type TaskChanges = {
   body?: string
   assignee?: string | null
 }
+
+export type HostedTaskLookupRow = {
+  record_id: string
+  key: string
+  project: string
+  title: string | null
+  parent_key: string | null
+  status: string | null
+  status_category: string | null
+  opened_at: string | null
+  last_seen: string | null
+  has_children: boolean
+}

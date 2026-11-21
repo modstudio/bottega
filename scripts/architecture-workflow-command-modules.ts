@@ -13,6 +13,11 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/project-task-list.ts', [
+    '../../../shared/trackers.ts',
+    './task-read-port.ts',
+    './workflow-task-reference.ts',
+  ]),
+  module('orchestrator/src/workflow/project-task-lookup.ts', [
     './task-read-port.ts',
     './workflow-task-reference.ts',
   ]),

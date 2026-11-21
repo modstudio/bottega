@@ -526,6 +526,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'assertTargetSpaceNotes',
     'hostedGetTask',
     'hostedIdentitySet',
+    'hostedLookupTasks',
     'hostedListTasks',
     'hostedSignedInUser',
     'hostedSignedInUserId',

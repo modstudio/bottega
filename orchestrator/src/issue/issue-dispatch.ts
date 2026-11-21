@@ -11,7 +11,11 @@ import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
-import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
+import {
+  type ProjectTaskListReader,
+  readLiveProjectTasks,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
@@ -286,8 +290,10 @@ export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
   reader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<FiledIssueQueueState> {
-  const rows = await reader(PLATFORM_SLUG)
-  const filedRows: FiledIssueTaskRow[] = rows.map((task) => ({
+  const rows = await readLiveProjectTasks(reader, PLATFORM_SLUG)
+  const filedRows: FiledIssueTaskRow[] = [
+    ...new Map(rows.map((task) => [`${task.project}\0${task.key}`, task])).values(),
+  ].map((task) => ({
     key: task.key,
     title: task.title ?? null,
     body: task.body ?? null,

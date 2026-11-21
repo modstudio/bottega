@@ -15,6 +15,7 @@ import {
   duplicateCandidates,
   duplicateScore,
   listTasks,
+  lookupTasks,
   setTask,
   setTaskBody,
   showTask,
@@ -499,6 +500,30 @@ describe('local-authoritative task writes', () => {
   afterAll(() => {
     if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
     else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
+  })
+
+  test('local lookup returns a deduplicated requested task with its ancestor chain', async () => {
+    const root = await createTask(
+      { project: 'beta', title: 'Lookup root' },
+      { skipDuplicateCheck: true },
+    )
+    const parent = await createTask(
+      { project: 'beta', title: 'Lookup parent', parent: root.key },
+      { skipDuplicateCheck: true },
+    )
+    const leaf = await createTask(
+      { project: 'beta', title: 'Lookup leaf', parent: parent.key },
+      { skipDuplicateCheck: true },
+    )
+
+    const found = await lookupTasks('beta', [leaf.key.toLowerCase(), leaf.key, 'BET-999999'])
+
+    expect(found.map(({ key }) => key).sort()).toEqual([root.key, parent.key, leaf.key].sort())
+    expect(found.find(({ key }) => key === root.key)?.has_children).toBe(true)
+    expect(found.find(({ key }) => key === parent.key)?.has_children).toBe(true)
+    expect(found.find(({ key }) => key === leaf.key)?.has_children).toBe(false)
+    expect(found.some(({ key }) => key === 'BET-999999')).toBe(false)
+    expect(found.every((row) => !('body' in row) && !('source' in row))).toBe(true)
   })
 
   test('mints the next key, then update close and comment write hub.db', async () => {

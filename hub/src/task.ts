@@ -6,6 +6,7 @@ import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
+import type { HostedTaskLookupRow } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode, type TaskWriteMode } from './hosted-write-mode.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
@@ -17,7 +18,7 @@ import { HOSTED_COMMENT_TABLE } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { cacheCreatedHostedTask } from './task-cache.ts'
-import { hostedCreateTask } from './task-client.ts'
+import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
@@ -38,7 +39,7 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
-import { listLocalTasks, showLocalTask } from './task-local-read.ts'
+import { listLocalTasks, lookupLocalTasks, showLocalTask } from './task-local-read.ts'
 import { taskRecordFromRows } from './task-record.ts'
 import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
@@ -513,6 +514,12 @@ export async function listTasks(
   if (hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured') return listLocalTasks(filters)
   if (filters.status) status(filters.status)
   return listHostedTasks(filters)
+}
+
+export async function lookupTasks(project: string, keys: string[]): Promise<HostedTaskLookupRow[]> {
+  if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
+    return hostedLookupTasks(project, keys, hostedTaskWriteOptions(project))
+  return lookupLocalTasks(project, keys)
 }
 
 export async function showTask(

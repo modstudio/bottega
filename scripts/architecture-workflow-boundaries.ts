@@ -47,11 +47,16 @@ const taskReadPortImporters = [
   'orchestrator/src/dispatch/task-cli-read.ts',
   'orchestrator/src/epic/epic.ts',
   'orchestrator/src/issue/issue-dispatch.ts',
+  'orchestrator/src/issue/issue-dispatch.test.ts',
   'orchestrator/src/issue/issue.ts',
   'orchestrator/src/mcp/mcp.ts',
   'orchestrator/src/spare/spare-runner.ts',
   'orchestrator/src/workflow/project-task-list.ts',
+  'orchestrator/src/workflow/project-task-lookup.ts',
   'orchestrator/src/workflow/project-task-list.test.ts',
+  'orchestrator/src/doc/context-brief.test.ts',
+  'orchestrator/src/session/context-review.test.ts',
+  'orchestrator/src/session/session-epic-work.test.ts',
   'orchestrator/src/workflow/task-read-port.test.ts',
   'orchestrator/src/workflow/workflow-child-service.test.ts',
   'orchestrator/src/workflow/workflow-floor-apply.test.ts',
@@ -79,9 +84,15 @@ export const workflowBoundarySpecs = [
   {
     name: 'project-task-list-boundary',
     file: 'orchestrator/src/workflow/project-task-list.ts',
-    allowed: ['./task-read-port.ts', './workflow-task-reference.ts'],
+    allowed: ['../../../shared/trackers.ts', './task-read-port.ts', './workflow-task-reference.ts'],
     reason:
       'Keep the expensive project-wide read in the one module whose importers are manifest-gated.',
+  },
+  {
+    name: 'project-task-lookup-boundary',
+    file: 'orchestrator/src/workflow/project-task-lookup.ts',
+    allowed: ['./task-read-port.ts', './workflow-task-reference.ts'],
+    reason: 'Keep narrow key lookup behind the installed task read port.',
   },
   {
     name: 'workflow-task-claim-boundary',

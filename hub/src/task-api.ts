@@ -14,7 +14,13 @@ import {
 } from './hosted-route-identity.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
-import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
+import {
+  createHostedDocument,
+  createHostedTask,
+  getHostedTask,
+  lookupHostedTasks,
+  TASK_LOOKUP_KEY_LIMIT,
+} from './hosted-tasks.ts'
 import {
   HOSTED_DAY_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
@@ -30,6 +36,7 @@ type Dependencies = {
   create?: typeof createHostedTask
   createDocument?: typeof createHostedDocument
   presence?: typeof hostedTaskPresence
+  lookup?: typeof lookupHostedTasks
   deleteTasks?: typeof softDeleteHostedTasks
 }
 
@@ -108,6 +115,22 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
 
 async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body } = ctx
+  if (request.method === 'POST' && url.pathname === '/v1/tasks/lookup') {
+    const lookup = taskLookupBody(body)
+    if (!lookup)
+      return json(
+        { error: `task lookup requires a project and 1-${TASK_LOOKUP_KEY_LIMIT} keys` },
+        400,
+      )
+    return json(
+      await call(dependencies.lookup, lookupHostedTasks)(
+        config.recordDatabaseUrl,
+        who,
+        lookup.project,
+        lookup.keys,
+      ),
+    )
+  }
   if (request.method === 'POST' && url.pathname === '/v1/tasks/presence')
     return json(
       await call(dependencies.presence, hostedTaskPresence)(
@@ -132,6 +155,14 @@ async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
       ),
     )
   return null
+}
+
+function taskLookupBody(body: Record<string, unknown> | null) {
+  if (typeof body?.project !== 'string' || !Array.isArray(body.keys)) return null
+  const keys = body.keys.filter((key): key is string => typeof key === 'string')
+  if (!body.project || keys.length !== body.keys.length || !keys.length) return null
+  if (keys.length > TASK_LOOKUP_KEY_LIMIT) return null
+  return { project: body.project, keys: keys.map((key) => key.toUpperCase()) }
 }
 
 async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
@@ -171,7 +202,9 @@ export async function taskApi(
   if (who.kind === 'refused-space') return refusedSpaceResponse(who.refusedSpace)
   assertAuthenticatedIdentity(who)
   const access = recordSpaceAccessDecision(
-    recordRequestNature(request.method),
+    request.method === 'POST' && url.pathname === '/v1/tasks/lookup'
+      ? 'read'
+      : recordRequestNature(request.method),
     who.spaceId,
     who.memberships,
   )
