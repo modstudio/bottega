@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import { forgetConfigReadMemo } from './config-read-memo.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore } from './key-store.ts'
 import {
@@ -175,6 +176,7 @@ export async function sendWithStoredRecordSessionToken<T extends { status: numbe
 
 /** Forget the process copy so a later read observes a session changed by another process. */
 export function forgetRecordSessionToken(): void {
+  forgetConfigReadMemo()
   tokenGeneration += 1
   memoizedToken = undefined
   memoizedStamp = undefined

@@ -12,9 +12,11 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 export const recordInvariantModules = [
   module('orchestrator/src/record/record-identity-memo.ts', [
-    '../../../shared/record-session.ts',
+    '../../../shared/bounded-fetch.ts',
+    '../../../shared/config-read-memo.ts',
     './record-api-client-paths.ts',
     './record-auth.ts',
+    './record-session.ts',
   ]),
   module('orchestrator/src/project/project-read.ts', [
     'bun:sqlite',

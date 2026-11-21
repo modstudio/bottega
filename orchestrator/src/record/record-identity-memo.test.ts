@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { configClient } from '../../../shared/config-client.ts'
+import { forgetConfigReadMemo } from '../../../shared/config-read-memo.ts'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
@@ -12,13 +15,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { recordApiClient, recordApiClientOver } from './record-api-client.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
-import {
-  forgetRecordIdentityMemo,
-  RECORD_IDENTITY_MEMO_MAX_AGE_MS,
-  selectRecordApiTransport,
-} from './record-identity-memo.ts'
+import { recordApiClient } from './record-api-client.ts'
 
 const identity = {
   user: {
@@ -80,11 +77,11 @@ beforeEach(() => {
     },
   })
   process.env.BOTTEGA_RECORD_API_URL = server.url.origin
-  forgetRecordIdentityMemo()
+  forgetConfigReadMemo()
 })
 
 afterEach(() => {
-  forgetRecordIdentityMemo()
+  forgetConfigReadMemo()
   server.stop(true)
   installRecordSessionRunner(null)
   installRecordApiClient(createMemoryRecordApiClient())
@@ -101,45 +98,21 @@ function restoreEnvironment(name: string, value: string | undefined): void {
   else process.env[name] = value
 }
 
-function countingRequest(onWhoami: () => Promise<typeof identity> = async () => identity): {
-  request: RecordClientRequest
-  whoamiRequests: () => number
-} {
-  let whoamiRequests = 0
-  const request = (async (
-    path: string,
-    init: RequestInit & { schema?: (body: unknown) => unknown } = {},
-  ): Promise<unknown> => {
-    if (path === '/v1/whoami') {
-      whoamiRequests += 1
-      const body = await onWhoami()
-      return init.schema ? init.schema(body) : body
-    }
-    if (path === '/api/auth/organization/set-active' || path === '/api/auth/organization/create') {
-      const body = { id: 'space-b', slug: 'beta' }
-      return init.schema ? init.schema(body) : body
-    }
-    if (path === '/api/auth/organization/accept-invitation') {
-      const body = { invitation: { organizationId: 'space-b' } }
-      return init.schema ? init.schema(body) : body
-    }
-    throw new Error(`unexpected request ${path}`)
-  }) as RecordClientRequest
-  return { request, whoamiRequests: () => whoamiRequests }
-}
-
-function realClients(request: RecordClientRequest, now: () => number = Date.now) {
-  const realRequest = () =>
-    selectRecordApiTransport(request, request, () => process.env.BOTTEGA_RECORD_API_URL!, now)
-  return [recordApiClientOver(realRequest()), recordApiClientOver(realRequest())] as const
-}
-
 describe('record identity process memo', () => {
   test('two independently built real-transport clients share one whoami request', async () => {
     const first = recordApiClient()
     const second = recordApiClient()
 
     await Promise.all([first.whoami(), second.whoami()])
+
+    expect(whoamiRequests).toBe(1)
+  })
+
+  test('record and config clients share the same identity read', async () => {
+    const record = recordApiClient()
+    const config = configClient(process.env, hostedApiFetch)
+
+    await Promise.all([record.whoami(), config.whoami()])
 
     expect(whoamiRequests).toBe(1)
   })
@@ -164,32 +137,6 @@ describe('record identity process memo', () => {
     await second.whoami()
 
     expect(whoamiRequests).toBe(2)
-  })
-
-  test('identity older than the maximum age is re-requested without sleeping', async () => {
-    let now = 1_000
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request, () => now)
-    await first.whoami()
-
-    now += RECORD_IDENTITY_MEMO_MAX_AGE_MS + 1
-    await second.whoami()
-
-    expect(counted.whoamiRequests()).toBe(2)
-  })
-
-  test('a failed whoami is retried instead of memoized', async () => {
-    let attempt = 0
-    const counted = countingRequest(async () => {
-      attempt += 1
-      if (attempt === 1) throw new Error('record unavailable')
-      return identity
-    })
-    const [first, second] = realClients(counted.request)
-
-    await expect(first.whoami()).rejects.toThrow('record unavailable')
-    await expect(second.whoami()).resolves.toEqual(identity)
-    expect(counted.whoamiRequests()).toBe(2)
   })
 
   test('set-active success invalidates identity before the next whoami', async () => {

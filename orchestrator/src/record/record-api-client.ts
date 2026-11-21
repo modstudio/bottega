@@ -63,7 +63,10 @@ import type { RecordContextItemInput } from './record-context-items.ts'
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
-import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
+import {
+  markRecordIdentityChanged,
+  sendWithStoredRecordSessionToken,
+} from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -98,7 +101,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
-import { markRecordIdentityMemoChanged, selectRecordApiTransport } from './record-identity-memo.ts'
+import { recordIdentityMemoRequest } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -735,7 +738,9 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  return recordApiClientOver(selectRecordApiTransport(request, recordApiRequest, recordApiBaseUrl))
+  return recordApiClientOver(
+    request === recordApiRequest ? recordIdentityMemoRequest(request, recordApiBaseUrl) : request,
+  )
 }
 
 export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
@@ -937,7 +942,7 @@ function recordIdentityAndSpaceClient(
     try {
       return await request(path, init)
     } finally {
-      markRecordIdentityMemoChanged()
+      markRecordIdentityChanged()
     }
   }
   return {
