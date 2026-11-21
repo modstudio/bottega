@@ -610,7 +610,7 @@ describe('suggestion notes', () => {
       const [previous, target] = writeTransaction((conn) => [
         createLocalTaskInTransaction(
           conn,
-          { project: 'workshop', title: 'Previous task' },
+          { project: 'workshop', title: 'Previous task', status: 'done' },
           { skipDuplicateCheck: true },
         ),
         createLocalTaskInTransaction(
@@ -640,6 +640,20 @@ describe('suggestion notes', () => {
         expect.objectContaining({
           body: `note ${note.label} relinked from ${previous.key}: the repair belongs here`,
         }),
+      )
+
+      const unattached = (
+        await createNote({
+          text: `Unattached relink ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(relinkNote(unattached.record_id, target.key, 'move it')).rejects.toThrow(
+        `${PLATFORM_SLUG} note promote ${unattached.label} --task <KEY>`,
+      )
+      await expect(relinkNote(note.record_id, 'LOC-999999', 'move it')).rejects.toThrow(
+        `${PLATFORM_SLUG} task list --project workshop`,
       )
     })
 
