@@ -2,6 +2,7 @@
 /** Decides which release probes are required and whether their results permit enqueue. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import type { EntryClosure } from './release-entry-closure.ts'
 import { decideRequiredRungs, type RequiredReleaseRung } from './release-required.ts'
 
@@ -36,7 +37,12 @@ function lastStderrLine(stderr: string): string {
 function failedProbe(rung: string, probe: 'credentials' | 'endpoint', stderr: string): string {
   const detail = lastStderrLine(stderr)
   const fix = detail.replace(/^REFUSE:\s*/, '')
-  return `release preflight for ${rung} failed its ${probe} probe: ${detail}\ncleared by: ${fix}, then ${PLATFORM_SLUG} pr merge <target> --release-required`
+  return renderRefusal(
+    refusal(`release preflight for ${rung} failed its ${probe} probe: ${detail}`, {
+      kind: 'edit',
+      text: `${fix}, then ${PLATFORM_SLUG} pr merge <target> --release-required`,
+    }),
+  )
 }
 
 export function decidePreflight(results: readonly ReleaseProbeResult[]): ReleasePreflightDecision {

@@ -24,7 +24,7 @@ describe('release preflight', () => {
         preflight: {
           ok: false,
           stderr:
-            'REFUSE: fly could not list secrets for bottega-hub; run fly auth login (or restore Fly access) and retry',
+            'REFUSE: fly could not list secrets for the hosted app; run fly auth login (or restore Fly access) and retry',
         },
         live: { ok: true, stderr: '' },
       },
