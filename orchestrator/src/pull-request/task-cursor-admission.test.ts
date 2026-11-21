@@ -10,24 +10,99 @@ const input = {
   project: 'alpha',
   taskKey: 'DEV-2387',
   harnessSession: 'session-a',
-  heldCursors: [] as Array<{ project: string; workflowKey: string }>,
+  heldCursors: [] as Array<{
+    number: number
+    project: string
+    workflowSlug: string
+    workflowKey: string
+    stepSlug: string
+    actions: string[]
+  }>,
 }
 
+const cursor = (number: number, stepSlug: string, actions: string[], workflowKey = 'DEV-2387') => ({
+  number,
+  project: 'alpha',
+  workflowSlug: 'fix-defect',
+  workflowKey,
+  stepSlug,
+  actions,
+})
+
 describe('pull-request task cursor admission', () => {
-  test('admits the session that owns the key cursor', () => {
+  test('admits pull-request verbs only at a step that declares their action', () => {
     expect(
       decidePullRequestTaskCursorAdmission({
         ...input,
-        heldCursors: [{ project: 'alpha', workflowKey: 'DEV-2387' }],
+        heldCursors: [cursor(1212, 'open-pr', ['pr-create'])],
       }),
     ).toEqual({ kind: 'allow' })
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        command: 'pr merge',
+        heldCursors: [cursor(1212, 'merge-pr', ['pr-merge'])],
+      }),
+    ).toEqual({ kind: 'allow' })
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        command: 'pr merge',
+        heldCursors: [cursor(1212, 'open-pr', ['pr-create'])],
+      }).kind,
+    ).toBe('refuse')
+  })
+
+  test.each(['pr create', 'pr merge'] as const)(
+    'refuses %s before its step and names the cursor, workflow, step, and next remedy',
+    (command) => {
+      const decision = decidePullRequestTaskCursorAdmission({
+        ...input,
+        command,
+        heldCursors: [cursor(1212, 'apply-findings', [])],
+      })
+      expect(decision.kind).toBe('refuse')
+      if (decision.kind === 'refuse') {
+        expect(decision.message).toContain(
+          `refusing ${PLATFORM_SLUG} ${command}: cursor 1212 (fix-defect, DEV-2387) is at step apply-findings`,
+        )
+        expect(decision.message).toContain(
+          `${PLATFORM_SLUG} workflow next fix-defect --cursor 1212 --project alpha --arg key=DEV-2387`,
+        )
+      }
+    },
+  )
+
+  test('admits several matching cursors when any current step declares the action', () => {
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        command: 'pr merge',
+        heldCursors: [cursor(1212, 'apply-findings', []), cursor(1213, 'merge-pr', ['pr-merge'])],
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('refuses several matching cursors and names each when none declares the action', () => {
+    const decision = decidePullRequestTaskCursorAdmission({
+      ...input,
+      command: 'pr merge',
+      heldCursors: [cursor(1212, 'apply-findings', []), cursor(1213, 'open-pr', ['pr-create'])],
+    })
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind === 'refuse') {
+      expect(decision.message).toContain('cursor 1212 (fix-defect, DEV-2387)')
+      expect(decision.message).toContain('cursor 1213 (fix-defect, DEV-2387)')
+      expect(decision.message).toContain('--cursor 1212')
+      expect(decision.message).toContain('--cursor 1213')
+    }
   })
 
   test('refuses a different cursor and names workflow compose', () => {
     const decision = decidePullRequestTaskCursorAdmission({
       ...input,
       command: 'pr merge',
-      heldCursors: [{ project: 'alpha', workflowKey: 'DEV-1' }],
+      heldCursors: [cursor(1212, 'merge-pr', ['pr-merge'], 'DEV-1')],
     })
     expect(decision.kind).toBe('refuse')
     if (decision.kind === 'refuse') {
@@ -35,6 +110,16 @@ describe('pull-request task cursor admission', () => {
       expect(decision.message).toContain(`${PLATFORM_SLUG} workflow compose ship-task`)
       expect(decision.message).toContain('--arg key=DEV-2387')
     }
+  })
+
+  test('allows a non-harness caller', () => {
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        harnessSession: null,
+        heldCursors: [cursor(1212, 'apply-findings', [])],
+      }),
+    ).toEqual({ kind: 'allow' })
   })
 })
 
@@ -59,7 +144,7 @@ test('the adapter reads the harness cursors before admitting a keyed branch', as
     },
     async (_database, session) => {
       sessions.push(session)
-      return [{ project: 'alpha', workflowKey: 'DEV-2387' }]
+      return [cursor(1212, 'open-pr', ['pr-create'])]
     },
   )
   expect(sessions).toEqual(['session-a'])
