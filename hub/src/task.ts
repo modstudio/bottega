@@ -21,7 +21,7 @@ import { cacheCreatedHostedTask } from './task-cache.ts'
 import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
-import type { TaskDocumentSummary } from './task-document.ts'
+import type { TaskDocumentSummary } from './task-document-types.ts'
 import {
   hostedComment,
   hostedTaskBatch,

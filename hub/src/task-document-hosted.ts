@@ -1,13 +1,16 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { db } from './db.ts'
 import { projects } from './projects.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import type { TaskDocument, TaskDocumentSummary } from './task-document-types.ts'
 import { showHostedTask } from './task-hosted-record.ts'
-import { type TaskScope, taskKeyPrefix } from './task-identity.ts'
+import {
+  projectOwningTaskKey,
+  type TaskScope,
+  taskProjectResolutionRefusal,
+} from './task-identity.ts'
 import { type HostedTaskWriteOptions, taskWriteDecision } from './task-write-destination.ts'
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type HostedDocumentContext = {
   document: TaskDocument
@@ -20,14 +23,9 @@ function usesHostedRecord(project: string, hosted?: HostedTaskWriteOptions): boo
 
 function projectForTaskKey(taskKey: string, scope: TaskScope): string {
   if (scope.project) return scope.project
-  const prefix = taskKeyPrefix(taskKey)
-  const matches = projects().filter((project) =>
-    project.settings.keyPrefixes?.some((candidate) => candidate.toUpperCase() === prefix),
-  )
-  if (matches.length === 1) return matches[0]!.name
-  throw new Error(
-    `cannot determine the project for task ${taskKey}; pass --project <project> or register its key prefix`,
-  )
+  const project = projectOwningTaskKey(taskKey, projects())
+  if (project) return project.name
+  throw new Error(taskProjectResolutionRefusal(taskKey))
 }
 
 function requiredHostedDocument(document: TaskDocumentSummary): TaskDocument {
@@ -63,7 +61,7 @@ export async function resolveHostedTaskDocument(
   scope: TaskScope = {},
   hosted?: HostedTaskWriteOptions,
 ): Promise<HostedDocumentContext | null> {
-  if (!UUID.test(value)) {
+  if (!hasRecordIdShape(value)) {
     const label = parseTaskDocumentLabel(value)
     const project = projectForTaskKey(label.taskKey, scope)
     if (!usesHostedRecord(project, hosted)) return null

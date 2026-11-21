@@ -11,6 +11,7 @@ import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
+  HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
@@ -37,6 +38,7 @@ const inFlightId = '01990000-0000-7000-8000-000000008515'
 const noteId = '01990000-0000-7000-8000-000000008517'
 const acknowledgementId = '01990000-0000-7000-8000-000000008518'
 const documentId = '01990000-0000-7000-8000-000000008526'
+const commentId = '01990000-0000-7000-8000-000000008527'
 const projectA = '01990000-0000-7000-8000-000000008519'
 const projectB = '01990000-0000-7000-8000-000000008520'
 const pageIds = [
@@ -123,6 +125,17 @@ function insertMachineDocument(id: string, taskId: string, taskKey: string) {
          VALUES (?,?,?,1,'Plan','body','v1',?,?)`,
       )
       .run(id, taskKey, taskId, at, at)
+  })
+}
+
+function insertMachineComment(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at)
+         VALUES (?,?,?,'comment',?)`,
+      )
+      .run(id, taskKey, taskId, at)
   })
 }
 
@@ -417,6 +430,59 @@ test('direct document and acknowledgement repairs send in separate table batches
   expect(listHostedOutbox()).toEqual([])
   expect((await listIds(HOSTED_DOCUMENT_TABLE)).ids).toContain(documentId)
   expect((await listIds(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)).ids).toContain(acknowledgementId)
+})
+
+test('a refused direct repair still queues task and comment repairs and reports the remedy', async () => {
+  insertMachineTask(taskA, 'DEV-1', 'workshop')
+  insertMachineComment(commentId, taskA, 'DEV-1')
+  insertMachineDocument(documentId, taskA, 'DEV-1')
+  let queuedDuringDrain: ReturnType<typeof listHostedOutbox> = []
+
+  const report = await pushTasks({
+    repair: true,
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    fetch: async () => {
+      throw new Error('direct repair refused')
+    },
+    personalSpace: async () => spaceA,
+    identity: async () => identity,
+    listIds: async () => ({ ids: [], more: false }),
+    registered: () => registered,
+    drain: async () => {
+      queuedDuringDrain = listHostedOutbox()
+      return {
+        queued: queuedDuringDrain.length,
+        sent: 0,
+        rejected: 0,
+        quarantined: 0,
+        dropped: 0,
+        waitingOnRouting: {},
+        waitingOnHostedHub: {},
+        skippedCapability: false,
+      }
+    },
+  })
+
+  expect(queuedDuringDrain).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ table_name: HOSTED_TASK_TABLE, row_id: taskA }),
+      expect.objectContaining({ table_name: HOSTED_COMMENT_TABLE, row_id: commentId }),
+    ]),
+  )
+  expect(report.directRepairFailures).toEqual([
+    expect.objectContaining({
+      table: HOSTED_DOCUMENT_TABLE,
+      label: 'task document repair',
+      reason: expect.stringContaining('direct repair refused'),
+      remedy: `${PLATFORM_SLUG} record pull`,
+    }),
+  ])
+  expect(formatTaskPushReport(report)).toContain(
+    `direct repair failed ${HOSTED_DOCUMENT_TABLE}: task document repair:`,
+  )
+  expect(formatTaskPushReport(report)).toContain(`remedy: ${PLATFORM_SLUG} record pull`)
+  expect(report.ok).toBeFalse()
 })
 
 test('a hosted delete is only-on-machine and --repair restores it through the outbox', async () => {

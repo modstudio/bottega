@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
@@ -33,11 +34,10 @@ import {
 } from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
   hostedTaskWriteOptions,
   taskWriteMode,
 } from './task-write-destination.ts'
-
-export type { TaskDocument, TaskDocumentSummary } from './task-document-types.ts'
 
 type DocumentTask = {
   record_id: string
@@ -49,10 +49,8 @@ type DocumentTask = {
 
 const documentVersion = () => randomBytes(8).toString('hex')
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 function documentRecordId(value: string, scope: TaskScope = {}): string {
-  if (UUID.test(value)) return value.toLowerCase()
+  if (hasRecordIdShape(value)) return value.toLowerCase()
   const label = parseTaskDocumentLabel(value)
   const taskId = resolveTask(db(), label.taskKey, scope.project)
   const recordId = taskDocumentIdentityByNumber(db(), taskId, label.number)
@@ -354,10 +352,7 @@ async function updateHostedTaskDocument(
       `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
     )
   const role = changes.role === undefined ? current.role : documentRole(changes.role)
-  const writeOptions = {
-    ...hostedTaskWriteOptions(project, hosted),
-    conflictRemedy: `${PLATFORM_SLUG} task show ${current.task_key}`,
-  }
+  const writeOptions = hostedTaskChangeSendOptions(current.task_key, project, hosted)
   if (changes.role !== undefined && role)
     await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
   const row: PushedDocument = {
@@ -412,7 +407,8 @@ export async function updateTaskDocument(
     id = current.id
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
-  taskWriteMode(task.project, options.hosted)
+  // Refuses a write the project's mode forbids.
+  void taskWriteMode(task.project, options.hosted)
   assertBodyUpdateVersion(changes.body, expectedVersion)
   const at = nowIso()
   writeTransaction((conn) => {
@@ -463,10 +459,11 @@ export async function deleteTaskDocument(
   const hostedContext = await resolveHostedTaskDocument(value, options.scope, options.hosted)
   if (hostedContext) {
     const removed = hostedContext.document
-    const writeOptions = {
-      ...hostedTaskWriteOptions(hostedContext.project, options.hosted),
-      conflictRemedy: `${PLATFORM_SLUG} task show ${removed.task_key}`,
-    }
+    const writeOptions = hostedTaskChangeSendOptions(
+      removed.task_key,
+      hostedContext.project,
+      options.hosted,
+    )
     await sendHostedChanges(
       'the record',
       [
@@ -494,7 +491,8 @@ export async function deleteTaskDocument(
   const id = removed.id
   const task = taskByRecordId<DocumentTask>(removed.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
-  taskWriteMode(task.project, options.hosted)
+  // Refuses a write the project's mode forbids.
+  void taskWriteMode(task.project, options.hosted)
   return writeTransaction((conn) => {
     const row = conn
       .query<Omit<TaskDocument, 'label'>, [string]>(

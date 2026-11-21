@@ -417,6 +417,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-document.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-id.ts',
       'bun:sqlite',
       'node:crypto',
       '../../shared/record/schema.ts',
@@ -440,6 +441,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-document-hosted.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-id.ts',
       './db.ts',
       './projects.ts',
       './task-hosted-record.ts',
@@ -502,6 +504,7 @@ export const hubModuleSpecs = [
       './task-types.ts',
       './task-detail.ts',
       './task-document.ts',
+      './task-document-types.ts',
       './task-row.ts',
       './task-write-destination.ts',
       './tracker-capabilities.ts',
@@ -512,6 +515,7 @@ export const hubModuleSpecs = [
     allowed: [
       './db.ts',
       './task-document.ts',
+      './task-document-types.ts',
       './task-identity.ts',
       './task-row.ts',
       './task-types.ts',

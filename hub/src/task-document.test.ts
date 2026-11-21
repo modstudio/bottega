@@ -271,6 +271,25 @@ describe('task documents', () => {
     expect(documentOutboxRows()).toEqual([])
   })
 
+  test('hosted delete removes an existing mirror after the record accepts it', async () => {
+    const taskRecordId = seed(hostedTask.key, hostedTask.project)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task_document
+            (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+           VALUES (?,?,?,1,NULL,'Plan','record body','v-record',?,?)`,
+        )
+        .run(hostedDocumentId, hostedTask.key, taskRecordId, hostedStamp, hostedStamp),
+    )
+    const stub = recordOnlyDocumentStub()
+
+    await deleteTaskDocument('LOC-2527/1', { hosted: stub.hosted })
+
+    expect(mirroredDocumentRows()).toEqual([])
+    expect(documentOutboxRows()).toEqual([])
+  })
+
   test('hosted delete leaves a local mirror untouched when the record is unreachable', async () => {
     const taskRecordId = seed(hostedTask.key, hostedTask.project)
     writeTransaction((conn) =>

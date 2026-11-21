@@ -17,6 +17,22 @@ export function taskKeyPrefix(taskKey: string): string | undefined {
   return taskKey.toUpperCase().match(TASK_KEY_PATTERN)?.[1]
 }
 
+export function projectOwningTaskKey<T extends { settings: { keyPrefixes?: readonly string[] } }>(
+  taskKey: string,
+  registered: readonly T[],
+): T | undefined {
+  const prefix = taskKeyPrefix(taskKey)
+  if (!prefix) return undefined
+  const matches = registered.filter((project) =>
+    project.settings.keyPrefixes?.some((candidate) => candidate.toUpperCase() === prefix),
+  )
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+export function taskProjectResolutionRefusal(taskKey: string): string {
+  return `cannot determine the project for task ${taskKey}; pass --project <project> or register its key prefix`
+}
+
 export function isTaskKeyPrefix(value: string): boolean {
   return TASK_KEY_PREFIX_PATTERN.test(value)
 }

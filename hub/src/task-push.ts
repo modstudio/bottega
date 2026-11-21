@@ -70,24 +70,32 @@ type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFet
 
 const DIRECT_REPAIR_COPY = {
   [HOSTED_DOCUMENT_TABLE]: {
-    subject: 'task document repair',
-    conflictRemedy: `${PLATFORM_SLUG} record pull`,
+    label: 'task document repair',
+    remedy: `${PLATFORM_SLUG} record pull`,
   },
   [HOSTED_NOTE_TABLE]: {
-    subject: 'note acknowledgement repair',
-    conflictRemedy: `${PLATFORM_SLUG} note list`,
+    label: 'note acknowledgement repair',
+    remedy: `${PLATFORM_SLUG} note list`,
   },
   [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
-    subject: 'note acknowledgement repair',
-    conflictRemedy: `${PLATFORM_SLUG} note list`,
+    label: 'note acknowledgement repair',
+    remedy: `${PLATFORM_SLUG} note list`,
   },
-} as const satisfies Record<DirectRecordTable, { subject: string; conflictRemedy: string }>
+} as const satisfies Record<DirectRecordTable, { label: string; remedy: string }>
+
+type DirectRepairFailure = {
+  table: DirectRecordTable
+  label: string
+  reason: string
+  remedy: string
+}
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
   unroutable: UnroutableRows[]
   stuck: StuckRow[]
   unrepairable: UnrepairableRow[]
+  directRepairFailures: DirectRepairFailure[]
   drain: HostedOutboxReport | null
   ok: boolean
 }
@@ -262,40 +270,50 @@ async function sendDirectRepairs(
   candidates: readonly RepairCandidate[],
   spaces: readonly SpaceAudit[],
   requestOptions: RequestOptions,
-): Promise<number> {
+): Promise<{ sent: number; failures: DirectRepairFailure[] }> {
   const directCandidates = new Map(
     candidates
       .filter((candidate) => DIRECT_RECORD_TABLES.has(candidate.table))
       .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
   )
   let sent = 0
+  const failures: DirectRepairFailure[] = []
   for (const space of spaces) {
     for (const directTable of DIRECT_RECORD_TABLE_NAMES) {
-      const table = space.tables.find((candidate) => candidate.table === directTable)
-      const changes = (table?.machineOnly ?? []).flatMap((id) => {
-        const candidate = directCandidates.get(`${directTable}:${id}`)
-        if (!candidate) return []
-        const loaded = loadOutboxChange(db(), {
-          table_name: candidate.table,
-          row_id: candidate.id,
-          operation: 'upsert',
-          fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
-        })
-        if (!loaded)
-          throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
-        return [loaded.change]
-      })
-      if (!changes.length) continue
       const copy = DIRECT_REPAIR_COPY[directTable]
-      await sendHostedChanges(copy.subject, [changes], {
-        ...requestOptions,
-        recordSpace: space.spaceId,
-        conflictRemedy: copy.conflictRemedy,
-      })
-      sent += changes.length
+      try {
+        const table = space.tables.find((candidate) => candidate.table === directTable)
+        const changes = (table?.machineOnly ?? []).flatMap((id) => {
+          const candidate = directCandidates.get(`${directTable}:${id}`)
+          if (!candidate) return []
+          const loaded = loadOutboxChange(db(), {
+            table_name: candidate.table,
+            row_id: candidate.id,
+            operation: 'upsert',
+            fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
+          })
+          if (!loaded)
+            throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
+          return [loaded.change]
+        })
+        if (!changes.length) continue
+        await sendHostedChanges(copy.label, [changes], {
+          ...requestOptions,
+          recordSpace: space.spaceId,
+          conflictRemedy: copy.remedy,
+        })
+        sent += changes.length
+      } catch (cause) {
+        failures.push({
+          table: directTable,
+          label: copy.label,
+          reason: cause instanceof Error ? cause.message : String(cause),
+          remedy: copy.remedy,
+        })
+      }
     }
   }
-  return sent
+  return { sent, failures }
 }
 
 function drainAudit(drain: HostedOutboxReport): DrainAudit {
@@ -346,10 +364,11 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       unroutable: plan.unroutable,
       stuck: plan.stuck,
       unrepairable: plan.unrepairable,
+      directRepairFailures: [],
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
-  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
+  const direct = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   queueRepairs(plan.repair)
   const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
@@ -357,14 +376,15 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
     push: (changes, pushOptions) =>
       hostedPushChanges(changes, { ...requestOptions, ...pushOptions }),
   })
-  const drain = { ...drained, sent: drained.sent + directlySent }
+  const drain = { ...drained, sent: drained.sent + direct.sent }
   return {
     spaces: plan.spaces,
     unroutable: plan.unroutable,
     stuck: plan.stuck,
     unrepairable: plan.unrepairable,
+    directRepairFailures: direct.failures,
     drain,
-    ok: taskPushVerdict(plan, drainAudit(drain)),
+    ok: direct.failures.length === 0 && taskPushVerdict(plan, drainAudit(drain)),
   }
 }
 
@@ -403,6 +423,13 @@ function unrepairableLines(rows: readonly UnrepairableRow[]): string[] {
   return rows.flatMap((row) => [
     `unrepairable ${row.table} ${row.id} ${row.reason}`,
     `  remedy: ${row.remedy}`,
+  ])
+}
+
+function directRepairFailureLines(failures: readonly DirectRepairFailure[]): string[] {
+  return failures.flatMap((failure) => [
+    `direct repair failed ${failure.table}: ${failure.label}: ${failure.reason}`,
+    `  remedy: ${failure.remedy}`,
   ])
 }
 
@@ -459,6 +486,7 @@ export function formatTaskPushReport(report: TaskPushReport): string {
     for (const id of row.ids) lines.push(`  ${id}`)
   }
   lines.push(...unrepairableLines(report.unrepairable))
+  lines.push(...directRepairFailureLines(report.directRepairFailures))
   if (report.drain) {
     lines.push(
       `drain queued=${report.drain.queued} sent=${report.drain.sent} rejected=${report.drain.rejected} quarantined=${report.drain.quarantined}`,
