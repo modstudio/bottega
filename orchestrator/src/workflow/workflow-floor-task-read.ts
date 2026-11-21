@@ -11,6 +11,7 @@ import { readFreshHubTaskThroughCli } from './workflow-task-reference.ts'
 export type HubTaskRead = {
   recordId?: string
   key: string
+  updatedAt: string | null
   status: string | null
   statusCategory: string | null
   commentIds: Array<string | number>
@@ -40,6 +41,7 @@ export function namesMissingTaskDocument(text: string, value: string): boolean {
 type HubTaskReadJson = {
   task?: {
     key?: string
+    updated_at?: string | null
     record_id?: string
     status?: string | null
     status_category?: string | null
@@ -67,6 +69,7 @@ export function hubTaskReadFromJson(key: string, parsed: unknown): HubTaskRead {
   return {
     recordId: read.task.record_id,
     key: read.task.key,
+    updatedAt: read.task.updated_at ?? null,
     status: read.task.status ?? null,
     statusCategory: read.task.status_category ?? null,
     commentIds: carriedCommentIds(
