@@ -770,8 +770,7 @@ describe('filesystem orphan under-lock ruling', () => {
     {
       name: 'a claimed worktree is kept before liveness checks',
       facts: {
-        claimingRuns: ['claim-run'],
-        pointerRuns: [],
+        claimants: ['claim-run'],
         sharers: 0,
         lockedAlive: false,
       },
@@ -785,8 +784,7 @@ describe('filesystem orphan under-lock ruling', () => {
     {
       name: 'a remembered run pointer keeps the worktree',
       facts: {
-        claimingRuns: [],
-        pointerRuns: ['pointer-run'],
+        claimants: ['pointer-run'],
         sharers: 0,
         lockedAlive: false,
       },
@@ -799,7 +797,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'sharers before removal refuse',
-      facts: { claimingRuns: [], pointerRuns: [], sharers: 1, lockedAlive: false },
+      facts: { claimants: [], sharers: 1, lockedAlive: false },
       expected: {
         action: 'shared-before',
         keepLine: 'acquired by run(s)',
@@ -809,7 +807,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'sharers take precedence when the tree is also live',
-      facts: { claimingRuns: [], pointerRuns: [], sharers: 1, lockedAlive: true },
+      facts: { claimants: [], sharers: 1, lockedAlive: true },
       expected: {
         action: 'shared-before',
         keepLine: 'acquired by run(s)',
@@ -819,7 +817,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'an orphan that becomes live under the lock is kept',
-      facts: { claimingRuns: [], pointerRuns: [], sharers: 0, lockedAlive: true },
+      facts: { claimants: [], sharers: 0, lockedAlive: true },
       expected: {
         action: 'live',
         keepLine: 'live — kept',
@@ -829,7 +827,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'an unshared non-live orphan proceeds to removal',
-      facts: { claimingRuns: [], pointerRuns: [], sharers: 0, lockedAlive: false },
+      facts: { claimants: [], sharers: 0, lockedAlive: false },
       expected: { action: 'remove', cleanupFailed: false },
     },
   ]

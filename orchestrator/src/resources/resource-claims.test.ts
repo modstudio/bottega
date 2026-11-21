@@ -4,6 +4,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   claimDatabaseName,
+  claimedWorktreeRefusal,
   claimIndex,
   claimKindForCreation,
   claimRecipePort,
@@ -127,6 +128,24 @@ describe('resource claim decisions', () => {
     ])
     expect(runsClaimingWorktreePath(database, path, claimedRun)).toEqual([])
     expect(runsClaimingWorktreePath(database, '/tmp/resource-claim-missing-tree')).toEqual([])
+  })
+
+  test("a child turn excludes its conversation root's own worktree claim", () => {
+    const database = db()
+    const root = resourceRun()
+    const child = resourceRun(null, root)
+    const path = '/tmp/resource-claim-chain-tree'
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
+          identity,label,state,claimed_at,settled_at)
+         VALUES (?,?,?,?, 'worktree', ?,NULL,NULL,'claimed',?,NULL)`,
+      )
+      .run(newRecordId(), root, child, null, path, nowIso())
+
+    expect(runsClaimingWorktreePath(database, path, child)).toEqual([])
+    expect(claimedWorktreeRefusal(database, path, child)).toBeNull()
   })
 
   test('the lowest free port selects the band start when the band is empty', () => {

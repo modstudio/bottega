@@ -429,8 +429,7 @@ export function decideFilesystemOrphanCandidate(
 }
 
 export type FilesystemOrphanUnderLockFacts = {
-  claimingRuns: string[]
-  pointerRuns: string[]
+  claimants: string[]
   sharers: number
   lockedAlive: boolean
 }
@@ -459,11 +458,10 @@ export type FilesystemOrphanUnderLockRuling =
 export function decideFilesystemOrphanUnderLock(
   facts: FilesystemOrphanUnderLockFacts,
 ): FilesystemOrphanUnderLockRuling {
-  const claimants = [...new Set([...facts.claimingRuns, ...facts.pointerRuns])]
-  if (claimants.length > 0) {
+  if (facts.claimants.length > 0) {
     return {
       action: 'claimed',
-      keepLine: `claimed by run(s) ${claimants.join(', ')} — kept`,
+      keepLine: `claimed by run(s) ${facts.claimants.join(', ')} — kept`,
       keepReason: 'claimed by run',
       cleanupFailed: false,
     }

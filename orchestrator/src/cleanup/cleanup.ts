@@ -10,8 +10,9 @@ import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../projec
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
 import {
+  claimedWorktreeRefusal,
   claimSettlement,
-  runsClaimingWorktreePath,
+  isSharedReaderWorktreeClaim,
   settleClaims,
 } from '../resources/resource-claims.ts'
 import {
@@ -496,23 +497,13 @@ function releaseSharedWorktreePointer(
   throw claim
 }
 
-function claimedWorktreeRefusal(path: string, actingRunId: string): string | null {
-  const claimants = runsClaimingWorktreePath(db(), path, actingRunId)
-  if (!claimants.length) return null
-  return (
-    `worktree ${path} is still claimed by other run(s): ` +
-    claimants.map((row) => row.record_id).join(', ') +
-    `; release the claim with ${PLATFORM_SLUG} run close-out ${claimants[0]!.record_id}`
-  )
-}
-
 function assertNoOtherWorktreeClaim(path: string, actingRunId: string): void {
-  const refusal = claimedWorktreeRefusal(path, actingRunId)
+  const refusal = claimedWorktreeRefusal(db(), path, actingRunId)
   if (refusal) throw new Error(refusal)
 }
 
 function assertNoWorktreeClaimAcquiredDuringCleanup(path: string, actingRunId: string): void {
-  const refusal = claimedWorktreeRefusal(path, actingRunId)
+  const refusal = claimedWorktreeRefusal(db(), path, actingRunId)
   if (!refusal) return
   throw new Error(
     `another run claimed ${path} during cleanup; the tree has already been removed and ` +
@@ -527,7 +518,6 @@ function worktreeWasReleasedBeforeDiscard(
 ): boolean {
   const released = !existsSync(row.worktree)
   assertDiscardTreeOwnership(row, repoRoot, force)
-  assertNoOtherWorktreeClaim(row.worktree, row.record_id)
   return released
 }
 
@@ -543,6 +533,10 @@ export function discardWorktree(
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
     const treeWasAlreadyReleased = worktreeWasReleasedBeforeDiscard(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
+    if (sharers.length && isSharedReaderWorktreeClaim(db(), row.worktree)) {
+      releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
+    }
+    assertNoOtherWorktreeClaim(row.worktree, row.record_id)
     if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
 
     const minted = mintedBranchForCleanup(row)

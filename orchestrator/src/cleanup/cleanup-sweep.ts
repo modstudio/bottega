@@ -53,12 +53,7 @@ import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { inspectTreeOwnership, markedWorktreeSource } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import {
-  landingInFlight,
-  orphanClaimRuling,
-  reconcileAbsentClaims,
-  rememberedWorktrees,
-} from './claim-reconciliation.ts'
+import { landingInFlight, reconcileAbsentClaims } from './claim-reconciliation.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -84,7 +79,9 @@ import { sweepHubTasks } from './cleanup-sweep-hub-tasks.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
 import {
   observeNamedRunForSweep,
+  orphanClaimRuling,
   orphanCandidateDecision,
+  rememberedWorktrees,
 } from './cleanup-sweep-orphan-candidate.ts'
 import {
   finishRemovedOrphan,

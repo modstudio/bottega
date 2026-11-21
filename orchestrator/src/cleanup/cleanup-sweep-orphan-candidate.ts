@@ -1,10 +1,14 @@
 // concern: cleanup sweep filesystem orphan candidate
 
+import type { Database } from 'bun:sqlite'
 import { basename } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { db } from '../database/db.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import type { Project } from '../project/projects.ts'
+import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
+import { recordedWorktreeSharerRunIds } from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
@@ -23,7 +27,37 @@ import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanCandidate,
+  decideFilesystemOrphanUnderLock,
 } from './cleanup-sweep-decisions.ts'
+
+export function rememberedWorktrees(database: Database): Set<string> {
+  const rows = database.query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
+    worktree: string
+  }[]
+  return new Set(rows.map((row) => realpathOrSpelled(row.worktree)))
+}
+
+function filesystemOrphanClaimants(database: Database, path: string): string[] {
+  return [
+    ...new Set([
+      ...runsClaimingWorktreePath(database, path).map((row) => row.record_id),
+      ...recordedWorktreeSharerRunIds(database, path),
+    ]),
+  ]
+}
+
+export function orphanClaimRuling(
+  database: Database,
+  path: string,
+  sharers: number,
+  lockedAlive: boolean,
+) {
+  return decideFilesystemOrphanUnderLock({
+    claimants: filesystemOrphanClaimants(database, path),
+    sharers,
+    lockedAlive,
+  })
+}
 
 type NamedRun = { record_id: string; status: string; alive: boolean }
 export type NamedRunLookup =

@@ -5,6 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
@@ -100,8 +101,15 @@ export function isSharedReaderWorktreeClaim(database: Database, path: string): b
 export function runsClaimingWorktreePath(
   database: Database,
   path: string,
-  excludeRootRunId?: string,
+  excludeRunId?: string,
 ): ClaimedWorktreeOwner[] {
+  const excludedRoot = excludeRunId
+    ? ((database
+        .query(
+          'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+        )
+        .get(excludeRunId) as { root_record_id: string } | null)?.root_record_id ?? excludeRunId)
+    : null
   const canonicalPath = realpathOrSpelled(path)
   const claimed = database
     .query(
@@ -114,7 +122,24 @@ export function runsClaimingWorktreePath(
     .all() as ClaimedWorktreeOwner[]
   return claimed.filter(
     (row) =>
-      row.record_id !== excludeRootRunId && realpathOrSpelled(row.allocation_key) === canonicalPath,
+      row.record_id !== excludedRoot && realpathOrSpelled(row.allocation_key) === canonicalPath,
+  )
+}
+
+/** One refusal for every surface that protects a worktree held by another conversation. */
+export function claimedWorktreeRefusal(
+  database: Database,
+  path: string,
+  actingRunId?: string,
+): string | null {
+  const claimants = runsClaimingWorktreePath(database, path, actingRunId)
+  if (!claimants.length) return null
+  const ids = claimants.map((row) => row.record_id)
+  const first = ids[0]!
+  return (
+    `worktree ${path} is in use by run(s) ${ids.join(', ')}; ` +
+    `once run ${first} is finished with the tree, close it out with ` +
+    `${PLATFORM_SLUG} run close-out ${first}`
   )
 }
 
