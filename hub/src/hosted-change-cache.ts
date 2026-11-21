@@ -153,7 +153,7 @@ function applyDeleteChange(
   else counts.deletesApplied += 1
 }
 
-function applyOneChange(
+function applyOneChangeUnchecked(
   conn: Database,
   change: HostedPreparedChange,
   spaceId: string,
@@ -208,6 +208,21 @@ function applyOneChange(
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else counts.upsertsChanged += 1
+}
+
+function applyOneChange(
+  conn: Database,
+  change: HostedPreparedChange,
+  spaceId: string,
+  family: HostedChangeFamily,
+  counts: SpaceCounts,
+) {
+  try {
+    applyOneChangeUnchecked(conn, change, spaceId, family, counts)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`${change.table} ${change.id}: ${message}`, { cause })
+  }
 }
 
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'

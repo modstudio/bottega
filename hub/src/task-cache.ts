@@ -262,6 +262,13 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
       `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
+  if (row.role !== null)
+    conn
+      .query(
+        `UPDATE task_document SET role=NULL
+         WHERE task_record_id=? AND role=? AND (record_id IS NULL OR record_id<>?)`,
+      )
+      .run(taskRecordId, row.role, row.id)
   conn
     .query(
       `INSERT INTO task_document
