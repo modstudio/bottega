@@ -426,4 +426,19 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       ]),
     ),
   ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [5, 5] })
+
+  const readStageSummaries = taskFlowClient.readTaskFlowStageSummaries!
+  installRecordApiClient({
+    ...taskFlowClient,
+    readTaskFlowStageSummaries: async (input) => {
+      const result = await readStageSummaries(input)
+      return {
+        ...result,
+        items: result.items.filter((item) => item.stage.id !== hosted.stage.id),
+      }
+    },
+  })
+  await expect(listWorkflowCursors({ session: context.session }, database)).rejects.toThrow(
+    'workflow cursor fixture#1 was listed, but its stage summary could not be read; retry `bottega workflow cursors`',
+  )
 })

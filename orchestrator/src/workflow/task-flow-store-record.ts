@@ -218,6 +218,14 @@ class RecordTaskFlowReadStore {
     return read(id)
   }
 
+  private openObligationRows(stage: HostedStage): TaskFlowOpenObligationRow[] {
+    return (stage.obligations ?? [])
+      .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
+      .map((obligation) =>
+        openObligationRow(obligation, stage.number, this.projectName(stage.projectId)),
+      )
+  }
+
   async stageSummaries(recordIds: readonly string[]) {
     const read = this.client.readTaskFlowStageSummaries
     if (!read)
@@ -233,15 +241,7 @@ class RecordTaskFlowReadStore {
     }
     return items.map((item) => ({
       stage: stageRow(item, false),
-      obligations: item.stage.obligations
-        .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
-        .map((obligation) =>
-          openObligationRow(
-            obligation,
-            item.stage.number,
-            required(item.stage.projectName, 'project name'),
-          ),
-        ),
+      obligations: this.openObligationRows(item.stage),
     }))
   }
 
@@ -518,10 +518,7 @@ class RecordTaskFlowReadStore {
   async openObligations(stageRecordId: string) {
     const result = await this.byId(stageRecordId)
     if (!result) return []
-    const number = result.stage.number
-    return (result.stage.obligations ?? [])
-      .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
-      .map((row) => openObligationRow(row, number, this.projectName(result.stage.projectId)))
+    return this.openObligationRows(result.stage)
   }
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
     const read = this.client.readTaskFlowObligation

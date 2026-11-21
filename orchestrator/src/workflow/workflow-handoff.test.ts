@@ -412,6 +412,11 @@ test('brief lineage lists a carried run under the real handoff successor', async
     evidence: { artifacts: [await attachWorkflowFloorArtifact(fixture.row, context, fixture.d)] },
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
+  const handoffLinks = await workflowCursorHandoffLinks([fixture.row, successor], fixture.d)
+  expect(handoffLinks.map(({ record_id }) => record_id)).toEqual([
+    fixture.row.record_id,
+    successor.record_id,
+  ])
   const selected = selectBriefInFlight(
     [
       {
@@ -424,7 +429,7 @@ test('brief lineage lists a carried run under the real handoff successor', async
     ],
     [successor],
     [],
-    await workflowCursorHandoffLinks([successor], fixture.d),
+    handoffLinks,
   )
 
   expect(selected.runs).toEqual([])

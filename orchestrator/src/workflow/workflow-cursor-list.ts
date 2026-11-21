@@ -15,7 +15,7 @@ import {
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
-import { floorFromObligationRow } from './workflow-obligation-floor.ts'
+import { openObligationFromRow } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
 
 export type CursorListOptions = {
@@ -40,7 +40,7 @@ export async function workflowCursorHandoffLinks(
   cursors: readonly Pick<WorkflowCursorListRow, 'record_id' | 'handed_off_from_record_id'>[],
   d: Database = db(),
 ) {
-  return [
+  const links = [
     ...cursors.map((cursor) => ({
       record_id: cursor.record_id,
       handed_off_from_record_id: cursor.handed_off_from_record_id,
@@ -52,6 +52,7 @@ export async function workflowCursorHandoffLinks(
       ),
     )),
   ]
+  return [...new Map(links.map((link) => [link.record_id, link])).values()]
 }
 
 /** Reads the run-owned live bindings for the selected workflow cursors. */
@@ -129,14 +130,12 @@ export async function listWorkflowCursors(
             },
             cursorAutonomy(row),
           )
-      const open = closed
-        ? []
-        : (summaries.get(row.record_id)?.obligations ?? []).map((item) => ({
-            id: item.id,
-            stepOrdinal: item.stepOrdinal,
-            stepSlug: item.stepSlug,
-            floorDefinition: floorFromObligationRow(item),
-          }))
+      const summary = summaries.get(row.record_id)
+      if (!closed && !summary)
+        throw new Error(
+          `workflow cursor ${row.project}#${row.id} was listed, but its stage summary could not be read; retry \`bottega workflow cursors\``,
+        )
+      const open = closed ? [] : summary.obligations.map(openObligationFromRow)
       const liveRuns = liveRunsByCursor.get(row.record_id) ?? []
       const listed = {
         ...row,

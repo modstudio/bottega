@@ -210,6 +210,22 @@ class SqliteTaskFlowStore {
       .get(recordId)
   }
 
+  private openObligationRows(
+    recordIds: readonly string[],
+  ): Array<TaskFlowOpenObligationRow & { cursor_record_id: string }> {
+    if (!recordIds.length) return []
+    const placeholders = recordIds.map(() => '?').join(',')
+    return this.database
+      .query<TaskFlowOpenObligationRow & { cursor_record_id: string }, string[]>(
+        `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
+                step_ordinal AS stepOrdinal,step_slug AS stepSlug
+         FROM workflow_obligation
+         WHERE cursor_record_id IN (${placeholders})
+           AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
+      )
+      .all(...recordIds)
+  }
+
   stageSummaries(recordIds: readonly string[]): TaskFlowStageSummaryRow[] {
     if (!recordIds.length) return []
     const placeholders = recordIds.map(() => '?').join(',')
@@ -219,15 +235,7 @@ class SqliteTaskFlowStore {
          WHERE cursor.record_id IN (${placeholders})`,
       )
       .all(...recordIds)
-    const obligations = this.database
-      .query<TaskFlowOpenObligationRow & { cursor_record_id: string }, string[]>(
-        `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
-                step_ordinal AS stepOrdinal,step_slug AS stepSlug
-         FROM workflow_obligation
-         WHERE cursor_record_id IN (${placeholders})
-           AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
-      )
-      .all(...recordIds)
+    const obligations = this.openObligationRows(recordIds)
     return stages.map((stage) => ({
       stage,
       obligations: obligations.filter((row) => row.cursor_record_id === stage.record_id),
@@ -524,14 +532,7 @@ class SqliteTaskFlowStore {
   }
 
   openObligations(stageRecordId: string): TaskFlowOpenObligationRow[] {
-    return this.database
-      .query<TaskFlowOpenObligationRow, [string]>(
-        `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},
-                step_ordinal AS stepOrdinal, step_slug AS stepSlug
-         FROM workflow_obligation
-         WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
-      )
-      .all(stageRecordId)
+    return this.openObligationRows([stageRecordId]).map(({ cursor_record_id: _, ...row }) => row)
   }
 
   obligationByRecordId(recordId: string): TaskFlowObligationRow | null {
