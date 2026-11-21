@@ -18,6 +18,7 @@ import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import {
+  CHECKOUT_CLI_BINARY_ENV,
   type CheckoutCliFreshnessDecision,
   checkoutCliBinaryEnvironment,
 } from './checkout-cli-freshness.ts'
@@ -89,7 +90,7 @@ export function childEnv(
     ...workerLaunchEnv(workerHarnessName(a)),
   }
   if (!includeStore) delete child.BOTTEGA_ORCHESTRATOR_DB
-  delete child.BOTTEGA_CLI_BINARY
+  delete child[CHECKOUT_CLI_BINARY_ENV]
   Object.assign(child, checkoutCliBinaryEnvironment(child, cliFreshnessDecision))
   return child
 }

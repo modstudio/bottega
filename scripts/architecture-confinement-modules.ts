@@ -116,7 +116,6 @@ export const confinementModules: ConfinementModule[] = [
     '../branch/branch-ref-guard.ts',
     '../database/checkout-cli-build.ts',
     '../git/git-environment.ts',
-    '../mcp/mcp-probe.ts',
     '../project/projects.ts',
     '../resources/ref-guard.ts',
     '../run/run-worker-home.ts',

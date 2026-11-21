@@ -11,6 +11,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { gooseProviderFile } from '../agent/goose-provider.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -644,7 +645,7 @@ export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   return [...acpWorkerChannel(opts), ...acpProjectMcpServers(opts.projectMcpSelection)]
 }
 
-export function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
+function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
   if (!opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN) return []
   if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
     return [
@@ -667,7 +668,7 @@ export function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
         'BOTTEGA_RUN_ID',
         'BOTTEGA_RUN_TOKEN',
         'BOTTEGA_ORCHESTRATOR_DB',
-        'BOTTEGA_CLI_BINARY',
+        CHECKOUT_CLI_BINARY_ENV,
       ].flatMap((name) => (opts.env[name] ? [{ name, value: opts.env[name]! }] : [])),
     },
   ]

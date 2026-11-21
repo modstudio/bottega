@@ -9,12 +9,14 @@ export type InstallEnvironment = Record<string, string | undefined>
 
 /** The platform-specific installation-root override is derived from the one canonical slug. */
 export const INSTALL_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_HOME`
-const CHECKOUT_ROOT_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECKOUT_ROOT`
+export const CHECKOUT_ROOT_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECKOUT_ROOT`
+/** The host-selected checkout CLI binary; bin/bottega is the shell reader of this name. */
+export const CHECKOUT_CLI_BINARY_ENV = `${PLATFORM_SLUG.toUpperCase()}_CLI_BINARY`
 
 declare const BOTTEGA_COMPILED_CHECKOUT_BUILD: boolean | undefined
 
 /** True only in the checkout-specific compiled CLI built by machine update. */
-function compiledCheckoutCli(): boolean {
+export function compiledCheckoutCli(): boolean {
   return (
     typeof BOTTEGA_COMPILED_CHECKOUT_BUILD !== 'undefined' &&
     BOTTEGA_COMPILED_CHECKOUT_BUILD === true

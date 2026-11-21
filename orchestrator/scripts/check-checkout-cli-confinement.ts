@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shared/brand.ts'
+import { CHECKOUT_CLI_BINARY_ENV, CHECKOUT_ROOT_ENV } from '../../shared/install-root.ts'
 import { ORCHESTRATOR_DATABASE_ENV, STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import type { Agent } from '../src/agent/agents.ts'
 import type { Project } from '../src/project/projects.ts'
@@ -91,9 +92,9 @@ async function probeConfinedTools(
     input.forceSource,
   )
   if (input.forceSource) {
-    if (runEnvironment.BOTTEGA_CLI_BINARY)
-      throw new Error('forced source guard unexpectedly selected BOTTEGA_CLI_BINARY')
-  } else if (!runEnvironment.BOTTEGA_CLI_BINARY) {
+    if (runEnvironment[CHECKOUT_CLI_BINARY_ENV])
+      throw new Error(`forced source guard unexpectedly selected ${CHECKOUT_CLI_BINARY_ENV}`)
+  } else if (!runEnvironment[CHECKOUT_CLI_BINARY_ENV]) {
     throw new Error('host judged the checkout binary not current')
   }
   const outside = fixtureProject('outside-project', 'outside-project', input.cwd)
@@ -118,7 +119,9 @@ async function probeConfinedTools(
     outPath: join(input.runtimeDir, 'output'),
     startedAt: Date.now(),
   }
-  const server = runtime.transport.acpWorkerChannel(opts)[0]
+  const server = runtime.transport
+    .acpMcpServers(opts)
+    .find((entry) => entry.name === WORKER_MCP_SERVER_NAME)
   if (!server || !('command' in server) || !server.command) {
     throw new Error('production ACP worker channel did not return a stdio server')
   }
@@ -164,8 +167,8 @@ async function main(): Promise<void> {
     BOTTEGA_RUN_TOKEN: 'checkout-cli-confinement-token',
   }
   delete environment[ORCHESTRATOR_DATABASE_ENV]
-  delete environment.BOTTEGA_CLI_BINARY
-  delete environment.BOTTEGA_CHECKOUT_ROOT
+  delete environment[CHECKOUT_CLI_BINARY_ENV]
+  delete environment[CHECKOUT_ROOT_ENV]
   let closeAskLoopback: (() => Promise<void>) | undefined
   try {
     migrateTemporaryStore(checkout, environment)
