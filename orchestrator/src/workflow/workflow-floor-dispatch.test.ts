@@ -156,6 +156,57 @@ test('run-chain evidence includes only the requested cursor and step', () => {
   ])
 })
 
+test('earlier-step evidence excludes a turn started after current-step activation', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'blast-radius', root)
+
+  expect(
+    gatherEarlierStepWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+      db(),
+    ),
+  ).toEqual([])
+})
+
+test('earlier-step evidence excludes a chain also bound at the current step', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  const currentStepTurn = addRun({
+    agent: 'codex',
+    job: 'implement',
+    parent: root,
+    turn: 2,
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(cursorRecordId, 'blast-radius', root)
+  bind.run(cursorRecordId, 'apply-findings', currentStepTurn)
+
+  expect(
+    gatherEarlierStepWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+      db(),
+    ),
+  ).toEqual([])
+})
+
 test('a root that is ok while its latest turn runs refuses the bound step', () => {
   const cursorRecordId = newRecordId()
   const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
