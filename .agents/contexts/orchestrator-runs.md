@@ -40,9 +40,9 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 - **Every wait, refusal and invalidation on a shared resource is recorded where it happens** (`contention`, same transaction). `bottega machine health` prices the class. Never inferred later, never routing evidence.
 - **A reclaim removes exactly the acquisition it classified as stale, never a replacement** (`project-lock.ts:reclaimStaleProjectLock`, incarnation id after rename). Malformed or locale-dependent process output is unknown, never stale (`project-lock.ts:staleProjectLockHolder`, `project-lock.ts:processStartTime`).
 
-Detach claims an id before routing; the asking session owns it. `bottega run result` exits `2` for unfinished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the prompt to the same agent and keeps the failure. Writing continues via `bottega run continue` in its worktree. **Keep both ends of a failure. Both claim paths set every meaningful column**, including `parent_run_id` and `turn`.
+Detach claims an id before routing; the asking session owns it. `bottega run result` exits `2` for unfinished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the prompt to its agent and keeps the failure. Writing continues via `bottega run continue` in its worktree. **Keep both ends of a failure. Both claim paths set every meaningful column**, including `parent_run_id` and `turn`.
 
-A keyed start or later turn needs the session's open cursor for the task unless its chain is bound; compose one. Only Shmuel Barkin overrides, never on answer.
+A turn needs the session's open cursor: the task's, or when unkeyed the project's keyless one (never for a repo-writing job), unless its chain is bound; compose one. Only Shmuel Barkin overrides, never on answer.
 
 # Delegating implementation
 
@@ -52,11 +52,11 @@ Workers do not register Git worktrees; they make baseline copies under `$BOTTEGA
 
 **Done describes work, not knowledge.** Consult a landed task's record instead of deriving it.
 
-`bottega run discard` and `bottega run abandon` remove the tree but retain uniquely reachable commits; refusals name their count and forced-deletion command. Empty and non-unique branches discard routinely; merged branches are recoverable from GitHub pull requests.
+`bottega run discard` and `bottega run abandon` remove the tree but retain uniquely reachable commits; refusals name their count and forced-deletion command. Empty and non-unique branches discard routinely; merged ones are recoverable from their pull requests.
 
 **`writesRepo` is declared, never inferred from `readsRepo`.** Codex `--approve-for-me` is required for MCP and implies workspace-write; `mcpImpliesWrite` declares that, and any writable sandbox is put in a worktree whether or not the job writes. The failure is silent: an agent that cannot write reports success having changed nothing.
 
-**`resumable` must mean the orchestrator can actually resume it, not that the CLI has a flag.**
+**`resumable` must mean the orchestrator can resume it, not that the CLI has a flag.**
 
 **A conversation is one unit of work.** Later turns are rows; only the root is evidence and it carries the chain's outcome.
 
@@ -90,7 +90,7 @@ A run's tree closes when it terminalises. Close-out and `bottega machine sweep` 
 
 The durable protocol is `status: blocked` in the return contract. The live channel is `ask_orchestrator`, registered with `bottega machine setup-ask`. The worker calls it mid-task; the turn is never lost. **It always answers.** On timeout it instructs the worker to stop and report the question in the final answer, so the fast path degrades into the durable one rather than a hang. The question stays open either way.
 
-**The run id comes from the environment, never from the tool arguments.**
+**The run id comes from the environment, never the tool arguments.**
 
 **A writing job gets MCP whether or not the caller asked for it.**
 
@@ -108,7 +108,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **The child does not inherit this session's identity, or an Anthropic key.** Every `CLAUDE_*` and `ANTHROPIC_*` variable is stripped.
 
-**Every run is bounded and every child is reaped.** `timeoutMs` is held below `STALE_AFTER_MS`. `SIGINT`/`SIGTERM` take children with the parent; the terminal row is written from a `finally`. The pid is recorded immediately after spawn, not after the wait.
+**Every run is bounded and every child is reaped.** `timeoutMs` stays below `STALE_AFTER_MS`. `SIGINT`/`SIGTERM` take children with the parent; the terminal row is written from a `finally`. The pid is recorded right after spawn.
 
 # A tool that cannot see its data refuses
 
