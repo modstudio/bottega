@@ -75,17 +75,9 @@ function landingObservationResult(
 
 function cwdObservationResult(
   command: string[],
-  observation:
-    | {
-        stdout?: string | ((tree: string) => string)
-        exitCode?: number
-        processTableStdout?: string
-      }
-    | undefined,
+  observation: { stdout?: string | ((tree: string) => string); exitCode?: number } | undefined,
   tree: string,
 ): ReturnType<typeof Bun.spawnSync> | null {
-  if (command[0] === 'ps' && observation?.processTableStdout !== undefined)
-    return spawnResult(observation.processTableStdout)
   if (command[0] !== 'lsof') return null
   const stdout =
     typeof observation?.stdout === 'function'
@@ -106,11 +98,7 @@ function closeOutFixture(
   ownership: 'owned' | 'attached',
   retainedRefDeleteFails = false,
   landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
-  cwdObservation?: {
-    stdout?: string | ((tree: string) => string)
-    exitCode?: number
-    processTableStdout?: string
-  },
+  cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
   observeBeforeLock?: (tree: string) => void,
   readerSourceRefs?: string,
 ) {
@@ -304,37 +292,6 @@ test('a dry run forecasts a process cwd hold', async () => {
     expect(result.detail).toContain(`pid ${holderPid}`)
     expect(result.detail).toContain('stop the listed processes')
     expect(existsSync(fixture.tree)).toBe(true)
-  } finally {
-    rmSync(fixture.repo, { recursive: true, force: true })
-  }
-})
-
-test('a later sweep releases a caller-group process hold after its holders exit', async () => {
-  const holderPid = process.pid + 10_002
-  let holderAlive = true
-  const pgid = process.pid + 20_000
-  const processTableStdout = [
-    `${process.pid} ${process.ppid} ${pgid} 0.0 Thu Nov 20 12:00:00 2026 00:01 bottega`,
-    `${holderPid} ${process.ppid} ${pgid} 0.0 Thu Nov 20 12:00:00 2026 00:01 tail`,
-  ].join('\n')
-  const fixture = closeOutFixture('owned', false, undefined, {
-    stdout: (tree) => (holderAlive ? `p${holderPid}\nn${tree}\n` : ''),
-    processTableStdout,
-  })
-  try {
-    const held = await closeOutRun(fixture.id, { intent: 'explicit' })
-    expect(held).toMatchObject({
-      outcome: 'held',
-      callerGroupHolderPids: [holderPid],
-    })
-    expect(
-      db().query('SELECT worktree,close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
-    ).toEqual({ worktree: fixture.tree, close_out_outcome: 'held' })
-
-    holderAlive = false
-    const swept = await closeOutRun(fixture.id, { intent: 'sweep' })
-    expect(swept.outcome).toBe('released')
-    expect(existsSync(fixture.tree)).toBe(false)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }

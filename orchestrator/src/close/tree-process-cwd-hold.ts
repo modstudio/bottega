@@ -6,10 +6,8 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { processTableSnapshot, processWorkingDirectories } from '../resources/process-inventory.ts'
 import { ancestorChain } from '../resources/session-process-anchoring.ts'
-import {
-  treeProcessCwdCallerGroupHolderPids,
-  treeProcessCwdDecision,
-} from './tree-process-cwd-decision.ts'
+import { treeProcessCwdCallerGroupHolderPids } from './tree-process-cwd-caller-group.ts'
+import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
 
 export type TreeProcessCwdHold = {
   runId: string
@@ -81,9 +79,7 @@ export function treeProcessCwdHold(input: {
       processPid: process.pid,
       holderPids: decision.reason.processes.map(({ pid }) => pid),
     })
-    const ownership = callerGroupHolderPids
-      ? "this command's own processes"
-      : 'live processes'
+    const ownership = callerGroupHolderPids ? "this command's own processes" : 'live processes'
     detail = `tree and branch retained because ${ownership} have working directories inside ${recordedTreePath}:\n${holders}\ncleared by: stop the listed processes, or wait for them to finish, ${retry}`
   }
   return {

@@ -116,6 +116,8 @@ export type ShipCleanupDependencies = {
   reclaimCompose(trees: readonly RemovedRunTree[]): RemovedTreeDockerCleanup
 }
 
+type ShipCleanupCloseOutResult = Awaited<ReturnType<ShipCleanupDependencies['closeOut']>>
+
 const dependencies: ShipCleanupDependencies = {
   landingState: (project, branch) => classifyMintedBranch(project, branch),
   observeBranchRef: (projectPath, branch) => observeGitRef(projectPath, `refs/heads/${branch}`),
@@ -339,26 +341,7 @@ async function closeBranchWorktree(
       reportCursorCleanupFailure(report, row.number, result)
       return null
     }
-    report.kept.push(
-      decideShipCleanupKeptItem(
-        {
-          item: `run ${row.number} worktree`,
-          reason: result.detail,
-          reasonKind: 'cleanup-failure',
-          holdingPath: null,
-          ...(result.callerGroupHolderPids
-            ? { callerGroupHolderPids: result.callerGroupHolderPids }
-            : {}),
-        },
-        callerLandingTreePath,
-      ),
-    )
-    if (result.callerGroupHolderPids) return null
-    report.errors.push({
-      item: `run ${row.number} worktree`,
-      detail: `close-out ${result.outcome}: ${result.detail}`,
-      retry: cleanupRetry(branch),
-    })
+    reportKeptCloseOutResult(branch, row, result, report, callerLandingTreePath)
   } catch (cause) {
     report.errors.push({
       item: `run ${row.number} worktree`,
@@ -367,6 +350,35 @@ async function closeBranchWorktree(
     })
   }
   return null
+}
+
+function reportKeptCloseOutResult(
+  branch: string,
+  row: ShipCleanupRunDecision,
+  result: ShipCleanupCloseOutResult,
+  report: ShipCleanupReport,
+  callerLandingTreePath: string | null,
+): void {
+  report.kept.push(
+    decideShipCleanupKeptItem(
+      {
+        item: `run ${row.number} worktree`,
+        reason: result.detail,
+        reasonKind: 'cleanup-failure',
+        holdingPath: null,
+        ...(result.callerGroupHolderPids
+          ? { callerGroupHolderPids: result.callerGroupHolderPids }
+          : {}),
+      },
+      callerLandingTreePath,
+    ),
+  )
+  if (result.callerGroupHolderPids) return
+  report.errors.push({
+    item: `run ${row.number} worktree`,
+    detail: `close-out ${result.outcome}: ${result.detail}`,
+    retry: cleanupRetry(branch),
+  })
 }
 
 function reportCursorCleanupFailure(
@@ -832,16 +844,8 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
     lines.push(deployFromLine(report))
   }
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
-  for (const item of report.kept.filter((item) => item.owner === 'caller-landing-tree')) {
-    lines.push(
-      `information: kept ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,
-    )
-  }
-  for (const item of report.kept.filter((item) => item.owner === 'caller-process-group')) {
-    lines.push(
-      `information: kept ${item.item}: tree is kept, held only by this command's own processes (pids ${item.callerGroupHolderPids!.join(', ')}), and ${PLATFORM_SLUG} machine sweep releases it`,
-    )
-  }
+  for (const item of report.kept.filter((item) => item.owner !== 'other'))
+    lines.push(formatCallerOwnedKeptItem(item))
   for (const item of report.verdict.residue) {
     lines.push(
       `kept: ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,
@@ -852,4 +856,10 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   }
   if (!report.verdict.residue.length && !report.errors.length) lines.push('kept: none')
   return lines.join('\n')
+}
+
+function formatCallerOwnedKeptItem(item: ShipCleanupKeptItem): string {
+  if (item.owner === 'caller-process-group')
+    return `information: kept ${item.item}: tree is kept, held only by this command's own processes (pids ${item.callerGroupHolderPids!.join(', ')}), and ${PLATFORM_SLUG} machine sweep releases it`
+  return `information: kept ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`
 }

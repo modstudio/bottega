@@ -133,6 +133,13 @@ export const cleanupBoundarySpecs = [
       'Keep the tree process cwd decision pure and independent of filesystems, stores, and processes.',
   },
   {
+    name: 'tree-process-cwd-caller-group-boundary',
+    file: 'orchestrator/src/close/tree-process-cwd-caller-group.ts',
+    allowed: ['../idle-kill.ts'],
+    typeOnlyAllowed: ['../resources/process-inventory.ts'],
+    reason: 'Keep caller process-group ownership as a decision over plain observed values.',
+  },
+  {
     name: 'tree-process-cwd-hold-boundary',
     file: 'orchestrator/src/close/tree-process-cwd-hold.ts',
     allowed: [
@@ -141,6 +148,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/brand.ts',
       '../resources/process-inventory.ts',
       '../resources/session-process-anchoring.ts',
+      './tree-process-cwd-caller-group.ts',
       './tree-process-cwd-decision.ts',
     ],
     typeOnlyAllowed: [],

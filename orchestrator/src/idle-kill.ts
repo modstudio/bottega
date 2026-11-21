@@ -104,6 +104,14 @@ export function isProcessGroupPgid(pgid: number | null | undefined): pgid is num
   return pgid != null && pgid > 1
 }
 
+/** Read one process group from an inventory without restating its fact shape. */
+export function processGroupForPid(
+  facts: readonly Pick<ProcessSample, 'pid' | 'pgid'>[],
+  pid: number,
+): number | null {
+  return facts.find((fact) => fact.pid === pid)?.pgid ?? null
+}
+
 /**
  * Group-kill only when our own pgid is known and the target differs.
  * Unknown selfPgid used to take `pgid !== null`, which is the coordinator's
