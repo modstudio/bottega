@@ -25,7 +25,6 @@ export async function relinkHostedNote(
       targetTask: target,
       reason,
       at,
-      queue: false,
     },
     false,
   )

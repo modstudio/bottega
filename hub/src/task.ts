@@ -383,15 +383,10 @@ export function attachLocalTaskEvidenceInTransaction(
   return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
 }
 
-type NoteRelinkCommentInput = {
-  project: string
-  noteLabel: string
-  previousTask: string
-  targetTask: string
-  reason: string
-  at: string
-  queue: boolean
-}
+type NoteRelinkCommentInput = Record<
+  'project' | 'noteLabel' | 'previousTask' | 'targetTask' | 'reason' | 'at',
+  string
+>
 
 function prepareNoteRelinkComments(conn: Database, input: NoteRelinkCommentInput) {
   const target = localTaskInTransaction(conn, input.targetTask, input.project)
@@ -409,7 +404,6 @@ function prepareNoteRelinkComments(conn: Database, input: NoteRelinkCommentInput
   })
   return {
     targetTaskRecordId: target.record_id,
-    queue: input.queue,
     comments: [
       row(target, `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`),
       ...(previous.record_id === target.record_id
@@ -429,7 +423,7 @@ function writePreparedNoteRelinkComments(
       { key: comment.task_key, record_id: comment.task_id! },
       comment.body,
       comment.created_at,
-      prepared.queue,
+      false,
       UNATTRIBUTED,
       comment.id,
     )

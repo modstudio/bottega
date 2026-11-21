@@ -685,7 +685,6 @@ export async function relinkNote(
       targetTask: target,
       reason: reason.trim(),
       at,
-      queue: false,
     })
     conn
       .query(
