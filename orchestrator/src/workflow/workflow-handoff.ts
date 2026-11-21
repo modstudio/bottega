@@ -11,7 +11,11 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import {
+  openWorkflowQuestionForCursor,
+  taskFlowLocalStore,
+  taskFlowReadStore,
+} from './task-flow-store.ts'
 import { type TaskFlowIntentInput, workflowStageInsert } from './task-flow-store-types.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
@@ -71,9 +75,10 @@ async function validateHandoffSource(input: HandoffInput, d: Database) {
     targetSession: input.context.session ?? null,
   })
   if (sourceRefusal) throw new Error(sourceRefusal)
-  const openQuestion = (
-    await taskFlowReadStore(d, input.context.taskFlowClient).waitingWorkflowQuestions()
-  ).find((question) => question.workflow_cursor_record_id === row.record_id)
+  const openQuestion = await openWorkflowQuestionForCursor(
+    taskFlowReadStore(d, input.context.taskFlowClient),
+    row.record_id,
+  )
   if (openQuestion)
     throw new Error(
       `workflow cursor ${row.id} has open workflow question ${openQuestion.question}; answer it, then retry the handoff`,

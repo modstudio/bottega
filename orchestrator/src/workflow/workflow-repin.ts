@@ -10,20 +10,44 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import {
+  openWorkflowQuestionForCursor,
+  taskFlowLocalStore,
+  taskFlowReadStore,
+} from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import type { CursorRepinnedEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { decideWorkflowRepin, type RepinStep } from './workflow-repin-decision.ts'
+import { isClosedStep } from './workflow-cursor-trail.ts'
+import { decideCloseFloors } from './workflow-floor.ts'
+import {
+  decideWorkflowRepin,
+  type RepinClosedStep,
+  type RepinStep,
+} from './workflow-repin-decision.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const repinSteps = (composition: ReturnType<typeof composeWorkflow>): RepinStep[] =>
-  composition.steps.map((step) => ({
-    slug: step.slug,
-    floors: step.floor,
+  composition.steps.map((step) => ({ slug: step.slug }))
+
+const repinClosedSteps = (
+  trail: readonly CursorTrailEntry[],
+  oldComposition: ReturnType<typeof composeWorkflow>,
+  nextComposition: ReturnType<typeof composeWorkflow>,
+): RepinClosedStep[] =>
+  trail.filter(isClosedStep).map((entry) => ({
+    ordinal: entry.n,
+    slug: entry.slug,
+    ...(entry.outcome ? { outcome: entry.outcome } : {}),
+    oldFloors: decideCloseFloors(oldComposition.steps[entry.n - 1]!, entry.outcome).map(
+      (floor) => floor.kind,
+    ),
+    newFloors: decideCloseFloors(nextComposition.steps[entry.n - 1]!, entry.outcome).map(
+      (floor) => floor.kind,
+    ),
   }))
 
 export async function repinWorkflowCursor(input: {
@@ -46,19 +70,20 @@ export async function repinWorkflowCursor(input: {
     cursorAutonomy(input.row),
   )
   const trail = JSON.parse(input.row.closed) as CursorTrailEntry[]
-  const openQuestion = (
-    await taskFlowReadStore(d, input.context.taskFlowClient).waitingWorkflowQuestions()
-  ).some((question) => question.workflow_cursor_record_id === input.row.record_id)
+  const openQuestion = await openWorkflowQuestionForCursor(
+    taskFlowReadStore(d, input.context.taskFlowClient),
+    input.row.record_id,
+  )
   const decision = decideWorkflowRepin({
     cursor: input.row.id,
     oldSteps: repinSteps(oldComposition),
     newSteps: repinSteps(nextComposition),
     currentOrdinal: input.row.ordinal,
-    trail,
+    closedSteps: repinClosedSteps(trail, oldComposition, nextComposition),
     holderSession: input.row.session_id,
     callerSession: input.context.session ?? null,
     callerIsOperator: isOperatorSession(input.context.session ?? null),
-    pendingQuestion: openQuestion,
+    pendingQuestion: openQuestion !== undefined,
     pendingAwait: input.row.state === 'awaiting-ruling',
     alreadyCurrent:
       input.row.workflow_version_record_id === nextComposition.workflow.record_id &&

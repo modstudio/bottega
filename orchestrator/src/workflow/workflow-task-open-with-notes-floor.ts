@@ -10,13 +10,19 @@ export type NoteFloorEvidence = {
 }
 
 export type TaskOpenWithNotesEvidence = {
-  task?: { key: string; status: string | null; statusCategory: string | null }
+  task?: {
+    key: string
+    status: string | null
+    statusCategory: string | null
+    mergedPullRequest: boolean | null
+  }
   notes?: NoteFloorEvidence[]
 }
 
 export function taskOpenWithNotesFailures(
   evidence: TaskOpenWithNotesEvidence,
   workflowKey?: string,
+  requirePullRequest = false,
 ): string[] {
   const failures: string[] = []
   if (!workflowKey) failures.push('the cursor has no task key')
@@ -26,6 +32,10 @@ export function taskOpenWithNotesFailures(
   else if (!['open', 'active', 'review'].includes(evidence.task.statusCategory))
     failures.push(
       `${evidence.task.key} reads back as ${evidence.task.status ?? 'unset'} (category ${evidence.task.statusCategory ?? 'unset'})`,
+    )
+  if (requirePullRequest && evidence.task?.mergedPullRequest !== true)
+    failures.push(
+      `${evidence.task?.key ?? workflowKey ?? 'the task'} has no merged pull request; merge the pull request and record its link on the task`,
     )
   if (!evidence.notes?.length) failures.push('no note artifact was named')
   for (const note of evidence.notes ?? []) {
@@ -41,6 +51,7 @@ export function taskOpenWithNotesFailures(
 export function taskOpenWithNotesMet(
   evidence: TaskOpenWithNotesEvidence,
   workflowKey?: string,
+  requirePullRequest = false,
 ): boolean {
-  return taskOpenWithNotesFailures(evidence, workflowKey).length === 0
+  return taskOpenWithNotesFailures(evidence, workflowKey, requirePullRequest).length === 0
 }

@@ -1,9 +1,14 @@
 // concern: workflow repin decision
 /** Decides whether an open cursor may adopt the current workflow and catalogue versions. */
 
-import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
-
-export type RepinStep = { slug: string; floors: readonly string[] }
+export type RepinStep = { slug: string }
+export type RepinClosedStep = {
+  ordinal: number
+  slug: string
+  outcome?: string
+  oldFloors: readonly string[]
+  newFloors: readonly string[]
+}
 
 export type WorkflowRepinDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
@@ -12,7 +17,7 @@ export function decideWorkflowRepin(input: {
   oldSteps: readonly RepinStep[]
   newSteps: readonly RepinStep[]
   currentOrdinal: number
-  trail: readonly CursorTrailEntry[]
+  closedSteps: readonly RepinClosedStep[]
   holderSession: string | null
   callerSession: string | null
   callerIsOperator: boolean
@@ -48,17 +53,13 @@ export function decideWorkflowRepin(input: {
         message: `workflow cursor ${input.cursor} step ${ordinal + 1} differs: pinned ${oldSlug}, current ${newSlug}; restore matching steps through the current ordinal or open a successor with the workflow handoff verb`,
       }
   }
-  const closedOrdinals = new Set(input.trail.filter(isClosedStep).map((entry) => entry.n - 1))
-  for (const ordinal of [...closedOrdinals].sort((a, b) => a - b)) {
-    const oldStep = input.oldSteps[ordinal]
-    const nextStep = input.newSteps[ordinal]
-    if (!oldStep || !nextStep) continue
-    const oldFloors = new Set(oldStep.floors)
-    const added = nextStep.floors.find((floor) => !oldFloors.has(floor))
+  for (const step of [...input.closedSteps].sort((a, b) => a.ordinal - b.ordinal)) {
+    const oldFloors = new Set(step.oldFloors)
+    const added = step.newFloors.find((floor) => !oldFloors.has(floor))
     if (added)
       return {
         action: 'refuse',
-        message: `workflow cursor ${input.cursor} closed step ${ordinal + 1} ${oldStep.slug} adds floor ${added}; remove that added floor from the current catalogue or open a successor with the workflow handoff verb`,
+        message: `workflow cursor ${input.cursor} closed step ${step.ordinal} ${step.slug}${step.outcome ? ` outcome ${step.outcome}` : ''} adds floor ${added}; remove that added floor from the current catalogue or open a successor with the workflow handoff verb`,
       }
   }
   if (input.alreadyCurrent)

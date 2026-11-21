@@ -261,7 +261,8 @@ export function catalogueFloors(
       deferrable: deferrable.includes(kind),
       expectedExitCode: DEFAULT_EXPECTED_EXIT_CODE,
       expectedStatus: status,
-      requirePullRequest: kind === 'tracker-transition' && requirePullRequest,
+      requirePullRequest:
+        (kind === 'tracker-transition' || kind === 'task-open-with-notes') && requirePullRequest,
       operatorRuling: kind === 'ruling' && operatorRuling,
       ...(commandEvidence ? { commandEvidence } : {}),
     }))
@@ -632,7 +633,8 @@ function floorIsMet(
         )
       : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
-  if (floor.kind === 'task-open-with-notes') return taskOpenWithNotesMet(evidence, workflowKey)
+  if (floor.kind === 'task-open-with-notes')
+    return taskOpenWithNotesMet(evidence, workflowKey, floor.requirePullRequest)
   if (floor.kind === 'descendants-closed')
     return (
       taskMet(floor, evidence) &&
@@ -667,8 +669,12 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
   return `${expectation}${unavailable}`
 }
 
-function taskOpenWithNotesUnmetMessage(evidence: ValidatedEvidence, workflowKey?: string): string {
-  const failures = taskOpenWithNotesFailures(evidence, workflowKey)
+function taskOpenWithNotesUnmetMessage(
+  floor: Floor,
+  evidence: ValidatedEvidence,
+  workflowKey?: string,
+): string {
+  const failures = taskOpenWithNotesFailures(evidence, workflowKey, floor.requirePullRequest)
   return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY> and --artifact note:<record-id|label> for every note named`
 }
 
@@ -696,7 +702,7 @@ function floorUnmetMessage(
   workflowKey?: string,
 ): string {
   if (floor.kind === 'task-open-with-notes')
-    return taskOpenWithNotesUnmetMessage(evidence, workflowKey)
+    return taskOpenWithNotesUnmetMessage(floor, evidence, workflowKey)
   if (floor.kind === 'descendants-closed') {
     const unfinished = (evidence.descendants ?? []).filter(
       (task) => task.statusCategory !== 'done' && task.statusCategory !== 'dropped',
