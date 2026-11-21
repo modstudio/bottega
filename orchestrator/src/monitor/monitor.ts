@@ -1022,4 +1022,5 @@ export {
   displayConditions,
   monitorHistory,
   monitorHistoryReleasedBefore,
+  monitorWorktreeReleases,
 } from './monitor-history.ts'

@@ -359,6 +359,7 @@ describe('resource claim decisions', () => {
        VALUES (?, ?,? ,?,?,'claimed',?)`,
     )
     insertClaim.run(newRecordId(), root, root, 'worktree', '/tree', nowIso())
+    insertClaim.run(newRecordId(), root, root, 'port', 'port:21000', nowIso())
     insertClaim.run(newRecordId(), root, root, 'index', 'index:1:1', nowIso())
     insertClaim.run(newRecordId(), root, root, 'string', 'string:1:value', nowIso())
     settleClaims(database, {
@@ -367,10 +368,11 @@ describe('resource claim decisions', () => {
       state: 'retained',
       settledAt: nowIso(),
       detail: 'held',
+      by: { verb: 'close-out:terminal', session: 'session-one' },
     })
     expect(
       database.query("SELECT COUNT(*) count FROM resource_claim WHERE state='claimed'").get(),
-    ).toEqual({ count: 2 })
+    ).toEqual({ count: 3 })
     database.query("UPDATE resource_claim SET state='claimed' WHERE kind='worktree'").run()
     settleClaims(database, {
       rootRunId: root,
@@ -378,10 +380,22 @@ describe('resource claim decisions', () => {
       state: 'released',
       settledAt: nowIso(),
       detail: 'removed',
+      by: { verb: 'close-out:requested', session: 'session-two' },
     })
     expect(
       database.query("SELECT COUNT(*) count FROM resource_claim WHERE state='claimed'").get(),
     ).toEqual({ count: 0 })
+    expect(
+      database
+        .query(
+          `SELECT kind,settled_verb,settled_session FROM resource_claim
+           WHERE kind IN ('worktree','port') ORDER BY kind`,
+        )
+        .all(),
+    ).toEqual([
+      { kind: 'port', settled_verb: 'close-out:requested', settled_session: 'session-two' },
+      { kind: 'worktree', settled_verb: 'close-out:requested', settled_session: 'session-two' },
+    ])
   })
 
   test('failed creation releases only claim ids inserted by that attempt', () => {
@@ -408,6 +422,7 @@ describe('resource claim decisions', () => {
       claimIds: [attemptId, databaseId],
       settledAt: nowIso(),
       reason: 'pre failed',
+      by: { verb: 'tracked-recipe:trackedAllocator', session: 'session-one' },
     })
     expect(
       database

@@ -9,7 +9,7 @@ import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
-import { settleClaims } from '../resources/resource-claims.ts'
+import { claimSettlement, settleClaims } from '../resources/resource-claims.ts'
 import {
   otherConversationWorktreeSharers,
   recordedWorktreeSharerRunIds,
@@ -67,6 +67,27 @@ type BranchOwnerRow = {
   status: string
   scored: number
   evidence_excluded?: string | null
+}
+
+function cleanupSettlement(detail: string, verb: 'discard' | 'abandon') {
+  return claimSettlement(detail, verb, sessionId())
+}
+
+function deletedBranchSettlement(branch: string, verb: 'discarded' | 'abandoned') {
+  return cleanupSettlement(
+    `deleted refs/heads/${branch}`,
+    verb === 'discarded' ? 'discard' : 'abandon',
+  )
+}
+
+function discardRunSettlement(detail: string) {
+  return claimSettlement(detail, 'cleanup:discardRun', sessionId())
+}
+
+function unmintedBranchSettlement(branch: string) {
+  return discardRunSettlement(
+    `left refs/heads/${branch}; branch was not minted by this conversation`,
+  )
 }
 
 class SharedWorktreeClaimError extends Error {
@@ -591,7 +612,7 @@ export function discardWorktree(
         kind: 'worktree',
         state: 'released',
         settledAt: new Date().toISOString(),
-        detail: r.detail,
+        ...cleanupSettlement(r.detail, verb === 'discarded' ? 'discard' : 'abandon'),
         allocationKey: row.worktree,
       })
       if (forcedMintedBranchRemoved && minted) {
@@ -600,7 +621,7 @@ export function discardWorktree(
           kind: 'branch',
           state: 'released',
           settledAt: new Date().toISOString(),
-          detail: `deleted refs/heads/${minted}`,
+          ...deletedBranchSettlement(minted, verb),
           allocationKey: `refs/heads/${minted}`,
         })
       }
@@ -682,7 +703,7 @@ function discardKeptBranchLocked(
         kind: 'branch',
         state: 'released',
         settledAt: new Date().toISOString(),
-        detail: `left refs/heads/${row.branch_kept}; branch was not minted by this conversation`,
+        ...unmintedBranchSettlement(row.branch_kept),
         allocationKey: `refs/heads/${row.branch_kept}`,
       })
       auditRunMutation(authority, 'discard', options.auditReason)
@@ -724,7 +745,7 @@ function discardKeptBranchLocked(
         kind: 'branch',
         state: 'released',
         settledAt: new Date().toISOString(),
-        detail: `deleted refs/heads/${row.branch_kept}`,
+        ...discardRunSettlement(`deleted refs/heads/${row.branch_kept}`),
         allocationKey: `refs/heads/${row.branch_kept}`,
       })
       auditRunMutation(authority, 'discard', options.auditReason)

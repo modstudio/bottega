@@ -102,7 +102,7 @@ test('K8b-3 keys monitor, release, and claim rows by UUID without losing their d
       trunk_tip: 'trunk-tip',
       commits_behind_trunk: 3,
     })
-    expect(database.query('SELECT * FROM resource_claim').get()).toEqual({
+    expect(database.query('SELECT * FROM resource_claim').get()).toMatchObject({
       record_id: ids.claim,
       number: 71,
       root_run_record_id: ids.run,

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
@@ -97,6 +98,32 @@ describe('task documents', () => {
       { recordId: taskRecordId },
     )
     expect(document.number).toBe(9)
+  })
+
+  test('local role writes refuse another holder without changing either row', async () => {
+    const task = await createTask({ project: 'beta', title: 'One role holder' })
+    const holder = await createTaskDocument(
+      { task: task.key, title: 'Current handoff', role: 'handoff' },
+      {},
+    )
+    const refusal = `role 'handoff' on task ${task.key} is held by ${holder.label} "Current handoff"; run \`${PLATFORM_SLUG} task doc set ${holder.label} --no-role --version ${holder.version}\`, then retry`
+
+    const createError = await createTaskDocument(
+      { task: task.key, title: 'Duplicate handoff', role: 'handoff' },
+      {},
+    ).catch((error: unknown) => error)
+    expect((createError as Error).message).toBe(refusal)
+
+    const other = await createTaskDocument({ task: task.key, title: 'Other' }, {})
+    expect(other.number).toBe(2)
+    const updateError = await updateTaskDocument(other.id, { role: 'handoff' }).catch(
+      (error: unknown) => error,
+    )
+    expect((updateError as Error).message).toBe(refusal)
+    expect(getTaskDocument(other.id)).toEqual(other)
+
+    expect((await updateTaskDocument(holder.id, { role: 'handoff' })).role).toBe('handoff')
+    expect((await updateTaskDocument(holder.id, { role: null })).role).toBeNull()
   })
 
   test('document creation still needs the hosted record while offline', async () => {

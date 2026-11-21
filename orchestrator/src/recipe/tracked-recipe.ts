@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { projects, type WorktreeTool } from '../project/projects.ts'
 import { dockerRunResources, orchRunLabelForRun } from '../resources/docker-resources.ts'
@@ -260,6 +260,7 @@ export const trackedAllocator: TrackedAllocator = {
         claimIds: attempt.insertedClaimIds,
         settledAt: nowIso(),
         reason,
+        by: { verb: 'tracked-recipe:trackedAllocator', session: sessionId() },
       })
     })
   },
@@ -627,6 +628,7 @@ function failTrackedCreation(input: {
             state: 'released',
             settledAt: nowIso(),
             detail: setup,
+            by: { verb: 'tracked-recipe:createTrackedRecipe', session: sessionId() },
             allocationKey: input.worktree.path,
           })
         }
@@ -896,6 +898,7 @@ function settleTrackedTeardown(runId: string): void {
       state: 'released',
       settledAt: nowIso(),
       detail: 'tracked recipe teardown completed',
+      by: { verb: 'tracked-recipe:teardownTrackedRecipe', session: sessionId() },
     })
     db()
       .query(

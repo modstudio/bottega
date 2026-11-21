@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { writeTransaction } from '../database/db.ts'
+import { sessionId, writeTransaction } from '../database/db.ts'
 
 export const RESOURCE_CLAIM_KINDS = [
   'worktree',
@@ -107,10 +107,16 @@ export function markResourceStepStuck(
 ): void {
   const result = database
     .query(
-      `UPDATE resource_claim SET state='stuck',settled_at=?,settled_detail=?
+      `UPDATE resource_claim SET state='stuck',settled_at=?,settled_detail=?,settled_verb=?,settled_session=?
        WHERE record_id=? AND state='pending'`,
     )
-    .run(settledAt, detail, step.recordId)
+    .run(
+      settledAt,
+      detail,
+      'resource-step-recorder:markResourceStepStuck',
+      sessionId(),
+      step.recordId,
+    )
   if (result.changes !== 1) throw new Error(`pending resource step ${step.recordId} was not found`)
 }
 
@@ -190,13 +196,15 @@ export function completeResourceStep(
     database
       .query(
         `UPDATE resource_claim
-         SET state='absent',allocation_key=?,settled_at=?,settled_detail=?
+         SET state='absent',allocation_key=?,settled_at=?,settled_detail=?,settled_verb=?,settled_session=?
          WHERE record_id=? AND state='pending'`,
       )
       .run(
         allocationKey,
         new Date().toISOString(),
         `duplicate of existing resource claim ${existing!.record_id}`,
+        'resource-step-recorder:completeResourceStep',
+        sessionId(),
         step.recordId,
       )
     return
