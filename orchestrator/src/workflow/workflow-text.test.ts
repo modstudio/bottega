@@ -259,6 +259,42 @@ describe('workflow text decisions', () => {
 })
 
 describe('workflow text lifecycle', () => {
+  test('keyed attach distinguishes an unknown task in hub from a known task without a cursor', async () => {
+    const d = database()
+    const identity = {
+      project: 'fixture',
+      workflow: 'text-fixture',
+      mode: 'default',
+      key: 'DEV-404',
+    }
+
+    await expect(
+      attachWorkflowText(
+        identity,
+        undefined,
+        'unknown task body',
+        {
+          ...context,
+          taskRecordId: null,
+        },
+        d,
+      ),
+    ).rejects.toThrow('task key DEV-404 names no task in hub')
+    await expect(
+      attachWorkflowText(
+        identity,
+        undefined,
+        'known task body',
+        {
+          ...context,
+          taskRecordId: 'task-dev-404',
+          taskStatusCategory: 'open',
+        },
+        d,
+      ),
+    ).rejects.toThrow('workflow has no live cursor; fetch its current step first')
+  })
+
   test('keyed attach without a cursor selects the task open stage', async () => {
     const d = database()
     const cursor = await open(d)

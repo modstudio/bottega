@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -69,6 +69,14 @@ const taskPort: TaskReadPort = {
     version: '1',
   }),
 }
+
+let previousTaskReader: TaskReadPort | undefined
+beforeEach(() => {
+  previousTaskReader = installTaskReader(taskPort)
+})
+afterEach(() => {
+  installTaskReader(previousTaskReader)
+})
 
 test('descendant facts use parent-filtered reads and visit each node once', async () => {
   const reads: Array<{ project?: string; parent?: string }> = []

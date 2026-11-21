@@ -1,13 +1,14 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { CommanderError } from 'commander'
+import { type Command, CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { CALLER_ENVIRONMENT_KEY, recordCallerToken } from '../../../shared/record-caller.ts'
 import { refusal } from '../../../shared/refusal.ts'
 import { readStoreLockRefusalsSince } from '../../../shared/store-lock-refusal-log.ts'
 import { dir } from '../../test/fixtures/store.ts'
+import { write } from '../commands/support.ts'
 import {
   MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
   MigrationDrainRefusalError,
@@ -214,6 +215,44 @@ test('an unknown command keeps exit 2 and migration drain refusals carry their d
   expect(exitCodeFor(new MigrationDrainRefusalError(refusal('draining')))).toBe(
     MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
   )
+})
+
+test('run drains output written before a command action throws', async () => {
+  const command = program.command('write-then-throw-fixture').action(() => {
+    write('started turn 44\n')
+    throw new Error('post-write failure')
+  })
+  const chunks: string[] = []
+  let delivered = false
+  const stdout = spyOn(process.stdout, 'write').mockImplementation(((
+    chunk: string | Uint8Array,
+    encodingOrCallback?: unknown,
+    callback?: unknown,
+  ) => {
+    chunks.push(String(chunk))
+    const done =
+      typeof encodingOrCallback === 'function'
+        ? encodingOrCallback
+        : typeof callback === 'function'
+          ? callback
+          : undefined
+    setTimeout(() => {
+      delivered = true
+      done?.()
+    }, 0)
+    return true
+  }) as typeof process.stdout.write)
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await run(['write-then-throw-fixture'])).toBe(1)
+    expect(chunks.join('')).toBe('started turn 44\n')
+    expect(delivered).toBeTrue()
+  } finally {
+    stdout.mockRestore()
+    error.mockRestore()
+    const commands = program.commands as Command[]
+    commands.splice(commands.indexOf(command), 1)
+  }
 })
 
 test('run query verbs use the read-only store handle', () => {

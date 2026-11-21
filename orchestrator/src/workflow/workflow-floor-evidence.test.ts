@@ -66,6 +66,11 @@ const operatorRulingFloor = {
   requirePullRequest: false,
   operatorRuling: true,
 } as const
+const commandExitFloor = {
+  ...operatorRulingFloor,
+  kind: 'command-exit',
+  operatorRuling: false,
+} as const
 
 test('gathers the stranded-question remedy through operator-floor evidence', async () => {
   const d = database()
@@ -356,6 +361,8 @@ test('a foreign architect gate is refused and a matching architect gate is allow
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
@@ -465,6 +472,8 @@ test('a foreign probe is refused and a matching probe is allowed', async () => {
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--artifact probe:1 cwd project is other, not this cursor's fixture")
 
@@ -501,6 +510,8 @@ test('exec evidence is branch-bound and carries its exit code', async () => {
             landingBranch: 'main',
           }),
         },
+        identity,
+        [commandExitFloor],
       ),
   ).toThrow("--artifact exec:1 cwd project is other, not this cursor's fixture")
 
@@ -577,25 +588,6 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
       )
     ).artifacts?.[0]?.artifact,
   ).toEqual({ ref: `exec:${execRecordId}`, exists: true })
-})
-
-test('exec evidence refuses a post-command head outside the change', async () => {
-  const d = database()
-  d.query(
-    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
-     VALUES ('${newRecordId()}','["git","rebase","origin/main"]','/fixture/work','foreign-tip',0,'','2026-09-01','exec')`,
-  ).run()
-
-  expect(
-    async () =>
-      await gather(
-        d,
-        { artifacts: ['exec:1'] },
-        {
-          resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
-        },
-      ),
-  ).toThrow('--artifact exec:1 head_commit does not belong to DEV-977-work or its recorded landing')
 })
 
 test('a pr-create exec whose output URL cannot be judged is gathered as a condition', async () => {

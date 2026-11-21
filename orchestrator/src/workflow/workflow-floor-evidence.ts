@@ -48,6 +48,7 @@ import {
   type Floor,
   flagForFloor,
   floorGuidance,
+  floorsAcceptCommandArtifact,
   githubPullRequestUrlIn,
   hasGateFloor,
   parseArtifactRef,
@@ -344,6 +345,16 @@ function requireCheckout(
   return checkout
 }
 
+function requireCommandArtifactCheckout(
+  required: boolean,
+  flag: string,
+  row: { cwd: string; head_commit: string | null },
+  identity: CursorIdentity,
+  resolveCheckout: FloorEvidencePorts['resolveCheckout'],
+): void {
+  if (required) requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+}
+
 async function gatherGate(
   recordId: string,
   identity: CursorIdentity,
@@ -553,6 +564,7 @@ async function resolveArtifact(
   ports: FloorEvidencePorts,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
+  requireCommandCheckout: boolean,
 ): Promise<{ ref: string; exists: boolean }> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
@@ -593,7 +605,7 @@ async function resolveArtifact(
     if (!row) throw new Error(`${unresolvedFlag} does not exist`)
     const flag = `--artifact ${ref.kind}:${row.number}`
     if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
-    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+    requireCommandArtifactCheckout(requireCommandCheckout, flag, row, identity, resolveCheckout)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
@@ -941,6 +953,7 @@ async function gatherArtifactEntry(
           ports,
           resolveCheckout,
           gathered.tree!.commit,
+          floorsAcceptCommandArtifact(input.floors),
         ),
     ...offeredArtifactRunEvidence(parsed, d),
   }

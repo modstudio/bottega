@@ -64,6 +64,61 @@ test('answer refuses a question-sibling option instead of recording it as ruling
   )
 })
 
+test('answer honors a typed value before or after the positional run id', async () => {
+  const answerValueFor = async (valueBeforeId: boolean) => {
+    const recordId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      session: sessionId(),
+    })
+    const number = db()
+      .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+      .get(recordId)!.number
+    db()
+      .query(
+        `INSERT INTO question
+          (record_id,number,run_record_id,asked_at,question,kind,typed_options)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-21',
+                 'Which option?','choice',?)`,
+      )
+      .run(newRecordId(), recordId, JSON.stringify([{ name: 'Use task comment' }, { name: 'Ask' }]))
+    const program = new Command().exitOverride()
+    register(program)
+    const argv = valueBeforeId
+      ? [
+          'node',
+          'orch',
+          'answer',
+          '--value',
+          'Use task comment',
+          '--record-only',
+          String(number),
+          'Use the task comment.',
+        ]
+      : [
+          'node',
+          'orch',
+          'answer',
+          String(number),
+          '--value',
+          'Use task comment',
+          '--record-only',
+          'Use the task comment.',
+        ]
+    setRawArgv(argv.slice(2))
+    await program.parseAsync(argv)
+    return db()
+      .query<{ answer_value: string }, [string]>(
+        'SELECT answer_value FROM question WHERE run_record_id=?',
+      )
+      .get(recordId)!.answer_value
+  }
+
+  expect(await answerValueFor(true)).toBe('"Use task comment"')
+  expect(await answerValueFor(false)).toBe('"Use task comment"')
+})
+
 test('answer records a late ruling on a closed cursor question without moving its cursor', async () => {
   const suffix = newRecordId().slice(-8)
   const project = `late-ruling-${suffix}`
@@ -163,6 +218,40 @@ test('tell derives refusals from newly registered owner options', async () => {
   )
 })
 
+test('relay honors its note option before the positional run id', async () => {
+  const recordId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: sessionId(),
+  })
+  const questionId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO question (record_id,number,run_record_id,asked_at,question)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-21','Which option?')`,
+    )
+    .run(questionId, recordId)
+  const number = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(recordId)!.number
+  const program = new Command().exitOverride()
+  register(program)
+  const argv = ['node', 'orch', 'relay', '--note', 'Needs operator judgment', String(number)]
+  setRawArgv(argv.slice(2))
+
+  await program.parseAsync(argv)
+
+  expect(
+    db()
+      .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
+      .get(questionId),
+  ).toMatchObject({
+    awaiting_operator_at: expect.any(String),
+    relayed_by: expect.any(String),
+  })
+})
+
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const number = (
@@ -178,7 +267,7 @@ test('continue parses --findings before the message and hands the rendered text 
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -216,7 +305,7 @@ test('continue without --findings hands the architect message through unchanged'
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -243,7 +332,7 @@ test('continue admits the later turn and records an attributed override on its c
         admissions.push(input)
         return { warning: 'operator override warning', binding: undefined }
       },
-      continueRun: async () => ({ childId: 'child-record-id', job: 'implement' }),
+      continueRun: async () => ({ childId: 'child-record-id', job: 'implement', reported: false }),
       reportContinuedRun: async () => {},
       recordKeyedTurnOverride: (runId, warning) => {
         if (warning) warnings.push({ runId, warning })
@@ -286,7 +375,7 @@ test('continue refuses an unknown option before --file instead of sending the op
     continueCommandDependencies: {
       continueRun: async () => {
         launched = true
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -324,7 +413,7 @@ test('continue parses --file before the id and reads only the file content', asy
     continueCommandDependencies: {
       continueRun: async (_id, message) => {
         received = message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -349,7 +438,7 @@ test('continue refuses an empty file before launch', async () => {
     continueCommandDependencies: {
       continueRun: async () => {
         launched = true
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -375,7 +464,7 @@ test('continue resolves a run UUID to the same local row as its number', async (
       continueCommandDependencies: {
         continueRun: async (runId) => {
           received.push(runId)
-          return { childId: '99', job: 'implement' }
+          return { childId: '99', job: 'implement', reported: false }
         },
         reportContinuedRun: async () => {},
       },
