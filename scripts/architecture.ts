@@ -134,21 +134,6 @@ const declaredModules: ArchitectureModule[] = [
     './absent-tree-close-out.ts',
     './close-out-report.ts',
   ]),
-  module('orchestrator/src/close/close-out-tree-naming.ts', [
-    './absent-tree-close-out.ts',
-    './close-out-preparation.ts',
-    './close-out-report.ts',
-    './tree-keep-decision.ts',
-  ]),
-  module('orchestrator/src/close/close-out.fixture.ts', [
-    'bun:test',
-    'node:fs',
-    'node:path',
-    '../../../shared/record-id.ts',
-    '../../test/fixtures/store.ts',
-    '../database/db.ts',
-    '../project/projects.ts',
-  ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

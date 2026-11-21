@@ -99,6 +99,33 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep the tree naming decision independent of observation adapters.',
   },
   {
+    name: 'close-out-tree-naming-boundary',
+    file: 'orchestrator/src/close/close-out-tree-naming.ts',
+    allowed: [
+      './absent-tree-close-out.ts',
+      './close-out-preparation.ts',
+      './close-out-report.ts',
+      './tree-keep-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep cursor-claim reporting structured across close-out preparation and completion.',
+  },
+  {
+    name: 'close-out-fixture-boundary',
+    file: 'orchestrator/src/close/close-out.fixture.ts',
+    allowed: [
+      'bun:test',
+      'node:fs',
+      'node:path',
+      '../../../shared/record-id.ts',
+      '../../test/fixtures/store.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep close-out subprocess fixtures beside their adapter tests.',
+  },
+  {
     name: 'tree-keep-boundary',
     file: 'orchestrator/src/close/tree-keep.ts',
     allowed: [

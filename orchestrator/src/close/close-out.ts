@@ -44,6 +44,7 @@ import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import {
   absentTreeCloseOut,
   failedResourceRemovalResult,
+  pointerMustClear,
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
