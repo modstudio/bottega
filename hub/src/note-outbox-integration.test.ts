@@ -506,9 +506,9 @@ test('repeat sighting refuses offline unchanged, then writes the record without 
   )
   expect(db().query(`SELECT 1 FROM hosted_outbox WHERE row_id=?`).all(noteId)).toHaveLength(0)
   expect(
-    db().query<{ sightings: number }, [string]>('SELECT sightings FROM note WHERE record_id=?').get(
-      noteId,
-    ),
+    db()
+      .query<{ sightings: number }, [string]>('SELECT sightings FROM note WHERE record_id=?')
+      .get(noteId),
   ).toEqual({ sightings: 1 })
   await createNote(input, { hosted: recordHosted })
   expect(db().query(`SELECT 1 FROM hosted_outbox WHERE row_id=?`).all(noteId)).toHaveLength(0)
@@ -606,7 +606,9 @@ test('merge refuses offline unchanged, then sends target before source with no o
   await expect(mergeNote(targetId, sourceId, { hosted: unavailableHosted })).rejects.toThrow(
     'hosted hub unavailable',
   )
-  expect(db().query(`SELECT 1 FROM note WHERE record_id IN (?,?)`).all(targetId, sourceId)).toHaveLength(2)
+  expect(
+    db().query(`SELECT 1 FROM note WHERE record_id IN (?,?)`).all(targetId, sourceId),
+  ).toHaveLength(2)
   expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   const merged = await mergeNote(targetId, sourceId, { hosted: recordHosted })
   expect(merged.anchors).toHaveLength(2)
@@ -627,6 +629,46 @@ test('merge refuses offline unchanged, then sends target before source with no o
       ])
     ).rows,
   ).toEqual([{ deleted: true }])
+})
+
+test('a failed merge delete leaves the hosted target union and tells the operator to rerun same', async () => {
+  const targetId = '01990000-0000-7000-8000-000000001338'
+  const sourceId = '01990000-0000-7000-8000-000000001339'
+  const target = noteRow(targetId, 338, {
+    anchors: JSON.stringify([{ id: crypto.randomUUID(), kind: 'run' }]),
+  })
+  const source = noteRow(sourceId, 339, {
+    anchors: JSON.stringify([{ id: crypto.randomUUID(), kind: 'run' }]),
+  })
+  seedMachineNote(target)
+  seedMachineNote(source)
+  await seedHostedNote(target)
+  await seedHostedNote(source)
+  let sends = 0
+  const interrupted = {
+    ...recordHosted,
+    fetch: async (input: string, init?: RequestInit) => {
+      const url = new URL(input)
+      if (url.pathname === '/v1/changes' && ++sends === 2)
+        throw new Error('delete transport interrupted')
+      return recordHosted.fetch(input, init)
+    },
+  }
+  await expect(mergeNote(targetId, sourceId, { hosted: interrupted })).rejects.toThrow(
+    `the target holds the merged sightings but source workshop#339 still exists; rerun \`${PLATFORM_SLUG} note same workshop#338 workshop#339\``,
+  )
+  expect(
+    (
+      await database.query(
+        `SELECT id::text,sightings,deleted_at IS NOT NULL deleted FROM hub_note
+         WHERE id IN ($1,$2) ORDER BY id`,
+        [targetId, sourceId],
+      )
+    ).rows,
+  ).toEqual([
+    { id: targetId, sightings: 2, deleted: false },
+    { id: sourceId, sightings: 1, deleted: false },
+  ])
 })
 
 test('a retried sighting with the same change id does not double-count', async () => {

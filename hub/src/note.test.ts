@@ -78,6 +78,55 @@ const hosted = {
       updated_at: at,
       deleted_at: null,
     })
+    const noteMatch = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
+    if (noteMatch && init?.method === 'GET') {
+      try {
+        return Response.json(shape(await getNote(noteMatch[1]!, { baseUrl: '' })))
+      } catch {
+        return Response.json({ error: 'note not found' }, { status: 404 })
+      }
+    }
+    if (url.pathname === '/v1/notes' && init?.method === 'GET') {
+      const notes = await listNotes(
+        {
+          project: url.searchParams.get('project') ?? undefined,
+          stale: url.searchParams.has('stale')
+            ? url.searchParams.get('stale') === 'true'
+            : undefined,
+          actionable: url.searchParams.get('actionable') === 'true',
+        },
+        { baseUrl: '' },
+      )
+      const acknowledgements = db()
+        .query<
+          {
+            id: string
+            note_id: string
+            project_name: string
+            session_id: string
+            acknowledged_at: string
+            sightings: number
+          },
+          []
+        >(
+          `SELECT a.record_id id,a.note_record_id note_id,n.project project_name,a.session_id,
+           a.acknowledged_at,a.sightings FROM note_acknowledgement a
+           JOIN note n ON n.record_id=a.note_record_id`,
+        )
+        .all()
+        .map((row) => ({
+          ...row,
+          created_at: row.acknowledged_at,
+          updated_at: row.acknowledged_at,
+          deleted_at: null,
+        }))
+      return Response.json({
+        notes: notes.map(shape),
+        acknowledgements,
+        cursor: 'done',
+        more: false,
+      })
+    }
     if (url.pathname === '/v1/notes' && init?.method === 'POST') {
       if (body.sameAs) {
         const old = await getNote(resolveNoteReference(String(body.sameAs), 'workshop'))
@@ -213,6 +262,8 @@ describe('suggestion notes', () => {
             ],
             capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
           })
+        if (url.pathname === '/v1/notes' && init?.method === 'GET')
+          return Response.json({ notes: [], acknowledgements: [], cursor: 'done', more: false })
         requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
         const body = JSON.parse(String(init?.body))
         writes.push(body)
@@ -325,7 +376,7 @@ describe('suggestion notes', () => {
     }
     await acknowledgeNote(id, 'session-1', { hosted: dispositionHosted })
     await dropNote(id, 'done', { hosted: dispositionHosted })
-    expect(spaces).toEqual(['space-gamma', 'space-gamma'])
+    expect(spaces).toEqual([null, 'space-gamma', null, 'space-gamma'])
   })
 
   test('a hosted-first create reports its reference when the local cache is locked', async () => {
@@ -677,7 +728,9 @@ describe('suggestion notes', () => {
       const merged = await mergeNote(one.record_id, two.record_id)
       expect(merged.sightings).toBe(2)
       expect(merged.anchors).toHaveLength(2)
-      await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(`no note ${two.record_id}`)
+      await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(
+        `no note ${two.record_id}`,
+      )
 
       const dropped = await dropNote(one.record_id, 'superseded')
       expect(dropped.stale_reason).toBe('dropped: superseded')
@@ -798,7 +851,9 @@ describe('suggestion notes', () => {
       })
     ).note
     expect((await merge(one.number, two.number)).sightings).toBe(2)
-    await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(`no note ${two.record_id}`)
+    await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(
+      `no note ${two.record_id}`,
+    )
 
     expect((await drop(one.number, 'superseded')).stale_reason).toBe('dropped: superseded')
   })
@@ -858,18 +913,12 @@ describe('suggestion notes', () => {
       ),
     ).toContain(workshop.record_id)
     expect(
-      (
-        await listNotes(
-          { text: token, project: 'workshop', stale: false },
-          { baseUrl: '' },
-        )
-      ).map((row) => row.record_id),
+      (await listNotes({ text: token, project: 'workshop', stale: false }, { baseUrl: '' })).map(
+        (row) => row.record_id,
+      ),
     ).toEqual([workshop.record_id])
     expect(
-      await listNotes(
-        { text: `absent-${crypto.randomUUID()}`, stale: false },
-        { baseUrl: '' },
-      ),
+      await listNotes({ text: `absent-${crypto.randomUUID()}`, stale: false }, { baseUrl: '' }),
     ).toEqual([])
   })
 
@@ -898,9 +947,7 @@ describe('suggestion notes', () => {
     ).not.toContain(note.record_id)
     expect(
       (await listNotes({ session: otherSession }, { baseUrl: '' })).map((row) => row.record_id),
-    ).toContain(
-      note.record_id,
-    )
+    ).toContain(note.record_id)
     expect(
       (await listNotes({ session: [otherSession, session] }, { baseUrl: '' })).map(
         (row) => row.record_id,
@@ -924,9 +971,7 @@ describe('suggestion notes', () => {
     )
     expect(
       (await listNotes({ session: otherSession }, { baseUrl: '' })).map((row) => row.record_id),
-    ).toContain(
-      note.record_id,
-    )
+    ).toContain(note.record_id)
     expect(
       (await listNotes({ session, kept: true }, { baseUrl: '' })).map((row) => row.record_id),
     ).not.toContain(note.record_id)

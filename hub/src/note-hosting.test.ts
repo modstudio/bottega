@@ -263,7 +263,7 @@ describe('hosted-only note safety', () => {
     expect((await getNote(id, { baseUrl: '' })).promoted_task).toBeNull()
   })
 
-  test('cache pull applies an update and a soft delete', () => {
+  test('cache pull applies an update and a soft delete', async () => {
     const at = '2026-09-17T12:00:00.000Z'
     const ids = new Map<number, string>()
     const row = (number: number, text: string, deletedAt: string | null) => ({
@@ -451,6 +451,25 @@ describe('hosted promotion title', () => {
           body,
         })
         if (url.pathname === '/v1/tasks/identity') return identity()
+        if (url.pathname === `/v1/notes/${note.id}`)
+          return Response.json({
+            id: note.id,
+            number: note.number,
+            project: 'gamma',
+            project_name: 'gamma',
+            text: note.text,
+            area: null,
+            anchors: '[]',
+            sightings: 1,
+            created_at: at,
+            last_seen_at: at,
+            stale_at: null,
+            stale_reason: null,
+            promoted_task: null,
+            updated_at: at,
+            deleted_at: null,
+            revision: 1,
+          })
         if (url.pathname.endsWith('/promote')) return promoted()
         return Response.json({ error: 'unexpected route' }, { status: 500 })
       }) as unknown as typeof fetch,

@@ -32,7 +32,8 @@ const transportIdentityMemos = new WeakMap<NoteFetch, Map<string, NoteIdentityMe
 
 function noteIdentity(options: Options = {}): Promise<NoteIdentity> {
   const memos = options.fetch
-    ? (transportIdentityMemos.get(options.fetch) ?? (() => {
+    ? (transportIdentityMemos.get(options.fetch) ??
+      (() => {
         const created = new Map<string, NoteIdentityMemo>()
         transportIdentityMemos.set(options.fetch!, created)
         return created
@@ -190,12 +191,19 @@ export const hostedMirrorNotes = async (body: unknown, options: NoteWriteOptions
 }
 export const hostedNoteCounts = (options?: Options) =>
   request<{ note: number; note_acknowledgement: number }>('/v1/notes/counts', options)
+const normalizeHostedNote = (row: HostedNote & { project_id?: string | null }): HostedNote => ({
+  ...row,
+  projectId: row.projectId ?? row.project_id ?? null,
+})
 export const hostedGetNote = (recordId: string, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${recordId}`, options)
+  request<HostedNote & { project_id?: string | null }>(`/v1/notes/${recordId}`, options).then(
+    normalizeHostedNote,
+  )
 export async function hostedListNotes(
   filters: { project?: string; stale?: boolean; actionable?: boolean },
   options?: Options,
 ) {
+  await noteIdentity(options)
   const query = new URLSearchParams()
   if (filters.project) query.set('project', filters.project)
   if (filters.stale !== undefined) query.set('stale', String(filters.stale))
@@ -212,7 +220,7 @@ export async function hostedListNotes(
       cursor: string
       more?: boolean
     }>(`/v1/notes?${pageQuery}`, options)
-    notes.push(...page.notes)
+    notes.push(...page.notes.map(normalizeHostedNote))
     acknowledgements.push(...page.acknowledgements)
     if (!page.more) return { notes, acknowledgements }
     cursor = page.cursor

@@ -70,7 +70,8 @@ export async function listNotes(
   filters: NoteFilters = {},
   hosted?: NoteClientOptions,
 ): Promise<NoteRow[]> {
-  if (filters.project && !registered(filters.project)) throw new Error(`unknown project '${filters.project}'`)
+  if (filters.project && !registered(filters.project))
+    throw new Error(`unknown project '${filters.project}'`)
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
     return listHostedNoteRows(filters, hosted)
   return listLocalNotes(filters)
@@ -108,10 +109,7 @@ export async function listProjectNotes(
   )
 }
 
-export async function getNote(
-  recordId: string,
-  hosted?: NoteClientOptions,
-): Promise<NoteRow> {
+export async function getNote(recordId: string, hosted?: NoteClientOptions): Promise<NoteRow> {
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
     return readHostedNote(recordId, hosted)
   const row = db()

@@ -43,10 +43,7 @@ import {
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
-import {
-  prepareNoteRelinkComments,
-  recordPreparedNoteRelinkComments,
-} from './note-relink-record.ts'
+import { relinkHostedNote } from './note-relink-record.ts'
 import type { NoteRow } from './note-row.ts'
 import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
@@ -230,6 +227,12 @@ export async function acknowledgeNote(
   const note = await getNote(recordId, options.hosted)
   const mode = writeMode(note.project, options.hosted)
   const at = nowIso()
+  const existing = db()
+    .query<{ sightings: number }, [string, string]>(
+      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
+    )
+    .get(note.record_id, sessionId)
+  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   if (mode === 'hosted-configured') {
     const acknowledgement = pushedAcknowledgement({
       id: newRecordId(),
@@ -273,12 +276,6 @@ export async function acknowledgeNote(
     })
     return { note, alreadyAcknowledged: false }
   }
-  const existing = db()
-    .query<{ sightings: number }, [string, string]>(
-      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
-    )
-    .get(note.record_id, sessionId)
-  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   writeTransaction((conn) => {
     const row = decode(noteRow(conn, note.record_id))
     conn
@@ -368,9 +365,7 @@ export async function mergeNote(
     anchors: union.anchors,
     sightings: union.sightings,
     last_seen_at:
-      target.last_seen_at > sourceNote.last_seen_at
-        ? target.last_seen_at
-        : sourceNote.last_seen_at,
+      target.last_seen_at > sourceNote.last_seen_at ? target.last_seen_at : sourceNote.last_seen_at,
   }
   const destination = await noteDestinationOptions(target.project, options.hosted)
   try {
@@ -571,12 +566,11 @@ export async function createNote(
     },
     hostedOptions,
   )
-  const applied = applyHostedWriteLocally(
+  applyHostedWriteLocally(
     `${formatNoteLabel(hosted.project, hosted.number)} was created in the hosted record; its local copy will arrive on the next record pull`,
     () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
   )
-  const created = applied ? await getNote(hosted.id, options.hosted) : noteRowFromHosted(hosted)
-  return completedNoteCreation(created, candidates, input, targetProject)
+  return completedNoteCreation(noteRowFromHosted(hosted), candidates, input, targetProject)
 }
 
 export async function promoteNote(
@@ -668,7 +662,7 @@ export async function promoteNote(
   const promoteInput = creating ? { title } : { task: options.existingTaskKey! }
   const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
   const reference = hosted.task?.key ?? formatNoteLabel(hosted.note.project, hosted.note.number)
-  const applied = applyHostedWriteLocally(
+  applyHostedWriteLocally(
     `${reference} was updated in the hosted record; its local copy will arrive on the next record pull`,
     () =>
       writeTransaction((conn) => {
@@ -677,7 +671,7 @@ export async function promoteNote(
         applyHostedNote(conn, hosted.note)
       }),
   )
-  return applied ? getNote(note.record_id, options.hosted) : noteRowFromHosted(hosted.note)
+  return noteRowFromHosted(hosted.note)
 }
 
 export function promotionTaskInput(note: NoteRow, title: string) {
@@ -763,61 +757,8 @@ export async function relinkNote(
     )
   const mode = writeMode(current.project, options.hosted)
   const at = nowIso()
-  if (mode === 'hosted-configured') {
-    const prepared = prepareNoteRelinkComments(db(), {
-      project: current.project,
-      noteLabel: current.label,
-      previousTask: current.promoted_task,
-      targetTask: target,
-      reason: reason.trim(),
-      at,
-    })
-    const updated: NoteRow = {
-      ...current,
-      promoted_task: target,
-      promoted_task_record_id: prepared.targetTaskRecordId,
-      last_seen_at: at,
-    }
-    const destination = await noteDestinationOptions(current.project, options.hosted)
-    await sendHostedChanges(
-      `note ${current.label}`,
-      [
-        [
-          ...prepared.comments.map(
-            (comment) =>
-              ({
-                table: 'hub_task_comment',
-                id: comment.id,
-                op: 'upsert',
-                row: comment,
-                expected_revision: 0,
-              }) as const,
-          ),
-          {
-            table: HOSTED_NOTE_TABLE,
-            id: current.record_id,
-            op: 'upsert',
-            row: pushedNote(updated, at),
-            fields: ['promoted_task', 'promoted_task_id', 'last_seen_at'],
-            expected_revision: current.revision,
-          },
-        ],
-      ],
-      {
-        ...destination,
-        conflictRemedy: `${PLATFORM_SLUG} note list --project ${current.project}`,
-      },
-    )
-    writeTransaction((conn) => {
-      recordPreparedNoteRelinkComments(conn, prepared.comments)
-      conn
-        .query(
-          `UPDATE note SET promoted_task=?,promoted_task_record_id=?,last_seen_at=? WHERE record_id=?`,
-        )
-        .run(target, prepared.targetTaskRecordId, at, current.record_id)
-    })
-    return updated
-  }
+  if (mode === 'hosted-configured')
+    return relinkHostedNote(current, target, reason.trim(), at, options.hosted)
   writeTransaction((conn) => {
     const row = decode(noteRow(conn, recordId))
     if (!row.promoted_task)

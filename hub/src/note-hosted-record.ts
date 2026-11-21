@@ -114,10 +114,10 @@ export async function listHostedNoteRows(
           ? note.anchors.some((anchor) =>
               sessions.includes(typeof anchor.session_id === 'string' ? anchor.session_id : ''),
             ) &&
-            (filters.kept ===
+            filters.kept ===
               result.acknowledgements.some((acknowledgement) =>
                 acknowledgementMatches(acknowledgement, note, sessions),
-              ))
+              )
           : true,
       )
       .filter((note) => !search || note.text.toLowerCase().includes(search))
