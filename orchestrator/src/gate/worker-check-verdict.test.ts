@@ -55,11 +55,7 @@ describe('worker check verdict at the reply HEAD', () => {
   })
 
   test('passes with none when the only check is at another HEAD', () => {
-    const verdict = decideWorkerCheckVerdict(
-      head,
-      null,
-      check({ headCommit: 'f'.repeat(40) }),
-    )
+    const verdict = decideWorkerCheckVerdict(head, null, check({ headCommit: 'f'.repeat(40) }))
     expect(workerCheckRefusalText(verdict)).toBeNull()
     expect(verdict.kind).toBe('none')
   })

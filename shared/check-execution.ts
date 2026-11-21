@@ -5,7 +5,7 @@ export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EX
 export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
 export const UNCHECKED_EXIT_CODE = 77
 export const UNCHECKED_LINE_PREFIX = 'unchecked: '
-export const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
+const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
 export const GATE_FAILURES_MARKER = 'gate failures:'
 
 export function formatFailingLegTailHeading(leg: string, exitCode: number): string {
@@ -16,8 +16,9 @@ export function parseFailingLegTailHeading(line: string): { leg: string; exitCod
   const separator = `] ${FAILING_LEG_TAIL_MARKER}`
   const separatorAt = line.indexOf(separator)
   if (!line.startsWith('[') || separatorAt <= 1 || !line.endsWith(')')) return null
-  const exitCode = Number(line.slice(separatorAt + separator.length, -1))
-  if (!Number.isInteger(exitCode)) return null
+  const exitText = line.slice(separatorAt + separator.length, -1)
+  if (!/^-?\d+$/.test(exitText)) return null
+  const exitCode = Number(exitText)
   return { leg: line.slice(1, separatorAt), exitCode }
 }
 
@@ -32,8 +33,10 @@ export function formatGateFailureDetail(detail: string): string {
 export function parseGateFailureFooterLine(
   line: string,
 ): { kind: 'detail' | 'leg'; value: string } | null {
-  if (line.startsWith('  ')) return { kind: 'detail', value: line.slice(2) }
-  if (line.length > 0) return { kind: 'leg', value: line }
+  if (line.startsWith(formatGateFailureDetail(''))) {
+    return { kind: 'detail', value: line.slice(formatGateFailureDetail('').length) }
+  }
+  if (line.length > 0 && formatGateFailureLeg(line) === line) return { kind: 'leg', value: line }
   return null
 }
 

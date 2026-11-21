@@ -10,10 +10,7 @@ import { db } from './database/db.ts'
 import { FAILS_OVER } from './failure/failure.ts'
 import { git } from './git/git-environment.ts'
 import { finalizeWorkerReply } from './outcome.ts'
-import {
-  terminalReplyFacts,
-  terminalWorkerCheckRefusal,
-} from './run/run-terminal-worker-check.ts'
+import { terminalReplyFacts, terminalWorkerCheckRefusal } from './run/run-terminal-worker-check.ts'
 
 const classify = (
   reply: WorkerReply,

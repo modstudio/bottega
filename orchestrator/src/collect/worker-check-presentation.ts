@@ -1,9 +1,7 @@
 // concern: recorded worker-check presentation for run result
 
 import type { Database } from 'bun:sqlite'
-import {
-  uncheckedChecksForGateExecution,
-} from '../gate/worker-check-omissions.ts'
+import { uncheckedChecksForGateExecution } from '../gate/worker-check-omissions.ts'
 import { recordedWorkerCheckResult } from '../gate/worker-check-result.ts'
 import { workerCheckVerdictLine } from '../gate/worker-check-verdict.ts'
 import { lastWorkerCheckNotRunBlock } from './result-output.ts'
