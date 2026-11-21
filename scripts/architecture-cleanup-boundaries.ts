@@ -102,6 +102,13 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep the tree naming decision independent of observation adapters.',
   },
   {
+    name: 'close-path-inside-boundary',
+    file: 'orchestrator/src/close/path-inside.ts',
+    allowed: ['node:path'],
+    typeOnlyAllowed: [],
+    reason: 'Keep close-out path containment beside its sole lifecycle consumer.',
+  },
+  {
     name: 'close-out-tree-naming-boundary',
     file: 'orchestrator/src/close/close-out-tree-naming.ts',
     allowed: [

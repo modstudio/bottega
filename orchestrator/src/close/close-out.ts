@@ -42,7 +42,6 @@ import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
-import { isPathInside } from './path-inside.ts'
 import {
   absentTreeCloseOut,
   failedResourceRemovalResult,
@@ -81,6 +80,7 @@ import {
   liveCloseOutResult,
   missingTreeConversationResult,
 } from './conversation-liveness.ts'
+import { isPathInside } from './path-inside.ts'
 import {
   extractionRunId,
   prepareReaderScratchCloseOut,

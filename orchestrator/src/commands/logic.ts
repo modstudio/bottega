@@ -384,10 +384,7 @@ function registerMachineAttentionCommands(program: Command): void {
       '--skip-board-refresh',
       'claim notices without refreshing the board or observing hosted pressure',
     )
-    .option(
-      '--json',
-      'write the monitor result as JSON; --history emits {history, releases}',
-    )
+    .option('--json', 'write the monitor result as JSON; --history emits {history, releases}')
     .allowExcessArguments(false)
     .action((options) =>
       monitorCommand(
