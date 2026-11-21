@@ -20,7 +20,6 @@ beforeEach(() => {
   workshop().settings.tracker = { protocol: 'hub' }
 })
 afterAll(() => {
-  workshop().settings.space = 'workshop'
   workshop().settings.tracker = previousTracker
   if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
   else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
