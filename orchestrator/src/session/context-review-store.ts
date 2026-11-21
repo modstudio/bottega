@@ -20,6 +20,18 @@ export type ContextReviewEvent = {
   itemHolders?: string[]
 }
 
+export type ReviewItemRef = string | { id: string; holder: string }
+
+export function encodeReviewItemRefs(itemIds: string[], itemHolders?: string[]): string {
+  return JSON.stringify(
+    itemHolders ? itemIds.map((id, index) => ({ id, holder: itemHolders[index]! })) : itemIds,
+  )
+}
+
+export function decodeReviewItemRefs(value: string): ReviewItemRef[] {
+  return JSON.parse(value) as ReviewItemRef[]
+}
+
 /** Reads the recorded review measurements in one report window. */
 export function contextReviewWindow(since: string, database: Database = db()) {
   return database
@@ -41,11 +53,7 @@ export function recordContextReview(
 ): ContextReviewEvent {
   const database = dependencies.database ?? db(true)
   const row = { ...input, id: newRecordId(), at: (dependencies.now ?? nowIso)() }
-  const itemIds = JSON.stringify(
-    row.itemHolders
-      ? row.itemIds.map((id, index) => ({ id, holder: row.itemHolders![index]! }))
-      : row.itemIds,
-  )
+  const itemIds = encodeReviewItemRefs(row.itemIds, row.itemHolders)
   writeTransaction(() => {
     database
       .query(`INSERT INTO context_review

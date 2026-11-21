@@ -48,3 +48,9 @@ export async function hostedContextItemClient(holder: string, suppliedOwner?: Re
       client.deleteContextItem(id, input, destination),
   }
 }
+
+/** Resolves a context holder to the same hosted space used by its writes. */
+export async function hostedContextItemDestination(holder: string) {
+  const client = recordApiClient()
+  return recordWriteDestination(client, await contextItemOwner(holder))
+}

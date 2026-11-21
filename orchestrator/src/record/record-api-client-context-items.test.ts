@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { recordContextItemReadClient } from './record-api-client-context-items.ts'
+import { recordContextItemClient } from './record-api-client-context-items.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
@@ -30,7 +30,7 @@ function captureContextItemReads() {
     const url = new URL(path, 'https://record.example.test')
     return url.searchParams.getAll('holder').map(contextItem) as T
   }) as RecordClientRequest
-  return { calls, client: recordContextItemReadClient(request) }
+  return { calls, client: recordContextItemClient(request) }
 }
 
 test('context-item client keeps exactly the holder limit in one request', async () => {

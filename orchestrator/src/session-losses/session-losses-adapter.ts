@@ -17,11 +17,13 @@ import {
   readTranscriptSessionId,
   transcriptSources,
 } from '../metric/transcript-reader.ts'
-import { isClosedStageState } from '../record/record-task-flow-contract.ts'
+import { isClosedStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { decodeReviewItemRefs } from '../session/context-review-store.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { sqliteTaskFlowReadStore } from '../workflow/task-flow-store-sqlite.ts'
 import {
   type ClaimLifecycle,
   type ContextReviewLoss,
@@ -63,8 +65,6 @@ type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   >
 }
 
-type StoredReviewItem = string | { id: string; holder: string }
-
 export async function contextReviewMeasurements(
   sessionId: string,
   boundaries: SessionLossReport['boundaries'],
@@ -73,13 +73,14 @@ export async function contextReviewMeasurements(
     readItems?: typeof listContextItems
   } = {},
 ) {
-  const rows = (dependencies.database ?? db())
+  const database = dependencies.database ?? db()
+  const rows = database
     .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
       `SELECT at,items,flagged,item_ids FROM context_review
        WHERE session_id=? ORDER BY at,record_id`,
     )
     .all(sessionId)
-  const storedItems = rows.map((row) => JSON.parse(row.item_ids) as StoredReviewItem[])
+  const storedItems = rows.map((row) => decodeReviewItemRefs(row.item_ids))
   const reviews = rows.map(
     (row, index): ContextReviewLossRow => ({
       at: row.at,
@@ -90,8 +91,21 @@ export async function contextReviewMeasurements(
   )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
+  const taskHolders = [
+    ...database
+      .query<{ task_record_id: string }, [string]>(
+        `SELECT DISTINCT task_record_id FROM run
+         WHERE session_id=? AND task_record_id IS NOT NULL`,
+      )
+      .all(sessionId)
+      .map((row) => row.task_record_id),
+    ...sqliteTaskFlowReadStore(database)
+      .listStages({ sessionId, states: TASK_FLOW_STAGE_STATES })
+      .flatMap((row) => (row.task_record_id ? [row.task_record_id] : [])),
+  ].map((taskRecordId) => `task:${taskRecordId}`)
   const holders = [
     `session:${sessionId}`,
+    ...taskHolders,
     ...storedItems.flatMap((items) =>
       items.flatMap((item) => (typeof item === 'string' ? [] : [item.holder])),
     ),

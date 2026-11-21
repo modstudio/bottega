@@ -1,9 +1,11 @@
 // concern: record-api-client-context-items
 /** Builds hosted context-item point-read methods and paths. */
-import type { ContextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
+import type {
+  ContextHolderKind,
+  ContextItemHolderGroup,
+} from '../../../shared/context-item-vocabulary.ts'
 import type {
   RecordClientRequest,
-  RecordContextItemMethod,
   RecordRequestDestination,
   RecordWriteDestination,
 } from './record-api-client-paths.ts'
@@ -25,7 +27,7 @@ export type RecordContextItemClient = {
     destination: RecordRequestDestination,
   ): Promise<RecordContextItem | null>
   listContextHolders(
-    kind: 'task' | 'session' | 'cursor',
+    kind: ContextHolderKind,
     destination: RecordRequestDestination,
   ): Promise<ContextItemHolderGroup[]>
   upsertContextItem(
@@ -39,9 +41,7 @@ export type RecordContextItemClient = {
   ): Promise<{ removed: boolean }>
 }
 
-export function recordContextItemReadClient(
-  request: RecordClientRequest,
-): Pick<RecordContextItemClient, RecordContextItemMethod> {
+export function recordContextItemClient(request: RecordClientRequest): RecordContextItemClient {
   const itemPath = (holders: string[], slug?: string) => {
     const search = new URLSearchParams()
     for (const holder of holders) search.append('holder', holder)

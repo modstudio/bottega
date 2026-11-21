@@ -285,7 +285,16 @@ async function dropSessionContextItemForLifecycle(input: {
           'SELECT project FROM presence WHERE session_id=?',
         )
         .get(input.session)
-      const project = sessionOwner?.project?.trim()
+      const runOwner = sessionOwner?.project?.trim()
+        ? null
+        : db()
+            .query<{ project: string | null }, [string]>(
+              `SELECT project.name AS project
+               FROM run JOIN project ON project.record_id=run.project_record_id
+               WHERE run.session_id=? ORDER BY run.number DESC LIMIT 1`,
+            )
+            .get(input.session)
+      const project = sessionOwner?.project?.trim() || runOwner?.project?.trim()
       if (!project)
         throw new Error(
           `session ${input.session} has no recorded owning project\n` +

@@ -13,9 +13,6 @@ import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
-const contractRoutes = ['GET /v1/context-items', 'GET /v1/context-items/holders'] as const
-void contractRoutes
-
 const readDeps = {
   readContextItems: async () => [],
   readContextHolders: async () => [],
@@ -136,6 +133,50 @@ test('hosted context-item GET validates batches and forwards holders and slug', 
     holders: [{ holderKind: 'task', holderId }],
     slug: 'probe',
   })
+})
+
+test('hosted context-item holders GET validates kind and returns grouped holders', async () => {
+  const grouped = [
+    {
+      holder: 'session:session-a',
+      holderId: 'session-a',
+      updatedAt: '2026-11-21T00:00:00.000Z',
+      items: [],
+    },
+  ]
+  let received: unknown = null
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordContextItemRoutes(
+    app,
+    {
+      ...readDeps,
+      readContextHolders: async (input) => {
+        received = input
+        return grouped
+      },
+      upsertContextItem: async () => ({}),
+      deleteContextItem: async () => ({ removed: false }),
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused.invalid/record',
+        userId: newRecordId(),
+        spaceId: newRecordId(),
+        spaceIds: [],
+      }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+
+  const response = await app.request('/v1/context-items/holders?kind=session')
+  expect(response.status).toBe(200)
+  expect(received).toMatchObject({ holderKind: 'session' })
+  expect(await response.json()).toEqual(grouped)
+
+  const invalid = await app.request('/v1/context-items/holders?kind=invalid')
+  expect(invalid.status).toBe(400)
 })
 
 test('hosted context-item GET names the holder batch cap when exceeded', async () => {

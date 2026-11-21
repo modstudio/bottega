@@ -29,7 +29,7 @@ import { type RecordChangesClient, recordChangesClient } from './record-api-clie
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import {
   type RecordContextItemClient,
-  recordContextItemReadClient,
+  recordContextItemClient,
 } from './record-api-client-context-items.ts'
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
@@ -751,7 +751,7 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
-    ...recordContextItemReadClient(request),
+    ...recordContextItemClient(request),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),

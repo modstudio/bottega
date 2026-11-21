@@ -55,6 +55,12 @@ test('failing hosted readers refuse through the store seam without a local fallb
     }
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal', permission: 'write' }],
+      }),
       listContextItems: reject,
       getContextItem: reject,
       listContextHolders: reject,
@@ -83,12 +89,18 @@ test('hook holder batches make one hosted context-item call', async () => {
     rememberHostedRecord(db())
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal', permission: 'write' }],
+      }),
       listContextItems: async () => {
         calls++
         return []
       },
     })
-    await listContextItems(['session:one', 'task:two', 'cursor:three'])
+    await listContextItems(['session:one', 'session:two', 'session:three'])
     expect(calls).toBe(1)
   } finally {
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

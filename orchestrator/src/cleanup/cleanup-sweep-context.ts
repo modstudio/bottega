@@ -9,6 +9,7 @@ import {
   sessionContextHolders,
 } from '../doc/context-service.ts'
 import { listDocsStore } from '../doc/doc-read-store.ts'
+import { hostedDocClient } from '../doc/doc-hosted-client.ts'
 import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import { latestStoredDocAuthorSession } from '../doc/doc-revision-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -40,6 +41,71 @@ function hasUnconsumedResumeBrief(database: Database, session: string): boolean 
   })
 }
 
+type ResumeBriefState = 'open' | 'absent' | 'unreadable'
+
+async function hostedResumeBriefState(
+  database: Database,
+  session: string,
+): Promise<ResumeBriefState> {
+  const projects = database
+    .query<{ project: string }, [string, string]>(
+      `SELECT DISTINCT project FROM presence WHERE session_id=? AND project IS NOT NULL
+       UNION
+       SELECT DISTINCT project.name AS project
+       FROM run JOIN project ON project.record_id=run.project_record_id
+       WHERE run.session_id=?`,
+    )
+    .all(session, session)
+    .map((row) => row.project.trim())
+    .filter(Boolean)
+  if (projects.length === 0) return 'unreadable'
+  try {
+    for (const project of projects) {
+      const client = await hostedDocClient('resume', project)
+      let cursor: string | null = null
+      do {
+        const page = await client.listDocs({
+          scope: 'resume',
+          subject: project,
+          limit: 100,
+          cursor,
+        })
+        for (const row of page.items) {
+          if (typeof row.body !== 'string' || parseResumeFrontmatter(row.body)?.status !== 'open')
+            continue
+          if (typeof row.id !== 'string') continue
+          const revisions = (await client.listRevisions(row.id)) as Array<{
+            op: string
+            sessionId: string | null
+            at: string
+          }>
+          const author = revisions
+            .filter((revision) => revision.op !== 'consume')
+            .sort((left, right) => right.at.localeCompare(left.at))[0]?.sessionId
+          if (author === session) return 'open'
+        }
+        cursor = page.nextCursor
+      } while (cursor)
+    }
+    return 'absent'
+  } catch {
+    return 'unreadable'
+  }
+}
+
+export async function sessionResumeBriefState(
+  readSource: 'local' | 'hosted',
+  database: Database,
+  session: string,
+): Promise<ResumeBriefState> {
+  if (readSource === 'local') return hasUnconsumedResumeBrief(database, session) ? 'open' : 'absent'
+  return hostedResumeBriefState(database, session)
+}
+
+export function sessionContextResumeUnreadableLine(count: number): string {
+  return `session context: kept ${count} holder${count === 1 ? '' : 's'} because hosted resume briefs could not be read`
+}
+
 export async function sweepSessionContext(input: {
   enabled: boolean
   dryRun: boolean
@@ -50,6 +116,7 @@ export async function sweepSessionContext(input: {
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   let failed = false
   let notOwned = 0
+  let resumeUnreadable = 0
   const readSource = contextItemReadSourceFor(database)
   for (const holder of await sessionContextHolders(database)) {
     const activity = gatherOwnerActivity(database, {
@@ -61,19 +128,23 @@ export async function sweepSessionContext(input: {
       now: Date.now(),
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })
+    if (readSource === 'hosted' && !activity.localOwnerEvidence) {
+      notOwned++
+      continue
+    }
+    const resumeBrief = await sessionResumeBriefState(readSource, database, holder.session)
+    if (resumeBrief === 'unreadable') resumeUnreadable++
     const decision = decideSessionContextSweep({
       readSource,
       localOwnerEvidence: activity.localOwnerEvidence,
       ownerGone: gone,
-      hasUnconsumedResumeBrief: hasUnconsumedResumeBrief(database, holder.session),
+      hasUnconsumedResumeBrief: resumeBrief !== 'absent',
     })
-    if (decision === 'not-owned-by-this-install') {
-      notOwned++
-      continue
-    }
+    if (decision === 'not-owned-by-this-install') continue
     if (decision === 'drop' && (await dropSweptHolder(input, holder))) failed = true
   }
   if (notOwned) input.presentation.log(sessionContextOwnershipLine(notOwned))
+  if (resumeUnreadable) input.presentation.log(sessionContextResumeUnreadableLine(resumeUnreadable))
   return failed
 }
 

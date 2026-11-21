@@ -5,6 +5,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -41,7 +42,7 @@ function installContextFacts(children: ContextFactsPorts['children'] = async () 
   upsertProject({
     recordId: newRecordId(),
     name: PLATFORM_SLUG,
-    path: '/tmp/context-item-test',
+    path: process.cwd(),
     settings: { keyPrefixes: ['DEV'], space: 'personal' },
   })
   globals[CONTEXT_FACTS_PORTS_KEY] = {
@@ -79,30 +80,80 @@ test('hosted task reads return record items when the local row is absent', async
   try {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     rememberHostedRecord(db())
-    installRecordApiClient(
-      createMemoryRecordApiClient({
-        contextItems: [
-          {
-            recordId: newRecordId(),
-            holder: `task:${task.record_id}`,
-            id: 'probe',
-            kind: 'fact',
-            body: 'visible from the record',
-            source: 'test',
-            questionNumber: null,
-            target: null,
-            revision: at,
-            createdAt: at,
-            updatedAt: at,
-          },
+    const memory = createMemoryRecordApiClient({
+      contextItems: [
+        {
+          recordId: newRecordId(),
+          holder: `task:${task.record_id}`,
+          id: 'probe',
+          kind: 'fact',
+          body: 'visible from the record',
+          source: 'test',
+          questionNumber: null,
+          target: null,
+          revision: at,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    let readDestination: string | undefined
+    installRecordApiClient({
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'other-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'other-space', slug: 'other', permission: 'write' },
+          { space_id: 'project-space', slug: 'personal', permission: 'write' },
         ],
       }),
-    )
+      listContextItems: async (holders, destination) => {
+        readDestination = destination.destinationSpaceId
+        return memory.listContextItems(holders, destination)
+      },
+    })
     expect(db().query('SELECT slug FROM context_item WHERE slug=?').get('probe')).toBeNull()
     expect((await getContext({ task: task.key })).items.map((item) => item.id)).toEqual(['probe'])
     expect(
       (await listContextItems(taskContextHolder(task.record_id), db())).map((item) => item.id),
     ).toEqual(['probe'])
+    expect(readDestination).toBe('project-space')
+  } finally {
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
+test('hosted session and task holders in one space make one context-item read', async () => {
+  installContextFacts()
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  let listReads = 0
+  try {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const client = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...client,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'other-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'other-space', slug: 'other', permission: 'write' },
+          { space_id: 'project-space', slug: 'personal', permission: 'write' },
+        ],
+      }),
+      listContextItems: async (holders, destination) => {
+        listReads++
+        expect(destination.destinationSpaceId).toBe('project-space')
+        return client.listContextItems(holders, destination)
+      },
+    })
+
+    await listContextItems([`session:batch-session`, taskContextHolder(task.record_id)], db())
+    expect(listReads).toBe(1)
   } finally {
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorUrl
@@ -511,7 +562,7 @@ test('lifecycle task clear passes revisions and counts already-absent hosted row
   }
 })
 
-test('lifecycle drop reports an absent hosted row and leaves the local mirror untouched', async () => {
+test('lifecycle drop resolves its project from a session run when presence is absent', async () => {
   const session = newRecordId()
   const ownerProject = `session-owner-${session}`
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -526,18 +577,14 @@ test('lifecycle drop reports an absent hosted row and leaves the local mirror un
       body: 'Drop this locally when the hosted row is absent.',
     })
     const item = (await getContext({ session })).items[0]!
+    const projectRecordId = newRecordId()
     upsertProject({
-      recordId: newRecordId(),
+      recordId: projectRecordId,
       name: ownerProject,
       path: `/tmp/${ownerProject}`,
       settings: { space: 'session-space' },
     })
-    db()
-      .query(
-        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
-         VALUES (?,'codex','architect','test-machine',?,'/tmp/session-owner','2026-11-16T00:00:00.000Z')`,
-      )
-      .run(session, ownerProject)
+    addRun({ agent: 'codex', job: 'implement', session, projectRecordId })
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     rememberHostedRecord(db())
     const memory = createMemoryRecordApiClient()

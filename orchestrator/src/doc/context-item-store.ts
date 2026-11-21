@@ -14,6 +14,7 @@ import {
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
 import type { RecordWriteDecision } from '../record/record-write-decision.ts'
+import { hostedContextItemDestination } from './context-item-hosted-client.ts'
 import {
   getLocalContextItem,
   listLocalContextHolders,
@@ -55,7 +56,27 @@ export async function listContextItems(
   if (contextItemReadSourceFor(database) === 'local')
     return holders.flatMap((value) => listLocalContextItems(value, database))
   try {
-    return await recordApiClient().listContextItems(holders, {})
+    const client = recordApiClient()
+    const groups = new Map<string, { destinationSpaceId: string; holders: string[] }>()
+    for (const value of holders) {
+      const destination = await hostedContextItemDestination(value)
+      const group = groups.get(destination.destinationSpaceId)
+      if (group) group.holders.push(value)
+      else groups.set(destination.destinationSpaceId, { ...destination, holders: [value] })
+    }
+    const items = (
+      await Promise.all(
+        [...groups.values()].map(({ holders: groupedHolders, ...destination }) =>
+          client.listContextItems(groupedHolders, destination),
+        ),
+      )
+    ).flat()
+    const holderOrder = new Map(holders.map((value, index) => [value, index]))
+    return items.sort(
+      (left, right) =>
+        (holderOrder.get(left.holder) ?? holders.length) -
+        (holderOrder.get(right.holder) ?? holders.length),
+    )
   } catch (error) {
     return contextItemReadFailure(error)
   }
@@ -69,7 +90,8 @@ export async function getContextItem(
   if (contextItemReadSourceFor(database) === 'local')
     return getLocalContextItem(holder, slug, database)
   try {
-    return await recordApiClient().getContextItem(holder, slug, {})
+    const destination = await hostedContextItemDestination(holder)
+    return await recordApiClient().getContextItem(holder, slug, destination)
   } catch (error) {
     return contextItemReadFailure(error)
   }
@@ -82,7 +104,8 @@ export async function listContextHolders(
   if (contextItemReadSourceFor(database) === 'local')
     return listLocalContextHolders(holderKind, database)
   try {
-    return await recordApiClient().listContextHolders(holderKind, {})
+    const destination = await hostedContextItemDestination('session:context-holder-catalogue')
+    return await recordApiClient().listContextHolders(holderKind, destination)
   } catch (error) {
     return contextItemReadFailure(error)
   }
