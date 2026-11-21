@@ -16,10 +16,9 @@ export type TaskReadRow = {
   last_seen: string | null
   body: string | null
   opened_at: string | null
-  has_children?: boolean
 }
 
-type TaskLookupRow = Omit<TaskReadRow, 'source' | 'body'>
+export type TaskLookupRow = Omit<TaskReadRow, 'source' | 'body'> & { has_children: boolean }
 
 type TaskReadDocumentSummary = {
   id: string

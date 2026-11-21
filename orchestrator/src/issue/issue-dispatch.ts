@@ -5,6 +5,7 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/trackers.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
@@ -288,7 +289,7 @@ export async function filedIssueQueueState(
 ): Promise<FiledIssueQueueState> {
   const rows = (
     await Promise.all(
-      ['open', 'active', 'review'].map((status) => reader(PLATFORM_SLUG, { status })),
+      LIVE_TASK_STATUS_CATEGORIES.map((status) => reader(PLATFORM_SLUG, { status })),
     )
   ).flat()
   const filedRows: FiledIssueTaskRow[] = [

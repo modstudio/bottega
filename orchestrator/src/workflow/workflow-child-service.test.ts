@@ -38,11 +38,14 @@ function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
     lookup: async (_project, keys) => {
-      const found = new Map<string, TaskReadRow>()
+      const found = new Map<string, TaskReadRow & { has_children: boolean }>()
       for (const key of keys) {
         let task = byKey.get(key)
         while (task && !found.has(task.key)) {
-          found.set(task.key, task)
+          found.set(task.key, {
+            ...task,
+            has_children: tasks.some((candidate) => candidate.parent_key === task!.key),
+          })
           task = task.parent_key ? byKey.get(task.parent_key) : undefined
         }
       }

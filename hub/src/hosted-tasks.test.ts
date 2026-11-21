@@ -5,7 +5,6 @@ import {
   createHostedTaskInTransaction,
   getHostedTask,
   lookupHostedTasks,
-  TASK_LOOKUP_KEY_LIMIT,
 } from './hosted-tasks.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001430'
@@ -93,14 +92,6 @@ test('lookupHostedTasks returns requested tasks with ancestors and child presenc
   expect(
     await lookupHostedTasks(pgliteSql(database), { userId, spaceId }, 'one', ['DEV-3']),
   ).toEqual({ tasks: [] })
-  await expect(
-    lookupHostedTasks(
-      pgliteSql(database),
-      { userId, spaceId },
-      'one',
-      Array.from({ length: TASK_LOOKUP_KEY_LIMIT + 1 }, (_, index) => `DEV-${index}`),
-    ),
-  ).rejects.toThrow(`at most ${TASK_LOOKUP_KEY_LIMIT}`)
 })
 
 test('createHostedTaskInTransaction mints a version-7 seq id', async () => {

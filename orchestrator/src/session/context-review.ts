@@ -9,6 +9,7 @@ import { contextBrief } from '../doc/context-brief.ts'
 import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
+import { taskKeysInText } from '../project/project-settings.ts'
 import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
@@ -30,9 +31,7 @@ async function reviewTasks(
   bodies: readonly string[],
 ) {
   const projects = [...new Set(cursors.map((cursor) => cursor.project))]
-  const itemKeys = [
-    ...new Set(bodies.flatMap((body) => body.match(/\b[A-Z][A-Z0-9]*-[0-9]+\b/gi) ?? [])),
-  ]
+  const itemKeys = [...new Set(bodies.flatMap(taskKeysInText))]
   return (
     await Promise.all(
       projects.map((project) =>

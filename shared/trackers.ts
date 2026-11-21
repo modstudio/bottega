@@ -25,6 +25,10 @@ import {
 
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
+export const LIVE_TASK_STATUS_CATEGORIES = TASK_STATUSES.filter(
+  (status): status is Exclude<StatusCategory, 'done' | 'dropped'> =>
+    status !== 'done' && status !== 'dropped',
+)
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
   'workspace-mcp',
   'cursor-mcp',

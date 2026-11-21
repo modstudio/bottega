@@ -154,6 +154,28 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
   ])
 })
 
+test('flags an item that names a done slice task', () => {
+  const decision = decideContextReview(
+    facts({
+      items: [
+        {
+          recordId: 'record-slice',
+          id: 'slice',
+          kind: 'fact',
+          holder: 'session:one',
+          updatedAt: now,
+          body: 'DEV-1844/2 is already complete',
+        },
+      ],
+      doneTaskKeys: ['DEV-1844/2'],
+    }),
+  )
+
+  expect(decision.items[0]).toEqual(
+    expect.objectContaining({ flagged: true, reason: 'names done task DEV-1844/2' }),
+  )
+})
+
 test('an epic carried through a child cursor is not stale or older than the child step', () => {
   const epicHolder = 'task:epic'
   const decision = decideContextReview({

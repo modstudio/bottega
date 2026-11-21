@@ -77,10 +77,6 @@ export async function lookupHostedTasks(
   project: string,
   keys: string[],
 ): Promise<{ tasks: HostedTaskLookupRow[] }> {
-  if (keys.length > TASK_LOOKUP_KEY_LIMIT)
-    throw new Error(`task lookup accepts at most ${TASK_LOOKUP_KEY_LIMIT} keys`)
-  if (!project || !keys.length || keys.some((key) => !key))
-    throw new Error('task lookup requires a project and at least one non-empty key')
   return withHostedTenant(client, identity, async (tx) => {
     const tasks = rows<HostedTaskLookupRow>(
       await tx`

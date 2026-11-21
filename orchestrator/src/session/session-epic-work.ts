@@ -2,6 +2,7 @@
 /** Gathers the epic queue surface for one live session without changing claims. */
 
 import type { Database } from 'bun:sqlite'
+import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/trackers.ts'
 import { boardLiveClaimProjectsForSession } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
@@ -11,8 +12,6 @@ import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-child-facts.ts'
 import { childQueueState, sessionWorksUnderEpic } from '../workflow/workflow-child-queue.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
-
-const SESSION_STOP_TASK_STATUSES = ['open', 'active', 'review'] as const
 
 export async function sessionEpicWork(session: string, database: Database = db()) {
   const sessionStages = await taskFlowReadStore(database).listOpenStages({ sessionId: session })
@@ -28,7 +27,7 @@ export async function sessionEpicWork(session: string, database: Database = db()
       continue
     const listedTasks = (
       await Promise.all(
-        SESSION_STOP_TASK_STATUSES.map((status) => readProjectTaskList(project, { status })),
+        LIVE_TASK_STATUS_CATEGORIES.map((status) => readProjectTaskList(project, { status })),
       )
     ).flat()
     const listedKeys = [...new Set(listedTasks.map((task) => task.key))]

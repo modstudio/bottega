@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { taskApi } from './task-api.ts'
 import { hostedLookupTasks } from './task-client.ts'
+import { TASK_LOOKUP_KEY_LIMIT } from './hosted-tasks.ts'
 
 const whoami = async () =>
   Response.json({
@@ -35,6 +36,12 @@ test('task lookup validates bounds and binds the requested tenant', async () => 
 
   const invalid = await taskApi(lookupRequest([]), hostedRouteTestConfig, { fetch: whoami })
   expect(invalid?.status).toBe(400)
+  const overLimit = await taskApi(
+    lookupRequest(Array.from({ length: TASK_LOOKUP_KEY_LIMIT + 1 }, (_, index) => `DEV-${index}`)),
+    hostedRouteTestConfig,
+    { fetch: whoami },
+  )
+  expect(overLimit?.status).toBe(400)
 })
 
 test('task lookup client refuses an old server with its deploy remedy', async () => {

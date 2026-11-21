@@ -18,6 +18,7 @@ import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { cacheCreatedHostedTask } from './task-cache.ts'
 import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
+import type { HostedTaskLookupRow } from './hosted-tasks.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
@@ -515,10 +516,10 @@ export async function listTasks(
   return listHostedTasks(filters)
 }
 
-export async function lookupTasks(project: string, keys: string[]) {
+export async function lookupTasks(project: string, keys: string[]): Promise<HostedTaskLookupRow[]> {
   if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
     return hostedLookupTasks(project, keys, hostedTaskWriteOptions(project))
-  const found = new Map<string, TaskRow & { has_children: boolean }>()
+  const found = new Map<string, HostedTaskLookupRow>()
   let pending = [...new Set(keys.map((key) => key.toUpperCase()))]
   while (pending.length) {
     const placeholders = pending.map(() => '?').join(',')
