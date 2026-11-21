@@ -286,8 +286,14 @@ export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
   reader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<FiledIssueQueueState> {
-  const rows = await reader(PLATFORM_SLUG)
-  const filedRows: FiledIssueTaskRow[] = rows.map((task) => ({
+  const rows = (
+    await Promise.all(
+      ['open', 'active', 'review'].map((status) => reader(PLATFORM_SLUG, { status })),
+    )
+  ).flat()
+  const filedRows: FiledIssueTaskRow[] = [
+    ...new Map(rows.map((task) => [`${task.project}\0${task.key}`, task])).values(),
+  ].map((task) => ({
     key: task.key,
     title: task.title ?? null,
     body: task.body ?? null,

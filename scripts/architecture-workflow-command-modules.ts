@@ -16,6 +16,10 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-read-port.ts',
     './workflow-task-reference.ts',
   ]),
+  module('orchestrator/src/workflow/project-task-lookup.ts', [
+    './task-read-port.ts',
+    './workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-task-tree.ts', []),
   module('orchestrator/src/workflow/workflow-child-queue.ts', [
     '../../../shared/brand.ts',

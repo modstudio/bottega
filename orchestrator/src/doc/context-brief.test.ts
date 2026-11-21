@@ -415,16 +415,23 @@ test('contextBrief uses the session cursor rows for holders and in flight', asyn
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
-  const task = (key: string, project: string, title: string, parentKey: string | null = null) => ({
+  const task = (
+    key: string,
+    project: string,
+    title: string,
+    parentKey: string | null = null,
+    hasChildren = false,
+  ) => ({
     key,
     project,
     title,
     parent_key: parentKey,
     record_id: `${project}:${key}`,
+    has_children: hasChildren,
   })
   const tasks = [
     task('DEV-1844/2', PLATFORM_SLUG, 'Build the brief', 'DEV-1844'),
-    task('DEV-1844', PLATFORM_SLUG, 'Architect context'),
+    task('DEV-1844', PLATFORM_SLUG, 'Architect context', null, true),
     task('APP-7', 'other', 'Other project task'),
     task('DEV-2000', PLATFORM_SLUG, 'Parentless childless task'),
     task('SHARED-1', PLATFORM_SLUG, 'Platform shared key'),

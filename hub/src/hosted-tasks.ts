@@ -21,6 +21,21 @@ export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument
 export type HostedStatusEvent = PushedStatusEvent
 
+export const TASK_LOOKUP_KEY_LIMIT = 100
+
+export type HostedTaskLookupRow = {
+  record_id: string
+  key: string
+  project: string
+  title: string | null
+  parent_key: string | null
+  status: string | null
+  status_category: string | null
+  opened_at: string | null
+  last_seen: string | null
+  has_children: boolean
+}
+
 export const hostedTaskPullSerializers = {
   hub_task: (row: HostedTask) => row,
   hub_task_comment: (row: HostedComment) => row,
@@ -52,6 +67,41 @@ export async function getHostedTask(client: SQL, identity: TaskIdentity, taskIde
         AND d.deleted_at IS NULL ORDER BY d.number`,
     )
     return { task, comments, documents }
+  })
+}
+
+export async function lookupHostedTasks(
+  client: SQL,
+  identity: TaskIdentity,
+  project: string,
+  keys: string[],
+): Promise<{ tasks: HostedTaskLookupRow[] }> {
+  if (keys.length > TASK_LOOKUP_KEY_LIMIT)
+    throw new Error(`task lookup accepts at most ${TASK_LOOKUP_KEY_LIMIT} keys`)
+  if (!project || !keys.length || keys.some((key) => !key))
+    throw new Error('task lookup requires a project and at least one non-empty key')
+  return withHostedTenant(client, identity, async (tx) => {
+    const tasks = rows<HostedTaskLookupRow>(
+      await tx`
+      WITH RECURSIVE selected AS (
+        SELECT t.* FROM hub_task t
+        WHERE t.space_id=${identity.spaceId}::uuid AND t.project_name=${project}
+          AND t.key IN (SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb))
+          AND t.deleted_at IS NULL
+        UNION
+        SELECT parent.* FROM hub_task parent JOIN selected child ON child.parent_id=parent.id
+        WHERE parent.space_id=${identity.spaceId}::uuid AND parent.project_name=${project}
+          AND parent.deleted_at IS NULL
+      )
+      SELECT selected.id::text record_id,selected.key,selected.project_name project,
+        selected.title,selected.parent_key,selected.status,selected.status_category,
+        selected.opened_at::text,selected.last_seen::text,
+        EXISTS(SELECT 1 FROM hub_task child
+          WHERE child.space_id=${identity.spaceId}::uuid AND child.parent_id=selected.id
+            AND child.deleted_at IS NULL) has_children
+      FROM selected ORDER BY selected.key`,
+    )
+    return { tasks }
   })
 }
 

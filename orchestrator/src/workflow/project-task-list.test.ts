@@ -3,6 +3,7 @@ import { readProjectTaskList } from './project-task-list.ts'
 import { installTaskReader, type TaskReadPort } from './task-read-port.ts'
 
 const invalidRowPort: TaskReadPort = {
+  lookup: async () => [],
   list: async () => [
     {
       key: 'DEV-1',

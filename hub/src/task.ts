@@ -17,7 +17,7 @@ import { HOSTED_COMMENT_TABLE } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { cacheCreatedHostedTask } from './task-cache.ts'
-import { hostedCreateTask } from './task-client.ts'
+import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
@@ -513,6 +513,34 @@ export async function listTasks(
   if (hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured') return listLocalTasks(filters)
   if (filters.status) status(filters.status)
   return listHostedTasks(filters)
+}
+
+export async function lookupTasks(project: string, keys: string[]) {
+  if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
+    return hostedLookupTasks(project, keys, hostedTaskWriteOptions(project))
+  const found = new Map<string, TaskRow & { has_children: boolean }>()
+  let pending = [...new Set(keys.map((key) => key.toUpperCase()))]
+  while (pending.length) {
+    const placeholders = pending.map(() => '?').join(',')
+    const rows = db()
+      .query<TaskRow, string[]>(
+        `SELECT * FROM task WHERE project=? AND key IN (${placeholders}) ORDER BY key`,
+      )
+      .all(project, ...pending)
+    pending = []
+    for (const row of rows) {
+      if (found.has(row.record_id)) continue
+      const hasChildren =
+        db()
+          .query<{ found: number }, [string]>(
+            'SELECT 1 found FROM task WHERE parent_record_id=? LIMIT 1',
+          )
+          .get(row.record_id) !== null
+      found.set(row.record_id, { ...row, has_children: hasChildren })
+      if (row.parent_key) pending.push(row.parent_key)
+    }
+  }
+  return [...found.values()]
 }
 
 export async function showTask(

@@ -35,6 +35,7 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
+    lookup: async () => [],
     list: async ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
     show: async (key) => ({ task: byKey.get(key)! }),
     duplicates: async () => [],

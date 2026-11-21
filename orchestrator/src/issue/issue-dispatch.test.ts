@@ -4,9 +4,32 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   filedIssueClaimable,
+  filedIssueQueueState,
   filedIssueStateForProject,
   unscoredFiledIssueLoopRuns,
 } from './issue-dispatch.ts'
+
+test('filed-issue queue reads only the three live status categories', async () => {
+  const calls: Array<{ project: string; status: string | undefined }> = []
+  const tasks = Array.from({ length: 600 }, (_, index) => ({
+    key: `DEV-${index}`,
+    record_id: `task-${index}`,
+    project: PLATFORM_SLUG,
+    title: 'ordinary task',
+    body: null,
+    status_category: 'open',
+    opened_at: null,
+  }))
+  await filedIssueQueueState(null, async (project, filters) => {
+    calls.push({ project, status: filters?.status })
+    return tasks.filter((task) => task.status_category === filters?.status)
+  })
+  expect(calls).toEqual([
+    { project: PLATFORM_SLUG, status: 'open' },
+    { project: PLATFORM_SLUG, status: 'active' },
+    { project: PLATFORM_SLUG, status: 'review' },
+  ])
+})
 
 test('project-scoped filed issue state belongs wholly to the platform project', () => {
   const state = {

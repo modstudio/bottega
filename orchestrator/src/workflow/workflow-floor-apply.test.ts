@@ -56,6 +56,7 @@ const task = {
 }
 
 const taskPort: TaskReadPort = {
+  lookup: async () => [],
   list: async () => [task],
   show: async () => ({ task }),
   duplicates: async () => [],
@@ -78,6 +79,7 @@ test('descendant facts use parent-filtered reads and visit each node once', asyn
     ['DEV-3', [{ ...task, key: 'DEV-2', parent_key: 'DEV-3' }]],
   ])
   installTaskReader({
+    lookup: async () => [],
     ...taskPort,
     list: async (filters = {}) => {
       reads.push(filters)
@@ -96,6 +98,7 @@ test('descendant facts use parent-filtered reads and visit each node once', asyn
 test('descendant facts make no reads without a root key', async () => {
   let reads = 0
   installTaskReader({
+    lookup: async () => [],
     ...taskPort,
     list: async () => {
       reads += 1

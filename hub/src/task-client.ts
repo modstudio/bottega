@@ -10,6 +10,7 @@ import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.t
 import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
+import { type HostedTaskLookupRow, TASK_LOOKUP_KEY_LIMIT } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import { parseIdentitySetPage } from './identity-set-contract.ts'
@@ -311,6 +312,37 @@ export async function hostedListTasks(
     if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
     cursor = page.cursor
   }
+}
+
+const TASK_LOOKUP_DEPLOY_REMEDY = 'run `scripts/deploy/hosted api` and retry'
+
+export async function hostedLookupTasks(
+  project: string,
+  keys: string[],
+  options: HostedWriteRequestOptions,
+): Promise<HostedTaskLookupRow[]> {
+  const tasks = new Map<string, HostedTaskLookupRow>()
+  for (let index = 0; index < keys.length; index += TASK_LOOKUP_KEY_LIMIT) {
+    const chunk = keys.slice(index, index + TASK_LOOKUP_KEY_LIMIT)
+    if (!chunk.length) continue
+    try {
+      const result = await writeRequest<{ tasks: HostedTaskLookupRow[] }>(
+        '/v1/tasks/lookup',
+        'POST',
+        { project, keys: chunk },
+        options,
+      )
+      for (const task of result.tasks) tasks.set(task.record_id, task)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/\b(404|405)\b|not found|method not allowed/i.test(message))
+        throw new Error(`hosted task lookup is unavailable; ${TASK_LOOKUP_DEPLOY_REMEDY}`, {
+          cause: error,
+        })
+      throw error
+    }
+  }
+  return [...tasks.values()]
 }
 
 export const hostedTaskPresence = (

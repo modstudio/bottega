@@ -19,6 +19,7 @@ export type HubTaskReference = {
   source?: string | null
   status?: string | null
   status_category?: string | null
+  has_children?: boolean
   commentIds?: Array<string | number>
   commentsVerifiable?: boolean
 }

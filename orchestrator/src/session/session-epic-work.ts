@@ -11,6 +11,8 @@ import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-chil
 import { childQueueState, sessionWorksUnderEpic } from '../workflow/workflow-child-queue.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
 
+const SESSION_STOP_TASK_STATUSES = ['open', 'active', 'review'] as const
+
 export async function sessionEpicWork(session: string, database: Database = db()) {
   const sessionStages = await taskFlowReadStore(database).listOpenStages({ sessionId: session })
   const claimProjects = boardLiveClaimProjectsForSession(session, Date.now(), database)
@@ -23,7 +25,11 @@ export async function sessionEpicWork(session: string, database: Database = db()
     })
     if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
       continue
-    const tasks = await readProjectTaskList(project)
+    const tasks = (
+      await Promise.all(
+        SESSION_STOP_TASK_STATUSES.map((status) => readProjectTaskList(project, { status })),
+      )
+    ).flat()
     const facts = await gatherChildTaskFacts(database, project, tasks)
     const claims = liveChildClaims(database, project).filter(
       ({ holder_session }) => holder_session === session,

@@ -19,6 +19,10 @@ import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
+import {
+  lookupProjectTasks,
+  type ProjectTaskLookupReader,
+} from '../workflow/project-task-lookup.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
@@ -47,7 +51,6 @@ import {
   formatContextBriefRunLine,
 } from './context-brief-format.ts'
 import { listContextItems } from './context-item-store.ts'
-import { taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
@@ -198,14 +201,14 @@ export function holderSequence(
   ]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
-  const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
+  const add = (task: HubTaskReference) => {
     const identity = projectTaskKey(task.project, task.key)
     if (emitted.has(identity)) return
     emitted.add(identity)
     holders.push({
       key: task.key,
       title: task.title ?? '',
-      kind: taskProfile(task.key, projectTasks),
+      kind: task.has_children ? 'epic' : 'task',
       recordId: task.record_id,
       project: task.project,
     })
@@ -213,13 +216,12 @@ export function holderSequence(
   for (const { key, project } of working) {
     const task = taskReferenceForProjectKey(index, project, key)
     if (!task) continue
-    const projectTasks = tasks.filter((row) => row.project === project)
-    add(task, projectTasks)
+    add(task)
     let parent = task.parent_key ?? null
     while (parent) {
       const parentTask = taskReferenceForProjectKey(index, project, parent)
       if (!parentTask) break
-      add(parentTask, projectTasks)
+      add(parentTask)
       parent = parentTask.parent_key ?? null
     }
   }
@@ -390,6 +392,7 @@ export async function contextBrief(
   cwd = process.cwd(),
   database: Database = db(),
   hubTaskReader: ProjectTaskListReader = readProjectTaskList,
+  hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
@@ -397,9 +400,14 @@ export async function contextBrief(
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
-    Promise.all(workingProjects.map((project) => hubTaskReader(project))).then((rows) =>
-      rows.flat(),
-    ),
+    Promise.all(
+      workingProjects.map((project) =>
+        hubTaskLookup(
+          project,
+          working.filter((row) => row.project === project).map((row) => row.key),
+        ),
+      ),
+    ).then((rows) => rows.flat()),
     architectSessionContext(cwd, { database }),
     filedIssueQueueState(projectAt(cwd, database)?.name ?? null, hubTaskReader),
   ])
