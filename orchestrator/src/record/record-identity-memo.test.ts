@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { configClient } from '../../../shared/config-client.ts'
 import { forgetConfigReadMemo } from '../../../shared/config-read-memo.ts'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
@@ -14,7 +15,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { recordApiClient } from './record-api-client.ts'
+import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 
 const identity = {
   user: {
@@ -157,7 +158,10 @@ describe('record identity process memo', () => {
     const record = recordApiClient()
 
     await expect(config.whoami()).resolves.toMatchObject({ user: { id: 'user-a' } })
-    await expect(record.whoami()).rejects.toThrow('record API returned an invalid identity')
+    const result = record.whoami()
+    await expect(result).rejects.toBeInstanceOf(RecordApiRequestError)
+    await expect(result).rejects.toMatchObject({ kind: 'unreachable' })
+    await expect(result).rejects.toThrow(`${PLATFORM_SLUG} record doctor`)
     expect(whoamiRequests).toBe(1)
   })
 

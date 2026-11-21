@@ -436,6 +436,8 @@ function createConfigClient(
   storedToken = false,
 ) {
   const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
+    const requestToken = storedToken ? readRecordSessionToken() : token
+    if (!requestToken) throw new ConfigClientError('not-configured', route)
     const send = async (bearer: string | null) => {
       if (!bearer) throw new ConfigClientError('not-configured', route)
       const headers = recordRequestHeaders({
@@ -504,14 +506,14 @@ function createConfigClient(
     }
     const method = init.method?.toUpperCase() ?? 'GET'
     if (method !== 'GET') {
-      clearConfigReadMemo(transport, baseUrl, token)
-      return load().finally(() => clearConfigReadMemo(transport, baseUrl, token))
+      clearConfigReadMemo(transport, baseUrl, requestToken)
+      return load().finally(() => clearConfigReadMemo(transport, baseUrl, requestToken))
     }
     if (isMemoizedConfigRead(route))
       return memoizedConfigRead(
         transport,
         baseUrl,
-        token,
+        requestToken,
         route,
         init.destinationSpaceId,
         init.projectId,

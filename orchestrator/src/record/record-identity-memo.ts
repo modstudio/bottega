@@ -28,7 +28,7 @@ function recordIdentityMemoRequest(
     if (path === RECORD_WHOAMI_ROUTE) {
       const token = storedRecordToken()
       if (token)
-        return recordIdentityResponse(
+        return (init.schema ?? recordIdentityResponse)(
           await memoizedConfigRead(
             transport,
             baseUrl(),
