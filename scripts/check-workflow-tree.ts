@@ -1,6 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { validateStepCatalogue } from '../orchestrator/src/workflow/step-catalogue.ts'
-import { workflowRenderGuidanceTexts } from '../orchestrator/src/workflow/workflow-render.ts'
 import type { WorkflowTreeStore } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { parseWorkflowTree } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-files.ts'
@@ -19,9 +19,13 @@ export function workflowTreeValidationErrors(tree: WorkflowTreeStore): string[] 
   ]
 }
 
-type GuidanceText = { name: string; text: string }
-
 const lineAt = (text: string, offset: number) => text.slice(0, offset).split('\n').length
+
+const renderPath = 'orchestrator/src/workflow/workflow-render.ts'
+const renderSource = readFileSync(
+  fileURLToPath(new URL(`../${renderPath}`, import.meta.url)),
+  'utf8',
+)
 
 function namingErrors(path: string, text: string, source?: string): string[] {
   const sourceOffset = source?.indexOf(text) ?? -1
@@ -34,7 +38,7 @@ function namingErrors(path: string, text: string, source?: string): string[] {
 export function workflowNamingErrors(
   tree: WorkflowTreeStore,
   sources: ReadonlyMap<string, string> = new Map(),
-  guidance: readonly GuidanceText[] = workflowRenderGuidanceTexts(),
+  workflowRenderSource: string = renderSource,
 ): string[] {
   return [
     ...tree.steps.flatMap((step) => {
@@ -42,9 +46,7 @@ export function workflowNamingErrors(
       const source = sources.get(path)
       return [...namingErrors(path, step.title, source), ...namingErrors(path, step.body, source)]
     }),
-    ...guidance.flatMap(({ name, text }) =>
-      namingErrors(`orchestrator/src/workflow/workflow-render.ts (${name})`, text),
-    ),
+    ...namingErrors(renderPath, workflowRenderSource),
   ]
 }
 

@@ -3,8 +3,15 @@
 
 import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 
-export function mutableArtifactFreshnessRefusal(
-  kind: string,
+export type MutableArtifactKind =
+  | 'doc'
+  | 'task comment'
+  | 'task document'
+  | 'note'
+  | 'attached text'
+
+function mutableArtifactFreshnessRefusal(
+  kind: MutableArtifactKind,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,
 ): string | null {
@@ -13,7 +20,7 @@ export function mutableArtifactFreshnessRefusal(
 }
 
 export function requireMutableArtifactFreshness(
-  kind: string,
+  kind: MutableArtifactKind,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,
 ): void {

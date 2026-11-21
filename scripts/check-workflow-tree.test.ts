@@ -22,9 +22,11 @@ test('naming guard covers step bodies, titles and rendered guidance without flag
     title: 'The operator approves',
     body: 'Ask the operator, then use --from-operator.',
   }
-  const findings = workflowNamingErrors(changed, new Map(), [
-    { name: 'fixture', text: 'Return the operator ruling with --from-operator.' },
-  ])
+  const findings = workflowNamingErrors(
+    changed,
+    new Map(),
+    'Return the operator ruling with --from-operator.',
+  )
   expect(findings).toHaveLength(3)
   expect(findings.some((finding) => finding.includes('workflow-render.ts'))).toBe(true)
   expect(workflowNamingErrors(tree)).toEqual([])

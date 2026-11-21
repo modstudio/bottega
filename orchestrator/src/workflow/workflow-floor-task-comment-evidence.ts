@@ -1,7 +1,7 @@
 // concern: workflows
 /** Resolves a tracker comment offered as mutable workflow floor evidence. */
 
-import type { ArtifactRef } from './workflow-artifact-reference.ts'
+import type { ArtifactEvidence, ArtifactRef } from './workflow-artifact-reference.ts'
 import { timedTaskCommentFreshnessNotice } from './workflow-floor-artifact-freshness.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 
@@ -10,7 +10,7 @@ export function resolveTaskCommentArtifact(
   raw: string,
   task: HubTaskRead,
   stepActivatedAt: string,
-): { ref: string; exists: boolean; notice?: string } {
+): ArtifactEvidence {
   if (task.commentsVerifiable === false)
     throw new Error(
       `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,

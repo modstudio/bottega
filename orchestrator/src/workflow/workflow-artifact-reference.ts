@@ -10,6 +10,8 @@ import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 
+export type ArtifactEvidence = { ref: string; exists: boolean; notice?: string }
+
 export type ArtifactRef =
   | { kind: 'task'; key: string }
   | { kind: 'comment'; key: string; id: string }

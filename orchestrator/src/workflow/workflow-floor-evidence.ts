@@ -30,6 +30,7 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import type {
+  ArtifactEvidence,
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
 } from './workflow-artifact-evidence.ts'
@@ -485,7 +486,7 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-): Promise<{ ref: string; exists: boolean; notice?: string }> {
+): Promise<ArtifactEvidence> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
@@ -503,7 +504,7 @@ async function resolveTaskArtifact(
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'task-document')
     return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
   if (!ports.readTask)
@@ -523,7 +524,7 @@ async function resolveStoredArtifact(
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): Promise<{ ref: string; exists: boolean; notice?: string }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text') {
     const row = await taskFlowReadStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
@@ -567,7 +568,7 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
   requireCommandCheckout: boolean,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id') return await resolveNumericArtifact(ref.id, identity, binding.cursorId, d)

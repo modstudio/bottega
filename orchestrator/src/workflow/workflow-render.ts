@@ -45,23 +45,6 @@ const decisionStillGoesToUser = `a design or product-direction decision still go
 const userVisibleDecisionStillGoesToUser = `a decision that changes what the user sees, or product direction, still goes to the user (\`${PLATFORM_SLUG} workflow await\`)`
 const reviewListingGuidance = 'the ruling is listed for the user when the workflow finishes'
 
-/** The prose constants a composed workflow can print, exposed for the tree naming guard. */
-export function workflowRenderGuidanceTexts(): Array<{ name: string; text: string }> {
-  return [
-    { name: 'legend', text: legend },
-    { name: 'agent rulings', text: agentRulingsGuidance },
-    { name: 'contract question', text: contractQuestionGuidance },
-    { name: 'missing work', text: missingWorkGuidance },
-    { name: 'missing arguments', text: missingArgumentsGuidance },
-    { name: 'other-floor ruling', text: otherFloorRulingGuidance },
-    { name: 'only-ruling', text: onlyRulingGuidance },
-    { name: 'ask action', text: askActionGuidance },
-    { name: 'decision routing', text: decisionStillGoesToUser },
-    { name: 'user-visible decision routing', text: userVisibleDecisionStillGoesToUser },
-    { name: 'review listing', text: reviewListingGuidance },
-  ]
-}
-
 const renderedJobs = (jobs: string[]) => (jobs.length ? ` jobs=${jobs.join(',')}` : '')
 
 const rulingsHeader = (result: WorkflowComposition) =>

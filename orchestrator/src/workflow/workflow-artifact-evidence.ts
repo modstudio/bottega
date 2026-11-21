@@ -1,8 +1,11 @@
 // concern: workflows
 /** Shapes evidence contributed by each offered workflow artifact. */
 
+import type { ArtifactEvidence } from './workflow-artifact-reference.ts'
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import type { NoteFloorEvidence } from './workflow-task-open-with-notes-floor.ts'
+
+export type { ArtifactEvidence } from './workflow-artifact-reference.ts'
 
 export type BottegaCommandIdentity = {
   resolvedCandidate: string | null
@@ -11,7 +14,7 @@ export type BottegaCommandIdentity = {
 }
 
 export type ValidatedArtifactEvidence = {
-  artifact: { ref: string; exists: boolean; notice?: string }
+  artifact: ArtifactEvidence
   note?: NoteFloorEvidence
   artifactRunOffered?: string
   probe?: { id: number; exitCode: number }
