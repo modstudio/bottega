@@ -355,6 +355,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       project: 'fixture',
       bindingPresent:
         resolveWorkflowCursorSuccessor(runBinding.cursor_record_id, links) === successor.record_id,
+      writesRepo: false,
       harnessSession: fixture.context.session,
       heldCursors: [],
       overrideReason: undefined,

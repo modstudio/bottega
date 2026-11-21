@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 
 export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
@@ -10,8 +11,10 @@ type KeyedRunCursor = {
   recordId: string
   number: number
   project: string
+  workflowSlug: string
   workflowKey: string
   stepSlug: string
+  updatedAt: string
 }
 
 type KeyedRunCursorBinding = { cursorRecordId: string; stepSlug: string }
@@ -21,6 +24,7 @@ export type KeyedRunCursorAdmissionInput = {
   key: string | undefined
   project: string | null
   bindingPresent: boolean
+  writesRepo: boolean
   rootCursorRecordId?: string | null
   harnessSession: string | null
   heldCursors: readonly KeyedRunCursor[]
@@ -54,6 +58,15 @@ const composeRemedy = (project: string | null, key: string): string => {
     `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${projectName} --arg key=${key}; ` +
     `to repair a defect, run ${PLATFORM_SLUG} workflow compose fix-defect --project ${projectName} --arg key=${key}; ` +
     `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${projectName} --arg key=${key} --arg branch=<branch> --arg worktree=<worktree>`
+  )
+}
+
+const unkeyedRemedy = (input: Pick<KeyedRunCursorAdmissionInput, 'turn' | 'project'>): string => {
+  const project = input.project ?? '<project>'
+  return (
+    `for work without a task, run ${PLATFORM_SLUG} workflow compose explore --project ${project}; ` +
+    composeRemedy(input.project, '<key>') +
+    (canOverride(input.turn) ? `; override with ${OVERRIDE_REMEDY}` : '')
   )
 }
 
@@ -106,6 +119,53 @@ function decideMatchingCursor(
   }
 }
 
+function decideKeylessCursor(
+  input: KeyedRunCursorAdmissionInput,
+  matching: readonly KeyedRunCursor[],
+): KeyedRunCursorAdmission {
+  const admitted =
+    input.cursor === undefined
+      ? matching.toSorted(
+          (left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt) || right.number - left.number,
+        )[0]
+      : matching.find(({ number }) => number === input.cursor)
+  if (!admitted) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing unkeyed run turn because cursor ${input.cursor} is not an open keyless workflow cursor held by harness session ${input.harnessSession} for project ${input.project}`,
+          {
+            kind: 'edit',
+            text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}`,
+          },
+        ),
+      ),
+    }
+  }
+  if (input.writesRepo) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing unkeyed run turn because workflow ${admitted.workflowSlug} cursor ${admitted.number} has no task key and this job writes the repository`,
+          {
+            kind: 'edit',
+            text:
+              `adopt the task key in place with ${PLATFORM_SLUG} workflow step ${admitted.workflowSlug}${workflowCursorReference(admitted.number, admitted.project).cli} --arg key=<KEY>; ` +
+              composeRemedy(input.project, '<key>'),
+          },
+        ),
+      ),
+    }
+  }
+  return {
+    kind: 'allow',
+    binding: { cursorRecordId: admitted.recordId, stepSlug: admitted.stepSlug },
+  }
+}
+
 function decideBoundRootCursor(
   input: KeyedRunCursorAdmissionInput,
 ): KeyedRunCursorAdmission | null {
@@ -138,11 +198,51 @@ function decideOverride(input: KeyedRunCursorAdmissionInput): KeyedRunCursorAdmi
   return { kind: 'allow-with-override', warning: `${OVERRIDE_PREFIX}${reason}` }
 }
 
+function decideUnkeyedCursorAdmission(
+  input: KeyedRunCursorAdmissionInput,
+): KeyedRunCursorAdmission {
+  if (!input.harnessSession) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal('refusing unkeyed run turn without a harness session', {
+          kind: 'edit',
+          text: unkeyedRemedy(input),
+        }),
+      ),
+    }
+  }
+  if (!input.project) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing unkeyed run turn because the dispatch location is outside every registered project, so cursor ownership for harness session ${input.harnessSession} cannot be established`,
+          { kind: 'edit', text: unkeyedRemedy(input) },
+        ),
+      ),
+    }
+  }
+  const matching = input.heldCursors.filter(
+    (cursor) => cursor.project === input.project && cursor.workflowKey === '',
+  )
+  if (matching.length) return decideKeylessCursor(input, matching)
+  return {
+    kind: 'refuse',
+    message: renderRefusal(
+      refusal(
+        `refusing unkeyed run turn because harness session ${input.harnessSession} does not hold an open keyless workflow cursor for project ${input.project}`,
+        { kind: 'edit', text: unkeyedRemedy(input) },
+      ),
+    ),
+  }
+}
+
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
 export function decideKeyedRunCursorAdmission(
   input: KeyedRunCursorAdmissionInput,
 ): KeyedRunCursorAdmission {
-  if (!input.key || (input.bindingPresent && !input.rootCursorRecordId)) {
+  if (input.bindingPresent && !input.rootCursorRecordId) {
     return { kind: 'allow' }
   }
 
@@ -151,6 +251,8 @@ export function decideKeyedRunCursorAdmission(
 
   const overrideDecision = decideOverride(input)
   if (overrideDecision) return overrideDecision
+
+  if (!input.key) return decideUnkeyedCursorAdmission(input)
 
   if (!input.harnessSession) {
     const remedy =
@@ -214,7 +316,6 @@ export async function checkKeyedRunCursorAdmission(
 ): Promise<KeyedRunCursorAdmission> {
   const decisionWithoutCursors = decideKeyedRunCursorAdmission({ ...input, heldCursors: [] })
   if (
-    !input.key ||
     (input.bindingPresent && !input.rootCursorRecordId) ||
     !input.harnessSession ||
     input.overrideReason !== undefined

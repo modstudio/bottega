@@ -13,6 +13,12 @@ import { setRawArgv } from './support.ts'
 
 const trackResidue = trackedTestResidue()
 
+const bindRunToCursor = (runId: string): void => {
+  db()
+    .query("UPDATE run SET cursor_record_id=?,step_slug='test-step' WHERE record_id=?")
+    .run(newRecordId(), runId)
+}
+
 test('agent registration forwards provider mutations to the agent command', async () => {
   const received: string[][] = []
   const parse = async (argv: string[]) => {
@@ -72,6 +78,7 @@ test('answer honors a typed value before or after the positional run id', async 
       status: 'asking',
       session: sessionId(),
     })
+    bindRunToCursor(recordId)
     const number = db()
       .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
       .get(recordId)!.number
@@ -254,6 +261,7 @@ test('relay honors its note option before the positional run id', async () => {
 
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  bindRunToCursor(recordId)
   const number = (
     db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
       number: number
@@ -291,6 +299,7 @@ test('continue parses --findings before the message and hands the rendered text 
 
 test('continue without --findings hands the architect message through unchanged', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  bindRunToCursor(recordId)
   const number = (
     db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
       number: number
@@ -400,6 +409,7 @@ test('continue refuses an unknown option before --file instead of sending the op
 
 test('continue parses --file before the id and reads only the file content', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  bindRunToCursor(recordId)
   const number = (
     db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
       number: number
@@ -452,6 +462,7 @@ test('continue refuses an empty file before launch', async () => {
 
 test('continue resolves a run UUID to the same local row as its number', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  bindRunToCursor(recordId)
   const number = (
     db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
       number: number
