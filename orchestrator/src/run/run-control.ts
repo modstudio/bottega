@@ -666,9 +666,10 @@ async function reportAndRecordContinuationTree(
   branchSource: ReturnType<typeof continuationBranchPlan>['source'],
   treePlan: ResumeTreePlan | null,
   dependencies: ContinueRunDependencies,
-): Promise<void> {
+): Promise<boolean> {
   await dependencies.reportDetached?.(childId, jobName)
   recordContinuationTreeSource(childId, branchSource, treePlan)
+  return dependencies.reportDetached !== undefined
 }
 
 function producedContinuationMessage(
@@ -729,7 +730,7 @@ export async function continueRun(
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
   dependencies: ContinueRunDependencies = {},
-): Promise<{ childId: string; job: string }> {
+): Promise<{ childId: string; job: string; reported: boolean }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
@@ -866,10 +867,20 @@ export async function continueRun(
       continuationMessage: messageBinding,
     },
   })
-  await reportAndRecordContinuationTree(childId, row.job, branchSource, treePlan, dependencies)
+  const reported = await reportAndRecordContinuationTree(
+    childId,
+    row.job,
+    branchSource,
+    treePlan,
+    dependencies,
+  )
   auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)
   await renewContinuedRunClaim(dependencies, row)
-  return { childId, job: row.job }
+  return { childId, job: row.job, reported }
+}
+
+export function reportsBeforeFollow(flags: { detach: boolean; follow: boolean }): boolean {
+  return flags.detach || !flags.follow
 }
 
 export async function reportContinuedRun(
@@ -879,7 +890,7 @@ export async function reportContinuedRun(
   presentation: RunControlPresentation,
 ): Promise<void> {
   if (reportHarnessHandoff(childId)) return
-  if (flags.detach || !flags.follow) {
+  if (reportsBeforeFollow(flags)) {
     presentation.printRunId(childId)
     if (!flags.quiet) {
       console.error(

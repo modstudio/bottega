@@ -308,6 +308,7 @@ describe('run continuation', () => {
     })
 
     expect(reportedChild).toBe(resumed.childId)
+    expect(resumed.reported).toBe(true)
     expect(
       db()
         .query(
@@ -657,7 +658,11 @@ describe('run continuation', () => {
       },
     })
 
-    expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
+    expect(resumed).toEqual({
+      childId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      job: 'summarize',
+      reported: false,
+    })
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('DEV-2414'))
     warning.mockRestore()
   })

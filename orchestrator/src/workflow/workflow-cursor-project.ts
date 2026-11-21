@@ -16,3 +16,11 @@ export function workflowCursorProject(
 export function workflowCursorProjectUsesHubTracker(project: string, database: Database): boolean {
   return projectByName(project, database)?.settings.tracker?.protocol === 'hub'
 }
+
+export function hubTrackerKeyNamesNoTask(
+  project: string,
+  taskRecordId: string | null,
+  database: Database,
+): boolean {
+  return workflowCursorProjectUsesHubTracker(project, database) && taskRecordId === null
+}

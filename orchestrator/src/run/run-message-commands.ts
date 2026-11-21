@@ -42,7 +42,12 @@ import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
-import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
+import {
+  continueRun,
+  type RunControlPresentation,
+  reportContinuedRun,
+  reportsBeforeFollow,
+} from './run-control.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
@@ -359,17 +364,15 @@ export async function continueCommand(
     turn: 'continue',
     ...admission,
   })
-  let detachedReported = false
   const reportDetached =
-    flags.detach || !flags.follow
+    reportsBeforeFollow(flags)
       ? async (childId: string, jobName: string) => {
-          await dependencies.reportContinuedRun(
+          return dependencies.reportContinuedRun(
             childId,
             jobName,
             flags,
             controlPresentation(presentation),
           )
-          detachedReported = true
         }
       : undefined
   const resumed = await dependencies.continueRun(
@@ -387,7 +390,7 @@ export async function continueCommand(
     resumed.childId,
     admissionResult.warning,
   )
-  if (!detachedReported)
+  if (!resumed.reported)
     await dependencies.reportContinuedRun(
       resumed.childId,
       resumed.job,

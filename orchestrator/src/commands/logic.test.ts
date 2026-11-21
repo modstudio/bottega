@@ -267,7 +267,7 @@ test('continue parses --findings before the message and hands the rendered text 
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -305,7 +305,7 @@ test('continue without --findings hands the architect message through unchanged'
     continueCommandDependencies: {
       continueRun: async (_id, message, _limit, produceMessage) => {
         received = produceMessage ? produceMessage() : message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -332,7 +332,7 @@ test('continue admits the later turn and records an attributed override on its c
         admissions.push(input)
         return { warning: 'operator override warning', binding: undefined }
       },
-      continueRun: async () => ({ childId: 'child-record-id', job: 'implement' }),
+      continueRun: async () => ({ childId: 'child-record-id', job: 'implement', reported: false }),
       reportContinuedRun: async () => {},
       recordKeyedTurnOverride: (runId, warning) => {
         if (warning) warnings.push({ runId, warning })
@@ -375,7 +375,7 @@ test('continue refuses an unknown option before --file instead of sending the op
     continueCommandDependencies: {
       continueRun: async () => {
         launched = true
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -413,7 +413,7 @@ test('continue parses --file before the id and reads only the file content', asy
     continueCommandDependencies: {
       continueRun: async (_id, message) => {
         received = message
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -438,7 +438,7 @@ test('continue refuses an empty file before launch', async () => {
     continueCommandDependencies: {
       continueRun: async () => {
         launched = true
-        return { childId: '99', job: 'implement' }
+        return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
     },
@@ -464,7 +464,7 @@ test('continue resolves a run UUID to the same local row as its number', async (
       continueCommandDependencies: {
         continueRun: async (runId) => {
           received.push(runId)
-          return { childId: '99', job: 'implement' }
+          return { childId: '99', job: 'implement', reported: false }
         },
         reportContinuedRun: async () => {},
       },

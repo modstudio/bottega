@@ -70,6 +70,7 @@ import {
   type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
+  reportsBeforeFollow,
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
@@ -640,7 +641,14 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue') {
-    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, helpers)
+    const reportDetached = reportsBeforeFollow(options.flags)
+      ? (childId: string, jobName: string) =>
+          reportContinuedRun(childId, jobName, options.flags, helpers.presentation)
+      : undefined
+    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, {
+      ...helpers,
+      reportDetached,
+    })
     auditRunMutation(
       retryAuthority,
       'retry',
@@ -648,7 +656,8 @@ export async function retryRun(
       db(),
       resumed.childId,
     )
-    await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
+    if (!resumed.reported)
+      await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
     return resumed.childId
   }
   if (!row.prompt_path || !existsSync(row.prompt_path)) {
