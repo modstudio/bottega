@@ -95,8 +95,23 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Operator emergency.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Operator emergency.',
     })
+  })
+
+  test('an unkeyed cursor-read failure names the unkeyed remedies without an undefined key', async () => {
+    const decision = await checkKeyedRunCursorAdmission(
+      { ...base, key: undefined, turn: 'continue' },
+      async () => {
+        throw new Error('store down')
+      },
+    )
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain('refusing unkeyed run turn')
+    expect(decision.message).toContain('workflow compose explore')
+    expect(decision.message).toContain('--arg key=<key>')
+    expect(decision.message).not.toContain('key=undefined')
   })
 
   test('the most recently advanced keyless cursor wins, then the highest number', () => {
@@ -425,7 +440,7 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
   })
 
@@ -510,7 +525,7 @@ describe('keyed run cursor admission', () => {
 
     expect(decision).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
     expect(reads).toBe(0)
   })

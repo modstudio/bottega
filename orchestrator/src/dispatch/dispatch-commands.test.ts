@@ -160,6 +160,103 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
   expect(detached).toBe(false)
 })
 
+test('an unkeyed dispatch refuses writing work and binds non-writing work to its keyless cursor', async () => {
+  const project = `keyless-cursor-admission-${newRecordId()}`
+  const projectId = newRecordId()
+  const harnessSession = `keyless-cursor-session-${newRecordId()}`
+  upsertProject({ recordId: projectId, name: project, path: import.meta.dir })
+  const cursorRecordId = newRecordId()
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+         session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+         closed,total_steps,created_at,updated_at,revision)
+       VALUES (?,77124,?,?,'explore','default','','',?, ?,?,'{}',1,'explore',
+               'running','[]',1,'2026-11-21','2026-11-21',1)`,
+    )
+    .run(cursorRecordId, project, projectId, harnessSession, newRecordId(), newRecordId())
+  db().exec('PRAGMA foreign_keys=ON')
+  process.env.CLAUDE_CODE_SESSION_ID = harnessSession
+  const detached: Array<{ jobName: string; binding: unknown }> = []
+  const flags = {
+    has: (name: string) => name === 'porcelain',
+    flag: (name: string) => (name === 'repo' ? project : undefined),
+    values: () => [],
+  }
+  const presentation = {
+    usage: () => {
+      throw new Error('unexpected usage')
+    },
+    doUsage: () => {
+      throw new Error('unexpected do usage')
+    },
+    error: () => {},
+    readPrompt: async () => 'Inspect the current implementation.',
+    askTypedQuestion: async () => null,
+    specIdentity: () => 'keyless-dispatch-test',
+    validateSchema: () => {},
+    warnCallerDrift: () => {},
+    warnTaskBranchBypass: () => {},
+    resolveTaskBranchForDispatch: async () => null,
+    checkoutHasUncommittedWork: () => false,
+    resolveBase: (_cwd: string, base: string) => base,
+    isWorktreeRelativeRef: () => false,
+    implicitReviewWarning: () => 'unused',
+    resolveReviewTarget: () => null,
+    resolveCallerCheckout: () => ({
+      callerCwd: import.meta.dir,
+      launchCwd: import.meta.dir,
+      notice: null,
+    }),
+    resolveDispatchOptions: async () => ({
+      agent: 'harness',
+      agentExplicit: true,
+      transport: 'cli' as const,
+      transportExplicit: false,
+      avoid: [],
+      distinctModels: [],
+      mcp: undefined,
+      agentHarness: null,
+    }),
+    harnessCursorAdapter,
+    lookupTaskKey: async () => ({ state: 'found' as const }),
+    recordRunWarning: () => {},
+    earlierReviewRejections: noEarlierReviewRejections,
+    reviewLensInputs: noLensInputs,
+    detach: async (
+      jobName: string,
+      _prompt: string,
+      _wait: boolean,
+      spec: { binding?: unknown },
+    ) => {
+      detached.push({ jobName, binding: spec.binding })
+      return newRecordId()
+    },
+    follow: async () => {},
+    runNumber: () => 1,
+    detachedResult: () => {},
+  }
+
+  try {
+    await expect(
+      dispatchCommand(['do', 'implement'], flags, presentation as never),
+    ).rejects.toThrow('has no task key and this job writes the repository')
+    expect(detached).toEqual([])
+
+    await dispatchCommand(['do', 'understand'], flags, presentation as never)
+    expect(detached).toEqual([
+      {
+        jobName: 'understand',
+        binding: { cursorRecordId, stepSlug: 'explore' },
+      },
+    ])
+  } finally {
+    delete process.env.CLAUDE_CODE_SESSION_ID
+  }
+})
+
 test('an attributed unbound override detaches and records its warning on the run', async () => {
   const project = `cursor-override-${newRecordId()}`
   upsertProject({ recordId: newRecordId(), name: project, path: import.meta.dir })
@@ -239,7 +336,7 @@ test('an attributed unbound override detaches and records its warning on the run
   expect(warnings).toEqual([
     {
       runId,
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     },
   ])
 })
