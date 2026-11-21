@@ -90,12 +90,14 @@ export type ShipCleanupDependencies = {
         detail: string
         cursorCleanupFailure?: string
         cursorCleanupRemedy?: string
+        callerGroupHolderPids?: readonly number[]
       }>
     | {
         outcome: string
         detail: string
         cursorCleanupFailure?: string
         cursorCleanupRemedy?: string
+        callerGroupHolderPids?: readonly number[]
       }
   prune(
     project: string,
@@ -344,10 +346,14 @@ async function closeBranchWorktree(
           reason: result.detail,
           reasonKind: 'cleanup-failure',
           holdingPath: null,
+          ...(result.callerGroupHolderPids
+            ? { callerGroupHolderPids: result.callerGroupHolderPids }
+            : {}),
         },
         callerLandingTreePath,
       ),
     )
+    if (result.callerGroupHolderPids) return null
     report.errors.push({
       item: `run ${row.number} worktree`,
       detail: `close-out ${result.outcome}: ${result.detail}`,
@@ -829,6 +835,11 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const item of report.kept.filter((item) => item.owner === 'caller-landing-tree')) {
     lines.push(
       `information: kept ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,
+    )
+  }
+  for (const item of report.kept.filter((item) => item.owner === 'caller-process-group')) {
+    lines.push(
+      `information: kept ${item.item}: tree is kept, held only by this command's own processes (pids ${item.callerGroupHolderPids!.join(', ')}), and ${PLATFORM_SLUG} machine sweep releases it`,
     )
   }
   for (const item of report.verdict.residue) {

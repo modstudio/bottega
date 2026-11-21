@@ -37,7 +37,7 @@ export type ShipCleanupRunFact = {
   worktree: string | null
 }
 
-type ShipCleanupKeptOwner = 'caller-landing-tree' | 'other'
+type ShipCleanupKeptOwner = 'caller-landing-tree' | 'caller-process-group' | 'other'
 
 export type ShipCleanupKeptItem = {
   item: string
@@ -45,13 +45,14 @@ export type ShipCleanupKeptItem = {
   reasonKind: ShipCleanupKeptReasonKind
   owner: ShipCleanupKeptOwner
   remedy?: string
+  callerGroupHolderPids?: readonly number[]
 }
 
 export type ShipCleanupKeptFact = Omit<ShipCleanupKeptItem, 'owner'> & {
   holdingPath: string | null
 }
 
-/** Assign ownership only when the item is held by the command's own landing tree. */
+/** Assign ownership when the item is held by the command's tree or its proved process group. */
 export function decideShipCleanupKeptItem(
   fact: ShipCleanupKeptFact,
   callerLandingTreePath: string | null,
@@ -59,8 +60,9 @@ export function decideShipCleanupKeptItem(
   const { holdingPath, ...item } = fact
   return {
     ...item,
-    owner:
-      holdingPath !== null && holdingPath === callerLandingTreePath
+    owner: item.callerGroupHolderPids
+      ? 'caller-process-group'
+      : holdingPath !== null && holdingPath === callerLandingTreePath
         ? 'caller-landing-tree'
         : 'other',
   }
@@ -87,7 +89,7 @@ export type ShipCleanupVerdict =
       residue: readonly ShipCleanupKeptItem[]
     }
 
-/** Judge residue independently of items owned by the caller's landing tree. */
+/** Judge residue independently of items owned by the caller's tree or process group. */
 export function decideShipCleanupVerdict(report: ShipCleanupResidueReport): ShipCleanupVerdict {
   const residue = report.kept.filter((item) => item.owner === 'other')
   if (report.errors.length > 0) return { clean: false, reason: 'errors', residue }

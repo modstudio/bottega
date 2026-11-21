@@ -10,7 +10,11 @@ import { join, resolve } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
-import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
+import {
+  isGroupKillablePgid,
+  isProcessGroupPgid,
+  runHasLiveDescendants,
+} from '../idle-kill.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -33,6 +37,7 @@ import {
   recordedWorktreeSharerRunIds,
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
+import { processGroupForPid } from '../resources/process-inventory.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunCloseOutLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
@@ -678,9 +683,9 @@ function attemptCloseOutRun(
   // did not setsid inherits the coordinator pgid; after it exits that group
   // still has live members (this process). terminateProcessGroup already
   // refuses that pgid; close-out must too, or every finished run retains.
-  const selfPgid = processSamples.find((row) => row.pid === process.pid)?.pgid ?? null
+  const selfPgid = processGroupForPid(processSamples, process.pid)
   const vendorGroupAlive = (pgid: number | null | undefined): boolean => {
-    if (pgid == null || pgid <= 1) return false
+    if (!isProcessGroupPgid(pgid)) return false
     if (selfPgid !== null && !isGroupKillablePgid(pgid, selfPgid)) return false
     return runHasLiveDescendants([], [], { sample }, pgid)
   }

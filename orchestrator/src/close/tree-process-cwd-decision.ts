@@ -2,22 +2,22 @@
 /** Decides whether process working directories prove a tree is still in use. */
 
 import { workingDirectoryIsInsideTree } from '../worktree/removal-working-directory.ts'
+import { isProcessGroupPgid } from '../idle-kill.ts'
+import { processGroupForPid, type ProcessFact } from '../resources/process-inventory.ts'
 
-type ProcessGroupFact = { pid: number; pgid: number }
-
-/** Exclude this command, its ancestors, and peers from the caller's process group. */
-export function treeProcessCwdExcludedPids(input: {
-  facts: readonly ProcessGroupFact[]
+/** Identify a process-cwd hold proved to contain only the caller's process group. */
+export function treeProcessCwdCallerGroupHolderPids(input: {
+  facts: readonly Pick<ProcessFact, 'pid' | 'pgid'>[]
   processPid: number
-  ancestorPids: readonly number[]
-}): ReadonlySet<number> {
-  const excluded = new Set([input.processPid, ...input.ancestorPids])
-  const processGroup = input.facts.find(({ pid }) => pid === input.processPid)?.pgid
-  if (processGroup === undefined || processGroup === 1) return excluded
-  for (const fact of input.facts) {
-    if (fact.pgid === processGroup) excluded.add(fact.pid)
-  }
-  return excluded
+  holderPids: readonly number[]
+}): readonly number[] | null {
+  const processGroup = processGroupForPid(input.facts, input.processPid)
+  if (!isProcessGroupPgid(processGroup) || input.holderPids.length === 0) return null
+  return input.holderPids.every(
+    (holderPid) => processGroupForPid(input.facts, holderPid) === processGroup,
+  )
+    ? [...input.holderPids]
+    : null
 }
 
 export type TreeProcessCwdDecision =

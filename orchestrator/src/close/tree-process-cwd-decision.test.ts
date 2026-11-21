@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { treeProcessCwdDecision, treeProcessCwdExcludedPids } from './tree-process-cwd-decision.ts'
+import {
+  treeProcessCwdCallerGroupHolderPids,
+  treeProcessCwdDecision,
+} from './tree-process-cwd-decision.ts'
 
 const decide = (
   cwdByPid: ReadonlyMap<number, string>,
@@ -72,43 +75,32 @@ describe('tree process cwd decision', () => {
   })
 })
 
-describe('tree process cwd exclusions', () => {
-  const excluded = (facts: { pid: number; pgid: number }[]) =>
-    treeProcessCwdExcludedPids({ facts, processPid: 20, ancestorPids: [10, 1] })
+describe('tree process cwd caller-group classification', () => {
+  const classify = (facts: { pid: number; pgid: number }[], holderPids = [21]) =>
+    treeProcessCwdCallerGroupHolderPids({ facts, processPid: 20, holderPids })
 
-  test('proceeds when a same-process-group sibling is inside the tree', () => {
-    const excludedPids = excluded([
+  test('classifies every same-group holder as caller-owned without excluding the hold', () => {
+    const facts = [
       { pid: 20, pgid: 10 },
       { pid: 21, pgid: 10 },
-    ])
-
-    expect(decide(new Map([[21, '/real/tree']]), { excludedPids })).toEqual({
-      action: 'proceed',
-    })
+      { pid: 22, pgid: 10 },
+    ]
+    expect(classify(facts, [21, 22])).toEqual([21, 22])
+    expect(decide(new Map([[21, '/real/tree']]))).toMatchObject({ action: 'hold' })
   })
 
-  test('holds when a different-process-group process is inside the tree', () => {
-    const excludedPids = excluded([
+  test('does not classify a foreign or mixed hold as caller-owned', () => {
+    const facts = [
       { pid: 20, pgid: 10 },
-      { pid: 21, pgid: 21 },
-    ])
-
-    expect(decide(new Map([[21, '/real/tree']]), { excludedPids })).toEqual({
-      action: 'hold',
-      reason: { kind: 'processes', processes: [{ pid: 21, cwd: '/real/tree' }] },
-    })
+      { pid: 21, pgid: 10 },
+      { pid: 22, pgid: 22 },
+    ]
+    expect(classify(facts, [22])).toBeNull()
+    expect(classify(facts, [21, 22])).toBeNull()
   })
 
-  test('excludes only self and ancestors when the command process group is unavailable', () => {
-    expect([...excluded([{ pid: 21, pgid: 10 }])]).toEqual([20, 10, 1])
-  })
-
-  test('excludes only self and ancestors when the command process group is init', () => {
-    expect([
-      ...excluded([
-        { pid: 20, pgid: 1 },
-        { pid: 21, pgid: 1 },
-      ]),
-    ]).toEqual([20, 10, 1])
+  test.each([null, 0, 1])('does not classify unavailable or unsafe pgid %p', (pgid) => {
+    const facts = pgid === null ? [{ pid: 21, pgid: 10 }] : [{ pid: 20, pgid }, { pid: 21, pgid }]
+    expect(classify(facts)).toBeNull()
   })
 })

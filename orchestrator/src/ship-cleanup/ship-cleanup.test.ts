@@ -75,6 +75,35 @@ test('ship cleanup output names an absent tree without a deploy-from instruction
   expect(output).not.toContain('deploy from:')
 })
 
+test('ship cleanup reports a caller-group process hold as informational', () => {
+  const report: ShipCleanupReport = {
+    project: 'ship-fixture',
+    branch: 'DEV-1565-c1',
+    landingBranch: 'main',
+    mainCheckoutPath: '/projects/ship-fixture',
+    freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+    removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    absentWorktrees: [],
+    reclaimed: { processes: [], compose: [] },
+    gone: [],
+    kept: [
+      {
+        item: 'run 42 worktree',
+        reason: 'process cwd hold',
+        reasonKind: 'cleanup-failure',
+        owner: 'caller-process-group',
+        callerGroupHolderPids: [101, 102],
+      },
+    ],
+    errors: [],
+    verdict: { clean: true, residue: [] },
+  }
+
+  expect(formatShipCleanup(report)).toContain(
+    `information: kept run 42 worktree: tree is kept, held only by this command's own processes (pids 101, 102), and ${PLATFORM_SLUG} machine sweep releases it`,
+  )
+})
+
 function addProject(): string {
   const recordId = newRecordId()
   db()

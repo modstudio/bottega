@@ -17,6 +17,14 @@ export type ProcessFact = {
   cwdVerified: boolean
 }
 
+/** Read one process group from a process inventory without restating its fact shape. */
+export function processGroupForPid(
+  facts: readonly Pick<ProcessFact, 'pid' | 'pgid'>[],
+  pid: number,
+): number | null {
+  return facts.find((fact) => fact.pid === pid)?.pgid ?? null
+}
+
 export type OrphanCandidate = ProcessFact & {
   missingTree: string
   project: string

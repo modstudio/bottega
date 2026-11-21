@@ -6,7 +6,18 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { processTableSnapshot, processWorkingDirectories } from '../resources/process-inventory.ts'
 import { ancestorChain } from '../resources/session-process-anchoring.ts'
-import { treeProcessCwdDecision, treeProcessCwdExcludedPids } from './tree-process-cwd-decision.ts'
+import {
+  treeProcessCwdCallerGroupHolderPids,
+  treeProcessCwdDecision,
+} from './tree-process-cwd-decision.ts'
+
+export type TreeProcessCwdHold = {
+  runId: string
+  worktree: string
+  outcome: 'held'
+  detail: string
+  callerGroupHolderPids?: readonly number[]
+}
 
 function realWorkingDirectories(values: ReadonlyMap<number, string>): {
   values: Map<number, string>
@@ -26,7 +37,7 @@ export function treeProcessCwdHold(input: {
   runId: string
   worktree: string
   treeAbsent: boolean
-}): { runId: string; worktree: string; outcome: 'held'; detail: string } | null {
+}): TreeProcessCwdHold | null {
   const { runId, worktree: treePath, treeAbsent } = input
   if (treeAbsent || !existsSync(treePath)) return null
   const recordedTreePath = treePath
@@ -45,20 +56,16 @@ export function treeProcessCwdHold(input: {
     processSnapshot.error || processSnapshot.facts.length === 0
       ? []
       : ancestorChain(process.pid, processSnapshot.facts)
-  const excludedPids = treeProcessCwdExcludedPids({
-    facts: processSnapshot.error ? [] : processSnapshot.facts,
-    processPid: process.pid,
-    ancestorPids: ancestors,
-  })
   const decision = treeProcessCwdDecision({
     treePaths: [...new Set([realTreePath, recordedTreeSpelling])],
     cwdByPid: cwds.values,
-    excludedPids,
+    excludedPids: new Set([process.pid, ...ancestors]),
     scanError: observed.error ?? scanError,
   })
   if (decision.action === 'proceed') return null
   const retry = `then run ${PLATFORM_SLUG} run close-out ${runId} or let ${PLATFORM_SLUG} machine sweep retry`
   let detail: string
+  let callerGroupHolderPids: readonly number[] | null = null
   if (decision.reason.kind === 'scan-error') {
     detail = `process cwd scan could not establish whether ${recordedTreePath} is in use: ${decision.reason.cause}; tree and branch retained; cleared by: correct the scan failure, ${retry}`
   } else {
@@ -69,7 +76,21 @@ export function treeProcessCwdHold(input: {
           `pid ${pid}: ${commands.get(pid)?.trim() || '<command unavailable>'}; cwd ${cwd}`,
       )
       .join('\n')
-    detail = `tree and branch retained because live processes have working directories inside ${recordedTreePath}:\n${holders}\ncleared by: stop the listed processes, or wait for them to finish, ${retry}`
+    callerGroupHolderPids = treeProcessCwdCallerGroupHolderPids({
+      facts: processSnapshot.facts,
+      processPid: process.pid,
+      holderPids: decision.reason.processes.map(({ pid }) => pid),
+    })
+    const ownership = callerGroupHolderPids
+      ? "this command's own processes"
+      : 'live processes'
+    detail = `tree and branch retained because ${ownership} have working directories inside ${recordedTreePath}:\n${holders}\ncleared by: stop the listed processes, or wait for them to finish, ${retry}`
   }
-  return { runId, worktree: recordedTreePath, outcome: 'held', detail }
+  return {
+    runId,
+    worktree: recordedTreePath,
+    outcome: 'held',
+    detail,
+    ...(callerGroupHolderPids ? { callerGroupHolderPids } : {}),
+  }
 }

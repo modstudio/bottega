@@ -99,18 +99,22 @@ function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean
   return samples.some((row) => pids.has(row.pid) && isUninterruptible(row.state))
 }
 
+/** Process groups must be above 1: 0 is not a group, and kill(-1) targets every allowed process. */
+export function isProcessGroupPgid(pgid: number | null | undefined): pgid is number {
+  return pgid != null && pgid > 1
+}
+
 /**
  * Group-kill only when our own pgid is known and the target differs.
  * Unknown selfPgid used to take `pgid !== null`, which is the coordinator's
  * session on a detached `bottega run start` (setsid: coordinator pgid equals its pid,
- * and the vendor inherits it). pgid 0 and 1 are rejected outright: 0 is not a
- * process group, and kill(-1) is every process the user can signal.
+ * and the vendor inherits it).
  */
 export function isGroupKillablePgid(
   pgid: number | null | undefined,
   selfPgid: number | null,
 ): boolean {
-  if (pgid == null || pgid <= 1) return false
+  if (!isProcessGroupPgid(pgid)) return false
   if (selfPgid == null) return false
   return pgid !== selfPgid
 }
