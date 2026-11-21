@@ -25,6 +25,7 @@ import {
   showTask,
   taskRecord,
 } from './task.ts'
+import { hostedGetTask } from './task-client.ts'
 import { taskBodyVersion } from './task-detail.ts'
 import { createTaskDocument, updateTaskDocument } from './task-document.ts'
 
@@ -340,6 +341,64 @@ test('hosted document updates use the declared space and refuse a stale version'
     `hub_task_document ${document.id} changed since revision ${document.version}`,
   )
   expect((stale as Error).message).not.toContain('Retry when the hosted record is reachable.')
+})
+
+test('hosted role writes refuse another holder before posting a document or change', async () => {
+  let documentPosts = 0
+  let changePosts = 0
+  const fetch = async (input: string, init?: RequestInit) => {
+    const path = new URL(input).pathname
+    if (init?.method === 'POST' && path.endsWith('/documents')) documentPosts += 1
+    if (init?.method === 'POST' && path === '/v1/changes') changePosts += 1
+    return recordFetch(input, init)
+  }
+  const options = {
+    hosted: { baseUrl: 'https://hub.example.test', token: 'test', fetch },
+  }
+  const task = await recordCreate(
+    { project: 'gamma', title: 'One hosted role holder' },
+    { ...options, skipDuplicateCheck: true },
+  )
+  const holder = await createTaskDocument(
+    { task: task.key, title: 'Current handoff', role: 'handoff' },
+    { project: 'gamma' },
+    options,
+  )
+  const refusal = `role 'handoff' on task ${task.key} is held by ${holder.label} "Current handoff"; run \`${PLATFORM_SLUG} task doc set ${holder.label} --no-role --version ${holder.version}\`, then retry`
+
+  const createError = await createTaskDocument(
+    { task: task.key, title: 'Duplicate handoff', role: 'handoff' },
+    { project: 'gamma' },
+    options,
+  ).catch((error: unknown) => error)
+  expect(documentPosts).toBe(1)
+  expect((createError as Error).message).toBe(refusal)
+  expect(
+    (await hostedGetTask(task.key, options.hosted)).documents.filter(
+      (document) => document.role === 'handoff',
+    ),
+  ).toHaveLength(1)
+
+  const other = await createTaskDocument(
+    { task: task.key, title: 'Other' },
+    { project: 'gamma' },
+    options,
+  )
+  const changesBeforeRefusal = changePosts
+  const updateError = await updateTaskDocument(
+    other.id,
+    { role: 'handoff', expectedVersion: other.version },
+    { ...options, scope: { project: 'gamma' } },
+  ).catch((error: unknown) => error)
+  expect(changePosts).toBe(changesBeforeRefusal)
+  expect((updateError as Error).message).toBe(refusal)
+
+  const cleared = await updateTaskDocument(
+    holder.id,
+    { role: null, expectedVersion: holder.version },
+    { ...options, scope: { project: 'gamma' } },
+  )
+  expect(cleared.role).toBeNull()
 })
 
 test('a hosted list scoped to an undeclared-space project refuses', async () => {

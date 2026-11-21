@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
@@ -12,8 +13,9 @@ import {
   type HostedPushChange,
   type PushedDocument,
 } from './push-contract.ts'
-import { hostedCreateDocument } from './task-client.ts'
+import { hostedCreateDocument, hostedGetTask } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
+import { documentRoleRefusal } from './task-document-role.ts'
 
 import {
   missingTaskRecordLine,
@@ -123,6 +125,42 @@ function taskDocumentFields(changes: {
   ]
 }
 
+function assertLocalRoleAvailable(
+  conn: Database,
+  taskRecordId: string,
+  taskKey: string,
+  role: TaskDocumentRole,
+  documentId?: string,
+) {
+  const documents = conn
+    .query<
+      { id: string; number: number; role: string | null; title: string; version: string },
+      [string]
+    >(
+      `SELECT record_id AS id,number,role,title,version FROM task_document
+       WHERE task_record_id = ?`,
+    )
+    .all(taskRecordId)
+  const refusal = documentRoleRefusal(documents, taskKey, role, documentId)
+  if (refusal) throw new Error(refusal)
+}
+
+async function assertHostedRoleAvailable(
+  taskKey: string,
+  role: TaskDocumentRole,
+  options: ReturnType<typeof hostedTaskWriteOptions>,
+  documentId?: string,
+) {
+  const { documents } = await hostedGetTask(taskKey, options)
+  const refusal = documentRoleRefusal(
+    documents.map((document) => ({ ...document, number: document.number! })),
+    taskKey,
+    role,
+    documentId,
+  )
+  if (refusal) throw new Error(refusal)
+}
+
 function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput): TaskDocument {
   const at = nowIso()
   const recordId = newRecordId()
@@ -134,10 +172,11 @@ function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput)
     if (!row) throw new Error(missingTaskRecordLine(task.record_id))
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
     const number = row.next_document_number
+    const role = documentRole(input.role)
+    if (role) assertLocalRoleAvailable(conn, row.record_id, row.key, role)
     conn
       .query(`UPDATE task SET next_document_number = ? WHERE record_id = ?`)
       .run(number + 1, row.record_id)
-    const role = documentRole(input.role)
     conn
       .query(
         `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
@@ -176,10 +215,13 @@ async function createHostedTaskDocument(
   hostedOptions?: HostedTaskWriteOptions,
 ): Promise<TaskDocument> {
   const version = documentVersion()
+  const role = documentRole(input.role)
+  const writeOptions = hostedTaskWriteOptions(task.project, hostedOptions)
+  if (role) await assertHostedRoleAvailable(task.key, role, writeOptions)
   const hosted = await hostedCreateDocument(
     task.key,
-    { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
-    hostedTaskWriteOptions(task.project, hostedOptions),
+    { title: input.title, body: input.body ?? '', role, version },
+    writeOptions,
   )
   if (hosted.number === null)
     throw new Error(`hosted task document ${hosted.id} for task ${task.key} has no number`)
@@ -189,7 +231,7 @@ async function createHostedTaskDocument(
     number: hostedNumber,
     task_key: task.key,
     task_record_id: task.record_id,
-    role: documentRole(input.role),
+    role,
     title: input.title,
     body: input.body ?? '',
     version: hosted.version,
@@ -210,7 +252,7 @@ async function createHostedTaskDocument(
             task.key,
             task.record_id,
             hostedNumber,
-            documentRole(input.role),
+            role,
             input.title,
             input.body ?? '',
             hosted.version,
@@ -259,14 +301,17 @@ export async function updateTaskDocument(
   if (changes.body !== undefined && !expectedVersion)
     throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
   const mode = taskWriteMode(task.project, options.hosted)
-  const hosted = mode === 'hosted-configured'
   const at = nowIso()
   const fields = taskDocumentFields(changes)
-  if (hosted) {
+  if (mode === 'hosted-configured') {
     if (!expectedVersion)
       throw new Error(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
       )
+    const role = changes.role === undefined ? current.role : documentRole(changes.role)
+    const writeOptions = hostedTaskWriteOptions(task.project, options.hosted)
+    if (changes.role !== undefined && role)
+      await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
     const version = documentVersion()
     const row: PushedDocument = {
       id,
@@ -275,7 +320,7 @@ export async function updateTaskDocument(
       task_id: current.task_record_id,
       project_name: task.project,
       projectId: undefined,
-      role: changes.role === undefined ? current.role : documentRole(changes.role),
+      role,
       title: changes.title ?? current.title,
       body: changes.body ?? current.body,
       version,
@@ -291,11 +336,7 @@ export async function updateTaskDocument(
       fields,
       expected_revision: expectedVersion,
     }
-    await sendHostedChanges(
-      current.task_key,
-      [[change]],
-      hostedTaskWriteOptions(task.project, options.hosted),
-    )
+    await sendHostedChanges(current.task_key, [[change]], writeOptions)
     return withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,
@@ -312,6 +353,8 @@ export async function updateTaskDocument(
       .get(id)
     if (!row) throw new Error(`no task document ${id}`)
     const nextRole = changes.role === undefined ? row.role : documentRole(changes.role)
+    if (changes.role !== undefined && nextRole)
+      assertLocalRoleAvailable(conn, row.task_record_id, row.task_key, nextRole, id)
     if (changes.body !== undefined) {
       const result = conn
         .query(

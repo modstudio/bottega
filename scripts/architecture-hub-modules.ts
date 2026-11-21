@@ -417,6 +417,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-document.ts',
     allowed: [
       '../../shared/brand.ts',
+      'bun:sqlite',
       'node:crypto',
       '../../shared/record/schema.ts',
       '../../shared/task-source.ts',
@@ -427,10 +428,15 @@ export const hubModuleSpecs = [
       './push-contract.ts',
       './task-client.ts',
       './task-document-label.ts',
+      './task-document-role.ts',
       './identity/identity.ts',
       './task-identity.ts',
       './task-write-destination.ts',
     ],
+  },
+  {
+    file: 'hub/src/task-document-role.ts',
+    allowed: ['../../shared/brand.ts', './task-document-label.ts'],
   },
   {
     file: 'hub/src/hosted-change-sender.ts',
