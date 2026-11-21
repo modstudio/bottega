@@ -16,6 +16,7 @@ import {
   hostedDeliveryRefusal,
   hubDatabaseLockHolder,
   hubStoreAccess,
+  hubWriteStorePath,
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
   resolveHubRuntime,
@@ -89,6 +90,19 @@ test('a reader checkout resolves the shared hub path as read-only', () => {
     openMode: 'read-only-immutable',
     writesRefused: true,
     migrationsRefused: true,
+  })
+})
+
+test('a write judges its explicit file store and allows in-memory stores', () => {
+  const liveStore = '/state/hub/hub.db'
+
+  expect(hubWriteStorePath(undefined, liveStore)).toBe(liveStore)
+  expect(hubWriteStorePath(liveStore, liveStore)).toBe(liveStore)
+  expect(hubWriteStorePath('/tmp/confinement/hub.db', liveStore)).toBe('/tmp/confinement/hub.db')
+  expect(hubWriteStorePath('', liveStore)).toBeNull()
+  expect(hubWriteStorePath(':memory:', liveStore)).toBeNull()
+  expect(hubStoreAccess(true, hubWriteStorePath(liveStore, liveStore)!)).toMatchObject({
+    writesRefused: true,
   })
 })
 
