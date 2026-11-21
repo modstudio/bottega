@@ -3,7 +3,6 @@
 
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import { job } from '../jobs/jobs.ts'
 import { supersededTurnQuestionState } from '../route/failover.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
 
@@ -73,10 +72,6 @@ export function inheritedRunFacts(parent: string): {
          FROM run WHERE record_id=?`,
     )
     .get(parent) as ReturnType<typeof inheritedRunFacts>
-}
-
-export function inheritedRunWritesRepo(jobName: string): boolean {
-  return Boolean(job(jobName).needs.writesRepo)
 }
 
 export function inheritedRunLinks(parent: string): {

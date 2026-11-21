@@ -26,11 +26,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/dispatch/keyed-run-cursor-admission.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../workflow/workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/dispatch/keyed-run-cursor-admission-adapter.ts', [
     '../caller-classification.ts',
     '../database/db.ts',
     '../events.ts',
+    '../jobs/jobs.ts',
     '../project/project-read.ts',
     '../question-store/question-store-read.ts',
     '../run/run-claim-inheritance.ts',
