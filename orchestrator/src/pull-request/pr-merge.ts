@@ -15,7 +15,10 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
-import type { RequiredRungDecision } from '../release/release-required.ts'
+import {
+  type RequiredRungDecision,
+  rungsCanBeExplicitlyRequired,
+} from '../release/release-required.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -72,7 +75,6 @@ import {
 import {
   assertPullRequestReleaseAdmission,
   type PullRequestReleaseDecisionAdapter,
-  projectCanRequireExplicitRelease,
   pullRequestReleaseDecisionAtHead,
 } from './pr-release-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
@@ -894,7 +896,8 @@ async function completeMerge(input: {
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
       const releaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
-      if (projectCanRequireExplicitRelease(input.project)) preMergeReleaseDecision = releaseDecision
+      if (rungsCanBeExplicitlyRequired(input.project.settings.release?.rungs ?? []))
+        preMergeReleaseDecision = releaseDecision
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {

@@ -6,11 +6,14 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
-import { type RequiredRungDecision, requiredRungDecision } from '../release/release-required.ts'
+import {
+  type RequiredRungDecision,
+  requiredRungDecision,
+  rungsCanBeExplicitlyRequired,
+} from '../release/release-required.ts'
 import { requiredMergeCommand } from './pr-post-landing-payload.ts'
 
 export type PullRequestReleaseFacts = {
-  number: number
   headCommit: string
   baseBranch: string
 }
@@ -26,12 +29,6 @@ export type PullRequestReleaseDecisionAdapter = {
 
 export type PullRequestReleaseAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
-export function projectCanRequireExplicitRelease(project: Project): boolean {
-  return (project.settings.release?.rungs ?? []).some(
-    (rung) => rung.requiredWhenChanged !== undefined || (rung.entryPoints?.length ?? 0) > 0,
-  )
-}
-
 export function decidePullRequestReleaseAdmission(input: {
   decision: RequiredRungDecision
   releaseRequired: boolean
@@ -46,7 +43,7 @@ export function decidePullRequestReleaseAdmission(input: {
           `refusing merge: required release rungs could not be decided: ${input.decision.error}`,
           {
             kind: 'edit',
-            text: requiredMergeCommand(input.target, input.depth, false),
+            text: requiredMergeCommand(input.target, input.depth, input.releaseRequired),
           },
         ),
       ),
@@ -75,7 +72,7 @@ export function pullRequestReleaseDecisionAtHead(
   pullRequest: PullRequestReleaseFacts,
   depth?: string,
 ): RequiredRungDecision {
-  if (!projectCanRequireExplicitRelease(project))
+  if (!rungsCanBeExplicitlyRequired(project.settings.release?.rungs ?? []))
     return { decided: true, required: [], rungs: [], error: null }
   const environment = targetGitEnvironment(cwd)
   git(['fetch', 'origin', pullRequest.baseBranch], cwd, environment, ' during release base fetch')

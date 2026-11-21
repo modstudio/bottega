@@ -87,7 +87,7 @@ describe('decidePullRequestReleaseAdmission', () => {
     if (admission.kind === 'allow') return
     expect(admission.message).toContain('closure build failed')
     expect(admission.message).toContain(
-      `cleared by: ${PLATFORM_SLUG} pr merge DEV-2555 --depth staging`,
+      `cleared by: ${PLATFORM_SLUG} pr merge DEV-2555 --release-required --depth staging`,
     )
   })
 })
@@ -102,7 +102,6 @@ test('a project without explicit release requirements returns before changed-pat
   } as Project
   expect(
     pullRequestReleaseDecisionAtHead(project, '/path/that/does/not/exist', {
-      number: 42,
       headCommit: 'head',
       baseBranch: 'main',
     }),
