@@ -52,7 +52,7 @@ const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
 
 type TaskFlowReadCounts = NonNullable<
-  Parameters<typeof createMemoryRecordApiClient>[0]['taskFlowReadCounts']
+  NonNullable<Parameters<typeof createMemoryRecordApiClient>[0]>['taskFlowReadCounts']
 >
 
 function taskFlowReadDelta(before: TaskFlowReadCounts, after: TaskFlowReadCounts) {
@@ -307,32 +307,31 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     },
   })
   const handoffStageId = memoryInput.taskFlowStages.at(-1)!.stage.id
+  const openObligation = {
+    id: '00000000-0000-4000-8003-000000000001',
+    stageRecordId: hosted.stage.id,
+    stepOrdinal: 0,
+    stepSlug: 'score',
+    floor: 'command-exit',
+    requirePullRequest: false,
+    expectedExitCode: 0,
+    expectedStatus: 'passed',
+    floorDeferrable: false,
+    reason: 'guard the open-obligation batch read',
+    sessionId: context.session,
+    createdAt: hosted.stage.createdAt,
+    satisfiedAt: null,
+    satisfiedStepOrdinal: null,
+    satisfiedStepSlug: null,
+    satisfiedEvidence: null,
+    abandonedAt: null,
+    abandonedReason: null,
+    operatorRuling: false,
+  }
   Object.assign(hosted.stage, {
     state: 'running',
     handedOffFromRecordId: handoffStageId,
-    obligations: [
-      {
-        id: '00000000-0000-4000-8003-000000000001',
-        stageRecordId: hosted.stage.id,
-        stepOrdinal: 0,
-        stepSlug: 'score',
-        floor: 'command-exit',
-        requirePullRequest: false,
-        expectedExitCode: 0,
-        expectedStatus: 'passed',
-        floorDeferrable: false,
-        reason: 'guard the open-obligation batch read',
-        sessionId: context.session,
-        createdAt: hosted.stage.createdAt,
-        satisfiedAt: null,
-        satisfiedStepOrdinal: null,
-        satisfiedStepSlug: null,
-        satisfiedEvidence: null,
-        abandonedAt: null,
-        abandonedReason: null,
-        operatorRuling: false,
-      },
-    ],
+    obligations: [openObligation],
   })
 
   const measure = async (entry: () => Promise<unknown>) => {
@@ -349,7 +348,13 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         cursorRows.push(...(await listWorkflowCursors({ session: context.session }, database)))
       })
       expect(cursorRows).not.toHaveLength(0)
-      expect(cursorRows.every((row) => row.obligations.includes('(score:command-exit)'))).toBe(true)
+      expect(
+        cursorRows.every((row) =>
+          (row as typeof row & { obligations: string }).obligations.includes(
+            '(score:command-exit)',
+          ),
+        ),
+      ).toBe(true)
       const stop = await measure(() =>
         sessionStopSummary(
           {
@@ -402,7 +407,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         handedOffFromRecordId: handoffStageId,
         obligations: [
           {
-            ...hosted.stage.obligations![0]!,
+            ...openObligation,
             id: `00000000-0000-4000-8003-${String(index).padStart(12, '0')}`,
             stageRecordId: stageId,
           },
