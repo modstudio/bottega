@@ -3,8 +3,8 @@ import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEMS_ROUTE,
 } from '../../../shared/record-routes.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { recordContextItemReadClient } from './record-api-client-context-items.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 import type { RecordContextItem } from './record-context-items.ts'
 
 function contextItem(holder: string): RecordContextItem {
@@ -55,8 +55,8 @@ test('context-item client splits one holder past the limit and returns every ite
   expect((await client.listContextItems(holders, {})).map((item) => item.holder)).toEqual(holders)
   expect(calls).toHaveLength(2)
   expect(
-    calls.map((path) =>
-      new URL(path, 'https://record.example.test').searchParams.getAll('holder').length,
+    calls.map(
+      (path) => new URL(path, 'https://record.example.test').searchParams.getAll('holder').length,
     ),
   ).toEqual([CONTEXT_ITEM_HOLDER_BATCH_LIMIT, 1])
 })
