@@ -7,12 +7,12 @@ import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { workflowQuestionContextMoment } from '../workflow/workflow-context-moment.ts'
 import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
 import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 
 export type McpWorkflowContextPorts = {
-  hubTaskReader?: HubTaskReader
+  hubTaskLookup?: HubTaskLookup
   contextMomentPorts?: ContextMomentPorts
 }
 
@@ -40,7 +40,7 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: McpWorkflowCo
         cursor,
         'await_workflow_ruling',
         'pass the mode argument',
-        ports.hubTaskReader,
+        ports.hubTaskLookup,
       )
       const result = await awaitWorkflowRuling(
         slug,
@@ -84,7 +84,7 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         cursor,
         'rule_workflow',
         'pass the mode argument',
-        ports.hubTaskReader,
+        ports.hubTaskLookup,
       )
       const result = await ruleWorkflow(
         slug,

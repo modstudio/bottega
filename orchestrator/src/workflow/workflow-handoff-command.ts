@@ -18,14 +18,14 @@ import {
 import { handoffTargetArguments, handoffWorkflow } from './workflow-handoff.ts'
 import { resolveOfferedArtifacts } from './workflow-offered-artifacts.ts'
 import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
-import type { HubTaskReader } from './workflow-task-reference.ts'
+import type { HubTaskLookup } from './workflow-task-reference.ts'
 
 export async function handoffCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
   options: {
     cwd?: string
-    hubTaskReader?: HubTaskReader
+    hubTaskLookup?: HubTaskLookup
     commitCount?: CommitCountPort
     database?: ReturnType<typeof db>
     context?: WorkflowCursorContext
@@ -43,7 +43,7 @@ export async function handoffCommand(
     project,
     handoffTargetArguments(row, args),
     options.context ?? cliWorkflowCursorContext(),
-    options.hubTaskReader,
+    options.hubTaskLookup,
     row,
   )
   const live = await resolveWorkflowLiveAutonomy(

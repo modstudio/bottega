@@ -16,7 +16,7 @@ import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { resolveOfferedArtifacts } from '../workflow/workflow-offered-artifacts.ts'
 import { productionWorkflowFloorPorts } from '../workflow/workflow-production-floor-ports.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { type HubTaskLookup, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
   closeCursorWithTextCopyResult,
   productionWorkflowTextDocumentPorts,
@@ -62,7 +62,7 @@ export async function advanceWorkflow(
     satisfies,
     cursor,
   }: z.infer<typeof nextWorkflowStepInputSchema>,
-  hubTaskReader?: HubTaskReader,
+  hubTaskLookup?: HubTaskLookup,
   workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
   contextMomentPorts?: ContextMomentPorts,
 ) {
@@ -80,9 +80,9 @@ export async function advanceWorkflow(
     cursor,
     'next_workflow_step',
     'pass the mode argument',
-    hubTaskReader,
+    hubTaskLookup,
   )
-  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
+  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskLookup) : null
   const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const live = await resolveCursorLiveAutonomy({
     slug,
@@ -128,7 +128,7 @@ export async function advanceWorkflow(
       live,
     },
     undefined,
-    hubTaskReader,
+    undefined,
     workflowTextDocuments,
   )
   try {

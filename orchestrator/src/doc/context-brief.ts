@@ -34,13 +34,15 @@ import {
   workflowCursorClaimHandles,
 } from '../workflow/workflow-cursor-worktrees.ts'
 import {
-  type HubTaskReader,
   type HubTaskReference,
   projectTaskKey,
-  readHubTasks,
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import {
   type ContextBriefCursorLine,
   contextBriefWorktreePath,
@@ -375,7 +377,7 @@ export async function contextBrief(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
-  hubTaskReader: HubTaskReader = readHubTasks,
+  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)

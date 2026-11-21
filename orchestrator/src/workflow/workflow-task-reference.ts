@@ -1,6 +1,6 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: workflows
-/** Resolves a workflow task label through the injectable hub task-list port. */
+/** Resolves a workflow task label through the injectable single-task lookup port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
@@ -21,7 +21,6 @@ export type HubTaskReference = {
   commentIds?: Array<string | number>
   commentsVerifiable?: boolean
 }
-export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskLookup = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
@@ -72,7 +71,7 @@ export function taskReadRefusal(
   )
 }
 
-function taskReference(row: unknown): HubTaskReference {
+export function taskReferenceFromRow(row: unknown): HubTaskReference {
   if (
     !row ||
     typeof row !== 'object' ||
@@ -107,7 +106,7 @@ export function taskReferenceFromShow(response: unknown): HubTaskReference | nul
   if (!response || typeof response !== 'object') throw new Error('response was not an object')
   const row = (response as { task?: unknown }).task
   if (row === undefined || row === null) return null
-  const task = taskReference(row)
+  const task = taskReferenceFromRow(row)
   const record = response as {
     comments?: Array<{ id?: unknown }>
     tracker_comment_ids?: unknown
@@ -154,10 +153,6 @@ export function readFreshHubTaskThroughCli(
   return stdout.trim()
 }
 
-export async function readHubTasks(project: string): Promise<HubTaskReference[]> {
-  return (await taskReader().list({ project })).map(taskReference)
-}
-
 export async function readHubTaskReference(
   project: string,
   key: string,
@@ -185,7 +180,7 @@ export async function readHubTaskChildren(
   project: string,
   parent: string,
 ): Promise<HubTaskReference[]> {
-  return (await taskReader().list({ project, parent })).map(taskReference)
+  return (await taskReader().list({ project, parent })).map(taskReferenceFromRow)
 }
 
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
@@ -213,13 +208,11 @@ export function taskRecordFailureNamesMissingTask(error: unknown, recordId: stri
 export async function resolveHubTaskReference(
   project: string | null,
   key: string,
-  reader?: HubTaskReader,
+  lookup: HubTaskLookup = readHubTaskReference,
 ): Promise<HubTaskReference | null> {
   if (!project) return null
   try {
-    if (!reader) return await readHubTaskReference(project, key)
-    const rows = await reader(project)
-    return taskReferenceForProjectKey(taskKeyMap(rows), project, key)
+    return await lookup(project, key)
   } catch (error) {
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }
@@ -263,10 +256,10 @@ export async function resolveOrPullHubTaskReference(
 export async function bestEffortTaskReference(
   project: string | null,
   key: string,
-  reader?: HubTaskReader,
+  lookup?: HubTaskLookup,
 ): Promise<HubTaskReference | null> {
   try {
-    return await resolveHubTaskReference(project, key, reader)
+    return await resolveHubTaskReference(project, key, lookup)
   } catch {
     return null
   }

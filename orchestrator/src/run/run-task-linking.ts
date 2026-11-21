@@ -14,13 +14,15 @@ import {
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
-  type HubTaskReader,
   type HubTaskReference,
-  readHubTasks,
   taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import { linkWorkflowQuestionTaskReference } from './question-mutation.ts'
 import { enqueueRunRecord, isRunRecordEligible, runRecordFinishedAt } from './run-outbox.ts'
 
@@ -399,7 +401,7 @@ export function deriveNewRunLinks(
 
 async function hubTaskMap(
   registered: readonly Project[],
-  reader: HubTaskReader = readHubTasks,
+  reader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<{
   byProjectKey: HubTaskKeyMap
   byProjectId: Map<string, HubTaskReference>
@@ -530,7 +532,7 @@ export async function linkRunTasks(
   dependencies: {
     database?: Database
     registeredProjects?: readonly Project[]
-    hubReader?: HubTaskReader
+    hubReader?: ProjectTaskListReader
     taskFlowClient?: RecordTaskFlowClient
   } = {},
 ): Promise<RunTaskLinkReport> {
@@ -645,7 +647,7 @@ export function formatRunTaskLinkReport(report: RunTaskLinkReport): string[] {
 
 export async function sweepRunTaskLinks(
   dryRun: boolean,
-  hubReader: HubTaskReader,
+  hubReader: ProjectTaskListReader,
 ): Promise<{ kind: 'log' | 'error'; line: string }> {
   try {
     const linked = await linkRunTasks({ dryRun }, { hubReader })

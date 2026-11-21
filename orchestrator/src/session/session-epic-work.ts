@@ -6,7 +6,7 @@ import { boardLiveClaimProjectsForSession } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { taskReader } from '../workflow/task-read-port.ts'
+import { readProjectTaskList } from '../workflow/project-task-list.ts'
 import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-child-facts.ts'
 import { childQueueState, sessionWorksUnderEpic } from '../workflow/workflow-child-queue.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
@@ -23,7 +23,7 @@ export async function sessionEpicWork(session: string, database: Database = db()
     })
     if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
       continue
-    const tasks = await taskReader().list({ project })
+    const tasks = await readProjectTaskList(project)
     const facts = await gatherChildTaskFacts(database, project, tasks)
     const claims = liveChildClaims(database, project).filter(
       ({ holder_session }) => holder_session === session,

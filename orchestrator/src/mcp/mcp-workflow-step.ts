@@ -13,7 +13,7 @@ import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.t
 import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor-serve.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
 import { getWorkflowStep, workflowModeStepLists } from '../workflow/workflows.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 
@@ -30,7 +30,7 @@ const inputSchema = z.object({
 async function workflowStep(
   input: z.infer<typeof inputSchema>,
   commitCount: CommitCountPort,
-  hubTaskReader?: HubTaskReader,
+  hubTaskLookup?: HubTaskLookup,
 ) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
   const workflowArgs = args ?? {}
@@ -43,11 +43,11 @@ async function workflowStep(
         cursor,
         'get_workflow_step',
         'pass the mode argument',
-        hubTaskReader,
+        hubTaskLookup,
       )
     : undefined
   const context =
-    resolved?.context ?? (await resolveMcpCursorContext(project, workflowArgs, hubTaskReader))
+    resolved?.context ?? (await resolveMcpCursorContext(project, workflowArgs, hubTaskLookup))
   const effectiveMode = resolved?.effectiveMode ?? mode
   const stepSlug = effectiveMode
     ? step
@@ -85,7 +85,7 @@ async function workflowStep(
 export function registerWorkflowStepTool(
   server: McpServer,
   commitCount: CommitCountPort = readCommitsPastLanding,
-  hubTaskReader?: HubTaskReader,
+  hubTaskLookup?: HubTaskLookup,
 ): void {
   server.registerTool(
     'get_workflow_step',
@@ -94,6 +94,6 @@ export function registerWorkflowStepTool(
         'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema,
     },
-    (input) => workflowStep(input, commitCount, hubTaskReader),
+    (input) => workflowStep(input, commitCount, hubTaskLookup),
   )
 }

@@ -63,9 +63,11 @@ test('reads external task text and resolves its project-scoped mirror record', a
         },
       ],
     },
-    hubTaskReader: async (projectName) => [
-      { key: 'SHARED-7', record_id: 'mirror-id', project: projectName },
-    ],
+    hubTaskLookup: async (projectName) => ({
+      key: 'SHARED-7',
+      record_id: 'mirror-id',
+      project: projectName,
+    }),
   })
   expect(result).toEqual({
     available: true,
@@ -94,7 +96,7 @@ test('carries external task text when the requested mirror read fails', async ()
         { id: 'external-id', key: 'SHARED-8', title: 'Remote title', description: 'Body' },
       ],
     },
-    hubTaskReader: async () => {
+    hubTaskLookup: async () => {
       throw new Error('hub unavailable')
     },
   })
@@ -127,7 +129,7 @@ test('does not read the mirror when no record id is requested', async () => {
         { id: 'external-id', key: 'SHARED-9', title: 'Remote title', description: 'Body' },
       ],
     },
-    hubTaskReader: async () => {
+    hubTaskLookup: async () => {
       mirrorReads += 1
       return []
     },

@@ -5,15 +5,15 @@ import { listContextHolders } from '../doc/context-item-store.ts'
 import { clearTaskHolderForLifecycle } from '../doc/context-service.ts'
 import { projects } from '../project/projects.ts'
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
+import type { ProjectTaskListReader } from '../workflow/project-task-list.ts'
 import {
-  type HubTaskReader,
   type HubTaskReference,
   taskReadRefusal,
 } from '../workflow/workflow-task-reference.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideTaskContextReap } from './task-context-reap-decision.ts'
 
-function sharedTaskReader(reader: HubTaskReader): HubTaskReader {
+function sharedTaskReader(reader: ProjectTaskListReader): ProjectTaskListReader {
   const reads = new Map<string, Promise<HubTaskReference[]>>()
   return (project) => {
     let read = reads.get(project)
@@ -27,7 +27,7 @@ function sharedTaskReader(reader: HubTaskReader): HubTaskReader {
 
 export async function sweepHubTasks(
   dryRun: boolean,
-  hubTaskReader: HubTaskReader,
+  hubTaskReader: ProjectTaskListReader,
   selectedProject: string | null,
   presentation: CleanupPresentation,
 ): Promise<boolean> {

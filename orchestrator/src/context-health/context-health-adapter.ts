@@ -17,7 +17,8 @@ import { briefInjectionWindow } from '../session/brief-injection.ts'
 import { contextReviewWindow } from '../session/context-review-store.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { liveRunCursorIds } from '../workflow/workflow-cursor-list.ts'
-import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { readProjectTaskList } from '../workflow/project-task-list.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { type ContextHealthFacts, type ContextHealthItem, contextHealth } from './context-health.ts'
 
 export type ContextHealthOptions = { since?: string; project?: string; session?: string }
@@ -32,7 +33,7 @@ async function taskRows(project: string | undefined): Promise<HubTaskReference[]
   const rows: HubTaskReference[] = []
   for (const candidate of selected) {
     try {
-      rows.push(...(await readHubTasks(candidate.name)))
+      rows.push(...(await readProjectTaskList(candidate.name)))
     } catch (error) {
       throw new ProjectTaskReadError(candidate.name, error)
     }

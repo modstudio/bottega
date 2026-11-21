@@ -8,12 +8,15 @@ import type { WorkflowPrint } from './workflow-commands.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
-  type HubTaskReader,
-  readHubTasks,
+  type HubTaskReference,
   taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from './workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from './project-task-list.ts'
 
 /** Names the closed task an open cursor outlived; a finished or abandoned cursor outlived nothing. */
 export function closedTaskAnnotation(
@@ -28,7 +31,7 @@ export function closedTaskAnnotation(
 export async function cursorsCommand(
   argv: string[],
   print: WorkflowPrint,
-  options: { hubTaskReader?: HubTaskReader } = {},
+  options: { hubTaskReader?: ProjectTaskListReader } = {},
 ): Promise<void> {
   const rows = await listWorkflowCursors({
     session: flagValue(argv, 'session'),
@@ -40,7 +43,7 @@ export async function cursorsCommand(
     print(rows)
     return
   }
-  const reader = options.hubTaskReader ?? readHubTasks
+  const reader = options.hubTaskReader ?? readProjectTaskList
   const projects = [...new Set(rows.filter((row) => row.workflow_key).map((row) => row.project))]
   const warnings: string[] = []
   const taskRows = (

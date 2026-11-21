@@ -10,7 +10,10 @@ import {
   defaultLocalProjectPath,
   deleteProjectRegisterRow,
 } from '../database/project-register-store.ts'
-import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
 import type { StoredProjectSettings } from './project-settings.ts'
@@ -50,7 +53,7 @@ function removeEmptyDirectory(path: string): void {
 export async function retireUnusedDefaultLocalProject(
   database: Database = db(),
   environment: Parameters<typeof defaultLocalProjectPath>[0] = process.env,
-  hubTaskReader: HubTaskReader = readHubTasks,
+  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<boolean> {
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false

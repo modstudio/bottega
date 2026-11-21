@@ -30,7 +30,7 @@ import {
 } from './workflow-cursor-format.ts'
 import { workflowCursorProject } from './workflow-cursor-project.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
-import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
+import { type HubTaskLookup, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 export type WorkflowCursorSelector = {
@@ -94,12 +94,12 @@ export async function resolveWorkflowCursorContext(
   project: string,
   args: Record<string, string>,
   context: WorkflowCursorContext,
-  reader?: HubTaskReader,
+  lookup?: HubTaskLookup,
   selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
 ): Promise<WorkflowCursorContext> {
   const key = workflowCursorContextKey(workflowKeyOf(args) || undefined, selectedRow?.workflow_key)
   if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
-  const task = await resolveHubTaskReference(project, key, reader)
+  const task = await resolveHubTaskReference(project, key, lookup)
   return {
     ...context,
     workflowKey: key,
@@ -148,9 +148,9 @@ export async function readThroughWorkflowCursorContext(
 export const resolveMcpCursorContext = (
   project: string,
   args: Record<string, string>,
-  reader?: HubTaskReader,
+  lookup?: HubTaskLookup,
   selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
-) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), reader, selectedRow)
+) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), lookup, selectedRow)
 
 export async function resolveMcpSelectedCursorContext(
   project: string | undefined,
@@ -158,7 +158,7 @@ export async function resolveMcpSelectedCursorContext(
   _mode: string | undefined,
   args: Record<string, string>,
   cursor: number | undefined,
-  reader?: HubTaskReader,
+  lookup?: HubTaskLookup,
 ): Promise<{ context: WorkflowCursorContext; selectedRow?: SelectableCursorRow }> {
   const selectedRow =
     cursor === undefined
@@ -167,7 +167,7 @@ export async function resolveMcpSelectedCursorContext(
   const resolvedProject = selectedRow?.project ?? project
   if (!resolvedProject) throw new Error('project is required without --cursor')
   return {
-    context: await resolveMcpCursorContext(resolvedProject, args, reader, selectedRow),
+    context: await resolveMcpCursorContext(resolvedProject, args, lookup, selectedRow),
     selectedRow,
   }
 }

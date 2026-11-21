@@ -49,7 +49,7 @@ import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-sta
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { ProjectTaskListReader } from '../workflow/project-task-list.ts'
 import { inspectTreeOwnership, markedWorktreeSource } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -153,7 +153,7 @@ export type SweepOptions = {
 export type SweepHelpers = {
   observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
-  hubTaskReader: HubTaskReader
+  hubTaskReader: ProjectTaskListReader
   outboxMaintenance?: SweepOutboxMaintenance
   telemetryMaintenance?: {
     rollupContention: typeof rollupContentionDays
@@ -453,7 +453,7 @@ function printSweepKept(
 /** Finishes task maintenance and fails the sweep when any part failed. */
 async function finishSweep(
   cleanupFailed: boolean,
-  hubTaskReader: HubTaskReader,
+  hubTaskReader: ProjectTaskListReader,
   options: SweepOptions,
 ): Promise<void> {
   const { dryRun: dry, project = null, presentation } = options

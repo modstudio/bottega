@@ -19,7 +19,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskReader: async () => [task],
+        hubTaskLookup: async () => task,
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
   })
@@ -38,7 +38,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskReader: async (project) => [{ record_id: 'owned-task', key: 'OWNED-42', project }],
+        hubTaskLookup: async (project) => ({ record_id: 'owned-task', key: 'OWNED-42', project }),
       }),
     ).toEqual({ taskRecordId: 'owned-task', projectRecordId })
   })
@@ -59,7 +59,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskReader: async () => {
+        hubTaskLookup: async () => {
           throw new Error('an ambiguous prefix must not read either project')
         },
       }),
@@ -75,7 +75,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskReader: async () => {
+        hubTaskLookup: async () => {
           throw new Error('hub unavailable')
         },
       }),

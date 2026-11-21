@@ -4,13 +4,15 @@
 import { TASK_STATUSES } from '../../../shared/trackers.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
 import {
-  type HubTaskReader,
   type HubTaskReference,
-  readHubTasks,
   taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 
 export type TaskStatusObservation = {
   raw: string | null
@@ -82,7 +84,7 @@ export async function observeTaskStatus(
 /** Observe landed task statuses with one task-list read per project. */
 export async function observeLandedTasks(
   identities: readonly { project: string; taskKey: string }[],
-  taskReader: HubTaskReader = readHubTasks,
+  taskReader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<LandedTaskObservation[]> {
   const byProject = Map.groupBy(identities, (identity) => identity.project)
   const observations = await Promise.all(

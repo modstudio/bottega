@@ -106,12 +106,7 @@ export async function applyFloorDecision(
   const args = JSON.parse(row.args) as Record<string, string>
   const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
-    ? (await taskReader().list({ project: row.project })).map((task) => ({
-        key: task.key,
-        parentKey: task.parent_key,
-        status: task.status,
-        statusCategory: task.status_category,
-      }))
+    ? await readDescendantTaskFacts(row.project, row.workflow_key)
     : []
   const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
     workflow: row.workflow_slug,
@@ -170,6 +165,39 @@ export async function applyFloorDecision(
       : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
+}
+
+type DescendantTaskFact = {
+  key: string
+  parentKey: string | null
+  status: string | null
+  statusCategory: string | null
+}
+
+/** Read each descendant set once without downloading the project's unrelated tasks. */
+export async function readDescendantTaskFacts(
+  project: string,
+  root: string,
+): Promise<DescendantTaskFact[]> {
+  const rows: DescendantTaskFact[] = []
+  const pending = [root]
+  const visited = new Set<string>()
+  while (pending.length) {
+    const parent = pending.shift()!
+    if (visited.has(parent)) continue
+    visited.add(parent)
+    const children = await taskReader().list({ project, parent })
+    for (const child of children) {
+      rows.push({
+        key: child.key,
+        parentKey: child.parent_key,
+        status: child.status,
+        statusCategory: child.status_category,
+      })
+      if (!visited.has(child.key)) pending.push(child.key)
+    }
+  }
+  return rows
 }
 
 function attachRunObligationEvidence(

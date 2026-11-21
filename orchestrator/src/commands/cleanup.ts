@@ -12,7 +12,7 @@ import { confirmRunProcessTermination, planRecordedRunTermination } from '../run
 import { abandonRun, stopRun } from '../run/run-stop.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
-import { readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { readProjectTaskList } from '../workflow/project-task-list.ts'
 import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(
@@ -75,7 +75,7 @@ export function register(program: Command): void {
           force: flags.has('force'),
           presentation,
         },
-        { observeGrokTrustHeadings, grokTrustPathFromHeading, hubTaskReader: readHubTasks },
+        { observeGrokTrustHeadings, grokTrustPathFromHeading, hubTaskReader: readProjectTaskList },
       )
     })
 

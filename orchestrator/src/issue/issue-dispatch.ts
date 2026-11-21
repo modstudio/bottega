@@ -12,7 +12,10 @@ import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../projec
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
-import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import {
+  type ProjectTaskListReader,
+  readProjectTaskList,
+} from '../workflow/project-task-list.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
 import { parseFiledIssue } from './issue-file.ts'
@@ -211,7 +214,7 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
     await claimAndWork(key.toUpperCase(), false)
     return false
   }
-  const rows = await taskReader().list({ project: PLATFORM_SLUG })
+  const rows = await readProjectTaskList(PLATFORM_SLUG)
   const candidates = eligibleFiledIssueTasks(rows, liveLease)
   const dispatched = new Set<string>()
   let taken = 0
@@ -275,7 +278,7 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
 
 export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
-  reader: HubTaskReader = readHubTasks,
+  reader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<FiledIssueQueueState> {
   const rows = await reader(PLATFORM_SLUG)
   const filedRows: FiledIssueTaskRow[] = rows.map((task) => ({

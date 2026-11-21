@@ -168,7 +168,7 @@ test('next by cursor alone reads the authoritative row and links the hosted task
     presentation(lines),
     {
       json: true,
-      hubTaskReader: async () => [{ key, record_id: taskId, project }],
+      hubTaskLookup: async () => ({ key, record_id: taskId, project }),
     },
   )
 

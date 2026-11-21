@@ -10,7 +10,8 @@ import {
 } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { type TaskReadRow, taskReader } from './task-read-port.ts'
+import { type TaskReadRow } from './task-read-port.ts'
+import { readProjectTaskList } from './project-task-list.ts'
 import { childAncestorKeys, gatherChildTaskFacts, liveChildClaims } from './workflow-child-facts.ts'
 import {
   childEligibility,
@@ -104,7 +105,7 @@ export async function queueWorkflowChild(
   },
   database: Database = db(),
 ) {
-  const tasks = await taskReader().list({ project: input.project })
+  const tasks = await readProjectTaskList(input.project)
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
   const root = ancestors.at(-1)!
@@ -156,7 +157,7 @@ export async function startWorkflowChild(
   )
   if (epic.workflow_slug !== 'plan-task' || epic.step_slug !== 'start')
     throw new Error(`cursor ${input.cursor} is not an epic plan-task cursor at start`)
-  const tasks = await taskReader().list({ project: input.project })
+  const tasks = await readProjectTaskList(input.project)
   const facts = await gatherChildTaskFacts(database, input.project, tasks)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
