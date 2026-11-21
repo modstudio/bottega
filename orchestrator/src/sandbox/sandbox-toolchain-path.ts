@@ -35,7 +35,7 @@ function resolveDeveloperDirectory(): string | null {
 let memoizedDeveloperDirectory: string | null | undefined
 
 /** Resolve the host developer directory at most once in this process. */
-export function sandboxDeveloperDirectory(): string | null {
+function sandboxDeveloperDirectory(): string | null {
   if (memoizedDeveloperDirectory === undefined) {
     memoizedDeveloperDirectory = resolveDeveloperDirectory()
   }

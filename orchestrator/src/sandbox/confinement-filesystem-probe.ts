@@ -54,8 +54,8 @@ import {
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 type CommandProbeStatus = 'ran' | 'failed'
 type CommandProbe = { status: CommandProbeStatus; reason: string }
-export const SANDBOX_GIT_SPAWN_SAMPLES = 9
-export const SANDBOX_GIT_SPAWN_RATIO_MAX = 8
+const SANDBOX_GIT_SPAWN_SAMPLES = 9
+const SANDBOX_GIT_SPAWN_RATIO_MAX = 8
 
 export type SandboxGitSpawnVerdict = {
   status: 'ok' | 'slow'
