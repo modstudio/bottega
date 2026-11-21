@@ -4,6 +4,7 @@
 import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { projectByRecordId } from '../project/project-read.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { inheritedRunFacts } from '../run/run-claim-inheritance.ts'
@@ -21,8 +22,10 @@ export function harnessCursorAdapter() {
         recordId: cursor.record_id,
         number: cursor.number,
         project: cursor.project,
+        workflowSlug: cursor.workflow_slug,
         workflowKey: cursor.workflow_key,
         stepSlug: cursor.step_slug,
+        updatedAt: cursor.updated_at,
       })),
   }
 }
@@ -49,6 +52,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
       key: facts.launch_key ?? undefined,
       project: project?.name ?? null,
       bindingPresent: facts.cursor_record_id !== null,
+      writesRepo: JOBS[facts.job]?.needs.writesRepo === true,
       rootCursorRecordId: facts.cursor_record_id,
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,

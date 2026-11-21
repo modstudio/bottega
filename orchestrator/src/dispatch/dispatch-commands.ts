@@ -228,6 +228,7 @@ async function keyedRunCursorWarningForDispatch(input: {
   key: string | undefined
   project: string | null
   bindingPresent: boolean
+  writesRepo: boolean
   overrideReason: string | undefined
   fromOperator: boolean
   cursor?: number
@@ -240,6 +241,7 @@ async function keyedRunCursorWarningForDispatch(input: {
       key: input.key,
       project: input.project,
       bindingPresent: input.bindingPresent,
+      writesRepo: input.writesRepo,
       overrideReason: input.overrideReason,
       fromOperator: input.fromOperator,
       harnessSession,
@@ -259,11 +261,13 @@ async function cursorWarningFor(
   presentation: DispatchPresentation,
   binding: { cursorRecordId: string; stepSlug: string } | undefined,
   project: string | null,
+  writesRepo: boolean,
 ) {
   return keyedRunCursorWarningForDispatch({
     key: flags.flag('key'),
     project,
     bindingPresent: Boolean(binding),
+    writesRepo,
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
     cursor: keyedCursorOption(flags.flag('cursor')),
@@ -276,10 +280,19 @@ async function cursorForDispatch(
   presentation: DispatchPresentation,
   binding: { cursorRecordId: string; stepSlug: string } | undefined,
   project: string | null,
+  writesRepo: boolean,
 ) {
-  const admission = await cursorWarningFor(flags, presentation, binding, project)
+  const admission = await cursorWarningFor(flags, presentation, binding, project, writesRepo)
   return { warning: admission.warning, binding: binding ?? admission.binding }
 }
+
+const cursorForJob = (
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  project: string | null,
+  requested: ReturnType<typeof job>,
+) => cursorForDispatch(flags, presentation, binding, project, Boolean(requested.needs.writesRepo))
 
 type SpecWarningInput = {
   jobName: string
@@ -779,7 +792,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  const cursor = await cursorForDispatch(flags, presentation, binding, dispatchProjectName)
+  const cursor = await cursorForJob(flags, presentation, binding, dispatchProjectName, requested)
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,

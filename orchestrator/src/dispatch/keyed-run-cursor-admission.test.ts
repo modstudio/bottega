@@ -11,17 +11,34 @@ const base = {
   key: 'DEV-2293',
   project: PLATFORM_SLUG,
   bindingPresent: false,
+  writesRepo: false,
   harnessSession: 'session-fixture',
   heldCursors: [] as Array<{
     recordId: string
     number: number
     project: string
+    workflowSlug: string
     workflowKey: string
     stepSlug: string
+    updatedAt: string
   }>,
   overrideReason: undefined,
   fromOperator: false,
 }
+
+const keylessCursor = (
+  number: number,
+  updatedAt = '2026-11-20T12:00:00.000Z',
+  project = PLATFORM_SLUG,
+) => ({
+  recordId: `keyless-${number}`,
+  number,
+  project,
+  workflowSlug: 'explore',
+  workflowKey: '',
+  stepSlug: 'explore',
+  updatedAt,
+})
 
 describe('keyed run cursor admission', () => {
   test('the shared cursor option accepts only positive integers', () => {
@@ -31,12 +48,142 @@ describe('keyed run cursor admission', () => {
     expect(() => keyedCursorOption('1.5')).toThrow('--cursor must be a positive integer')
   })
 
-  test.each([
-    ['keyless', { key: undefined }],
-    ['unkeyed later turn', { turn: 'retry' as const, key: undefined }],
-    ['workflow-bound', { bindingPresent: true }],
-  ])('allows %s', (_name, change) => {
-    expect(decideKeyedRunCursorAdmission({ ...base, ...change })).toEqual({ kind: 'allow' })
+  test('allows a workflow-bound call without reading cursor evidence', () => {
+    expect(decideKeyedRunCursorAdmission({ ...base, bindingPresent: true })).toEqual({
+      kind: 'allow',
+    })
+  })
+
+  test('an unkeyed start with a held keyless cursor is allowed and bound to it', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        key: undefined,
+        heldCursors: [keylessCursor(17)],
+      }),
+    ).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'keyless-17', stepSlug: 'explore' },
+    })
+  })
+
+  test('an unkeyed start without a keyless cursor is refused with explore and keyed remedies', () => {
+    const decision = decideKeyedRunCursorAdmission({ ...base, key: undefined })
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow compose explore --project ${PLATFORM_SLUG}`,
+    )
+    expect(decision.message).toContain('workflow compose plan-task')
+    expect(decision.message).toContain('--override-unbound "<reason>" --from-operator')
+  })
+
+  test('an unkeyed continue without a keyless cursor is refused', () => {
+    expect(decideKeyedRunCursorAdmission({ ...base, key: undefined, turn: 'continue' })).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining('refusing unkeyed run turn'),
+    })
+  })
+
+  test('an unkeyed override is allowed with a warning', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        key: undefined,
+        overrideReason: 'Operator emergency.',
+        fromOperator: true,
+      }),
+    ).toEqual({
+      kind: 'allow-with-override',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Operator emergency.',
+    })
+  })
+
+  test('an unkeyed cursor-read failure names the unkeyed remedies without an undefined key', async () => {
+    const decision = await checkKeyedRunCursorAdmission(
+      { ...base, key: undefined, turn: 'continue' },
+      async () => {
+        throw new Error('store down')
+      },
+    )
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain('refusing unkeyed run turn')
+    expect(decision.message).toContain('workflow compose explore')
+    expect(decision.message).toContain('--arg key=<key>')
+    expect(decision.message).not.toContain('key=undefined')
+  })
+
+  test('the most recently advanced keyless cursor wins, then the highest number', () => {
+    const later = decideKeyedRunCursorAdmission({
+      ...base,
+      key: undefined,
+      heldCursors: [
+        keylessCursor(19, '2026-11-20T12:00:00.000Z'),
+        keylessCursor(17, '2026-11-20T13:00:00.000Z'),
+      ],
+    })
+    expect(later).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'keyless-17', stepSlug: 'explore' },
+    })
+
+    const higher = decideKeyedRunCursorAdmission({
+      ...base,
+      key: undefined,
+      heldCursors: [keylessCursor(17), keylessCursor(19)],
+    })
+    expect(higher).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'keyless-19', stepSlug: 'explore' },
+    })
+  })
+
+  test('an explicit cursor must name a held keyless cursor', () => {
+    const heldCursors = [keylessCursor(17), keylessCursor(19)]
+    expect(
+      decideKeyedRunCursorAdmission({ ...base, key: undefined, heldCursors, cursor: 17 }),
+    ).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'keyless-17', stepSlug: 'explore' },
+    })
+    expect(
+      decideKeyedRunCursorAdmission({ ...base, key: undefined, heldCursors, cursor: 18 }),
+    ).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining('naming one of: 17, 19'),
+    })
+  })
+
+  test('a keyless cursor for another project does not admit an unkeyed start', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        key: undefined,
+        heldCursors: [keylessCursor(17, undefined, 'segnavia')],
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining(
+        `does not hold an open keyless workflow cursor for project ${PLATFORM_SLUG}`,
+      ),
+    })
+  })
+
+  test('a writing job cannot bind to a keyless cursor', () => {
+    const decision = decideKeyedRunCursorAdmission({
+      ...base,
+      key: undefined,
+      writesRepo: true,
+      heldCursors: [keylessCursor(17)],
+    })
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain('has no task key and this job writes the repository')
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow step explore --cursor 17 --project ${PLATFORM_SLUG} --arg key=<KEY>`,
+    )
+    expect(decision.message).toContain('workflow compose plan-task')
   })
 
   test('a keyed later turn with its cursor held is allowed', () => {
@@ -49,8 +196,10 @@ describe('keyed run cursor admission', () => {
             recordId: 'cursor-record',
             number: 17,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'apply-findings',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
         ],
       }),
@@ -72,8 +221,10 @@ describe('keyed run cursor admission', () => {
             recordId: 'cursor-record',
             number: 17,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'apply-findings',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
         ],
       }),
@@ -96,8 +247,10 @@ describe('keyed run cursor admission', () => {
             recordId: 'selected-cursor-record',
             number: 18,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'apply-findings',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
         ],
       }),
@@ -120,15 +273,19 @@ describe('keyed run cursor admission', () => {
             recordId: 'root-cursor-record',
             number: 17,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'implement-fix',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
           {
             recordId: 'selected-cursor-record',
             number: 18,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'apply-findings',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
         ],
       }),
@@ -151,8 +308,10 @@ describe('keyed run cursor admission', () => {
             recordId: 'root-cursor-record',
             number: 17,
             project: PLATFORM_SLUG,
+            workflowSlug: 'fix-defect',
             workflowKey: 'DEV-2293',
             stepSlug: 'implement-fix',
+            updatedAt: '2026-11-20T12:00:00.000Z',
           },
         ],
       }),
@@ -170,15 +329,19 @@ describe('keyed run cursor admission', () => {
         recordId: 'cursor-17',
         number: 17,
         project: PLATFORM_SLUG,
+        workflowSlug: 'fix-defect',
         workflowKey: 'DEV-2293',
         stepSlug: 'implement-fix',
+        updatedAt: '2026-11-20T12:00:00.000Z',
       },
       {
         recordId: 'cursor-18',
         number: 18,
         project: PLATFORM_SLUG,
+        workflowSlug: 'fix-defect',
         workflowKey: 'DEV-2293',
         stepSlug: 'review-lenses',
+        updatedAt: '2026-11-20T12:00:00.000Z',
       },
     ]
     const ambiguous = decideKeyedRunCursorAdmission({ ...base, heldCursors })
@@ -238,8 +401,10 @@ describe('keyed run cursor admission', () => {
           recordId: 'other-project',
           number: 17,
           project: 'segnavia',
+          workflowSlug: 'fix-defect',
           workflowKey: 'DEV-2293',
           stepSlug: 'start',
+          updatedAt: '2026-11-20T12:00:00.000Z',
         },
       ],
     ],
@@ -250,8 +415,10 @@ describe('keyed run cursor admission', () => {
           recordId: 'keyless',
           number: 17,
           project: PLATFORM_SLUG,
+          workflowSlug: 'explore',
           workflowKey: '',
           stepSlug: 'start',
+          updatedAt: '2026-11-20T12:00:00.000Z',
         },
       ],
     ],
@@ -273,7 +440,7 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
   })
 
@@ -358,7 +525,7 @@ describe('keyed run cursor admission', () => {
 
     expect(decision).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
     expect(reads).toBe(0)
   })
