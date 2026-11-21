@@ -32,6 +32,7 @@ type FreshTaskDependencies = {
 
 export type FreshTaskResult = {
   trackerRead: boolean
+  trackerUpdatedAt: string | null
   commentsVerifiable: boolean
   /** The tracker read's own comment ids; empty when it reports none. */
   commentIds: string[]
@@ -86,7 +87,8 @@ export async function refreshTrackerTask(
     (dependencies.registeredProjects ?? projects)(),
   )
   const source = (dependencies.sourceFor ?? trackerSourceFor)(project)
-  if (!source) return { trackerRead: false, commentsVerifiable: true, commentIds: [] }
+  if (!source)
+    return { trackerRead: false, trackerUpdatedAt: null, commentsVerifiable: true, commentIds: [] }
   if (!source.lookup)
     throw new Error(`project ${project.name} tracker has no single-task lookup for ${key}`)
 
@@ -113,6 +115,7 @@ export async function refreshTrackerTask(
           guard.assertHeld()
           return {
             commentIds,
+            trackerUpdatedAt: task.updatedAt,
             shown: await (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
           }
         },
@@ -120,9 +123,10 @@ export async function refreshTrackerTask(
       )
       if (!leased.ran)
         throw new Error(formatCollectLeaseRefusal('fresh task read was not performed', leased))
-      const { commentIds, shown } = leased.value
+      const { commentIds, trackerUpdatedAt, shown } = leased.value
       return {
         trackerRead: true,
+        trackerUpdatedAt,
         commentsVerifiable: commentIds !== null,
         commentIds: commentIds ?? [],
         shown,

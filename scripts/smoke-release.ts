@@ -182,6 +182,7 @@ su -s /bin/sh smoke -c '
   esac
   printf "%s\\n" "$cursor" > /tmp/mcp-state/workflow-cursor
   printf "%s\\n" "$smoke_task" > /tmp/mcp-state/smoke-task
+  ${installedBinary} task comment "$smoke_task" "Probe repository is registered."
   ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Probe repository and smoke task created."
   ${installedBinary} workflow probe -- git status --short
   dispatch_output=$(${installedBinary} workflow dispatch implement --cursor "$cursor" --agent codex "Make the release smoke fixture commit." 2>&1)
@@ -212,6 +213,7 @@ su -s /bin/sh smoke -c '
   esac
   ${installedBinary} workflow next --cursor "$cursor" --artifact "exec:$exec_id" --note "Guard placement and run commit verified."
   ${installedBinary} task show "$smoke_task"
+  ${installedBinary} task comment "$smoke_task" "Release writing probe is complete."
   ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Release writing probe complete."
 '
 

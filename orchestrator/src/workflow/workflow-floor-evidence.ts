@@ -57,6 +57,7 @@ import {
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import {
+  TIMED_FRESHNESS as FRESHNESS,
   requireAttachedTextFreshness,
   requireMutableArtifactFreshness,
 } from './workflow-floor-artifact-freshness.ts'
@@ -514,7 +515,10 @@ async function resolveTaskArtifact(
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
   if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
-  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
+  if (ref.kind === 'task') {
+    const notice = FRESHNESS.notice(FRESHNESS.task, task.updatedAt, identity.stepActivatedAt)
+    return { ref: raw, exists: task.key === ref.key, ...(notice ? { notice } : {}) }
+  }
   return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)
 }
 

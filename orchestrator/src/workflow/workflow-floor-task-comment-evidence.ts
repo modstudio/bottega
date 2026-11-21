@@ -3,7 +3,7 @@
 
 import type { ArtifactEvidence } from './workflow-artifact-evidence.ts'
 import type { ArtifactRef } from './workflow-artifact-reference.ts'
-import { timedTaskCommentFreshnessNotice } from './workflow-floor-artifact-freshness.ts'
+import { TIMED_FRESHNESS as FRESHNESS } from './workflow-floor-artifact-freshness.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 
 export function resolveTaskCommentArtifact(
@@ -18,6 +18,10 @@ export function resolveTaskCommentArtifact(
     )
   if (!task.commentIds.map(String).includes(ref.id))
     throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  const notice = timedTaskCommentFreshnessNotice(task.commentWrittenAt?.[ref.id], stepActivatedAt)
+  const notice = FRESHNESS.notice(
+    FRESHNESS.taskComment,
+    task.commentWrittenAt?.[ref.id],
+    stepActivatedAt,
+  )
   return { ref: raw, exists: true, ...(notice ? { notice } : {}) }
 }

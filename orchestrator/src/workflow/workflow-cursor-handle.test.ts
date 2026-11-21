@@ -15,6 +15,7 @@ const ports: FloorEvidencePorts = {
   readTask: (key: string) => ({
     recordId: `task-${key}`,
     key,
+    updatedAt: null,
     status: 'done' as const,
     statusCategory: 'done' as const,
     commentIds: [1],

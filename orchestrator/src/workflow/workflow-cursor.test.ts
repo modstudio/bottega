@@ -967,6 +967,7 @@ describe('workflow cursor adapter', () => {
           return {
             recordId: `task-${key}`,
             key,
+            updatedAt: null,
             status: 'done',
             statusCategory: 'done',
             commentIds: [1],

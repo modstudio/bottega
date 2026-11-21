@@ -77,7 +77,22 @@ describe('fresh tracker task read', () => {
       },
     })
     expect(observed).toEqual([task])
-    expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, commentIds: [], shown })
+    expect(result).toEqual({
+      trackerRead: true,
+      trackerUpdatedAt: null,
+      commentsVerifiable: false,
+      commentIds: [],
+      shown,
+    })
+  })
+
+  test("reports the tracker task's own update time", async () => {
+    const trackerUpdatedAt = '2026-10-05T00:00:00.000Z'
+    const result = await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => ({ ...task, updatedAt: trackerUpdatedAt })),
+    })
+
+    expect(result.trackerUpdatedAt).toBe(trackerUpdatedAt)
   })
 
   test('writes only parseable JSON to stdout when a fresh task read holds the lease', async () => {
@@ -104,7 +119,13 @@ describe('fresh tracker task read', () => {
       ...dependencies(async () => task),
       sourceFor: () => ({ ...source(async () => task), readCommentIds: async () => commentIds }),
     })
-    expect(result).toEqual({ trackerRead: true, commentsVerifiable: true, commentIds, shown })
+    expect(result).toEqual({
+      trackerRead: true,
+      trackerUpdatedAt: null,
+      commentsVerifiable: true,
+      commentIds,
+      shown,
+    })
   })
 
   test('a task read that carries no comments stays unverifiable', async () => {
@@ -112,7 +133,13 @@ describe('fresh tracker task read', () => {
       ...dependencies(async () => task),
       sourceFor: () => ({ ...source(async () => task), readCommentIds: async () => null }),
     })
-    expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, commentIds: [], shown })
+    expect(result).toEqual({
+      trackerRead: true,
+      trackerUpdatedAt: null,
+      commentsVerifiable: false,
+      commentIds: [],
+      shown,
+    })
   })
 
   test('refuses when the source lookup does not find the task', async () => {

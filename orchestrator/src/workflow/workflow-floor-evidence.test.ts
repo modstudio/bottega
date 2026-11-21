@@ -834,6 +834,7 @@ test('every workflow task read requests a fresh tracker read through its port', 
         return {
           recordId: `task-${key}`,
           key,
+          updatedAt: null,
           status: 'done',
           statusCategory: 'done',
           commentIds: [],
@@ -870,6 +871,7 @@ test('a tracker without comment ids names the task artifact remedy', async () =>
           readTask: (key) => ({
             recordId: `task-${key}`,
             key,
+            updatedAt: null,
             status: 'done',
             statusCategory: 'done',
             commentIds: [],
