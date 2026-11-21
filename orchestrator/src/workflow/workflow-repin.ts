@@ -23,7 +23,7 @@ import { composeWorkflow } from './workflows.ts'
 const repinSteps = (composition: ReturnType<typeof composeWorkflow>): RepinStep[] =>
   composition.steps.map((step) => ({
     slug: step.slug,
-    floors: step.floor.map((floor) => floor.kind),
+    floors: step.floor,
   }))
 
 export async function repinWorkflowCursor(input: {
