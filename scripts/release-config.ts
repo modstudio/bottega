@@ -1,7 +1,4 @@
-import {
-  BUN_VERSION_FILE,
-  readDeclaredBunVersion,
-} from '../shared/bun-version.ts'
+import { BUN_VERSION_FILE, readDeclaredBunVersion } from '../shared/bun-version.ts'
 
 function readReleaseBunVersion(): string {
   const version = readDeclaredBunVersion(new URL(`../${BUN_VERSION_FILE}`, import.meta.url))
