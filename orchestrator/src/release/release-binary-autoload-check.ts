@@ -22,10 +22,8 @@ type ProbePlant = (facts: {
 type AutoloadProbe = { flag: AutoloadOffFlag; directory: string; plant: ProbePlant }
 
 function compileAutoloadFlag(source: string): AutoloadOffFlag {
-  return (
-    COMPILE_AUTOLOAD_OFF_FLAGS.find((flag) => flag.endsWith(`autoload-${source}`)) ??
-    `--no-compile-autoload-${source}`
-  ) as AutoloadOffFlag
+  return (COMPILE_AUTOLOAD_OFF_FLAGS.find((flag) => flag.endsWith(`autoload-${source}`)) ??
+    `--no-compile-autoload-${source}`) as AutoloadOffFlag
 }
 
 function observerSource(observerMarker: string): string {
