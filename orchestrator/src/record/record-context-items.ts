@@ -60,7 +60,10 @@ function readOutput(row: Record<string, unknown>) {
 export type RecordContextItem = ReturnType<typeof readOutput>
 
 export async function readRecordContextItems(
-  input: Tenant & { holders: Array<{ holderKind: ContextHolderKind; holderId: string }>; slug?: string },
+  input: Tenant & {
+    holders: Array<{ holderKind: ContextHolderKind; holderId: string }>
+    slug?: string
+  },
 ): Promise<RecordContextItem[]> {
   return tenant(input, async (tx) => {
     const groups = await Promise.all(
@@ -83,9 +86,7 @@ export async function readRecordContextItems(
   })
 }
 
-export async function readRecordContextHolders(
-  input: Tenant & { holderKind: ContextHolderKind },
-) {
+export async function readRecordContextHolders(input: Tenant & { holderKind: ContextHolderKind }) {
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT * FROM context_item WHERE space_id=${input.spaceId}::uuid
@@ -95,13 +96,10 @@ export async function readRecordContextHolders(
     return [...Map.groupBy(rows, (row) => String(row.holder_id))].map(([holderId, items]) => ({
       holder: `${input.holderKind}:${holderId}`,
       holderId,
-      updatedAt: items.reduce(
-        (latest, row) => {
-          const value = recordIso(row.updated_at)
-          return value > latest ? value : latest
-        },
-        recordIso(items[0]!.updated_at),
-      ),
+      updatedAt: items.reduce((latest, row) => {
+        const value = recordIso(row.updated_at)
+        return value > latest ? value : latest
+      }, recordIso(items[0]!.updated_at)),
       items: items.map(readOutput),
     }))
   })

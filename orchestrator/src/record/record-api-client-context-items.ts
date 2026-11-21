@@ -4,12 +4,13 @@ import {
   RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
   RECORD_CONTEXT_ITEMS_ROUTE,
 } from '../../../shared/record-routes.ts'
-import type { RecordContextItem } from './record-context-items.ts'
 import type {
   RecordClientRequest,
   RecordContextItemMethod,
   RecordRequestDestination,
+  RecordWriteDestination,
 } from './record-api-client-paths.ts'
+import type { RecordContextItem, RecordContextItemInput } from './record-context-items.ts'
 
 export type RecordContextItemClient = {
   listContextItems(
@@ -24,12 +25,23 @@ export type RecordContextItemClient = {
   listContextHolders(
     kind: 'task' | 'session' | 'cursor',
     destination: RecordRequestDestination,
-  ): Promise<Array<{
-    holder: string
-    holderId: string
-    updatedAt: string
-    items: RecordContextItem[]
-  }>>
+  ): Promise<
+    Array<{
+      holder: string
+      holderId: string
+      updatedAt: string
+      items: RecordContextItem[]
+    }>
+  >
+  upsertContextItem(
+    input: RecordContextItemInput,
+    destination: RecordWriteDestination,
+  ): Promise<{ id: string; createdAt: string; updatedAt: string }>
+  deleteContextItem(
+    id: string,
+    input: { expectedRevision?: string },
+    destination: RecordWriteDestination,
+  ): Promise<{ removed: boolean }>
 }
 
 export function recordContextItemReadClient(
@@ -47,5 +59,17 @@ export function recordContextItemReadClient(
       (await request<RecordContextItem[]>(itemPath([holder], slug), destination))[0] ?? null,
     listContextHolders: (kind, destination) =>
       request(`${RECORD_CONTEXT_ITEM_HOLDERS_ROUTE}?kind=${encodeURIComponent(kind)}`, destination),
+    upsertContextItem: (input, destination) =>
+      request(RECORD_CONTEXT_ITEMS_ROUTE, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    deleteContextItem: (id, input, destination) =>
+      request(`${RECORD_CONTEXT_ITEMS_ROUTE}/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
   }
 }

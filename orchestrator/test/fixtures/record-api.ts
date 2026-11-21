@@ -9,7 +9,6 @@ import type {
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
-import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { unusedContextItemClientMethods } from '../../src/record/record-api-context-items.fixture.ts'
 import { identity } from '../../src/record/record-api-identity.fixture.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
@@ -21,7 +20,10 @@ import {
 } from '../../src/record/record-board-contract.ts'
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
+import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { memoryContextItemClient } from './record-api-context-items.ts'
+import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
 import { memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
@@ -80,24 +82,6 @@ function idleWorkflowDeps() {
     retireWorkflow: unused,
   }
 }
-function idlePortDeps() {
-  const unused = async () => {
-    throw new Error('hosted port catalogue is unused in this fixture')
-  }
-  return { listPortCatalogue: async () => [], writePort: unused }
-}
-
-function idleCredentialDeps() {
-  const unused = async () => {
-    throw new Error('hosted credential preferences are unused in this fixture')
-  }
-  return {
-    listCredentialPreferences: async () => [],
-    putCredentialPreference: unused,
-    deleteCredentialPreference: async () => undefined,
-  }
-}
-
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
@@ -418,27 +402,10 @@ export function createMemoryRecordApiClient(
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
+    ...memoryContextItemClient(contextItems),
     ...memoryTaskFlowClient(input),
     ...memoryQuestionClient(input),
     cacheCounts: unusedIdentityAndSpace,
-    async listContextItems(holders) {
-      return contextItems.filter((item) => holders.includes(item.holder))
-    },
-    async getContextItem(holder, slug) {
-      return contextItems.find((item) => item.holder === holder && item.id === slug) ?? null
-    },
-    async listContextHolders(kind) {
-      const selected = contextItems.filter((item) => item.holder.startsWith(`${kind}:`))
-      return [...Map.groupBy(selected, (item) => item.holder)].map(([holder, items]) => ({
-        holder,
-        holderId: holder.slice(holder.indexOf(':') + 1),
-        updatedAt: items.reduce(
-          (latest, item) => (item.updatedAt > latest ? item.updatedAt : latest),
-          items[0]!.updatedAt,
-        ),
-        items,
-      }))
-    },
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },

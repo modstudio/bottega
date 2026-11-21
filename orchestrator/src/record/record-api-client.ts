@@ -27,6 +27,10 @@ import {
 } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
+import {
+  type RecordContextItemClient,
+  recordContextItemReadClient,
+} from './record-api-client-context-items.ts'
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
   recordApiUnreachable as classifyRecordApiUnreachable,
@@ -58,11 +62,6 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
-import type { RecordContextItemInput } from './record-context-items.ts'
-import {
-  type RecordContextItemClient,
-  recordContextItemReadClient,
-} from './record-api-client-context-items.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -254,15 +253,6 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> &
   RecordContextItemClient & {
-    upsertContextItem(
-      input: RecordContextItemInput,
-      destination: RecordWriteDestination,
-    ): Promise<{ id: string; createdAt: string; updatedAt: string }>
-    deleteContextItem(
-      id: string,
-      input: { expectedRevision?: string },
-      destination: RecordWriteDestination,
-    ): Promise<{ removed: boolean }>
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -762,18 +752,6 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordContextItemReadClient(request),
-    upsertContextItem: (input, destination) =>
-      request('/v1/context-items', {
-        method: 'PUT',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    deleteContextItem: (id, input, destination) =>
-      request(`/v1/context-items/${id}`, {
-        method: 'DELETE',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),

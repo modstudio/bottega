@@ -9,6 +9,7 @@ import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { listContextItems } from '../doc/context-item-store.ts'
 import { getDoc } from '../doc/docs.ts'
 import {
   readTranscriptRows,
@@ -35,7 +36,6 @@ import {
   type TranscriptRow,
   transcriptRowTime,
 } from './session-losses.ts'
-import { listContextItems } from '../doc/context-item-store.ts'
 
 type JudgeVerdict = {
   candidateId: string
@@ -62,7 +62,10 @@ type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   >
 }
 
-async function contextReviewMeasurements(sessionId: string, boundaries: SessionLossReport['boundaries']) {
+async function contextReviewMeasurements(
+  sessionId: string,
+  boundaries: SessionLossReport['boundaries'],
+) {
   const reviews = db()
     .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
       `SELECT at,items,flagged,item_ids FROM context_review

@@ -39,7 +39,11 @@ export async function sessionCloseOutObligationItems(
     await Promise.all(
       landedTasks.flatMap((observation) =>
         observation.task
-          ? [taskContextItems(observation.task, database).then((items) => [observation.task!.record_id, items] as const)]
+          ? [
+              taskContextItems(observation.task, database).then(
+                (items) => [observation.task!.record_id, items] as const,
+              ),
+            ]
           : [],
       ),
     ),

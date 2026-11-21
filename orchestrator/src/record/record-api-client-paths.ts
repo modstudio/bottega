@@ -67,6 +67,8 @@ export type RecordContextItemMethod =
   | 'listContextItems'
   | 'getContextItem'
   | 'listContextHolders'
+  | 'upsertContextItem'
+  | 'deleteContextItem'
 
 export type ProjectIdentityClient = {
   upsertProject(

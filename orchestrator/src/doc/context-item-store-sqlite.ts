@@ -47,7 +47,10 @@ function stored(row: ContextItemRow): StoredContextItem {
   }
 }
 
-export function listLocalContextItems(holder: string, database: Database = db()): StoredContextItem[] {
+export function listLocalContextItems(
+  holder: string,
+  database: Database = db(),
+): StoredContextItem[] {
   const { holderKind, holderId } = splitContextHolder(holder)
   return database
     .query<ContextItemRow, [string, string]>(

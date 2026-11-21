@@ -128,8 +128,15 @@ type Deps = RecordSubjectRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
-    readContextItems(input: Tenant & { holders: Array<{ holderKind: 'task' | 'session' | 'cursor'; holderId: string }>; slug?: string }): Promise<RecordContextItem[]>
-    readContextHolders(input: Tenant & { holderKind: 'task' | 'session' | 'cursor' }): Promise<unknown>
+    readContextItems(
+      input: Tenant & {
+        holders: Array<{ holderKind: 'task' | 'session' | 'cursor'; holderId: string }>
+        slug?: string
+      },
+    ): Promise<RecordContextItem[]>
+    readContextHolders(
+      input: Tenant & { holderKind: 'task' | 'session' | 'cursor' },
+    ): Promise<unknown>
     upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },

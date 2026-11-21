@@ -188,8 +188,8 @@ test('session context sweep logs and drops each item for a gone owner', async ()
     `dropped context session:${session}/one (fact)`,
     `dropped context session:${session}/two (fact)`,
   ])
-  expect(getContextItem(`session:${session}`, 'one')).toBeNull()
-  expect(getContextItem(`session:${session}`, 'two')).toBeNull()
+  expect(await getContextItem(`session:${session}`, 'one')).toBeNull()
+  expect(await getContextItem(`session:${session}`, 'two')).toBeNull()
 })
 
 test.each(['session_seen', 'holder write'])(
@@ -223,7 +223,7 @@ test.each(['session_seen', 'holder write'])(
       presentation: presentation([], () => {}),
     })
 
-    expect(getContextItem(`session:${session}`, 'live')).not.toBeNull()
+    expect(await getContextItem(`session:${session}`, 'live')).not.toBeNull()
   },
 )
 
@@ -260,7 +260,7 @@ test('session context sweep keeps items while the author has an unconsumed resum
     presentation: presentation([], () => {}),
   })
 
-  expect(getContextItem(`session:${session}`, 'kept-for-resume')).not.toBeNull()
+  expect(await getContextItem(`session:${session}`, 'kept-for-resume')).not.toBeNull()
 })
 
 test('session context sweep resolves an open brief author past a later consume revision', async () => {
@@ -312,7 +312,7 @@ test('session context sweep resolves an open brief author past a later consume r
     presentation: presentation([], () => {}),
   })
 
-  expect(getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
+  expect(await getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
 })
 
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {

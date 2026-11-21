@@ -143,7 +143,9 @@ async function taskCursorWarning(task: ContextTaskIdentity): Promise<string | nu
 export async function getContext(selection: ContextHolderSelection) {
   const { holder, task, children } = await resolveContextHolder(selection)
   const profile = task ? taskProfile(task.key, children) : 'session'
-  const cursors = selection.session ? await openKeylessCursorsForSession(selection.session, db()) : []
+  const cursors = selection.session
+    ? await openKeylessCursorsForSession(selection.session, db())
+    : []
   const addresses = [holder, ...cursors.map((cursor) => cursorContextHolder(cursor.record_id))]
   const batchedItems = await listContextItems(addresses)
   const items = batchedItems.filter((item) => item.holder === holder)
@@ -236,25 +238,32 @@ export async function clearTaskHolderForLifecycle(input: {
 }
 
 /** Lists one scope of stored context through the context service read boundary. */
-export async function scopeContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
-  return (await listContextHolders(holderKind, database)).map(({ holder, holderId, updatedAt, items }) => ({
-    holder,
-    holderId,
-    updatedAt,
-    items,
-  }))
+export async function scopeContextHolders(
+  holderKind: ContextHolderKind,
+  database: Database = db(),
+) {
+  return (await listContextHolders(holderKind, database)).map(
+    ({ holder, holderId, updatedAt, items }) => ({
+      holder,
+      holderId,
+      updatedAt,
+      items,
+    }),
+  )
 }
 
 export async function sessionContextHolders(database: Database) {
-  return (await scopeContextHolders('session', database)).map(({ holder, holderId, updatedAt, items }) => ({
-    holder,
-    session: holderId,
-    updatedAt,
-    items,
-  }))
+  return (await scopeContextHolders('session', database)).map(
+    ({ holder, holderId, updatedAt, items }) => ({
+      holder,
+      session: holderId,
+      updatedAt,
+      items,
+    }),
+  )
 }
 
-/** Hosted lifecycle removal is unconditional like task clearing; the local snapshot revision guards against selecting a changed item. */
+/** Hosted lifecycle removal is unconditional like task clearing; the selected record revision guards against a changed item. */
 async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string

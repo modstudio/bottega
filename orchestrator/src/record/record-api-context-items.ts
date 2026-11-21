@@ -22,14 +22,16 @@ type Deps = {
       slug?: string
     },
   ): Promise<RecordContextItem[]>
-  readContextHolders(input: Tenant & { holderKind: (typeof CONTEXT_HOLDER_KINDS)[number] }): Promise<unknown>
+  readContextHolders(
+    input: Tenant & { holderKind: (typeof CONTEXT_HOLDER_KINDS)[number] },
+  ): Promise<unknown>
   upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
   deleteContextItem(
     input: Tenant & { id: string; expectedRevision?: string },
   ): Promise<{ removed: boolean }>
 }
 
-export const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
+const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
 
 const holder = z.string().transform((value, context) => {
   const separator = value.indexOf(':')
@@ -86,13 +88,19 @@ export function registerRecordContextItemRoutes(
       return context.json({ error: 'invalid context item query' }, 400)
     if (holders.data.length > CONTEXT_ITEM_HOLDER_BATCH_LIMIT)
       return context.json(
-        { error: `holder count exceeds CONTEXT_ITEM_HOLDER_BATCH_LIMIT (${CONTEXT_ITEM_HOLDER_BATCH_LIMIT})` },
+        {
+          error: `holder count exceeds CONTEXT_ITEM_HOLDER_BATCH_LIMIT (${CONTEXT_ITEM_HOLDER_BATCH_LIMIT})`,
+        },
         400,
       )
     if (slug.data && holders.data.length !== 1)
       return context.json({ error: 'slug requires exactly one holder' }, 400)
     return context.json(
-      await deps.readContextItems({ ...tenant, holders: holders.data, ...(slug.data ? { slug: slug.data } : {}) }),
+      await deps.readContextItems({
+        ...tenant,
+        holders: holders.data,
+        ...(slug.data ? { slug: slug.data } : {}),
+      }),
     )
   })
   app.put(RECORD_CONTEXT_ITEMS_ROUTE, async (context) => {

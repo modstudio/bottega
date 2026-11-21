@@ -1,6 +1,19 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { guardHostedTables } from './hosted-table-guard.ts'
+import { guardHostedTables, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from './hosted-table-guard.ts'
+
+test('hosted install guard refuses local context-item access', () => {
+  const database = new Database(':memory:')
+  database.exec('CREATE TABLE context_item (id TEXT)')
+  const guarded = guardHostedTables(database, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS)
+  try {
+    expect(() => guarded.query('SELECT * FROM context_item')).toThrow(
+      'context_item is held by the hosted record',
+    )
+  } finally {
+    database.close()
+  }
+})
 
 test('hosted install guard refuses listed SQL and allows other tables', () => {
   const database = new Database(':memory:')

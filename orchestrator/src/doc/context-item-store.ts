@@ -16,12 +16,12 @@ import {
   listLocalContextItems,
   removeLocalContextHolder,
   removeLocalContextItem,
-  setLocalContextItem,
   type StoredContextItem,
+  setLocalContextItem,
 } from './context-item-store-sqlite.ts'
 
-export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
 export type { StoredContextItem }
+export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
 
 type ContextItemReadSource = 'local' | 'hosted'
 
@@ -67,10 +67,7 @@ export async function getContextItem(
   }
 }
 
-export async function listContextHolders(
-  holderKind: ContextHolderKind,
-  database: Database = db(),
-) {
+export async function listContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
   if (contextItemReadSource(currentRecordWriteDecision(database)) === 'local')
     return listLocalContextHolders(holderKind, database)
   try {

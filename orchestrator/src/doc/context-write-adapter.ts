@@ -262,7 +262,7 @@ const productionContextFactsPorts: ContextFactsPorts = {
 const defaultContextFactsPorts = () =>
   portsHolder[CONTEXT_FACTS_PORTS_KEY] ?? productionContextFactsPorts
 
-export async function storedItems(holder: string, database: Database): Promise<ContextItem[]> {
+async function storedItems(holder: string, database: Database): Promise<ContextItem[]> {
   return listContextItems(holder, database)
 }
 
