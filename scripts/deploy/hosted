@@ -7,22 +7,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 APP="${1:-}"
 
-# shellcheck source=scripts/deploy/hosted-required-secrets
-source "$SCRIPT_DIR/hosted-required-secrets"
-
-case "$APP" in
-  api|hub) ;;
-  *)
-    echo "REFUSE: expected api or hub; use scripts/deploy/hosted <api|hub>" >&2
-    exit 1
-    ;;
-esac
-
-if (( $# != 1 )); then
-  echo "REFUSE: expected exactly one app; use scripts/deploy/hosted <api|hub>" >&2
-  exit 1
-fi
-
 release_command="bottega release run bottega --rung hosted-$APP"
 for release_variable in BOTTEGA_RELEASE_PROJECT BOTTEGA_RELEASE_RUNG BOTTEGA_RELEASE_COMMIT; do
   if [[ -z "${!release_variable:-}" ]]; then
@@ -76,21 +60,16 @@ if [[ -z "$record_migrate_url" ]]; then
   fi
 fi
 
-if ! command -v fly >/dev/null 2>&1; then
-  echo "REFUSE: fly is unavailable; install or expose the Fly CLI before deploying" >&2
-  exit 1
-fi
+"$SCRIPT_DIR/hosted-preflight" "$APP"
 
 case "$APP" in
   api)
     fly_app="bottega-api"
-    required_secrets=("${HOSTED_API_REQUIRED_SECRETS[@]}")
     deploy_config="$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
     deploy_args=(--build-arg GIT_SHA="$commit")
     ;;
   hub)
     fly_app="bottega-hub"
-    required_secrets=("${HOSTED_HUB_REQUIRED_SECRETS[@]}")
     deploy_config="$PROJECT_ROOT/hub/deploy/fly.toml"
     deploy_args=(
       --build-arg VITE_HUB_MODE=hosted
@@ -101,33 +80,6 @@ case "$APP" in
     )
     ;;
 esac
-
-if ! listed_secrets_json="$(fly secrets list -a "$fly_app" --json)"; then
-  echo "REFUSE: fly could not list secrets for $fly_app; restore Fly access and retry" >&2
-  exit 1
-fi
-if ! listed_secret_names="$(
-  printf '%s' "$listed_secrets_json" |
-    bun --no-env-file -e \
-      'const rows = JSON.parse(await Bun.stdin.text()); for (const row of rows) { const name = row.name ?? row.Name; if (typeof name === "string") console.log(name) }'
-)"; then
-  echo "REFUSE: fly returned an unreadable secret list for $fly_app; restore Fly access and retry" >&2
-  exit 1
-fi
-
-missing_secrets=()
-for secret_name in "${required_secrets[@]}"; do
-  if ! grep -Fqx "$secret_name" <<<"$listed_secret_names"; then
-    missing_secrets+=("$secret_name")
-  fi
-done
-if (( ${#missing_secrets[@]} > 0 )); then
-  echo "REFUSE: $fly_app is missing required secrets: ${missing_secrets[*]}" >&2
-  for secret_name in "${missing_secrets[@]}"; do
-    echo "Remedy: fly secrets set $secret_name=<value> -a $fly_app (use the value from the old name's owner), then retry" >&2
-  done
-  exit 1
-fi
 
 cd "$PROJECT_ROOT"
 

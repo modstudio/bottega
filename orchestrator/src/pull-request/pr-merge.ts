@@ -15,6 +15,7 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
+import { runReleasePreflight } from '../release/release-preflight-adapter.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -81,6 +82,7 @@ export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
   taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
+  releasePreflight?(input: Parameters<typeof runReleasePreflight>[0]): Promise<void>
   checks(cwd: string, number: number): PullRequestCheck[]
   landingState(
     cwd: string,
@@ -250,6 +252,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       database,
     })
   },
+  releasePreflight: runReleasePreflight,
   checks(cwd, number) {
     const result = run(cwd, [
       'gh',
@@ -884,6 +887,12 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
+      if (input.releaseRequired)
+        await input.adapter.releasePreflight?.({
+          project: input.project,
+          pullRequest,
+          target: input.target,
+        })
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {
