@@ -374,6 +374,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-task-comment-evidence.ts', [
+    './workflow-artifact-evidence.ts',
     './workflow-artifact-reference.ts',
     './workflow-floor-artifact-freshness.ts',
     './workflow-floor-task-read.ts',

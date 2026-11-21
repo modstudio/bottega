@@ -1,7 +1,8 @@
 // concern: workflows
 /** Resolves a tracker comment offered as mutable workflow floor evidence. */
 
-import type { ArtifactEvidence, ArtifactRef } from './workflow-artifact-reference.ts'
+import type { ArtifactEvidence } from './workflow-artifact-evidence.ts'
+import type { ArtifactRef } from './workflow-artifact-reference.ts'
 import { timedTaskCommentFreshnessNotice } from './workflow-floor-artifact-freshness.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 
