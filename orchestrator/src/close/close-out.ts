@@ -6,7 +6,7 @@
  */
 
 import { existsSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
@@ -19,9 +19,9 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import {
-  isSharedReaderWorktreeClaim,
   claimSettlement,
   isPathInside,
+  isSharedReaderWorktreeClaim,
   type ResourceClaimState,
   recordRetainedRefClaim,
   sandboxDirectoryRelease,
@@ -243,7 +243,7 @@ export function releaseSandboxDirectoryForConversation(
     intent: CloseOutIntent
     dryRun?: boolean
     worktreeState?: ResourceClaimState | 'no-tree'
-  } = {},
+  },
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()

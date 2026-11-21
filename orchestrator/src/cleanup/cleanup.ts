@@ -73,6 +73,13 @@ function cleanupSettlement(detail: string, verb: 'discard' | 'abandon') {
   return claimSettlement(detail, verb, sessionId())
 }
 
+function deletedBranchSettlement(branch: string, verb: 'discarded' | 'abandoned') {
+  return cleanupSettlement(
+    `deleted refs/heads/${branch}`,
+    verb === 'discarded' ? 'discard' : 'abandon',
+  )
+}
+
 function discardRunSettlement(detail: string) {
   return claimSettlement(detail, 'cleanup:discardRun', sessionId())
 }
@@ -614,10 +621,7 @@ export function discardWorktree(
           kind: 'branch',
           state: 'released',
           settledAt: new Date().toISOString(),
-          ...cleanupSettlement(
-            `deleted refs/heads/${minted}`,
-            verb === 'discarded' ? 'discard' : 'abandon',
-          ),
+          ...deletedBranchSettlement(minted, verb),
           allocationKey: `refs/heads/${minted}`,
         })
       }

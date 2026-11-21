@@ -5,8 +5,8 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
