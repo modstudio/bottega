@@ -23,10 +23,12 @@ export type StepRunObligation = {
 
 export type WorkflowRunObligationInput = {
   workflowKey?: string
+  cursorNumber?: number
   selectedFloors: string[]
   metWaiverFacts: DispatchWaiverFact[]
   step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
+  earlierStepRuns?: { number: number; stepSlug: string }[]
   judgedRuns?: WorkflowRunChainEvidence[]
 }
 
@@ -42,6 +44,23 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   const runs = input.dispatchRuns ?? []
   if (!runs.length) {
     const job = step.jobs[0] ?? '<job>'
+    const earlier = input.earlierStepRuns ?? []
+    if (earlier.length) {
+      const cursor = input.cursorNumber ?? '<n>'
+      const chainSummary = earlier
+        .map(
+          (run) =>
+            `chain ${run.number} was bound at step ${run.stepSlug} before this step activated, so it is not credited here`,
+        )
+        .join('; ')
+      return (
+        `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run is bound ` +
+        `to this cursor at step ${step.slug}; ${chainSummary}. ` +
+        `A finding applied before triage needs a confirmation turn at this step; ` +
+        `run \`${PLATFORM_SLUG} run continue --findings --cursor ${cursor} ${earlier[0]!.number} "<message>"\`; ` +
+        `its successful exit meets the obligation`
+      )
+    }
     return (
       `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
       `from this cursor at step ${step.slug}; dispatch one with ` +

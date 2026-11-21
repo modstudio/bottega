@@ -158,6 +158,7 @@ export type ValidatedEvidence = {
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
+  earlierStepRuns?: { number: number; stepSlug: string }[]
   judgedRuns?: WorkflowRunChainEvidence[]
   metDispatchWaiverFacts?: DispatchWaiverFact[]
 }
@@ -193,6 +194,7 @@ export type FloorSatisfactionInput = {
   freshRulingAfter?: string
   cursorTakeoverRemedy?: string
   workflowKey?: string
+  cursorNumber?: number
   step?: StepRunObligation
 }
 
@@ -1001,10 +1003,12 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   )
   const obligationInput = {
     workflowKey: input.workflowKey,
+    cursorNumber: input.cursorNumber,
     selectedFloors: input.floors.map((floor) => floor.kind),
     metWaiverFacts: input.evidence.metDispatchWaiverFacts ?? [],
     step: input.step,
     dispatchRuns: input.evidence.dispatchRuns,
+    earlierStepRuns: input.evidence.earlierStepRuns,
     judgedRuns: input.evidence.judgedRuns,
   }
   const dispatchRefusal = dispatchObligationRefusal(obligationInput)

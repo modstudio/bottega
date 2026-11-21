@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { WorkflowRunChainEvidence } from './workflow-run-obligation.ts'
 
 export function gatherWorkflowRunChains(
@@ -40,4 +41,45 @@ export function gatherWorkflowRunChains(
     terminal: TERMINAL_RUN_STATUS_SET.has(row.status),
     needsVerdict: row.needs_verdict === 1,
   }))
+}
+
+export type EarlierStepRunEvidence = { number: number; stepSlug: string }
+
+export function gatherEarlierStepWorkflowRunChains(
+  cursorRecordId: string,
+  jobs: readonly string[],
+  currentStepSlug: string,
+  stepActivatedAt: string,
+  database: Database,
+): EarlierStepRunEvidence[] {
+  if (!jobs.length) return []
+  const jobPlaceholders = jobs.map(() => '?').join(',')
+  const rows = database
+    .query<
+      { number: number; step_slug: string; created_at: string },
+      (string | number)[]
+    >(
+      `SELECT root.number,bound.step_slug,bound.started_at AS created_at
+         FROM run root JOIN run bound
+           ON bound.record_id=root.record_id OR bound.parent_run_record_id=root.record_id
+        WHERE root.parent_run_record_id IS NULL
+          AND root.job IN (${jobPlaceholders})
+          AND bound.cursor_record_id=?
+          AND bound.step_slug<>?
+          AND NOT EXISTS (SELECT 1 FROM run current_bound
+                           WHERE (current_bound.record_id=root.record_id
+                                  OR current_bound.parent_run_record_id=root.record_id)
+                             AND current_bound.cursor_record_id=?
+                             AND current_bound.step_slug=?)
+        ORDER BY root.number,bound.turn DESC,bound.number DESC`,
+    )
+    .all(...jobs, cursorRecordId, currentStepSlug, cursorRecordId, currentStepSlug)
+  const gathered: EarlierStepRunEvidence[] = []
+  const seen = new Set<number>()
+  for (const row of rows) {
+    if (seen.has(row.number) || createdAfterStepActivation(row.created_at, stepActivatedAt)) continue
+    seen.add(row.number)
+    gathered.push({ number: row.number, stepSlug: row.step_slug })
+  }
+  return gathered
 }

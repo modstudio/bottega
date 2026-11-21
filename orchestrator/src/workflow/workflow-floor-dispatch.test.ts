@@ -8,7 +8,11 @@ import {
   type Floor,
   type FloorSatisfactionInput,
 } from './workflow-floor.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import {
+  gatherEarlierStepWorkflowRunChains,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
+import { dispatchObligationRefusal } from './workflow-run-obligation.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -68,6 +72,71 @@ test('a terminal scored dispatch allows', () => {
       step: dispatchStep,
     }).action,
   ).toBe('allow')
+})
+
+test('an earlier-step chain before activation gets the confirmation-turn refusal', () => {
+  const cursorRecordId = newRecordId()
+  const earlier = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  db()
+    .query('UPDATE run SET number=?,cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(987_654, cursorRecordId, 'blast-radius', earlier)
+  const earlierStepRuns = gatherEarlierStepWorkflowRunChains(
+    cursorRecordId,
+    ['implement'],
+    'apply-findings',
+    '2026-11-19T01:00:00.000Z',
+    db(),
+  )
+
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: { ...dispatchStep, slug: 'apply-findings' },
+    dispatchRuns: [],
+    earlierStepRuns,
+  })
+
+  expect(refusal).toMatch(/\b987654\b/)
+  expect(refusal).toContain('blast-radius')
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`,
+  )
+})
+
+test('a current-step chain is credited without mentioning an earlier chain', () => {
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: { ...dispatchStep, slug: 'apply-findings' },
+      dispatchRuns: [terminalDispatch],
+      earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+    }),
+  ).toBeNull()
+})
+
+test('empty earlier-step evidence keeps the existing zero-dispatch wording', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: { ...dispatchStep, slug: 'apply-findings' },
+    dispatchRuns: [],
+    earlierStepRuns: [],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no implement run was dispatched from this cursor at step apply-findings; dispatch one with \`${PLATFORM_SLUG} run start implement --key DEV-1 ...\` from this cursor`,
+  )
 })
 
 test('run-chain evidence includes only the requested cursor and step', () => {
