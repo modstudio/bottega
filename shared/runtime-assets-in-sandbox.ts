@@ -25,7 +25,7 @@ export const CHECKOUT_CLI_RUNTIME_ASSETS = {
 
 const CHECKOUT_CLI_STAMP_KEYS = ['head', 'lock', 'binary', 'size', 'mtime', 'inode'] as const
 
-export type CheckoutCliStampKey = (typeof CHECKOUT_CLI_STAMP_KEYS)[number]
+type CheckoutCliStampKey = (typeof CHECKOUT_CLI_STAMP_KEYS)[number]
 export type CheckoutCliStamp = Record<CheckoutCliStampKey, string | number>
 
 /**
@@ -38,18 +38,16 @@ export function formatCheckoutCliStamp(values: CheckoutCliStamp): string {
 }
 
 /** Parse the declared compiled checkout CLI stamp fields from text. */
-export function stampValues(contents: string): Partial<Record<CheckoutCliStampKey, string>> {
+export function stampValues(contents: string): Record<string, string> {
   const knownKeys = new Set<string>(CHECKOUT_CLI_STAMP_KEYS)
-  return Object.fromEntries(
-    contents
-      .trim()
-      .split('\n')
-      .map((line) => {
-        const separator = line.indexOf('=')
-        return separator < 1 ? ['', ''] : [line.slice(0, separator), line.slice(separator + 1)]
-      })
-      .filter(([key]) => knownKeys.has(key)),
-  )
+  const values: Record<string, string> = {}
+  for (const line of contents.trim().split('\n')) {
+    const separator = line.indexOf('=')
+    if (separator < 1) continue
+    const key = line.slice(0, separator)
+    if (knownKeys.has(key)) values[key] = line.slice(separator + 1)
+  }
+  return values
 }
 
 function safeRuntimeAsset(entry: string, versionRoot: string): string {
