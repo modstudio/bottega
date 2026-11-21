@@ -34,6 +34,8 @@ import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { median } from '../state/statistics.ts'
+import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
+import { firstErrorLine, launchSandboxProbe } from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -47,7 +49,6 @@ import {
   probeSandboxProfile,
   readonlyLensProfile,
   resetSandbox,
-  type SandboxRuntimeConfig,
   sandboxLaunchArgv,
   writerProfile,
 } from './sandbox.ts'
@@ -82,6 +83,7 @@ export type ConfinementFilesystemProbeRow = {
     | 'read-only MCP'
     | 'host override'
     | 'sandbox git spawn'
+    | 'headless browser'
   status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
@@ -134,10 +136,6 @@ function fixtureProject(
     retiredAt: null,
     settings: { keyPrefixes, secretPaths },
   }
-}
-
-function firstErrorLine(stderr: string): string {
-  return stderr.trim().split(/\r?\n/, 1)[0] || 'no stderr'
 }
 
 function stderrTail(stderr: string): string {
@@ -235,21 +233,6 @@ function applyCommandCellVerdict(
   if (!failed) return filesystemVerdict
   const [name, command] = failed
   return { status: 'failed', reason: `command cell ${name} failed: ${command.reason}` }
-}
-
-async function launchSandboxProbe(
-  profile: SandboxRuntimeConfig,
-  executable: string,
-  argv: string[],
-  environment: Record<string, string>,
-  scratchDir: string,
-  options: { cwd?: string; environment?: Record<string, string> } = {},
-) {
-  return startBounded(await sandboxLaunchArgv(profile, executable, argv, scratchDir, environment), {
-    budget: 'sandbox-probe',
-    cwd: options.cwd,
-    env: { ...process.env, ...environment, ...options.environment },
-  })
 }
 
 async function launchCommand(
@@ -937,6 +920,17 @@ function createProbeFixture(root: string) {
   }
 }
 
+function launchHeadlessBrowserProbeRow(
+  common: ReturnType<typeof createProbeFixture>['common'],
+  environment: Record<string, string>,
+) {
+  return launchHeadlessBrowserProbe(
+    readonlyLensProfile({ ...common, agent: 'goose' }),
+    common.scratchDir,
+    environment,
+  )
+}
+
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
   const probeParent = tmpdir()
@@ -1012,6 +1006,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.environment,
         common.scratchDir,
       ),
+      await launchHeadlessBrowserProbeRow(common, fixture.environment),
       ...NOT_COVERED,
     ]
   } finally {
