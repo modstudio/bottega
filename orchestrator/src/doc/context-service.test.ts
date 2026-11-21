@@ -10,8 +10,10 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { assertRecordContextItemRevision } from '../record/record-context-items.ts'
+import { contextCursorWarning } from './context-cursor-warning-decision.ts'
 import {
   clearTaskContext,
+  cursorAncestorTasks,
   dropContextItem,
   dropSessionContextItemsForLifecycle,
   getContext,
@@ -34,8 +36,10 @@ function installContextFacts() {
     settings: { keyPrefixes: ['DEV'], space: 'personal' },
   })
   globals[CONTEXT_FACTS_PORTS_KEY] = {
-    tasks: async () => [task],
     task: async () => task,
+    lookup: async () => task,
+    record: async () => task,
+    children: async () => [],
     pointer: async (value) =>
       value.startsWith('doc:') ? `doc-store record ${value} does not resolve` : null,
   }
@@ -44,6 +48,49 @@ function installContextFacts() {
 afterEach(() => {
   delete globals[CONTEXT_FACTS_PORTS_KEY]
   installRecordApiClient(null)
+})
+
+test('cursor ancestry skips the target, caches shared ancestors, and carries grandchildren', async () => {
+  const target = { key: 'DEV-1', project: PLATFORM_SLUG }
+  let targetLookups = 0
+  const direct = await cursorAncestorTasks({
+    task: target,
+    openCursors: [{ project: PLATFORM_SLUG, taskKey: target.key }],
+    lookup: async () => {
+      targetLookups++
+      return null
+    },
+  })
+  expect(targetLookups).toBe(0)
+  expect(
+    contextCursorWarning({
+      task: target,
+      openCursors: [{ project: PLATFORM_SLUG, taskKey: target.key }],
+      tasks: direct,
+    }),
+  ).toBeNull()
+
+  const rows = [
+    { key: 'DEV-2', project: PLATFORM_SLUG, parent_key: 'DEV-4' },
+    { key: 'DEV-3', project: PLATFORM_SLUG, parent_key: 'DEV-4' },
+    { key: 'DEV-4', project: PLATFORM_SLUG, parent_key: target.key },
+  ]
+  const reads = new Map<string, number>()
+  const openCursors = [
+    { project: PLATFORM_SLUG, taskKey: 'DEV-2' },
+    { project: PLATFORM_SLUG, taskKey: 'DEV-3' },
+  ]
+  const ancestors = await cursorAncestorTasks({
+    task: target,
+    openCursors,
+    lookup: async (project, key) => {
+      reads.set(key, (reads.get(key) ?? 0) + 1)
+      return rows.find((row) => row.project === project && row.key === key) ?? null
+    },
+  })
+
+  expect(reads.get('DEV-4')).toBe(1)
+  expect(contextCursorWarning({ task: target, openCursors, tasks: ancestors })).toBeNull()
 })
 
 test('context service stores structured columns and compare-and-set revisions', async () => {

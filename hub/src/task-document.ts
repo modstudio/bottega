@@ -15,7 +15,13 @@ import {
 import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 
-import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
+import {
+  missingTaskRecordLine,
+  resolveTask,
+  type TaskScope,
+  taskByRecordId,
+  taskRecordId,
+} from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
@@ -125,7 +131,7 @@ function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput)
     const row = conn
       .query<DocumentTask, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(task.record_id)
-    if (!row) throw new Error(`no task record ${task.record_id}`)
+    if (!row) throw new Error(missingTaskRecordLine(task.record_id))
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
     const number = row.next_document_number
     conn

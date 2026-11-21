@@ -48,33 +48,33 @@ test('resolved task refreshes only after a mirror miss', async () => {
   const mirrored = { key: 'DEV-1', record_id: 'mirror-id', project: 'alpha' }
   const pulled = { key: 'DEV-2', record_id: 'pull-id', project: 'alpha' }
   const pulls: string[] = []
-  const reader = async () => [mirrored]
+  const lookup = async (_project: string, key: string) => (key === mirrored.key ? mirrored : null)
   const puller = async (_project: string, key: string) => {
     pulls.push(key)
     return key === pulled.key ? pulled : null
   }
 
-  await expect(resolveOrPullHubTaskReference('alpha', mirrored.key, reader, puller)).resolves.toBe(
+  await expect(resolveOrPullHubTaskReference('alpha', mirrored.key, lookup, puller)).resolves.toBe(
     mirrored,
   )
   expect(pulls).toEqual([])
-  await expect(resolveOrPullHubTaskReference('alpha', pulled.key, reader, puller)).resolves.toBe(
+  await expect(resolveOrPullHubTaskReference('alpha', pulled.key, lookup, puller)).resolves.toBe(
     pulled,
   )
   expect(pulls).toEqual([pulled.key])
 })
 
 test('fresh task failures and absent tasks have distinct actionable refusals', async () => {
-  const reader = async () => []
+  const lookup = async () => null
   await expect(
-    resolveOrPullHubTaskReference('alpha', 'DEV-2', reader, async () => {
+    resolveOrPullHubTaskReference('alpha', 'DEV-2', lookup, async () => {
       throw new Error('tracker token=super-secret')
     }),
   ).rejects.toThrow(
     `could not read task data for project alpha: tracker [withheld: assignment]; retry: ${PLATFORM_SLUG} task show DEV-2 --project alpha --fresh --json`,
   )
   await expect(
-    resolveOrPullHubTaskReference('alpha', 'DEV-3', reader, async () => null),
+    resolveOrPullHubTaskReference('alpha', 'DEV-3', lookup, async () => null),
   ).rejects.toThrow(
     `no task DEV-3 in project alpha; inspect available tasks with ${PLATFORM_SLUG} task list --project alpha --json`,
   )
@@ -87,16 +87,16 @@ test('classifies only a pull failure whose canonical missing-task line names the
 })
 
 test('refuses a fresh task identity that differs from the requested key or project', async () => {
-  const reader = async () => []
+  const lookup = async () => null
   await expect(
-    resolveOrPullHubTaskReference('alpha', 'DEV-2', reader, async () => ({
+    resolveOrPullHubTaskReference('alpha', 'DEV-2', lookup, async () => ({
       key: 'DEV-3',
       record_id: 'wrong-key',
       project: 'alpha',
     })),
   ).rejects.toThrow('fresh task read returned')
   await expect(
-    resolveOrPullHubTaskReference('alpha', 'DEV-2', reader, async () => ({
+    resolveOrPullHubTaskReference('alpha', 'DEV-2', lookup, async () => ({
       key: 'DEV-2',
       record_id: 'wrong-project',
       project: 'beta',

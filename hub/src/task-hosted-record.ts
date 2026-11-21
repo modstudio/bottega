@@ -90,17 +90,12 @@ export async function listHostedTasks(filters: {
 }) {
   const rows = new Map<string, TaskRow>()
   for (const options of hostedProjectSpaces(filters.project)) {
-    const page = await hostedListTasks(options)
+    const page = await hostedListTasks(options, filters)
     for (const task of page.tasks) rows.set(task.id, hostedTaskRow(task))
   }
-  return [...rows.values()]
-    .filter((task) => !filters.project || task.project === filters.project)
-    .filter((task) => !filters.status || task.status_category === filters.status)
-    .filter((task) => !filters.parent || task.parent_key === filters.parent.toUpperCase())
-    .sort(
-      (left, right) =>
-        left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
-    )
+  return [...rows.values()].sort(
+    (left, right) => left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
+  )
 }
 
 export async function showHostedTask(

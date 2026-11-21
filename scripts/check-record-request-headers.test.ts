@@ -106,6 +106,19 @@ test('refuses fallback fetches and resolver-derived URL variables', () => {
   ])
 })
 
+test('follows hosted URL initializers through concatenation and enclosing scopes', () => {
+  const source = `
+    const base = resolveHostedUrl()
+    async function send() {
+      const url = base + '/v1/tasks'
+      await fetch(url)
+    }
+  `
+  expect(recordFetchViolations(source, 'hub/src/example.ts')).toEqual([
+    { file: 'hub/src/example.ts', line: 5 },
+  ])
+})
+
 test('allows the named task transport handed to the traced hosted-session seam', () => {
   const source = `
     async function hostedFetch(input, init, options) {

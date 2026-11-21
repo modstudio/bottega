@@ -1,6 +1,7 @@
 // concern: record-call-trace
 /** Measures record API HTTP calls without coupling callers to a concern-specific client. */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { PLATFORM_SLUG } from './brand.ts'
 import {
   type BodyCountFinish,
@@ -37,7 +38,7 @@ type RecordTraceSummary = {
 }
 
 const encoder = new TextEncoder()
-const RECORD_TRACE_ACTIVE = Symbol('record-trace-active')
+const recordTraceContext = new AsyncLocalStorage<boolean>()
 const completedSummaries = new Map<string, RecordTraceSummary>()
 const activeCalls = new Set<RecordCallTrace>()
 
@@ -125,10 +126,13 @@ export function summarizeRecordCalls(calls: readonly RecordCallTrace[]): RecordT
   )
 }
 
-function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTraceSummary {
+function combineSummaries(
+  summaries: readonly RecordTraceSummary[],
+  routeClass = 'total',
+): RecordTraceSummary {
   return summaries.reduce<RecordTraceSummary>(
     (total, summary) => ({
-      routeClass: 'total',
+      routeClass,
       count: total.count + summary.count,
       responseBytesTotal:
         summary.responseBytesTotal === null
@@ -155,7 +159,7 @@ function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTrace
       incomplete: total.incomplete + summary.incomplete,
     }),
     {
-      routeClass: 'total',
+      routeClass,
       count: 0,
       responseBytesTotal: null,
       responseBytesMax: null,
@@ -203,9 +207,10 @@ function formatRecordCall(call: RecordCallTrace): string {
 function mergeCompletedCall(call: RecordCallTrace): void {
   const current = completedSummaries.get(call.routeClass)
   const next = summarizeRecordCalls([call])[0]!
-  completedSummaries.set(call.routeClass, current ? combineSummaries([current, next]) : next)
-  const stored = completedSummaries.get(call.routeClass)!
-  stored.routeClass = call.routeClass
+  completedSummaries.set(
+    call.routeClass,
+    current ? combineSummaries([current, next], call.routeClass) : next,
+  )
 }
 
 function finishRecordCall(
@@ -230,19 +235,14 @@ export async function tracedRecordFetch(
   transport: typeof fetch,
   observer?: (call: RecordCallTrace) => void,
 ): Promise<Response> {
-  if ((init as RequestInit & { [RECORD_TRACE_ACTIVE]?: true })[RECORD_TRACE_ACTIVE])
-    return transport(url, init)
+  if (recordTraceContext.getStore()) return transport(url, init)
   const mode = configuredMode()
   if (!mode && !observer) return transport(url, init)
   const runtimeTrace = mode !== null
   const startedAt = performance.now()
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
-    const marked: RequestInit & { [RECORD_TRACE_ACTIVE]?: true } = {
-      ...init,
-      [RECORD_TRACE_ACTIVE]: true,
-    }
-    const response = await transport(url, marked)
+    const response = await recordTraceContext.run(true, () => transport(url, init))
     const responseBytes = contentLength(response.headers)
     const common = {
       routeClass,
@@ -301,9 +301,7 @@ export function writeRecordTraceSummary(): void {
     const index = summaries.findIndex((summary) => summary.routeClass === active.routeClass)
     if (index < 0) summaries.push(activeSummary)
     else {
-      const routeClass = summaries[index]!.routeClass
-      summaries[index] = combineSummaries([summaries[index]!, activeSummary])
-      summaries[index]!.routeClass = routeClass
+      summaries[index] = combineSummaries([summaries[index]!, activeSummary], active.routeClass)
     }
   }
   summaries.sort((left, right) => left.routeClass.localeCompare(right.routeClass))

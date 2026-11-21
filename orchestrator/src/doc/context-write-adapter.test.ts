@@ -4,7 +4,14 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
-import { type PointerTargetPorts, resolvedPointerTarget } from './context-write-adapter.ts'
+import {
+  type ContextFactsPorts,
+  type PointerTargetPorts,
+  resolveContextTaskByRecordId,
+  resolveContextTaskWithChildren,
+  resolvedPointerTarget,
+  taskProfile,
+} from './context-write-adapter.ts'
 
 function ports(document: PointerTargetPorts['document'] = async () => {}): PointerTargetPorts {
   return {
@@ -181,6 +188,120 @@ test('a comment pointer refuses distinctly when the tracker cannot report commen
   })
   await expect(resolvedPointerTarget('task:DEV-2473#comment:4', database, adapter)).rejects.toThrow(
     "cannot be verified because this tracker's task read does not report comment ids; use task:DEV-2473",
+  )
+  database.close()
+})
+
+function contextFacts(record: ContextFactsPorts['record']): ContextFactsPorts {
+  return {
+    task: async () => null,
+    lookup: async () => null,
+    record,
+    children: async () => [],
+    pointer: async () => null,
+  }
+}
+
+test('a missing task record returns null without a read failure', async () => {
+  const database = migratedTestDatabase()
+  const recordId = newRecordId()
+  const result = await resolveContextTaskByRecordId(
+    recordId,
+    database,
+    contextFacts(async () => {
+      throw new Error(`no task record ${recordId.toUpperCase()}`)
+    }),
+  )
+
+  expect(result).toEqual({ task: null, failure: null })
+  database.close()
+})
+
+test('a task-record transport failure preserves its cause', async () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const result = await resolveContextTaskByRecordId(
+    newRecordId(),
+    database,
+    contextFacts(async () => {
+      throw new Error('record service unavailable')
+    }),
+  )
+
+  expect(result.task).toBeNull()
+  expect(result.failure).toBe('record service unavailable')
+  database.close()
+})
+
+test('one task resolves by lookup and profiles only its direct children', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,canon,settings)
+       VALUES (?,'context-fixture','/tmp/context-fixture',0,'{"keyPrefixes":["CTX"]}')`,
+    )
+    .run(newRecordId())
+  const calls = { pull: 0, lookup: [] as string[], children: [] as string[] }
+  const parent = {
+    key: 'CTX-1',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+  }
+  const child = {
+    key: 'CTX-2',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+    parent_key: parent.key,
+  }
+  const adapter: ContextFactsPorts = {
+    task: async () => {
+      calls.pull++
+      return null
+    },
+    lookup: async (project, key) => {
+      calls.lookup.push(`${project}:${key}`)
+      return parent
+    },
+    record: async () => null,
+    children: async (project, key) => {
+      calls.children.push(`${project}:${key}`)
+      return [child]
+    },
+    pointer: async () => null,
+  }
+
+  const resolved = await resolveContextTaskWithChildren('ctx-1', database, adapter)
+
+  expect(resolved).toEqual({ task: parent, children: [child] })
+  expect(taskProfile(resolved.task.key, resolved.children)).toBe('epic')
+  expect(calls).toEqual({
+    pull: 0,
+    lookup: ['context-fixture:CTX-1'],
+    children: ['context-fixture:CTX-1'],
+  })
+  database.close()
+})
+
+test('a direct-children read failure is a task read refusal', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,canon,settings)
+       VALUES (?,'context-fixture','/tmp/context-fixture',0,'{"keyPrefixes":["CTX"]}')`,
+    )
+    .run(newRecordId())
+  const adapter = contextFacts(async () => null)
+  adapter.lookup = async () => ({
+    key: 'CTX-1',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+  })
+  adapter.children = async () => {
+    throw new Error('children unavailable')
+  }
+
+  await expect(resolveContextTaskWithChildren('CTX-1', database, adapter)).rejects.toThrow(
+    'could not read task data for project context-fixture: children unavailable',
   )
   database.close()
 })

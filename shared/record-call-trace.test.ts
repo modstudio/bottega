@@ -212,3 +212,58 @@ test.serial('exit summary formats bounded aggregate state', async () => {
     else process.env.BOTTEGA_RECORD_TRACE = previous
   }
 })
+
+test.serial(
+  'summary merging preserves the route class across completed and active calls',
+  async () => {
+    const previous = process.env.BOTTEGA_RECORD_TRACE
+    process.env.BOTTEGA_RECORD_TRACE = '1'
+    const originalWrite = process.stderr.write
+    const writes: string[] = []
+    process.stderr.write = ((value: string | Uint8Array) => {
+      writes.push(String(value))
+      return true
+    }) as typeof process.stderr.write
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      const completed = async (bytes: number) =>
+        tracedRecordFetch(
+          'https://record.test/v1/merge-test',
+          {},
+          (async () =>
+            new Response(null, {
+              headers: { 'content-length': String(bytes) },
+            })) as unknown as typeof fetch,
+        )
+      await completed(5)
+      await completed(7)
+      const active = await tracedRecordFetch(
+        'https://record.test/v1/merge-test',
+        {},
+        (async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              pull(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]))
+              },
+            }),
+          )) as unknown as typeof fetch,
+      )
+      reader = active.body!.getReader()
+      await reader.read()
+
+      writeRecordTraceSummary()
+
+      expect(writes).toContainEqual(
+        expect.stringContaining(
+          'record-trace route=record-merge-test count=3 response_bytes_total=15',
+        ),
+      )
+    } finally {
+      await reader?.cancel('test complete')
+      process.stderr.write = originalWrite
+      if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
+      else process.env.BOTTEGA_RECORD_TRACE = previous
+    }
+  },
+)

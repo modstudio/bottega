@@ -5,7 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { namesMissingTask } from '../../../shared/task-missing.ts'
+import { namesMissingTask, namesMissingTaskRecord } from '../../../shared/task-missing.ts'
 import { taskReader } from './task-read-port.ts'
 
 export type HubTaskReference = {
@@ -22,6 +22,7 @@ export type HubTaskReference = {
   commentsVerifiable?: boolean
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+export type HubTaskLookup = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
@@ -157,6 +158,36 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return (await taskReader().list({ project })).map(taskReference)
 }
 
+export async function readHubTaskReference(
+  project: string,
+  key: string,
+): Promise<HubTaskReference | null> {
+  try {
+    return taskReferenceFromShow(await taskReader().show(key, { project }))
+  } catch (error) {
+    if (taskPullFailureNamesMissingTask(error, key)) return null
+    throw error
+  }
+}
+
+export async function readHubTaskReferenceByRecordId(
+  recordId: string,
+): Promise<HubTaskReference | null> {
+  try {
+    return taskReferenceFromShow(await taskReader().show(recordId, { recordId }))
+  } catch (error) {
+    if (taskRecordFailureNamesMissingTask(error, recordId)) return null
+    throw error
+  }
+}
+
+export async function readHubTaskChildren(
+  project: string,
+  parent: string,
+): Promise<HubTaskReference[]> {
+  return (await taskReader().list({ project, parent })).map(taskReference)
+}
+
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
   let output: string
   try {
@@ -174,14 +205,19 @@ export function taskPullFailureNamesMissingTask(error: unknown, key: string): bo
   return namesMissingTask(error instanceof Error ? error.message : String(error), key)
 }
 
+export function taskRecordFailureNamesMissingTask(error: unknown, recordId: string): boolean {
+  return namesMissingTaskRecord(error instanceof Error ? error.message : String(error), recordId)
+}
+
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */
 export async function resolveHubTaskReference(
   project: string | null,
   key: string,
-  reader: HubTaskReader = readHubTasks,
+  reader?: HubTaskReader,
 ): Promise<HubTaskReference | null> {
   if (!project) return null
   try {
+    if (!reader) return await readHubTaskReference(project, key)
     const rows = await reader(project)
     return taskReferenceForProjectKey(taskKeyMap(rows), project, key)
   } catch (error) {
@@ -193,10 +229,15 @@ export async function resolveHubTaskReference(
 export async function resolveOrPullHubTaskReference(
   project: string,
   key: string,
-  reader: HubTaskReader = readHubTasks,
+  lookup: HubTaskLookup = readHubTaskReference,
   puller: HubTaskPuller = pullHubTask,
 ): Promise<HubTaskReference> {
-  const mirrored = await resolveHubTaskReference(project, key, reader)
+  let mirrored: HubTaskReference | null
+  try {
+    mirrored = await lookup(project, key)
+  } catch (error) {
+    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
+  }
   if (mirrored) return mirrored
   const retry = `${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`
   let pulled: HubTaskReference | null
