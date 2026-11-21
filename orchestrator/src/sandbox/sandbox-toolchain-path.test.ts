@@ -1,19 +1,22 @@
 import { describe, expect, test } from 'bun:test'
-import { sandboxToolchainPath } from './sandbox-toolchain-path.ts'
+import { sandboxToolchainPrefix } from './sandbox-toolchain-path.ts'
 
-describe('sandboxToolchainPath', () => {
+describe('sandboxToolchainPrefix', () => {
   test.each([
+    ['darwin', '/Developer', 'PATH=/Developer/usr/bin${PATH:+:$PATH}; export PATH; '],
+    ['darwin', null, ''],
+    ['linux', '/Developer', ''],
     [
-      { platform: 'darwin', developerDir: '/Developer', path: '/usr/bin:/bin' },
-      '/Developer/usr/bin:/usr/bin:/bin',
+      'darwin',
+      "/Developer's Tools",
+      `PATH='/Developer'"'"'s Tools/usr/bin'\${PATH:+:$PATH}; export PATH; `,
     ],
-    [{ platform: 'darwin', developerDir: null, path: '/usr/bin:/bin' }, '/usr/bin:/bin'],
-    [{ platform: 'linux', developerDir: '/Developer', path: '/usr/bin:/bin' }, '/usr/bin:/bin'],
     [
-      { platform: 'darwin', developerDir: '/Developer', path: '/Developer/usr/bin:/usr/bin' },
-      '/Developer/usr/bin:/usr/bin',
+      'darwin',
+      '/Developer Tools',
+      `PATH='/Developer Tools/usr/bin'\${PATH:+:$PATH}; export PATH; `,
     ],
-  ] as const)('maps %o to %s', (input, expected) => {
-    expect(sandboxToolchainPath(input)).toBe(expected)
+  ] as const)('maps %s and %s to %s', (platform, developerDir, expected) => {
+    expect(sandboxToolchainPrefix(platform, developerDir)).toBe(expected)
   })
 })

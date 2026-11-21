@@ -123,6 +123,7 @@ export const confinementModules: ConfinementModule[] = [
     '../project/projects.ts',
     '../resources/ref-guard.ts',
     '../run/run-worker-home.ts',
+    '../state/statistics.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
     './sandbox.ts',

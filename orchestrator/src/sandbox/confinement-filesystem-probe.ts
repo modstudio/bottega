@@ -33,6 +33,7 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
+import { median } from '../state/statistics.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -143,20 +144,16 @@ function stderrTail(stderr: string): string {
   return stderr.trim().split(/\r?\n/).slice(-3).join(' | ') || 'no stderr'
 }
 
-function median(values: readonly number[]): number {
-  if (values.length === 0) throw new TypeError('sandbox git spawn verdict requires samples')
-  const sorted = [...values].sort((left, right) => left - right)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
-}
-
 /** Compare sandboxed git startup with the host's minimal executable startup. */
 export function sandboxGitSpawnVerdict(input: {
   gitMs: readonly number[]
   trueMs: readonly number[]
 }): SandboxGitSpawnVerdict {
-  const gitMedianMs = median(input.gitMs)
-  const trueMedianMs = median(input.trueMs)
+  const gitMedianMs = median([...input.gitMs])
+  const trueMedianMs = median([...input.trueMs])
+  if (gitMedianMs === null || trueMedianMs === null) {
+    throw new TypeError('sandbox git spawn verdict requires samples')
+  }
   const ratio = gitMedianMs / trueMedianMs
   return {
     status: ratio <= SANDBOX_GIT_SPAWN_RATIO_MAX ? 'ok' : 'slow',

@@ -41,7 +41,7 @@ import {
 import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-read-carvebacks.ts'
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
-import { sandboxToolchainCommandArgv } from './sandbox-toolchain-path.ts'
+import { sandboxDeveloperDirectory, sandboxToolchainPrefix } from './sandbox-toolchain-path.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
 import { ownWorktreeRootEntries } from './worktree-root-entries.ts'
@@ -736,10 +736,7 @@ export async function sandboxLaunchArgv(
 ): Promise<string[]> {
   ensureHubLoginTokenDirectory(environment)
   const config = sandboxRuntimeConfig(profile)
-  const inheritedPath = environment.PATH ?? process.env.PATH ?? '/usr/bin:/bin'
-  const command = shellCommand(
-    sandboxToolchainCommandArgv(process.platform, inheritedPath, bin, argv),
-  )
+  const command = `${sandboxToolchainPrefix(process.platform, sandboxDeveloperDirectory())}${shellCommand([bin, ...argv])}`
   return launchWithSandboxRuntime(config, command, temporaryDirectory, environment)
 }
 
