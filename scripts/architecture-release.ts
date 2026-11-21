@@ -36,7 +36,6 @@ export const releaseModules = [
       'node:path',
       'shared/brand.ts',
       'shared/bounded-process.ts',
-      'shared/compile-autoload.ts',
       'shared/refusal.ts',
     ],
   },

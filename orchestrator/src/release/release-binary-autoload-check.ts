@@ -6,13 +6,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { COMPILE_AUTOLOAD_OFF_FLAGS } from '../../../shared/compile-autoload.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 export const RELEASE_REQUIRE_PINNED_BUN_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_REQUIRE_PINNED_BUN`
 const RELEASE_DOTENV_SENTINEL_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_DOTENV_SENTINEL`
 
-type AutoloadOffFlag = (typeof COMPILE_AUTOLOAD_OFF_FLAGS)[number]
+// Deliberately independent of the build's flag list, so changing that list is caught by the real-binary guard.
+const INERT_SURFACES = ['dotenv', 'bunfig', 'tsconfig', 'package-json'] as const
+type InertSurface = (typeof INERT_SURFACES)[number]
 type ProbePlant = (facts: {
   directory: string
   marker: string
@@ -23,8 +24,8 @@ function observerSource(observerMarker: string): string {
   return `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(observerMarker)}, '')\n`
 }
 
-const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> = {
-  '--no-compile-autoload-dotenv': {
+const AUTOLOAD_PROBES: Readonly<Record<InertSurface, { plant: ProbePlant }>> = {
+  dotenv: {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
       writeFileSync(
@@ -36,7 +37,7 @@ const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> 
       return { ...cleanEnvironment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  '--no-compile-autoload-bunfig': {
+  bunfig: {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, 'bunfig.toml'), 'preload = ["./sentinel.ts"]\n')
       writeFileSync(join(directory, 'observer.ts'), observerSource(observerMarker))
@@ -47,7 +48,7 @@ const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> 
       return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  '--no-compile-autoload-tsconfig': {
+  tsconfig: {
     plant: ({ directory, marker, observerMarker, environment }) => {
       mkdirSync(join(directory, 'planted'))
       writeFileSync(
@@ -70,7 +71,7 @@ const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> 
       return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  '--no-compile-autoload-package-json': {
+  'package-json': {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(
         join(directory, 'package.json'),
@@ -89,15 +90,15 @@ const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> 
   },
 }
 
-function positiveFlag(flag: AutoloadOffFlag): string {
-  return flag.replace('--no-', '--')
+function positiveFlag(surface: InertSurface): string {
+  return `--compile-autoload-${surface}`
 }
 
-function autoloadFailure(flag: AutoloadOffFlag): Error {
+function autoloadFailure(surface: InertSurface): Error {
   return new Error(
     renderRefusal(
       refusal(
-        `release binary runtime guard failed: ${positiveFlag(flag)} took effect from the working directory`,
+        `release binary runtime guard failed: ${positiveFlag(surface)} took effect from the working directory`,
         {
           kind: 'edit',
           text: 'keep every flag of COMPILE_AUTOLOAD_OFF_FLAGS on the compile in scripts/build-binary.ts, then retry',
@@ -107,11 +108,11 @@ function autoloadFailure(flag: AutoloadOffFlag): Error {
   )
 }
 
-function observerFailure(flag: AutoloadOffFlag): Error {
+function observerFailure(surface: InertSurface): Error {
   return new Error(
     renderRefusal(
       refusal(
-        `release binary runtime guard failed for ${positiveFlag(flag)}: the sentinel's observer never ran, so the guard proved nothing`,
+        `release binary runtime guard failed for ${positiveFlag(surface)}: the sentinel's observer never ran, so the guard proved nothing`,
         {
           kind: 'edit',
           text: "the guard's injection mechanism stopped working on this Bun; fix the sentinel before releasing",
@@ -124,11 +125,11 @@ function observerFailure(flag: AutoloadOffFlag): Error {
 async function probe(
   binary: string,
   scratch: string,
-  flag: AutoloadOffFlag,
+  surface: InertSurface,
   entry: { plant: ProbePlant },
   environment: Record<string, string | undefined>,
 ): Promise<void> {
-  const directory = join(scratch, flag.replace('--no-compile-autoload-', ''))
+  const directory = join(scratch, surface)
   const marker = join(directory, 'autoload-marker')
   const observerMarker = join(directory, 'observer-ran')
   mkdirSync(directory)
@@ -138,8 +139,8 @@ async function probe(
     cwd: directory,
     env: probeEnvironment,
   })
-  if (!existsSync(observerMarker)) throw observerFailure(flag)
-  if (existsSync(marker)) throw autoloadFailure(flag)
+  if (!existsSync(observerMarker)) throw observerFailure(surface)
+  if (existsSync(marker)) throw autoloadFailure(surface)
 }
 
 /** Build and execute the same host binary as the release artifact path, with every cwd sentinel. */
@@ -174,8 +175,8 @@ export async function checkReleaseBinaryAutoload(
       )
     }
     const binary = join(output, PLATFORM_SLUG)
-    for (const flag of COMPILE_AUTOLOAD_OFF_FLAGS) {
-      await probe(binary, scratch, flag, AUTOLOAD_PROBES[flag], environment)
+    for (const surface of INERT_SURFACES) {
+      await probe(binary, scratch, surface, AUTOLOAD_PROBES[surface], environment)
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
