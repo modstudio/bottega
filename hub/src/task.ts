@@ -45,6 +45,7 @@ import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
 import {
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
   taskWriteMode,
@@ -147,6 +148,7 @@ function assertParent(key: string | null | undefined, project?: string) {
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = HostedTaskWriteOptions
 const hostedOptionsForProject = hostedTaskWriteOptions
+const hostedSendOptionsForTask = hostedTaskChangeSendOptions
 
 type DoneTransitionOptions = {
   abandonReason?: string
@@ -415,6 +417,78 @@ export function recordNoteRelinkCommentsInTransaction(
   return { targetTaskRecordId: target.record_id }
 }
 
+export function prepareNoteRelinkComments(
+  conn: Database,
+  input: {
+    project: string
+    noteLabel: string
+    previousTask: string
+    targetTask: string
+    reason: string
+    at: string
+  },
+) {
+  const target = localTaskInTransaction(conn, input.targetTask, input.project)
+  const previous = localTaskInTransaction(conn, input.previousTask, input.project)
+  const row = (task: TaskRow, body: string): PushedComment => ({
+    id: newRecordId(),
+    task_key: task.key,
+    task_id: task.record_id,
+    project_name: task.project,
+    projectId: task.project_record_id,
+    body,
+    created_at: input.at,
+    updated_at: input.at,
+    deleted_at: null,
+  })
+  return {
+    targetTaskRecordId: target.record_id,
+    comments: [
+      row(
+        target,
+        `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`,
+      ),
+      ...(previous.record_id === target.record_id
+        ? []
+        : [
+            row(
+              previous,
+              `note ${input.noteLabel} relinked to ${target.key}: ${input.reason}`,
+            ),
+          ]),
+    ],
+  }
+}
+
+export function recordPreparedNoteRelinkComments(
+  conn: Database,
+  comments: readonly PushedComment[],
+): void {
+  for (const comment of comments) {
+    conn
+      .query(
+        `INSERT INTO task_comment
+         (record_id,task_key,task_record_id,body,created_at,updated_at,
+          actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        comment.id,
+        comment.task_key,
+        comment.task_id,
+        comment.body,
+        comment.created_at,
+        comment.updated_at,
+        comment.actor_user_id,
+        comment.actor_name,
+        comment.agent,
+        comment.run_id,
+      )
+    conn
+      .query(`UPDATE task SET updated_at=?,last_seen=? WHERE record_id=?`)
+      .run(comment.updated_at, comment.updated_at, comment.task_id)
+  }
+}
+
 export async function createTask(
   input: {
     project: string
@@ -565,7 +639,7 @@ export async function setTaskBody(
     if (!capability.allowed) throw new Error(capability.reason)
     const at = nowIso()
     await sendHostedChanges(
-      current.key,
+      'the record',
       hostedTaskBatch({
         current,
         changes: { body },
@@ -574,7 +648,7 @@ export async function setTaskBody(
         attribution: UNATTRIBUTED,
         expectedRevision: Number(expectedVersion),
       }),
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -747,9 +821,9 @@ export async function setTask(
       expectedRevision: options.expectedRevision,
     })
     await sendHostedChanges(
-      current.key,
+      'the record',
       batch,
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -779,7 +853,7 @@ export async function closeTask(
   const at = nowIso()
   if (hosted) {
     await sendHostedChanges(
-      current.key,
+      'the record',
       hostedTaskBatch({
         current,
         changes: { status: 'done' },
@@ -787,7 +861,7 @@ export async function closeTask(
         at,
         attribution,
       }),
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -835,7 +909,7 @@ export async function commentTask(
   if (hosted) {
     const comment = pushedComment(current, body, at, attribution)
     await sendHostedChanges(
-      current.key,
+      'the record',
       [
         [
           {
@@ -847,7 +921,7 @@ export async function commentTask(
           },
         ],
       ],
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return { ...hostedComment(comment), revision: 1 }
   }
@@ -918,7 +992,7 @@ export async function editTaskComment(
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { body }, at)
     await sendHostedChanges(
-      current.key,
+      'the record',
       [
         [
           {
@@ -931,7 +1005,7 @@ export async function editTaskComment(
           },
         ],
       ],
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return { ...comment, body, updated_at: at, revision: options.expectedRevision + 1 }
   }
@@ -986,7 +1060,7 @@ export async function deleteTaskComment(
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { deleted_at: at }, at)
     await sendHostedChanges(
-      current.key,
+      'the record',
       [
         [
           {
@@ -999,7 +1073,7 @@ export async function deleteTaskComment(
           },
         ],
       ],
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return
   }

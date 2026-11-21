@@ -169,6 +169,32 @@ export const hostedNoteCounts = (options?: Options) =>
   request<{ note: number; note_acknowledgement: number }>('/v1/notes/counts', options)
 export const hostedGetNote = (recordId: string, options?: Options) =>
   request<HostedNote>(`/v1/notes/${recordId}`, options)
+export async function hostedListNotes(
+  filters: { project?: string; stale?: boolean; actionable?: boolean },
+  options?: Options,
+) {
+  const query = new URLSearchParams()
+  if (filters.project) query.set('project', filters.project)
+  if (filters.stale !== undefined) query.set('stale', String(filters.stale))
+  if (filters.actionable !== undefined) query.set('actionable', String(filters.actionable))
+  const notes: HostedNote[] = []
+  const acknowledgements: HostedAcknowledgement[] = []
+  let cursor: string | undefined
+  for (;;) {
+    const pageQuery = new URLSearchParams(query)
+    if (cursor) pageQuery.set('cursor', cursor)
+    const page = await request<{
+      notes: HostedNote[]
+      acknowledgements: HostedAcknowledgement[]
+      cursor: string
+      more?: boolean
+    }>(`/v1/notes?${pageQuery}`, options)
+    notes.push(...page.notes)
+    acknowledgements.push(...page.acknowledgements)
+    if (!page.more) return { notes, acknowledgements }
+    cursor = page.cursor
+  }
+}
 export type OutsideNote = {
   id: string
   number: number

@@ -32,6 +32,7 @@ import {
 } from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
   hostedTaskWriteOptions,
   taskWriteMode,
 } from './task-write-destination.ts'
@@ -338,7 +339,11 @@ export async function updateTaskDocument(
       fields,
       expected_revision: expectedVersion,
     }
-    await sendHostedChanges(current.task_key, [[change]], writeOptions)
+    await sendHostedChanges(
+      'the record',
+      [[change]],
+      hostedTaskChangeSendOptions(current.task_key, task.project, options.hosted),
+    )
     return withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,

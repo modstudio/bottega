@@ -9,6 +9,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { HostedChangeStageError, sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
@@ -29,6 +30,14 @@ import {
 } from './note-duplicate-question.ts'
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
+import {
+  listHostedNoteRows,
+  type NoteFilters,
+  noteRowFromHosted,
+  pushedAcknowledgement,
+  pushedNote,
+  readHostedNote,
+} from './note-hosted-record.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import {
@@ -44,9 +53,7 @@ import {
   type StalenessChange,
   type StalenessResult,
 } from './note-staleness-store.ts'
-import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
-import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
@@ -54,6 +61,8 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
+  prepareNoteRelinkComments,
+  recordPreparedNoteRelinkComments,
   recordNoteRelinkCommentsInTransaction,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
@@ -124,23 +133,6 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
     label: formatNoteLabel(row.project, row.number),
     anchors: JSON.parse(row.anchors) as NoteAnchor[],
   }
-}
-
-function noteRowFromHosted(row: Awaited<ReturnType<typeof hostedCreateNote>>): NoteRow {
-  return decode({
-    record_id: row.id,
-    number: row.number,
-    project: row.project,
-    text: row.text,
-    area: row.area,
-    anchors: row.anchors,
-    sightings: row.sightings,
-    created_at: row.created_at,
-    last_seen_at: row.last_seen_at,
-    stale_at: row.stale_at,
-    stale_reason: row.stale_reason,
-    promoted_task: row.promoted_task,
-  })
 }
 
 function registeredProject(name: string): RegisteredProject {
@@ -222,16 +214,7 @@ function identifiedAnchor(anchor: NoteAnchor): NoteAnchor {
   return anchor.id ? anchor : { ...anchor, id: newRecordId() }
 }
 
-export function listNotes(
-  filters: {
-    project?: string
-    stale?: boolean
-    session?: string | string[]
-    actionable?: boolean
-    kept?: boolean
-    text?: string
-  } = {},
-): NoteRow[] {
+function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
   const sessions = [
@@ -276,10 +259,21 @@ export function listNotes(
   return matched.map(decode)
 }
 
-export function listActionableNotes(
+export async function listNotes(
+  filters: NoteFilters = {},
+  hosted?: NoteClientOptions,
+): Promise<NoteRow[]> {
+  if (filters.project) registeredProject(filters.project)
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
+    return listHostedNoteRows(filters, hosted)
+  return listLocalNotes(filters)
+}
+
+export async function listActionableNotes(
   filters: { project?: string; session?: string | string[]; text?: string } = {},
-): NoteRow[] {
-  return listNotes({ ...filters, actionable: true })
+  hosted?: NoteClientOptions,
+): Promise<NoteRow[]> {
+  return listNotes({ ...filters, actionable: true }, hosted)
 }
 
 export async function listProjectNotes(
@@ -305,10 +299,10 @@ export async function listProjectNotes(
     ...localFilters,
     stale: Boolean(filters.stale),
     kept: Boolean(filters.kept),
-  })
+  }, filters.hosted)
 }
 
-export function getNote(recordId: string): NoteRow {
+function getLocalNote(recordId: string): NoteRow {
   const row = db()
     .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, [string]>(
       'SELECT * FROM note WHERE record_id = ?',
@@ -316,6 +310,15 @@ export function getNote(recordId: string): NoteRow {
     .get(recordId)
   if (!row) throw new Error(`no note ${recordId}`)
   return decode(row)
+}
+
+export async function getNote(
+  recordId: string,
+  hosted?: NoteClientOptions,
+): Promise<NoteRow> {
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
+    return readHostedNote(recordId, hosted)
+  return getLocalNote(recordId)
 }
 
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
@@ -329,15 +332,58 @@ export async function acknowledgeNote(
 ): Promise<NoteAcknowledgement> {
   const sessionId = session.trim()
   if (!sessionId) throw new Error('cannot keep note: no session identity')
-  const note = getNote(recordId)
+  const note = await getNote(recordId, options.hosted)
+  const mode = writeMode(note.project, options.hosted)
+  const at = nowIso()
+  if (mode === 'hosted-configured') {
+    const acknowledgement = pushedAcknowledgement({
+      id: newRecordId(),
+      note,
+      sessionId,
+      at,
+    })
+    const destination = await noteDestinationOptions(note.project, options.hosted)
+    await sendHostedChanges(
+      `note ${note.label}`,
+      [
+        [
+          {
+            table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+            id: acknowledgement.id,
+            op: 'upsert',
+            row: acknowledgement,
+          },
+        ],
+      ],
+      {
+        ...destination,
+        conflictRemedy: `${PLATFORM_SLUG} note list --project ${note.project}`,
+      },
+    )
+    writeTransaction((conn) => {
+      conn
+        .query(
+          `INSERT INTO note_acknowledgement (record_id,note_record_id,session_id,acknowledged_at,sightings)
+           VALUES (?,?,?,?,?) ON CONFLICT(note_record_id,session_id) DO UPDATE SET
+           record_id=excluded.record_id,acknowledged_at=excluded.acknowledged_at,
+           sightings=excluded.sightings`,
+        )
+        .run(
+          acknowledgement.id,
+          note.record_id,
+          sessionId,
+          acknowledgement.acknowledged_at,
+          acknowledgement.sightings,
+        )
+    })
+    return { note, alreadyAcknowledged: false }
+  }
   const existing = db()
     .query<{ sightings: number }, [string, string]>(
       'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
     )
     .get(note.record_id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
-  const mode = writeMode(note.project, options.hosted)
-  const queuedAt = nowIso()
   writeTransaction((conn) => {
     const row = decode(noteRow(conn, note.record_id))
     conn
@@ -346,28 +392,12 @@ export async function acknowledgeNote(
          VALUES (?,?,?,?,?) ON CONFLICT(note_record_id,session_id) DO UPDATE SET
          acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings`,
       )
-      .run(newRecordId(), row.record_id, sessionId, queuedAt, row.sightings)
-    if (mode === 'hosted-configured') {
-      const acknowledgement = conn
-        .query<{ record_id: string }, [string, string]>(
-          'SELECT record_id FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
-        )
-        .get(row.record_id, sessionId)!
-      queueHostedChange(
-        conn,
-        HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
-        acknowledgement.record_id,
-        'upsert',
-        queuedAt,
-      )
-    }
+      .run(newRecordId(), row.record_id, sessionId, at, row.sightings)
   })
-  if (mode === 'hosted-configured') await drainHostedEditOutbox(queuedAt, options.hosted)
-  return { note: getNote(note.record_id), alreadyAcknowledged: false }
+  return { note: await getNote(note.record_id, options.hosted), alreadyAcknowledged: false }
 }
 
-function noteCandidates(text: string, project?: string): NoteCandidate[] {
-  const notes = listNotes({ ...(project ? { project } : {}), stale: false })
+function noteCandidates(notes: NoteRow[], text: string): NoteCandidate[] {
   const byId = new Map(notes.map((note) => [note.record_id, note]))
   return duplicateCandidates(
     notes.map(
@@ -413,8 +443,8 @@ export async function mergeNote(
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteRow> {
   if (targetRecordId === sourceRecordId) throw new Error('a note cannot be merged with itself')
-  const target = getNote(targetRecordId)
-  const sourceNote = getNote(sourceRecordId)
+  const target = await getNote(targetRecordId, options.hosted)
+  const sourceNote = await getNote(sourceRecordId, options.hosted)
   if (target.project !== sourceNote.project)
     throw new Error('notes from different projects cannot be merged')
   const mode = writeMode(target.project, options.hosted)
@@ -432,34 +462,63 @@ export async function mergeNote(
         .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
       conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
-    const merged = getNote(targetRecordId)
+    const merged = await getNote(targetRecordId, options.hosted)
     await recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
     return merged
   }
-  const queuedAt = nowIso()
+  const at = nowIso()
+  const union = mergeNoteAnchors(target.anchors, sourceNote.anchors.map(identifiedAnchor))
+  const merged: NoteRow = {
+    ...target,
+    anchors: union.anchors,
+    sightings: union.sightings,
+    last_seen_at:
+      target.last_seen_at > sourceNote.last_seen_at
+        ? target.last_seen_at
+        : sourceNote.last_seen_at,
+  }
+  const destination = await noteDestinationOptions(target.project, options.hosted)
+  try {
+    await sendHostedChanges(
+      `note ${target.label}`,
+      [
+        [
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: target.record_id,
+            op: 'upsert',
+            row: pushedNote(merged, at),
+            fields: ['anchors', 'last_seen_at'],
+            expected_revision: target.revision,
+          },
+        ],
+        [
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: sourceNote.record_id,
+            op: 'delete',
+            expected_revision: sourceNote.revision,
+          },
+        ],
+      ],
+      {
+        ...destination,
+        conflictRemedy: `${PLATFORM_SLUG} note list --project ${target.project}`,
+      },
+    )
+  } catch (cause) {
+    if (cause instanceof HostedChangeStageError && cause.stageIndex === 1)
+      throw new Error(
+        `${cause.message}; the target holds the merged sightings but source ${sourceNote.label} still exists; rerun \`${PLATFORM_SLUG} note same ${target.label} ${sourceNote.label}\``,
+      )
+    throw cause
+  }
   writeTransaction((conn) => {
-    const current = decode(noteRow(conn, targetRecordId))
-    const source = decode(noteRow(conn, sourceRecordId))
-    const merged = mergeNoteAnchors(current.anchors, source.anchors.map(identifiedAnchor))
-    const lastSeen =
-      current.last_seen_at > source.last_seen_at ? current.last_seen_at : source.last_seen_at
     conn
       .query(`UPDATE note SET anchors=?,sightings=?,last_seen_at=? WHERE record_id=?`)
-      .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, current.record_id, 'upsert', queuedAt, [
-      'anchors',
-      'last_seen_at',
-    ])
-    conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, sourceRecordId, 'delete', queuedAt)
-    conn
-      .query(
-        `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,
-      )
-      .run(target.project, projectRecordIdFor(target.project), HOSTED_NOTE_TABLE, sourceRecordId)
+      .run(JSON.stringify(merged.anchors), merged.sightings, merged.last_seen_at, merged.record_id)
+    conn.query('DELETE FROM note WHERE record_id=?').run(sourceNote.record_id)
   })
-  await drainHostedEditOutbox(queuedAt, options.hosted)
-  const merged = getNote(targetRecordId)
   await recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
   return merged
 }
@@ -486,10 +545,12 @@ async function duplicateCandidatesForNewNote(
   text: string,
   project: string,
   sameAs: string | undefined,
+  hosted?: NoteClientOptions,
 ): Promise<NoteCandidate[]> {
-  const lexicalCandidates = noteCandidates(text, project)
-  if (sameAs) return lexicalCandidates
-  const asked = await askNoteDuplicateQuestions(listNotes(), project, text)
+  if (sameAs) return []
+  const notes = await listNotes({ project, actionable: true }, hosted)
+  const lexicalCandidates = noteCandidates(notes, text)
+  const asked = await askNoteDuplicateQuestions(notes, project, text)
   return [
     ...lexicalCandidates,
     ...jevOnlyDuplicateCandidates(lexicalCandidates, asked).map(({ probability, ...note }) => ({
@@ -531,10 +592,15 @@ export async function createNote(
   if (!isRegisteredNoteProject(targetProject))
     return outsideNoteCreation(input, text, anchor, targetProject, options.hosted)
   const registered = registeredProject(targetProject)
-  const candidates = await duplicateCandidatesForNewNote(text, targetProject, input.sameAs)
+  const candidates = await duplicateCandidatesForNewNote(
+    text,
+    targetProject,
+    input.sameAs,
+    options.hosted,
+  )
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
-    const existing = getNote(input.sameAs)
+    const existing = await getNote(input.sameAs, options.hosted)
     if (existing.project !== targetProject)
       throw new Error('the matching note belongs to another project')
     if (mode === 'local-authoritative') {
@@ -549,24 +615,51 @@ export async function createNote(
           )
           .run(JSON.stringify([...row.anchors, anchor]), at, row.record_id)
       })
-      return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
+      return completedNoteCreation(
+        await getNote(existing.record_id, options.hosted),
+        candidates,
+        input,
+        targetProject,
+      )
     }
-    const queuedAt = nowIso()
+    const at = nowIso()
+    const union = mergeNoteAnchors(existing.anchors, [anchor])
+    const updated: NoteRow = {
+      ...existing,
+      anchors: union.anchors,
+      sightings: union.sightings,
+      last_seen_at: at,
+      stale_at: null,
+      stale_reason: null,
+    }
+    const destination = await noteDestinationOptions(existing.project, options.hosted)
+    await sendHostedChanges(
+      `note ${existing.label}`,
+      [
+        [
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: existing.record_id,
+            op: 'upsert',
+            row: pushedNote(updated, at),
+            fields: ['anchors', 'last_seen_at'],
+            expected_revision: existing.revision,
+          },
+        ],
+      ],
+      {
+        ...destination,
+        conflictRemedy: `${PLATFORM_SLUG} note list --project ${existing.project}`,
+      },
+    )
     writeTransaction((conn) => {
-      const row = decode(noteRow(conn, existing.record_id))
-      const merged = mergeNoteAnchors(row.anchors, [anchor])
       conn
         .query(
           `UPDATE note SET anchors=?,sightings=?,last_seen_at=?,stale_at=NULL,stale_reason=NULL WHERE record_id=?`,
         )
-        .run(JSON.stringify(merged.anchors), merged.sightings, queuedAt, row.record_id)
-      queueHostedChange(conn, HOSTED_NOTE_TABLE, row.record_id, 'upsert', queuedAt, [
-        'anchors',
-        'last_seen_at',
-      ])
+        .run(JSON.stringify(updated.anchors), updated.sightings, at, updated.record_id)
     })
-    await drainHostedEditOutbox(queuedAt, options.hosted)
-    return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
+    return completedNoteCreation(updated, candidates, input, targetProject)
   }
   if (candidates.length && !input.forceNew)
     return { note: null as never, candidates, outside: false }
@@ -593,7 +686,12 @@ export async function createNote(
         )
       return recordId
     })
-    return completedNoteCreation(getNote(recordId), candidates, input, targetProject)
+    return completedNoteCreation(
+      await getNote(recordId, options.hosted),
+      candidates,
+      input,
+      targetProject,
+    )
   }
   const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
   const hosted = await hostedCreateNote(
@@ -610,7 +708,7 @@ export async function createNote(
     `${formatNoteLabel(hosted.project, hosted.number)} was created in the hosted record; its local copy will arrive on the next record pull`,
     () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
   )
-  const created = applied ? getNote(hosted.id) : noteRowFromHosted(hosted)
+  const created = applied ? await getNote(hosted.id, options.hosted) : noteRowFromHosted(hosted)
   return completedNoteCreation(created, candidates, input, targetProject)
 }
 
@@ -622,7 +720,7 @@ export async function promoteNote(
     title?: string
   } = {},
 ): Promise<NoteRow> {
-  const note = getNote(recordId)
+  const note = await getNote(recordId, options.hosted)
   if (note.promoted_task)
     throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
   const creating = options.existingTaskKey === undefined
@@ -655,7 +753,7 @@ export async function promoteNote(
           )
           .run(options.existingTaskKey!, nowIso(), row.record_id)
       })
-      return getNote(note.record_id)
+      return getNote(note.record_id, options.hosted)
     }
     if (options.existingTaskKey) {
       writeTransaction((conn) => {
@@ -676,7 +774,7 @@ export async function promoteNote(
           )
           .run(task.task_key, task.task_record_id, at, row.record_id)
       })
-      return getNote(note.record_id)
+      return getNote(note.record_id, options.hosted)
     }
     writeTransaction((conn) => {
       const row = decode(noteRow(conn, note.record_id))
@@ -697,7 +795,7 @@ export async function promoteNote(
         )
         .run(task.key, task.record_id, nowIso(), row.record_id)
     })
-    return getNote(note.record_id)
+    return getNote(note.record_id, options.hosted)
   }
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
   const promoteInput = creating ? { title } : { task: options.existingTaskKey! }
@@ -712,7 +810,7 @@ export async function promoteNote(
         applyHostedNote(conn, hosted.note)
       }),
   )
-  return applied ? getNote(note.record_id) : noteRowFromHosted(hosted.note)
+  return applied ? getNote(note.record_id, options.hosted) : noteRowFromHosted(hosted.note)
 }
 
 export function promotionTaskInput(note: NoteRow, title: string) {
@@ -725,7 +823,7 @@ export async function dropNote(
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteRow> {
   if (!reason.trim()) throw new Error('--reason is required')
-  const current = getNote(recordId)
+  const current = await getNote(recordId, options.hosted)
   const mode = writeMode(current.project, options.hosted)
   if (mode === 'local-authoritative') {
     const at = nowIso()
@@ -735,22 +833,42 @@ export async function dropNote(
         .query(`UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE record_id=?`)
         .run(at, `dropped: ${reason.trim()}`, at, recordId)
     })
-    return getNote(recordId)
+    return getNote(recordId, options.hosted)
   }
-  const queuedAt = nowIso()
+  const at = nowIso()
+  const updated: NoteRow = {
+    ...current,
+    stale_at: at,
+    stale_reason: `dropped: ${reason.trim()}`,
+    last_seen_at: at,
+  }
+  const destination = await noteDestinationOptions(current.project, options.hosted)
+  await sendHostedChanges(
+    `note ${current.label}`,
+    [
+      [
+        {
+          table: HOSTED_NOTE_TABLE,
+          id: current.record_id,
+          op: 'upsert',
+          row: pushedNote(updated, at),
+          fields: ['stale_at', 'stale_reason', 'last_seen_at'],
+          expected_revision: current.revision,
+        },
+      ],
+    ],
+    {
+      ...destination,
+      conflictRemedy: `${PLATFORM_SLUG} note list --project ${current.project}`,
+    },
+  )
   writeTransaction((conn) => {
     noteRow(conn, recordId)
     conn
       .query(`UPDATE note SET stale_at=?,stale_reason=?,last_seen_at=? WHERE record_id=?`)
-      .run(queuedAt, `dropped: ${reason.trim()}`, queuedAt, recordId)
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, recordId, 'upsert', queuedAt, [
-      'stale_at',
-      'stale_reason',
-      'last_seen_at',
-    ])
+      .run(at, updated.stale_reason, at, recordId)
   })
-  await drainHostedEditOutbox(queuedAt, options.hosted)
-  return getNote(recordId)
+  return updated
 }
 
 export async function relinkNote(
@@ -760,7 +878,7 @@ export async function relinkNote(
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteRow> {
   if (!reason.trim()) throw new Error('--reason is required')
-  const current = getNote(recordId)
+  const current = await getNote(recordId, options.hosted)
   if (!current.promoted_task)
     throw new Error(
       `note ${current.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${current.label} --task <KEY>`,
@@ -778,6 +896,61 @@ export async function relinkNote(
     )
   const mode = writeMode(current.project, options.hosted)
   const at = nowIso()
+  if (mode === 'hosted-configured') {
+    const prepared = prepareNoteRelinkComments(db(), {
+      project: current.project,
+      noteLabel: current.label,
+      previousTask: current.promoted_task,
+      targetTask: target,
+      reason: reason.trim(),
+      at,
+    })
+    const updated: NoteRow = {
+      ...current,
+      promoted_task: target,
+      promoted_task_record_id: prepared.targetTaskRecordId,
+      last_seen_at: at,
+    }
+    const destination = await noteDestinationOptions(current.project, options.hosted)
+    await sendHostedChanges(
+      `note ${current.label}`,
+      [
+        [
+          ...prepared.comments.map(
+            (comment) =>
+              ({
+                table: 'hub_task_comment',
+                id: comment.id,
+                op: 'upsert',
+                row: comment,
+                expected_revision: 0,
+              }) as const,
+          ),
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: current.record_id,
+            op: 'upsert',
+            row: pushedNote(updated, at),
+            fields: ['promoted_task', 'promoted_task_id', 'last_seen_at'],
+            expected_revision: current.revision,
+          },
+        ],
+      ],
+      {
+        ...destination,
+        conflictRemedy: `${PLATFORM_SLUG} note list --project ${current.project}`,
+      },
+    )
+    writeTransaction((conn) => {
+      recordPreparedNoteRelinkComments(conn, prepared.comments)
+      conn
+        .query(
+          `UPDATE note SET promoted_task=?,promoted_task_record_id=?,last_seen_at=? WHERE record_id=?`,
+        )
+        .run(target, prepared.targetTaskRecordId, at, current.record_id)
+    })
+    return updated
+  }
   writeTransaction((conn) => {
     const row = decode(noteRow(conn, recordId))
     if (!row.promoted_task)
@@ -795,22 +968,15 @@ export async function relinkNote(
       targetTask: target,
       reason: reason.trim(),
       at,
-      queue: mode === 'hosted-configured',
+      queue: false,
     })
     conn
       .query(
         `UPDATE note SET promoted_task=?,promoted_task_record_id=?,last_seen_at=? WHERE record_id=?`,
       )
       .run(target, history.targetTaskRecordId, at, row.record_id)
-    if (mode === 'hosted-configured')
-      queueHostedChange(conn, HOSTED_NOTE_TABLE, row.record_id, 'upsert', at, [
-        'promoted_task',
-        'promoted_task_id',
-        'last_seen_at',
-      ])
   })
-  if (mode === 'hosted-configured') await drainHostedEditOutbox(at, options.hosted)
-  return getNote(recordId)
+  return getNote(recordId, options.hosted)
 }
 
 export type StaleResult = StalenessResult

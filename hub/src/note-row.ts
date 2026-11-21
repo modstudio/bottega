@@ -8,6 +8,7 @@ export type NoteRow<Anchor = NoteAnchorWire> = {
   number: number
   label: string
   project: string
+  project_record_id?: string | null
   text: string
   area: string | null
   anchors: Anchor[]
@@ -17,4 +18,6 @@ export type NoteRow<Anchor = NoteAnchorWire> = {
   stale_at: string | null
   stale_reason: string | null
   promoted_task: string | null
+  promoted_task_record_id?: string | null
+  revision?: number
 }

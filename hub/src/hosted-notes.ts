@@ -43,6 +43,7 @@ export type HostedNote = {
   hidden_at?: string | null
   hidden_by_user_id?: string | null
   hidden_reason?: string | null
+  revision?: number
 }
 export type HostedAcknowledgement = {
   id: string
