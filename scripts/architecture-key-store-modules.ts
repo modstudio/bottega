@@ -51,6 +51,7 @@ export const keyStoreModules: KeyStoreModule[] = [
     'node:fs',
     'node:path',
     './brand.ts',
+    './config-read-memo.ts',
     './file-backed-secret-paths.ts',
     './key-store.ts',
     './keychain.ts',

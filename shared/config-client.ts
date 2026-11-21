@@ -1,14 +1,11 @@
+import { hostedApiFetch } from './bounded-fetch.ts'
+import { clearConfigReadMemo, memoizedConfigRead } from './config-read-memo.ts'
 import type {
   CredentialEnvironment,
   CredentialMetadataFields,
   CredentialMode,
   CredentialPreference,
 } from './credential.ts'
-import { hostedApiFetch } from './bounded-fetch.ts'
-import {
-  clearConfigReadMemo,
-  memoizedConfigRead,
-} from './config-read-memo.ts'
 import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'

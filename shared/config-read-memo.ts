@@ -51,11 +51,7 @@ export function memoizedConfigRead<T>(
   return read
 }
 
-export function clearConfigReadMemo(
-  transport: Transport,
-  baseUrl: string,
-  token: string,
-): void {
+export function clearConfigReadMemo(transport: Transport, baseUrl: string, token: string): void {
   const byUrl = readsByTransport.get(transport)
   const byToken = byUrl?.get(baseUrl)
   byToken?.delete(token)
