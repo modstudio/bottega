@@ -506,6 +506,31 @@ function claimedWorktreeRefusal(path: string, actingRunId: string): string | nul
   )
 }
 
+function assertNoOtherWorktreeClaim(path: string, actingRunId: string): void {
+  const refusal = claimedWorktreeRefusal(path, actingRunId)
+  if (refusal) throw new Error(refusal)
+}
+
+function assertNoWorktreeClaimAcquiredDuringCleanup(path: string, actingRunId: string): void {
+  const refusal = claimedWorktreeRefusal(path, actingRunId)
+  if (!refusal) return
+  throw new Error(
+    `another run claimed ${path} during cleanup; the tree has already been removed and ` +
+      `this conversation's pointer was not released. ${refusal}`,
+  )
+}
+
+function worktreeWasReleasedBeforeDiscard(
+  row: CleanupRow,
+  repoRoot: string,
+  force: boolean,
+): boolean {
+  const released = !existsSync(row.worktree)
+  assertDiscardTreeOwnership(row, repoRoot, force)
+  assertNoOtherWorktreeClaim(row.worktree, row.record_id)
+  return released
+}
+
 export function discardWorktree(
   row: CleanupRow,
   verb: 'discarded' | 'abandoned',
@@ -516,10 +541,7 @@ export function discardWorktree(
 ): void {
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
-    const treeWasAlreadyReleased = !existsSync(row.worktree)
-    assertDiscardTreeOwnership(row, repoRoot, force)
-    const claimRefusal = claimedWorktreeRefusal(row.worktree, row.record_id)
-    if (claimRefusal) throw new Error(claimRefusal)
+    const treeWasAlreadyReleased = worktreeWasReleasedBeforeDiscard(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
 
@@ -550,13 +572,7 @@ export function discardWorktree(
       row.record_id,
       force && !forceBusy,
     )
-    const claimRefusalAfter = claimedWorktreeRefusal(row.worktree, row.record_id)
-    if (claimRefusalAfter) {
-      throw new Error(
-        `another run claimed ${row.worktree} during cleanup; the tree has already been removed and ` +
-          `this conversation's pointer was not released. ${claimRefusalAfter}`,
-      )
-    }
+    assertNoWorktreeClaimAcquiredDuringCleanup(row.worktree, row.record_id)
     const sharersAfter = otherConversationWorktreeSharers(db(), row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null

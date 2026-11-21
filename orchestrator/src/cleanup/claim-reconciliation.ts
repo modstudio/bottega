@@ -2,18 +2,18 @@
 /** Observes claimed resources and settles only rows whose absence passes every lifecycle guard. */
 
 import type { Database } from 'bun:sqlite'
-import { lstatSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
-import type { ClaimSettlementVerb } from '../resources/resource-claims.ts'
+import { type ClaimSettlementVerb, runsClaimingWorktreePath } from '../resources/resource-claims.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { decideAbsentClaim } from './cleanup-sweep-decisions.ts'
+import { decideAbsentClaim, decideFilesystemOrphanUnderLock } from './cleanup-sweep-decisions.ts'
 
 const RECONCILED_KINDS = [
   'branch',
@@ -58,6 +58,47 @@ type ClaimSynchronizer = (
 ) => void
 
 type ReconciliationResult = { action: string; detail?: string }
+
+export function rememberedWorktrees(database: Database): Set<string> {
+  const rows = database.query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
+    worktree: string
+  }[]
+  return new Set(
+    rows.map((row) => (existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree)),
+  )
+}
+
+function filesystemOrphanClaimingRuns(
+  database: Database,
+  path: string,
+): { claimingRuns: string[]; pointerRuns: string[] } {
+  const canonicalPath = existsSync(path) ? realpathSync(path) : path
+  const rows = database
+    .query('SELECT record_id,worktree FROM run WHERE worktree IS NOT NULL')
+    .all() as { record_id: string; worktree: string }[]
+  return {
+    claimingRuns: runsClaimingWorktreePath(database, path).map((row) => row.record_id),
+    pointerRuns: rows
+      .filter((row) => {
+        const recordedPath = existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree
+        return recordedPath === canonicalPath
+      })
+      .map((row) => row.record_id),
+  }
+}
+
+export function orphanClaimRuling(
+  database: Database,
+  path: string,
+  sharers: number,
+  lockedAlive: boolean,
+) {
+  return decideFilesystemOrphanUnderLock({
+    ...filesystemOrphanClaimingRuns(database, path),
+    sharers,
+    lockedAlive,
+  })
+}
 
 function observePath(path: string): { outcome: 'present' | 'absent' | 'failed'; detail?: string } {
   try {

@@ -33,7 +33,6 @@ import {
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
-import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
 import {
   liveWorktreeSharers,
   recordedWorktreeSharerRunIds,
@@ -54,7 +53,12 @@ import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { inspectTreeOwnership, markedWorktreeSource } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { landingInFlight, reconcileAbsentClaims } from './claim-reconciliation.ts'
+import {
+  landingInFlight,
+  orphanClaimRuling,
+  reconcileAbsentClaims,
+  rememberedWorktrees,
+} from './claim-reconciliation.ts'
 import {
   type CleanupPresentation,
   evidenceOwningBranchOwners,
@@ -66,7 +70,6 @@ import { pruneSweepArchives } from './cleanup-sweep-archive.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
-  decideFilesystemOrphanUnderLock,
   decideRecordedRunCloseOut,
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
@@ -83,7 +86,11 @@ import {
   observeNamedRunForSweep,
   orphanCandidateDecision,
 } from './cleanup-sweep-orphan-candidate.ts'
-import { finishRemovedOrphan, reportOrphanAfterRemovalKeep } from './cleanup-sweep-orphan-report.ts'
+import {
+  finishRemovedOrphan,
+  reportClaimedOrphanKeep,
+  reportOrphanAfterRemovalKeep,
+} from './cleanup-sweep-orphan-report.ts'
 import {
   DEFAULT_OUTBOX_MAINTENANCE,
   maintainOutboxForSweep,
@@ -133,31 +140,6 @@ async function sweepOrphanProcesses(
     }
   }
   return failed
-}
-
-function rememberedWorktrees(): Set<string> {
-  const rows = db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
-    worktree: string
-  }[]
-  return new Set(
-    rows.map((row) => (existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree)),
-  )
-}
-
-function runsRememberingWorktreePath(path: string): string[] {
-  const canonicalPath = existsSync(path) ? realpathSync(path) : path
-  const rows = db()
-    .query('SELECT record_id,worktree FROM run WHERE worktree IS NOT NULL')
-    .all() as {
-    record_id: string
-    worktree: string
-  }[]
-  return rows
-    .filter((row) => {
-      const recordedPath = existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree
-      return recordedPath === canonicalPath
-    })
-    .map((row) => row.record_id)
 }
 
 export type SweepOptions = {
@@ -919,7 +901,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
    * list as a worktree is kept; uncommitted work is extracted before removal.
    * A project's own removal refusal remains final through removeWithTool().
    */
-  const remembered = rememberedWorktrees()
+  const remembered = rememberedWorktrees(db())
   for (const p of sweepProjects) {
     const root = join(p.path, '.claude', 'worktrees')
     if (!existsSync(root)) continue
@@ -958,21 +940,11 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
           const ownerRow = { record_id: runId, repo: p.name, branch: safe.branch }
           const worktreeRow = { record_id: runId, worktree: path }
-          const claimingRuns = runsClaimingWorktreePath(db(), path).map((row) => row.record_id)
-          const pointerRuns = runsRememberingWorktreePath(path)
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const locked = observeLockedRun(path, p, runId, label, options.presentation)
           cleanupFailed ||= locked.failed
-          const lockedRuling = decideFilesystemOrphanUnderLock({
-            claimingRuns,
-            pointerRuns,
-            sharers: sharersBefore.length,
-            lockedAlive: locked.alive,
-          })
-          if (lockedRuling.action === 'claimed') {
-            keepHeld(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason)
-            return
-          }
+          const lockedRuling = orphanClaimRuling(db(), path, sharersBefore.length, locked.alive)
+          if (reportClaimedOrphanKeep(lockedRuling, label, keepHeld)) return
           if (lockedRuling.action === 'shared-before') {
             const owners = worktreeSharerList(sharersBefore)
             cleanupFailed ||= lockedRuling.cleanupFailed

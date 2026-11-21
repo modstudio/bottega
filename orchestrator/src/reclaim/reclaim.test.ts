@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -92,7 +93,7 @@ test("reclaim refuses another run's claimed worktree claim", () => {
     ok: false,
     action:
       `refused; worktree ${path} is still claimed by run ${claimant}; ` +
-      `release it with bottega run close-out ${claimant}`,
+      `release it with ${PLATFORM_SLUG} run close-out ${claimant}`,
   })
 })
 
