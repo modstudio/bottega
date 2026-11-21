@@ -421,8 +421,9 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
     )
   if (input.read === 'open-for-session')
     return limited(
-      ((await tx.unsafe(
-        `SELECT stage.id::text record_id,stage.number,project.name project,stage.workflow workflow_slug,
+      (
+        (await tx.unsafe(
+          `SELECT stage.id::text record_id,stage.number,project.name project,stage.workflow workflow_slug,
         stage.mode mode_slug,stage.workflow_key,stage.active_slug step_slug,stage.state,stage.updated_at::text updated_at,
         (SELECT step->'actions' FROM jsonb_array_elements(catalogue.definition::jsonb->'steps') step
           WHERE step->>'slug'=stage.active_slug) step_actions,
@@ -432,8 +433,9 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
        JOIN step_catalogue_version catalogue ON catalogue.id=stage.catalogue_version_id
        WHERE stage.session_id=$1 AND stage.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ORDER BY stage.number`,
-        [input.sessionId],
-      )) as Row[]).map((row) => ({
+          [input.sessionId],
+        )) as Row[]
+      ).map((row) => ({
         ...row,
         step_actions: Array.isArray(row.step_actions) ? row.step_actions : [],
       })),

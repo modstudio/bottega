@@ -20,12 +20,7 @@ const input = {
   }>,
 }
 
-const cursor = (
-  number: number,
-  stepSlug: string,
-  actions: string[],
-  workflowKey = 'DEV-2387',
-) => ({
+const cursor = (number: number, stepSlug: string, actions: string[], workflowKey = 'DEV-2387') => ({
   number,
   project: 'alpha',
   workflowSlug: 'fix-defect',
