@@ -305,6 +305,21 @@ async function sendWithCredentialRefresh(
   }
 }
 
+async function responseResult(
+  questions: readonly TypedQuestion[],
+  response: Response | 'timeout' | 'transport',
+  started: number,
+): Promise<TypedQuestionsClientResult> {
+  if (typeof response === 'string')
+    return { kind: 'error', error: response, latencyMs: elapsed(started) }
+  if (!response.ok)
+    return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
+  const parsed = await parsedAnswers(questions, response)
+  return parsed
+    ? { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
+    : { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
+}
+
 function numericHeader(response: Response, name: string): number | null {
   const value = response.headers.get(name)?.trim()
   if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return null
@@ -373,14 +388,7 @@ export async function askTypedQuestionsClient(
       await sleep(retryDelay(response, attempt, random))
       continue
     }
-    if (typeof response === 'string')
-      return { kind: 'error', error: response, latencyMs: elapsed(started) }
-    if (!response.ok) {
-      return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
-    }
-    const parsed = await parsedAnswers(questions, response)
-    if (!parsed) return { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
-    return { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
+    return responseResult(questions, response, started)
   }
   throw new Error('unreachable typed-question retry loop')
 }
