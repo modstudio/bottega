@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url'
-import { namingFindings } from '../shared/prose/naming-rule.ts'
 import { validateStepCatalogue } from '../orchestrator/src/workflow/step-catalogue.ts'
 import { workflowRenderGuidanceTexts } from '../orchestrator/src/workflow/workflow-render.ts'
 import type { WorkflowTreeStore } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { parseWorkflowTree } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-files.ts'
 import { validateWorkflowDefinition } from '../orchestrator/src/workflow/workflows.ts'
+import { namingFindings } from '../shared/prose/naming-rule.ts'
 
 export function workflowTreeValidationErrors(tree: WorkflowTreeStore): string[] {
   const catalogue = { steps: tree.steps, sequences: tree.sequences }

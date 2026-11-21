@@ -131,19 +131,23 @@ test('task comments and documents must change during the active step', async () 
     gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()
   await expect(
-    gather(d, { artifacts: ['task:DEV-977#comment:4'] }, {
-      readTask: () => ({
-        ...readTask('2026-09-02')(),
-        commentWrittenAt: {},
-      }),
-    }),
+    gather(
+      d,
+      { artifacts: ['task:DEV-977#comment:4'] },
+      {
+        readTask: () => ({
+          ...readTask('2026-09-02')(),
+          commentWrittenAt: {},
+        }),
+      },
+    ),
   ).resolves.toBeDefined()
 
-  const readTaskDocument = (updated_at: string) => async (value: string) => ({
+  const readTaskDocument = (updatedAt: string) => async (value: string) => ({
     id: 'document-id',
     label: value,
     task_record_id: 'task-DEV-977',
-    updated_at,
+    updated_at: updatedAt,
   })
   await expect(
     gather(d, { artifacts: ['DEV-977/1'] }, { readTaskDocument: readTaskDocument('2026-08-01') }),
@@ -176,17 +180,9 @@ test('notes and attached text must be written during the active step', async () 
       (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
      VALUES (?, ?, 1, 'rebase', 'evidence', '2026-08-01')`,
   ).run(textId, CURSOR_RECORD_ID)
-  d.query(
-    `INSERT INTO workflow_text_copy
-      (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
-     VALUES (?, ?, ?, 'DEV-977/1', '2026-08-01')`,
-  ).run(newRecordId(), textId, CURSOR_RECORD_ID)
   await expect(gather(d, { artifacts: [`attached-text:${textId}`] })).rejects.toThrow(
     'attached text record time is 2026-08-01',
   )
-  d.query('UPDATE workflow_text_copy SET copied_at=? WHERE workflow_text_record_id=?').run(
-    '2026-09-02',
-    textId,
-  )
+  d.query('UPDATE workflow_step_text SET created_at=? WHERE record_id=?').run('2026-09-02', textId)
   await expect(gather(d, { artifacts: [`attached-text:${textId}`] })).resolves.toBeDefined()
 })

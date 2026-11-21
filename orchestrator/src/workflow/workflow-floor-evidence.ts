@@ -42,7 +42,6 @@ import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
-import { requireMutableArtifactFreshness } from './workflow-floor-artifact-freshness.ts'
 import {
   type ArtifactRef,
   decideReviewReadArtifact,
@@ -56,6 +55,11 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import {
+  requireAttachedTextFreshness,
+  requireMutableArtifactFreshness,
+  timedTaskCommentFreshnessNotice,
+} from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
@@ -481,7 +485,7 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<{ ref: string; exists: boolean; notice?: string }> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
@@ -516,11 +520,11 @@ async function resolveTaskArtifact(
     )
   if (!task.commentIds.map(String).includes(ref.id))
     throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  const commentWrittenAt = task.commentWrittenAt?.[ref.id]
-  // External trackers expose comment ids without timestamps, so only timed comments get freshness.
-  if (commentWrittenAt)
-    requireMutableArtifactFreshness('task comment', commentWrittenAt, identity.stepActivatedAt)
-  return { ref: raw, exists: true }
+  const notice = timedTaskCommentFreshnessNotice(
+    task.commentWrittenAt?.[ref.id],
+    identity.stepActivatedAt,
+  )
+  return { ref: raw, exists: true, ...(notice ? { notice } : {}) }
 }
 
 async function resolveStoredArtifact(
@@ -529,7 +533,7 @@ async function resolveStoredArtifact(
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<{ ref: string; exists: boolean; notice?: string }> {
   if (ref.kind === 'attached-text') {
     const row = await taskFlowReadStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
@@ -539,15 +543,10 @@ async function resolveStoredArtifact(
           stepOrdinal: row.step_ordinal,
           stepSlug: row.step_slug,
           body: row.body,
-          copiedAt: row.copied_at,
+          writtenAt: row.created_at,
         }
       : null
-    if (attachment)
-      requireMutableArtifactFreshness(
-        'attached text',
-        attachment.copiedAt,
-        identity.stepActivatedAt,
-      )
+    requireAttachedTextFreshness(attachment, identity.stepActivatedAt)
     return {
       ref: 'attached-text',
       exists: attachedTextReferenceMeetsFloor({ ...binding, attachment }),

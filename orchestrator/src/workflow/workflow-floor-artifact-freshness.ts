@@ -20,3 +20,20 @@ export function requireMutableArtifactFreshness(
   const refusal = mutableArtifactFreshnessRefusal(kind, writtenAt, stepActivatedAt)
   if (refusal) throw new Error(refusal)
 }
+
+export function timedTaskCommentFreshnessNotice(
+  writtenAt: string | undefined,
+  stepActivatedAt: string,
+): string | null {
+  // External trackers expose comment ids without timestamps, so only timed comments get freshness.
+  if (writtenAt) requireMutableArtifactFreshness('task comment', writtenAt, stepActivatedAt)
+  return writtenAt ? null : 'freshness unchecked: external tracker returns no comment time'
+}
+
+export function requireAttachedTextFreshness(
+  attachment: { writtenAt?: string } | null,
+  stepActivatedAt: string,
+): void {
+  if (attachment)
+    requireMutableArtifactFreshness('attached text', attachment.writtenAt, stepActivatedAt)
+}

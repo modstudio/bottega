@@ -66,9 +66,7 @@ const renderedJobs = (jobs: string[]) => (jobs.length ? ` jobs=${jobs.join(',')}
 
 const rulingsHeader = (result: WorkflowComposition) =>
   `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).${
-    result.rulings.value === 'agent'
-      ? agentRulingsGuidance
-      : ''
+    result.rulings.value === 'agent' ? agentRulingsGuidance : ''
   }`
 
 const shellWord = (value: string) =>
@@ -173,9 +171,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
 }
 
 function operatorRulingAutonomy(hasOtherFloor: boolean): string {
-  return hasOtherFloor
-    ? otherFloorRulingGuidance
-    : onlyRulingGuidance
+  return hasOtherFloor ? otherFloorRulingGuidance : onlyRulingGuidance
 }
 
 const stopAndAsk = onlyRulingGuidance

@@ -187,6 +187,7 @@ export type FloorDecision =
       action: 'allow'
       enforcement: EnforcementMode
       refs: EvidenceRef[]
+      notices?: string[]
       defer?: { floor: FloorKind; reason: string }
       satisfyId?: string
     }
@@ -892,6 +893,10 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   return refs
 }
 
+function evidenceNotices(evidence: ValidatedEvidence): string[] {
+  return [...new Set((evidence.artifacts ?? []).flatMap(({ artifact }) => artifact.notice ?? []))]
+}
+
 function refuseDefer(floors: Floor[]): FloorDecision {
   return {
     action: 'refuse',
@@ -1061,6 +1066,9 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     action: 'allow',
     enforcement: 'floors',
     refs: evidenceRefs(input.evidence),
+    ...(evidenceNotices(input.evidence).length
+      ? { notices: evidenceNotices(input.evidence) }
+      : {}),
     ...deferred,
     ...satisfied,
   }

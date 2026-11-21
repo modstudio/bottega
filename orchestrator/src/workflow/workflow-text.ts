@@ -46,7 +46,7 @@ export type WorkflowTextRow = {
   stepOrdinal: number
   stepSlug: string
   body: string
-  copiedAt?: string | null
+  writtenAt?: string
 }
 
 type AttachDecision = { action: 'allow' } | { action: 'refuse'; message: string }

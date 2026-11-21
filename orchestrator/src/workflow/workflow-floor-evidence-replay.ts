@@ -18,9 +18,10 @@ export type FloorEvidencePorts = {
   readNote?: (
     project: string,
     reference: string,
-  ) => Promise<
-    Pick<NoteFloorEvidence, 'recordId' | 'label' | 'promotedTask' | 'staleAt' | 'writtenAt'> | null
-  >
+  ) => Promise<Pick<
+    NoteFloorEvidence,
+    'recordId' | 'label' | 'promotedTask' | 'staleAt' | 'writtenAt'
+  > | null>
   resolveCheckout?: (
     cwd: string,
     headCommit: string | null,

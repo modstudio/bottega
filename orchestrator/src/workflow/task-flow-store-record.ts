@@ -442,7 +442,7 @@ class RecordTaskFlowReadStore {
   async textAttachmentByRecordId(recordId: string) {
     const result = await this.readText(recordId)
     if (!result?.text) return null
-    return { ...textRow(result.text), copied_at: result.copy?.copiedAt ?? null }
+    return { ...textRow(result.text), created_at: result.text.createdAt }
   }
   async textRecordIdsForStage(stageRecordId: string) {
     return (await this.textsForStage(stageRecordId)).map(({ id }) => id)

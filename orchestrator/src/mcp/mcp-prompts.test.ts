@@ -344,7 +344,7 @@ describe('workflow prompts on the wire', () => {
     const text = (result.messages[0]!.content as { text: string }).text
 
     expect(text).toContain('No mode is chosen yet.')
-    expect(text).toContain('get it from the operator as a task key or a description')
+    expect(text).toContain('get it from the user as a task key or a description')
     expect(text).toContain('- key (optional): Existing task key.')
     expect(text).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
     expect(text).toContain(
