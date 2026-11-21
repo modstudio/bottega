@@ -34,6 +34,12 @@ export function finishCursorWorktreeClear(
 ): CloseOutResult {
   delete result.resourceTeardownCompleted
   delete result.resourceTeardownFailed
+  if (cleanup)
+    result.detail = result.detail.replaceAll(
+      'worktree claim was cleared',
+      'worktree claim could not be cleared',
+    )
+  if (cleanup) delete result.clearedCursorClaims
   return cleanup
     ? { ...result, cursorCleanupFailure: cleanup.failure, cursorCleanupRemedy: cleanup.remedy }
     : result

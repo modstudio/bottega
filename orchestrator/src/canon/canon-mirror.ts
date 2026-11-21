@@ -265,8 +265,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     command(p.path, ['git', 'update-ref', '-d', `refs/heads/${branch}`, expected])
   },
   prepareRelease: prepareCloseOut,
-  releaseRun: (runId, preparation) =>
-    closeOutRunPrepared(runId, { intent: 'tree-remove' }, preparation),
+  releaseRun: (runId, preparation) => closeOutRunPrepared(runId, { intent: 'landed' }, preparation),
 }
 
 export function canonMirrorMergeArgs(number: number, commit: string): string[] {

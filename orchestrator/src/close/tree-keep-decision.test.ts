@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTreeKeep, type TreeNamer } from './tree-keep-decision.ts'
+import { CLOSE_OUT_INTENTS, decideTreeKeep, type TreeNamer } from './tree-keep-decision.ts'
 
 const cursor: TreeNamer = {
   kind: 'cursor',
@@ -10,31 +10,30 @@ const cursor: TreeNamer = {
 const liveRun: TreeNamer = { kind: 'live-run', recordId: 'run-record-id' }
 
 describe('tree keep decision', () => {
-  for (const intent of ['terminal', 'sweep'] as const) {
-    test(`${intent} proceeds without a namer and holds for either namer kind`, () => {
+  for (const intent of CLOSE_OUT_INTENTS) {
+    test(`${intent} proceeds without a namer and classifies either namer kind`, () => {
       expect(decideTreeKeep({ intent, namers: [] })).toEqual({ action: 'proceed' })
-      expect(decideTreeKeep({ intent, namers: [cursor] })).toEqual({
-        action: 'hold',
-        namers: [cursor],
-      })
+      const action =
+        intent === 'operator-removal' || intent === 'failed-provision' ? 'proceed-named' : 'hold'
+      expect(decideTreeKeep({ intent, namers: [cursor] })).toEqual({ action, namers: [cursor] })
       expect(decideTreeKeep({ intent, namers: [liveRun] })).toEqual({
-        action: 'hold',
+        action,
         namers: [liveRun],
       })
     })
   }
 
-  for (const intent of ['explicit', 'tree-remove'] as const) {
-    test(`${intent} proceeds without a namer and reports either namer kind`, () => {
-      expect(decideTreeKeep({ intent, namers: [] })).toEqual({ action: 'proceed' })
-      expect(decideTreeKeep({ intent, namers: [cursor] })).toEqual({
-        action: 'proceed-named',
-        namers: [cursor],
-      })
-      expect(decideTreeKeep({ intent, namers: [liveRun] })).toEqual({
-        action: 'proceed-named',
-        namers: [liveRun],
-      })
+  test.each([false, null, undefined])('landed=%s holds a named tree', (landed) => {
+    expect(decideTreeKeep({ intent: 'landed', namers: [cursor], landed })).toEqual({
+      action: 'hold',
+      namers: [cursor],
     })
-  }
+  })
+
+  test('landed=true proceeds on a named tree', () => {
+    expect(decideTreeKeep({ intent: 'landed', namers: [cursor], landed: true })).toEqual({
+      action: 'proceed-named',
+      namers: [cursor],
+    })
+  })
 })

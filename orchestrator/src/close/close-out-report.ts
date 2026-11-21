@@ -39,6 +39,7 @@ export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutco
   reportOutcome?: 'kept'
   cursorCleanupFailure?: string
   cursorCleanupRemedy?: string
+  clearedCursorClaims?: string[]
 }
 
 export type HeldConversationCloseOutResult = Omit<

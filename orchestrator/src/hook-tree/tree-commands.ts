@@ -40,8 +40,11 @@ export async function treeCreateCommand(
   if (result.action === 'refused') presentation.error(result.warning)
 }
 
-export async function treeRemoveCommand(path: string): Promise<void> {
-  await removeHookTree(path)
+export async function treeRemoveCommand(
+  path: string,
+  presentation: { log(value: string): void },
+): Promise<void> {
+  for (const notice of await removeHookTree(path)) presentation.log(notice)
 }
 
 export async function treeOpenCommand(

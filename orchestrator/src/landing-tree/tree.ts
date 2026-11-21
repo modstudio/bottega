@@ -119,7 +119,7 @@ export async function releaseFailedLandingTree(runId: string): Promise<void> {
     worktree: string | null
   }
   if (!recorded.worktree) return
-  const cleanup = await closeOutRun(runId, { intent: 'tree-remove' })
+  const cleanup = await closeOutRun(runId, { intent: 'failed-provision' })
   if (!['released', 'absent'].includes(cleanup.outcome)) {
     throw new Error(`landing tree cleanup ${cleanup.outcome}: ${cleanup.detail}`)
   }

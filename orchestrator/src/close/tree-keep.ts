@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
+import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, liveRuns, nowIso } from '../database/db.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -143,18 +144,39 @@ export function closeOutKeepTreeDecision(
   database: Database = db(),
 ): { hold: ConversationKeepTreeHold; naming: TreeKeepDecision } {
   const namers = treePath ? treeKeepNamers(treePath, rootId, cursorWorktrees, database) : []
-  const naming = decideTreeKeep({ intent, namers })
+  let landed: boolean | null = null
+  let landedFailure: string | null = null
+  if (intent === 'landed' && namers.length > 0) {
+    const row = database.query('SELECT repo,branch FROM run WHERE record_id=?').get(rootId) as {
+      repo: string | null
+      branch: string | null
+    } | null
+    if (!row?.repo || !row.branch) {
+      landedFailure = 'project or branch is no longer recorded'
+    } else {
+      const state = classifyMintedBranch(row.repo, row.branch)
+      landed = state.state === 'landed' ? true : state.state === 'unknown' ? null : false
+      if (state.state === 'unknown') landedFailure = state.error ?? 'landing status is unknown'
+      else if (state.state !== 'landed') landedFailure = `branch ${row.branch} is ${state.state}`
+    }
+  }
+  const naming = decideTreeKeep({ intent, namers, landed })
   if (naming.action === 'hold') {
     return {
       hold: {
         held: true,
         until: null,
-        reason: `tree kept because ${treeNamersText(naming.namers)} names it`,
+        reason:
+          `tree kept because ${treeNamersText(naming.namers)} names it` +
+          (intent === 'landed' && landedFailure
+            ? ` and landing could not be established: ${landedFailure}`
+            : ''),
       },
       naming,
     }
   }
-  if (intent === 'tree-remove') return { hold: { held: false }, naming }
+  if (intent === 'operator-removal' || intent === 'landed' || intent === 'failed-provision')
+    return { hold: { held: false }, naming }
   if (intent === 'sweep') {
     const landing = database
       .query(

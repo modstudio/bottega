@@ -196,7 +196,7 @@ test('reader close-out excludes its base when the source no longer reaches it', 
 })
 
 describe('close-out of a tree named by an open workflow cursor', () => {
-  for (const intent of ['terminal', 'sweep'] as const) {
+  for (const intent of ['terminal', 'sweep', 'requested'] as const) {
     test(`${intent} holds the named tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
@@ -212,7 +212,7 @@ describe('close-out of a tree named by an open workflow cursor', () => {
     })
   }
 
-  for (const intent of ['explicit', 'tree-remove'] as const) {
+  for (const intent of ['operator-removal', 'failed-provision'] as const) {
     test(`${intent} proceeds and reports the cursor naming the tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
@@ -221,8 +221,9 @@ describe('close-out of a tree named by an open workflow cursor', () => {
         const result = await closeOutRun(fixture.id, { intent })
 
         expect(result.outcome).toBe('released')
-        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
-        expect(result.detail).toEndWith('names this tree')
+        expect(result.detail).toContain(
+          `open workflow cursor ${number} (ship-task, segnavia) worktree claim was cleared`,
+        )
         expect(existsSync(fixture.tree)).toBe(false)
       } finally {
         rmSync(fixture.repo, { recursive: true, force: true })
@@ -664,7 +665,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
          VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
       .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
-    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'requested' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
@@ -741,7 +742,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
     return spawnResult('', 1)
   }) as typeof Bun.spawnSync)
   try {
-    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'requested' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
@@ -845,7 +846,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', asy
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'requested' })).outcome).toBe('failed')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -853,7 +854,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', asy
         }
       ).resource_teardown,
     ).toBe('done')
-    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'requested' })).outcome).toBe('absent')
     expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
@@ -1011,7 +1012,7 @@ test('absent-tree dry run reports teardown without executing it', async () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    const result = await closeOutRun(fixture.id, { intent: 'explicit', dryRun: true })
+    const result = await closeOutRun(fixture.id, { intent: 'requested', dryRun: true })
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain('would run its recorded resource teardown')
     expect(commands).not.toContain('teardown-marker')

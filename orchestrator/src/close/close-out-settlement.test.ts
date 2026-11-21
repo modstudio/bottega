@@ -18,8 +18,8 @@ test('worktree settlement records the close-out caller', async () => {
     )
     .run(claimRecordId, runId, runId, worktree)
 
-  await closeOutRun(runId, { intent: 'explicit' })
-  const caller = `close-out intent=explicit pid=${process.pid} ppid=${process.ppid}`
+  await closeOutRun(runId, { intent: 'requested' })
+  const caller = `close-out intent=requested pid=${process.pid} ppid=${process.ppid}`
   const run = db()
     .query('SELECT close_out_detail detail FROM run WHERE record_id=?')
     .get(runId) as {
