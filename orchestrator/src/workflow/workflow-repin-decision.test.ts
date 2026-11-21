@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { decideWorkflowRepin, type RepinStep } from './workflow-repin-decision.ts'
 
@@ -22,6 +23,7 @@ const input = {
   pendingQuestion: false,
   pendingAwait: false,
   alreadyCurrent: false,
+  retryCommand: `${PLATFORM_SLUG} workflow repin --cursor 1206 --project fixture --reason <text>`,
 }
 
 test('repin refuses a differing slug through the current ordinal', () => {

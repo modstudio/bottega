@@ -1,14 +1,11 @@
 // concern: workflow repin decision
 /** Decides whether an open cursor may adopt the current workflow and catalogue versions. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { isClosedStep, type CursorTrailEntry } from './workflow-cursor-trail.ts'
+import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 
 export type RepinStep = { slug: string; floors: readonly string[] }
 
-export type WorkflowRepinDecision =
-  | { action: 'allow' }
-  | { action: 'refuse'; message: string }
+export type WorkflowRepinDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
 export function decideWorkflowRepin(input: {
   cursor: number
@@ -22,8 +19,8 @@ export function decideWorkflowRepin(input: {
   pendingQuestion: boolean
   pendingAwait: boolean
   alreadyCurrent: boolean
+  retryCommand: string
 }): WorkflowRepinDecision {
-  const retry = `${PLATFORM_SLUG} workflow repin --cursor ${input.cursor} --reason <text>`
   if (
     !input.callerIsOperator &&
     (!input.callerSession || input.callerSession !== input.holderSession)
@@ -35,12 +32,12 @@ export function decideWorkflowRepin(input: {
   if (input.pendingAwait)
     return {
       action: 'refuse',
-      message: `workflow cursor ${input.cursor} has a pending workflow await; answer it with \`${PLATFORM_SLUG} workflow rule\`, then retry ${retry}`,
+      message: `workflow cursor ${input.cursor} has a pending workflow await; answer it with the workflow rule verb, then retry ${input.retryCommand}`,
     }
   if (input.pendingQuestion)
     return {
       action: 'refuse',
-      message: `workflow cursor ${input.cursor} has an open workflow question or ruling; answer it, then retry ${retry}`,
+      message: `workflow cursor ${input.cursor} has an open workflow question or ruling; answer it, then retry ${input.retryCommand}`,
     }
   for (let ordinal = 0; ordinal <= input.currentOrdinal; ordinal += 1) {
     const oldSlug = input.oldSteps[ordinal]?.slug ?? '<missing>'
@@ -48,12 +45,10 @@ export function decideWorkflowRepin(input: {
     if (oldSlug !== newSlug)
       return {
         action: 'refuse',
-        message: `workflow cursor ${input.cursor} step ${ordinal + 1} differs: pinned ${oldSlug}, current ${newSlug}; restore matching steps through the current ordinal or open a successor with \`${PLATFORM_SLUG} workflow handoff\``,
+        message: `workflow cursor ${input.cursor} step ${ordinal + 1} differs: pinned ${oldSlug}, current ${newSlug}; restore matching steps through the current ordinal or open a successor with the workflow handoff verb`,
       }
   }
-  const closedOrdinals = new Set(
-    input.trail.filter(isClosedStep).map((entry) => entry.n - 1),
-  )
+  const closedOrdinals = new Set(input.trail.filter(isClosedStep).map((entry) => entry.n - 1))
   for (const ordinal of [...closedOrdinals].sort((a, b) => a - b)) {
     const oldStep = input.oldSteps[ordinal]
     const nextStep = input.newSteps[ordinal]
@@ -63,7 +58,7 @@ export function decideWorkflowRepin(input: {
     if (added)
       return {
         action: 'refuse',
-        message: `workflow cursor ${input.cursor} closed step ${ordinal + 1} ${oldStep.slug} adds floor ${added}; remove that added floor from the current catalogue or open a successor with \`${PLATFORM_SLUG} workflow handoff\``,
+        message: `workflow cursor ${input.cursor} closed step ${ordinal + 1} ${oldStep.slug} adds floor ${added}; remove that added floor from the current catalogue or open a successor with the workflow handoff verb`,
       }
   }
   if (input.alreadyCurrent)

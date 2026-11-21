@@ -487,6 +487,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'workflow promote-tree',
   'workflow queue',
   'workflow render-check',
+  'workflow repin',
   'workflow retire',
   'workflow rule',
   'workflow set',

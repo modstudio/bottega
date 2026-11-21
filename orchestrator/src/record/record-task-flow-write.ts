@@ -496,12 +496,7 @@ async function applyRepin(tx: SQL, body: RepinBody) {
   await lockParentFlowForStage(tx, body.stage.id)
   return {
     revisions: {
-      [body.stage.id]: await updateRevisionRow(
-        tx,
-        'task_flow_stage',
-        body.stage,
-        body.requestId,
-      ),
+      [body.stage.id]: await updateRevisionRow(tx, 'task_flow_stage', body.stage, body.requestId),
     },
   }
 }

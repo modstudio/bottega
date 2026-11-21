@@ -23,8 +23,8 @@ import {
   promoteWorkflowCommand,
   queueChildCommand,
   recordEvidenceCommand,
-  repinCommand,
   renderCheckCommand,
+  repinCommand,
   retireCatalogueCommand,
   retireWorkflowCommand,
   ruleCommand,
@@ -502,17 +502,6 @@ function registerWorkflowCursorAdmin({
   jsonOption(
     reasonOption(
       workflow
-        .command('repin')
-        .description('re-point an open cursor to the current production workflow and catalogue')
-        .requiredOption('--cursor <value>', 'select this workflow cursor')
-        .option('--project <value>', 'select this registered project'),
-    ),
-  )
-    .allowExcessArguments(false)
-    .action((options) => repinCommand(workflowArgv('repin', [], options), output(options)))
-  jsonOption(
-    reasonOption(
-      workflow
         .command('abandon [workflow]')
         .description('abandon an open workflow cursor')
         .option('--cursor <value>', 'select this workflow cursor')
@@ -544,6 +533,20 @@ function registerWorkflowCursorAdmin({
   )
     .allowExcessArguments(false)
     .action((options) => cursorsCommand(workflowArgv('cursors', [], options), output(options)))
+}
+
+function registerWorkflowRepin({ workflow, output }: WorkflowRegistration): void {
+  jsonOption(
+    reasonOption(
+      workflow
+        .command('repin')
+        .description('re-point an open cursor to the current production workflow and catalogue')
+        .requiredOption('--cursor <value>', 'select this workflow cursor')
+        .option('--project <value>', 'select this registered project'),
+    ),
+  )
+    .allowExcessArguments(false)
+    .action((options) => repinCommand(workflowArgv('repin', [], options), output(options)))
 }
 
 function registerWorkflowChildCommands({
@@ -767,6 +770,7 @@ export function registerWorkflowCommands(
   registerWorkflowAdvancement(registration)
   registerWorkflowStepActionCommands(registration.workflow)
   registerWorkflowRulings(registration)
+  registerWorkflowRepin(registration)
   registerWorkflowCursorAdmin(registration)
   registerWorkflowChildCommands(registration)
   registerWorkflowTreeCommands(registration)

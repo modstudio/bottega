@@ -2,8 +2,8 @@
 /** Keeps public cursor notices and command/tool handle syntax consistent. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 import type { CursorRepinnedEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
+import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 
 export const WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS = 120
 export const workflowCursorListCommand = `${PLATFORM_SLUG} workflow cursors`

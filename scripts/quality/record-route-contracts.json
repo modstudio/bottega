@@ -480,6 +480,10 @@
     "reason": "untested"
   },
   {
+    "route": "POST /v1/task-flow/repin",
+    "reason": "untested"
+  },
+  {
     "route": "POST /v1/task-flow/stage-update",
     "reason": "untested"
   },

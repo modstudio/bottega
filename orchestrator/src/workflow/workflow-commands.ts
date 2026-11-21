@@ -60,7 +60,6 @@ import {
   wrappedCommandExitCode,
 } from './workflow-probe.ts'
 import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
-import { repinWorkflowCursor } from './workflow-repin.ts'
 import {
   admittedWorkflowPromotion,
   type PromotionContainsHead,
@@ -71,6 +70,7 @@ import {
   checkResolvedWorkflowRendering,
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
+import { repinWorkflowCursor } from './workflow-repin.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskLookup, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -564,10 +564,7 @@ export async function abandonCommand(
   print(result, result)
 }
 
-export async function repinCommand(
-  argv: string[],
-  print: WorkflowPrint,
-): Promise<void> {
+export async function repinCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (cursor === undefined) throw new Error('--cursor is required')
   const context = cliWorkflowCursorContext()

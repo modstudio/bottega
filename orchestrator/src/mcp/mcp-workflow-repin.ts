@@ -26,12 +26,7 @@ export function registerWorkflowRepinTool(
     },
     async ({ cursor, project, reason }) => {
       const context = mcpWorkflowCursorContext()
-      const row = await selectWorkflowCursorByHandle(
-        { project },
-        cursor,
-        context.session,
-        db(),
-      )
+      const row = await selectWorkflowCursorByHandle({ project }, cursor, context.session, db())
       return text(await repinWorkflowCursor({ row, reason, context }))
     },
   )

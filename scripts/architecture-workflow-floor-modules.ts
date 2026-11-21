@@ -20,6 +20,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-format.ts', [
     '../../../shared/brand.ts',
+    './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [

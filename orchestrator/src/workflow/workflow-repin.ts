@@ -2,6 +2,7 @@
 /** Re-points one open cursor to the current production composition after a pure compatibility ruling. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOperatorSession } from '../../../shared/caller-classification.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
@@ -12,6 +13,7 @@ import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import type { CursorRepinnedEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
@@ -61,6 +63,7 @@ export async function repinWorkflowCursor(input: {
     alreadyCurrent:
       input.row.workflow_version_record_id === nextComposition.workflow.record_id &&
       input.row.catalogue_version_record_id === nextComposition.catalogue.record_id,
+    retryCommand: `${PLATFORM_SLUG} workflow repin${workflowCursorReference(input.row.id, input.row.project).cli} --reason <text>`,
   })
   if (decision.action === 'refuse') throw new Error(decision.message)
   const callerSession = input.context.session!

@@ -38,6 +38,7 @@ workflows and their cursors
 - [bottega workflow promote-tree](#bottega-workflow-promote-tree)
 - [bottega workflow queue](#bottega-workflow-queue)
 - [bottega workflow render-check](#bottega-workflow-render-check)
+- [bottega workflow repin](#bottega-workflow-repin)
 - [bottega workflow retire](#bottega-workflow-retire)
 - [bottega workflow rule](#bottega-workflow-rule)
 - [bottega workflow set](#bottega-workflow-set)
@@ -81,6 +82,7 @@ workflows and their cursors
 - [bottega workflow promote-tree](./workflow.md#bottega-workflow-promote-tree)
 - [bottega workflow queue](./workflow.md#bottega-workflow-queue)
 - [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
+- [bottega workflow repin](./workflow.md#bottega-workflow-repin)
 - [bottega workflow retire](./workflow.md#bottega-workflow-retire)
 - [bottega workflow rule](./workflow.md#bottega-workflow-rule)
 - [bottega workflow set](./workflow.md#bottega-workflow-set)
@@ -631,6 +633,23 @@ check every production workflow can render
 
 ### Options
 
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow repin
+
+**Synopsis:** `bottega workflow repin --cursor <value> [--project <value>] [--reason <value>] [--json]`
+
+re-point an open cursor to the current production workflow and catalogue
+
+### Options
+
+- `--cursor <value>`: select this workflow cursor
+- `--project <value>`: select this registered project
+- `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
 
 ### Related

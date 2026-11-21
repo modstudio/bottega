@@ -30,6 +30,13 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-production-floor-ports.ts',
     '../workflow/workflow-task-reference.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-workflow-repin.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../database/db.ts',
+    '../workflow/workflow-cursor-selection.ts',
+    '../workflow/workflow-repin.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-task-flow.fixture.ts', [
     'bun:sqlite',
     '../../test/fixtures/record-api.ts',
