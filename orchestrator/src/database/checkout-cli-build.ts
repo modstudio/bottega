@@ -11,9 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS } from '../../../shared/compiled-runtime-autoload.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { INSTALL_HOME_ENV, installationIdentity } from '../../../shared/install-root.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
@@ -24,6 +22,7 @@ import {
   workerRuntimeAssetPaths,
 } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
+import { compileCheckoutCliEntry } from './checkout-cli-compile.ts'
 
 export type CheckoutCliBuildResult = {
   binary: string
@@ -106,23 +105,11 @@ export function buildCheckoutCli(
   const temporaryBinary = join(destination, `.checkout-cli-${suffix}`)
   const temporaryStamp = join(destination, `.checkout-cli-stamp-${suffix}`)
   try {
-    const result = startBoundedSync(
-      [
-        'bun',
-        'build',
-        '--compile',
-        ...COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS,
-        '--define',
-        'BOTTEGA_COMPILED_CHECKOUT_BUILD=true',
-        `cli/${PLATFORM_SLUG}.ts`,
-        '--outfile',
-        temporaryBinary,
-      ],
-      {
-        budget: 'machine-update',
-        cwd: checkoutRoot,
-        env: { ...environment, [INSTALL_HOME_ENV]: checkoutRoot },
-      },
+    const result = compileCheckoutCliEntry(
+      checkoutRoot,
+      `cli/${PLATFORM_SLUG}.ts`,
+      temporaryBinary,
+      environment,
     )
     if (result.exitCode !== 0) {
       throw checkoutCliBuildFailure(
