@@ -90,12 +90,12 @@ import {
   retainedBranchReason,
   retainedRefForRun,
 } from './retained-branch.ts'
-import { closeOutKeepTreeDecision, conversationKeepTreeHold } from './tree-keep.ts'
 import {
-  type CloseOutIntent,
-  clearedCursorClaimsText,
-  treeNamersText,
-} from './tree-keep-decision.ts'
+  closeOutKeepTreeDecision,
+  conversationKeepTreeHold,
+  recordTreeNamingDetail,
+} from './tree-keep.ts'
+import type { CloseOutIntent } from './tree-keep-decision.ts'
 import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
 export type { CloseOutResult } from './close-out-report.ts'
@@ -118,6 +118,10 @@ type CloseOutPreparedOptions = CloseOutOptions & {
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
+
+function explicitlyRemovesTree(intent: CloseOutIntent): boolean {
+  return intent === 'operator-removal' || intent === 'failed-provision'
+}
 type RunIdRow = { record_id: string }
 
 function terminateCloseOutProcesses(dryRun: boolean, runId: string): void {
@@ -550,8 +554,7 @@ function attemptCloseOutRun(
     sessionId: effective.session_id,
     launchKey: effective.launch_key,
     status: effective.status,
-    explicitTreeRemovalRequested:
-      options.intent === 'operator-removal' || options.intent === 'failed-provision',
+    explicitTreeRemovalRequested: explicitlyRemovesTree(options.intent),
   }
   const preRemovalHold =
     terminalHoldResult(row.root_record_id, treePath, effective.status, options.keepTreeDecision) ??
@@ -905,25 +908,6 @@ function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent'])
   return `${detail}; close-out intent=${intent} pid=${process.pid} ppid=${process.ppid}`
 }
 
-function appendTreeNamingDetail(
-  result: CloseOutAttemptResult,
-  naming: ReturnType<typeof closeOutKeepTreeDecision>['naming'],
-  options: CloseOutOptions,
-): void {
-  if (naming.action !== 'proceed-named') return
-  const cursorClaims = clearedCursorClaimsText(naming.namers)
-  const liveRuns = naming.namers.filter((namer) => namer.kind === 'live-run')
-  if (cursorClaims) {
-    result.detail += `; ${options.dryRun ? cursorClaims.replaceAll('was cleared', 'would be cleared') : cursorClaims}`
-    if (!options.dryRun) result.clearedCursorClaims = cursorClaims.split('; ')
-  }
-  if (liveRuns.length) result.detail += `; ${treeNamersText(liveRuns)} named this tree`
-  if (options.dryRun) return
-  db()
-    .query('UPDATE run SET close_out_detail=? WHERE record_id=?')
-    .run(closeOutCallerDetail(result.detail, options.intent), result.runId)
-}
-
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 function closeOutRunHoldingLease(
   runId: string,
@@ -1005,7 +989,7 @@ function closeOutRunHoldingLease(
       }
     }
   }
-  appendTreeNamingDetail(result, keepTree.naming, options)
+  recordTreeNamingDetail(result, keepTree.naming, options)
   if (!options.dryRun && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const turns = db()
       .query(

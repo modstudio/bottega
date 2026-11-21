@@ -7,7 +7,6 @@ import { resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
-import type { CloseOutIntent } from '../close/tree-keep-decision.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { projectAt, projects, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
@@ -259,7 +258,7 @@ export type HookTreeRemovalResult =
 
 export async function removeHookTreeResult(
   requestedPath: string,
-  intent: Extract<CloseOutIntent, 'operator-removal' | 'landed'>,
+  intent: 'operator-removal' | 'landed',
   taskFlowClient?: CursorWorktreeTaskFlowClient,
 ): Promise<HookTreeRemovalResult> {
   try {
@@ -278,7 +277,7 @@ export function absentClaimedHookTreeDecision(input: {
 
 async function removeRecordedHookTree(
   requestedPath: string,
-  intent: Extract<CloseOutIntent, 'operator-removal' | 'landed'>,
+  intent: 'operator-removal' | 'landed',
   taskFlowClient?: CursorWorktreeTaskFlowClient,
 ): Promise<HookTreeRemovalResult> {
   const wanted = canonicalPath(requestedPath)

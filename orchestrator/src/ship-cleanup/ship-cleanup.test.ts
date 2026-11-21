@@ -30,7 +30,7 @@ test('ship cleanup output names each released tree and where to deploy from', as
     },
     absentWorktrees: [],
     clearedCursorClaims: [
-      'open workflow cursor 1207 (ship-task, bottega) worktree claim was cleared',
+      `open workflow cursor 1207 (ship-task, ${PLATFORM_SLUG}) worktree claim was cleared`,
     ],
     reclaimed: { processes: [], compose: [] },
     gone: [],
@@ -42,7 +42,7 @@ test('ship cleanup output names each released tree and where to deploy from', as
   const output = formatShipCleanup(report)
   expect(output).toContain('released tree: /trees/released')
   expect(output).toContain(
-    'open workflow cursor 1207 (ship-task, bottega) worktree claim was cleared',
+    `open workflow cursor 1207 (ship-task, ${PLATFORM_SLUG}) worktree claim was cleared`,
   )
   expect(output).toContain(
     `deploy from: the landing branch main — pull it in the main checkout /projects/ship-fixture, or run ${PLATFORM_SLUG} tree create --name deploy-main --base origin/main`,

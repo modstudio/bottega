@@ -104,6 +104,7 @@ export const cleanupBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       'node:fs',
+      '../branch/branches.ts',
       '../database/db.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/landing-tree.ts',

@@ -52,7 +52,7 @@ export function treeNamersText(namers: readonly TreeNamer[]): string {
     .join(', ')
 }
 
-export function clearedCursorClaimsText(namers: readonly TreeNamer[]): string {
+function clearedCursorClaimsText(namers: readonly TreeNamer[]): string {
   return namers
     .filter((namer): namer is Extract<TreeNamer, { kind: 'cursor' }> => namer.kind === 'cursor')
     .map(
@@ -60,4 +60,22 @@ export function clearedCursorClaimsText(namers: readonly TreeNamer[]): string {
         `open workflow cursor ${namer.number} (${namer.workflow}, ${namer.project}) worktree claim was cleared`,
     )
     .join('; ')
+}
+
+export function treeNamingReleaseReport(
+  decision: TreeKeepDecision,
+  dryRun = false,
+): { detail: string; clearedCursorClaims: string[] } | null {
+  if (decision.action !== 'proceed-named') return null
+  const cursorClaims = clearedCursorClaimsText(decision.namers)
+  const liveRuns = treeNamersText(decision.namers.filter((namer) => namer.kind === 'live-run'))
+  const clauses = [
+    cursorClaims &&
+      (dryRun ? cursorClaims.replaceAll('was cleared', 'would be cleared') : cursorClaims),
+    liveRuns && `${liveRuns} named this tree`,
+  ].filter(Boolean)
+  return {
+    detail: clauses.join('; '),
+    clearedCursorClaims: dryRun || !cursorClaims ? [] : cursorClaims.split('; '),
+  }
 }

@@ -11,14 +11,38 @@ import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.
 import type { OpenCursorWorktree } from '../workflow/workflow-cursor-worktrees.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
-import type { ConversationKeepTreeHold } from './close-out-report.ts'
+import type { CloseOutResult, ConversationKeepTreeHold } from './close-out-report.ts'
 import {
   type CloseOutIntent,
   decideTreeKeep,
   type TreeKeepDecision,
   type TreeNamer,
   treeNamersText,
+  treeNamingReleaseReport,
 } from './tree-keep-decision.ts'
+
+export function appendTreeNamingDetail(
+  result: CloseOutResult,
+  naming: TreeKeepDecision,
+  dryRun = false,
+): boolean {
+  const report = treeNamingReleaseReport(naming, dryRun)
+  if (!report) return false
+  if (report.detail) result.detail += `; ${report.detail}`
+  if (report.clearedCursorClaims.length) result.clearedCursorClaims = report.clearedCursorClaims
+  return true
+}
+
+export function recordTreeNamingDetail(
+  result: CloseOutResult,
+  naming: TreeKeepDecision,
+  options: { dryRun?: boolean; intent: CloseOutIntent },
+): void {
+  const named = appendTreeNamingDetail(result, naming, options.dryRun)
+  if (!named || options.dryRun) return
+  const detail = `${result.detail}; close-out intent=${options.intent} pid=${process.pid} ppid=${process.ppid}`
+  db().query('UPDATE run SET close_out_detail=? WHERE record_id=?').run(detail, result.runId)
+}
 
 function realTreePath(path: string): string | null {
   if (!existsSync(path)) return null
@@ -75,6 +99,23 @@ export function namedProjectTreePaths(
     if (canonical) named.add(canonical)
   }
   return named
+}
+
+function landedNamingFact(
+  rootId: string,
+  database: Database,
+): { landed: boolean | null; failure: string | null } {
+  const row = database.query('SELECT repo,branch FROM run WHERE record_id=?').get(rootId) as {
+    repo: string | null
+    branch: string | null
+  } | null
+  if (!row?.repo || !row.branch)
+    return { landed: null, failure: 'project or branch is no longer recorded' }
+  const state = classifyMintedBranch(row.repo, row.branch)
+  if (state.state === 'landed') return { landed: true, failure: null }
+  if (state.state === 'unknown')
+    return { landed: null, failure: state.error ?? 'landing status is unknown' }
+  return { landed: false, failure: `branch ${row.branch} is ${state.state}` }
 }
 
 export function conversationKeepTreeHold(
@@ -144,23 +185,11 @@ export function closeOutKeepTreeDecision(
   database: Database = db(),
 ): { hold: ConversationKeepTreeHold; naming: TreeKeepDecision } {
   const namers = treePath ? treeKeepNamers(treePath, rootId, cursorWorktrees, database) : []
-  let landed: boolean | null = null
-  let landedFailure: string | null = null
-  if (intent === 'landed' && namers.length > 0) {
-    const row = database.query('SELECT repo,branch FROM run WHERE record_id=?').get(rootId) as {
-      repo: string | null
-      branch: string | null
-    } | null
-    if (!row?.repo || !row.branch) {
-      landedFailure = 'project or branch is no longer recorded'
-    } else {
-      const state = classifyMintedBranch(row.repo, row.branch)
-      landed = state.state === 'landed' ? true : state.state === 'unknown' ? null : false
-      if (state.state === 'unknown') landedFailure = state.error ?? 'landing status is unknown'
-      else if (state.state !== 'landed') landedFailure = `branch ${row.branch} is ${state.state}`
-    }
-  }
-  const naming = decideTreeKeep({ intent, namers, landed })
+  const landedFact =
+    intent === 'landed' && namers.length > 0
+      ? landedNamingFact(rootId, database)
+      : { landed: null, failure: null }
+  const naming = decideTreeKeep({ intent, namers, landed: landedFact.landed })
   if (naming.action === 'hold') {
     return {
       hold: {
@@ -168,8 +197,8 @@ export function closeOutKeepTreeDecision(
         until: null,
         reason:
           `tree kept because ${treeNamersText(naming.namers)} names it` +
-          (intent === 'landed' && landedFailure
-            ? ` and landing could not be established: ${landedFailure}`
+          (intent === 'landed' && landedFact.failure
+            ? ` and landing could not be established: ${landedFact.failure}`
             : ''),
       },
       naming,
