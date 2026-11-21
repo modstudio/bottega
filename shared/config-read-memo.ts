@@ -1,10 +1,13 @@
 // concern: hosted-config-client
-/** Shares selected hosted configuration reads within one process. */
+/** Shares selected hosted configuration and record identity reads within one process. */
 
-export const RECORD_WHOAMI_ROUTE = '/v1/whoami'
+import { RECORD_WHOAMI_ROUTE } from './record-routes.ts'
+
+export const RECORD_IDENTITY_MEMO_MAX_AGE_MS = 60_000
 
 type MemoIdentity = object
-type ReadMemo = Map<string, Map<string, Map<string, Promise<unknown>>>>
+type MemoEntry = { startedAt: number; read: Promise<unknown> }
+type ReadMemo = Map<string, Map<string, Map<string, MemoEntry>>>
 
 let readsByIdentity = new WeakMap<MemoIdentity, ReadMemo>()
 
@@ -20,7 +23,7 @@ function tokenReads(
   identityKey: MemoIdentity,
   baseUrl: string,
   token: string,
-): Map<string, Promise<unknown>> {
+): Map<string, MemoEntry> {
   const byUrl = identityReads(identityKey)
   let byToken = byUrl.get(baseUrl)
   if (!byToken) {
@@ -43,16 +46,19 @@ export function memoizedConfigRead<T>(
   destinationSpaceId: string | undefined,
   projectId: string | null | undefined,
   load: () => Promise<T>,
+  now: () => number = Date.now,
 ): Promise<T> {
   const byPath = tokenReads(identityKey, baseUrl, token)
   const tenantPath = JSON.stringify([path, destinationSpaceId ?? '', projectId ?? ''])
   const existing = byPath.get(tenantPath)
-  if (existing) return existing as Promise<T>
+  const startedAt = now()
+  if (existing && startedAt - existing.startedAt < RECORD_IDENTITY_MEMO_MAX_AGE_MS)
+    return existing.read as Promise<T>
   const read = load().catch((error) => {
-    if (byPath.get(tenantPath) === read) byPath.delete(tenantPath)
+    if (byPath.get(tenantPath)?.read === read) byPath.delete(tenantPath)
     throw error
   })
-  byPath.set(tenantPath, read)
+  byPath.set(tenantPath, { startedAt, read })
   return read
 }
 

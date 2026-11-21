@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { configClient } from './config-client.ts'
-import { forgetConfigReadMemo } from './config-read-memo.ts'
+import {
+  forgetConfigReadMemo,
+  memoizedConfigRead,
+  RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+} from './config-read-memo.ts'
 import { RECORD_SPACE_HEADER_NAME } from './record-request-headers.ts'
 import { forgetRecordSessionToken } from './record-session.ts'
 
@@ -58,6 +62,30 @@ const environment = { BOTTEGA_RECORD_API_URL: 'https://record.test' }
 beforeEach(() => forgetConfigReadMemo())
 
 describe('hosted configuration read memo', () => {
+  test('reads are shared within the age bound and reloaded after it', async () => {
+    const identityKey = {}
+    let loads = 0
+    let now = 1_000
+    const read = () =>
+      memoizedConfigRead(
+        identityKey,
+        'https://record.test',
+        'token-a',
+        '/v1/whoami',
+        undefined,
+        undefined,
+        async () => ++loads,
+        () => now,
+      )
+
+    expect(await read()).toBe(1)
+    now += RECORD_IDENTITY_MEMO_MAX_AGE_MS - 1
+    expect(await read()).toBe(1)
+    now += 2
+    expect(await read()).toBe(2)
+    expect(loads).toBe(2)
+  })
+
   test('separate clients share sequential and concurrent identity and secret-list reads', async () => {
     const counts: Counts = new Map()
     const transport = countingTransport(counts)
@@ -87,6 +115,40 @@ describe('hosted configuration read memo', () => {
     await second.whoami()
 
     expect(counts.get('GET /v1/whoami')).toBe(2)
+  })
+
+  test('a read racing a config write is cleared after the write settles', async () => {
+    let whoamiRequests = 0
+    let finishWrite: (() => void) | undefined
+    const writeFinished = new Promise<void>((resolve) => {
+      finishWrite = resolve
+    })
+    const transport = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(typeof input === 'string' ? input : input.toString()).pathname
+        if ((init?.method ?? 'GET') !== 'GET') {
+          await writeFinished
+          return Response.json({})
+        }
+        if (path === '/v1/whoami') whoamiRequests += 1
+        return responseFor(path)
+      },
+      { preconnect: fetch.preconnect },
+    )
+    const first = configClient(environment, transport, 'token-a')
+    const second = configClient(environment, transport, 'token-a')
+    const write = first.putEntry(
+      'entry-a',
+      { scope: 'user', environment: 'default', value: 'value', expectedRowVersion: null },
+      { destinationSpaceId: 'space-a' },
+    )
+
+    await second.whoami()
+    finishWrite?.()
+    await write
+    await second.whoami()
+
+    expect(whoamiRequests).toBe(2)
   })
 
   test('a different session token has a separate read', async () => {

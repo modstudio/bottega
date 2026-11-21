@@ -45,6 +45,7 @@ let server: ReturnType<typeof Bun.serve>
 let session: ReturnType<typeof memoryRecordSession>
 let whoamiRequests = 0
 let rejectSetActiveResponse = false
+let whoamiIdentity: unknown = identity
 
 beforeEach(() => {
   stateHome = mkdtempSync(join(tmpdir(), 'record-identity-memo-'))
@@ -58,13 +59,14 @@ beforeEach(() => {
   installRecordApiClient(null)
   whoamiRequests = 0
   rejectSetActiveResponse = false
+  whoamiIdentity = identity
   server = Bun.serve({
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname
       if (path === '/v1/whoami') {
         whoamiRequests += 1
-        return Response.json(identity)
+        return Response.json(whoamiIdentity)
       }
       if (path === '/api/auth/organization/set-active' && rejectSetActiveResponse)
         return Response.json({ id: 'space-b' })
@@ -114,6 +116,21 @@ describe('record identity process memo', () => {
 
     await Promise.all([record.whoami(), config.whoami()])
 
+    expect(whoamiRequests).toBe(1)
+  })
+
+  test('record identity is validated after a config client fills the shared memo', async () => {
+    whoamiIdentity = {
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [],
+    }
+    const config = configClient(process.env)
+    const record = recordApiClient()
+
+    await expect(config.whoami()).resolves.toMatchObject({ user: { id: 'user-a' } })
+    await expect(record.whoami()).rejects.toThrow('record API returned an invalid identity')
     expect(whoamiRequests).toBe(1)
   })
 
