@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import {
@@ -50,6 +51,9 @@ test('the action target selects the cursor handle and reads its composed ordinal
     jobs: composition.steps[0]!.jobs,
     actions: composition.steps[0]!.actions,
   })
+  expect((await openQuestionStages(d, context.session!))[0]?.step_actions).toEqual(
+    composition.steps[0]!.actions,
+  )
 })
 
 test('a declared job dispatches with the cursor record and current step binding', async () => {

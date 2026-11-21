@@ -10,7 +10,16 @@ import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 
-type HeldTaskCursor = { project: string; workflowKey: string }
+type PullRequestAction = 'pr-create' | 'pr-merge'
+
+type HeldTaskCursor = {
+  number: number
+  project: string
+  workflowSlug: string
+  workflowKey: string
+  stepSlug: string
+  actions: readonly string[]
+}
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
@@ -22,12 +31,41 @@ export function decidePullRequestTaskCursorAdmission(input: {
   heldCursors: readonly HeldTaskCursor[]
 }): PullRequestTaskCursorAdmission {
   if (!input.taskKey || !input.harnessSession) return { kind: 'allow' }
-  if (
-    input.heldCursors.some(
-      (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
-    )
+  const matching = input.heldCursors.filter(
+    (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
   )
-    return { kind: 'allow' }
+  if (matching.length) {
+    const required: PullRequestAction = input.command === 'pr create' ? 'pr-create' : 'pr-merge'
+    if (matching.some((cursor) => cursor.actions.includes(required))) return { kind: 'allow' }
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          matching
+            .map(
+              (cursor) =>
+                `refusing ${PLATFORM_SLUG} ${input.command}: cursor ${cursor.number} (${cursor.workflowSlug}, ${cursor.workflowKey}) is at step ${cursor.stepSlug}, which does not run ${input.command}`,
+            )
+            .join('\n'),
+          matching.map((cursor) => ({
+            kind: 'command' as const,
+            argv: [
+              PLATFORM_SLUG,
+              'workflow',
+              'next',
+              cursor.workflowSlug,
+              '--cursor',
+              String(cursor.number),
+              '--project',
+              cursor.project,
+              '--arg',
+              `key=${cursor.workflowKey}`,
+            ],
+          })),
+        ),
+      ),
+    }
+  }
   return {
     kind: 'refuse',
     message: renderRefusal(
@@ -55,8 +93,12 @@ export async function assertPullRequestTaskCursorAdmission(
     session,
   ) =>
     (await openQuestionStages(database, session)).map((cursor) => ({
+      number: cursor.number,
       project: cursor.project,
+      workflowSlug: cursor.workflow_slug,
       workflowKey: cursor.workflow_key,
+      stepSlug: cursor.step_slug,
+      actions: cursor.step_actions,
     })),
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
