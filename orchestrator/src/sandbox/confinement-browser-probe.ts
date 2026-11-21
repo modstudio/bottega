@@ -3,8 +3,8 @@
 import { mkdirSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { startBounded } from '../../../shared/bounded-process.ts'
-import { resetSandbox, type SandboxRuntimeConfig, sandboxLaunchArgv } from './sandbox.ts'
+import { firstErrorLine, launchSandboxProbe } from './confinement-probe-launch.ts'
+import { resetSandbox, type SandboxRuntimeConfig } from './sandbox.ts'
 
 type DirectoryListing = (directory: string) => readonly string[]
 
@@ -99,10 +99,6 @@ export function headlessShellExecutable(input: HeadlessShellInput): string | nul
   return null
 }
 
-function firstErrorLine(stderr: string | undefined): string {
-  return stderr?.trim().split(/\r?\n/, 1)[0] || 'no stderr'
-}
-
 /** Classify the browser launch without treating an absent executable as a pass. */
 export function browserProbeVerdict(input: BrowserProbeVerdictInput): BrowserProbeVerdict {
   if (input.executable === null) {
@@ -149,7 +145,7 @@ export async function launchHeadlessBrowserProbe(
   try {
     mkdirSync(profileDirectory, { recursive: true })
     mkdirSync(temporaryDirectory, { recursive: true })
-    const argv = await sandboxLaunchArgv(
+    const result = await launchSandboxProbe(
       profile,
       executable,
       [
@@ -160,13 +156,10 @@ export async function launchHeadlessBrowserProbe(
         '--dump-dom',
         'about:blank',
       ],
-      scratchDir,
       environment,
+      scratchDir,
+      { environment: { TMPDIR: temporaryDirectory } },
     )
-    const result = await startBounded(argv, {
-      budget: 'sandbox-probe',
-      env: { ...process.env, ...environment, TMPDIR: temporaryDirectory },
-    })
     return {
       family: 'headless browser' as const,
       ...browserProbeVerdict({ executable, searchedRoot, ...result }),

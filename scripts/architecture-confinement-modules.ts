@@ -105,11 +105,15 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/confinement-run-measurement.ts', [
     '../run/run-confinement-count.ts',
   ]),
+  module('orchestrator/src/sandbox/confinement-probe-launch.ts', [
+    '../../../shared/bounded-process.ts',
+    './sandbox.ts',
+  ]),
   module('orchestrator/src/sandbox/confinement-browser-probe.ts', [
     'node:fs',
     'node:os',
     'node:path',
-    '../../../shared/bounded-process.ts',
+    './confinement-probe-launch.ts',
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-filesystem-probe.ts', [
@@ -132,6 +136,7 @@ export const confinementModules: ConfinementModule[] = [
     '../run/run-worker-home.ts',
     '../state/statistics.ts',
     './confinement-browser-probe.ts',
+    './confinement-probe-launch.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
     './sandbox.ts',
