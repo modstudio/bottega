@@ -57,6 +57,7 @@ export const releaseModules = [
     allowed: [
       'shared/brand.ts',
       'shared/git-path-list.ts',
+      'shared/refusal.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/main-checkout-invariant.ts',
       'orchestrator/src/project/projects.ts',

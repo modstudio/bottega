@@ -7,6 +7,7 @@ import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
   type RequiredReleaseRunner,
+  type RequiredRungDecision,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
@@ -56,8 +57,12 @@ const runner = (overrides: Partial<RequiredReleaseRunner> = {}): RequiredRelease
 })
 
 describe('decidePullRequestReleaseAdmission', () => {
-  const decided = (required: string[]) =>
-    ({ decided: true, required, rungs: [], error: null }) as const
+  const decided = (required: string[]): RequiredRungDecision => ({
+    decided: true,
+    required,
+    rungs: [],
+    error: null,
+  })
 
   test('refuses required rungs without the release flag', () => {
     const admission = decidePullRequestReleaseAdmission({
