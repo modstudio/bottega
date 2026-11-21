@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { processMemo } from '../../shared/process-memo.ts'
@@ -43,7 +44,7 @@ function noteIdentity(options: Options = {}): Promise<NoteIdentity> {
   const existing = memos.get(key)
   if (existing) return existing.get()
   const created = processMemo(() => hostedTaskIdentity(options), {
-    maxAgeMs: Number.POSITIVE_INFINITY,
+    maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
   })
   memos.set(key, created)
   return created.get()

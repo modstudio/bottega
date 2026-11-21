@@ -1,4 +1,5 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect, spyOn, test } from 'bun:test'
+import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { getNote, listNotes } from './note-read.ts'
@@ -118,4 +119,31 @@ test('hosted list delegates server filters, applies client filters, sorts, and r
     expect(params.get('actionable')).toBe('true')
   }
   expect(identities).toBe(1)
+})
+
+test('hosted note identity is reloaded after the record identity memo max age', async () => {
+  let now = 1_000
+  const clock = spyOn(Date, 'now').mockImplementation(() => now)
+  let identities = 0
+  const fetch = async (input: string) => {
+    if (new URL(input).pathname === '/v1/tasks/identity') {
+      identities++
+      return Response.json(identity)
+    }
+    return Response.json({ notes: [], acknowledgements: [], cursor: '', more: false })
+  }
+  const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
+
+  try {
+    await listNotes({ project: 'workshop' }, options)
+    now += RECORD_IDENTITY_MEMO_MAX_AGE_MS - 1
+    await listNotes({ project: 'workshop' }, options)
+    expect(identities).toBe(1)
+
+    now++
+    await listNotes({ project: 'workshop' }, options)
+    expect(identities).toBe(2)
+  } finally {
+    clock.mockRestore()
+  }
 })
