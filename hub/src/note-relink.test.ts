@@ -9,6 +9,7 @@ import { createLocalTaskInTransaction } from './task.ts'
 
 const workshop = declareFixtureProjectSpace('workshop', 'workshop')
 const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+const previousTracker = workshop().settings.tracker
 
 beforeAll(() => {
   delete process.env.BOTTEGA_HOSTED_URL
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 afterAll(() => {
   workshop().settings.space = 'workshop'
+  workshop().settings.tracker = previousTracker
   if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
   else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
   resetFixtureStore()
