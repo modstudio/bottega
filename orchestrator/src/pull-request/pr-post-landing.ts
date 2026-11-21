@@ -368,6 +368,7 @@ export async function completePullRequestPostLanding(input: {
   releaseRequired: boolean
   depth?: string
   workflowPromotionDue: boolean
+  preMergeReleaseDecision?: RequiredRungDecision
   recordingError?: string
   requeueOutput?: string
   movesInstallation?: boolean
@@ -375,12 +376,13 @@ export async function completePullRequestPostLanding(input: {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision: RequiredRungDecision =
     input.workflowPromotionDue || input.releaseRequired
-      ? requiredRungDecision(
+      ? (input.preMergeReleaseDecision ??
+        requiredRungDecision(
           input.project,
           () => post.changedPaths(input.project, input.mergeCommit),
           (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
           input.depth,
-        )
+        ))
       : { decided: true, required: [], rungs: [], error: null }
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
   const move = moveMainForPostLanding(

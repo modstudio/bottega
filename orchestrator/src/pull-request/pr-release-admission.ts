@@ -65,17 +65,19 @@ export function assertPullRequestReleaseAdmission(input: {
   adapter: PullRequestReleaseDecisionAdapter
   releaseRequired: boolean
   depth?: string
-}): void {
+}): RequiredRungDecision {
+  const decision = input.adapter.releaseDecision(
+    input.project,
+    input.cwd,
+    input.pullRequest,
+    input.depth,
+  )
   const admission = decidePullRequestReleaseAdmission({
-    decision: input.adapter.releaseDecision(
-      input.project,
-      input.cwd,
-      input.pullRequest,
-      input.depth,
-    ),
+    decision,
     releaseRequired: input.releaseRequired,
   })
   if (admission.kind === 'refuse') {
     throw new Error(admission.message.replace('<n>', String(input.pullRequest.number)))
   }
+  return decision
 }

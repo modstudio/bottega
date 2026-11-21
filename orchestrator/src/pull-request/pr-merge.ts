@@ -15,6 +15,7 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
+import type { RequiredRungDecision } from '../release/release-required.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -866,6 +867,7 @@ async function completeMerge(input: {
   let mergeCommitLookupFailed = false
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
+  let preMergeReleaseDecision: RequiredRungDecision | undefined
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
   } catch (cause) {
@@ -890,7 +892,7 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
-      assertPullRequestReleaseAdmission({ ...input, pullRequest })
+      preMergeReleaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {
@@ -942,6 +944,7 @@ async function completeMerge(input: {
     releaseRequired: input.releaseRequired,
     depth: input.depth,
     workflowPromotionDue,
+    preMergeReleaseDecision,
   })
   return {
     ...outcome,
