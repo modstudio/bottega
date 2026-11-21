@@ -2,6 +2,7 @@
 /** Gathers cursor-bound run-chain facts without deciding workflow obligations. */
 
 import type { Database } from 'bun:sqlite'
+import { readMergedBranchLandingPrNumbers } from '../branch/branch-landing-records.ts'
 import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
 import { resolveLocalRun } from '../identity/identity-local-run.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
@@ -11,6 +12,17 @@ import type {
   LandedEarlierStepRunEvidence,
   WorkflowRunChainEvidence,
 } from './workflow-run-obligation.ts'
+
+function dispatchCreditedTurn(
+  turn: { stepSlug: string; startedAt: string },
+  currentStepSlug: string,
+  stepActivatedAt?: string,
+): boolean {
+  return (
+    turn.stepSlug === currentStepSlug ||
+    (stepActivatedAt !== undefined && createdAfterStepActivation(turn.startedAt, stepActivatedAt))
+  )
+}
 
 export function gatherWorkflowRunChains(
   cursorRecordId: string,
@@ -36,13 +48,16 @@ export function gatherWorkflowRunChains(
       .filter(
         (row) =>
           stepSlug === undefined ||
-          row.step_slug === stepSlug ||
-          (stepActivatedAt !== undefined &&
-            createdAfterStepActivation(row.started_at, stepActivatedAt)),
+          dispatchCreditedTurn(
+            { stepSlug: row.step_slug, startedAt: row.started_at },
+            stepSlug,
+            stepActivatedAt,
+          ),
       )
       .map((row) => row.root_record_id),
   )
   if (!creditedRoots.size) return []
+  const rootPlaceholders = [...creditedRoots].map(() => '?').join(',')
   const rows = database
     .query<
       {
@@ -61,21 +76,16 @@ export function gatherWorkflowRunChains(
               CASE WHEN ${PENDING_SCORE_WHERE} THEN 1 ELSE 0 END AS needs_verdict
          FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
         WHERE r.parent_run_record_id IS NULL
-          AND EXISTS (SELECT 1 FROM run bound
-                       WHERE (bound.record_id=r.record_id OR bound.parent_run_record_id=r.record_id)
-                         AND bound.cursor_record_id=?)
-          AND r.job IN (${jobPlaceholders})
+          AND r.record_id IN (${rootPlaceholders})
         ORDER BY r.number`,
     )
-    .all(cursorRecordId, ...jobs)
-  return rows
-    .filter((row) => creditedRoots.has(row.record_id))
-    .map((row) => ({
-      number: row.number,
-      job: row.job,
-      terminal: TERMINAL_RUN_STATUS_SET.has(row.status),
-      needsVerdict: row.needs_verdict === 1,
-    }))
+    .all(...creditedRoots)
+  return rows.map((row) => ({
+    number: row.number,
+    job: row.job,
+    terminal: TERMINAL_RUN_STATUS_SET.has(row.status),
+    needsVerdict: row.needs_verdict === 1,
+  }))
 }
 
 export function gatherEarlierStepWorkflowRunChains(
@@ -102,10 +112,12 @@ export function gatherEarlierStepWorkflowRunChains(
   const seen = new Set<number>()
   const creditedByDispatch = new Set(
     rows
-      .filter(
-        (row) =>
-          row.step_slug === currentStepSlug ||
-          createdAfterStepActivation(row.created_at, stepActivatedAt),
+      .filter((row) =>
+        dispatchCreditedTurn(
+          { stepSlug: row.step_slug, startedAt: row.created_at },
+          currentStepSlug,
+          stepActivatedAt,
+        ),
       )
       .map((row) => row.number),
   )
@@ -134,8 +146,9 @@ export function gatherLandedEarlierStepWorkflowRunChains(
   const byRecordId = new Map(identified.map(({ recordId, run }) => [recordId, run]))
   const placeholders = earlierStepRuns.map(() => '?').join(',')
   const rows = database
-    .query<{ record_id: string; pr_number: number }, string[]>(
-      `SELECT root.record_id,landing.pr_number
+    .query<{ record_id: string; project_record_id: string; branch: string }, string[]>(
+      `SELECT root.record_id,root.project_record_id,
+              COALESCE(newest.branch,newest.branch_kept) branch
          FROM run root
          JOIN run newest
            ON newest.record_id=(
@@ -143,17 +156,22 @@ export function gatherLandedEarlierStepWorkflowRunChains(
               WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
               ORDER BY turn.turn DESC,turn.number DESC LIMIT 1
            )
-         JOIN branch_landing_record landing
-           ON landing.project_record_id=root.project_record_id
-          AND landing.branch=COALESCE(newest.branch,newest.branch_kept)
-          AND landing.merged_at IS NOT NULL
         WHERE root.parent_run_record_id IS NULL
           AND root.record_id IN (${placeholders})
+          AND COALESCE(newest.branch,newest.branch_kept) IS NOT NULL
         ORDER BY root.number`,
     )
     .all(...identified.map(({ recordId }) => recordId))
+  const landed = readMergedBranchLandingPrNumbers(
+    database,
+    rows.map((row) => ({ projectRecordId: row.project_record_id, branch: row.branch })),
+  )
+  const prNumberByBranch = new Map(
+    landed.map((row) => [JSON.stringify([row.projectRecordId, row.branch]), row.prNumber]),
+  )
   return rows.flatMap((row) => {
     const earlier = byRecordId.get(row.record_id)
-    return earlier ? [{ ...earlier, prNumber: row.pr_number }] : []
+    const prNumber = prNumberByBranch.get(JSON.stringify([row.project_record_id, row.branch]))
+    return earlier && prNumber !== undefined ? [{ ...earlier, prNumber }] : []
   })
 }

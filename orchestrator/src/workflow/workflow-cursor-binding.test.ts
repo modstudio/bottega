@@ -101,19 +101,25 @@ test('a bound implement run makes every fix-defect step render and advances blas
   d.query(
     `INSERT INTO run
       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
-       task_record_id,branch,project_record_id)
+       task_record_id,cursor_record_id,step_slug,branch,project_record_id)
      VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-17','codex','implement',
-             'sha',1,'older same-key run','ok',?,? ,
+             'sha',1,'older same-key run','ok',?,?,?,? ,
              (SELECT record_id FROM project WHERE name='fixture'))`,
-  ).run(olderSameKeyRun, guardContext.taskRecordId, 'DEV-2449-older')
-  expect(await bindRecordedRunCursorArguments(olderSameKeyRun, d)).toEqual({ action: 'unbound' })
+  ).run(
+    olderSameKeyRun,
+    guardContext.taskRecordId,
+    cursor.record_id,
+    'blast-radius',
+    'DEV-2449-older',
+  )
+  expect(await bindRecordedRunCursorArguments(olderSameKeyRun, d)).toEqual({ action: 'updated' })
   expect(
     JSON.parse(
       d
         .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
         .get(cursor.record_id)!.args,
     ),
-  ).not.toHaveProperty('branch')
+  ).toMatchObject({ branch: 'DEV-2449-older' })
   const run = newRecordId()
   d.query(
     `INSERT INTO run
@@ -124,6 +130,7 @@ test('a bound implement run makes every fix-defect step render and advances blas
   ).run(run, cursor.record_id, 'implement-fix', branch, worktree)
 
   expect(await bindRecordedRunCursorArguments(run, d)).toEqual({ action: 'updated' })
+  expect(await bindRecordedRunCursorArguments(olderSameKeyRun, d)).toEqual({ action: 'no-op' })
   const args = JSON.parse(
     (
       d

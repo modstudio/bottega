@@ -231,6 +231,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-run-obligation-evidence.ts', [
     'bun:sqlite',
+    '../branch/branch-landing-records.ts',
     '../evidence/pending-score-sql.ts',
     '../identity/identity-local-run.ts',
     '../run/run-status.ts',
