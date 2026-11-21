@@ -8,10 +8,12 @@ export function installTaskRows(rows: readonly TaskLookupRow[] | null): void {
   }
   installTaskReader({
     list: async ({ project, status } = {}) =>
-      rows.filter(
-        (row) =>
-          (!project || row.project === project) && (!status || row.status_category === status),
-      ).map((row) => ({ ...row, source: 'fixture', body: null })),
+      rows
+        .filter(
+          (row) =>
+            (!project || row.project === project) && (!status || row.status_category === status),
+        )
+        .map((row) => ({ ...row, source: 'fixture', body: null })),
     lookup: async (project, keys) =>
       rows.filter((row) => row.project === project && keys.includes(row.key)),
     duplicates: async () => [],
