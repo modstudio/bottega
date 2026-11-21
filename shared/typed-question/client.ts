@@ -4,8 +4,10 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 
 import { PLATFORM_SLUG } from '../brand.ts'
 import { ConfigClientError } from '../config-client.ts'
+import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../config-read-memo.ts'
 import { credentialIdentityPath } from '../credential.ts'
 import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
+import { processMemo } from '../process-memo.ts'
 import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
@@ -74,17 +76,33 @@ export type TypedQuestionsClientResult =
 
 export type TypedQuestionClientDependencies = {
   resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
+  invalidateCredential?(): void
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
   random?(): number
 }
 
-const clientDependencies: TypedQuestionClientDependencies = {
-  resolveCredential: () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
-  fetch: (input, init) => hostedApiFetch(input, init),
-  sleep: (ms) => Bun.sleep(ms),
-  random: Math.random,
+export function typedQuestionClientDependencies(
+  resolveCredential: TypedQuestionClientDependencies['resolveCredential'],
+  fetch: TypedQuestionClientDependencies['fetch'],
+): TypedQuestionClientDependencies {
+  const credential = processMemo(resolveCredential, {
+    maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+    keep: (result) => result.kind === 'resolved',
+  })
+  return {
+    resolveCredential: credential.get,
+    invalidateCredential: credential.clear,
+    fetch,
+    sleep: (ms) => Bun.sleep(ms),
+    random: Math.random,
+  }
 }
+
+const clientDependencies = typedQuestionClientDependencies(
+  () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
+  (input, init) => hostedApiFetch(input, init),
+)
 
 type ActiveSpaceCredentialResolver = typeof resolveActiveSpaceCredentialValue
 
@@ -251,6 +269,42 @@ function retryable(result: Response | 'timeout' | 'transport'): boolean {
   )
 }
 
+type CredentialRequestResult =
+  | {
+      kind: 'response'
+      response: Response | 'timeout' | 'transport'
+      key: string
+      refreshed: boolean
+    }
+  | { kind: 'missing-key' }
+  | { kind: 'key-resolution' }
+
+async function sendWithCredentialRefresh(
+  key: string,
+  body: string,
+  dependencies: TypedQuestionClientDependencies,
+  allowRefresh: boolean,
+): Promise<CredentialRequestResult> {
+  const response = await sendRequest(key, body, dependencies.fetch)
+  if (
+    !allowRefresh ||
+    typeof response === 'string' ||
+    (response.status !== 401 && response.status !== 403)
+  )
+    return { kind: 'response', response, key, refreshed: false }
+
+  dependencies.invalidateCredential?.()
+  const resolved = await resolveKey(dependencies)
+  if (resolved.kind === 'error') return { kind: 'key-resolution' }
+  if (resolved.kind === 'missing-key') return resolved
+  return {
+    kind: 'response',
+    response: await sendRequest(resolved.value, body, dependencies.fetch),
+    key: resolved.value,
+    refreshed: true,
+  }
+}
+
 function numericHeader(response: Response, name: string): number | null {
   const value = response.headers.get(name)?.trim()
   if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return null
@@ -292,7 +346,7 @@ export async function askTypedQuestionsClient(
   dependencies: TypedQuestionClientDependencies = clientDependencies,
 ): Promise<TypedQuestionsClientResult> {
   const started = performance.now()
-  const resolved = await resolveKey(dependencies)
+  let resolved = await resolveKey(dependencies)
   if (resolved.kind === 'error') {
     return { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
   }
@@ -306,8 +360,15 @@ export async function askTypedQuestionsClient(
   })
   const sleep = dependencies.sleep ?? clientDependencies.sleep!
   const random = dependencies.random ?? clientDependencies.random!
+  let authRetried = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await sendRequest(resolved.value, body, dependencies.fetch)
+    const sent = await sendWithCredentialRefresh(resolved.value, body, dependencies, !authRetried)
+    if (sent.kind === 'key-resolution')
+      return { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
+    if (sent.kind === 'missing-key') return sent
+    const response = sent.response
+    resolved = { kind: 'key', value: sent.key }
+    authRetried ||= sent.refreshed
     if (retryable(response) && attempt < 2) {
       await sleep(retryDelay(response, attempt, random))
       continue

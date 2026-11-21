@@ -1,0 +1,89 @@
+import { expect, test } from 'bun:test'
+import { processMemo } from './process-memo.ts'
+
+test('concurrent gets share one load', async () => {
+  let loads = 0
+  let finish!: (value: string) => void
+  const memo = processMemo(
+    () => {
+      loads += 1
+      return new Promise<string>((resolve) => {
+        finish = resolve
+      })
+    },
+    { maxAgeMs: 100 },
+  )
+
+  const reads = [memo.get(), memo.get(), memo.get()]
+  expect(loads).toBe(1)
+  finish('shared')
+  expect(await Promise.all(reads)).toEqual(['shared', 'shared', 'shared'])
+})
+
+test('reloads after the age measured from when loading began expires', async () => {
+  let now = 10
+  let loads = 0
+  const memo = processMemo(
+    async () => {
+      loads += 1
+      return loads
+    },
+    { maxAgeMs: 100, now: () => now },
+  )
+
+  expect(await memo.get()).toBe(1)
+  now = 109
+  expect(await memo.get()).toBe(1)
+  now = 110
+  expect(await memo.get()).toBe(2)
+})
+
+test('does not keep a rejected load or a value rejected by keep', async () => {
+  let rejectedLoads = 0
+  const rejected = processMemo(
+    async () => {
+      rejectedLoads += 1
+      if (rejectedLoads === 1) throw new Error('fixture rejection')
+      return 'kept'
+    },
+    { maxAgeMs: 100 },
+  )
+  await expect(rejected.get()).rejects.toThrow('fixture rejection')
+  expect(await rejected.get()).toBe('kept')
+  expect(rejectedLoads).toBe(2)
+
+  let filteredLoads = 0
+  const filtered = processMemo(
+    async () => {
+      filteredLoads += 1
+      return filteredLoads
+    },
+    { maxAgeMs: 100, keep: (value) => value > 1 },
+  )
+  expect(await filtered.get()).toBe(1)
+  expect(await filtered.get()).toBe(2)
+  expect(await filtered.get()).toBe(2)
+  expect(filteredLoads).toBe(2)
+})
+
+test('clear forces a reload without changing an existing caller result', async () => {
+  let loads = 0
+  const resolvers: Array<(value: string) => void> = []
+  const memo = processMemo(
+    () => {
+      loads += 1
+      return new Promise<string>((resolve) => resolvers.push(resolve))
+    },
+    { maxAgeMs: 100 },
+  )
+
+  const first = memo.get()
+  memo.clear()
+  const second = memo.get()
+  expect(loads).toBe(2)
+  resolvers[0]!('old')
+  resolvers[1]!('new')
+  expect(await first).toBe('old')
+  expect(await second).toBe('new')
+  expect(await memo.get()).toBe('new')
+})

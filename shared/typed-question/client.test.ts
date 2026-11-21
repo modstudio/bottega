@@ -4,6 +4,7 @@ import {
   askTypedQuestionClient,
   askTypedQuestionsClient,
   resolveTypesafeCredential,
+  typedQuestionClientDependencies,
 } from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
@@ -15,7 +16,7 @@ const FIXTURE_QUESTION = {
   instructions: 'Judge whether the fixture state leaves a choice open.',
 } as const satisfies NoulQuestion
 
-const resolvedCredential = async () => ({ kind: 'resolved', value: 'fixture-secret' }) as const
+const resolvedCredential = async () => ({ kind: 'resolved', value: 'fake-key-a' }) as const
 const missingCredential = async () => ({ kind: 'missing' }) as const
 
 test('TypeSafe credential adapter maps an unconfigured record session to missing', async () => {
@@ -71,7 +72,7 @@ test('sends the declared noul question and parses its probability', async () => 
   expect(request).not.toBeNull()
   expect(request!.url).toBe('https://api.typesafe.ai/v1/systemone')
   expect(request!.init.method).toBe('POST')
-  expect(new Headers(request!.init.headers).get('Authorization')).toBe('Bearer fixture-secret')
+  expect(new Headers(request!.init.headers).get('Authorization')).toBe('Bearer fake-key-a')
   expect(request!.init.signal).toBeInstanceOf(AbortSignal)
   expect(JSON.parse(String(request!.init.body))).toEqual({
     model: 'jev-1.14.0',
@@ -259,4 +260,88 @@ test('batches every id, retries once, and drops only an unparsable answer', asyn
     inputTokens: 9,
   })
   if (result.kind === 'answer') expect(result.answers.other).toBeUndefined()
+})
+
+test('shares one credential resolution across the duplicate-candidate request budget', async () => {
+  const candidateCount = 20
+  let resolutions = 0
+  let requests = 0
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      resolutions += 1
+      return { kind: 'resolved', value: 'fake-key-a' }
+    },
+    async () => {
+      requests += 1
+      return Response.json({
+        answers: { spec_unsettled: { noul: 0.8 } },
+        model: 'jev-served',
+        usage: { input_tokens: 1 },
+      })
+    },
+  )
+
+  const results = await Promise.all(
+    Array.from({ length: candidateCount }, (_, index) =>
+      askTypedQuestionsClient([FIXTURE_QUESTION], { candidate: index }, dependencies),
+    ),
+  )
+
+  expect(results.every((result) => result.kind === 'answer')).toBe(true)
+  expect(requests).toBe(candidateCount)
+  expect(resolutions).toBe(1)
+})
+
+test('an auth refusal clears the credential and resends once with the refreshed key', async () => {
+  const keys = ['fake-key-a', 'fake-key-b']
+  let resolutions = 0
+  const authorizations: Array<string | null> = []
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      const value = keys[resolutions]!
+      resolutions += 1
+      return { kind: 'resolved', value }
+    },
+    async (_url, init) => {
+      authorizations.push(new Headers(init.headers).get('Authorization'))
+      if (authorizations.length === 1) return new Response('', { status: 401 })
+      return Response.json({
+        answers: { spec_unsettled: { noul: 0.9 } },
+        model: 'jev-served',
+        usage: { input_tokens: 1 },
+      })
+    },
+  )
+
+  const result = await askTypedQuestionsClient([FIXTURE_QUESTION], 'state', dependencies)
+
+  expect(resolutions).toBe(2)
+  expect(authorizations).toEqual(['Bearer fake-key-a', 'Bearer fake-key-b'])
+  expect(result).toMatchObject({
+    kind: 'answer',
+    answers: { spec_unsettled: { noul: 0.9 } },
+  })
+})
+
+test('two auth refusals resolve twice and return the second refusal', async () => {
+  const keys = ['fake-key-a', 'fake-key-b']
+  let resolutions = 0
+  let requests = 0
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      const value = keys[resolutions]!
+      resolutions += 1
+      return { kind: 'resolved', value }
+    },
+    async () => {
+      requests += 1
+      return new Response('', { status: 401 })
+    },
+  )
+
+  const result = await askTypedQuestionsClient([FIXTURE_QUESTION], 'state', dependencies)
+
+  expect(resolutions).toBe(2)
+  expect(requests).toBe(2)
+  expect(result).toMatchObject({ kind: 'error', error: 'http_401' })
 })
