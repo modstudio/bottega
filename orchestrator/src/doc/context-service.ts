@@ -150,7 +150,7 @@ export async function getContext(selection: ContextHolderSelection) {
     ? await openKeylessCursorsForSession(selection.session, db())
     : []
   const addresses = [
-    task ? { holder, owner: { kind: 'task', projectName: task.project } } : holder,
+    task ? { holder, owner: { kind: 'task' as const, projectName: task.project } } : holder,
     ...cursors.map((cursor) => cursorContextHolder(cursor.record_id)),
   ]
   const batchedItems = await listContextItems(addresses)
