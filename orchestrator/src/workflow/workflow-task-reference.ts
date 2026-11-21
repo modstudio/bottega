@@ -71,7 +71,7 @@ export function taskReadRefusal(
   )
 }
 
-function taskReference(row: unknown): HubTaskReference {
+export function taskReference(row: unknown): HubTaskReference {
   if (
     !row ||
     typeof row !== 'object' ||

@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { taskReader } from './task-read-port.ts'
 import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
@@ -23,6 +22,7 @@ import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
 import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import { readHubTaskChildren } from './workflow-task-reference.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -179,6 +179,7 @@ export async function readDescendantTaskFacts(
   project: string,
   root: string,
 ): Promise<DescendantTaskFact[]> {
+  if (!root) return []
   const rows: DescendantTaskFact[] = []
   const pending = [root]
   const visited = new Set<string>()
@@ -187,8 +188,9 @@ export async function readDescendantTaskFacts(
     const parent = pending.shift()!
     if (visited.has(parent)) continue
     visited.add(parent)
-    const children = await taskReader().list({ project, parent })
+    const children = await readHubTaskChildren(project, parent)
     for (const child of children) {
+      if (!child.key) continue
       if (discovered.has(child.key)) continue
       discovered.add(child.key)
       rows.push({

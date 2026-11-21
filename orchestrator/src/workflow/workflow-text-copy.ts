@@ -202,7 +202,7 @@ export async function copyWorkflowTextForCursor(
   const target = taskFlowWriteTarget(cursor.project, database)
   try {
     const task = await taskLookup(cursor.taskRecordId)
-    if (!task)
+    if (!task || task.project !== cursor.project)
       throw new Error(
         `task record ${cursor.taskRecordId} is not readable in project ${cursor.project}`,
       )

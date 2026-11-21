@@ -358,13 +358,13 @@ async function relatedContextTasks(input: {
   return related
 }
 
+type ContextSetInput = { holder: string; item: ContextItem } & (
+  | { contextTask: ContextTask; contextTaskChildren: readonly ContextTask[] }
+  | { contextTask?: undefined; contextTaskChildren?: readonly ContextTask[] }
+)
+
 async function contextSetRefusal(
-  input: {
-    holder: string
-    item: ContextItem
-    contextTask?: ContextTask
-    contextTaskChildren?: readonly ContextTask[]
-  },
+  input: ContextSetInput,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<string | null> {
@@ -389,7 +389,7 @@ async function contextSetRefusal(
         .filter((claim) => claim.subject.kind === 'task')
         .map((claim) => ({ key: claim.subject.value, project: claim.project }))
     : []
-  const projectTasks = task ? (input.contextTaskChildren ?? []) : []
+  const projectTasks = task ? input.contextTaskChildren : []
   const profile = task ? taskProfile(task.key, projectTasks) : 'session'
   const relatedTasks = await relatedContextTasks({
     owner,
@@ -410,12 +410,7 @@ async function contextSetRefusal(
   return refusal
 }
 
-export async function assertContextSetAllowed(input: {
-  holder: string
-  item: ContextItem
-  contextTask?: ContextTask
-  contextTaskChildren?: readonly ContextTask[]
-}): Promise<void> {
+export async function assertContextSetAllowed(input: ContextSetInput): Promise<void> {
   const refusal = await contextSetRefusal(input)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }

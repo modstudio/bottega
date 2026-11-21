@@ -16,7 +16,7 @@ export function taskSingleReadViolations(source: string, file: string): TaskSing
   const visit = (node: ts.Node) => {
     if (ts.isFunctionLike(node)) {
       const text = node.getText(sourceFile)
-      const readsList = /taskReader\(\)\.list\s*\(|readHubTasks\s*\(/.test(text)
+      const readsList = /taskReader\(\)\.list\s*\(|readProjectTaskList\s*\(/.test(text)
       const searchesKey = /\.find\s*\([\s\S]*?\.(?:key|record_id)\s*===/.test(text)
       if (readsList && searchesKey) {
         const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))

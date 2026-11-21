@@ -391,12 +391,11 @@ export async function setContextItem(
   )
   if (ownership) throw new ContextWriteRefusalError(ownership)
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
-  await assertContextSetAllowed({
-    holder,
-    item,
-    contextTask: task ?? undefined,
-    contextTaskChildren: children,
-  })
+  await assertContextSetAllowed(
+    task
+      ? { holder, item, contextTask: task, contextTaskChildren: children }
+      : { holder, item },
+  )
   const localInput = {
     holder,
     slug: input.id,

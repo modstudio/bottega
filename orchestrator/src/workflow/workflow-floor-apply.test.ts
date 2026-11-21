@@ -86,6 +86,20 @@ test('descendant facts use parent-filtered reads and visit each node once', asyn
   ])
 })
 
+test('descendant facts make no reads without a root key', async () => {
+  let reads = 0
+  installTaskReader({
+    ...taskPort,
+    list: async () => {
+      reads += 1
+      return []
+    },
+  })
+
+  await expect(readDescendantTaskFacts('fixture', '')).resolves.toEqual([])
+  expect(reads).toBe(0)
+})
+
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
   deferrable: false,

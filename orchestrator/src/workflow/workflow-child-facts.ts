@@ -6,6 +6,7 @@ import { boardLiveClaimsForProject } from '../board/board-operations.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { ChildTaskFact } from './workflow-child-queue.ts'
+import type { HubTaskReference } from './workflow-task-reference.ts'
 import { ancestorTaskKeys } from './workflow-task-tree.ts'
 
 export type LiveChildClaim = {
@@ -29,12 +30,7 @@ export function liveChildClaims(database: Database, project: string, now = Date.
 export async function gatherChildTaskFacts(
   database: Database,
   project: string,
-  tasks: readonly {
-    key: string
-    project: string
-    parent_key?: string | null
-    status_category?: string | null
-  }[],
+  tasks: readonly HubTaskReference[],
 ): Promise<ChildTaskFact[]> {
   const cursors = new Map<string, { number: number; state: string }>()
   for (const cursor of await taskFlowReadStore(database).listStages({
@@ -70,7 +66,7 @@ export async function gatherChildTaskFacts(
 
 export function childAncestorKeys(
   key: string,
-  tasks: readonly { key: string; parent_key?: string | null }[],
+  tasks: readonly HubTaskReference[],
 ): string[] {
   return ancestorTaskKeys(
     key,
