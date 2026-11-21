@@ -62,15 +62,20 @@ type CommandResult = { exitCode: number; output: string }
 const RELEASE_CI_DEPLOY_WAIT_MS = 30 * 60 * 1_000
 const RELEASE_CI_DEPLOY_POLL_MS = 30 * 1_000
 
+function releaseCheckoutRoot(
+  fromDirectory?: string,
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  return fromDirectory
+    ? resolveInstallRoot(fromDirectory, environment)
+    : resolveInstallRoot(import.meta.dir, environment)
+}
+
 /** Validate a proposed tag against the version reported by this development checkout. */
 function validateReleaseTagVersion(
   tag: string,
-  fromDirectory?: string,
-  environment: Record<string, string | undefined> = process.env,
+  root: string,
 ): { tag: string; reportedVersion: string } {
-  const root = fromDirectory
-    ? resolveInstallRoot(fromDirectory, environment)
-    : resolveInstallRoot(import.meta.dir, environment)
   const file = join(root, 'package.json')
   let value: unknown
   try {
@@ -96,10 +101,8 @@ export async function checkRelease(
   fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,
 ): Promise<{ tag: string; reportedVersion: string; runtimeConfigGuardSkip: string | null }> {
-  const checked = validateReleaseTagVersion(tag, fromDirectory, environment)
-  const root = fromDirectory
-    ? resolveInstallRoot(fromDirectory, environment)
-    : resolveInstallRoot(import.meta.dir, environment)
+  const root = releaseCheckoutRoot(fromDirectory, environment)
+  const checked = validateReleaseTagVersion(tag, root)
   const bunVersionFile = join(root, BUN_VERSION_FILE)
   let pinnedBunVersion: string | undefined
   try {

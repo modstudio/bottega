@@ -19,21 +19,12 @@ type ProbePlant = (facts: {
   observerMarker: string
   environment: Record<string, string | undefined>
 }) => Record<string, string | undefined>
-type AutoloadProbe = { flag: AutoloadOffFlag; directory: string; plant: ProbePlant }
-
-function compileAutoloadFlag(source: string): AutoloadOffFlag {
-  return (COMPILE_AUTOLOAD_OFF_FLAGS.find((flag) => flag.endsWith(`autoload-${source}`)) ??
-    `--no-compile-autoload-${source}`) as AutoloadOffFlag
-}
-
 function observerSource(observerMarker: string): string {
   return `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(observerMarker)}, '')\n`
 }
 
-const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
-  {
-    flag: compileAutoloadFlag('dotenv'),
-    directory: 'dotenv',
+const AUTOLOAD_PROBES: Readonly<Record<AutoloadOffFlag, { plant: ProbePlant }>> = {
+  '--no-compile-autoload-dotenv': {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
       writeFileSync(
@@ -45,9 +36,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
       return { ...cleanEnvironment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  {
-    flag: compileAutoloadFlag('bunfig'),
-    directory: 'bunfig',
+  '--no-compile-autoload-bunfig': {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, 'bunfig.toml'), 'preload = ["./sentinel.ts"]\n')
       writeFileSync(join(directory, 'observer.ts'), observerSource(observerMarker))
@@ -58,9 +47,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
       return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  {
-    flag: compileAutoloadFlag('tsconfig'),
-    directory: 'tsconfig',
+  '--no-compile-autoload-tsconfig': {
     plant: ({ directory, marker, observerMarker, environment }) => {
       mkdirSync(join(directory, 'planted'))
       writeFileSync(
@@ -83,9 +70,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
       return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-  {
-    flag: compileAutoloadFlag('package-json'),
-    directory: 'package-json',
+  '--no-compile-autoload-package-json': {
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(
         join(directory, 'package.json'),
@@ -102,18 +87,6 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
       return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
     },
   },
-]
-
-const coveredFlags = new Set(AUTOLOAD_PROBES.map(({ flag }) => flag))
-if (
-  coveredFlags.size !== AUTOLOAD_PROBES.length ||
-  COMPILE_AUTOLOAD_OFF_FLAGS.some(
-    (flag) => AUTOLOAD_PROBES.filter(({ flag: probeFlag }) => probeFlag === flag).length !== 1,
-  )
-) {
-  throw new Error(
-    'release binary runtime guard must define exactly one probe for every compile autoload flag',
-  )
 }
 
 function positiveFlag(flag: AutoloadOffFlag): string {
@@ -151,10 +124,11 @@ function observerFailure(flag: AutoloadOffFlag): Error {
 async function probe(
   binary: string,
   scratch: string,
-  entry: AutoloadProbe,
+  flag: AutoloadOffFlag,
+  entry: { plant: ProbePlant },
   environment: Record<string, string | undefined>,
 ): Promise<void> {
-  const directory = join(scratch, entry.directory)
+  const directory = join(scratch, flag.replace('--no-compile-autoload-', ''))
   const marker = join(directory, 'autoload-marker')
   const observerMarker = join(directory, 'observer-ran')
   mkdirSync(directory)
@@ -164,8 +138,8 @@ async function probe(
     cwd: directory,
     env: probeEnvironment,
   })
-  if (!existsSync(observerMarker)) throw observerFailure(entry.flag)
-  if (existsSync(marker)) throw autoloadFailure(entry.flag)
+  if (!existsSync(observerMarker)) throw observerFailure(flag)
+  if (existsSync(marker)) throw autoloadFailure(flag)
 }
 
 /** Build and execute the same host binary as the release artifact path, with every cwd sentinel. */
@@ -200,7 +174,9 @@ export async function checkReleaseBinaryAutoload(
       )
     }
     const binary = join(output, PLATFORM_SLUG)
-    for (const entry of AUTOLOAD_PROBES) await probe(binary, scratch, entry, environment)
+    for (const flag of COMPILE_AUTOLOAD_OFF_FLAGS) {
+      await probe(binary, scratch, flag, AUTOLOAD_PROBES[flag], environment)
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
