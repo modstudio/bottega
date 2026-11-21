@@ -3,11 +3,24 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
-import { confineExplicitNoteAnchor } from './note.ts'
+import { confineExplicitNoteAnchor, parseNoteAnchor } from './note.ts'
 import { deriveNoteFileAnchors, NOTE_ANCHOR_MAX_FILE_BYTES } from './note-file-anchors.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-file-anchors-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
+
+test('a malformed explicit anchor names its field', () => {
+  const anchor: NoteAnchorWire = {
+    cwd: '/fixtures/repos/workshop',
+    project: 'workshop',
+    files: [],
+    run_record_id: null,
+    branch: null,
+    commit: null,
+    session_id: null,
+  }
+  expect(() => parseNoteAnchor({ ...anchor, cwd: 7 })).toThrow('cwd')
+})
 
 test('explicit note anchors are confined to the cwd project and its registered checkout', () => {
   const anchor: NoteAnchorWire = {

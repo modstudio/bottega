@@ -19,7 +19,6 @@ import {
   listProjectNotes,
   mergeNote,
   type NoteAnchor,
-  parseNoteAnchor,
   promoteNote,
   relinkNote,
   resolveNoteReference,
@@ -725,19 +724,6 @@ describe('suggestion notes', () => {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior
     }
-  })
-
-  test(`${PLATFORM_SLUG} note names a malformed explicit anchor field`, () => {
-    const anchor: NoteAnchor = {
-      cwd: '/fixtures/repos/workshop',
-      project: 'workshop',
-      files: [],
-      run_record_id: null,
-      branch: null,
-      commit: null,
-      session_id: null,
-    }
-    expect(() => parseNoteAnchor({ ...anchor, cwd: 7 })).toThrow('cwd')
   })
 
   test(`${PLATFORM_SLUG} note new without a duplicate choice returns candidates and files nothing`, async () => {

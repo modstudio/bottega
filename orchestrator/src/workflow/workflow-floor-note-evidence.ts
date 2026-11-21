@@ -1,7 +1,6 @@
 // concern: workflow-floor-note-evidence
 /** Resolves note artifacts through the injected hub-note reader. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import type { ArtifactRef } from './workflow-floor.ts'
 import {
@@ -16,9 +15,7 @@ export async function gatherNoteArtifactEvidence(
   ports: FloorEvidencePorts,
 ): Promise<Pick<ValidatedArtifactEvidence, 'artifact' | 'note'>> {
   if (!ports.readNote)
-    throw new Error(
-      `--artifact ${offeredArtifact} needs ${PLATFORM_SLUG} note evidence and no reader was provided`,
-    )
+    throw new Error(`--artifact ${offeredArtifact} needs note evidence and no reader was provided`)
   const note = await invokeFloorEvidencePort(
     ports,
     'readNote',

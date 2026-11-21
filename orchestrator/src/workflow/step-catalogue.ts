@@ -15,13 +15,13 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
 import { closeInstructionTaskTargetErrors } from './step-catalogue-close-instruction.ts'
-import { outcomeFloorErrors } from './step-catalogue-outcome-floors.ts'
 import type {
   CatalogueSequence,
   CatalogueStep,
   FloorEntry,
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
+import { outcomeFloorErrors } from './step-catalogue-outcome-floors.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import {
   type WorkflowDefinition,

@@ -58,14 +58,14 @@ import {
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
-import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
-import { gatherPullRequestArtifactEvidence } from './workflow-floor-pull-request-evidence.ts'
 import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
+import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
+import { gatherPullRequestArtifactEvidence } from './workflow-floor-pull-request-evidence.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
@@ -927,6 +927,51 @@ async function gatherCommandArtifactEntry(
   )
 }
 
+async function gatherArtifactEntry(
+  offeredArtifact: string,
+  input: GatherValidatedEvidenceInput,
+  gathered: ValidatedEvidence,
+  d: Database,
+  ports: FloorEvidencePorts,
+  resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
+): Promise<ValidatedArtifactEvidence> {
+  const parsed = parseArtifactRef(offeredArtifact)
+  if ('error' in parsed) throw new Error(parsed.error)
+  const noteEvidence =
+    parsed.kind === 'note'
+      ? await gatherNoteArtifactEvidence(parsed, offeredArtifact, input.identity.project, ports)
+      : undefined
+  const entry: ValidatedArtifactEvidence = {
+    artifact: noteEvidence
+      ? noteEvidence.artifact
+      : await resolveArtifact(
+          parsed,
+          offeredArtifact,
+          input.identity,
+          {
+            cursorId: input.cursorId,
+            stepOrdinal: input.stepOrdinal,
+            stepSlug: input.stepSlug,
+          },
+          d,
+          ports,
+          resolveCheckout,
+          gathered.tree!.commit,
+        ),
+    ...offeredArtifactRunEvidence(parsed, d),
+  }
+  if (noteEvidence) {
+    entry.note = noteEvidence.note
+    if (!gathered.notes) gathered.notes = []
+    gathered.notes.push(noteEvidence.note)
+  }
+  if (parsed.kind === 'pull-request')
+    entry.pullRequest = gatherPullRequestArtifactEvidence(parsed.url, input.identity, d, ports)
+  if (parsed.kind === 'probe' || parsed.kind === 'exec')
+    await gatherCommandArtifactEntry(parsed, entry, input, d, ports, resolveCheckout)
+  return entry
+}
+
 async function gatherArtifactEvidence(
   input: GatherValidatedEvidenceInput,
   gathered: ValidatedEvidence,
@@ -940,47 +985,10 @@ async function gatherArtifactEvidence(
     const offeredArtifact = resolvedOfferedArtifact(d, artifact)
     if (seen.has(offeredArtifact)) continue
     seen.add(offeredArtifact)
-    const parsed = parseArtifactRef(offeredArtifact)
-    if ('error' in parsed) throw new Error(parsed.error)
-    const noteEvidence =
-      parsed.kind === 'note'
-        ? await gatherNoteArtifactEvidence(
-            parsed,
-            offeredArtifact,
-            input.identity.project,
-            ports,
-          )
-        : undefined
-    const entry: ValidatedArtifactEvidence = {
-      artifact: noteEvidence
-        ? noteEvidence.artifact
-        : await resolveArtifact(
-            parsed,
-            offeredArtifact,
-            input.identity,
-            {
-              cursorId: input.cursorId,
-              stepOrdinal: input.stepOrdinal,
-              stepSlug: input.stepSlug,
-            },
-            d,
-            ports,
-            resolveCheckout,
-            gathered.tree!.commit,
-          ),
-      ...offeredArtifactRunEvidence(parsed, d),
-    }
-    if (noteEvidence) {
-      entry.note = noteEvidence.note
-      if (!gathered.notes) gathered.notes = []
-      gathered.notes.push(noteEvidence.note)
-    }
-    if (parsed.kind === 'pull-request')
-      entry.pullRequest = gatherPullRequestArtifactEvidence(parsed.url, input.identity, d, ports)
-    if (parsed.kind === 'probe' || parsed.kind === 'exec')
-      await gatherCommandArtifactEntry(parsed, entry, input, d, ports, resolveCheckout)
     if (!gathered.artifacts) gathered.artifacts = []
-    gathered.artifacts.push(entry)
+    gathered.artifacts.push(
+      await gatherArtifactEntry(offeredArtifact, input, gathered, d, ports, resolveCheckout),
+    )
   }
 }
 

@@ -2,12 +2,14 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import {
   taskOpenWithNotesFailures,
   taskOpenWithNotesMet,
 } from './workflow-task-open-with-notes-floor.ts'
-import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
+
 export { type ArtifactRef, parseArtifactRef } from './workflow-artifact-reference.ts'
+
 import type {
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
