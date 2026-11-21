@@ -12,10 +12,6 @@ import {
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
-import {
-  latestFinishedWorkerCheckExecutionRecordId,
-  uncheckedChecksForGateExecution,
-} from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
@@ -27,11 +23,11 @@ import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   declaredExpectFailProbeLines,
-  lastWorkerCheckNotRunBlock,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
 } from './result-output.ts'
+import { presentWorkerCheckResult } from './worker-check-presentation.ts'
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
@@ -116,6 +112,9 @@ type CollectedRunRow = {
   tests_passed: number | null
   tests_claim_disagrees: number | null
   executor: string
+  result_member_record_id: string
+  reply_head: string | null
+  reply_tree: string | null
 }
 
 type AskingResolution =
@@ -137,19 +136,6 @@ function presentObservedTests(
   for (const probeLine of declaredExpectFailProbeLines(declaredProbes(row.record_id))) {
     presentation.error(probeLine)
   }
-}
-
-function presentLastWorkerCheckOmissions(
-  database: Database,
-  runRecordId: string,
-  presentation: CollectResultPresentation,
-): void {
-  const executionRecordId = latestFinishedWorkerCheckExecutionRecordId(runRecordId, database)
-  const uncheckedChecks = executionRecordId
-    ? uncheckedChecksForGateExecution(executionRecordId, database)
-    : []
-  const block = lastWorkerCheckNotRunBlock(uncheckedChecks)
-  if (block) presentation.error(block)
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
@@ -761,7 +747,9 @@ export async function collectResult(
             root.evidence_excluded, root.base_commit, root.cwd, root.mcp, root.mcp_server,
             root.mcp_connected, root.mcp_error, root.mcp_probe, root.review_provenance,
             root.provenance_status, root.worktree, root.branch, root.minted_branch,
-            root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor
+            root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor,
+            current_run.record_id result_member_record_id,
+            current_run.reply_head, current_run.reply_tree
        FROM run root`,
         'WHERE root.record_id = ?',
       ),
@@ -790,8 +778,8 @@ export async function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
+  presentWorkerCheckResult(database, row, (value) => presentation.error(value))
   presentCollectedOutput(row, output, outcome.ok, presentation)
-  presentLastWorkerCheckOmissions(database, row.record_id, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

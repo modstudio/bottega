@@ -356,6 +356,7 @@ describe('collection records', () => {
       .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
     expect((await recordedResult(id)).errors).toEqual([
+      'worker check: none at this HEAD',
       `\n— run ${number} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
@@ -647,13 +648,15 @@ describe('collection records', () => {
   test(`${PLATFORM_SLUG} run result lists omissions from the last worker check`, async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const gateRecordId = newRecordId()
+    const replyHead = '1234567890abcdef1234567890abcdef12345678'
+    db().query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, id)
     db()
       .query(
         `INSERT INTO gate_execution
-          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose)
-         VALUES (?,?,?,?,0,0,20,'worker-check')`,
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,0,0,20,'worker-check',?)`,
       )
-      .run(gateRecordId, id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z')
+      .run(gateRecordId, id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', replyHead)
     db()
       .query(
         `INSERT INTO check_execution
@@ -665,6 +668,51 @@ describe('collection records', () => {
     expect((await recordedResult(id)).errors.join('\n')).toContain(
       'Last worker check:\nnot run:\n- scripts typecheck (no matching files)',
     )
+  })
+
+  test(`${PLATFORM_SLUG} run result uses the recorded reply HEAD after the worker committed`, async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const launchHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const replyHead = '1234567890abcdef1234567890abcdef12345678'
+    const outputPath = join(dir, 'worker-check-result-output.json')
+    writeFileSync(outputPath, JSON.stringify({ status: 'done', summary: 'worker narrative' }))
+    db()
+      .query('UPDATE run SET output_path=?,head_commit=?,reply_head=? WHERE record_id=?')
+      .run(outputPath, launchHead, replyHead, id)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,1,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:01.000Z', replyHead)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,0,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', replyHead)
+
+    const result = await recordedResult(id)
+    expect(result.errors[0]).toBe('worker check: passed at 1234567890ab (gate 2)')
+    expect(result.logs[0]).toContain('worker narrative')
+    rmSync(outputPath)
+  })
+
+  test(`${PLATFORM_SLUG} run result does not fall back to the launch HEAD for legacy rows`, async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const launchHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    db().query('UPDATE run SET head_commit=?,reply_head=NULL WHERE record_id=?').run(launchHead, id)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,0,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', launchHead)
+
+    expect((await recordedResult(id)).errors[0]).toBe('worker check: none at this HEAD')
   })
 
   test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, async () => {

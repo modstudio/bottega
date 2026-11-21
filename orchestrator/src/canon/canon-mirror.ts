@@ -14,9 +14,18 @@ import {
   assertBranchRefMayBeCreated,
   assertBranchRefMayBeDeleted,
 } from '../branch/branch-ref-guard.ts'
-import { closeOutRunPrepared } from '../close/close-out.ts'
-import { type CloseOutPreparation, prepareCloseOut } from '../close/close-out-preparation.ts'
+import {
+  type CloseOutResult,
+  closeOutRunPrepared,
+  persistCloseOutDetail,
+} from '../close/close-out.ts'
+import {
+  type CloseOutPreparation,
+  prepareCloseOut,
+  prepareCursorWorktreeClear,
+} from '../close/close-out-preparation.ts'
 import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
+import { completePreparedTreeNaming } from '../close/close-out-tree-naming.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -110,7 +119,13 @@ export type CanonMirrorPort = {
   releaseRun(
     runId: string,
     preparation: CloseOutPreparation,
-  ): { outcome: string; detail: string; questionRootIds?: readonly string[] }
+  ): {
+    outcome: string
+    detail: string
+    questionRootIds?: readonly string[]
+    clearedCursorClaims?: string[]
+    cursorCleanup?: Promise<CloseOutResult>
+  }
 }
 
 export function screenCanonMirrorError(
@@ -265,8 +280,16 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     command(p.path, ['git', 'update-ref', '-d', `refs/heads/${branch}`, expected])
   },
   prepareRelease: prepareCloseOut,
-  releaseRun: (runId, preparation) =>
-    closeOutRunPrepared(runId, { intent: 'tree-remove' }, preparation),
+  releaseRun: (runId, preparation) => {
+    const clearCursorWorktrees = prepareCursorWorktreeClear(runId, preparation)
+    const result = closeOutRunPrepared(runId, { intent: 'landed' }, preparation)
+    return {
+      ...result,
+      cursorCleanup: completePreparedTreeNaming(result, false, clearCursorWorktrees, (completed) =>
+        persistCloseOutDetail(completed, 'landed'),
+      ),
+    }
+  },
 }
 
 export function canonMirrorMergeArgs(number: number, commit: string): string[] {
@@ -381,11 +404,12 @@ function releaseLifecycle(
   port: CanonMirrorPort,
   runId: string,
   preparation: CloseOutPreparation,
-  questionRootIds: string[],
+  execution: MirrorExecution,
 ): string | null {
   try {
     const closed = port.releaseRun(runId, preparation)
-    questionRootIds.push(...(closed.questionRootIds ?? []))
+    execution.questionRootIds.push(...(closed.questionRootIds ?? []))
+    if (closed.cursorCleanup) execution.cursorCleanups.push(closed.cursorCleanup)
     return ['released', 'absent'].includes(closed.outcome)
       ? null
       : screenCanonMirrorError(`canon mirror cleanup ${closed.outcome}: ${closed.detail}`)
@@ -420,7 +444,7 @@ function releaseOwnedLeftover(
   path: string,
   port: CanonMirrorPort,
   preparation: CloseOutPreparation,
-  questionRootIds: string[],
+  execution: MirrorExecution,
 ): void {
   if (!existsSync(path)) return
   const owners = db()
@@ -451,7 +475,8 @@ function releaseOwnedLeftover(
   }
   if (markerRun === null) return
   const closed = port.releaseRun(markerRun, preparation)
-  questionRootIds.push(...(closed.questionRootIds ?? []))
+  execution.questionRootIds.push(...(closed.questionRootIds ?? []))
+  if (closed.cursorCleanup) execution.cursorCleanups.push(closed.cursorCleanup)
   if (!['released', 'absent'].includes(closed.outcome) || existsSync(path)) {
     throw new Error(
       `owned canon mirror worktree ${path} could not be released: ${closed.outcome}: ${closed.detail}`,
@@ -490,6 +515,7 @@ type MirrorExecution = {
   commit: string | null
   knownCommits: string[]
   questionRootIds: string[]
+  cursorCleanups: Promise<CloseOutResult>[]
 }
 
 function mirrorOwnership(
@@ -521,7 +547,24 @@ function emptyMirrorExecution(): MirrorExecution {
     commit: null,
     knownCommits: [],
     questionRootIds: [],
+    cursorCleanups: [],
   }
+}
+
+async function finishMirrorCursorCleanups(
+  outcome: MirrorResult,
+  execution: MirrorExecution,
+): Promise<MirrorResult> {
+  for (const pending of execution.cursorCleanups) {
+    const closed = await pending
+    if (closed.cursorCleanupFailure) {
+      outcome.failed = true
+      outcome.text = `failed, ${screenCanonMirrorError(closed.cursorCleanupFailure)}`
+      continue
+    }
+    for (const notice of closed.clearedCursorClaims ?? []) outcome.text += `; ${notice}`
+  }
+  return outcome
 }
 
 function recordPushedTip(runId: string, commit: string): void {
@@ -571,7 +614,7 @@ function performMirrorPublication(input: {
     rows.filter((row) => row.subject === project.name).length,
     plan.deletes.length,
   )
-  releaseOwnedLeftover(project, path, port, input.releasePreparation, execution.questionRootIds)
+  releaseOwnedLeftover(project, path, port, input.releasePreparation, execution)
   const { previous, remoteTip } = mirrorOwnership(project, branch, runId, port, execution)
   port.createTree({
     project,
@@ -736,12 +779,7 @@ function runMirrorLocked(input: {
       return outcome
     } finally {
       lease?.release()
-      const cleanupFailure = releaseLifecycle(
-        port,
-        runId,
-        releasePreparation,
-        execution.questionRootIds,
-      )
+      const cleanupFailure = releaseLifecycle(port, runId, releasePreparation, execution)
       if (cleanupFailure) {
         setRunTerminal(runId, input.started, cleanupFailure)
         outcome.failed = true
@@ -824,16 +862,21 @@ async function mirrorProject(
     return await finishMirrorQuestionCleanup(
       runId,
       started,
-      lockedOutcome,
+      await finishMirrorCursorCleanups(lockedOutcome, execution),
       execution.questionRootIds,
     )
   } catch (cause) {
     const outcome = failedMirrorResult(project, runId, started, cause, execution.knownCommits)
     const cleanupFailure = releasePreparation
-      ? releaseLifecycle(port, runId, releasePreparation, execution.questionRootIds)
+      ? releaseLifecycle(port, runId, releasePreparation, execution)
       : null
     if (cleanupFailure) outcome.text = `failed, ${cleanupFailure}`
-    return await finishMirrorQuestionCleanup(runId, started, outcome, execution.questionRootIds)
+    return await finishMirrorQuestionCleanup(
+      runId,
+      started,
+      await finishMirrorCursorCleanups(outcome, execution),
+      execution.questionRootIds,
+    )
   }
 }
 

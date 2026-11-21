@@ -66,7 +66,6 @@ import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
-import { terminalTurnChanged } from './run-terminal-change.ts'
 import {
   terminalLifecycleColumnValues,
   terminalLifecycleWrite,
@@ -78,6 +77,7 @@ import {
 } from './run-terminal-premature.ts'
 import { recordTerminalQuestions } from './run-terminal-questions.ts'
 import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
+import { terminalReplyFacts } from './run-terminal-worker-check.ts'
 import {
   type ObservedTestOutcome,
   observedTestOutcome,
@@ -295,6 +295,16 @@ export type TerminalResult = {
   confinementEvent: ConfinementEvent | null
   preConfinement: string | null
   artifactsPersisted: boolean
+}
+
+function workerCheckReplyFacts(input: TerminalInput) {
+  return terminalReplyFacts({
+    database: db(),
+    runId: input.claim.id,
+    writesJob: input.writesJob,
+    worktreePath: input.worktree?.path ?? null,
+    measurementScope: input.provisionedMcpConfig,
+  })
 }
 
 function terminalUsageSnapshot(input: TerminalInput, name: string) {
@@ -765,13 +775,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-  const turnChanged = terminalTurnChanged({
-    database: db(),
-    runId: claim.id,
-    writingJob: writesJob,
-    worktreePath: worktree?.path ?? null,
-    measurementScope: provisionedMcpConfig,
-  })
+  const replyFacts = workerCheckReplyFacts(input)
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,
@@ -788,11 +792,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const finalization = finalizeWorkerReply({
     reply: contract,
     measuredFiles: changes?.files ?? null,
-    turnChanged,
+    turnChanged: replyFacts.turnChanged,
     status,
     failureKind,
     error,
     contractObjects,
+    contractRefusal: replyFacts.contractRefusal,
   })
   ;({ status, failureKind, error } = finalization)
   const vendorTermination = applyVendorTermination({

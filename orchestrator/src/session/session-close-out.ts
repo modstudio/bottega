@@ -600,7 +600,7 @@ async function applyMechanicalAction(
   database: Database,
 ): Promise<string | null> {
   if (action.kind === 'close-run') {
-    const result = await closeOutRun(action.runId, { intent: 'explicit' })
+    const result = await closeOutRun(action.runId, { intent: 'requested' })
     await throwUnlessReleased(result)
     return result.runId
   }
@@ -610,7 +610,7 @@ async function applyMechanicalAction(
       throw new Error(
         `planned tree ${action.path} is no longer owned only by run ${action.runId}; gather again before removing it`,
       )
-    const result = await closeOutRun(action.runId, { intent: 'tree-remove' })
+    const result = await closeOutRun(action.runId, { intent: 'requested' })
     await throwUnlessReleased(result)
     return result.runId
   }

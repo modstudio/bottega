@@ -1,3 +1,5 @@
+import { formatGateFailureDetail, formatGateFailureLeg } from '../shared/check-execution.ts'
+
 export const FAILED_STEP_DETAIL_LINES = 20
 
 // Which gate steps failed, the exit code, and the summary that names each failure.
@@ -11,20 +13,20 @@ export type GateStepResult = {
 
 function failedStepSummary(step: GateStepResult): string[] {
   const heading = [
-    step.name,
-    ...(step.note ? [`  ${step.note}`] : []),
+    formatGateFailureLeg(step.name),
+    ...(step.note ? [formatGateFailureDetail(step.note)] : []),
     ...(step.omittedDetailLines > 0
-      ? [`  … ${step.omittedDetailLines} earlier lines omitted`]
+      ? [formatGateFailureDetail(`… ${step.omittedDetailLines} earlier lines omitted`)]
       : []),
   ]
   if (step.detail.length <= FAILED_STEP_DETAIL_LINES) {
-    return [...heading, ...step.detail.map((line) => `  ${line}`)]
+    return [...heading, ...step.detail.map(formatGateFailureDetail)]
   }
   const visibleDetailCount = FAILED_STEP_DETAIL_LINES - 1
   return [
     ...heading,
-    ...step.detail.slice(0, visibleDetailCount).map((line) => `  ${line}`),
-    `  … ${step.detail.length - visibleDetailCount} more`,
+    ...step.detail.slice(0, visibleDetailCount).map(formatGateFailureDetail),
+    formatGateFailureDetail(`… ${step.detail.length - visibleDetailCount} more`),
   ]
 }
 

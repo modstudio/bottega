@@ -2,10 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import {
-  latestFinishedWorkerCheckExecutionRecordId,
-  uncheckedChecksForGateExecution,
-} from './worker-check-omissions.ts'
+import { uncheckedChecksForGateExecution } from './worker-check-omissions.ts'
 
 function insertGate(input: { runId: string; finishedAt: string }): string {
   const recordId = newRecordId()
@@ -35,22 +32,4 @@ test('unchecked-check reader returns only omissions ordered by check name', () =
     { check: 'biome', reason: 'no files to check' },
     { check: 'typecheck', reason: 'no matching files' },
   ])
-})
-
-test('latest worker-check reader returns the newest finished execution by request order', () => {
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-  insertGate({ runId: run, finishedAt: '2026-10-01T10:00:00.000Z' })
-  const newestFinished = insertGate({
-    runId: run,
-    finishedAt: '2026-10-01T11:00:00.000Z',
-  })
-  db()
-    .query(
-      `INSERT INTO gate_execution
-        (record_id,run_record_id,requested_at,purpose)
-       VALUES (?,?,?,'worker-check')`,
-    )
-    .run(newRecordId(), run, '2026-10-01T12:00:00.000Z')
-
-  expect(latestFinishedWorkerCheckExecutionRecordId(run, db())).toBe(newestFinished)
 })

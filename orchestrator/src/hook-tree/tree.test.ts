@@ -61,5 +61,5 @@ test('a repeated removal reports an absent tree from its released claim', async 
     )
     .run(newRecordId(), id, id, path, nowIso(), nowIso())
 
-  expect(await removeHookTreeResult(path)).toEqual({ outcome: 'absent' })
+  expect(await removeHookTreeResult(path, 'operator-removal')).toEqual({ outcome: 'absent' })
 })
