@@ -21,7 +21,7 @@ import {
   treeNamingReleaseReport,
 } from './tree-keep-decision.ts'
 
-export function appendTreeNamingDetail(
+function appendTreeNamingDetail(
   result: CloseOutResult,
   naming: TreeKeepDecision,
   dryRun = false,
