@@ -23,7 +23,16 @@ export type ArgumentReboundEvent = {
   at: string
 }
 
-export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
+export type CursorRepinnedEvent = {
+  event: 'repinned'
+  workflow: { from: number; to: number }
+  catalogue: { from: number; to: number }
+  reason: string
+  callerSession: string
+  at: string
+}
+
+export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent | CursorRepinnedEvent
 
 export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 

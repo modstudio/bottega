@@ -191,6 +191,18 @@ const taskFlowStageUpdateSchema = z.object({
   stages: z.array(mutation(stageUpdateValues)).min(1),
   flow: mutation(flowComposeValues).optional(),
 })
+const taskFlowRepinSchema = z.object({
+  ...base,
+  stage: mutation(
+    z.object({
+      workflowVersionId: id,
+      catalogueVersionId: id,
+      totalSteps: z.number().int().positive(),
+      closedStepNotes: z.array(z.unknown()),
+      updatedAt: stamp,
+    }),
+  ),
+})
 const taskFlowAdvanceSchema = z.object({
   ...base,
   stage: mutation(stageUpdateValues),
@@ -276,6 +288,7 @@ export const taskFlowIntentSchemas = {
   import: taskFlowImportSchema,
   compose: taskFlowComposeSchema,
   'stage-update': taskFlowStageUpdateSchema,
+  repin: taskFlowRepinSchema,
   advance: taskFlowAdvanceSchema,
   'await-ruling': taskFlowAwaitRulingSchema,
   abandon: taskFlowAbandonSchema,

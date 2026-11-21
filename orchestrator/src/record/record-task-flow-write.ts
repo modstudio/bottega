@@ -32,6 +32,7 @@ type RevisionRow = { revision: number | string; last_request_id: string | null }
 type ComposeBody = TaskFlowIntentBody<'compose'>
 type ImportBody = TaskFlowIntentBody<'import'>
 type StageUpdateBody = TaskFlowIntentBody<'stage-update'>
+type RepinBody = TaskFlowIntentBody<'repin'>
 type AdoptBody = TaskFlowIntentBody<'adopt'>
 type HandoffBody = TaskFlowIntentBody<'handoff'>
 type StageMutationBody =
@@ -491,6 +492,20 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
+async function applyRepin(tx: SQL, body: RepinBody) {
+  await lockParentFlowForStage(tx, body.stage.id)
+  return {
+    revisions: {
+      [body.stage.id]: await updateRevisionRow(
+        tx,
+        'task_flow_stage',
+        body.stage,
+        body.requestId,
+      ),
+    },
+  }
+}
+
 type HandoffSourceRow = {
   session_id: string | null
   workflow: string
@@ -767,6 +782,7 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   import: (tx, input, jsonb) => applyImport(tx, input, input, jsonb),
   compose: (tx, input, jsonb) => applyCompose(tx, input, input, jsonb),
   'stage-update': (tx, input) => applyStageUpdates(tx, input),
+  repin: (tx, input) => applyRepin(tx, input),
   advance: (tx, input) => applyStageMutation(tx, input, input),
   'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
   abandon: (tx, input) => applyStageMutation(tx, input, input),

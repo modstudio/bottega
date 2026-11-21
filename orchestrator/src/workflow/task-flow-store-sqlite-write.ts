@@ -31,6 +31,7 @@ export type TaskFlowStaleRowKind = 'flow' | 'stage' | 'cursor'
 const REVISION_ACTION: Record<TaskFlowLiveIntent, string> = {
   compose: 'composing',
   'stage-update': 'applying a stage update',
+  repin: 'being repinned',
   advance: 'advancing',
   'await-ruling': 'awaiting a ruling',
   abandon: 'being abandoned',
@@ -124,7 +125,9 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
     enforcement=COALESCE(?,enforcement),opened_machine_id=COALESCE(?,opened_machine_id),
     taken_over_from_machine_id=CASE WHEN ? THEN ? ELSE taken_over_from_machine_id END,
     last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),
-    updated_at=COALESCE(?,updated_at),revision=?
+    workflow_version_record_id=COALESCE(?,workflow_version_record_id),
+    catalogue_version_record_id=COALESCE(?,catalogue_version_record_id),
+    total_steps=COALESCE(?,total_steps),updated_at=COALESCE(?,updated_at),revision=?
     WHERE record_id=?`)
     .run(
       value('flowRecordId'),
@@ -142,6 +145,9 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
       value('openedMachineId'),
       ...takeover,
       value('lastAdvancedMachineId'),
+      value('workflowVersionId'),
+      value('catalogueVersionId'),
+      value('totalSteps'),
       value('updatedAt'),
       next,
       mutation.id,
@@ -614,6 +620,15 @@ function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<s
   return { revisions: result }
 }
 
+function writeRepin(database: Database, body: SqlRow, revisions?: Record<string, number>) {
+  const stage = body.stage as unknown as Mutation
+  return {
+    revisions: {
+      [stage.id]: updateMutation(database, 'workflow_cursor', stage, 'repin', revisions),
+    },
+  }
+}
+
 function writeHandoff(
   database: Database,
   body: SqlRow,
@@ -718,6 +733,8 @@ export function writeSqliteTaskFlow<K extends TaskFlowLiveIntent>(
     ) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'stage-update')
     return writeStageUpdate(database, body, revisions) as unknown as TaskFlowSqliteWriteResult<K>
+  if (intent === 'repin')
+    return writeRepin(database, body, revisions) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
     return applyStageMutation(
       database,

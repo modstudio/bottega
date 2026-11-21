@@ -47,6 +47,7 @@ export function resolveTaskFlowDestination(
 const methodByIntent = {
   compose: 'composeTaskFlow',
   'stage-update': 'updateTaskFlowStage',
+  repin: 'repinTaskFlow',
   advance: 'advanceTaskFlow',
   'await-ruling': 'awaitTaskFlowRuling',
   abandon: 'abandonTaskFlow',

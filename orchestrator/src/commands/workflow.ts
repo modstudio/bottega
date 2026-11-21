@@ -23,6 +23,7 @@ import {
   promoteWorkflowCommand,
   queueChildCommand,
   recordEvidenceCommand,
+  repinCommand,
   renderCheckCommand,
   retireCatalogueCommand,
   retireWorkflowCommand,
@@ -126,7 +127,7 @@ function workflowRegistration(
     .allowExcessArguments(true)
     .action(() => {
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | handoff | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | handoff | repin | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
       )
     })
   return { workflow, workflowPresentation, handlerOptions, output }
@@ -498,6 +499,17 @@ function registerWorkflowCursorAdmin({
     .description('print numeric workflow cursor identities and their durable record ids as JSON')
     .allowExcessArguments(false)
     .action(async () => log(JSON.stringify(await workflowCursorIdentityMap(db()))))
+  jsonOption(
+    reasonOption(
+      workflow
+        .command('repin')
+        .description('re-point an open cursor to the current production workflow and catalogue')
+        .requiredOption('--cursor <value>', 'select this workflow cursor')
+        .option('--project <value>', 'select this registered project'),
+    ),
+  )
+    .allowExcessArguments(false)
+    .action((options) => repinCommand(workflowArgv('repin', [], options), output(options)))
   jsonOption(
     reasonOption(
       workflow

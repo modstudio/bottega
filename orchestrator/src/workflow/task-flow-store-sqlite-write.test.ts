@@ -48,6 +48,22 @@ test('intent writes refuse every stale expected revision', async () => {
   const cases = [
     ['compose', { requestId: row.record_id, stageChanges: [mutation] }],
     ['stage-update', { requestId: row.record_id, stages: [mutation] }],
+    [
+      'repin',
+      {
+        requestId: row.record_id,
+        stage: {
+          ...mutation,
+          values: {
+            workflowVersionId: row.workflow_version_record_id,
+            catalogueVersionId: row.catalogue_version_record_id,
+            totalSteps: row.total_steps,
+            closedStepNotes: [],
+            updatedAt: row.updated_at,
+          },
+        },
+      },
+    ],
     ['advance', { requestId: row.record_id, stage: mutation }],
     ['await-ruling', { requestId: row.record_id, stage: mutation }],
     ['abandon', { requestId: row.record_id, stage: mutation }],
@@ -131,6 +147,7 @@ test('revision refusal names the declared intent and stale row kind', () => {
     ['compose', 'stage', 'stage-id', 'workflow stage stage-id changed while composing'],
     ['compose', 'cursor', 12, 'workflow cursor 12 changed while composing'],
     ['stage-update', 'cursor', 13, 'workflow cursor 13 changed while applying a stage update'],
+    ['repin', 'cursor', 19, 'workflow cursor 19 changed while being repinned'],
     ['advance', 'flow', 'flow-id', 'task flow flow-id changed while advancing'],
     ['advance', 'cursor', 14, 'workflow cursor 14 changed while advancing'],
     ['await-ruling', 'cursor', 15, 'workflow cursor 15 changed while awaiting a ruling'],
