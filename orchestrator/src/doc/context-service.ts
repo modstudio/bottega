@@ -149,7 +149,10 @@ export async function getContext(selection: ContextHolderSelection) {
   const cursors = selection.session
     ? await openKeylessCursorsForSession(selection.session, db())
     : []
-  const addresses = [holder, ...cursors.map((cursor) => cursorContextHolder(cursor.record_id))]
+  const addresses = [
+    task ? { holder, owner: contextTaskOwner({ project: task.project }) } : holder,
+    ...cursors.map((cursor) => cursorContextHolder(cursor.record_id)),
+  ]
   const batchedItems = await listContextItems(addresses)
   const items = batchedItems.filter((item) => item.holder === holder)
   const cursorHolders = cursors.map((cursor) => {
@@ -176,8 +179,15 @@ export async function getContext(selection: ContextHolderSelection) {
 export async function contextItemRevision(
   selection: ContextHolderSelection & { id: string },
 ): Promise<string | undefined> {
-  const { holder } = await resolveContextHolder(selection)
-  return (await getContextItem(holder, selection.id))?.revision
+  const { holder, task } = await resolveContextHolder(selection)
+  return (
+    await getContextItem(
+      holder,
+      selection.id,
+      db(),
+      task ? contextTaskOwner({ project: task.project }) : undefined,
+    )
+  )?.revision
 }
 
 export async function sessionContextItems(session: string, database: Database) {
@@ -211,7 +221,10 @@ export async function clearTaskHolderForLifecycle(input: {
 }) {
   assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
   const holder = taskContextHolder(input.holderId)
-  const items = await listContextItems(holder)
+  const items = await listContextItems({
+    holder,
+    owner: contextTaskOwner({ project: input.project }),
+  })
   if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()
   const result = await applyRecordWriteAuthority({
@@ -483,7 +496,12 @@ export async function setContextItem(
   const written = await applyRecordWriteAuthority({
     local: () => setLocalContextItem(localInput),
     hosted: async () => {
-      const current = await getContextItem(holder, input.id)
+      const current = await getContextItem(
+        holder,
+        input.id,
+        db(),
+        contextTaskOwner(task ?? undefined),
+      )
       const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
       const address = splitContextHolder(holder)
       const result = await client.upsert({

@@ -67,12 +67,22 @@ export async function localTaskRecordIdsForSession(
   database: Database,
   sessionId: string,
 ): Promise<string[]> {
+  return (await localTaskReferencesForSession(database, sessionId)).map((row) => row.recordId)
+}
+
+/** Reads machine-local cursor/task links with their already-known project owners. */
+export async function localTaskReferencesForSession(
+  database: Database,
+  sessionId: string,
+): Promise<Array<{ recordId: string; project: string }>> {
   return (
     await sqliteTaskFlowReadStore(database).listStages({
       sessionId,
       states: TASK_FLOW_STAGE_STATES,
     })
-  ).flatMap((row) => (row.task_record_id ? [row.task_record_id] : []))
+  ).flatMap((row) =>
+    row.task_record_id ? [{ recordId: row.task_record_id, project: row.project }] : [],
+  )
 }
 
 /**

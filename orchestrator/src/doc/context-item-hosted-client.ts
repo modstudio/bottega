@@ -49,8 +49,31 @@ export async function hostedContextItemClient(holder: string, suppliedOwner?: Re
   }
 }
 
+const destinationByClient = new WeakMap<
+  object,
+  Map<string, Promise<{ destinationSpaceId: string }>>
+>()
+
+function ownerCacheKey(owner: RecordWriteOwner | null): string {
+  return JSON.stringify(owner)
+}
+
 /** Resolves a context holder to the same hosted space used by its writes. */
-export async function hostedContextItemDestination(holder: string) {
+export async function hostedContextItemDestination(
+  holder: string,
+  suppliedOwner?: RecordWriteOwner,
+) {
   const client = recordApiClient()
-  return recordWriteDestination(client, await contextItemOwner(holder))
+  const owner = suppliedOwner ?? (await contextItemOwner(holder))
+  let destinations = destinationByClient.get(client)
+  if (!destinations) {
+    destinations = new Map()
+    destinationByClient.set(client, destinations)
+  }
+  const key = ownerCacheKey(owner)
+  const cached = destinations.get(key)
+  if (cached) return cached
+  const destination = recordWriteDestination(client, owner)
+  destinations.set(key, destination)
+  return destination
 }

@@ -22,7 +22,7 @@ import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { decodeReviewItemRefs } from '../session/context-review-store.ts'
-import { localTaskRecordIdsForSession, taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { localTaskReferencesForSession, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
   type ContextReviewLoss,
@@ -90,25 +90,43 @@ export async function contextReviewMeasurements(
   )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
-  const cursorTasks = await localTaskRecordIdsForSession(database, sessionId)
-  const taskHolders = [
+  const taskFacts = [
     ...database
-      .query<{ task_record_id: string }, [string]>(
-        `SELECT DISTINCT task_record_id FROM run
-         WHERE session_id=? AND task_record_id IS NOT NULL`,
+      .query<{ task_record_id: string; project: string }, [string]>(
+        `SELECT DISTINCT run.task_record_id,project.name project FROM run
+         JOIN project ON project.record_id=run.project_record_id
+         WHERE run.session_id=? AND run.task_record_id IS NOT NULL`,
       )
-      .all(sessionId)
-      .map((row) => row.task_record_id),
-    ...cursorTasks,
-  ].map((taskRecordId) => `task:${taskRecordId}`)
+      .all(sessionId),
+    ...(await localTaskReferencesForSession(database, sessionId)).map((row) => ({
+      task_record_id: row.recordId,
+      project: row.project,
+    })),
+  ]
+  const ownerByHolder = new Map(
+    taskFacts.map((fact) => [
+      `task:${fact.task_record_id}`,
+      { kind: 'task' as const, projectName: fact.project },
+    ]),
+  )
+  const taskHolders = [...ownerByHolder].map(([holder, owner]) => ({ holder, owner }))
   const holders = [
     `session:${sessionId}`,
     ...taskHolders,
     ...storedItems.flatMap((items) =>
-      items.flatMap((item) => (typeof item === 'string' ? [] : [item.holder])),
+      items.flatMap((item) => {
+        if (typeof item === 'string') return []
+        const owner = ownerByHolder.get(item.holder)
+        return [owner ? { holder: item.holder, owner } : item.holder]
+      }),
     ),
   ]
-  const items = (await (dependencies.readItems ?? listContextItems)([...new Set(holders)]))
+  const uniqueHolders = [
+    ...new Map(
+      holders.map((entry) => [typeof entry === 'string' ? entry : entry.holder, entry]),
+    ).values(),
+  ]
+  const items = (await (dependencies.readItems ?? listContextItems)(uniqueHolders))
     .map((item) => ({
       id: item.recordId,
       createdAt: item.createdAt,

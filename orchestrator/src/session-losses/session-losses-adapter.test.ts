@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addOpenCursorWorktree } from '../../test/fixtures/workflow.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
+import type { ContextItemHolderEntry } from '../doc/context-item-store.ts'
 import { recordContextReview } from '../session/context-review-store.ts'
 import { briefsAtBoundaries, contextReviewMeasurements } from './session-losses-adapter.ts'
 
@@ -35,12 +36,12 @@ test('review measurements batch every recorded holder so a present task item is 
     },
     { database, now: () => at, machine: () => '01990000-0000-7000-8000-000000000099' },
   )
-  const calls: string[][] = []
+  const calls: ContextItemHolderEntry[][] = []
 
   const measured = await contextReviewMeasurements('session-a', [], {
     database,
     readItems: async (holders) => {
-      calls.push(typeof holders === 'string' ? [holders] : [...holders])
+      calls.push(Array.isArray(holders) ? [...holders] : [holders])
       return [
         {
           recordId: 'task-item',
@@ -101,7 +102,7 @@ test('review measurements count a compaction capture on a task named by a sessio
   database
     .query('UPDATE workflow_cursor SET session_id=?,task_record_id=? WHERE number=?')
     .run(session, cursorTaskRecordId, cursor)
-  const calls: string[][] = []
+  const calls: ContextItemHolderEntry[][] = []
 
   const measured = await contextReviewMeasurements(
     session,
@@ -109,7 +110,7 @@ test('review measurements count a compaction capture on a task named by a sessio
     {
       database,
       readItems: async (holders) => {
-        calls.push(typeof holders === 'string' ? [holders] : [...holders])
+        calls.push(Array.isArray(holders) ? [...holders] : [holders])
         return [
           {
             recordId: 'capture-item',
@@ -130,7 +131,17 @@ test('review measurements count a compaction capture on a task named by a sessio
   )
 
   expect(calls).toEqual([
-    [`session:${session}`, `task:${taskRecordId}`, `task:${cursorTaskRecordId}`],
+    [
+      `session:${session}`,
+      {
+        holder: `task:${taskRecordId}`,
+        owner: { kind: 'task', projectName: 'run-fixture' },
+      },
+      {
+        holder: `task:${cursorTaskRecordId}`,
+        owner: { kind: 'task', projectName: 'fixture' },
+      },
+    ],
   ])
   expect(measured.captured).toEqual([1])
   database.close()

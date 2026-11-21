@@ -6,6 +6,7 @@ import {
   type StoredContextItem,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
+import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { parsePointerReference } from '../../../shared/reference.ts'
 import {
   referenceNotVisibleRefusal,
@@ -42,6 +43,8 @@ import {
 import { readHostedDocReference } from './doc-hosted-client.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
+
+type ContextReadHolder = string | { holder: string; owner: RecordWriteOwner }
 
 export type ContextTask = HubTaskReference
 class ContextTaskPrefixError extends Error {
@@ -366,7 +369,7 @@ async function contextSetRefusal(
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
   readItems: (
-    holder: string | readonly string[],
+    holder: ContextReadHolder | readonly ContextReadHolder[],
     database: Database,
   ) => Promise<StoredContextItem[]> = () => {
     throw new Error('context item reader is required')
@@ -401,12 +404,24 @@ async function contextSetRefusal(
     task,
     ports,
   })
-  const relatedHolders = [
-    ...new Set(relatedTasks.map((related) => taskContextHolder(related.record_id))),
-  ]
+  const relatedHolders = relatedTasks.map((related) => ({
+    holder: taskContextHolder(related.record_id),
+    owner: { kind: 'task' as const, projectName: related.project },
+  }))
   const [siblings, related] = await Promise.all([
-    readItems(input.holder, database),
-    readItems([...new Set(relatedHolders)], database),
+    readItems(
+      task
+        ? {
+            holder: input.holder,
+            owner: { kind: 'task', projectName: task.project },
+          }
+        : input.holder,
+      database,
+    ),
+    readItems(
+      [...new Map(relatedHolders.map((entry) => [entry.holder, entry])).values()],
+      database,
+    ),
   ])
   const refusal = contextWriteRefusal(item, {
     profile,
@@ -421,7 +436,7 @@ async function contextSetRefusal(
 export async function assertContextSetAllowed(
   input: ContextSetInput,
   readItems: (
-    holder: string | readonly string[],
+    holder: ContextReadHolder | readonly ContextReadHolder[],
     database: Database,
   ) => Promise<StoredContextItem[]>,
 ): Promise<void> {

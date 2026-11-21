@@ -260,7 +260,10 @@ export async function storedBriefHolders(
       ? `session:${reference.key}`
       : reference.kind === 'cursor'
         ? cursorContextHolder(reference.recordId)
-        : taskContextHolder(reference.recordId),
+        : {
+            holder: taskContextHolder(reference.recordId),
+            owner: { kind: 'task' as const, projectName: reference.project },
+          },
   )
   const itemsByHolder = Map.groupBy(
     await listContextItems(holderAddresses, database),

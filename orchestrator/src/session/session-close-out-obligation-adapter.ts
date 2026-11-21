@@ -37,7 +37,14 @@ export async function sessionCloseOutObligationItems(
   })
   const landedTasks = await observeLandedTasks(identities, taskReader)
   const taskHolders = landedTasks.flatMap((observation) =>
-    observation.task ? [taskContextHolder(observation.task.record_id)] : [],
+    observation.task
+      ? [
+          {
+            holder: taskContextHolder(observation.task.record_id),
+            owner: { kind: 'task' as const, projectName: observation.task.project },
+          },
+        ]
+      : [],
   )
   const contextByTask = Map.groupBy(await listContextItems(taskHolders, database), (item) =>
     item.holder.slice('task:'.length),

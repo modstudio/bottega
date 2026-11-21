@@ -126,25 +126,37 @@ test('hosted task reads return record items when the local row is absent', async
   }
 })
 
-test('hosted session and task holders in one space make one context-item read', async () => {
+test('a brief-shaped owned holder batch skips task reads and makes one context-item read', async () => {
   installContextFacts()
   const priorUrl = process.env.BOTTEGA_RECORD_API_URL
   let listReads = 0
+  let taskReads = 0
+  let destinationResolutions = 0
   try {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     rememberHostedRecord(db())
     const client = createMemoryRecordApiClient()
+    globals[CONTEXT_FACTS_PORTS_KEY] = {
+      ...globals[CONTEXT_FACTS_PORTS_KEY]!,
+      record: async () => {
+        taskReads++
+        return task
+      },
+    }
     installRecordApiClient({
       ...client,
-      whoami: async () => ({
-        user: { id: 'user-a' },
-        activeSpaceId: 'other-space',
-        personalSpaceId: 'personal-space',
-        memberships: [
-          { space_id: 'other-space', slug: 'other', permission: 'write' },
-          { space_id: 'project-space', slug: 'personal', permission: 'write' },
-        ],
-      }),
+      whoami: async () => {
+        destinationResolutions++
+        return {
+          user: { id: 'user-a' },
+          activeSpaceId: 'other-space',
+          personalSpaceId: 'personal-space',
+          memberships: [
+            { space_id: 'other-space', slug: 'other', permission: 'write' },
+            { space_id: 'project-space', slug: 'personal', permission: 'write' },
+          ],
+        }
+      },
       listContextItems: async (holders, destination) => {
         listReads++
         expect(destination.destinationSpaceId).toBe('project-space')
@@ -152,7 +164,22 @@ test('hosted session and task holders in one space make one context-item read', 
       },
     })
 
-    await listContextItems([`session:batch-session`, taskContextHolder(task.record_id)], db())
+    await listContextItems(
+      [
+        `session:batch-session`,
+        {
+          holder: taskContextHolder(task.record_id),
+          owner: { kind: 'task', projectName: PLATFORM_SLUG },
+        },
+        {
+          holder: taskContextHolder(newRecordId()),
+          owner: { kind: 'task', projectName: PLATFORM_SLUG },
+        },
+      ],
+      db(),
+    )
+    expect(taskReads).toBe(0)
+    expect(destinationResolutions).toBe(2)
     expect(listReads).toBe(1)
   } finally {
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

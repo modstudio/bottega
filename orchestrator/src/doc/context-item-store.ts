@@ -7,6 +7,7 @@ import type {
   ContextItemHolderGroup,
   StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
+import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { db } from '../database/db.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -26,6 +27,8 @@ import {
 
 export type { StoredContextItem } from '../../../shared/context-item-vocabulary.ts'
 export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
+
+export type ContextItemHolderEntry = string | { holder: string; owner: RecordWriteOwner }
 
 type ContextItemReadSource = 'local' | 'hosted'
 
@@ -48,18 +51,23 @@ export function contextItemReadFailure(error: unknown): never {
 }
 
 export async function listContextItems(
-  holder: string | readonly string[],
+  holder: ContextItemHolderEntry | readonly ContextItemHolderEntry[],
   database: Database = db(),
 ): Promise<StoredContextItem[]> {
-  const holders = typeof holder === 'string' ? [holder] : [...holder]
-  if (holders.length === 0) return []
+  const entries = Array.isArray(holder) ? [...holder] : [holder as ContextItemHolderEntry]
+  if (entries.length === 0) return []
+  const holders = entries.map((entry) => (typeof entry === 'string' ? entry : entry.holder))
   if (contextItemReadSourceFor(database) === 'local')
     return holders.flatMap((value) => listLocalContextItems(value, database))
   try {
     const client = recordApiClient()
     const groups = new Map<string, { destinationSpaceId: string; holders: string[] }>()
-    for (const value of holders) {
-      const destination = await hostedContextItemDestination(value)
+    for (const entry of entries) {
+      const value = typeof entry === 'string' ? entry : entry.holder
+      const destination = await hostedContextItemDestination(
+        value,
+        typeof entry === 'string' ? undefined : entry.owner,
+      )
       const group = groups.get(destination.destinationSpaceId)
       if (group) group.holders.push(value)
       else groups.set(destination.destinationSpaceId, { ...destination, holders: [value] })
@@ -86,11 +94,12 @@ export async function getContextItem(
   holder: string,
   slug: string,
   database: Database = db(),
+  owner?: RecordWriteOwner,
 ): Promise<StoredContextItem | null> {
   if (contextItemReadSourceFor(database) === 'local')
     return getLocalContextItem(holder, slug, database)
   try {
-    const destination = await hostedContextItemDestination(holder)
+    const destination = await hostedContextItemDestination(holder, owner)
     return await recordApiClient().getContextItem(holder, slug, destination)
   } catch (error) {
     return contextItemReadFailure(error)
