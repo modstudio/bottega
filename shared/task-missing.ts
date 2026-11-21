@@ -5,6 +5,10 @@ export function missingTaskLine(key: string): string {
   return `no task ${key}`
 }
 
+export function missingTaskRecordLine(recordId: string): string {
+  return `no task record ${recordId}`
+}
+
 export function missingTaskMessage(key: string): string {
   return renderRefusal(
     refusal(missingTaskLine(key), {
@@ -22,7 +26,7 @@ export function namesMissingTask(text: string, key: string): boolean {
 /** Match either task-read port's missing-record line without depending on record-id casing. */
 export function namesMissingTaskRecord(text: string, recordId: string): boolean {
   const expected = missingTaskLine(recordId).toLowerCase()
-  const localExpected = `no task record ${recordId}`.toLowerCase()
+  const localExpected = missingTaskRecordLine(recordId).toLowerCase()
   return text
     .split('\n')
     .some((line) => [expected, localExpected].includes(line.trim().toLowerCase()))

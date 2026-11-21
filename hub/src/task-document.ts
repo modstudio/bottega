@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
+import { missingTaskRecordLine } from '../../shared/task-missing.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
@@ -125,7 +126,7 @@ function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput)
     const row = conn
       .query<DocumentTask, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(task.record_id)
-    if (!row) throw new Error(`no task record ${task.record_id}`)
+    if (!row) throw new Error(missingTaskRecordLine(task.record_id))
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
     const number = row.next_document_number
     conn

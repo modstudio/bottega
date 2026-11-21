@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
+import { missingTaskRecordLine } from '../../shared/task-missing.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
@@ -305,7 +306,7 @@ export function createLocalTaskInTransaction(
       )
   }
   const row = conn.query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
-  if (!row) throw new Error(`no task record ${recordId}`)
+  if (!row) throw new Error(missingTaskRecordLine(recordId))
   return row
 }
 
@@ -582,7 +583,7 @@ function applyLocalTaskPatch(
   const current = conn
     .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
     .get(recordId)
-  if (!current) throw new Error(`no task record ${recordId}`)
+  if (!current) throw new Error(missingTaskRecordLine(recordId))
   if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
   assertLocalTaskBodyOverwrite(current, changes.body, options.force)
   const category = changes.status === undefined ? current.status_category : status(changes.status)
@@ -614,7 +615,7 @@ function applyLocalTaskPatch(
     )
   recordLocalStatusChange(conn, current, category, at, attribution)
   const row = conn.query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
-  if (!row) throw new Error(`no task record ${recordId}`)
+  if (!row) throw new Error(missingTaskRecordLine(recordId))
   return row
 }
 
@@ -754,7 +755,7 @@ export async function closeTask(
     const row = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(current.record_id)
-    if (!row) throw new Error(`no task record ${current.record_id}`)
+    if (!row) throw new Error(missingTaskRecordLine(current.record_id))
     conn
       .query(
         `UPDATE task SET status = 'done', status_category = 'done',
@@ -766,7 +767,7 @@ export async function closeTask(
     const closed = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(row.record_id)
-    if (!closed) throw new Error(`no task record ${row.record_id}`)
+    if (!closed) throw new Error(missingTaskRecordLine(row.record_id))
     return closed
   })
   return result
@@ -808,7 +809,7 @@ export async function commentTask(
     const row = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(current.record_id)
-    if (!row) throw new Error(`no task record ${current.record_id}`)
+    if (!row) throw new Error(missingTaskRecordLine(current.record_id))
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
     return writeLocalComment(conn, row, body, at, hosted, attribution)
   })

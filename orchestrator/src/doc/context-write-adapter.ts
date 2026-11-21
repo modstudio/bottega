@@ -25,6 +25,7 @@ import {
   readHubTaskReference,
   readHubTaskReferenceByRecordId,
   resolveOrPullHubTaskReference,
+  taskReadRefusal,
   taskRecordFailureNamesMissingTask,
 } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
@@ -283,7 +284,12 @@ export async function resolveContextTaskWithChildren(
   const project = projectForTaskKey(key, projects(undefined, database))
   if (!project) throw new ContextTaskPrefixError(key, prefix)
   const task = await resolveOrPullHubTaskReference(project.name, key, ports.lookup, ports.task)
-  const children = await ports.children(project.name, task.key)
+  let children: ContextTask[]
+  try {
+    children = await ports.children(project.name, task.key)
+  } catch (error) {
+    throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
+  }
   return {
     task,
     children,
@@ -298,19 +304,19 @@ export async function lookupContextTask(
   return ports.lookup(project, key)
 }
 
-type ContextTaskByRecordId = { task: ContextTask | null; unreadable: string[] }
+type ContextTaskByRecordId = { task: ContextTask | null; failure: string | null }
 
-/** Resolve the stable task identity used in a context subject, naming every project whose tasks could not be read. */
+/** Resolve the stable task identity used in a context subject, preserving a point-read failure. */
 export async function resolveContextTaskByRecordId(
   recordId: string,
-  database: Database = db(),
+  _database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<ContextTaskByRecordId> {
   try {
-    return { task: await ports.record(recordId), unreadable: [] }
+    return { task: await ports.record(recordId), failure: null }
   } catch (error) {
-    if (taskRecordFailureNamesMissingTask(error, recordId)) return { task: null, unreadable: [] }
-    return { task: null, unreadable: projects(undefined, database).map((row) => row.name) }
+    if (taskRecordFailureNamesMissingTask(error, recordId)) return { task: null, failure: null }
+    return { task: null, failure: error instanceof Error ? error.message : String(error) }
   }
 }
 

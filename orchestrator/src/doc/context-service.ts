@@ -12,7 +12,7 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
-import { contextCursorWarning, cursorAncestorTasks } from './context-cursor-warning-decision.ts'
+import { contextCursorWarning } from './context-cursor-warning-decision.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
   getContextItem,
@@ -46,6 +46,45 @@ type ResolvedContextHolder = {
   holder: string
   task: ContextTaskIdentity | null
   children: HubTaskReference[]
+}
+
+type CursorTask = { project: string; taskKey: string | null }
+type TaskParent = { key: string; project: string; parent_key?: string | null }
+
+/** Read only the ancestor chains needed to decide whether an open cursor carries a task. */
+export async function cursorAncestorTasks(input: {
+  task: { key: string; project: string }
+  openCursors: readonly CursorTask[]
+  lookup(project: string, key: string): Promise<TaskParent | null>
+}): Promise<TaskParent[]> {
+  if (
+    input.openCursors.some(
+      (cursor) => cursor.project === input.task.project && cursor.taskKey === input.task.key,
+    )
+  )
+    return []
+
+  const cache = new Map<string, TaskParent | null>()
+  const tasks = new Map<string, TaskParent>()
+  for (const cursor of input.openCursors) {
+    if (cursor.project !== input.task.project || !cursor.taskKey) continue
+    let key: string | null = cursor.taskKey
+    const visited = new Set<string>()
+    while (key && !visited.has(key)) {
+      visited.add(key)
+      if (key === input.task.key) return [...tasks.values()]
+      const scopedKey = `${cursor.project}\0${key}`
+      let task = cache.get(scopedKey)
+      if (task === undefined && !cache.has(scopedKey)) {
+        task = await input.lookup(cursor.project, key)
+        cache.set(scopedKey, task)
+      }
+      if (!task) break
+      tasks.set(scopedKey, task)
+      key = task.parent_key ?? null
+    }
+  }
+  return [...tasks.values()]
 }
 
 async function resolveContextHolder(

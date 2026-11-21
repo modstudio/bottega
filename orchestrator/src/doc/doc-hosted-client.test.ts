@@ -312,6 +312,21 @@ test('a task context subject derives its project space from its record lookup', 
     status: 409,
     message: expect.stringContaining('agent context set --task <KEY>'),
   })
+  globals[CONTEXT_FACTS_PORTS_KEY] = {
+    task: async () => null,
+    lookup: async () => null,
+    record: async () => {
+      throw new Error('record transport unavailable')
+    },
+    children: async () => [],
+    pointer: async () => null,
+  }
+  await expect(hostedContextItemClient(`task:${newRecordId()}`)).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining(
+      'task record could not be read (record transport unavailable)',
+    ),
+  })
 })
 
 test('a session context subject writes to its checkout project space, else the personal space', async () => {

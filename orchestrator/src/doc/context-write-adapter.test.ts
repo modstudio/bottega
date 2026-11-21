@@ -8,7 +8,9 @@ import {
   type ContextFactsPorts,
   type PointerTargetPorts,
   resolveContextTaskByRecordId,
+  resolveContextTaskWithChildren,
   resolvedPointerTarget,
+  taskProfile,
 } from './context-write-adapter.ts'
 
 function ports(document: PointerTargetPorts['document'] = async () => {}): PointerTargetPorts {
@@ -200,7 +202,7 @@ function contextFacts(record: ContextFactsPorts['record']): ContextFactsPorts {
   }
 }
 
-test('a missing task record returns null without marking projects unreadable', async () => {
+test('a missing task record returns null without a read failure', async () => {
   const database = migratedTestDatabase()
   const recordId = newRecordId()
   const result = await resolveContextTaskByRecordId(
@@ -211,11 +213,11 @@ test('a missing task record returns null without marking projects unreadable', a
     }),
   )
 
-  expect(result).toEqual({ task: null, unreadable: [] })
+  expect(result).toEqual({ task: null, failure: null })
   database.close()
 })
 
-test('a task-record transport failure marks registered projects unreadable', async () => {
+test('a task-record transport failure preserves its cause', async () => {
   const database = migratedTestDatabase()
   fixtureProjectRecordId(database)
   const result = await resolveContextTaskByRecordId(
@@ -227,6 +229,79 @@ test('a task-record transport failure marks registered projects unreadable', asy
   )
 
   expect(result.task).toBeNull()
-  expect(result.unreadable).toContain('run-fixture')
+  expect(result.failure).toBe('record service unavailable')
+  database.close()
+})
+
+test('one task resolves by lookup and profiles only its direct children', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,canon,settings)
+       VALUES (?,'context-fixture','/tmp/context-fixture',0,'{"keyPrefixes":["CTX"]}')`,
+    )
+    .run(newRecordId())
+  const calls = { pull: 0, lookup: [] as string[], children: [] as string[] }
+  const parent = {
+    key: 'CTX-1',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+  }
+  const child = {
+    key: 'CTX-2',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+    parent_key: parent.key,
+  }
+  const adapter: ContextFactsPorts = {
+    task: async () => {
+      calls.pull++
+      return null
+    },
+    lookup: async (project, key) => {
+      calls.lookup.push(`${project}:${key}`)
+      return parent
+    },
+    record: async () => null,
+    children: async (project, key) => {
+      calls.children.push(`${project}:${key}`)
+      return [child]
+    },
+    pointer: async () => null,
+  }
+
+  const resolved = await resolveContextTaskWithChildren('ctx-1', database, adapter)
+
+  expect(resolved).toEqual({ task: parent, children: [child] })
+  expect(taskProfile(resolved.task.key, resolved.children)).toBe('epic')
+  expect(calls).toEqual({
+    pull: 0,
+    lookup: ['context-fixture:CTX-1'],
+    children: ['context-fixture:CTX-1'],
+  })
+  database.close()
+})
+
+test('a direct-children read failure is a task read refusal', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,canon,settings)
+       VALUES (?,'context-fixture','/tmp/context-fixture',0,'{"keyPrefixes":["CTX"]}')`,
+    )
+    .run(newRecordId())
+  const adapter = contextFacts(async () => null)
+  adapter.lookup = async () => ({
+    key: 'CTX-1',
+    record_id: newRecordId(),
+    project: 'context-fixture',
+  })
+  adapter.children = async () => {
+    throw new Error('children unavailable')
+  }
+
+  await expect(resolveContextTaskWithChildren('CTX-1', database, adapter)).rejects.toThrow(
+    'could not read task data for project context-fixture: children unavailable',
+  )
   database.close()
 })

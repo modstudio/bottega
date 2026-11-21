@@ -15,11 +15,11 @@ export async function contextItemOwner(holder: string): Promise<RecordWriteOwner
     return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }
   }
   if (address.holderKind === 'task') {
-    const { task, unreadable } = await resolveContextTaskByRecordId(address.holderId)
+    const { task, failure } = await resolveContextTaskByRecordId(address.holderId)
     if (task) return { kind: 'task', projectName: task.project }
     throw new RecordApiRequestError(
-      unreadable.length > 0
-        ? `task context owner could not be resolved because the tasks of ${unreadable.join(', ')} could not be read; run \`${PLATFORM_SLUG} record doctor\`, then retry`
+      failure
+        ? `task context owner could not be resolved because the task record could not be read (${failure}); run \`${PLATFORM_SLUG} record doctor\`, then retry`
         : `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
       'refused',
       409,
