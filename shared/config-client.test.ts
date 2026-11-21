@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
+import { BoundExceededError } from './call-budgets.ts'
 import {
   type ConfigCallObservation,
   type ConfigClient,
   ConfigClientError,
   configClient,
 } from './config-client.ts'
-import { BoundExceededError } from './call-budgets.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 import { CALLER_HEADER_NAME, withRecordCaller } from './record-caller.ts'
 

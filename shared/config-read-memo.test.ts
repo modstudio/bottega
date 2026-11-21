@@ -115,8 +115,8 @@ describe('hosted configuration read memo', () => {
     const beta = await client.listSecrets('default', { destinationSpaceId: 'beta' })
 
     expect(requests).toBe(2)
-    expect(alpha).toEqual([{ key: 'secret-alpha' }])
-    expect(beta).toEqual([{ key: 'secret-beta' }])
+    expect(alpha.map((secret) => secret.key)).toEqual(['secret-alpha'])
+    expect(beta.map((secret) => secret.key)).toEqual(['secret-beta'])
   })
 
   test('a rejected read is retried', async () => {

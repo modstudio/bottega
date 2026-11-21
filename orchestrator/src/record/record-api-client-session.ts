@@ -1,12 +1,12 @@
 // concern: record-api-client-session
 /** Builds hosted session identity and evidence-sync requests. */
 
+import { RECORD_WHOAMI_ROUTE } from '../../../shared/config-read-memo.ts'
 import {
   NO_DESTINATION_WRITES_ROUTE,
   type NoDestinationWriteReport,
   parseNoDestinationWriteReport,
 } from '../../../shared/record-no-destination-write-contract.ts'
-import { RECORD_WHOAMI_ROUTE } from '../../../shared/config-read-memo.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'

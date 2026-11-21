@@ -937,11 +937,7 @@ function recordIdentityAndSpaceClient(
   request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   const changingRequest: RecordClientRequest = async (path, init) => {
-    try {
-      return await request(path, init)
-    } finally {
-      markRecordIdentityChanged()
-    }
+    return request(path, init).finally(markRecordIdentityChanged)
   }
   return {
     createOrganization: (input) =>

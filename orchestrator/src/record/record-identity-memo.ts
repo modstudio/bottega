@@ -24,7 +24,7 @@ function recordIdentityMemoRequest(
           baseUrl(),
           token,
           path,
-          init.destinationSpaceId,
+          (init as { destinationSpaceId?: string }).destinationSpaceId,
           undefined,
           () => request<RecordIdentity>(path, init),
         ) as Promise<T>
