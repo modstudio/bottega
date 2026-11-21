@@ -29,19 +29,19 @@ export function requireMutableArtifactFreshness(
   if (refusal) throw new Error(refusal)
 }
 
-export type TimedArtifactNotice = { kind: MutableArtifactKind; untimed: string }
+type TimedArtifactNotice = { kind: MutableArtifactKind; untimed: string }
 
-export const TASK_FRESHNESS_NOTICE: TimedArtifactNotice = {
+const TASK_FRESHNESS_NOTICE: TimedArtifactNotice = {
   kind: 'task',
   untimed: 'freshness unchecked: the tracker returns no task update time',
 }
 
-export const TASK_COMMENT_FRESHNESS_NOTICE: TimedArtifactNotice = {
+const TASK_COMMENT_FRESHNESS_NOTICE: TimedArtifactNotice = {
   kind: 'task comment',
   untimed: 'freshness unchecked: external tracker returns no comment time',
 }
 
-export function timedArtifactFreshnessNotice(
+function timedArtifactFreshnessNotice(
   config: TimedArtifactNotice,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,

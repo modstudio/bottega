@@ -57,9 +57,9 @@ import {
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import {
+  TIMED_FRESHNESS as FRESHNESS,
   requireAttachedTextFreshness,
   requireMutableArtifactFreshness,
-  TIMED_FRESHNESS as FRESHNESS,
 } from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
