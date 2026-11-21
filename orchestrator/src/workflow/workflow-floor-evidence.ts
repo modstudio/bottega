@@ -67,7 +67,10 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
-import { resolveTaskDocumentArtifact } from './workflow-floor-task-document-evidence.ts'
+import {
+  artifactTaskIsNotCursorTask,
+  resolveTaskDocumentArtifact,
+} from './workflow-floor-task-document-evidence.ts'
 import { readHubTask, readHubTaskDocument } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
@@ -471,11 +474,11 @@ async function resolveNumericArtifact(
   } | null
   if (run) {
     const binding = loadRunBinding(run.record_id, d)
-    if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+    if (!binding) throw new Error(`--artifact ${id} is not a run bound to this cursor`)
     await requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
     return { ref: String(id), exists: true }
   }
-  throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+  throw new Error(`--artifact ${id} is not a recorded run`)
 }
 
 async function resolveTaskArtifact(
@@ -491,11 +494,7 @@ async function resolveTaskArtifact(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
     )
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
-  if (
-    identity.workflowTaskRecordId
-      ? task.recordId !== identity.workflowTaskRecordId
-      : Boolean(identity.workflowKey) && ref.key !== identity.workflowKey
-  )
+  if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)

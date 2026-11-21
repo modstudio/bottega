@@ -20,8 +20,20 @@ export type HubTaskRead = {
 export async function readHubTaskDocument(
   value: string,
   scope: { project: string; recordId?: string },
-): Promise<{ id: string; label: string }> {
-  return await taskReader().document(value, scope)
+): Promise<{ id: string; label: string; task_record_id: string } | null> {
+  try {
+    return await taskReader().document(value, scope)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const key = value.split('/', 1)[0]!
+    if (namesMissingTask(detail, key) || namesMissingTaskDocument(detail, value)) return null
+    throw error
+  }
+}
+
+export function namesMissingTaskDocument(text: string, value: string): boolean {
+  const expected = `no task document ${value}`
+  return text.split('\n').some((line) => line.trim() === expected)
 }
 
 type HubTaskReadJson = {

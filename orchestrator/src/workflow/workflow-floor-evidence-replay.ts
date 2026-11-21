@@ -14,7 +14,7 @@ export type FloorEvidencePorts = {
   readTaskDocument?: (
     value: string,
     scope: { project: string; recordId?: string },
-  ) => Promise<{ id: string; label: string }>
+  ) => Promise<{ id: string; label: string; task_record_id: string } | null>
   readNote?: (
     project: string,
     reference: string,

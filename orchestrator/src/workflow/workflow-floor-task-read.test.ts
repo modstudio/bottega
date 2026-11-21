@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { missingTaskMessage } from '../../../shared/task-missing.ts'
-import { hubTaskReadRefusal } from './workflow-floor-task-read.ts'
+import { hubTaskReadRefusal, namesMissingTaskDocument } from './workflow-floor-task-read.ts'
+
+test('a missing task document matcher requires the complete hub miss line', () => {
+  expect(namesMissingTaskDocument('no task document DEV-1070/2', 'DEV-1070/2')).toBeTrue()
+  expect(namesMissingTaskDocument('no task document DEV-1070/20', 'DEV-1070/2')).toBeFalse()
+})
 
 test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
   const detail = missingTaskMessage('DEV-1070')

@@ -742,7 +742,7 @@ function floorUnmetMessage(
         ? trackerUnmetMessage(floor, evidence)
         : '')
   if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)
-    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when it has a reply or a recorded artifact`
+    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when the run is bound to this cursor`
   const artifactRunOffered = evidence.artifacts?.find(
     (entry) => entry.artifactRunOffered !== undefined,
   )?.artifactRunOffered

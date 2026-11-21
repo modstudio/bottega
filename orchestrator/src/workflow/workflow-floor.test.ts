@@ -309,7 +309,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>; run 8 is accepted as --artifact 8 when the run is bound to this cursor',
   })
 })
 
