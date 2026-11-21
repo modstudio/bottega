@@ -21,9 +21,11 @@ export type FailedBeforeClaimRunEvidence = {
   count: number
 }
 
+type CursorlessRunEvidenceRow = Omit<CursorlessRunEvidence, 'probe'> & { probe: number }
+
 export function cursorlessRunEvidence(database: Database, from: string): CursorlessRunEvidence[] {
   return database
-    .query<Omit<CursorlessRunEvidence, 'probe'> & { probe: number }, [string]>(
+    .query<CursorlessRunEvidenceRow, [string]>(
       `SELECT number,job,session_id session,started_at at,probe=1 probe
          FROM run
         WHERE ${CURSORLESS_RUN_FAMILY_PREDICATE}

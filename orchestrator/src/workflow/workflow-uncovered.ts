@@ -37,14 +37,16 @@ export type HandoffTransition = {
   openedAt: string
 }
 
+type UncoveredRun = { number: number; job: string; session: string | null }
+
 export type WorkflowUncoveredReport = {
   expected: 0
   days: Array<{
     day: string
     count: number
     tasks: Array<{ project: string; key: string }>
-    cursorlessRuns: Array<{ number: number; job: string; session: string | null }>
-    probeRuns: Array<{ number: number; job: string; session: string | null }>
+    cursorlessRuns: UncoveredRun[]
+    probeRuns: UncoveredRun[]
     failedBeforeClaim: number
   }>
 }
@@ -109,14 +111,13 @@ export function decideWorkflowUncovered(input: {
         (left, right) =>
           left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
       )
-      const cursorlessRuns = (input.cursorlessRuns ?? [])
-        .filter((run) => run.at.slice(0, 10) === day && !run.probe)
-        .map(({ number, job, session }) => ({ number, job, session }))
-        .sort((left, right) => left.number - right.number)
-      const probeRuns = (input.cursorlessRuns ?? [])
-        .filter((run) => run.at.slice(0, 10) === day && run.probe)
-        .map(({ number, job, session }) => ({ number, job, session }))
-        .sort((left, right) => left.number - right.number)
+      const runsOn = (probe: boolean): UncoveredRun[] =>
+        (input.cursorlessRuns ?? [])
+          .filter((run) => run.at.slice(0, 10) === day && run.probe === probe)
+          .map(({ number, job, session }) => ({ number, job, session }))
+          .sort((left, right) => left.number - right.number)
+      const cursorlessRuns = runsOn(false)
+      const probeRuns = runsOn(true)
       const failedBeforeClaim =
         input.failedBeforeClaimRuns?.find((evidence) => evidence.day === day)?.count ?? 0
       return { day, count: tasks.length, tasks, cursorlessRuns, probeRuns, failedBeforeClaim }
