@@ -6,7 +6,6 @@ import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
-import type { ContextHolderKind } from '../../../shared/context-item-vocabulary.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
@@ -79,6 +78,7 @@ import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
 import type {
   RecordContextItem,
+  RecordContextHolderKind,
   RecordContextItemHolderGroup,
   RecordContextItemInput,
 } from './record-context-items.ts'
@@ -135,12 +135,12 @@ type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
     readContextItems(
       input: Tenant & {
-        holders: Array<{ holderKind: ContextHolderKind; holderId: string }>
+        holders: Array<{ holderKind: RecordContextHolderKind; holderId: string }>
         slug?: string
       },
     ): Promise<RecordContextItem[]>
     readContextHolders(
-      input: Tenant & { holderKind: ContextHolderKind },
+      input: Tenant & { holderKind: RecordContextHolderKind },
     ): Promise<RecordContextItemHolderGroup[]>
     upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
     deleteContextItem(

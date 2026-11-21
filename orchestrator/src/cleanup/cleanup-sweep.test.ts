@@ -12,6 +12,7 @@ import {
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
+import { sessionResumeBriefState } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
@@ -21,7 +22,6 @@ import { sweepRuns } from './cleanup-sweep.ts'
 import {
   decideSessionContextSweep,
   sessionContextOwnershipLine,
-  sessionResumeBriefState,
   sweepSessionContext,
 } from './cleanup-sweep-context.ts'
 import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'

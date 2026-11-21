@@ -36,7 +36,10 @@ import {
   ContextWriteRefusalError,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
-import { contextTaskOwner } from './doc-hosted-client.ts'
+import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
+import { listDocsStore } from './doc-read-store.ts'
+import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
+import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 
@@ -257,6 +260,72 @@ export async function sessionContextHolders(database: Database) {
   )
 }
 
+export type ResumeBriefState = 'open' | 'absent' | 'unreadable'
+
+function localSessionHasOpenResumeBrief(database: Database, session: string): boolean {
+  return listDocsStore({ scope: 'resume' }, database).some((doc) => {
+    if (parseResumeFrontmatter(doc.body)?.status !== 'open') return false
+    return latestStoredDocAuthorSession(doc.record_id, database) === session
+  })
+}
+
+function sessionResumeProjects(database: Database, session: string): string[] {
+  return database
+    .query<{ project: string }, [string, string]>(
+      `SELECT DISTINCT project FROM presence WHERE session_id=? AND project IS NOT NULL
+       UNION
+       SELECT DISTINCT project.name AS project
+       FROM run JOIN project ON project.record_id=run.project_record_id
+       WHERE run.session_id=?`,
+    )
+    .all(session, session)
+    .map((row) => row.project.trim())
+    .filter(Boolean)
+}
+
+async function hostedProjectHasOpenResumeBrief(project: string, session: string): Promise<boolean> {
+  const client = await hostedDocClient('resume', project)
+  let cursor: string | null = null
+  do {
+    const page = await client.listDocs({ scope: 'resume', subject: project, limit: 100, cursor })
+    for (const row of page.items) {
+      if (typeof row.body !== 'string' || parseResumeFrontmatter(row.body)?.status !== 'open')
+        continue
+      if (typeof row.id !== 'string') continue
+      const revisions = (await client.listRevisions(row.id)) as Array<{
+        op: string
+        sessionId: string | null
+        at: string
+      }>
+      const author = revisions
+        .filter((revision) => revision.op !== 'consume')
+        .sort((left, right) => right.at.localeCompare(left.at))[0]?.sessionId
+      if (author === session) return true
+    }
+    cursor = page.nextCursor
+  } while (cursor)
+  return false
+}
+
+/** Reads resume-brief liveness from the same authority as the context-holder sweep. */
+export async function sessionResumeBriefState(
+  readSource: 'local' | 'hosted',
+  database: Database,
+  session: string,
+): Promise<ResumeBriefState> {
+  if (readSource === 'local')
+    return localSessionHasOpenResumeBrief(database, session) ? 'open' : 'absent'
+  const projects = sessionResumeProjects(database, session)
+  if (projects.length === 0) return 'unreadable'
+  try {
+    for (const project of projects)
+      if (await hostedProjectHasOpenResumeBrief(project, session)) return 'open'
+    return 'absent'
+  } catch {
+    return 'unreadable'
+  }
+}
+
 /** Hosted lifecycle removal is unconditional like task clearing; the selected record revision guards against a changed item. */
 async function dropSessionContextItemForLifecycle(input: {
   session: string
@@ -399,6 +468,7 @@ export async function setContextItem(
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
   await assertContextSetAllowed(
     task ? { holder, item, contextTask: task, contextTaskChildren: children } : { holder, item },
+    listContextItems,
   )
   const localInput = {
     holder,

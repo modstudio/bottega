@@ -65,6 +65,7 @@ function readOutput(row: Record<string, unknown>): StoredContextItem {
 
 export type RecordContextItem = StoredContextItem
 export type RecordContextItemHolderGroup = ContextItemHolderGroup
+export type RecordContextHolderKind = ContextHolderKind
 
 export async function readRecordContextItems(
   input: Tenant & {

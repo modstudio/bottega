@@ -33,6 +33,7 @@ export const sessionLossesModules: SessionLossesModule[] = [
     '../run/run-artifacts.ts',
     '../run/run-dispatch.ts',
     '../run/run-status.ts',
+    '../session/context-review-store.ts',
     '../workflow/task-flow-store.ts',
     './session-losses.ts',
   ]),

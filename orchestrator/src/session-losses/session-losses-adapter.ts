@@ -17,13 +17,12 @@ import {
   readTranscriptSessionId,
   transcriptSources,
 } from '../metric/transcript-reader.ts'
-import { isClosedStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { decodeReviewItemRefs } from '../session/context-review-store.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { sqliteTaskFlowReadStore } from '../workflow/task-flow-store-sqlite.ts'
+import { localTaskRecordIdsForSession, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
   type ContextReviewLoss,
@@ -91,12 +90,7 @@ export async function contextReviewMeasurements(
   )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
-  const cursorTasks = (
-    await sqliteTaskFlowReadStore(database).listStages({
-      sessionId,
-      states: TASK_FLOW_STAGE_STATES,
-    })
-  ).flatMap((row) => (row.task_record_id ? [row.task_record_id] : []))
+  const cursorTasks = await localTaskRecordIdsForSession(database, sessionId)
   const taskHolders = [
     ...database
       .query<{ task_record_id: string }, [string]>(

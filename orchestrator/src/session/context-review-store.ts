@@ -22,7 +22,7 @@ export type ContextReviewEvent = {
 
 export type ReviewItemRef = string | { id: string; holder: string }
 
-export function encodeReviewItemRefs(itemIds: string[], itemHolders?: string[]): string {
+function encodeReviewItemRefs(itemIds: string[], itemHolders?: string[]): string {
   return JSON.stringify(
     itemHolders ? itemIds.map((id, index) => ({ id, holder: itemHolders[index]! })) : itemIds,
   )

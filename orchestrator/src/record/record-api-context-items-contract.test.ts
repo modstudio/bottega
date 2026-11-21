@@ -13,6 +13,9 @@ import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
+const contractRoutes = ['GET /v1/context-items', 'GET /v1/context-items/holders'] as const
+const contractPath = (route: (typeof contractRoutes)[number]) => route.slice('GET '.length)
+
 const readDeps = {
   readContextItems: async () => [],
   readContextHolders: async () => [],
@@ -127,7 +130,9 @@ test('hosted context-item GET validates batches and forwards holders and slug', 
     },
   )
   const holderId = newRecordId()
-  const response = await app.request(`/v1/context-items?holder=task:${holderId}&slug=probe`)
+  const response = await app.request(
+    `${contractPath(contractRoutes[0])}?holder=task:${holderId}&slug=probe`,
+  )
   expect(response.status).toBe(200)
   expect(received).toMatchObject({
     holders: [{ holderKind: 'task', holderId }],
@@ -170,12 +175,12 @@ test('hosted context-item holders GET validates kind and returns grouped holders
     },
   )
 
-  const response = await app.request('/v1/context-items/holders?kind=session')
+  const response = await app.request(`${contractPath(contractRoutes[1])}?kind=session`)
   expect(response.status).toBe(200)
   expect(received).toMatchObject({ holderKind: 'session' })
   expect(await response.json()).toEqual(grouped)
 
-  const invalid = await app.request('/v1/context-items/holders?kind=invalid')
+  const invalid = await app.request(`${contractPath(contractRoutes[1])}?kind=invalid`)
   expect(invalid.status).toBe(400)
 })
 
