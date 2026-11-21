@@ -4,12 +4,13 @@ import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
 import { applyHostedRow } from './hosted-change-family.ts'
 import { otherTaskDocumentIdentityByNumber } from './identity/identity.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { adoptPendingHostedRow, removeQueuedHostedChangeField } from './outbox.ts'
+import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
+import { demoteOtherTaskDocumentRoleHolders } from './task-document-demotion.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { hostedTaskRow } from './task-hosted-record.ts'
 import { taskIdentityDecision } from './task-identity.ts'
@@ -264,25 +265,7 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     )
   }
   if (row.role !== null) {
-    const holders = conn
-      .query<{ record_id: string }, [string, string, string]>(
-        `SELECT record_id FROM task_document
-         WHERE task_record_id=? AND role=? AND record_id<>?`,
-      )
-      .all(taskRecordId, row.role, row.id)
-    conn
-      .query(
-        `UPDATE task_document SET role=NULL
-         WHERE task_record_id=? AND role=? AND record_id<>?`,
-      )
-      .run(taskRecordId, row.role, row.id)
-    for (const holder of holders)
-      removeQueuedHostedChangeField(conn, 'hub_task_document', holder.record_id, 'role', [
-        'role',
-        'title',
-        'body',
-        'version',
-      ])
+    demoteOtherTaskDocumentRoleHolders(conn, taskRecordId, row.role, row.id)
   }
   conn
     .query(
