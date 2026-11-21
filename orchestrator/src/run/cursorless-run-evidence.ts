@@ -13,6 +13,7 @@ export type CursorlessRunEvidence = {
   job: string
   session: string | null
   at: string
+  probe: boolean
 }
 
 export type FailedBeforeClaimRunEvidence = {
@@ -22,8 +23,8 @@ export type FailedBeforeClaimRunEvidence = {
 
 export function cursorlessRunEvidence(database: Database, from: string): CursorlessRunEvidence[] {
   return database
-    .query<CursorlessRunEvidence, [string]>(
-      `SELECT number,job,session_id session,started_at at
+    .query<Omit<CursorlessRunEvidence, 'probe'> & { probe: number }, [string]>(
+      `SELECT number,job,session_id session,started_at at,probe=1 probe
          FROM run
         WHERE ${CURSORLESS_RUN_FAMILY_PREDICATE}
           AND NOT (agent='(pending)' AND status='failed')
@@ -32,6 +33,7 @@ export function cursorlessRunEvidence(database: Database, from: string): Cursorl
     )
     .all(from)
     .filter((run) => Object.hasOwn(JOBS, run.job))
+    .map((run) => ({ ...run, probe: run.probe === 1 }))
 }
 
 type FailedBeforeClaimRunEvidenceRow = FailedBeforeClaimRunEvidence & { job: string }
