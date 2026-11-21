@@ -184,6 +184,9 @@ test('task-open-with-notes requires an open task and every named note to be live
   ).toBe('refuse')
   expect(result({ task, notes: [] }).action).toBe('refuse')
   expect(result({ task, notes: [{ ...note, promotedTask: 'DEV-978' }] }).action).toBe('refuse')
+  expect(result({ task, notes: [note, { ...note, promotedTask: 'DEV-978' }] }).action).toBe(
+    'refuse',
+  )
   expect(result({ task, notes: [{ ...note, staleAt: '2026-11-20T00:00:00.000Z' }] }).action).toBe(
     'refuse',
   )
