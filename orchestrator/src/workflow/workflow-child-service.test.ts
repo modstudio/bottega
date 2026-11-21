@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'bun:test'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
@@ -18,6 +18,8 @@ const database = testDatabaseFixture((d) => {
   seedCurrentWorkflowTreeFixture(d, ['plan-task'], 'epic child service fixture')
 })
 
+afterAll(() => installTaskReader(undefined as never))
+
 const row = (key: string, parentKey: string | null): TaskReadRow => ({
   key,
   record_id: `task-${key}`,
@@ -35,7 +37,17 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
-    lookup: async () => [],
+    lookup: async (_project, keys) => {
+      const found = new Map<string, TaskReadRow>()
+      for (const key of keys) {
+        let task = byKey.get(key)
+        while (task && !found.has(task.key)) {
+          found.set(task.key, task)
+          task = task.parent_key ? byKey.get(task.parent_key) : undefined
+        }
+      }
+      return [...found.values()]
+    },
     list: async ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
     show: async (key) => ({ task: byKey.get(key)! }),
     duplicates: async () => [],

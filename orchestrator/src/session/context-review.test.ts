@@ -74,4 +74,5 @@ test('reviewContext drives the brief and its own lookup within the task-call bud
     { operation: 'list', status: 'review' },
     { operation: 'lookup', keys: ['DEV-1'] },
   ])
+  installTaskReader(undefined as never)
 })

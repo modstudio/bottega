@@ -486,6 +486,7 @@ test('contextBrief drives lookup and filtered queue reads within its task-call b
     { operation: 'list', status: 'active' },
     { operation: 'list', status: 'review' },
   ])
+  installTaskReader(undefined as never)
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {

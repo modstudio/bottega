@@ -50,6 +50,7 @@ test('filed-issue queue reads only the three live status categories', async () =
     { project: PLATFORM_SLUG, status: 'active' },
     { project: PLATFORM_SLUG, status: 'review' },
   ])
+  installTaskReader(undefined as never)
 })
 
 test('project-scoped filed issue state belongs wholly to the platform project', () => {

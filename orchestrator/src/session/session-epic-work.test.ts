@@ -125,4 +125,5 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
   expect(surfaces).toEqual([
     expect.objectContaining({ epic: 'DEV-1', open: ['DEV-3'], queue: [] }),
   ])
+  installTaskReader(undefined as never)
 })
