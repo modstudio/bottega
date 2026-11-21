@@ -26,6 +26,7 @@ import {
   isClosedStageState,
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
   TASK_FLOW_STAGE_STATES,
   TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
 } from '../record/record-task-flow-contract.ts'
@@ -45,6 +46,7 @@ import type {
   TaskFlowOpenObligationRow,
   TaskFlowOpenStageWorktreeRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -98,6 +100,29 @@ async function listAllTaskFlowStages(
   selector: StageListSelector,
   destination?: RecordRequestDestination,
 ): Promise<ListedItem[]> {
+  if (selector.workflowKeys?.length === 0) return []
+  if ((selector.workflowKeys?.length ?? 0) > TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX) {
+    const chunks: ListedItem[][] = []
+    for (
+      let offset = 0;
+      offset < selector.workflowKeys!.length;
+      offset += TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX
+    )
+      chunks.push(
+        await listAllTaskFlowStages(
+          client,
+          {
+            ...selector,
+            workflowKeys: selector.workflowKeys!.slice(
+              offset,
+              offset + TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
+            ),
+          },
+          destination,
+        ),
+      )
+    return chunks.flat()
+  }
   const items: ListedItem[] = []
   let cursor: string | undefined
   let page = 1
@@ -343,11 +368,7 @@ class RecordTaskFlowReadStore {
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
   }
-  async listStages(input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-  }) {
+  async listStages(input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>) {
     return this.questions.listStages(input)
   }
   async keyedStageHistory(input: { since: string }) {

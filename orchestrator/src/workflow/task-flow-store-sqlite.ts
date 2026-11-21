@@ -40,6 +40,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
@@ -305,11 +306,7 @@ class SqliteTaskFlowStore {
           .all(input.project, input.workflow, input.sessionId)
   }
 
-  listStages(input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }): TaskFlowListedStageRow[] {
+  listStages(input: TaskFlowStageListInput<TaskFlowStageState>): TaskFlowListedStageRow[] {
     const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
     const values: string[] = [...input.states]
     if (input.project) {
@@ -319,6 +316,11 @@ class SqliteTaskFlowStore {
     if (input.sessionId) {
       clauses.push('cursor.session_id=?')
       values.push(input.sessionId)
+    }
+    if (input.workflowKeys) {
+      if (input.workflowKeys.length === 0) return []
+      clauses.push(`cursor.workflow_key IN (${input.workflowKeys.map(() => '?').join(',')})`)
+      values.push(...input.workflowKeys)
     }
     return this.database
       .query<TaskFlowListedStageRow, string[]>(
@@ -743,11 +745,7 @@ type SqliteTaskFlowReadStoreWithOpenStages = SqliteTaskFlowReadStore & {
 /** Delegates async reads to the single synchronous SQLite implementation. */
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStoreWithOpenStages {
   const local = new SqliteTaskFlowStore(database)
-  const listStages = async (input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }) => {
+  const listStages = async (input: TaskFlowStageListInput<TaskFlowStageState>) => {
     const rows = local.listStages(input)
     const openByCursor = new Map<string, number>()
     for (const row of await openQuestionsForCursors(
