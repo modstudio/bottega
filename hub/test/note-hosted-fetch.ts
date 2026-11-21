@@ -30,6 +30,18 @@ const identity = {
   },
 }
 
+type CapturedNoteChange = {
+  table: string
+  op: string
+  expected_revision?: unknown
+}
+
+export const noteHostedChanges: CapturedNoteChange[] = []
+
+export function resetNoteHostedChanges() {
+  noteHostedChanges.length = 0
+}
+
 const shape = (note: Awaited<ReturnType<typeof getNote>>, at: string) => ({
   id: note.record_id,
   number: note.number,
@@ -46,6 +58,7 @@ const shape = (note: Awaited<ReturnType<typeof getNote>>, at: string) => ({
   promoted_task: note.promoted_task,
   updated_at: at,
   deleted_at: null,
+  revision: '1',
 })
 
 async function getRoute(url: URL, at: string) {
@@ -136,7 +149,8 @@ export const noteHostedFetch = async (input: string, init?: RequestInit) => {
   const at = new Date().toISOString()
   if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
   if (url.pathname === '/v1/changes') {
-    const changes = rawBody as Array<{ id: string }>
+    const changes = rawBody as Array<CapturedNoteChange & { id: string }>
+    noteHostedChanges.push(...changes)
     return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
   }
   if (url.pathname.startsWith('/v1/notes') && init?.method === 'GET') return getRoute(url, at)
