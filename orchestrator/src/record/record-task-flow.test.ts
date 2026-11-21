@@ -11,6 +11,7 @@ import {
   readRecordTaskFlowTextTransaction,
   readRecordTaskFlowTransaction,
 } from './record-task-flow.ts'
+import { taskFlowStageListQuerySchema } from './record-task-flow-contract.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002416'
 const USER = '01990000-0000-7000-8000-000000002417'
@@ -116,12 +117,17 @@ test('stage-list summary omits only closed-step notes and autonomy', async () =>
     WHERE id='${STAGE}';
     SET ROLE record_actor;
   `)
-  const base = {
+  const tenant = {
     userId: USER,
     spaceId: SPACE,
-    projectId: PROJECT,
-    order: 'project' as const,
-    limit: 200,
+  }
+  const base = {
+    ...tenant,
+    ...taskFlowStageListQuerySchema.parse({
+      projectId: PROJECT,
+      order: 'project',
+      limit: 200,
+    }),
   }
   const sql = pgliteSql(postgres)
   const full = await listRecordTaskFlowStagesTransaction(sql, base)
@@ -181,7 +187,15 @@ test('stage-list summary omits only closed-step notes and autonomy', async () =>
     nextCursor: null,
   })
 
-  const summary = await listRecordTaskFlowStagesTransaction(sql, { ...base, view: 'summary' })
+  const summary = await listRecordTaskFlowStagesTransaction(sql, {
+    ...tenant,
+    ...taskFlowStageListQuerySchema.parse({
+      projectId: PROJECT,
+      order: 'project',
+      limit: 200,
+      view: 'summary',
+    }),
+  })
   const fullStage = full.items[0]!.stage as Record<string, unknown>
   const summaryStage = summary.items[0]!.stage as Record<string, unknown>
   expect(
