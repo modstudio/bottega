@@ -364,17 +364,16 @@ export async function continueCommand(
     turn: 'continue',
     ...admission,
   })
-  const reportDetached =
-    reportsBeforeFollow(flags)
-      ? async (childId: string, jobName: string) => {
-          return dependencies.reportContinuedRun(
-            childId,
-            jobName,
-            flags,
-            controlPresentation(presentation),
-          )
-        }
-      : undefined
+  const reportDetached = reportsBeforeFollow(flags)
+    ? async (childId: string, jobName: string) => {
+        return dependencies.reportContinuedRun(
+          childId,
+          jobName,
+          flags,
+          controlPresentation(presentation),
+        )
+      }
+    : undefined
   const resumed = await dependencies.continueRun(
     id,
     message,

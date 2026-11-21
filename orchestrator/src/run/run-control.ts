@@ -660,7 +660,7 @@ function recordContinuationTreeSource(
   appendRunEvent(childId, { ts: nowIso(), type: 'text', text })
 }
 
-async function reportAndRecordContinuationTree(
+async function reportAndRecordTree(
   childId: string,
   jobName: string,
   branchSource: ReturnType<typeof continuationBranchPlan>['source'],
@@ -867,13 +867,7 @@ export async function continueRun(
       continuationMessage: messageBinding,
     },
   })
-  const reported = await reportAndRecordContinuationTree(
-    childId,
-    row.job,
-    branchSource,
-    treePlan,
-    dependencies,
-  )
+  const reported = await reportAndRecordTree(childId, row.job, branchSource, treePlan, dependencies)
   auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)
   await renewContinuedRunClaim(dependencies, row)
   return { childId, job: row.job, reported }
