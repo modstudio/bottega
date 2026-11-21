@@ -51,7 +51,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
           Buffer.byteLength(input.prompt),
           input.callerCwd,
           input.runProjectName,
-          input.runProjectId,
+          input.runProjectRecordId,
         )
       const promptPath = join(input.callerCwd, '.fixture-prompt.md')
       return {

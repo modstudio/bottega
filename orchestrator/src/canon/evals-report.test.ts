@@ -213,16 +213,16 @@ describe('behavioral canon evals', () => {
       launchCwd: '/projectless/canon-eval-scratch',
       probe: true,
     })
-    const attribution = runProjectAttribution({
-      projectName: null,
-      projectRecordId: options.projectRecordId,
-    })
+    const attributedProjectId = runProjectAttribution(null, options.projectRecordId).rowProjectId(
+      links.projectRecordId,
+    )
+    expect(attributedProjectId).toBe(projectId)
     const runId = addRun({
       agent: 'codex',
       job: 'implement',
       status: 'running',
       probe: 1,
-      projectRecordId: attribution.runProjectRecordId ?? links.projectRecordId,
+      projectRecordId: attributedProjectId,
     })
 
     await recordTerminalQuestions(runId, [

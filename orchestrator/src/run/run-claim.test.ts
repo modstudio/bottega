@@ -107,7 +107,8 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       writesJob: false,
       repoJob: false,
       runProjectName: null,
-      runProjectId: null,
+      namedProjectRecordId: null,
+      runProjectRecordId: null,
       reason: 'test',
       vendorSession: null,
       pack: null,
@@ -145,7 +146,8 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     const projectRecordId = newRecordId()
     upsertProject({ recordId: projectRecordId, name: 'claim-fixture', path: runsDir })
     claimInput.runProjectName = 'claim-fixture'
-    claimInput.runProjectId = projectRecordId
+    claimInput.namedProjectRecordId = projectRecordId
+    claimInput.runProjectRecordId = projectRecordId
     const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)

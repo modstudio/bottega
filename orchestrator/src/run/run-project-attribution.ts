@@ -1,20 +1,29 @@
 // concern: run project attribution
 /** Validates explicit row-only attribution separately from the run's project selector. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectByName, projectByRecordId } from '../project/projects.ts'
 
-export function runProjectAttribution(input: {
-  projectName: string | null
-  projectRecordId?: string
-}): { namedProjectRecordId: string | null; runProjectRecordId: string | null } {
-  if (input.projectRecordId && !projectByRecordId(input.projectRecordId)) {
-    throw new Error(`unknown project record ${JSON.stringify(input.projectRecordId)}`)
+export function validateRunProjectRecordId(projectRecordId?: string): void {
+  if (projectRecordId && !projectByRecordId(projectRecordId)) {
+    throw new Error(
+      `unknown project record ${JSON.stringify(projectRecordId)}; pass a registered project's record id (${PLATFORM_SLUG} project list --json)`,
+    )
   }
-  const namedProjectRecordId = input.projectName
-    ? (projectByName(input.projectName)?.recordId ?? null)
-    : null
+}
+
+export function runProjectAttribution(
+  projectName: string | null,
+  projectRecordId?: string,
+): {
+  namedProjectRecordId: string | null
+  rowProjectId(derivedProjectRecordId?: string | null): string | null
+} {
+  validateRunProjectRecordId(projectRecordId)
+  const namedProjectRecordId = projectName ? (projectByName(projectName)?.recordId ?? null) : null
   return {
     namedProjectRecordId,
-    runProjectRecordId: input.projectRecordId ?? namedProjectRecordId,
+    rowProjectId: (derivedProjectRecordId) =>
+      projectRecordId ?? derivedProjectRecordId ?? namedProjectRecordId,
   }
 }
