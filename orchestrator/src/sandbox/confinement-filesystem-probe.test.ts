@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { decideOutboundRefusal, probeVerdict } from './confinement-filesystem-probe.ts'
+import {
+  decideOutboundRefusal,
+  probeVerdict,
+  sandboxGitSpawnVerdict,
+} from './confinement-filesystem-probe.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
 
@@ -110,5 +114,25 @@ describe('probeVerdict', () => {
       status: 'failed',
       reason: 'command cell non-loopback outbound failed: exit 1',
     })
+  })
+})
+
+describe('sandboxGitSpawnVerdict', () => {
+  test('reports medians and accepts a ratio at the maximum', () => {
+    expect(
+      sandboxGitSpawnVerdict({
+        gitMs: [8, 24, 16],
+        trueMs: [1, 3, 2],
+      }),
+    ).toEqual({ status: 'ok', gitMedianMs: 16, trueMedianMs: 2, ratio: 8 })
+  })
+
+  test('reports a slow git spawn ratio', () => {
+    expect(
+      sandboxGitSpawnVerdict({
+        gitMs: [18, 20, 19],
+        trueMs: [1, 2, 3],
+      }),
+    ).toEqual({ status: 'slow', gitMedianMs: 19, trueMedianMs: 2, ratio: 9.5 })
   })
 })
