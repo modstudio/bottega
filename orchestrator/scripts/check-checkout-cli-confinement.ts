@@ -1,6 +1,6 @@
 // concern: CI proof that a confined ACP worker can launch checkout bottega-ask.
 
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
@@ -104,6 +104,95 @@ function assertCompiledCliDoesNotAutoloadDotenv(
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
+}
+
+function compiledCliVersion(
+  binary: string,
+  checkout: string,
+  cwd: string,
+  environment: Record<string, string>,
+) {
+  return startBoundedSync([binary, '--version'], {
+    budget: 'machine-update',
+    cwd,
+    env: { ...environment, [CHECKOUT_ROOT_ENV]: checkout },
+  })
+}
+
+function assertCompiledCliDoesNotAutoloadBunfig(
+  binary: string,
+  checkout: string,
+  root: string,
+  environment: Record<string, string>,
+): void {
+  const cwd = mkdtempSync(join(root, 'bunfig-'))
+  const marker = join(cwd, 'planted-preload-ran')
+  try {
+    writeFileSync(join(cwd, 'bunfig.toml'), 'preload = ["./planted.ts"]\n')
+    writeFileSync(
+      join(cwd, 'planted.ts'),
+      `await Bun.write(${JSON.stringify(marker)}, 'planted')\n`,
+    )
+    const result = compiledCliVersion(binary, checkout, cwd, environment)
+    if (existsSync(marker)) throw new Error('compiled checkout CLI autoloaded bunfig.toml')
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `compiled checkout CLI bunfig sentinel failed with exit ${result.exitCode}: ${result.stderr.trim()}`,
+      )
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}
+
+function assertCompiledCliDoesNotAutoloadJsonConfig(
+  binary: string,
+  checkout: string,
+  root: string,
+  environment: Record<string, string>,
+  config: 'tsconfig.json' | 'package.json',
+  message: string,
+): void {
+  const cwd = mkdtempSync(join(root, `${config.slice(0, -5)}-`))
+  const sentinel = `BOTTEGA_${config === 'tsconfig.json' ? 'TSCONFIG' : 'PACKAGE_JSON'}_AUTOLOAD_SENTINEL`
+  try {
+    writeFileSync(join(cwd, config), `${sentinel}\n`)
+    const result = compiledCliVersion(binary, checkout, cwd, environment)
+    if (`${result.stdout}\n${result.stderr}`.includes(sentinel)) throw new Error(message)
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `compiled checkout CLI ${config} sentinel failed with exit ${result.exitCode}: ${result.stderr.trim()}`,
+      )
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}
+
+function assertCompiledCliDoesNotAutoloadRuntimeConfig(
+  binary: string,
+  checkout: string,
+  root: string,
+  environment: Record<string, string>,
+): void {
+  assertCompiledCliDoesNotAutoloadDotenv(binary, checkout, root, environment)
+  assertCompiledCliDoesNotAutoloadBunfig(binary, checkout, root, environment)
+  assertCompiledCliDoesNotAutoloadJsonConfig(
+    binary,
+    checkout,
+    root,
+    environment,
+    'tsconfig.json',
+    'compiled checkout CLI autoloaded tsconfig.json',
+  )
+  assertCompiledCliDoesNotAutoloadJsonConfig(
+    binary,
+    checkout,
+    root,
+    environment,
+    'package.json',
+    'compiled checkout CLI autoloaded package.json',
+  )
 }
 
 async function probeConfinedTools(
@@ -215,7 +304,7 @@ async function main(): Promise<void> {
     environment.BOTTEGA_ASK_URL = askLoopback.url
     const built = runtime.build.buildCheckoutCli(checkout, environment)
     runtime.build.verifyCheckoutCliBuild(built)
-    assertCompiledCliDoesNotAutoloadDotenv(built.binary, checkout, root, environment)
+    assertCompiledCliDoesNotAutoloadRuntimeConfig(built.binary, checkout, root, environment)
     const result = await probeConfinedTools(runtime, {
       checkout,
       cwd,

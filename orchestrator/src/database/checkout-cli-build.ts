@@ -13,6 +13,7 @@ import {
 import { dirname, join } from 'node:path'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS } from '../../../shared/compiled-runtime-autoload.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { INSTALL_HOME_ENV, installationIdentity } from '../../../shared/install-root.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
@@ -110,7 +111,7 @@ export function buildCheckoutCli(
         'bun',
         'build',
         '--compile',
-        '--no-compile-autoload-dotenv',
+        ...COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS,
         '--define',
         'BOTTEGA_COMPILED_CHECKOUT_BUILD=true',
         `cli/${PLATFORM_SLUG}.ts`,

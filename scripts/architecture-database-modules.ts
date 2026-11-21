@@ -15,6 +15,7 @@ export const databaseModules: ArchitectureModule[] = [
     'node:path',
     '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',
+    '../../../shared/compiled-runtime-autoload.ts',
     '../../../shared/git.ts',
     '../../../shared/install-root.ts',
     '../../../shared/runtime-assets-in-sandbox.ts',
