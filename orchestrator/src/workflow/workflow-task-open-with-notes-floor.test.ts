@@ -30,15 +30,6 @@ test('an outcome floor replaces the step floor only for its declared outcome', (
   ])
 })
 
-test('ruling outcomes take precedence over outcome floors', () => {
-  const step = {
-    floor: ['tracker-transition'] as const,
-    rulingOutcomes: ['partial'],
-    outcomeFloors: { partial: ['task-open-with-notes'] as const },
-  }
-  expect(decideCloseFloors(step, 'partial').map((floor) => floor.kind)).toEqual(['ruling'])
-})
-
 test('task-open-with-notes requires an open task and every named note to be live and attached', () => {
   const task = {
     key: 'DEV-977',
@@ -68,6 +59,15 @@ test('task-open-with-notes requires an open task and every named note to be live
   expect(
     result({ task: { ...task, status: 'done', statusCategory: 'done' }, notes: [note] }).action,
   ).toBe('refuse')
+  expect(
+    result({ task: { ...task, status: 'dropped', statusCategory: 'dropped' }, notes: [note] }).action,
+  ).toBe('refuse')
+  expect(
+    result({ task: { ...task, status: null, statusCategory: null }, notes: [note] }),
+  ).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining("DEV-977's status category could not be established"),
+  })
   expect(result({ task, notes: [] }).action).toBe('refuse')
   expect(result({ task, notes: [{ ...note, promotedTask: 'DEV-978' }] }).action).toBe('refuse')
   expect(result({ task, notes: [note, { ...note, promotedTask: 'DEV-978' }] }).action).toBe(

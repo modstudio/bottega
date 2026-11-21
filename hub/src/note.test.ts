@@ -637,6 +637,9 @@ describe('suggestion notes', () => {
           body: `note ${note.label} relinked from ${previous.key}: the repair belongs here`,
         }),
       )
+      await expect(relinkNote(note.record_id, target.key, 'already there')).rejects.toThrow(
+        `note ${note.label} is already attached to ${target.key}`,
+      )
 
       const unattached = (
         await createNote({

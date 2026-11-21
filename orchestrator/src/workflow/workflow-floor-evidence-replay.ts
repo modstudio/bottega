@@ -7,18 +7,14 @@ import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
 import type { DispatchWaiverEvidence } from './workflow-dispatch-waiver-evidence.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 import type { ReviewOwedFloorDecision } from './workflow-review-owed-decision.ts'
+import type { NoteFloorEvidence } from './workflow-task-open-with-notes-floor.ts'
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
   readNote?: (
     project: string,
     reference: string,
-  ) => Promise<{
-    recordId: string
-    label: string
-    promotedTask: string | null
-    staleAt: string | null
-  } | null>
+  ) => Promise<Pick<NoteFloorEvidence, 'recordId' | 'label' | 'promotedTask' | 'staleAt'> | null>
   runHasArtifacts?: (runId: string) => boolean
   resolveCheckout?: (
     cwd: string,

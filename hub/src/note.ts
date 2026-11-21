@@ -767,6 +767,15 @@ export async function relinkNote(
     )
   const target = targetTask.trim().toUpperCase()
   if (!target) throw new Error('--task is required')
+  if (target === current.promoted_task.toUpperCase())
+    throw new Error(
+      `note ${current.label} is already attached to ${current.promoted_task}; choose a different task with --task <KEY>`,
+    )
+  const project = registeredProject(current.project)
+  if (taskCreationDestination(project) === 'tracker')
+    throw new Error(
+      `note ${current.label} cannot be relinked in project ${current.project}: its tasks are tracker-owned, and relink records its trail as hub task comments that tracker-owned tasks cannot carry; use note relink only for a hub-owned project`,
+    )
   const mode = writeMode(current.project, options.hosted)
   const at = nowIso()
   writeTransaction((conn) => {
@@ -774,6 +783,10 @@ export async function relinkNote(
     if (!row.promoted_task)
       throw new Error(
         `note ${row.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${row.label} --task <KEY>`,
+      )
+    if (target === row.promoted_task.toUpperCase())
+      throw new Error(
+        `note ${row.label} is already attached to ${row.promoted_task}; choose a different task with --task <KEY>`,
       )
     const history = recordNoteRelinkCommentsInTransaction(conn, {
       project: row.project,

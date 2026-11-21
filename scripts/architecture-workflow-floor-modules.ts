@@ -247,6 +247,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-artifact-evidence.ts', [
     './workflow-checkout-refusal.ts',
+    './workflow-task-open-with-notes-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-evidence-input.ts', []),
   module('orchestrator/src/workflow/workflow-offered-artifacts.ts', [
@@ -343,6 +344,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-dispatch-waiver-evidence.ts',
     './workflow-floor-task-read.ts',
     './workflow-review-owed-decision.ts',
+    './workflow-task-open-with-notes-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-task-read.ts', [
     'node:child_process',
@@ -463,15 +465,15 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-floor-note-evidence.ts', [
     './workflow-artifact-evidence.ts',
-    './workflow-floor.ts',
+    './workflow-artifact-reference.ts',
     './workflow-floor-evidence-replay.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-pull-request-evidence.ts', [
     'bun:sqlite',
     '../../../shared/github-repository.ts',
-    '../branch/merged-pull-request.ts',
     '../project/projects.ts',
     './workflow-artifact-evidence.ts',
+    './workflow-floor-evidence.ts',
     './workflow-floor-evidence-checkout.ts',
     './workflow-floor-evidence-replay.ts',
   ]),

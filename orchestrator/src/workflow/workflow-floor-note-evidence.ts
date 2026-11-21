@@ -2,7 +2,7 @@
 /** Resolves note artifacts through the injected hub-note reader. */
 
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
-import type { ArtifactRef } from './workflow-floor.ts'
+import type { ArtifactRef } from './workflow-artifact-reference.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,

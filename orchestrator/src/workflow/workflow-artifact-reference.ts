@@ -24,12 +24,24 @@ export type ArtifactRef =
   | { kind: 'commit'; sha: string }
   | { kind: 'id'; id: number }
 
-export function parseArtifactRef(value: string): ArtifactRef | { error: string } {
+export function parseArtifactRef(
+  value: string,
+  cursorProject?: string,
+): ArtifactRef | { error: string } {
   const trimmed = value.trim()
   try {
     const note = /^note:(\S+)$/i.exec(trimmed)
     if (note) {
-      parseReference(note[1]!, 'note')
+      const parsed = parseReference(note[1]!, 'note')
+      const validRecordId = parsed.value.kind === 'record-id' && parsed.qualifier === null
+      const validLabel =
+        parsed.value.kind === 'number' &&
+        parsed.qualifier?.kind === 'project' &&
+        (!cursorProject || parsed.qualifier.value.toLowerCase() === cursorProject.toLowerCase())
+      if (!validRecordId && !validLabel)
+        throw new Error(
+          `invalid note artifact ${JSON.stringify(trimmed)}: expected note:<project>#<number> or note:<record-id>${cursorProject ? `; the label project must be ${cursorProject}` : ''}`,
+        )
       return { kind: 'note', reference: note[1]! }
     }
     return artifactRefFromPointer(parsePointerReference(trimmed), trimmed)

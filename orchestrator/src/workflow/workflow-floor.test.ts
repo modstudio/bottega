@@ -968,6 +968,14 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     kind: 'note',
     reference: ATTACHMENT_UUID,
   })
+  expect(parseArtifactRef('note:2817', PLATFORM_SLUG)).toMatchObject({
+    error: expect.stringContaining('expected note:<project>#<number> or note:<record-id>'),
+  })
+  expect(parseArtifactRef('note:other#2817', PLATFORM_SLUG)).toMatchObject({
+    error: expect.stringContaining(
+      `expected note:<project>#<number> or note:<record-id>; the label project must be ${PLATFORM_SLUG}`,
+    ),
+  })
   expect(parseArtifactRef(`probe:${ATTACHMENT_UUID}`)).toEqual({
     kind: 'probe',
     recordId: ATTACHMENT_UUID,

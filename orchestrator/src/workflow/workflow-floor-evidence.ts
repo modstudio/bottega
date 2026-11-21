@@ -941,7 +941,7 @@ async function gatherArtifactEntry(
   ports: FloorEvidencePorts,
   resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
 ): Promise<ValidatedArtifactEvidence> {
-  const parsed = parseArtifactRef(offeredArtifact)
+  const parsed = parseArtifactRef(offeredArtifact, input.identity.project)
   if ('error' in parsed) throw new Error(parsed.error)
   const noteEvidence =
     parsed.kind === 'note'

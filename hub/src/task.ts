@@ -354,13 +354,7 @@ function writeLocalComment(
   }
 }
 
-export function attachLocalTaskEvidenceInTransaction(
-  conn: Database,
-  key: string,
-  project: string,
-  body: string,
-  at: string,
-): TaskComment {
+function localTaskInTransaction(conn: Database, key: string, project: string): TaskRow {
   const upper = key.toUpperCase()
   const task = conn
     .query<TaskRow, [string, string]>(
@@ -371,6 +365,17 @@ export function attachLocalTaskEvidenceInTransaction(
     throw new Error(
       `no local task ${upper} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
     )
+  return task
+}
+
+export function attachLocalTaskEvidenceInTransaction(
+  conn: Database,
+  key: string,
+  project: string,
+  body: string,
+  at: string,
+): TaskComment {
+  const task = localTaskInTransaction(conn, key, project)
   return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
 }
 
@@ -386,17 +391,7 @@ export function recordNoteRelinkCommentsInTransaction(
     queue: boolean
   },
 ): { targetTaskRecordId: string } {
-  const task = (key: string) =>
-    conn
-      .query<TaskRow, [string, string]>(
-        `SELECT * FROM task WHERE project = ? AND key = ? COLLATE NOCASE`,
-      )
-      .get(input.project, key.toUpperCase())
-  const target = task(input.targetTask)
-  if (target?.source !== 'local')
-    throw new Error(
-      `no local task ${input.targetTask.toUpperCase()} in project ${input.project}; run \`${PLATFORM_SLUG} task list --project ${input.project}\``,
-    )
+  const target = localTaskInTransaction(conn, input.targetTask, input.project)
   writeLocalComment(
     conn,
     target,
@@ -405,8 +400,8 @@ export function recordNoteRelinkCommentsInTransaction(
     input.queue,
     UNATTRIBUTED,
   )
-  const previous = task(input.previousTask)
-  if (previous?.source === 'local' && previous.record_id !== target.record_id)
+  const previous = localTaskInTransaction(conn, input.previousTask, input.project)
+  if (previous.record_id !== target.record_id)
     writeLocalComment(
       conn,
       previous,

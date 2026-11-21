@@ -3,9 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { githubRepository } from '../../../shared/github-repository.ts'
-import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { projectByName } from '../project/projects.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
+import { productionFloorPorts } from './workflow-floor-evidence.ts'
 import { gitText } from './workflow-floor-evidence-checkout.ts'
 import {
   type FloorEvidencePorts,
@@ -26,12 +26,7 @@ export function gatherPullRequestArtifactEvidence(
     throw new Error(
       `${flag} cannot be checked because this cursor has no branch or its project has no trunk`,
     )
-  const fallback = (projectName: string, value: number | string) => {
-    const row = projectByName(projectName)
-    if (!row)
-      throw new Error(`project ${projectName} is not registered; cannot view pull request ${value}`)
-    return viewPullRequest(row, value)
-  }
+  const fallback = productionFloorPorts().viewPullRequest!
   const number = /^#([1-9][0-9]*)$/.exec(reference)?.[1]
   const view = invokeFloorEvidencePort(
     ports,

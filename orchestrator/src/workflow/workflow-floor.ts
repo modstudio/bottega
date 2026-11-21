@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import {
+  type NoteFloorEvidence,
   taskOpenWithNotesFailures,
   taskOpenWithNotesMet,
 } from './workflow-task-open-with-notes-floor.ts'
@@ -150,13 +151,7 @@ export type ValidatedEvidence = {
       | { kind: 'read-error'; reason: string }
     trackerStates: TrackerStates
   }
-  notes?: Array<{
-    reference: string
-    recordId: string | null
-    label: string | null
-    promotedTask: string | null
-    staleAt: string | null
-  }>
+  notes?: NoteFloorEvidence[]
   descendants?: Array<{ key: string; status: string | null; statusCategory: string | null }>
   deferReason?: string
   satisfy?: ValidatedSatisfy
