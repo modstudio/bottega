@@ -14,11 +14,7 @@ const closedSteps: RepinClosedStep[] = [
     newFloors: ['recorded-artifact'],
   },
 ]
-const oldSteps: RepinStep[] = [
-  { slug: 'plan' },
-  { slug: 'close-task' },
-  { slug: 'later' },
-]
+const oldSteps: RepinStep[] = [{ slug: 'plan' }, { slug: 'close-task' }, { slug: 'later' }]
 const input = {
   cursor: 1206,
   oldSteps,
@@ -47,11 +43,7 @@ test('repin refuses a floor added to an already-closed step', () => {
   expect(
     decideWorkflowRepin({
       ...input,
-      newSteps: [
-        oldSteps[0]!,
-        oldSteps[1]!,
-        oldSteps[2]!,
-      ],
+      newSteps: [oldSteps[0]!, oldSteps[1]!, oldSteps[2]!],
       closedSteps: [{ ...closedSteps[0]!, newFloors: ['recorded-artifact', 'ruling'] }],
     }),
   ).toMatchObject({ action: 'refuse', message: expect.stringContaining('adds floor ruling') })
@@ -61,11 +53,7 @@ test('repin allows current-step floor changes and later-step changes', () => {
   expect(
     decideWorkflowRepin({
       ...input,
-      newSteps: [
-        oldSteps[0]!,
-        oldSteps[1]!,
-        { slug: 'replacement' },
-      ],
+      newSteps: [oldSteps[0]!, oldSteps[1]!, { slug: 'replacement' }],
     }),
   ).toEqual({ action: 'allow' })
 })

@@ -20,8 +20,11 @@ import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
-import type { CursorRepinnedEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { isClosedStep } from './workflow-cursor-trail.ts'
+import {
+  type CursorRepinnedEvent,
+  type CursorTrailEntry,
+  isClosedStep,
+} from './workflow-cursor-trail.ts'
 import { decideCloseFloors } from './workflow-floor.ts'
 import {
   decideWorkflowRepin,

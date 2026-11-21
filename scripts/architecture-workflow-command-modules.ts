@@ -106,7 +106,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-handoff-refusal.ts', [
     '../record/record-task-flow-contract.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-repin-decision.ts', ['./workflow-cursor-trail.ts']),
+  module('orchestrator/src/workflow/workflow-repin-decision.ts', []),
   module('orchestrator/src/workflow/workflow-repin.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
@@ -121,6 +121,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-selection.ts',
     './workflow-cursor-serve.ts',
     './workflow-cursor-trail.ts',
+    './workflow-floor.ts',
     './workflow-repin-decision.ts',
     './workflows.ts',
   ]),
@@ -309,6 +310,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
+    './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
     './workflow-explore-lifecycle-close.ts',
     './workflow-handoff-types.ts',
