@@ -374,6 +374,50 @@ export function attachLocalTaskEvidenceInTransaction(
   return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
 }
 
+export function recordNoteRelinkCommentsInTransaction(
+  conn: Database,
+  input: {
+    project: string
+    noteLabel: string
+    previousTask: string
+    targetTask: string
+    reason: string
+    at: string
+    queue: boolean
+  },
+): { targetTaskRecordId: string } {
+  const task = (key: string) =>
+    conn
+      .query<TaskRow, [string, string]>(
+        `SELECT * FROM task WHERE project = ? AND key = ? COLLATE NOCASE`,
+      )
+      .get(input.project, key.toUpperCase())
+  const target = task(input.targetTask)
+  if (target?.source !== 'local')
+    throw new Error(
+      `no local task ${input.targetTask.toUpperCase()} in project ${input.project}; run \`${PLATFORM_SLUG} task list --project ${input.project}\``,
+    )
+  writeLocalComment(
+    conn,
+    target,
+    `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`,
+    input.at,
+    input.queue,
+    UNATTRIBUTED,
+  )
+  const previous = task(input.previousTask)
+  if (previous?.source === 'local' && previous.record_id !== target.record_id)
+    writeLocalComment(
+      conn,
+      previous,
+      `note ${input.noteLabel} relinked to ${target.key}: ${input.reason}`,
+      input.at,
+      input.queue,
+      UNATTRIBUTED,
+    )
+  return { targetTaskRecordId: target.record_id }
+}
+
 export async function createTask(
   input: {
     project: string

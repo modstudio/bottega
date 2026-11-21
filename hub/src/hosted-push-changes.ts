@@ -272,7 +272,8 @@ async function upsertHostedNoteFromPush(
   const values = decision.values
   await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
     last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
-    stale_reason=${values.stale_reason ?? null},updated_at=now()
+    stale_reason=${values.stale_reason ?? null},promoted_task=${values.promoted_task ?? null},
+    promoted_task_id=${values.promoted_task_id ?? null}::uuid,updated_at=now()
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return { id: input.id, status: 'applied' as const }
 }

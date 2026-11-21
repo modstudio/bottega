@@ -571,6 +571,20 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
 ): Promise<{ ref: string; exists: boolean }> {
+  if (ref.kind === 'note') {
+    if (!ports.readNote)
+      throw new Error(
+        `--artifact note:${ref.reference} needs a ${PLATFORM_SLUG} note read and no reader was provided`,
+      )
+    const note = await invokeFloorEvidencePort(
+      ports,
+      'readNote',
+      ports.readNote,
+      identity.project,
+      ref.reference,
+    )
+    return { ref: `note:${ref.reference}`, exists: note !== null }
+  }
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id')
@@ -943,22 +957,50 @@ async function gatherArtifactEvidence(
     seen.add(offeredArtifact)
     const parsed = parseArtifactRef(offeredArtifact)
     if ('error' in parsed) throw new Error(parsed.error)
-    const entry: ValidatedArtifactEvidence = {
-      artifact: await resolveArtifact(
-        parsed,
-        offeredArtifact,
-        input.identity,
-        {
-          cursorId: input.cursorId,
-          stepOrdinal: input.stepOrdinal,
-          stepSlug: input.stepSlug,
-        },
-        d,
+    let noteEvidence: NonNullable<ValidatedArtifactEvidence['note']> | undefined
+    if (parsed.kind === 'note') {
+      if (!ports.readNote)
+        throw new Error(
+          `--artifact ${offeredArtifact} needs a ${PLATFORM_SLUG} note read and no reader was provided`,
+        )
+      const note = await invokeFloorEvidencePort(
         ports,
-        resolveCheckout,
-        gathered.tree!.commit,
-      ),
+        'readNote',
+        ports.readNote,
+        input.identity.project,
+        parsed.reference,
+      )
+      noteEvidence = {
+        reference: parsed.reference,
+        recordId: note?.recordId ?? null,
+        label: note?.label ?? null,
+        promotedTask: note?.promotedTask ?? null,
+        staleAt: note?.staleAt ?? null,
+      }
+    }
+    const entry: ValidatedArtifactEvidence = {
+      artifact: noteEvidence
+        ? { ref: offeredArtifact, exists: noteEvidence.recordId !== null }
+        : await resolveArtifact(
+            parsed,
+            offeredArtifact,
+            input.identity,
+            {
+              cursorId: input.cursorId,
+              stepOrdinal: input.stepOrdinal,
+              stepSlug: input.stepSlug,
+            },
+            d,
+            ports,
+            resolveCheckout,
+            gathered.tree!.commit,
+          ),
       ...offeredArtifactRunEvidence(parsed, d),
+    }
+    if (noteEvidence) {
+      entry.note = noteEvidence
+      if (!gathered.notes) gathered.notes = []
+      gathered.notes.push(noteEvidence)
     }
     if (parsed.kind === 'pull-request')
       entry.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)

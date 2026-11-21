@@ -24,6 +24,7 @@ import {
   type NoteAnchor,
   parseNoteAnchor,
   promoteNote,
+  relinkNote,
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
@@ -596,6 +597,50 @@ describe('suggestion notes', () => {
       await expect(
         promoteNote(unknown.record_id, { existingTaskKey: 'LOC-999999' }),
       ).rejects.toThrow(`${PLATFORM_SLUG} task list --project workshop`)
+    })
+
+    test('relink moves the attachment and records both task-history directions', async () => {
+      const note = (
+        await createNote({
+          text: `Relink history ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const [previous, target] = writeTransaction((conn) => [
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Previous task' },
+          { skipDuplicateCheck: true },
+        ),
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Target task' },
+          { skipDuplicateCheck: true },
+        ),
+      ])
+      await promoteNote(note.record_id, { existingTaskKey: previous.key })
+
+      const moved = await relinkNote(note.record_id, target.key, 'the repair belongs here')
+
+      expect(moved.promoted_task).toBe(target.key)
+      expect(
+        db()
+          .query<{ promoted_task_record_id: string }, [string]>(
+            'SELECT promoted_task_record_id FROM note WHERE record_id=?',
+          )
+          .get(note.record_id),
+      ).toEqual({ promoted_task_record_id: target.record_id })
+      expect((await showTask(previous.key, { project: 'workshop' })).comments).toContainEqual(
+        expect.objectContaining({
+          body: `note ${note.label} relinked to ${target.key}: the repair belongs here`,
+        }),
+      )
+      expect((await showTask(target.key, { project: 'workshop' })).comments).toContainEqual(
+        expect.objectContaining({
+          body: `note ${note.label} relinked from ${previous.key}: the repair belongs here`,
+        }),
+      )
     })
 
     test('drop merge and reap write locally and keep hosted invariants', async () => {

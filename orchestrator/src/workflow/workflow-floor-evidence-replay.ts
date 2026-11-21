@@ -10,6 +10,15 @@ import type { ReviewOwedFloorDecision } from './workflow-review-owed-decision.ts
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
+  readNote?: (
+    project: string,
+    reference: string,
+  ) => Promise<{
+    recordId: string
+    label: string
+    promotedTask: string | null
+    staleAt: string | null
+  } | null>
   runHasArtifacts?: (runId: string) => boolean
   resolveCheckout?: (
     cwd: string,
@@ -88,6 +97,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
   const wrapped: ReplayingPorts = { ...real, [REPLAY]: context }
   for (const port of [
     'readTask',
+    'readNote',
     'resolveCheckout',
     'viewPullRequest',
     'resolveCommit',

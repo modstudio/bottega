@@ -53,6 +53,7 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
+  recordNoteRelinkCommentsInTransaction,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import type { TaskRow } from './task-row.ts'
@@ -809,6 +810,53 @@ export async function dropNote(
     ])
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
+  return getNote(recordId)
+}
+
+export async function relinkNote(
+  recordId: string,
+  targetTask: string,
+  reason: string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteRow> {
+  if (!reason.trim()) throw new Error('--reason is required')
+  const current = getNote(recordId)
+  if (!current.promoted_task)
+    throw new Error(
+      `note ${current.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${current.label} --task <KEY>`,
+    )
+  const target = targetTask.trim().toUpperCase()
+  if (!target) throw new Error('--task is required')
+  const mode = writeMode(current.project, options.hosted)
+  const at = nowIso()
+  writeTransaction((conn) => {
+    const row = decode(noteRow(conn, recordId))
+    if (!row.promoted_task)
+      throw new Error(
+        `note ${row.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${row.label} --task <KEY>`,
+      )
+    const history = recordNoteRelinkCommentsInTransaction(conn, {
+      project: row.project,
+      noteLabel: row.label,
+      previousTask: row.promoted_task,
+      targetTask: target,
+      reason: reason.trim(),
+      at,
+      queue: mode === 'hosted-configured',
+    })
+    conn
+      .query(
+        `UPDATE note SET promoted_task=?,promoted_task_record_id=?,last_seen_at=? WHERE record_id=?`,
+      )
+      .run(target, history.targetTaskRecordId, at, row.record_id)
+    if (mode === 'hosted-configured')
+      queueHostedChange(conn, HOSTED_NOTE_TABLE, row.record_id, 'upsert', at, [
+        'promoted_task',
+        'promoted_task_id',
+        'last_seen_at',
+      ])
+  })
+  if (mode === 'hosted-configured') await drainHostedEditOutbox(at, options.hosted)
   return getNote(recordId)
 }
 

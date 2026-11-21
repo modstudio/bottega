@@ -11,6 +11,13 @@ export type BottegaCommandIdentity = {
 
 export type ValidatedArtifactEvidence = {
   artifact: { ref: string; exists: boolean }
+  note?: {
+    reference: string
+    recordId: string | null
+    label: string | null
+    promotedTask: string | null
+    staleAt: string | null
+  }
   artifactRunOffered?: string
   probe?: { id: number; exitCode: number }
   exec?: {

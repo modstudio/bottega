@@ -156,6 +156,27 @@ test('rulingOutcomes must be a non-empty unique subset of outcomes', () => {
   ).toContain('step "design" rulingOutcomes must be a non-empty unique subset of outcomes')
 })
 
+test('outcomeFloors keys must be declared outcomes and values must be known floor kinds', () => {
+  const staged = { ...step, stage: 'plan' as const, outcomes: ['partial', 'done'] }
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, outcomeFloors: { partial: ['task-open-with-notes'] } }],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, outcomeFloors: { unknown: ['task-open-with-notes'] } }],
+    }),
+  ).toContain('step "design" outcomeFloors key "unknown" must be a declared outcome')
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, outcomeFloors: { partial: ['unknown-floor'] } }],
+    }),
+  ).toContain(
+    'step "design" outcomeFloors.partial must be a non-empty unique list of known floor kinds',
+  )
+})
+
 test('reenter.outcome must be one of the step outcomes', () => {
   const staged = { ...step, stage: 'plan' as const, outcomes: ['changed', 'clean'] }
   expect(

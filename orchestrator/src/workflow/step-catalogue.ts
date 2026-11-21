@@ -68,6 +68,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateIdentity(item, seen, errors)
     validateOutcomes(item, errors)
     validateRulingOutcomes(item, errors)
+    validateOutcomeFloors(item, errors)
     validateReenter(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
@@ -144,6 +145,29 @@ function validateRulingOutcomes(item: Record<string, unknown>, errors: string[])
     item.rulingOutcomes.some((outcome) => typeof outcome !== 'string' || !outcomes.has(outcome))
   )
     errors.push(`step "${slug}" rulingOutcomes must be a non-empty unique subset of outcomes`)
+}
+
+function validateOutcomeFloors(item: Record<string, unknown>, errors: string[]): void {
+  if (item.outcomeFloors === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!object(item.outcomeFloors)) {
+    errors.push(`step "${slug}" outcomeFloors must be an outcome-to-floor-list map`)
+    return
+  }
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  for (const [outcome, floors] of Object.entries(item.outcomeFloors)) {
+    if (!outcomes.has(outcome))
+      errors.push(`step "${slug}" outcomeFloors key "${outcome}" must be a declared outcome`)
+    if (
+      !Array.isArray(floors) ||
+      floors.length === 0 ||
+      new Set(floors).size !== floors.length ||
+      floors.some((floor) => typeof floor !== 'string' || !isFloorKind(floor))
+    )
+      errors.push(
+        `step "${slug}" outcomeFloors.${outcome} must be a non-empty unique list of known floor kinds`,
+      )
+  }
 }
 
 function validateReenter(item: Record<string, unknown>, errors: string[]): void {
@@ -469,6 +493,22 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
                 operatorRuling: false,
               },
               String(outcome),
+            ),
+          )
+        : []),
+      ...(object(item.outcomeFloors)
+        ? Object.keys(item.outcomeFloors).map((outcome) =>
+            mayCloseOnAgentSelfRuling(
+              {
+                floor,
+                outcomeFloors: Object.fromEntries(
+                  Object.entries(item.outcomeFloors as Record<string, unknown>).map(
+                    ([key, value]) => [key, Array.isArray(value) ? value.map(String) : []],
+                  ),
+                ),
+                operatorRuling: false,
+              },
+              outcome,
             ),
           )
         : []),
