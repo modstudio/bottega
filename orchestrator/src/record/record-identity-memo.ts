@@ -3,17 +3,18 @@
 
 import { memoizedConfigRead } from '../../../shared/config-read-memo.ts'
 import { RECORD_WHOAMI_ROUTE } from '../../../shared/record-routes.ts'
-import type {
-  RecordApiAuthentication,
-  RecordClientRequest,
-} from './record-api-client-paths.ts'
+import type { RecordApiAuthentication, RecordClientRequest } from './record-api-client-paths.ts'
 import { recordIdentityResponse } from './record-api-client-session.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { storedRecordToken } from './record-session.ts'
 
 type TransportedRecordClientRequest = <T>(
   path: string,
-  init?: Parameters<RecordClientRequest>[1],
+  init?: RequestInit & {
+    schema?: (body: unknown) => T
+    acceptedError?: { status: number; schema: (body: unknown) => T }
+    destinationSpaceId?: string
+  },
   authentication?: RecordApiAuthentication,
   transport?: typeof fetch,
 ) => Promise<T>

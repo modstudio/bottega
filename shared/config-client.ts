@@ -17,8 +17,8 @@ import { resolveRecordApiUrl } from './record-api-url.ts'
 import { tracedRecordFetch } from './record-call-trace.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
-import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 import { RECORD_WHOAMI_ROUTE } from './record-routes.ts'
+import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 
 export const CURRENT_DATA_KEY_PATH = '/v1/config/data-keys/current'
 

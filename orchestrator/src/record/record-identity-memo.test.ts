@@ -110,6 +110,33 @@ describe('record identity process memo', () => {
     expect(whoamiRequests).toBe(1)
   })
 
+  test('the memo identity is the transport used by the record request', async () => {
+    let firstRequests = 0
+    let secondRequests = 0
+    const transport = (id: string, count: () => void) =>
+      Object.assign(
+        async () => {
+          count()
+          return Response.json({ ...identity, user: { ...identity.user, id } })
+        },
+        { preconnect: fetch.preconnect },
+      )
+    const firstTransport = transport('user-first', () => {
+      firstRequests += 1
+    })
+    const secondTransport = transport('user-second', () => {
+      secondRequests += 1
+    })
+
+    const first = recordApiClient(undefined, firstTransport)
+    const second = recordApiClient(undefined, secondTransport)
+
+    await expect(first.whoami()).resolves.toMatchObject({ user: { id: 'user-first' } })
+    await expect(second.whoami()).resolves.toMatchObject({ user: { id: 'user-second' } })
+    expect(firstRequests).toBe(1)
+    expect(secondRequests).toBe(1)
+  })
+
   test('record and config clients share the same identity read', async () => {
     const record = recordApiClient()
     const config = configClient(process.env)
