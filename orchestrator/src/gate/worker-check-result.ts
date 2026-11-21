@@ -8,6 +8,7 @@ import {
   type WorkerCheckCandidate,
   type WorkerCheckVerdict,
   workerCheckFailures,
+  workerCheckVerdictLine,
 } from './worker-check-verdict.ts'
 
 type WorkerCheckRow = {
@@ -33,10 +34,7 @@ function failingLegs(database: Database, executionRecordId: string): string[] {
 }
 
 /** Read plain candidates for the pure reply-HEAD verdict decision. */
-export function workerCheckCandidates(
-  database: Database,
-  runRecordId: string,
-): WorkerCheckCandidate[] {
+function workerCheckCandidates(database: Database, runRecordId: string): WorkerCheckCandidate[] {
   return database
     .query<WorkerCheckRow, [string]>(
       `SELECT record_id,number,head_commit,requested_at,exit_code,timed_out,output_tail,output_artifact
@@ -69,4 +67,12 @@ export function recordedWorkerCheckVerdict(
   replyHead: string | null,
 ): WorkerCheckVerdict {
   return decideWorkerCheckVerdict(replyHead, workerCheckCandidates(database, runRecordId))
+}
+
+export function recordedWorkerCheckVerdictLine(
+  database: Database,
+  runRecordId: string,
+  replyHead: string | null,
+): string {
+  return workerCheckVerdictLine(recordedWorkerCheckVerdict(database, runRecordId, replyHead))
 }

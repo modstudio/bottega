@@ -16,8 +16,7 @@ import {
   latestFinishedWorkerCheckExecutionRecordId,
   uncheckedChecksForGateExecution,
 } from '../gate/worker-check-omissions.ts'
-import { recordedWorkerCheckVerdict } from '../gate/worker-check-result.ts'
-import { workerCheckVerdictLine } from '../gate/worker-check-verdict.ts'
+import { recordedWorkerCheckVerdictLine } from '../gate/worker-check-result.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
@@ -712,9 +711,7 @@ function presentCollectedOutput(
   presentation: CollectResultPresentation,
 ): void {
   presentation.error(
-    workerCheckVerdictLine(
-      recordedWorkerCheckVerdict(database, row.result_member_record_id, row.reply_head),
-    ),
+    recordedWorkerCheckVerdictLine(database, row.result_member_record_id, row.reply_head),
   )
   if (output === null) return
   const runsRoot = resolveRunsDirectory(process.env)

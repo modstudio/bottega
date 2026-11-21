@@ -113,6 +113,13 @@ export const gateModules: GateModule[] = [
     './worker-check-omissions.ts',
   ]),
   module('orchestrator/src/gate/worker-check-omissions.ts', ['bun:sqlite']),
+  module('orchestrator/src/gate/worker-check-result.ts', [
+    'bun:sqlite',
+    'node:fs',
+    '../../../shared/check-execution.ts',
+    './worker-check-verdict.ts',
+  ]),
+  module('orchestrator/src/gate/worker-check-verdict.ts', []),
 ]
 
 export const gateBoundarySpecs: GateBoundarySpec[] = [

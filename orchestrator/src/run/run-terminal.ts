@@ -225,13 +225,16 @@ function terminalOutcomeNote(
 
 function terminalWorkerCheckRefusal(
   input: Pick<TerminalInput, 'writesJob' | 'worktree' | 'claim'>,
-  startedHead: string | null,
   contract: WorkerReply | null,
 ): string | null {
   if (!input.writesJob) return null
   const replyHead = input.worktree
     ? gitContext(input.worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-    : startedHead
+    : ((
+        db().query('SELECT head_commit FROM run WHERE record_id=?').get(input.claim.id) as {
+          head_commit: string | null
+        } | null
+      )?.head_commit ?? null)
   return workerCheckDoneRefusal(
     contract?.status ?? null,
     recordedWorkerCheckVerdict(db(), input.claim.id, replyHead),
@@ -301,6 +304,19 @@ export type TerminalInput = {
   mcpRuling: TerminalMcpRuling
   workerEvents: Array<{ kind: string }>
   contextProfile?: GooseContextProfile | null
+}
+
+function terminalReplyFacts(input: TerminalInput, contract: WorkerReply | null) {
+  return {
+    turnChanged: terminalTurnChanged({
+      database: db(),
+      runId: input.claim.id,
+      writingJob: input.writesJob,
+      worktreePath: input.worktree?.path ?? null,
+      measurementScope: input.provisionedMcpConfig,
+    }),
+    contractRefusal: terminalWorkerCheckRefusal(input, contract),
+  }
 }
 
 export type TerminalResult = {
@@ -783,18 +799,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-  const turnChanged = terminalTurnChanged({
-    database: db(),
-    runId: claim.id,
-    writingJob: writesJob,
-    worktreePath: worktree?.path ?? null,
-    measurementScope: provisionedMcpConfig,
-  })
-  const workerCheckRefusal = terminalWorkerCheckRefusal(
-    input,
-    startedAt?.head_commit ?? null,
-    contract,
-  )
+  const replyFacts = terminalReplyFacts(input, contract)
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,
@@ -811,12 +816,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const finalization = finalizeWorkerReply({
     reply: contract,
     measuredFiles: changes?.files ?? null,
-    turnChanged,
+    turnChanged: replyFacts.turnChanged,
     status,
     failureKind,
     error,
     contractObjects,
-    contractRefusal: workerCheckRefusal,
+    contractRefusal: replyFacts.contractRefusal,
   })
   ;({ status, failureKind, error } = finalization)
   const vendorTermination = applyVendorTermination({

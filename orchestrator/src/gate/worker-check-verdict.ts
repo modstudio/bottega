@@ -94,24 +94,18 @@ export function workerCheckDoneRefusal(
 }
 
 /** Recover the recorded footer detail for known failing legs without interpreting prose. */
-export function workerCheckFailures(
-  output: string,
-  failingLegs: readonly string[],
-): WorkerCheckFailure[] {
-  const failures = new Map(failingLegs.map((leg) => [leg, [] as string[]]))
-  const lines = output.split('\n')
-  for (const leg of failingLegs) {
-    const marker = lines.findLastIndex((line) =>
-      line.startsWith(`[${leg}] failing leg tail (exit `),
-    )
-    if (marker < 0) continue
-    const tail: string[] = []
-    for (const line of lines.slice(marker + 1)) {
-      if (!line.startsWith(`[${leg}] `)) break
-      tail.push(line)
-    }
-    failures.set(leg, tail)
+function recordedLegTail(lines: readonly string[], leg: string): string[] {
+  const marker = lines.findLastIndex((line) => line.startsWith(`[${leg}] failing leg tail (exit `))
+  if (marker < 0) return []
+  const tail: string[] = []
+  for (const line of lines.slice(marker + 1)) {
+    if (!line.startsWith(`[${leg}] `)) break
+    tail.push(line)
   }
+  return tail
+}
+
+function addFooterTails(lines: readonly string[], failures: Map<string, string[]>): void {
   const footer = lines.findLastIndex((line) => line.trim() === 'gate failures:')
   let current: string | null = null
   for (const line of footer < 0 ? [] : lines.slice(footer + 1)) {
@@ -125,5 +119,14 @@ export function workerCheckFailures(
     }
     if (failures.get(current)!.length === 0) failures.get(current)!.push(line.slice(2))
   }
+}
+
+export function workerCheckFailures(
+  output: string,
+  failingLegs: readonly string[],
+): WorkerCheckFailure[] {
+  const lines = output.split('\n')
+  const failures = new Map(failingLegs.map((leg) => [leg, recordedLegTail(lines, leg)]))
+  addFooterTails(lines, failures)
   return failingLegs.map((leg) => ({ leg, tail: failures.get(leg)! }))
 }
