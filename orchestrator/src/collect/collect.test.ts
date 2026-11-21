@@ -667,6 +667,28 @@ describe('collection records', () => {
     )
   })
 
+  test(`${PLATFORM_SLUG} run result prints the recorded verdict before worker prose`, async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const replyHead = '1234567890abcdef1234567890abcdef12345678'
+    const outputPath = join(dir, 'worker-check-result-output.json')
+    writeFileSync(outputPath, JSON.stringify({ status: 'done', summary: 'worker narrative' }))
+    db()
+      .query('UPDATE run SET output_path=?,branch_kept_tip=? WHERE record_id=?')
+      .run(outputPath, replyHead, id)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,0,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', replyHead)
+
+    const result = await recordedResult(id)
+    expect(result.errors[0]).toBe('worker check: passed at 1234567890ab (gate 1)')
+    expect(result.logs[0]).toContain('worker narrative')
+    rmSync(outputPath)
+  })
+
   test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     const eventsPath = runEventsPath(id)

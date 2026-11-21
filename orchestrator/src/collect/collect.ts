@@ -16,6 +16,8 @@ import {
   latestFinishedWorkerCheckExecutionRecordId,
   uncheckedChecksForGateExecution,
 } from '../gate/worker-check-omissions.ts'
+import { recordedWorkerCheckVerdict } from '../gate/worker-check-result.ts'
+import { workerCheckVerdictLine } from '../gate/worker-check-verdict.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
@@ -116,6 +118,8 @@ type CollectedRunRow = {
   tests_passed: number | null
   tests_claim_disagrees: number | null
   executor: string
+  result_member_record_id: string
+  reply_head: string | null
 }
 
 type AskingResolution =
@@ -691,6 +695,7 @@ const consoleCollectResultPresentation: CollectResultPresentation = {
 }
 
 function presentCollectedOutput(
+  database: Database,
   row: {
     number: number
     record_id: string
@@ -699,11 +704,18 @@ function presentCollectedOutput(
     failure_kind: string | null
     exit_code: number | null
     cwd: string | null
+    result_member_record_id: string
+    reply_head: string | null
   },
   output: string | null,
   ok: boolean,
   presentation: CollectResultPresentation,
 ): void {
+  presentation.error(
+    workerCheckVerdictLine(
+      recordedWorkerCheckVerdict(database, row.result_member_record_id, row.reply_head),
+    ),
+  )
   if (output === null) return
   const runsRoot = resolveRunsDirectory(process.env)
   if (!ok) {
@@ -761,7 +773,9 @@ export async function collectResult(
             root.evidence_excluded, root.base_commit, root.cwd, root.mcp, root.mcp_server,
             root.mcp_connected, root.mcp_error, root.mcp_probe, root.review_provenance,
             root.provenance_status, root.worktree, root.branch, root.minted_branch,
-            root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor
+            root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor,
+            current_run.record_id result_member_record_id,
+            COALESCE(current_run.branch_kept_tip,current_run.head_commit) reply_head
        FROM run root`,
         'WHERE root.record_id = ?',
       ),
@@ -790,7 +804,7 @@ export async function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  presentCollectedOutput(row, output, outcome.ok, presentation)
+  presentCollectedOutput(database, row, output, outcome.ok, presentation)
   presentLastWorkerCheckOmissions(database, row.record_id, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)

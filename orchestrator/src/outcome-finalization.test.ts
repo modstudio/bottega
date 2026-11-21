@@ -21,6 +21,23 @@ const reply = (overrides: Record<string, unknown>): WorkerReply =>
   fixtureWorkerReply(overrides) as WorkerReply
 
 describe('worker reply finalization', () => {
+  test('a recorded check contradiction makes a done reply a contract failure', () => {
+    const result = finalizeWorkerReply({
+      reply: reply({ status: 'done' }),
+      measuredFiles: ['changed.ts'],
+      turnChanged: true,
+      status: 'ok',
+      failureKind: null,
+      error: null,
+      contractRefusal: 'worker check failed at the reply HEAD',
+    })
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureKind: 'contract',
+      error: 'worker check failed at the reply HEAD',
+    })
+  })
+
   test('done with no turn-local change keeps ok and records the earlier-work note', () => {
     const result = classify(
       reply({ status: 'done', files_changed: ['earlier.ts'], tests: { ran: true } }),

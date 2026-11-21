@@ -28,6 +28,9 @@ import {
   type classify,
   type EffectiveBillingKey,
 } from '../failure/failure.ts'
+import { recordedWorkerCheckVerdict } from '../gate/worker-check-result.ts'
+import { workerCheckDoneRefusal } from '../gate/worker-check-verdict.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -218,6 +221,21 @@ function terminalOutcomeNote(
   return testOutcome
     ? outcomeNoteWithPassedProbes({ status, error, probesPassed: testOutcome.probesPassed })
     : error
+}
+
+function terminalWorkerCheckRefusal(
+  input: Pick<TerminalInput, 'writesJob' | 'worktree' | 'claim'>,
+  startedHead: string | null,
+  contract: WorkerReply | null,
+): string | null {
+  if (!input.writesJob) return null
+  const replyHead = input.worktree
+    ? gitContext(input.worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
+    : startedHead
+  return workerCheckDoneRefusal(
+    contract?.status ?? null,
+    recordedWorkerCheckVerdict(db(), input.claim.id, replyHead),
+  )
 }
 
 export type TerminalInput = {
@@ -772,6 +790,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     worktreePath: worktree?.path ?? null,
     measurementScope: provisionedMcpConfig,
   })
+  const workerCheckRefusal = terminalWorkerCheckRefusal(
+    input,
+    startedAt?.head_commit ?? null,
+    contract,
+  )
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,
@@ -793,6 +816,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     failureKind,
     error,
     contractObjects,
+    contractRefusal: workerCheckRefusal,
   })
   ;({ status, failureKind, error } = finalization)
   const vendorTermination = applyVendorTermination({

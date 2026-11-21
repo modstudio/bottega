@@ -117,6 +117,7 @@ type FinalizationInputs<FailureKind extends string> = {
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
   contractObjects?: number
+  contractRefusal?: string | null
 }
 
 type FinalizationDecision<FailureKind extends string> = Pick<
@@ -165,6 +166,14 @@ function rejectEmptyDone<FailureKind extends string>(
     failureKind: 'other',
     error: 'reported done with no change and no test run',
   }
+}
+
+function rejectContradictedDone<FailureKind extends string>(
+  inputs: FinalizationInputs<FailureKind>,
+  decision: FinalizationDecision<FailureKind>,
+): FinalizationDecision<FailureKind> {
+  if (inputs.reply?.status !== 'done' || !inputs.contractRefusal) return decision
+  return { status: 'failed', failureKind: 'contract', error: inputs.contractRefusal }
 }
 
 function reclassifyDoneAsking<FailureKind extends string>(
@@ -217,6 +226,7 @@ export function finalizeWorkerReply<FailureKind extends string>(
     : []
   let decision: FinalizationDecision<FailureKind> = inputs
   decision = rejectEmptyAsking(reply, acceptedQuestions, decision)
+  decision = rejectContradictedDone(inputs, decision)
   decision = rejectEmptyDone(inputs, decision)
   if ((inputs.contractObjects ?? 0) > 1) {
     const note = `${inputs.contractObjects} contract objects in output; took the last`
