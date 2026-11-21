@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
+import { claimRun } from '../run/run-claim.ts'
 import { runProjectAttribution } from '../run/run-project-attribution.ts'
 import { admitNewRunReference } from '../run/run-task-reference.ts'
 import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
@@ -189,6 +194,7 @@ describe('behavioral canon evals', () => {
   })
 
   test('a canon eval probe records its question in the evaluated project record space', async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), 'canon-eval-probe-claim-'))
     const projectId = addProject(
       'canon-eval-probe-question',
       '/registered/canon-eval-probe-question',
@@ -205,39 +211,67 @@ describe('behavioral canon evals', () => {
       repo: '/projectless/canon-eval-scratch',
       pack: undefined,
     })
-    const links = await admitNewRunReference({
-      projectName: null,
-      projectRecordId: null,
-      key: null,
-      cwd: null,
-      launchCwd: '/projectless/canon-eval-scratch',
-      probe: true,
-    })
-    const attributedProjectId = runProjectAttribution(null, options.projectRecordId).rowProjectId(
-      links.projectRecordId,
-    )
-    expect(attributedProjectId).toBe(projectId)
-    const runId = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'running',
-      probe: 1,
-      projectRecordId: attributedProjectId,
-    })
+    try {
+      const claimed = await claimRun({
+        opts: options,
+        runsDir,
+        stamp: 'canon-eval-probe',
+        name: 'codex',
+        generatedSchema: null,
+        originalPrompt: options.prompt,
+        prompt: options.prompt,
+        callerCwd: options.cwd!,
+        seed: undefined,
+        writesJob: false,
+        repoJob: false,
+        runProjectName: null,
+        projectAttribution: runProjectAttribution(null, options.projectRecordId),
+        reason: 'test',
+        vendorSession: null,
+        pack: null,
+        mcpRequest: undefined,
+        transportName: 'cli',
+        a: AGENTS.codex!,
+        mcpConnection: null,
+        mcpMode: null,
+        declaredDeliverables: [],
+        timeoutMinutes: undefined,
+        timeoutMs: 60_000,
+        forbidsRepo: true,
+        reviewTarget: null,
+        implicitReview: { branch: null, findings: false },
+        coverageBase: null,
+        readOnlyBase: null,
+        deferredCwdMcpPlan: [],
+        usingMcp: false,
+        startedByUserId: null,
+        replySchemaName: 'WORKER_SCHEMA',
+        carriedContext: { questionIds: [], attachmentWarnings: [] },
+        endpointKeySource: 'agent',
+        precomputedLinks: null,
+        assertDispatchAllowed: () => {},
+      })
+      expect(claimed.runProjectRecordId).toBe(projectId)
+      expect(
+        db().query('SELECT project_record_id FROM run WHERE record_id=?').get(claimed.claim.id),
+      ).toEqual({ project_record_id: projectId })
 
-    await recordTerminalQuestions(runId, [
-      {
-        kind: 'choice',
-        question: 'Which persistence backend?',
-        why: 'The implementation depends on the choice.',
-        options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
-      },
-    ])
+      await recordTerminalQuestions(claimed.claim.id, [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend?',
+          why: 'The implementation depends on the choice.',
+          options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
+        },
+      ])
 
-    expect(await questionsForRun(db(), runId)).toEqual([
-      expect.objectContaining({ project_record_id: projectId }),
-    ])
-    expect(options).not.toHaveProperty('repo')
+      expect(await questionsForRun(db(), claimed.claim.id)).toEqual([
+        expect.objectContaining({ project_record_id: projectId }),
+      ])
+      expect(options).not.toHaveProperty('repo')
+    } finally {
+      rmSync(runsDir, { recursive: true, force: true })
+    }
   })
 
   test('a canon eval probe without project attribution hits the record-space refusal', async () => {

@@ -2,6 +2,7 @@
 /** Validates explicit row-only attribution separately from the run's project selector. */
 
 import { projectByName, projectByRecordId } from '../project/projects.ts'
+import type { RunProjectAttribution } from './run-claim-types.ts'
 
 function validateRunProjectRecordId(projectRecordId?: string): void {
   if (projectRecordId && !projectByRecordId(projectRecordId)) {
@@ -14,10 +15,7 @@ function validateRunProjectRecordId(projectRecordId?: string): void {
 export function runProjectAttribution(
   projectName: string | null,
   projectRecordId?: string,
-): {
-  namedProjectRecordId: string | null
-  rowProjectId(derivedProjectRecordId?: string | null): string | null
-} {
+): RunProjectAttribution {
   validateRunProjectRecordId(projectRecordId)
   const namedProjectRecordId = projectName ? (projectByName(projectName)?.recordId ?? null) : null
   return {

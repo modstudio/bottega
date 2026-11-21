@@ -335,7 +335,6 @@ export async function run(
     writesJob,
     spec: originalPrompt,
   })
-  const rowProjectId = attribution.rowProjectId(preparedRulings.links?.projectRecordId)
   let prompt = runDispatchPrompt({
     job: opts.job,
     originalPrompt,
@@ -517,8 +516,7 @@ export async function run(
     writesJob,
     repoJob,
     runProjectName,
-    namedProjectRecordId: attribution.namedProjectRecordId,
-    runProjectRecordId: rowProjectId,
+    projectAttribution: attribution,
     reason,
     vendorSession,
     pack,
@@ -574,9 +572,10 @@ export async function run(
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
+    runProjectRecordId: projectId,
   } = claimedRun
   const localMachineId = machineId()
-  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: rowProjectId }
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)

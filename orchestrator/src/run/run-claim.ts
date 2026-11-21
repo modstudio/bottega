@@ -189,8 +189,7 @@ export type ClaimInput = {
   writesJob: boolean
   repoJob: boolean
   runProjectName: string | null
-  namedProjectRecordId: string | null
-  runProjectRecordId: string | null
+  projectAttribution: RunProjectAttribution
   reason: string
   vendorSession: string | null
   pack: Pack | null
@@ -220,7 +219,7 @@ export type ClaimInput = {
   recordDispatchRefusal?(cause: unknown): void
 }
 
-import type { ClaimResult } from './run-claim-types.ts'
+import type { ClaimResult, RunProjectAttribution } from './run-claim-types.ts'
 
 export type { ClaimResult } from './run-claim-types.ts'
 
@@ -255,7 +254,7 @@ async function claimLinks(
     inheritedTaskRecordId: inherited?.task_record_id,
     inheritedProjectRecordId: inherited?.project_record_id,
     projectName: input.runProjectName,
-    projectRecordId: input.namedProjectRecordId,
+    projectRecordId: input.projectAttribution.namedProjectRecordId,
     key: launchKey,
     cwd: input.repoJob ? null : input.callerCwd,
     launchCwd,
@@ -292,7 +291,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     writesJob,
     repoJob,
     runProjectName,
-    runProjectRecordId,
+    projectAttribution,
     reason,
     vendorSession,
     pack,
@@ -365,6 +364,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
+  const runProjectRecordId = projectAttribution.rowProjectId(links.projectRecordId)
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const binding = inheritedRunBinding(opts.resume?.parent, opts.binding)
@@ -1034,6 +1034,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     schemaPath,
     started,
     launchKey,
+    runProjectRecordId,
     runToken,
     claim: { ...claim, recordId, parentRunRecordId: identity.parent_run_record_id },
     keepTree,
