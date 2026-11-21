@@ -404,7 +404,7 @@ describe('record sign-in machine key claim failure', () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     writeMachineKey(pair)
     globalThis.fetch = (async (input) => {
-      const path = new URL(String(input)).pathname
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname
       if (path === '/v1/config/machine-keys') {
         return Response.json({
           items: [
