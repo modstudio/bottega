@@ -6,6 +6,9 @@ import {
   PROJECT_RELATIVE_NO_TREE_REMEDY,
 } from './mcp-reader-scope.ts'
 import {
+  HEADER_MISMATCH_REMEDY,
+  headerMismatchFindings,
+  headerMismatchScopeLine,
   mergeMcpSetupHeader,
   PROJECT_MCP_RELATIVE_WRITER_ADVICE,
   PROJECT_MCP_RELATIVE_WRITER_REASON,
@@ -15,6 +18,8 @@ import {
   projectMcpWriterRemedy,
   selectProjectMcpServers,
 } from './project-mcp-scope.ts'
+
+const FAKE_FIXTURE_HEADER_VALUE = 'FAKE_FIXTURE_HEADER_VALUE'
 
 const writerWithheld = (...names: string[]) =>
   names.map((name) => ({
@@ -44,6 +49,60 @@ const PROJECT = { name: 'starship', path: '/project', settings: {} }
 const PROXY = { kind: 'proxy' } as const
 const ACP_ADVICE = 'ACP test decision withholds this server'
 const ACP = { kind: 'withhold', advice: ACP_ADVICE } as const
+
+test('checkout header names missing from matching tree servers produce sorted findings', () => {
+  const findings = headerMismatchFindings(
+    {
+      beta: { name: 'beta', url: 'https://tree.test/beta', headers: { Present: 'tree' } },
+      alpha: { name: 'alpha', url: 'https://tree.test/alpha' },
+      treeOnly: { name: 'treeOnly', url: 'https://tree.test/only' },
+    },
+    {
+      beta: {
+        name: 'beta',
+        url: 'https://checkout.test/beta',
+        headers: { Zeta: FAKE_FIXTURE_HEADER_VALUE, Alpha: FAKE_FIXTURE_HEADER_VALUE },
+      },
+      alpha: {
+        name: 'alpha',
+        url: 'https://checkout.test/alpha',
+        headers: { Authorization: FAKE_FIXTURE_HEADER_VALUE },
+      },
+      checkoutOnly: {
+        name: 'checkoutOnly',
+        url: 'https://checkout.test/only',
+        headers: { Ignored: FAKE_FIXTURE_HEADER_VALUE },
+      },
+    },
+  )
+
+  expect(findings).toEqual([
+    { server: 'alpha', headerNames: ['Authorization'], remedy: HEADER_MISMATCH_REMEDY },
+    { server: 'beta', headerNames: ['Alpha', 'Zeta'], remedy: HEADER_MISMATCH_REMEDY },
+  ])
+  expect(headerMismatchScopeLine(findings[0]!)).toBe(
+    `MCP scope: alpha tree config lacks checkout header names Authorization; ${HEADER_MISMATCH_REMEDY}`,
+  )
+  expect(JSON.stringify(findings)).not.toContain(FAKE_FIXTURE_HEADER_VALUE)
+  expect(headerMismatchScopeLine(findings[0]!)).not.toContain(FAKE_FIXTURE_HEADER_VALUE)
+})
+
+test('matching headers and servers absent from either config produce no mismatch', () => {
+  const matching = {
+    shared: {
+      name: 'shared',
+      url: 'https://example.test/mcp',
+      headers: { Authorization: FAKE_FIXTURE_HEADER_VALUE },
+    },
+  }
+  expect(headerMismatchFindings(matching, matching)).toEqual([])
+  expect(
+    headerMismatchFindings(
+      { treeOnly: { name: 'treeOnly', command: 'tree-only' } },
+      { checkoutOnly: { name: 'checkoutOnly', command: 'checkout-only' } },
+    ),
+  ).toEqual([])
+})
 
 test('a writing run attaches every project server except the withheld ones', () => {
   const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true, PROXY)

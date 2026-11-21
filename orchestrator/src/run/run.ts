@@ -55,7 +55,7 @@ import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { runTempDir as tempDir } from '../run-owned-paths.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
-import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
+import { headerMismatchScopeLine, mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
 import {
   isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
@@ -661,6 +661,10 @@ export async function run(
     mcpSetupHeader = mergeMcpSetupHeader(
       mcpSetupHeader,
       withheldScopeLine(transportName, workerHarnessName(a), mcpLaunch.projectSelection),
+    )
+    mcpSetupHeader = mcpLaunch.headerMismatches.reduce<string | null>(
+      (header, finding) => mergeMcpSetupHeader(header, headerMismatchScopeLine(finding)),
+      mcpSetupHeader,
     )
     mcpSetupHeader = mcpLaunch.credentialLines.reduce<string | null>(
       (header, line) => mergeMcpSetupHeader(header, line),

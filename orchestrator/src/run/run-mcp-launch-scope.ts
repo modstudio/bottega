@@ -6,6 +6,8 @@ import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
+  type HeaderMismatchFinding,
+  headerMismatchFindings,
   type ProjectMcpSelection,
   projectMcpWithheldLine,
   selectProjectMcpServers,
@@ -62,13 +64,17 @@ function launchSelectionFacts(input: {
   writerProxy: WriterProxyDecision
 }): {
   config: Record<string, McpServerConfig>
+  headerMismatches: HeaderMismatchFinding[]
   project: Project | null
   selection: ProjectMcpSelection | null
 } {
   const config = readMcpConfig(input.cwd)
   const project = projectAt(input.callerCwd)
+  const checkoutConfig =
+    input.usingMcp && project && project.path !== input.cwd ? readMcpConfig(project.path) : {}
   return {
     config,
+    headerMismatches: headerMismatchFindings(config, checkoutConfig),
     project,
     selection: launchProjectSelection(
       input.usingMcp,
@@ -138,6 +144,7 @@ export function workerMcpLaunchScope(input: {
   const writerProxy = writerProxyRoute(harness, input.transport)
   const {
     config,
+    headerMismatches,
     project,
     selection: projectSelection,
   } = launchSelectionFacts({
@@ -146,6 +153,7 @@ export function workerMcpLaunchScope(input: {
   })
   return {
     config,
+    headerMismatches,
     codex: codexProjectServersFromSelection(projectSelection, input.agent.name, input.transport),
     grok:
       grokReaderServersForRun(

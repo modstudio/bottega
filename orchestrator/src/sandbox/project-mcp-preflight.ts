@@ -10,6 +10,7 @@ import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
 import { RefusalError } from '../refusal-error.ts'
 import {
+  type HeaderMismatchFinding,
   type ProjectMcpSelection,
   type ProjectMcpWithheld,
   projectMcpWriterRemedy,
@@ -57,6 +58,8 @@ export type RequiredMcpProbeFacts = {
   selectedServers?: readonly string[]
   /** The server names the selection withheld, and why. */
   withheld?: readonly ProjectMcpWithheld[]
+  /** Checkout header names absent from matching entries in the run tree. */
+  headerMismatches?: readonly HeaderMismatchFinding[]
 }
 
 export type RequiredMcpProbeDecision = {
@@ -94,6 +97,21 @@ function missingRequiredServerFailure(facts: RequiredMcpProbeFacts): ProjectMcpP
  */
 export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): RequiredMcpProbeDecision {
   if (facts.mode !== 'require') return { refusal: null, unrelatedFailures: [] }
+  if (facts.headerMismatches?.length) {
+    const mismatchLines = facts.headerMismatches.map(
+      (finding) =>
+        `${finding.server}: tree config lacks checkout header names ${finding.headerNames.join(', ')}`,
+    )
+    const remedies = [...new Set(facts.headerMismatches.map((finding) => finding.remedy))]
+    return {
+      refusal: refusal(
+        `--mcp require was asked for, but the tree MCP config is missing checkout header names:\n${mismatchLines.join('\n')}` +
+          `\ninvariant: --mcp require refuses a tree config that omits checkout header names`,
+        { kind: 'edit', text: remedies.join('; ') },
+      ),
+      unrelatedFailures: facts.failures,
+    }
+  }
   const missing = missingRequiredServerFailure(facts)
   const required = facts.requiredServer
   const scoped = Boolean(required && !isPlatformServer(required))

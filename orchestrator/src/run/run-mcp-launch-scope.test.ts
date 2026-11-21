@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -41,7 +41,7 @@ const launch = (
   transport: string,
   usingMcp: boolean,
   cwd: string,
-  opts?: { writesJob?: boolean; hasProjectTree?: boolean },
+  opts?: { writesJob?: boolean; hasProjectTree?: boolean; callerCwd?: string },
 ) =>
   workerMcpLaunchScope({
     agent: { name: agent, harness: agent } as Agent,
@@ -49,7 +49,7 @@ const launch = (
     usingMcp,
     writesJob: opts?.writesJob ?? true,
     hasProjectTree: opts?.hasProjectTree ?? true,
-    callerCwd: cwd,
+    callerCwd: opts?.callerCwd ?? cwd,
     cwd,
     connection: null,
   })
@@ -70,6 +70,40 @@ test('a writing launch reads the tree and names the same direct server for every
   const goose = launch('goose', 'acp', true, cwd)
   expect(goose.projectSelection).toEqual(codex.projectSelection)
   expect(goose.codex).toBeNull()
+})
+
+test('an MCP launch reports checkout header names missing from its tree config', () => {
+  const checkout = tree({
+    tracker: {
+      url: 'https://checkout.test/mcp',
+      headers: { Authorization: 'FAKE_FIXTURE_HEADER_VALUE' },
+    },
+  })
+  execFileSync('git', ['init', '--quiet'], { cwd: checkout })
+  const cwd = join(checkout, '.claude', 'worktrees', 'header-mismatch')
+  mkdirSync(cwd, { recursive: true })
+  writeFileSync(
+    join(cwd, '.mcp.json'),
+    JSON.stringify({ mcpServers: { tracker: { url: 'https://tree.test/mcp' } } }),
+  )
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'header-mismatch-fixture',
+    path: checkout,
+    settings: {},
+  })
+
+  const scope = launch('codex', 'cli', true, cwd, { callerCwd: checkout })
+  expect(scope.headerMismatches).toEqual([
+    {
+      server: 'tracker',
+      headerNames: ['Authorization'],
+      remedy:
+        "regenerate the tree's MCP config after the tree .env exists, or declare mcp.writer_tools for the server",
+    },
+  ])
+  expect(JSON.stringify(scope.headerMismatches)).not.toContain('FAKE_FIXTURE_HEADER_VALUE')
+  expect(launch('codex', 'cli', false, cwd, { callerCwd: checkout }).headerMismatches).toEqual([])
 })
 
 test('inline credentials are withheld from the selection rather than rendered', () => {
