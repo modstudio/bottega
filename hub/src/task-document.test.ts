@@ -127,7 +127,7 @@ describe('task documents', () => {
   })
 
   test('a hosted document update is applied to the local mirror after the send succeeds', async () => {
-    const taskKey = 'WRK-2560'
+    const taskKey = 'SHOP-2560'
     const taskRecordId = seed(taskKey, 'workshop')
     const documentId = Bun.randomUUIDv7()
     const createdAt = '2026-01-01T00:00:00.000Z'
@@ -166,7 +166,7 @@ describe('task documents', () => {
   })
 
   test("a hosted title-only update keeps the mirror's version", async () => {
-    const taskKey = 'WRK-2561'
+    const taskKey = 'SHOP-2561'
     const taskRecordId = seed(taskKey, 'workshop')
     const documentId = Bun.randomUUIDv7()
     const createdAt = '2026-01-01T00:00:00.000Z'
