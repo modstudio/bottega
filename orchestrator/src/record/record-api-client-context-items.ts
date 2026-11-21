@@ -1,6 +1,7 @@
 // concern: record-api-client-context-items
 /** Builds hosted context-item point-read methods and paths. */
 import {
+  CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
   RECORD_CONTEXT_ITEMS_ROUTE,
 } from '../../../shared/record-routes.ts'
@@ -53,8 +54,22 @@ export function recordContextItemReadClient(
     if (slug) search.set('slug', slug)
     return `${RECORD_CONTEXT_ITEMS_ROUTE}?${search}`
   }
+  const itemChunks = (holders: string[]) => {
+    const chunks: string[][] = []
+    for (let index = 0; index < holders.length; index += CONTEXT_ITEM_HOLDER_BATCH_LIMIT)
+      chunks.push(holders.slice(index, index + CONTEXT_ITEM_HOLDER_BATCH_LIMIT))
+    if (chunks.length === 0) chunks.push([])
+    return chunks
+  }
   return {
-    listContextItems: (holders, destination) => request(itemPath(holders), destination),
+    listContextItems: async (holders, destination) =>
+      (
+        await Promise.all(
+          itemChunks(holders).map((chunk) =>
+            request<RecordContextItem[]>(itemPath(chunk), destination),
+          ),
+        )
+      ).flat(),
     getContextItem: async (holder, slug, destination) =>
       (await request<RecordContextItem[]>(itemPath([holder], slug), destination))[0] ?? null,
     listContextHolders: (kind, destination) =>

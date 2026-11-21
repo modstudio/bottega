@@ -7,6 +7,7 @@ import {
   CONTEXT_ITEM_KINDS,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
+  CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
   RECORD_CONTEXT_ITEMS_ROUTE,
 } from '../../../shared/record-routes.ts'
@@ -30,8 +31,6 @@ type Deps = {
     input: Tenant & { id: string; expectedRevision?: string },
   ): Promise<{ removed: boolean }>
 }
-
-const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
 
 const holder = z.string().transform((value, context) => {
   const separator = value.indexOf(':')
