@@ -9,8 +9,8 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
-import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
+import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
@@ -432,10 +432,7 @@ test('repair posts a machine-only task before its comment and writes no outbox r
   const repaired = await runPush(true, (changes) => posts.push(changes))
 
   expect(posts).toHaveLength(1)
-  expect(posts[0]?.map((change) => change.table)).toEqual([
-    HOSTED_TASK_TABLE,
-    HOSTED_COMMENT_TABLE,
-  ])
+  expect(posts[0]?.map((change) => change.table)).toEqual([HOSTED_TASK_TABLE, HOSTED_COMMENT_TABLE])
   expect(posts[0]?.map((change) => change.id)).toEqual([missingHosted, commentId])
   expect(listHostedOutbox()).toEqual([])
   expect(repaired.drain?.sent).toBe(2)
@@ -634,10 +631,7 @@ test('repair insert-if-absent keeps a hosted title written after the audit', asy
           },
         ])
       }
-      const result = await applyOn(
-        spaceA,
-        JSON.parse(String(init?.body)) as HostedPushChange[],
-      )
+      const result = await applyOn(spaceA, JSON.parse(String(init?.body)) as HostedPushChange[])
       outcomes.push(...result)
       return Response.json(result)
     },

@@ -294,7 +294,7 @@ async function sendDirectRepairs(
     await sendHostedChanges('record repair', stages, {
       ...requestOptions,
       recordSpace: space.spaceId,
-      conflictRemedy: `${PLATFORM_SLUG} task hosted push`,
+      conflictRemedy: `${PLATFORM_SLUG} task push`,
     })
     sent += changes.length
   }
