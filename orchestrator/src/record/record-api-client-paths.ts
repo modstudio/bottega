@@ -38,7 +38,12 @@ export type RecordSnapshotAndPublicDocMethod =
   | 'listPublicDocs'
   | 'getPublicDoc'
   | 'searchPublicDocs'
-export type RecordDocReadMethod = 'searchDocs' | 'listDocs' | 'getDoc' | 'listRevisions'
+export type RecordDocReadMethod =
+  | 'searchDocs'
+  | 'listDocs'
+  | 'getDoc'
+  | 'getDocRevision'
+  | 'listRevisions'
 export type RecordDocWriteMethod =
   | 'upsertDoc'
   | 'reorderDocs'

@@ -135,6 +135,12 @@ test('doc rm deletes the hosted row when the local mirror is empty', async () =>
 
 test('consume reaches the hosted resume when the local mirror is empty', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'fixture',
+    path: '/tmp/fixture',
+    settings: { space: 'personal-space' },
+  })
   const body = [
     '---',
     'status: open',
@@ -148,6 +154,14 @@ test('consume reaches the hosted resume when the local mirror is empty', async (
   const consumes: Array<{ id: string; expectedRevision?: string }> = []
   installRecordApiClient(
     hostedClient({
+      whoami: async () => ({
+        user: { id: 'user-a', name: 'Fixture', email: 'fixture@example.test' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write', role: 'owner' },
+        ],
+      }),
       listDocs: async () => ({
         items: [hostedRow({ scope: 'resume', subject: 'fixture', body })],
         nextCursor: null,
@@ -200,6 +214,11 @@ test('restore finds its revision in the hosted record when the local mirror is e
   client.getDocRevision = async (id) => {
     expect(id).toBe(restoredRevisionId)
     return revision
+  }
+  client.restoreDoc = async (id, input) => {
+    expect(id).toBe(docId)
+    expect(input.revisionId).toBe(restoredRevisionId)
+    return { id, revisionId: newRecordId() }
   }
   installRecordApiClient(client)
 

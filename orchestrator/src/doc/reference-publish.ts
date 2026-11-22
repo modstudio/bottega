@@ -7,7 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { getDocStore as getDoc, listDocsStore as listDocs } from './doc-read-store.ts'
+import { readDoc, readDocs } from './doc-authoritative-read.ts'
 import { removeDoc, setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {
@@ -74,7 +74,7 @@ export async function publishReferenceDocs(
   const indexFile = files.find((file) => basename(file) === 'index.md')
   if (!indexFile)
     throw new Error('docs/reference/index.md is not tracked; regenerate the reference')
-  const currentIndex = getDoc('project', PLATFORM_SLUG, 'cli')
+  const currentIndex = await readDoc('project', PLATFORM_SLUG, 'cli')
   if (!currentIndex) {
     throw new Error(
       `project/${PLATFORM_SLUG}/cli does not exist; restore the existing CLI article first`,
@@ -88,7 +88,7 @@ export async function publishReferenceDocs(
     const slug = pageSlug(file, indexFile)
     const parentSlug = file === indexFile ? currentIndex.parent_slug : 'cli'
     const pagePosition = file === indexFile ? currentIndex.position : position - 1
-    const existing = getDoc('project', PLATFORM_SLUG, slug)
+    const existing = await readDoc('project', PLATFORM_SLUG, slug)
     if (
       existing &&
       existing.form === 'reference' &&
@@ -119,7 +119,7 @@ export async function publishReferenceDocs(
     results.push({ slug, disposition: existing ? 'updated' : 'created' })
   }
   const expected = new Set(ordered.map((file) => pageSlug(file, indexFile)))
-  const removed = listDocs({ scope: 'project', subject: PLATFORM_SLUG })
+  const removed = (await readDocs({ scope: 'project', subject: PLATFORM_SLUG }))
     .filter(
       (doc) => doc.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
     )

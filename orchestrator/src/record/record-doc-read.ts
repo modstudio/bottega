@@ -253,6 +253,18 @@ export async function listRecordDocRevisions(
   })
 }
 
+export async function getRecordDocRevision(
+  input: Tenant & { id: string; audience?: DocAudience },
+): Promise<RecordDocRevision | null> {
+  const docId = await tenant(input, async (tx) => {
+    const rows = await tx`SELECT doc_id FROM doc_revision WHERE id=${input.id}::uuid`
+    return rows[0]?.doc_id == null ? null : String(rows[0].doc_id)
+  })
+  if (!docId) return null
+  const revisions = await listRecordDocRevisions({ ...input, id: docId })
+  return revisions?.find(({ id }) => id === input.id) ?? null
+}
+
 /** Apply the hosted audience contract to one document body. */
 export function hostedDocBodyForAudience(
   document: Pick<RecordDoc, 'scope' | 'subject' | 'slug' | 'audiences' | 'body'>,

@@ -196,6 +196,9 @@ type RecordApiDeps = RecordSessionRouteDeps &
     searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
     searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
     readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
+    readDocRevision(
+      input: Tenant & { id: string; audience?: DocAudience },
+    ): Promise<RecordDocRevision | null>
     listDocRevisions(
       input: Tenant & { id: string; audience?: DocAudience },
     ): Promise<RecordDocRevision[] | null>
@@ -826,6 +829,30 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     } catch (error) {
       return writeError(context, error)
     }
+  })
+  app.get('/v1/doc-revisions/:revisionId', async (context) => {
+    const id = idSchema.safeParse(context.req.param('revisionId'))
+    if (!id.success) return context.json({ error: 'doc revision id must be a uuid' }, 400)
+    const readable = scope(context, true)
+    if (!readable) return noSpace(context)
+    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
+    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
+    const found = await deps.readDocRevision({
+      ...readable,
+      id: id.data,
+      audience: audience.data,
+    })
+    if (!found) return context.json({ error: 'doc revision not found' }, 404)
+    const tenant = await docIdScope(context, found.docId)
+    if (!tenant) return noSpace(context)
+    const revision = await deps.readDocRevision({
+      ...tenant,
+      id: id.data,
+      audience: audience.data,
+    })
+    return revision
+      ? context.json(revision)
+      : context.json({ error: 'doc revision not found' }, 404)
   })
   app.put('/v1/docs', async (context) => {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))

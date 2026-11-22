@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
-import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { readDoc } from '../doc/doc-authoritative-read.ts'
 import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -92,7 +92,7 @@ export async function settingsEnvImportCommand(
     assertCurrentMachineHomeWriteAuthority('machine settings env import --user', [home])
   }
   const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error('refusing settings env import: no user settings row')
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
@@ -136,7 +136,7 @@ export async function settingsAdoptCommand(
 ): Promise<void> {
   const target = resolveTarget(flags)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
-  const row = settingsRow(target, owner)
+  const row = await settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings adopt: no settings row for ${targetLabel(target)}`)
   if (flags.has('all') === requestedRules.length > 0) {
     throw new Error('refusing settings adopt: pass either --all or one or more rules')
@@ -212,7 +212,7 @@ export async function settingsRenderWriteCommand(
   const target = resolveTarget(flags)
   assertSettingsRenderWriteAuthority(target)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
-  const row = settingsRow(target, owner)
+  const row = await settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings render: no settings row for ${targetLabel(target)}`)
   const root = targetRoot(target, presentation.cwd())
   if (
@@ -328,7 +328,7 @@ function targetRoot(target: Target, cwd: string): string {
 
 function settingsRow(target: Target, owner: string | null) {
   const address = targetAddress(target, owner)
-  return getDoc(SETTINGS_SCOPE, address.subject, SETTINGS_SLUG, address.owner)
+  return readDoc(SETTINGS_SCOPE, address.subject, SETTINGS_SLUG, address.owner)
 }
 
 function targetAddress(target: Target, owner: string | null) {
@@ -359,7 +359,7 @@ export async function migrateStoredSettingsEnvironmentNames(
   replacement: (name: string) => string | null,
 ): Promise<Array<{ oldName: string; newName: string }>> {
   const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) return []
   const owned = parseStoredOwnedSettings(row.body)
   const current = owned.envKeys ?? []
@@ -384,7 +384,7 @@ export async function restoreStoredSettingsEnvironmentNames(
 ): Promise<void> {
   if (!migrations.length) return
   const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) {
     throw new Error(
       `refusing setup restore: stored user settings are absent; restore the settings document, then re-run ${PLATFORM_SLUG} machine setup restore`,
@@ -440,7 +440,7 @@ export async function assertStoredSettingsEnvironmentMigration(
   replacement: (name: string) => string | null,
 ): Promise<void> {
   const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) return
   settingsEnvironmentNamesDecision(parseStoredOwnedSettings(row.body).envKeys ?? [], replacement)
 }

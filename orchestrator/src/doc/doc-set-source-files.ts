@@ -1,6 +1,6 @@
 /** Applies command-specific source-file updates through the document service. */
 
-import { getDocStore as getDoc } from './doc-read-store.ts'
+import { readDoc } from './doc-authoritative-read.ts'
 import {
   type DocSourceFileUpdate,
   docSourceFileExpectedRevision,
@@ -14,7 +14,7 @@ export async function setDocFromCommand(
   sourceFileUpdate: DocSourceFileUpdate | undefined,
 ): ReturnType<typeof setDoc> {
   if (!sourceFileUpdate) return setDoc(input)
-  const prior = getDoc(input.scope, input.subject, input.slug, input.owner ?? null)
+  const prior = await readDoc(input.scope, input.subject, input.slug, input.owner ?? null)
   return setDoc({
     ...input,
     expectedRevision: docSourceFileExpectedRevision(

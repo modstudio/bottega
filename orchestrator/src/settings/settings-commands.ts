@@ -7,7 +7,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { renderRefusal } from '../../../shared/refusal.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
-import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { readDoc } from '../doc/doc-authoritative-read.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -152,7 +152,7 @@ async function applySettingsListEdit<Counts>(input: {
   edit(settings: OwnedSettings): SettingsListEdit
   counts(settings: OwnedSettings): Counts
 }): Promise<{ revision: string; counts: Counts; changed: boolean; message?: string }> {
-  const row = settingsRow(input.target, input.owner)
+  const row = await settingsRow(input.target, input.owner)
   if (!row) throw new Error(input.missingRowMessage)
   const revision = decideDocRevisionWrite({
     expected: input.expectedRevision,
@@ -248,7 +248,7 @@ export async function settingsImportCommand(
   const cwd = presentation.cwd()
   const path = settingsFilePath(target, process.env, cwd)
   const parsed = readSettingsFile(path)
-  const existing = settingsRow(target, owner)
+  const existing = await settingsRow(target, owner)
   const storeOwned = existing ? parseStoreOwned(existing.body) : emptyOwned()
   const localLists = readLocalPermissionLists(settingsLocalPath(target, process.env, cwd))
   const adoption = adoptionCandidates(localLists, permissionLists(storeOwned.permissions))
@@ -293,7 +293,7 @@ export async function settingsRenderCheckCommand(
   const cwd = presentation.cwd()
   const path = settingsFilePath(target, process.env, cwd)
   const parsed = flags.has('json') ? tryReadSettingsFile(path) : readSettingsFile(path)
-  const existing = settingsRow(target, owner)
+  const existing = await settingsRow(target, owner)
   const storeOwned = effectiveStoredSettings(target, existing?.body)
   if (
     target.kind === 'project' &&
@@ -419,7 +419,7 @@ function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSe
 }
 
 function settingsRow(target: SettingsTargetKind, owner: string | null) {
-  return getDoc(
+  return readDoc(
     SETTINGS_SCOPE,
     target.kind === 'project' ? target.name : null,
     SETTINGS_SLUG,

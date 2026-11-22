@@ -7,7 +7,11 @@ import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient, listAllHostedDocs } from './doc-hosted-client.ts'
-import { type HostedDocRevision, hostedDocRevisionRead } from './doc-hosted-history.ts'
+import {
+  type HostedDocRevision,
+  hostedDocRevisionRead,
+  mapHostedDocRevisions,
+} from './doc-hosted-history.ts'
 import {
   type Doc,
   type DocListFilters,
@@ -258,6 +262,24 @@ export function readDocRevisions(
       withReadRemedy(
         async () => (await hostedRevisionRead(scope, subject, slug, owner))?.revisions ?? [],
       ),
+  })
+}
+
+export function readDocRevision(
+  revisionId: string,
+  owner: string | null = null,
+  scope = 'global',
+  subject: string | null = null,
+): Promise<import('./doc-read-store.ts').DocRevision | null> {
+  return applyRecordReadAuthority({
+    local: () => getStoredDocRevision(revisionId, owner),
+    hosted: () =>
+      withReadRemedy(async () => {
+        const revision = await (await hostedDocClient(scope, subject)).getDocRevision(revisionId)
+        if ('record_id' in revision)
+          return revision as unknown as import('./doc-read-store.ts').DocRevision
+        return mapHostedDocRevisions([revision as HostedDocRevision])[0] ?? null
+      }),
   })
 }
 

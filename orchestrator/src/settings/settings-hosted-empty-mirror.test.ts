@@ -75,7 +75,7 @@ test('settings env edits the hosted settings row when the local mirror is empty'
   expect(requests[0]?.expectedRevision).toBe(revisionId)
 })
 
-test('settings permission and auto-mode edit the hosted settings row when the local mirror is empty', async () => {
+test('settings permission edits the hosted settings row when the local mirror is empty', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const requests: RecordDocUpsertInput[] = []
   installHostedSettings(requests)
@@ -86,6 +86,13 @@ test('settings permission and auto-mode edit the hosted settings row when the lo
   }
 
   await settingsPermissionCommand(flags, 'add')
+  expect(requests[0]?.expectedRevision).toBe(revisionId)
+})
+
+test('settings auto-mode edits the hosted settings row when the local mirror is empty', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const requests: RecordDocUpsertInput[] = []
+  installHostedSettings(requests)
   await settingsAutoModeCommand(
     {
       has: (name) => name === 'user',
@@ -96,7 +103,7 @@ test('settings permission and auto-mode edit the hosted settings row when the lo
     },
     'add',
   )
-  expect(requests.map(({ expectedRevision }) => expectedRevision)).toEqual([revisionId, revisionId])
+  expect(requests[0]?.expectedRevision).toBe(revisionId)
 })
 
 test('settings apply reads and revises hosted settings when the local mirror is empty', async () => {

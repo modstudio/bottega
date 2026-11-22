@@ -88,7 +88,16 @@ test('reference publish compares and revises hosted pages when the local mirror 
       }),
       upsertDoc: async (input) => {
         requests.push(input)
-        return { id: taskId, revisionId: newRecordId() }
+        return {
+          id: taskId,
+          revisionId: newRecordId(),
+          form: input.form,
+          articleSubject: null,
+          relatedSubjects: [],
+          sourceFiles: input.sourceFiles,
+          checkedAgainstCommit: input.checkedAgainstCommit,
+          summary: input.summary,
+        }
       },
     })
 

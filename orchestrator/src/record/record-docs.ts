@@ -72,6 +72,7 @@ import { recordPool } from './record-pool.ts'
 export { assertRevisionWrite, RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 export {
+  getRecordDocRevision,
   getRecordDoc,
   listRecordDocEntries,
   listRecordDocRevisions,

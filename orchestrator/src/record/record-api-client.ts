@@ -813,6 +813,7 @@ const recordDocReadClient = (
     return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
   },
   getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
+  getDocRevision: (id, destination) => request(`/v1/doc-revisions/${id}`, destination),
   listRevisions: (id, destination) => listDocRevisionsRequest(id, destination, request),
 })
 

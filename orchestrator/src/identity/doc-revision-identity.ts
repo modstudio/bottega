@@ -2,7 +2,9 @@
 /** Resolves a user-facing document-revision number or UUID at the identity door. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 
 const ACCEPTED = 'a positive decimal document-revision number or a full document-revision UUID'
 
@@ -25,6 +27,14 @@ export function parseDocRevisionIdentifier(input: string | number): ParsedDocRev
 
 export function resolveDocRevisionIdentifier(database: Database, input: string | number): string {
   const parsed = parseDocRevisionIdentifier(input)
+  if (recordApiConfigured()) {
+    if (parsed.kind === 'number') {
+      throw new Error(
+        `hosted document revisions have no numeric identifier; pass the revision id listed by ${PLATFORM_SLUG} doc history`,
+      )
+    }
+    return parsed.recordId
+  }
   if (parsed.kind === 'number') {
     const row = database
       .query<{ record_id: string }, [number]>('SELECT record_id FROM doc_revision WHERE number=?')

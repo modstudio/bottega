@@ -612,6 +612,13 @@ export function createMemoryRecordApiClient(
       if (!doc) throw new Error('doc not found')
       return doc
     },
+    async getDocRevision(id) {
+      for (const rows of revisions.values()) {
+        const revision = rows.find((row) => row.id === id)
+        if (revision) return revision
+      }
+      throw new Error('doc revision not found')
+    },
     async listRevisions(id) {
       return revisions.get(id) ?? []
     },
