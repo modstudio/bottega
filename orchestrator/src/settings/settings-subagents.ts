@@ -2,13 +2,13 @@
 /** Owns the signed-in user's subagent-blocking choice. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { subagentBlockingState } from '../../../shared/stored-settings.ts'
 import { setDoc } from '../doc/docs.ts'
 import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
-  subagentBlockingState,
 } from './settings.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import { readSignedInUserSettingsRow } from './settings-user-row.ts'

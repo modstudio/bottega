@@ -2,13 +2,13 @@
 /** Reads only local session and Claude settings state for setup planning. */
 
 import { runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
+import { subagentBlockingState } from '../../../shared/stored-settings.ts'
 import { recordSessionPresent } from '../record/record-session.ts'
 import {
   claudeHomeFromEnvironment,
   readSettingsJsonLenient,
   userSettingsPath,
 } from '../settings/settings-files.ts'
-import { subagentBlockingState } from '../settings/settings.ts'
 import {
   type ProductHookDeclaration,
   productHookDeclarations,
