@@ -9,6 +9,7 @@ import {
 } from '../settings/settings-machine-apply.ts'
 import {
   PRODUCT_HOOKS,
+  productHookDeclarations,
   SCRIPT_FILES,
   withMachineProductHooks,
 } from '../settings/settings-machine-hooks.ts'
@@ -32,7 +33,7 @@ function facts(): SetupInstallVerifyFacts {
         required: true,
         state: 'readable',
         settings: withMachineProductHooks(
-          { permissions: {}, hooks: {}, options: { subagentHooks: 'on' } },
+          { permissions: {}, hooks: {} },
           { subagentHooks: 'on' },
           '/state/orchestrator.db',
           'on',
@@ -70,6 +71,7 @@ test('rendered and verified install settings succeed with every named check', as
   const result = await applySetupInstallVerify(true, {
     applySettings: async () => current,
     facts,
+    subagentHooks: async () => 'on',
   })
   expect(result.status).toBe('unchanged')
   expect(result.message).toContain('hooks-present: ok')
@@ -80,8 +82,32 @@ test('the rendered success fixture fails when one product hook is removed', asyn
   const input = facts()
   removeRenderedHook(input, 'git-guard.py')
   await expect(
-    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, {
+      applySettings: async () => current,
+      facts: () => input,
+      subagentHooks: async () => 'on',
+    }),
   ).rejects.toThrow('hooks-present: failed')
+})
+
+test('a signed-in blocking choice requires block-agent hooks absent from rendered settings', async () => {
+  const input = facts()
+  removeRenderedHook(input, 'block-agent.py')
+  let gatheredChoice: 'on' | undefined
+  await expect(
+    applySetupInstallVerify(true, {
+      applySettings: async () => current,
+      subagentHooks: async () => 'on',
+      facts: (subagentHooks) => {
+        gatheredChoice = subagentHooks
+        return {
+          ...input,
+          hooks: productHookDeclarations(subagentHooks === 'on' ? { subagentHooks } : undefined),
+        }
+      },
+    }),
+  ).rejects.toThrow('missing: PreToolUse Agent|Task|Workflow block-agent.py')
+  expect(gatheredChoice).toBe('on')
 })
 
 test('a settings-row refusal names its target, condition, and row remedy', async () => {
@@ -99,6 +125,7 @@ test('a settings-row refusal names its target, condition, and row remedy', async
         },
       ],
       facts,
+      subagentHooks: async () => 'on',
     }),
   ).rejects.toThrow('no-settings-row')
 })
@@ -167,7 +194,11 @@ test('an absent hook after render refuses naming hooks-present', async () => {
   const input = facts()
   removeRenderedHook(input, 'stop-summary.py')
   await expect(
-    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, {
+      applySettings: async () => current,
+      facts: () => input,
+      subagentHooks: async () => 'on',
+    }),
   ).rejects.toThrow('hooks-present: failed')
 })
 
@@ -210,6 +241,7 @@ test('a skipped registered project does not prevent verification', async () => {
       },
     ],
     facts,
+    subagentHooks: async () => 'on',
   })
   expect(result.status).toBe('unchanged')
   expect(result.message).toContain('hooks-present: ok')

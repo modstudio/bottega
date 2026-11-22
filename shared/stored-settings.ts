@@ -78,8 +78,10 @@ const STORED_SETTINGS_ROW_SCHEMA = storedObjectSchema(OWNED_SETTINGS_SCHEMA).ext
 const OWNED_SETTINGS_KEYS_TEXT = Object.keys(OWNED_SETTINGS_SCHEMA.shape).join(', ')
 
 export const STORED_SETTINGS_REMEDY = `cleared by: write a JSON object with only these keys: ${OWNED_SETTINGS_KEYS_TEXT}`
-export const STORED_SETTINGS_UPGRADE_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
-export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; ${STORED_SETTINGS_UPGRADE_REMEDY}`
+export function storedSettingsUpgradeRemedy(verb: 'reading' | 'editing'): string {
+  return `upgrade ${PLATFORM_NAME} before ${verb} this settings row`
+}
+export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; ${storedSettingsUpgradeRemedy('reading')}`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)

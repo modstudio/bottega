@@ -1,7 +1,7 @@
 // concern: settings-edit-refusal
 /** Renders the forward-compatibility refusal shared by settings row edit adapters. */
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { STORED_SETTINGS_UPGRADE_REMEDY } from '../../../shared/stored-settings.ts'
+import { storedSettingsUpgradeRemedy } from '../../../shared/stored-settings.ts'
 import { unknownStoredSettingsKeyPath } from './settings.ts'
 
 export function refuseUnknownStoredSettingsEdit(body: string): string | null {
@@ -12,7 +12,7 @@ export function refuseUnknownStoredSettingsEdit(body: string): string | null {
       `refusing settings edit: stored settings row has unknown key ${JSON.stringify(unknown)}`,
       {
         kind: 'edit',
-        text: STORED_SETTINGS_UPGRADE_REMEDY.replace('reading', 'editing'),
+        text: storedSettingsUpgradeRemedy('editing'),
       },
     ),
   )

@@ -197,11 +197,6 @@ export function productHookDeclarations(
   )
 }
 
-export function renderedSubagentHookOptions(settings: unknown): OwnedSettings['options'] {
-  if (!isPlainObject(settings) || !isPlainObject(settings.options)) return undefined
-  return settings.options.subagentHooks === 'on' ? { subagentHooks: 'on' } : undefined
-}
-
 export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
   const needle = assetRoot
     ? join(assetRoot, 'orchestrator', 'hooks', file)

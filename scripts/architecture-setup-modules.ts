@@ -264,6 +264,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../settings/settings-files.ts',
       '../settings/settings-machine-apply.ts',
       '../settings/settings-machine-hooks.ts',
+      '../settings/settings-user-row.ts',
       './setup-install-verify.ts',
     ],
     typeOnlyAllowed: [],

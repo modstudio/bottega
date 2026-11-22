@@ -22,11 +22,8 @@ import {
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import {
-  productHookDeclarations,
-  renderedSubagentHookOptions,
-  SCRIPT_FILES,
-} from '../settings/settings-machine-hooks.ts'
+import { productHookDeclarations, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import { readSignedInSubagentHooks } from '../settings/settings-user-row.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -35,8 +32,9 @@ import {
 
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
-  facts?: () => SetupInstallVerifyFacts
+  facts?: (subagentHooks: 'on' | undefined) => SetupInstallVerifyFacts
   prepareRuntime?: () => void
+  subagentHooks?: () => Promise<'on' | undefined>
 }
 
 const SIGN_IN_FOLLOW_UP =
@@ -63,6 +61,7 @@ function readSettingsFact(
 
 function gatherSetupInstallVerifyFacts(
   environment: NodeJS.ProcessEnv = process.env,
+  subagentHooks: 'on' | undefined,
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
@@ -100,8 +99,7 @@ function gatherSetupInstallVerifyFacts(
     readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
     ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
   ]
-  const userSettings = settingsFiles.find((file) => file.kind === 'user')?.settings
-  const settingsOptions = renderedSubagentHookOptions(userSettings)
+  const settingsOptions = subagentHooks === 'on' ? { subagentHooks } : undefined
   return {
     installRoot,
     hooks: productHookDeclarations(settingsOptions),
@@ -153,7 +151,14 @@ export async function applySetupInstallVerify(
       condition: 'waiting-for-sign-in',
     }
   }
-  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
+  const subagentHooks = sessionPresent
+    ? await (adapters.subagentHooks ?? readSignedInSubagentHooks)()
+    : undefined
+  const checks = verifySetupInstall(
+    adapters.facts
+      ? adapters.facts(subagentHooks)
+      : gatherSetupInstallVerifyFacts(process.env, subagentHooks),
+  )
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))
   return {
     status: results.some((result) => result.changed) ? 'applied' : 'unchanged',
