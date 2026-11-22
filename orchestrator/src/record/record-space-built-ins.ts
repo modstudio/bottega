@@ -58,8 +58,14 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
       ...builtIns.workflows.map((item) => ({ kind: 'workflow' as const, ...item })),
     ],
     async (item) => {
-      const workflowVersionRow = maskHostedTableWrite('workflow_version', item)
-      const stepVersionRow = maskHostedTableWrite('step_catalogue_version', item)
+      const workflowVersionRow = maskHostedTableWrite('workflow_version', {
+        ...item,
+        author: BUILT_IN_WORKFLOW_AUTHOR,
+      })
+      const stepVersionRow = maskHostedTableWrite('step_catalogue_version', {
+        ...item,
+        author: BUILT_IN_WORKFLOW_AUTHOR,
+      })
       const workflowEventRow = maskHostedTableWrite('workflow_event', {
         author: BUILT_IN_WORKFLOW_AUTHOR,
         reason: item.reason,
@@ -96,11 +102,11 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
             ? await tx`INSERT INTO workflow_version
             (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
             VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${workflowVersionRow.definition},
-              ${workflowEventRow.author},${workflowVersionRow.reason},now(),now(),now()) RETURNING id`
+              ${workflowVersionRow.author},${workflowVersionRow.reason},now(),now(),now()) RETURNING id`
             : await tx`INSERT INTO step_catalogue_version
             (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
             VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${stepVersionRow.definition},
-              ${stepEventRow.author},${stepVersionRow.reason},now(),now(),now()) RETURNING id`
+              ${stepVersionRow.author},${stepVersionRow.reason},now(),now(),now()) RETURNING id`
         result.inserted++
       }
       const versionId = String(versions[0]!.id)
