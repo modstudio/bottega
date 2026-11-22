@@ -1,6 +1,7 @@
 // concern: settings
 /** Owned Claude settings policy over the shared stored shape. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -110,7 +111,9 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
       throw new Error('refusing stored settings row: cannot parse JSON')
     }
     if (error instanceof StoredSettingsRowError && error.reason === 'shape') {
-      throw new Error(`refusing stored settings row: invalid owned settings shape\n${error.message}`)
+      throw new Error(
+        `refusing stored settings row: invalid owned settings shape\n${error.message}`,
+      )
     }
     throw error
   }
@@ -273,8 +276,12 @@ function parseOptions(value: unknown): OwnedSettings['options'] {
   const result = OWNED_SETTINGS_OPTIONS_SCHEMA.safeParse(value)
   if (!result.success) {
     throw new Error(
-      'refusing settings file: invalid options\n' +
-        'cleared by: use only subagentHooks with accepted value "on"',
+      renderRefusal(
+        refusal('refusing settings file: invalid options', {
+          kind: 'edit',
+          text: 'use only subagentHooks with accepted value "on"',
+        }),
+      ),
     )
   }
   return result.data

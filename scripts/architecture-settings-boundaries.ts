@@ -9,6 +9,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'zod',
       'shared/brand.ts',
+      'shared/refusal.ts',
       'shared/secret-shaped.ts',
       'shared/settings-permission-lists.ts',
       'shared/stored-settings.ts',

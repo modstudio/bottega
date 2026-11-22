@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import { PLATFORM_NAME } from './brand.ts'
+import { refusal, renderRefusal } from './refusal.ts'
 
 export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'] as const
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
@@ -70,13 +71,19 @@ const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
 
 export const STORED_SETTINGS_REMEDY =
   'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names'
-export const STORED_SETTINGS_OPTIONS_REMEDY =
-  `cleared by: upgrade ${PLATFORM_NAME} before reading this settings row`
+export const STORED_SETTINGS_OPTIONS_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)
   if (issue.code === 'unrecognized_keys') path.push(issue.keys[0] ?? '(root)')
   return path.join('.') || '(root)'
+}
+
+function storedSettingsShapeMessage(path: string): string {
+  const condition = `stored settings row has an invalid shape at ${JSON.stringify(path)}`
+  return path.startsWith('options.')
+    ? renderRefusal(refusal(condition, { kind: 'edit', text: STORED_SETTINGS_OPTIONS_REMEDY }))
+    : `${condition}\n${STORED_SETTINGS_REMEDY}`
 }
 
 export class StoredSettingsRowError extends Error {
@@ -89,11 +96,7 @@ export class StoredSettingsRowError extends Error {
     super(
       reason === 'json'
         ? `stored settings row cannot parse JSON\n${STORED_SETTINGS_REMEDY}`
-        : `stored settings row has an invalid shape at ${JSON.stringify(path)}\n${
-            path?.startsWith('options.')
-              ? STORED_SETTINGS_OPTIONS_REMEDY
-              : STORED_SETTINGS_REMEDY
-          }`,
+        : storedSettingsShapeMessage(path!),
     )
     this.name = 'StoredSettingsRowError'
     this.reason = reason

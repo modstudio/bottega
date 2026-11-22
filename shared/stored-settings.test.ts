@@ -39,7 +39,9 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
     parseStoredSettingsRow(
       JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
     ),
-  ).toThrow(new RegExp(`options\\.subagentHooks.*${STORED_SETTINGS_OPTIONS_REMEDY}`, 's'))
+  ).toThrow(
+    new RegExp(`options\\.subagentHooks.*cleared by: ${STORED_SETTINGS_OPTIONS_REMEDY}`, 's'),
+  )
 
   try {
     parseStoredSettingsRow('{')
