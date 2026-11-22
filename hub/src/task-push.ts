@@ -5,6 +5,7 @@ import { rememberHostedInstall } from './install-binding.ts'
 import {
   DIRECT_RECORD_TABLES,
   drainHostedOutbox,
+  HOSTED_OUTBOX_BATCH_SIZE,
   type HostedOutboxReport,
   queueHostedChange,
 } from './outbox.ts'
@@ -23,6 +24,7 @@ import {
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
 } from './push-contract.ts'
+import { orderHostedPushChanges } from './push-order.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -65,6 +67,14 @@ type Options = {
 
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set([
+  ...DIRECT_RECORD_TABLES,
+  HOSTED_TASK_TABLE,
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DOCUMENT_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
+])
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
@@ -231,7 +241,7 @@ async function hostedTableIds(
 function queueRepairs(candidates: readonly RepairCandidate[]) {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
     const rows = candidates.filter(
-      (candidate) => candidate.table === table && !DIRECT_RECORD_TABLES.has(candidate.table),
+      (candidate) => candidate.table === table && !DIRECT_REPAIR_TABLES.has(candidate.table),
     )
     if (!rows.length) continue
     writeTransaction((conn) => {
@@ -248,7 +258,7 @@ async function sendDirectRepairs(
 ): Promise<number> {
   const directCandidates = new Map(
     candidates
-      .filter((candidate) => DIRECT_RECORD_TABLES.has(candidate.table))
+      .filter((candidate) => DIRECT_REPAIR_TABLES.has(candidate.table))
       .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
   )
   let sent = 0
@@ -265,14 +275,26 @@ async function sendDirectRepairs(
         })
         if (!loaded)
           throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
-        return [loaded.change]
+        return [
+          loaded.change.op === 'upsert' &&
+          candidate.fields !== null &&
+          (loaded.change.table === HOSTED_TASK_TABLE ||
+            loaded.change.table === HOSTED_COMMENT_TABLE ||
+            loaded.change.table === HOSTED_DOCUMENT_TABLE)
+            ? { ...loaded.change, fields: candidate.fields }
+            : loaded.change,
+        ]
       }),
     )
     if (!changes.length) continue
-    await sendHostedChanges('note acknowledgement repair', [changes], {
+    const ordered = orderHostedPushChanges(changes)
+    const stages = []
+    for (let index = 0; index < ordered.length; index += HOSTED_OUTBOX_BATCH_SIZE)
+      stages.push(ordered.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE))
+    await sendHostedChanges('record repair', stages, {
       ...requestOptions,
       recordSpace: space.spaceId,
-      conflictRemedy: `${PLATFORM_SLUG} note list`,
+      conflictRemedy: `${PLATFORM_SLUG} task hosted push`,
     })
     sent += changes.length
   }
