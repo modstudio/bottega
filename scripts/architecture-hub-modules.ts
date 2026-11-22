@@ -104,6 +104,46 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
+    file: 'hub/src/ingest/tracker-observation-times.ts',
+    allowed: ['../../../shared/trackers.ts'],
+  },
+  {
+    file: 'hub/src/ingest/tracker-hosted-collector.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/trackers.ts',
+      '../hosted-change-sender.ts',
+      '../outbox-row.ts',
+      '../task-hosted-row.ts',
+      '../task-row.ts',
+      '../task-write-destination.ts',
+      './tracker-row-plan.ts',
+    ],
+  },
+  {
+    file: 'hub/src/ingest/tracker-row-plan.ts',
+    allowed: [
+      'node:crypto',
+      '../../../shared/trackers.ts',
+      '../outbox-row.ts',
+      '../task-row.ts',
+      './tracker-observation-times.ts',
+    ],
+  },
+  {
+    file: 'hub/src/ingest/tracker-local-collector.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/trackers.ts',
+      '../db.ts',
+      '../outbox.ts',
+      '../push-contract.ts',
+      '../task-hosted-row.ts',
+      '../task-row.ts',
+      './tracker-row-plan.ts',
+    ],
+  },
+  {
     file: 'hub/src/ingest/trackers.ts',
     allowed: [
       'bun:sqlite',
@@ -113,7 +153,6 @@ export const hubModuleSpecs = [
       '../../../shared/trackers.ts',
       '../db.ts',
       '../hosted-change-sender.ts',
-      '../hosted-queue-decision.ts',
       '../hosted-url.ts',
       '../hosted-write-mode.ts',
       '../mcp.ts',
@@ -125,8 +164,13 @@ export const hubModuleSpecs = [
       '../task-cache.ts',
       '../task-hosted-row.ts',
       '../task-identity.ts',
+      '../task-row.ts',
       '../task-write-destination.ts',
       './tracker-read-mode.ts',
+      './tracker-hosted-collector.ts',
+      './tracker-local-collector.ts',
+      './tracker-observation-times.ts',
+      './tracker-row-plan.ts',
     ],
   },
   {

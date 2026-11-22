@@ -19,6 +19,57 @@ import {
 import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
 import type { TaskRow } from './task-row.ts'
 
+export type StatusEventRow = {
+  record_id: string
+  task_key: string
+  task_record_id: string
+  at: string
+  from_status: string | null
+  to_status: string
+  actor_user_id: string | null
+  actor_name: string | null
+  agent: string | null
+  run_id: string | null
+  project_name: string
+  project_record_id: string | null
+}
+
+/** The shared local/planned task-row to hosted-change mapping. */
+export function taskRowHostedChange(row: TaskRow): HostedPushChange {
+  return {
+    table: HOSTED_TASK_TABLE,
+    id: row.record_id,
+    op: 'upsert',
+    row: hostedTaskFromTaskRow(row, row.record_id),
+  }
+}
+
+/** The shared local/planned status-event to hosted-change mapping. */
+export function statusEventRowHostedChange(row: StatusEventRow): HostedPushChange {
+  return {
+    table: HOSTED_STATUS_EVENT_TABLE,
+    id: row.record_id,
+    op: 'upsert',
+    row: {
+      id: row.record_id,
+      task_key: row.task_key,
+      task_id: row.task_record_id,
+      at: row.at,
+      from_status: row.from_status,
+      to_status: row.to_status,
+      project_name: row.project_name,
+      projectId: row.project_record_id,
+      actor_user_id: row.actor_user_id,
+      actor_name: row.actor_name,
+      agent: row.agent,
+      run_id: row.run_id,
+      created_at: row.at,
+      updated_at: row.at,
+      deleted_at: null,
+    },
+  }
+}
+
 type OutboxPointer = {
   table_name: string
   row_id: string
@@ -76,7 +127,7 @@ function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
   return row
     ? {
         projectName: row.project,
-        change: { table: HOSTED_TASK_TABLE, id, op: 'upsert', row: hostedTaskFromTaskRow(row, id) },
+        change: taskRowHostedChange(row),
       }
     : null
 }
@@ -122,6 +173,7 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
         from_status: string | null
         to_status: string
         project_name: string
+        projectId: string | null
         actor_user_id: string | null
         actor_name: string | null
         agent: string | null
@@ -138,12 +190,20 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
   return row
     ? {
         projectName: row.project_name,
-        change: {
-          table: HOSTED_STATUS_EVENT_TABLE,
-          id,
-          op: 'upsert',
-          row: { ...row, created_at: row.at, updated_at: row.at, deleted_at: null },
-        },
+        change: statusEventRowHostedChange({
+          record_id: row.id,
+          task_key: row.task_key,
+          task_record_id: row.task_id,
+          at: row.at,
+          from_status: row.from_status,
+          to_status: row.to_status,
+          actor_user_id: row.actor_user_id,
+          actor_name: row.actor_name,
+          agent: row.agent,
+          run_id: row.run_id,
+          project_name: row.project_name,
+          project_record_id: row.projectId,
+        }),
       }
     : null
 }
