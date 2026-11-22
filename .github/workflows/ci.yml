@@ -66,6 +66,21 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
 
+  orchestrator-future-clock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install
+        run: bun install --silent
+      - name: Test under the future clock
+        env:
+          CI: "1"
+        run: $SUITE_COMMAND --only=orchestrator/future-clock
+
   orchestrator-hooks:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -422,7 +437,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal, release-smoke, migration-paths, migration-compatibility, install-proof]
+    needs: [secrets, static, cli, orchestrator, orchestrator-future-clock, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal, release-smoke, migration-paths, migration-compatibility, install-proof]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
