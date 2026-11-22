@@ -5,11 +5,107 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import type { RecordDocUpsertInput } from '../record/record-api-client.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { consumeDoc, importDoc, restoreDoc, setDoc } from './docs.ts'
 import { publishReferenceDocs, slugLinkedBody } from './reference-publish.ts'
+
+test('reference publish compares and revises hosted pages when the local mirror is empty', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'hosted-reference-publish-'))
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  const indexBody = '# Command reference\n\n- [task](./task.md)\n'
+  const taskBody = '# task\n\nChanged task reference.\n'
+  const indexId = '01990000-0000-7000-8000-000000000401'
+  const taskId = '01990000-0000-7000-8000-000000000402'
+  const indexRevision = '01990000-0000-7000-8000-000000000403'
+  const taskRevision = '01990000-0000-7000-8000-000000000404'
+  try {
+    mkdirSync(join(root, 'docs/reference'), { recursive: true })
+    const indexFile = 'docs/reference/index.md'
+    const taskFile = 'docs/reference/task.md'
+    writeFileSync(join(root, indexFile), indexBody)
+    writeFileSync(join(root, taskFile), taskBody)
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: root,
+      settings: { space: 'personal-space' },
+    })
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    const requests: RecordDocUpsertInput[] = []
+    const client = createMemoryRecordApiClient()
+    const row = (overrides: Record<string, unknown>) => ({
+      scope: 'project',
+      subject: PLATFORM_SLUG,
+      owner: null,
+      delivery: 'demand',
+      audiences: ['technical'],
+      status: 'current',
+      kind: 'article',
+      form: 'reference',
+      position: 0,
+      featured: false,
+      createdAt: '2026-11-22T00:00:00.000Z',
+      updatedAt: '2026-11-22T00:00:00.000Z',
+      ...overrides,
+    })
+    const rows = [
+      row({
+        id: indexId,
+        slug: 'cli',
+        title: 'Command reference',
+        body: indexBody.replace('./task.md', 'cli-task'),
+        latestRevisionId: indexRevision,
+      }),
+      row({
+        id: taskId,
+        slug: 'cli-task',
+        title: 'task',
+        body: '# task\n\nOld task reference.\n',
+        parentId: indexId,
+        latestRevisionId: taskRevision,
+      }),
+    ]
+    installRecordApiClient({
+      ...client,
+      whoami: async () => ({
+        user: { id: 'user-a', name: 'Fixture', email: 'fixture@example.test' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write', role: 'owner' },
+        ],
+      }),
+      listDocs: async (query) => ({
+        items: rows.filter((item) => !query.slug || item.slug === query.slug),
+        nextCursor: null,
+      }),
+      upsertDoc: async (input) => {
+        requests.push(input)
+        return { id: taskId, revisionId: newRecordId() }
+      },
+    })
+
+    expect(await publishReferenceDocs(root, [indexFile, taskFile])).toEqual([
+      { slug: 'cli', disposition: 'unchanged' },
+      { slug: 'cli-task', disposition: 'updated' },
+    ])
+    expect(requests).toContainEqual(
+      expect.objectContaining({ slug: 'cli-task', expectedRevision: taskRevision }),
+    )
+  } finally {
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+    installRecordApiClient(createMemoryRecordApiClient())
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('reference publishing is the only write path and is idempotent and removing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reference-publish-'))
