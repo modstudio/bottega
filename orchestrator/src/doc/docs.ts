@@ -55,7 +55,6 @@ import {
   type DocRevision,
   type DocRevisionMetadata,
   docForAudience,
-  getDocForAudienceStore,
   getDocStore,
 } from './doc-read-store.ts'
 import {
@@ -281,7 +280,6 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 export { readHostedUserSettingsDocuments } from './doc-hosted-client.ts'
 export { docSubjects, listDocMetadata, listDocs }
 export const getDoc = getDocStore
-export const getDocForAudience = getDocForAudienceStore
 
 export { signedInDocOwner } from './doc-owner.ts'
 
@@ -823,31 +821,39 @@ export function readDocRevision(
     : revision
 }
 
+function isAddressRevision(
+  revision: DocRevision,
+  scope: string,
+  subject: string | null,
+  owner: string | null,
+  slug: string,
+) {
+  return (
+    revision.scope === scope &&
+    revision.subject === subject &&
+    revision.owner === owner &&
+    revision.slug === slug
+  )
+}
+
 export async function restoreDoc(
   scope: string,
   subject: string | null,
   slug: string,
   revisionId: string,
-  context: DocWriteContext,
+  context: DocWriteContext & { suppliedRead?: { revision: DocRevision; current: Doc | null } },
   owner: string | null = null,
-  supplied?: { revision: DocRevision; current: Doc | null },
 ): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const revision = supplied?.revision ?? getDocRevision(revisionId, owner)
-  if (
-    !revision ||
-    revision.scope !== scope ||
-    revision.subject !== subject ||
-    revision.owner !== owner ||
-    revision.slug !== slug
-  ) {
+  const revision = context.suppliedRead?.revision ?? getDocRevision(revisionId, owner)
+  if (!revision || !isAddressRevision(revision, scope, subject, owner, slug)) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const [expectedCurrent, current] = supplied
-    ? [supplied.current?.revision ?? null, supplied.current]
+  const [expectedCurrent, current] = context.suppliedRead
+    ? [context.suppliedRead.current?.revision ?? null, context.suppliedRead.current]
     : referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },

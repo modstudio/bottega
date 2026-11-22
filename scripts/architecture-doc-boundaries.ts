@@ -65,10 +65,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
       ].map(exact),
     },
     to: {
-      path: [
-        'orchestrator/src/doc/doc-read-store.ts',
-        'orchestrator/src/doc/doc-revision-store.ts',
-      ]
+      path: ['orchestrator/src/doc/doc-read-store.ts', 'orchestrator/src/doc/doc-revision-store.ts']
         .map(exact)
         .join('|'),
     },

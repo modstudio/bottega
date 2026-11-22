@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
@@ -58,6 +59,6 @@ test('an unreachable hosted read refuses with the sign-in and retry remedy', asy
     },
   })
   await expect(readDoc('global', null, 'authority')).rejects.toThrow(
-    'run bottega record whoami to verify sign-in, or retry when the hosted record is reachable',
+    `run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry when the hosted record is reachable`,
   )
 })

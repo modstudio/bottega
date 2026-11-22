@@ -891,14 +891,14 @@ async function restoreDocCommand(
       expectedRevision: expected
         ? (hosted?.resolve(expected) ?? resolveDocRevisionIdentifier(db(), expected))
         : undefined,
+      suppliedRead: hosted
+        ? {
+            revision: hosted.revision(revision),
+            current: await authoritativeDoc(scope, subject, slug, owner),
+          }
+        : undefined,
     },
     owner,
-    hosted
-      ? {
-          revision: hosted.revision(revision),
-          current: await authoritativeDoc(scope, subject, slug, owner),
-        }
-      : undefined,
   )
   printRestoreResult(restored, flags, presentation, scope, subject, slug)
 }
