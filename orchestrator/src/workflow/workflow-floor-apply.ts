@@ -227,6 +227,7 @@ function attachRunObligationEvidence(
       row.record_id,
       step.jobs,
       database,
+      'binding',
       row.step_slug,
       stepActivatedAt,
     )
@@ -245,5 +246,10 @@ function attachRunObligationEvidence(
     }
   }
   if (step.judges?.length)
-    evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
+    evidence.judgedRuns = gatherWorkflowRunChains(
+      row.record_id,
+      step.judges,
+      database,
+      'declared-job',
+    )
 }
