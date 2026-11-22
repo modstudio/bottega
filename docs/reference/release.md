@@ -50,13 +50,14 @@ list recorded releases for a project
 
 ## bottega release run
 
-**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--behind-trunk <reason>] [--redeploy <reason>] [--json]`
+**Synopsis:** `bottega release run [project] [--rung <name>] [--at <commit>] [--rollback <reason>] [--behind-trunk <reason>] [--redeploy <reason>] [--json]`
 
 run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback; for a rung CI deploys, wait for its live probe to contain the branch tip and record the proof
 
 ### Options
 
 - `--rung <name>`: release rung to run
+- `--at <commit>`: provision a detached release tree at this commit
 - `--rollback <reason>`: reason for deploying the prior live commit
 - `--behind-trunk <reason>`: reason for deploying a branch behind the project trunk
 - `--redeploy <reason>`: deploy again even when this commit is already live

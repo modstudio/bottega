@@ -106,14 +106,16 @@ function recordHookTreeSuccess(recordId: string, startedAt: string): void {
   })
 }
 
-export function createHookTree(input: {
+export type HookTreeCreateInput = {
   cwd: string
   name: string
   key?: string
   base?: string
   seed?: string
   detached?: boolean
-}): string {
+}
+
+export function createHookTree(input: HookTreeCreateInput): string {
   const callerCwd = resolve(input.cwd)
   const project = projectAt(callerCwd)
   if (!project) throw new Error(`${callerCwd} is not inside a registered project`)

@@ -22,13 +22,10 @@ import {
   returnMainCheckoutToTrunkCommand,
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
-import { projectAt } from '../project/projects.ts'
 import type { Project } from '../project/projects.ts'
+import { projectAt } from '../project/projects.ts'
 import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
-import {
-  machineUpdateRungRefusal,
-  requiredRungDecision,
-} from '../release/release-required.ts'
+import { machineUpdateRungRefusal, requiredRungDecision } from '../release/release-required.ts'
 import { newestSuccessfulProvenReleaseCommit } from '../release/release-service.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
@@ -248,10 +245,7 @@ type UpdateDependencies = {
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
-  project?: (
-    cwd: string,
-    database: import('bun:sqlite').Database,
-  ) => UpdateProject | null
+  project?: (cwd: string, database: import('bun:sqlite').Database) => UpdateProject | null
   requiredRungRefusal?: (project: UpdateProject, branch: string) => string | null
   verifyMainCheckout?: (
     path: string,
@@ -621,7 +615,9 @@ function incomingRequiredRungRefusal(project: UpdateProject, branch: string): st
     proved.set(rung, commit)
     contains.set(
       rung,
-      Boolean(commit && gitResult(['merge-base', '--is-ancestor', incoming, commit], project.path).ok),
+      Boolean(
+        commit && gitResult(['merge-base', '--is-ancestor', incoming, commit], project.path).ok,
+      ),
     )
   }
   return machineUpdateRungRefusal({

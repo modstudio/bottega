@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { createHookTree, removeHookTree } from '../hook-tree/tree.ts'
 import type { Project } from '../project/projects.ts'
-import { releaseProjectFromCheckout, type ReleaseResult } from './release-service.ts'
+import { type ReleaseResult, releaseProjectFromCheckout } from './release-service.ts'
 
 export type ReleaseAtCommitReport = {
   result: ReleaseResult

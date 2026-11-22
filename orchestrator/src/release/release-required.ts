@@ -7,6 +7,7 @@ import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
+import { releaseAtCommit } from './release-at-commit.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
 import type { EntryClosure } from './release-entry-closure.ts'
 import {
@@ -15,7 +16,6 @@ import {
   releaseProject,
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
-import { releaseAtCommit } from './release-at-commit.ts'
 
 export type RequiredReleaseRung = {
   name: string

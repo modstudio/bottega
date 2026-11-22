@@ -59,9 +59,7 @@ test('machine update refuses an incoming commit until every required rung proves
   }
   expect(
     machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', false]]) }),
-  ).toContain(
-    `${PLATFORM_SLUG} release run fixture --rung hosted-api --at incoming-tip`,
-  )
+  ).toContain(`${PLATFORM_SLUG} release run fixture --rung hosted-api --at incoming-tip`)
   expect(
     machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', true]]) }),
   ).toBeNull()

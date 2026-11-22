@@ -369,6 +369,65 @@ function postLandingHandOffOutcome(
   }
 }
 
+function postLandingRungDecision(
+  input: Pick<
+    Parameters<typeof completePullRequestPostLanding>[0],
+    'project' | 'mergeCommit' | 'depth' | 'releaseRequired' | 'workflowPromotionDue'
+  >,
+  post: PullRequestPostLandingAdapter,
+): RequiredRungDecision {
+  return input.workflowPromotionDue || input.releaseRequired
+    ? requiredRungDecision(
+        input.project,
+        () => post.changedPaths(input.project, input.mergeCommit),
+        (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
+        input.depth,
+      )
+    : { decided: true, required: [], rungs: [], error: null }
+}
+
+async function requiredReleaseBeforeMove(
+  post: PullRequestPostLandingAdapter,
+  project: Project,
+  mergeCommit: string,
+  decision: RequiredRungDecision,
+  releaseRequired: boolean,
+): Promise<RequiredReleaseReport | undefined> {
+  if (requiredReleaseStepOrder(releaseRequired, decision.rungs)[0] !== 'deploy-rungs') return
+  if (post.releaseBeforeMove)
+    return post.releaseBeforeMove({ project, mergeCommit, rungs: decision.rungs })
+  if (process.env.NODE_ENV !== 'test')
+    throw new Error('post-landing adapter does not implement pre-move required-rung release')
+  return {
+    required: decision.required,
+    releases: decision.rungs.map((plan) => ({
+      rung: plan.rung,
+      required: plan.required,
+      deployExit: plan.required ? 0 : null,
+      outputTail: plan.required
+        ? 'proved by injected test adapter'
+        : (plan.reason ?? 'not required'),
+      satisfied: true,
+      deployed: false,
+    })),
+    satisfied: true,
+  }
+}
+
+function postLandingTimingTrace(
+  enabled: boolean,
+  report: RequiredReleaseReport | undefined,
+  mergeCommit: string,
+): string[] {
+  if (!enabled) return []
+  return [
+    ...(report?.releases
+      .filter(({ required, satisfied }) => required && satisfied)
+      .map(({ outputTail }) => outputTail) ?? []),
+    `main moved to ${mergeCommit} ${new Date().toISOString()}`,
+  ]
+}
+
 export async function completePullRequestPostLanding(input: {
   adapter: RemainingStageAdapter
   postLandingAdapter?: PullRequestPostLandingAdapter
@@ -385,53 +444,27 @@ export async function completePullRequestPostLanding(input: {
   movesInstallation?: boolean
 }): Promise<PullRequestMergeOutcome> {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
-  const decision: RequiredRungDecision =
-    input.workflowPromotionDue || input.releaseRequired
-      ? requiredRungDecision(
-          input.project,
-          () => post.changedPaths(input.project, input.mergeCommit),
-          (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
-          input.depth,
-        )
-      : { decided: true, required: [], rungs: [], error: null }
+  const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
   const traceEnabled = Boolean(post.releaseBeforeMove)
-  let provedRequiredRelease: RequiredReleaseReport | undefined
-  if (requiredReleaseStepOrder(input.releaseRequired, decision.rungs)[0] === 'deploy-rungs') {
-    if (!post.releaseBeforeMove) {
-      if (process.env.NODE_ENV !== 'test')
-        throw new Error('post-landing adapter does not implement pre-move required-rung release')
-      provedRequiredRelease = {
-        required: decision.required,
-        releases: decision.rungs.map((plan) => ({
-          rung: plan.rung,
-          required: plan.required,
-          deployExit: plan.required ? 0 : null,
-          outputTail: plan.required ? 'proved by injected test adapter' : (plan.reason ?? 'not required'),
-          satisfied: true,
-          deployed: false,
-        })),
-        satisfied: true,
-      }
-    } else {
-      provedRequiredRelease = await post.releaseBeforeMove({
-        project: input.project,
-        mergeCommit: input.mergeCommit,
-        rungs: decision.rungs,
-      })
-    }
-    if (!provedRequiredRelease.satisfied) {
-      return mergedOutput({
-        ...input,
-        project: input.project.name,
-        branch: input.pullRequest.headBranch,
-        prNumber: input.pullRequest.number,
-        promotion: { output: '' },
-        requiredRelease: provedRequiredRelease,
-        cleanupWasFenced: true,
-        cleanupRecovery: requiredMergeCommand(input.target, input.depth),
-      })
-    }
+  const provedRequiredRelease = await requiredReleaseBeforeMove(
+    post,
+    input.project,
+    input.mergeCommit,
+    decision,
+    input.releaseRequired,
+  )
+  if (provedRequiredRelease && !provedRequiredRelease.satisfied) {
+    return mergedOutput({
+      ...input,
+      project: input.project.name,
+      branch: input.pullRequest.headBranch,
+      prNumber: input.pullRequest.number,
+      promotion: { output: '' },
+      requiredRelease: provedRequiredRelease,
+      cleanupWasFenced: true,
+      cleanupRecovery: requiredMergeCommand(input.target, input.depth),
+    })
   }
   const move = moveMainForPostLanding(
     post,
@@ -492,12 +525,7 @@ export async function completePullRequestPostLanding(input: {
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target, input.depth)}`,
   )
   const handedOff = await post.handOff(payload, input.project, movesInstallation)
-  const trace = traceEnabled ? [
-    ...(provedRequiredRelease?.releases
-      .filter(({ required, satisfied }) => required && satisfied)
-      .map(({ outputTail }) => outputTail) ?? []),
-    `main moved to ${input.mergeCommit} ${new Date().toISOString()}`,
-  ] : []
+  const trace = postLandingTimingTrace(traceEnabled, provedRequiredRelease, input.mergeCommit)
   const outcome = postLandingHandOffOutcome(handedOff, input.target, input.depth)
   return { ...outcome, output: [...trace, outcome.output].filter(Boolean).join('\n') }
 }
@@ -647,17 +675,19 @@ export async function runPullRequestPostLanding(
       payload.requiredRungs,
       project.settings.trunk ?? '',
     )
-  const requiredRelease = payload.provedRequiredRelease ?? (payload.rungDecisionError
-    ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
-    : !payload.releaseRequired
-      ? releaseRequiredFlagAbsent(rungPlans)
-      : checkoutFailure
-        ? failedRequiredRelease(rungPlans, checkoutFailure)
-        : adapter.release({
-            project,
-            mergeCommit: payload.mergeCommit,
-            rungs: rungPlans,
-          }))
+  const requiredRelease =
+    payload.provedRequiredRelease ??
+    (payload.rungDecisionError
+      ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
+      : !payload.releaseRequired
+        ? releaseRequiredFlagAbsent(rungPlans)
+        : checkoutFailure
+          ? failedRequiredRelease(rungPlans, checkoutFailure)
+          : adapter.release({
+              project,
+              mergeCommit: payload.mergeCommit,
+              rungs: rungPlans,
+            }))
   if (checkoutFailure && !payload.promoteWorkflowDrafts && requiredRelease.satisfied) {
     promotion = {
       output: `${checkoutFailure}; ${postLandingRecovery(payload.target, payload.depth ?? undefined)}`,

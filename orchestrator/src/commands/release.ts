@@ -2,14 +2,14 @@
 /** Registers the release adapter. Must not own release policy or persistence. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { projectByName } from '../project/projects.ts'
+import { releaseAtCommit } from '../release/release-at-commit.ts'
 import {
   checkRelease,
   type ReleaseResult,
   releaseLog,
   releaseProject,
 } from '../release/release-service.ts'
-import { releaseAtCommit } from '../release/release-at-commit.ts'
-import { projectByName } from '../project/projects.ts'
 import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
