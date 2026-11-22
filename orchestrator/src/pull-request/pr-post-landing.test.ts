@@ -208,6 +208,31 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
 
+test('a required rung is proved before main moves and is not delegated again', async () => {
+  const events: string[] = []
+  const outcome = await complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      releaseBeforeMove: async () => {
+        events.push('deploy-rungs')
+        return satisfied
+      },
+      moveMain: () => events.push('move-main'),
+      fence: () => {},
+      handOff: (payload) => {
+        events.push(payload.provedRequiredRelease ? 'hand-off-proved' : 'hand-off-unproved')
+        return { output: 'child output', exitCode: 0 }
+      },
+    },
+  })
+  expect(events).toEqual(['deploy-rungs', 'move-main', 'hand-off-proved'])
+  expect(outcome.output.indexOf('already live at release-commit')).toBeLessThan(
+    outcome.output.indexOf('main moved to merge-commit'),
+  )
+})
+
 test('another project uses the plain move and the current installation hand-off', async () => {
   const movesInstallation = projectMovesInstallation(project)
 

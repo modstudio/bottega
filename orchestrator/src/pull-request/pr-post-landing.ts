@@ -29,6 +29,8 @@ import {
   type RequiredRungDecision,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
+  releaseRequiredRungsBeforeMainMove,
+  requiredReleaseStepOrder,
   requiredRungDecision,
   undecidedRequiredRelease,
   verifyMainCheckout,
@@ -68,6 +70,11 @@ export type PullRequestPostLandingAdapter = {
   entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string, movesInstallation: boolean): void
+  releaseBeforeMove?(input: {
+    project: Project
+    mergeCommit: string
+    rungs: ReleaseRungPlan[]
+  }): Promise<RequiredReleaseReport>
   fence(reason: string): void
   handOff(
     payload: PullRequestPostLandingPayload,
@@ -156,6 +163,10 @@ function guardRealPostLandingAdapter(
       refuseRealPostLandingAdapterInTest()
       adapter.moveMain(project, mergeCommit, movesInstallation)
     },
+    releaseBeforeMove(input) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.releaseBeforeMove!(input)
+    },
     // Fencing only changes in-process store state; it performs no git or process side effect.
     fence: adapter.fence,
     handOff(payload, project, movesInstallation) {
@@ -182,6 +193,7 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
       },
     })
   },
+  releaseBeforeMove: releaseRequiredRungsBeforeMainMove,
   fence: fenceStoreAfterCheckoutMove,
   async handOff(payload, project, movesInstallation) {
     try {
@@ -383,6 +395,44 @@ export async function completePullRequestPostLanding(input: {
         )
       : { decided: true, required: [], rungs: [], error: null }
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
+  const traceEnabled = Boolean(post.releaseBeforeMove)
+  let provedRequiredRelease: RequiredReleaseReport | undefined
+  if (requiredReleaseStepOrder(input.releaseRequired, decision.rungs)[0] === 'deploy-rungs') {
+    if (!post.releaseBeforeMove) {
+      if (process.env.NODE_ENV !== 'test')
+        throw new Error('post-landing adapter does not implement pre-move required-rung release')
+      provedRequiredRelease = {
+        required: decision.required,
+        releases: decision.rungs.map((plan) => ({
+          rung: plan.rung,
+          required: plan.required,
+          deployExit: plan.required ? 0 : null,
+          outputTail: plan.required ? 'proved by injected test adapter' : (plan.reason ?? 'not required'),
+          satisfied: true,
+          deployed: false,
+        })),
+        satisfied: true,
+      }
+    } else {
+      provedRequiredRelease = await post.releaseBeforeMove({
+        project: input.project,
+        mergeCommit: input.mergeCommit,
+        rungs: decision.rungs,
+      })
+    }
+    if (!provedRequiredRelease.satisfied) {
+      return mergedOutput({
+        ...input,
+        project: input.project.name,
+        branch: input.pullRequest.headBranch,
+        prNumber: input.pullRequest.number,
+        promotion: { output: '' },
+        requiredRelease: provedRequiredRelease,
+        cleanupWasFenced: true,
+        cleanupRecovery: requiredMergeCommand(input.target, input.depth),
+      })
+    }
+  }
   const move = moveMainForPostLanding(
     post,
     input.project,
@@ -436,12 +486,20 @@ export async function completePullRequestPostLanding(input: {
     promoteWorkflowDrafts: input.workflowPromotionDue,
     recordingError: input.recordingError ?? null,
     requeueOutput: input.requeueOutput ?? null,
+    ...(traceEnabled ? { provedRequiredRelease } : {}),
   }
   post.fence(
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target, input.depth)}`,
   )
   const handedOff = await post.handOff(payload, input.project, movesInstallation)
-  return postLandingHandOffOutcome(handedOff, input.target, input.depth)
+  const trace = traceEnabled ? [
+    ...(provedRequiredRelease?.releases
+      .filter(({ required, satisfied }) => required && satisfied)
+      .map(({ outputTail }) => outputTail) ?? []),
+    `main moved to ${input.mergeCommit} ${new Date().toISOString()}`,
+  ] : []
+  const outcome = postLandingHandOffOutcome(handedOff, input.target, input.depth)
+  return { ...outcome, output: [...trace, outcome.output].filter(Boolean).join('\n') }
 }
 
 function promoteWorkflowTree(
@@ -589,7 +647,7 @@ export async function runPullRequestPostLanding(
       payload.requiredRungs,
       project.settings.trunk ?? '',
     )
-  const requiredRelease = payload.rungDecisionError
+  const requiredRelease = payload.provedRequiredRelease ?? (payload.rungDecisionError
     ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
     : !payload.releaseRequired
       ? releaseRequiredFlagAbsent(rungPlans)
@@ -599,7 +657,7 @@ export async function runPullRequestPostLanding(
             project,
             mergeCommit: payload.mergeCommit,
             rungs: rungPlans,
-          })
+          }))
   if (checkoutFailure && !payload.promoteWorkflowDrafts && requiredRelease.satisfied) {
     promotion = {
       output: `${checkoutFailure}; ${postLandingRecovery(payload.target, payload.depth ?? undefined)}`,

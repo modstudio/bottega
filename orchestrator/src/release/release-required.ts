@@ -15,6 +15,7 @@ import {
   releaseProject,
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
+import { releaseAtCommit } from './release-at-commit.ts'
 
 export type RequiredReleaseRung = {
   name: string
@@ -77,6 +78,36 @@ export const RELEASE_REQUIREMENT_SOURCES = ['explicit', 'reach'] as const
 export type RequiredRungDecision =
   | { decided: true; required: string[]; rungs: ReleaseRungPlan[]; error: null }
   | { decided: false; required: string[]; rungs: ReleaseRungPlan[]; error: string }
+
+export type RequiredReleaseStep = 'deploy-rungs' | 'move-main' | 'hand-off'
+
+/** Decide the only allowed ordering before adapters perform any side effect. */
+export function requiredReleaseStepOrder(
+  releaseRequired: boolean,
+  plans: readonly Pick<ReleaseRungPlan, 'required'>[],
+): RequiredReleaseStep[] {
+  return releaseRequired && plans.some(({ required }) => required)
+    ? ['deploy-rungs', 'move-main', 'hand-off']
+    : ['move-main', 'hand-off']
+}
+
+export function machineUpdateRungRefusal(input: {
+  incomingCommit: string
+  requiredRungs: readonly string[]
+  provedCommits: ReadonlyMap<string, string | null>
+  liveContainsIncoming: ReadonlyMap<string, boolean>
+  project: string
+}): string | null {
+  for (const rung of input.requiredRungs) {
+    const proved = input.provedCommits.get(rung) ?? null
+    if (proved && input.liveContainsIncoming.get(rung)) continue
+    return (
+      `refusing machine update: required rung ${rung} has not proved incoming commit ${input.incomingCommit} live; ` +
+      `run ${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}, then retry ${PLATFORM_SLUG} machine update`
+    )
+  }
+  return null
+}
 
 function notRequiredReason(
   rung: RequiredReleaseRung,
@@ -372,6 +403,59 @@ export function releaseRequiredRungsAfterMainMove(input: {
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
   return runRequiredReleaseRungs(input.project, input.mergeCommit, input.rungs, runner)
+}
+
+/** Release required rungs from lifecycle-backed trees before the registered checkout moves. */
+export async function releaseRequiredRungsBeforeMainMove(input: {
+  project: Project
+  mergeCommit: string
+  rungs: ReleaseRungPlan[]
+}): Promise<RequiredReleaseReport> {
+  const required = input.rungs.filter(({ required }) => required).map(({ rung }) => rung)
+  const releases: RequiredRungRelease[] = []
+  for (const plan of input.rungs) {
+    if (!plan.required) {
+      releases.push(failure(plan, plan.reason ?? 'not required'))
+      continue
+    }
+    const proofRefusal = releaseRungProofRefusal(
+      PLATFORM_SLUG,
+      input.project.name,
+      plan.rung,
+      plan.branch,
+      input.project.settings.release?.rungs ?? [],
+    )
+    if (proofRefusal) {
+      releases.push({ ...failure(plan, proofRefusal), unprovable: true })
+      continue
+    }
+    try {
+      const report = await releaseAtCommit({
+        project: input.project,
+        rung: plan.rung,
+        commit: input.mergeCommit,
+      })
+      const satisfied = releaseProofDecision({
+        exitCode: report.result.exitCode,
+        liveMatchesCandidate: report.result.liveMatchesCandidate,
+        candidateContainsMerge: true,
+      })
+      const timing = `provision ${report.provisionMs}ms, deploy ${report.deployMs}ms, release ${report.releaseMs}ms`
+      releases.push({
+        rung: plan.rung,
+        required: true,
+        deployExit: report.result.exitCode,
+        outputTail: satisfied
+          ? `rung ${plan.rung} healthy at ${input.mergeCommit} ${new Date().toISOString()} (${timing})`
+          : `${report.result.outputTail || '(no deploy output)'} (${timing})`,
+        satisfied,
+        deployed: !report.result.alreadyLive,
+      })
+    } catch (cause) {
+      releases.push(failure(plan, cause instanceof Error ? cause.message : String(cause)))
+    }
+  }
+  return { required, releases, satisfied: releases.every(({ satisfied }) => satisfied) }
 }
 
 function runRequiredReleaseRungs(

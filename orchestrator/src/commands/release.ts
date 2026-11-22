@@ -8,6 +8,8 @@ import {
   releaseLog,
   releaseProject,
 } from '../release/release-service.ts'
+import { releaseAtCommit } from '../release/release-at-commit.ts'
+import { projectByName } from '../project/projects.ts'
 import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
@@ -41,23 +43,42 @@ export function register(program: Command): void {
       'run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback; for a rung CI deploys, wait for its live probe to contain the branch tip and record the proof',
     )
     .option('--rung <name>', 'release rung to run')
+    .option('--at <commit>', 'provision a detached release tree at this commit')
     .option('--rollback <reason>', 'reason for deploying the prior live commit')
     .option('--behind-trunk <reason>', 'reason for deploying a branch behind the project trunk')
     .option('--redeploy <reason>', 'deploy again even when this commit is already live')
     .option('--json', 'write the release result as JSON')
     .allowExcessArguments(false)
-    .action((project, options) => {
+    .action(async (project, options) => {
       if (!project)
         throw new Error(
           `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
         )
-      const result = releaseProject(
-        project,
-        options.rung,
-        options.rollback,
-        options.behindTrunk,
-        options.redeploy,
-      )
+      let result: ReleaseResult
+      if (options.at) {
+        if (!options.rung) throw new Error('--at requires --rung')
+        if (options.rollback || options.behindTrunk || options.redeploy)
+          throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
+        const registered = projectByName(project)
+        if (!registered) throw new Error(`no project "${project}"`)
+        const report = await releaseAtCommit({
+          project: registered,
+          rung: options.rung,
+          commit: options.at,
+        })
+        result = report.result
+        log(
+          `release tree timing: provision ${report.provisionMs}ms, deploy ${report.deployMs}ms, release ${report.releaseMs}ms`,
+        )
+      } else {
+        result = releaseProject(
+          project,
+          options.rung,
+          options.rollback,
+          options.behindTrunk,
+          options.redeploy,
+        )
+      }
       if (options.json) log(JSON.stringify(result))
       else writeReleaseResult(result)
       if (result.exitCode !== 0) process.exitCode = result.exitCode

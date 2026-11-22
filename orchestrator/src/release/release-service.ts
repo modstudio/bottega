@@ -406,10 +406,11 @@ function releaseLiveObservation(
   target: ReturnType<typeof releaseTarget>,
   candidate: string,
   purpose: string,
+  checkoutPath = target.project.path,
 ): RungLiveObservation {
   const { project, selected, trunk } = target
   if (selected.liveVersion) {
-    const reading = readLiveVersion(selected.liveVersion, project.path, candidate, trunk)
+    const reading = readLiveVersion(selected.liveVersion, checkoutPath, candidate, trunk)
     if (!reading.ok) {
       throw liveReadingRefusal(
         reading,
@@ -421,10 +422,10 @@ function releaseLiveObservation(
     }
     return { commit: reading.commit, matchesCandidate: reading.matchesCandidate }
   }
-  const commit = releaseLiveCommit(selected.live!, project.path, purpose, selected.name)
+  const commit = releaseLiveCommit(selected.live!, checkoutPath, purpose, selected.name)
   return {
     commit,
-    matchesCandidate: candidateIsLiveAncestor(candidate, commit, project.path),
+    matchesCandidate: candidateIsLiveAncestor(candidate, commit, checkoutPath),
   }
 }
 
@@ -514,6 +515,7 @@ function postDeployFacts(
   rung: string,
   candidate: string,
   initialLive: RungLiveObservation,
+  checkoutPath = target.project.path,
 ) {
   if (deployed.exitCode !== 0) {
     return {
@@ -524,7 +526,14 @@ function postDeployFacts(
       warning: null,
     }
   }
-  const waited = waitForCiDeploy(target, rung, candidate, initialLive, 'post-deploy live')
+  const waited = waitForCiDeploy(
+    target,
+    rung,
+    candidate,
+    initialLive,
+    'post-deploy live',
+    checkoutPath,
+  )
   const timedOut = waited.terminal.ledgerResult.exitCode !== 0
   const remedy = timedOut
     ? `; re-run ${PLATFORM_SLUG} release run ${project} --rung ${rung} once the deploy has finished, and confirm the live observation`
@@ -627,9 +636,10 @@ function preActionReleaseObservation(
   live: RungLiveObservation,
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
+  checkoutPath = target.project.path,
 ) {
   const { project, selected, trunk } = target
-  const position = releaseTrunkPositionFacts(project.path, trunk, selected.branch, candidate)
+  const position = releaseTrunkPositionFacts(checkoutPath, trunk, selected.branch, candidate)
   return {
     position,
     alreadyLive: alreadyLiveReleaseResult(
@@ -703,6 +713,7 @@ function waitForCiDeploy(
   candidate: string,
   initialLive: RungLiveObservation,
   livePurpose = 'CI-deployed release live',
+  checkoutPath = target.project.path,
 ) {
   const startedAt = Date.now()
   let live = initialLive
@@ -728,7 +739,7 @@ function waitForCiDeploy(
         }
       }
       Bun.sleepSync(RELEASE_CI_DEPLOY_POLL_MS)
-      live = releaseLiveObservation(target, candidate, livePurpose)
+      live = releaseLiveObservation(target, candidate, livePurpose, checkoutPath)
     }
   } catch (cause) {
     const warning = cause instanceof Error ? cause.message : String(cause)
@@ -860,6 +871,43 @@ function releaseCommandTarget(
   return outcome.result
 }
 
+function releaseCommandTargetFromCheckout(
+  target: ReturnType<typeof releaseTarget>,
+  projectName: string,
+  checkoutPath: string,
+  expectedCommit: string,
+): ReleaseResult {
+  if (!target.deploy)
+    throw new Error(`release rung ${target.selected.name} has no deploy command to run from a checkout`)
+  const outcome = releaseCommandTargetAtRung(
+    target,
+    target.deploy,
+    projectName,
+    undefined,
+    undefined,
+    undefined,
+    checkoutPath,
+    expectedCommit,
+  )
+  if (outcome.ledger.kind === 'finish') {
+    finishReleaseLedgerEntry(
+      writableDb(),
+      outcome.ledger.recordId,
+      outcome.ledger.deployed,
+      outcome.result.outputTail,
+      outcome.result.liveAfter,
+      outcome.result.liveMatchesCandidate,
+      outcome.result.warning,
+    )
+  } else if (
+    outcome.ledger.kind === 'warning' &&
+    outcome.result.warning !== outcome.ledger.previousWarning
+  ) {
+    updateReleaseLedgerWarning(writableDb(), outcome.ledger.recordId, outcome.result.warning!)
+  }
+  return outcome.result
+}
+
 function releaseCommandTargetAtRung(
   target: ReturnType<typeof releaseTarget>,
   deploy: string,
@@ -867,18 +915,30 @@ function releaseCommandTargetAtRung(
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
   redeployReason: string | undefined,
+  checkoutPath = target.project.path,
+  expectedCommit?: string,
 ): ReleaseCommandOutcome {
   const { project, selected, trunk } = target
-  const checkout = checkoutFacts(project.path, selected.branch, trunk)
-  const checkoutDecision = checkoutReleaseDecision(checkout)
-  if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
-  const live = releaseLiveObservation(target, checkout.head, 'pre-deploy live')
+  const checkout = checkoutFacts(checkoutPath, selected.branch, trunk)
+  if (expectedCommit) {
+    if (checkout.dirty)
+      throw new Error(`release checkout ${checkoutPath} is dirty; clean or recreate it, then retry`)
+    if (checkout.branch)
+      throw new Error(`release checkout ${checkoutPath} is on branch ${checkout.branch}; detach it at ${expectedCommit}, then retry`)
+    if (checkout.head !== expectedCommit)
+      throw new Error(`release checkout ${checkoutPath} is at ${checkout.head}, not expected commit ${expectedCommit}; recreate it, then retry`)
+  } else {
+    const checkoutDecision = checkoutReleaseDecision(checkout)
+    if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
+  }
+  const live = releaseLiveObservation(target, checkout.head, 'pre-deploy live', checkoutPath)
   const { position, alreadyLive } = preActionReleaseObservation(
     target,
     checkout.head,
     live,
     redeployReason,
     rollbackReason,
+    checkoutPath,
   )
   if (alreadyLive) {
     return {
@@ -894,7 +954,7 @@ function releaseCommandTargetAtRung(
   }
   const freshness = releaseTrunkFacts(
     position,
-    project.path,
+    checkoutPath,
     selected.branch,
     live.commit,
     behindTrunkReason,
@@ -903,7 +963,7 @@ function releaseCommandTargetAtRung(
   const forward = forwardReleaseDecision({
     candidate: checkout.head,
     live: live.commit,
-    liveIsAncestor: releaseAncestry(live.commit, checkout.head, project.path),
+    liveIsAncestor: releaseAncestry(live.commit, checkout.head, checkoutPath),
     rollbackReason,
   })
   if (!forward.ok) throw new Error(forward.message)
@@ -918,10 +978,18 @@ function releaseCommandTargetAtRung(
   })
   const deployed = shell(
     deploy,
-    project.path,
+    checkoutPath,
     releaseCommandEnvironment(projectName, selected.name, checkout.head, forward.rollback),
   )
-  const checked = postDeployFacts(deployed, target, projectName, selected.name, checkout.head, live)
+  const checked = postDeployFacts(
+    deployed,
+    target,
+    projectName,
+    selected.name,
+    checkout.head,
+    live,
+    checkoutPath,
+  )
   const outputTail = checked.outputTail
   const warning = releaseWarning(redeployReason, checked.warning)
   return {
@@ -999,6 +1067,24 @@ export function releaseProject(
         behindTrunkReason,
         redeployReason,
       ),
+  )
+}
+
+/** Deploy from a lifecycle-provisioned detached checkout without moving or switching it. */
+export function releaseProjectFromCheckout(
+  projectName: string,
+  requestedRung: string,
+  checkoutPath: string,
+  expectedCommit: string,
+): ReleaseResult {
+  const target = releaseTarget(projectName, requestedRung)
+  const { project, selected } = target
+  const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
+  if (!lock.ok) throw new Error(lock.message)
+  return withReleaseLock(
+    project.path,
+    { session: sessionId(), what: `release ${projectName}/${selected.name} at ${expectedCommit}` },
+    () => releaseCommandTargetFromCheckout(target, projectName, checkoutPath, expectedCommit),
   )
 }
 

@@ -5,9 +5,11 @@ import { releaseProofDecision } from './release-decision.ts'
 import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
+  machineUpdateRungRefusal,
   type RequiredReleaseRunner,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
+  requiredReleaseStepOrder,
   requiredRungDecision,
   undecidedRequiredRelease,
 } from './release-required.ts'
@@ -37,6 +39,33 @@ const project = {
     },
   },
 } as Project
+
+test('required releases run before the main checkout moves', () => {
+  expect(requiredReleaseStepOrder(true, [{ required: true }])).toEqual([
+    'deploy-rungs',
+    'move-main',
+    'hand-off',
+  ])
+  expect(requiredReleaseStepOrder(false, [{ required: true }])).toEqual(['move-main', 'hand-off'])
+  expect(requiredReleaseStepOrder(true, [{ required: false }])).toEqual(['move-main', 'hand-off'])
+})
+
+test('machine update refuses an incoming commit until every required rung proves it live', () => {
+  const input = {
+    incomingCommit: 'incoming-tip',
+    requiredRungs: ['hosted-api'],
+    provedCommits: new Map([['hosted-api', 'live-tip']]),
+    project: 'fixture',
+  }
+  expect(
+    machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', false]]) }),
+  ).toContain(
+    `${PLATFORM_SLUG} release run fixture --rung hosted-api --at incoming-tip`,
+  )
+  expect(
+    machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', true]]) }),
+  ).toBeNull()
+})
 
 const successfulRelease = (overrides: Partial<ReleaseResult> = {}): ReleaseResult =>
   ({

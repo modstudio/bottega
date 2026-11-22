@@ -2,7 +2,11 @@
 /** Identity fixed by the parent before the main checkout moves. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RELEASE_REQUIREMENT_SOURCES, type ReleaseRungPlan } from '../release/release-required.ts'
+import {
+  RELEASE_REQUIREMENT_SOURCES,
+  type ReleaseRungPlan,
+  type RequiredReleaseReport,
+} from '../release/release-required.ts'
 import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
@@ -31,6 +35,7 @@ export type PullRequestPostLandingPayload = {
   promoteWorkflowDrafts: boolean
   recordingError: string | null
   requeueOutput: string | null
+  provedRequiredRelease?: RequiredReleaseReport
 }
 
 export function encodePullRequestPostLandingPayload(
@@ -74,6 +79,19 @@ function validateRungPlans(value: unknown): void {
     throw refusal('rungPlans', 'an array of release-rung plans')
 }
 
+function validateProvedRequiredRelease(value: unknown): void {
+  if (value === undefined) return
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw refusal('provedRequiredRelease', 'a required-release report')
+  const report = value as Record<string, unknown>
+  if (
+    !Array.isArray(report.required) ||
+    !Array.isArray(report.releases) ||
+    typeof report.satisfied !== 'boolean'
+  )
+    throw refusal('provedRequiredRelease', 'a required-release report')
+}
+
 function validateDepth(value: unknown): string | null {
   if (value === undefined) return null
   if (!(value === null || (typeof value === 'string' && value)))
@@ -110,6 +128,7 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
   )
     throw refusal('requiredRungs', 'an array of non-empty strings')
   validateRungPlans(row.rungPlans)
+  validateProvedRequiredRelease(row.provedRequiredRelease)
   if (!(row.rungDecisionError === null || typeof row.rungDecisionError === 'string'))
     throw refusal('rungDecisionError', 'a string or null')
   if (typeof row.releaseRequired !== 'boolean') throw refusal('releaseRequired', 'a boolean')

@@ -112,6 +112,7 @@ export function createHookTree(input: {
   key?: string
   base?: string
   seed?: string
+  detached?: boolean
 }): string {
   const callerCwd = resolve(input.cwd)
   const project = projectAt(callerCwd)
@@ -223,7 +224,7 @@ export function createHookTree(input: {
       input.key,
       input.base,
       record,
-      false,
+      input.detached ?? false,
       undefined,
       undefined,
       undefined,
