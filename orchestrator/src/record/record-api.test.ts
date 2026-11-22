@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_WRITE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { proveCredentialRouteProjectAddressing } from '../../test/fixtures/credential-route-proof.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
@@ -302,6 +302,64 @@ describe('record API', () => {
     })
     expect(otherUser.status).toBe(400)
     expect(owners).toHaveLength(3)
+  })
+
+  test('hosted settings edits refuse future options without rewriting the row', async () => {
+    const listRevisions = mock(async () => [])
+    const upsertDoc = mock(async () => ({ id, revisionId: id }))
+    const app = appWith(identity, {
+      applySettingsPermission: (input: RecordSettingsPermissionInput) =>
+        applyRecordSettingsPermission(input, {
+          listDocs: async () => [
+            {
+              id,
+              spaceId: 'space-a',
+              spaceName: 'Space A',
+              scope: 'settings',
+              subject: null,
+              owner: 'user-a',
+              slug: 'settings',
+              title: 'settings',
+              body: JSON.stringify({
+                permissions: {},
+                hooks: {},
+                options: { subagentHooks: 'on', futureOption: 1 },
+              }),
+              delivery: 'demand',
+              audiences: ['technical'],
+              parentId: null,
+              position: 0,
+              projectName: null,
+              createdAt: '2026-09-28T12:00:00.000Z',
+              updatedAt: '2026-09-28T12:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          listRevisions,
+          upsertDoc,
+        }),
+    })
+    const response = await app.request('/v1/settings/permission', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+      body: JSON.stringify({
+        target: { kind: 'user' },
+        list: 'allow',
+        rule: 'Bash(orch *)',
+        operation: 'add',
+        reason: 'test future option refusal',
+        expectedRevision: id,
+      }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(
+        new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+      ),
+    })
+    expect(listRevisions).not.toHaveBeenCalled()
+    expect(upsertDoc).not.toHaveBeenCalled()
   })
 
   test('refuses a permission write when the revision changes between read and locked write', async () => {
