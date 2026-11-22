@@ -550,17 +550,6 @@ export const recordModules: RecordModule[] = [
     './outbox-serialize.ts',
     'bun:sqlite',
   ]),
-  module('orchestrator/src/record/outbox-secret-audit.ts', [
-    '../../../shared/brand.ts',
-    'bun:sqlite',
-    './outbox-prune-payload.ts',
-    './outbox-sanitize.ts',
-  ]),
-  module('orchestrator/src/record/hosted-secret-audit.ts', [
-    '../../../shared/record/tenant.ts',
-    '../../../shared/secret-shaped.ts',
-    'bun',
-  ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',

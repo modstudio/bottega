@@ -62,7 +62,7 @@ test('task-comment push stores fixture credentials masked', async () => {
     {
       fetch: whoami,
       push: async (_url, _identity, inputs) => {
-        storedBody = String(inputs[0]?.row.body)
+        storedBody = String((inputs[0] as { row: { body: string } }).row.body)
         return [{ id, status: 'applied' }]
       },
     },

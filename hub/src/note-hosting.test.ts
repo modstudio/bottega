@@ -54,7 +54,7 @@ test('note create stores fixture credentials masked', async () => {
           activeSpaceId: 'space-a',
           memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
         })) as unknown as typeof fetch,
-      create: async (_url, _identity, input: { text: string }) => {
+      create: async (_url: unknown, _identity: unknown, input: { text: string }) => {
         storedText = input.text
         return { id: '01990000-0000-7000-8000-000000000002' } as never
       },
