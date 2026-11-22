@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  OWNED_SETTINGS_KEYS,
+  OWNED_SETTINGS_OPTION_KEYS,
+  OWNED_SETTINGS_OPTIONS_SCHEMA,
+  OWNED_SETTINGS_SCHEMA,
+} from '../../../shared/stored-settings.ts'
+import {
   containsSecretShaped,
   editSettingsEnv,
   extractOwnedSettings,
@@ -46,13 +52,12 @@ describe('extractOwnedSettings', () => {
     expect(() => extractOwnedSettings(JSON.parse('[]'))).toThrow(SETTINGS_PARSE_REFUSAL)
   })
 
-  test('refuses invalid options instead of dropping them', () => {
-    expect(() => extractOwnedSettings({ options: { subagentHooks: 'warn' } })).toThrow(
-      /invalid options.*accepted value "on"/s,
-    )
-    expect(() => extractOwnedSettings({ options: { futureOption: 1 } })).toThrow(
-      /invalid options.*accepted value "on"/s,
-    )
+  test('does not own options from a harness settings file', () => {
+    expect(extractOwnedSettings({ options: { subagentHooks: 'warn', futureOption: 1 } })).toEqual({
+      permissions: {},
+      hooks: {},
+      envKeys: [],
+    })
   })
 })
 
@@ -197,12 +202,17 @@ test('ownedSettingsEqual requires auto-mode ownership on both sides', () => {
   expect(ownedSettingsEqual(owned, unowned)).toBe(false)
 })
 
-test('options round trip and participate in owned settings equality', () => {
+test('options round trip but do not participate in harness-file equality', () => {
   const owned = { permissions: {}, hooks: {}, options: { subagentHooks: 'on' as const } }
   const parsed = parseStoredOwnedSettings(serializeOwnedSettings(owned))
   expect(parsed.options).toEqual(owned.options)
   expect(ownedSettingsEqual(parsed, owned)).toBe(true)
-  expect(ownedSettingsEqual(parsed, { permissions: {}, hooks: {} })).toBe(false)
+  expect(ownedSettingsEqual(parsed, { permissions: {}, hooks: {} })).toBe(true)
+})
+
+test('known stored settings keys are derived from their schemas', () => {
+  expect(OWNED_SETTINGS_KEYS).toEqual(Object.keys(OWNED_SETTINGS_SCHEMA.shape))
+  expect(OWNED_SETTINGS_OPTION_KEYS).toEqual(Object.keys(OWNED_SETTINGS_OPTIONS_SCHEMA.shape))
 })
 
 test('a stored row without auto-mode round trips without gaining ownership', () => {
@@ -239,7 +249,12 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
     parseStoredOwnedSettings(
       JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
     ),
-  ).toThrow(new RegExp(`options\\.subagentHooks.*upgrade ${PLATFORM_NAME}`, 's'))
+  ).toThrow(
+    new RegExp(
+      `options\\.subagentHooks.*accepted options\\.subagentHooks="on".*upgrade ${PLATFORM_NAME}`,
+      's',
+    ),
+  )
 })
 
 describe('editSettingsEnv', () => {

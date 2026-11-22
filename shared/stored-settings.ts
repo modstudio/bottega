@@ -17,7 +17,10 @@ export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
   .strict()
 type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
 
-export const OWNED_SETTINGS_OPTION_KEYS = ['subagentHooks'] as const
+export const OWNED_SETTINGS_OPTION_KEYS = Object.keys(OWNED_SETTINGS_OPTIONS_SCHEMA.shape)
+export const OWNED_SETTINGS_SUBAGENT_HOOK_VALUES =
+  OWNED_SETTINGS_OPTIONS_SCHEMA.shape.subagentHooks.unwrap().options
+export const OWNED_SETTINGS_OPTIONS_ACCEPTED = `accepted options.subagentHooks=${OWNED_SETTINGS_SUBAGENT_HOOK_VALUES.map((value) => JSON.stringify(value)).join('|')}`
 
 const STORED_SETTINGS_OPTIONS_SCHEMA = OWNED_SETTINGS_OPTIONS_SCHEMA.strip()
 
@@ -40,15 +43,6 @@ export type OwnedSettings = {
   envKeys?: string[]
 }
 
-export const OWNED_SETTINGS_KEYS = [
-  'permissions',
-  'hooks',
-  'autoMode',
-  'options',
-  'env',
-  'envKeys',
-] as const
-
 const ENV_KEYS_SCHEMA = z
   .array(z.string().regex(ENV_NAME))
   .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name))
@@ -64,6 +58,8 @@ export const OWNED_SETTINGS_SCHEMA = z
   })
   .strict()
 
+export const OWNED_SETTINGS_KEYS = Object.keys(OWNED_SETTINGS_SCHEMA.shape)
+
 const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
   options: STORED_SETTINGS_OPTIONS_SCHEMA.optional(),
   envKeys: ENV_KEYS_SCHEMA.default([]),
@@ -71,7 +67,7 @@ const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
 
 export const STORED_SETTINGS_REMEDY =
   'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names'
-export const STORED_SETTINGS_OPTIONS_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
+export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; upgrade ${PLATFORM_NAME} before reading this settings row`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)

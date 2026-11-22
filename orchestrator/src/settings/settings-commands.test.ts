@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -145,6 +145,12 @@ describe('settings import', () => {
 
   test('extracts only owned keys into the store', async () => {
     const root = fixtureProject('alpha')
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const source = readFileSync(settingsPath, 'utf8')
+    writeFileSync(
+      settingsPath,
+      source.replace('  "permissions":', '  "options": {"anything":  1},\n  "permissions":'),
+    )
     const shown = presentation()
     await settingsImportCommand(shown.flags({ project: 'alpha', 'dry-run': true }), {
       ...shown.port(root),
@@ -164,6 +170,7 @@ describe('settings import', () => {
       }),
     )
     expect(stored?.body).not.toContain('SECRET')
+    expect(stored?.body).not.toContain('options')
     expect(stored?.delivery).toBe('demand')
     await expect(
       setDoc({
@@ -426,6 +433,37 @@ describe('settings render --check', () => {
     expect(shown.logs.join('\n')).toContain('drift: none')
     expect(shown.logs.join('\n')).not.toContain(`${PLATFORM_SLUG} note new`)
     expect(shown.code()).toBe(0)
+  })
+
+  test('stored options are not harness-file drift in text or JSON output', async () => {
+    const root = fixtureProject('options-no-drift')
+    await setDoc({
+      scope: 'settings',
+      subject: 'options-no-drift',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+        options: { subagentHooks: 'on' },
+      }),
+      reason: 'seed store',
+    })
+    const text = presentation()
+    await settingsRenderCheckCommand(
+      text.flags({ project: 'options-no-drift', check: true }),
+      text.port(root),
+    )
+    expect(text.logs.join('\n')).toContain('drift: none')
+    expect(text.code()).toBe(0)
+
+    const json = presentation()
+    await settingsRenderCheckCommand(
+      json.flags({ project: 'options-no-drift', check: true, json: true }),
+      json.port(root),
+    )
+    expect(JSON.parse(json.logs[0]!)).toMatchObject({ drifted: false })
+    expect(json.code()).toBe(0)
   })
 
   test('drift output fingerprints hooks and never prints commands', async () => {

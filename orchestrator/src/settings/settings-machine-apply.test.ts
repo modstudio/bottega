@@ -141,6 +141,20 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('keeps unowned options in the harness settings file byte-for-byte', async () => {
+    writeCurrentSettings()
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const source = readFileSync(settingsPath, 'utf8').replace(
+      '  "permissions":',
+      '  "options": {"anything":  1},\n  "permissions":',
+    )
+    writeFileSync(settingsPath, source)
+
+    await applyMachineSettings({ check: false }, deps())
+
+    expect(readFileSync(settingsPath, 'utf8')).toContain('"options": {"anything":  1}')
+  })
+
   test('check mode bounds hosted reads to identity and document routes', async () => {
     process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
     const routes: string[] = []

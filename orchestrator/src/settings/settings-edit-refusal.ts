@@ -17,3 +17,8 @@ export function refuseUnknownStoredSettingsEdit(body: string): string | null {
     ),
   )
 }
+
+export function assertNoUnknownStoredSettingsEdit(body: string): void {
+  const refusal = refuseUnknownStoredSettingsEdit(body)
+  if (refusal) throw new Error(refusal)
+}

@@ -1,7 +1,6 @@
 // concern: settings
 /** Owned Claude settings policy over the shared stored shape. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -14,7 +13,7 @@ import {
   OWNED_AUTO_MODE_SCHEMA,
   OWNED_SETTINGS_KEYS,
   OWNED_SETTINGS_OPTION_KEYS,
-  OWNED_SETTINGS_OPTIONS_SCHEMA,
+  OWNED_SETTINGS_OPTIONS_ACCEPTED,
   OWNED_SETTINGS_SCHEMA,
   type OwnedAutoMode,
   type OwnedSettings,
@@ -51,12 +50,10 @@ export function extractOwnedSettings(value: unknown): OwnedSettings {
     throw new Error(SETTINGS_PARSE_REFUSAL)
   }
   const autoMode = Object.hasOwn(value, 'autoMode') ? parseAutoMode(value.autoMode) : undefined
-  const options = Object.hasOwn(value, 'options') ? parseOptions(value.options) : undefined
   return {
     permissions: Object.hasOwn(value, 'permissions') ? value.permissions : {},
     hooks: Object.hasOwn(value, 'hooks') ? value.hooks : {},
     ...(autoMode === undefined ? {} : { autoMode }),
-    ...(options === undefined ? {} : { options }),
     envKeys: [],
   }
 }
@@ -88,9 +85,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
   const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
   if (!result.success) {
     if (result.error.issues.some((issue) => issue.path[0] === 'options')) {
-      throw new Error(
-        'refusing settings body: invalid options; accepted options.subagentHooks="on"',
-      )
+      throw new Error(`refusing settings body: invalid options; ${OWNED_SETTINGS_OPTIONS_ACCEPTED}`)
     }
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
@@ -177,10 +172,6 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
       (left.autoMode !== undefined &&
         right.autoMode !== undefined &&
         deepEqual(left.autoMode, right.autoMode))) &&
-    ((left.options === undefined && right.options === undefined) ||
-      (left.options !== undefined &&
-        right.options !== undefined &&
-        deepEqual(left.options, right.options))) &&
     deepEqual(left.env ?? {}, right.env ?? {}) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
@@ -267,21 +258,6 @@ function parseAutoMode(value: unknown): OwnedAutoMode {
   if (!result.success) {
     throw new Error(
       'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',
-    )
-  }
-  return result.data
-}
-
-function parseOptions(value: unknown): OwnedSettings['options'] {
-  const result = OWNED_SETTINGS_OPTIONS_SCHEMA.safeParse(value)
-  if (!result.success) {
-    throw new Error(
-      renderRefusal(
-        refusal('refusing settings file: invalid options', {
-          kind: 'edit',
-          text: 'use only subagentHooks with accepted value "on"',
-        }),
-      ),
     )
   }
   return result.data

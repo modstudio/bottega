@@ -21,7 +21,7 @@ import {
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
-import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
+import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import {
   mergeSettingsEnv,
   readSettingsEnv,
@@ -95,7 +95,7 @@ export async function settingsEnvImportCommand(
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error('refusing settings env import: no user settings row')
-  refuseUnknownStoredSettingsWrite(row.body)
+  assertNoUnknownStoredSettingsEdit(row.body)
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
   const imported = settingsEnvironmentFromJson(settingsPath)
@@ -140,7 +140,7 @@ export async function settingsAdoptCommand(
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings adopt: no settings row for ${targetLabel(target)}`)
-  refuseUnknownStoredSettingsWrite(row.body)
+  assertNoUnknownStoredSettingsEdit(row.body)
   if (flags.has('all') === requestedRules.length > 0) {
     throw new Error('refusing settings adopt: pass either --all or one or more rules')
   }
@@ -357,11 +357,6 @@ async function writeOwned(
   })
 }
 
-function refuseUnknownStoredSettingsWrite(body: string): void {
-  const refusal = refuseUnknownStoredSettingsEdit(body)
-  if (refusal) throw new Error(refusal)
-}
-
 /** Migrate only names in the stored user settings body; values remain in settings.env. */
 export async function migrateStoredSettingsEnvironmentNames(
   replacement: (name: string) => string | null,
@@ -369,7 +364,7 @@ export async function migrateStoredSettingsEnvironmentNames(
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) return []
-  refuseUnknownStoredSettingsWrite(row.body)
+  assertNoUnknownStoredSettingsEdit(row.body)
   const owned = parseStoredOwnedSettings(row.body)
   const current = owned.envKeys ?? []
   const { names: migrated, changed } = settingsEnvironmentNamesDecision(current, replacement)
@@ -399,7 +394,7 @@ export async function restoreStoredSettingsEnvironmentNames(
       `refusing setup restore: stored user settings are absent; restore the settings document, then re-run ${PLATFORM_SLUG} machine setup restore`,
     )
   }
-  refuseUnknownStoredSettingsWrite(row.body)
+  assertNoUnknownStoredSettingsEdit(row.body)
   const owned = parseStoredOwnedSettings(row.body)
   const current = owned.envKeys ?? []
   for (const { oldName, newName } of migrations) {
