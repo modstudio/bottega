@@ -880,7 +880,7 @@ async function restoreDocCommand(
     )
   const revisionId = hosted
     ? hosted.resolve(revision)
-    : resolveDocRevisionIdentifier(db(), revision)
+    : await resolveDocRevisionIdentifier(db(), revision)
   const expected = flags.flag('expect')
   const restored = await restoreDoc(
     scope,
@@ -891,7 +891,7 @@ async function restoreDocCommand(
       reason,
       author: flags.flag('author'),
       expectedRevision: expected
-        ? (hosted?.resolve(expected) ?? resolveDocRevisionIdentifier(db(), expected))
+        ? (hosted?.resolve(expected) ?? (await resolveDocRevisionIdentifier(db(), expected)))
         : undefined,
       suppliedRead: hosted
         ? {

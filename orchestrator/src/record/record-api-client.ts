@@ -62,6 +62,7 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
+import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -320,10 +321,7 @@ export type RecordApiClient = ProjectIdentityClient &
       endCursor?: string | null
     }>
     getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
-    getDocRevision(
-      id: string,
-      destination?: RecordRequestDestination,
-    ): Promise<Record<string, unknown>>
+    getDocRevision(id: string, destination?: RecordRequestDestination): Promise<RecordDocRevision>
     listRevisions(
       id: string,
       destination?: RecordRequestDestination,

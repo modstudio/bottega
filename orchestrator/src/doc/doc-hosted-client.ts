@@ -53,7 +53,7 @@ export async function hostedDocClient(
     listDocs: (query) =>
       client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),
     getDoc: (id) => client.getDoc(id, destination),
-    getDocRevision: (id) => client.getDocRevision(id, destination),
+    getDocRevision: (id) => client.getDocRevision(id),
     listRevisions: (id) => client.listRevisions(id, destination),
     upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
     reorderDocs: (input) => client.reorderDocs(input, destination),

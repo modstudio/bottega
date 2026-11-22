@@ -7,6 +7,8 @@ const sources = [
   "import { db } from '../database/db.ts'; db().prepare('SELECT * FROM doc WHERE slug=?')",
   "import type { Database } from 'bun:sqlite'; function f(store: Database) { return store.query('SELECT body FROM doc_revision').all() }",
   "import { db } from '../database/db.ts'; const SQL = 'SELECT * FROM doc'; db().query(SQL)",
+  "import { writableDb } from '../database/db.ts'; writableDb().query('SELECT * FROM doc')",
+  "import * as sqlite from '../database/db.ts'; sqlite.db().query('SELECT * FROM doc')",
 ]
 
 test('document SQL outside the allow-list is refused independent of call shape', () => {

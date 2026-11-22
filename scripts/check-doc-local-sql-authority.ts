@@ -60,9 +60,9 @@ export const DOC_LOCAL_SQL_ALLOWANCES: readonly DocLocalSqlAllowance[] = [
 ]
 
 const SQL_WITH_DOC_TABLE =
-  /\b(?:from|join|into|update|table)\s+(?:(?:[a-z_][a-z0-9_]*|"[^"]+")\s*\.\s*)?["`\[]?(?:doc|doc_revision|doc_related_subject)\b/i
+  /\b(?:from|join|into|update|table)\s+(?:(?:[a-z_][a-z0-9_]*|"[^"]+")\s*\.\s*)?["`[]?(?:doc|doc_revision|doc_related_subject)\b/i
 const LOCAL_SQL_IMPORT =
-  /(?:from\s*['"]bun:sqlite['"]|import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"](?:\.\.?\/)+(?:database\/)?db\.ts['"])/s
+  /(?:from\s*['"]bun:sqlite['"]|from\s*['"](?:\.\.?\/)+(?:database\/)?db\.ts['"]|import\s*['"](?:\.\.?\/)+(?:database\/)?db\.ts['"])/
 
 function commentEnd(source: string, index: number): number | null {
   if (source[index] !== '/') return null

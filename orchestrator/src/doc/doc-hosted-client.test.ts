@@ -49,6 +49,10 @@ test('a project-addressed document client omits the destination only for cross-s
       capture(destination)
       return {}
     },
+    getDocRevision: async (_id, destination) => {
+      capture(destination)
+      return {} as never
+    },
     listRevisions: async (_id, destination) => {
       capture(destination)
       return []
@@ -97,6 +101,7 @@ test('a project-addressed document client omits the destination only for cross-s
   await client.listDocs({})
   await client.listDocs({ acrossReadableSpaces: true })
   await client.getDoc('doc')
+  await client.getDocRevision('revision')
   await client.listRevisions('doc')
   await client.upsertDoc({
     scope: 'project',
@@ -165,7 +170,9 @@ test('a project-addressed document client omits the destination only for cross-s
   expect(destinations).toEqual([
     'docs-space',
     undefined,
-    ...Array.from({ length: 11 }, () => 'docs-space'),
+    'docs-space',
+    undefined,
+    ...Array.from({ length: 10 }, () => 'docs-space'),
   ])
 })
 

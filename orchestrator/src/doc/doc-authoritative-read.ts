@@ -270,15 +270,13 @@ export function readDocRevision(
   owner: string | null = null,
   scope = 'global',
   subject: string | null = null,
-): Promise<import('./doc-read-store.ts').DocRevision | null> {
+): Promise<DocRevision | null> {
   return applyRecordReadAuthority({
     local: () => getStoredDocRevision(revisionId, owner),
     hosted: () =>
       withReadRemedy(async () => {
         const revision = await (await hostedDocClient(scope, subject)).getDocRevision(revisionId)
-        if ('record_id' in revision)
-          return revision as unknown as import('./doc-read-store.ts').DocRevision
-        return mapHostedDocRevisions([revision as HostedDocRevision])[0] ?? null
+        return mapHostedDocRevisions([revision])[0] ?? null
       }),
   })
 }

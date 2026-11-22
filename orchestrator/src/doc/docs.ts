@@ -387,7 +387,7 @@ async function docWriteState(
 const hostedDocWriteClient = (input: DocWriteInput) =>
   hostedDocClient(input.scope, input.subject, contextTaskOwner(input.contextTask))
 
-function hostedUnmirroredDoc(input: {
+type HostedUnmirroredSet = {
   prior: Doc
   write: DocWriteInput
   recordId: string
@@ -397,7 +397,28 @@ function hostedUnmirroredDoc(input: {
   tree: ReturnType<typeof localDocTreeFields>
   lifecycle: ReturnType<typeof localDocumentLifecycle>
   article: ReturnType<typeof resolveLocalDocArticleFields>
-}): Doc {
+}
+
+type HostedUnmirroredConsume = {
+  prior: Doc
+  body: string
+  revisionId: string
+  alreadyConsumed: boolean
+}
+
+function hostedUnmirroredDoc(input: HostedUnmirroredSet): Doc
+function hostedUnmirroredDoc(input: HostedUnmirroredConsume): Doc & { already_consumed: boolean }
+function hostedUnmirroredDoc(
+  input: HostedUnmirroredSet | HostedUnmirroredConsume,
+): Doc & { already_consumed?: boolean } {
+  if (!('write' in input)) {
+    return {
+      ...input.prior,
+      body: input.body,
+      revision: input.revisionId,
+      already_consumed: input.alreadyConsumed,
+    }
+  }
   return {
     ...input.prior,
     record_id: input.recordId,
@@ -729,7 +750,12 @@ export async function consumeDoc(
       })
       if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
       if (!getDoc(scope, doc.subject, slug)) {
-        return { ...doc, body: patched.body, revision: hosted.revisionId, already_consumed: false }
+        return hostedUnmirroredDoc({
+          prior: doc,
+          body: patched.body,
+          revisionId: hosted.revisionId,
+          alreadyConsumed: false,
+        })
       }
       return commitDocConsume({
         scope,
