@@ -37,9 +37,9 @@ describe('tracker row plan', () => {
     expect(first.row.record_id[14]).toBe('7')
   })
 
-  test('different observation times keep the same new-task id', () => {
+  test('different tracker update times keep the same new-task id', () => {
     const first = trackerTaskRowPlan({
-      task: { ...task, updatedAt: null },
+      task: { ...task, updatedAt: '2026-11-20T12:00:00.000Z' },
       stored: null,
       effectiveKey: task.key,
       parentRecordId: null,
@@ -47,7 +47,7 @@ describe('tracker row plan', () => {
       projectRecordId,
     })
     const second = trackerTaskRowPlan({
-      task: { ...task, updatedAt: null },
+      task: { ...task, updatedAt: '2026-11-21T12:00:00.000Z' },
       stored: null,
       effectiveKey: task.key,
       parentRecordId: null,
@@ -55,6 +55,13 @@ describe('tracker row plan', () => {
       projectRecordId,
     })
     expect(first.row.record_id).toBe(second.row.record_id)
+  })
+
+  test('a locally owned row is unchanged and has no event', () => {
+    const local = { ...plan().row, source: 'local' as const }
+    const observed = plan(local, { ...task, status: 'active', category: 'active' })
+    expect(observed.changed).toBeFalse()
+    expect(observed.event).toBeNull()
   })
 
   test('does not send an unchanged row (mutation: dropping the change filter fails)', () => {

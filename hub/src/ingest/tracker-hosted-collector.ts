@@ -8,7 +8,12 @@ import {
   type HostedTaskWriteOptions,
   hostedTaskChangeSendOptions,
 } from '../task-write-destination.ts'
-import { retireTrackerRowPlan, type TrackerTaskRowPlan } from './tracker-row-plan.ts'
+import {
+  retireTrackerRowPlan,
+  trackerOutOfScopeReason,
+  trackerTaskFromRow,
+  type TrackerTaskRowPlan,
+} from './tracker-row-plan.ts'
 
 type HostedPlanResult = { accepted: TrackerTaskRowPlan[]; rejected: string[] }
 
@@ -16,6 +21,11 @@ export async function sendTrackerPlans(
   plans: TrackerTaskRowPlan[],
   options?: HostedTaskWriteOptions,
 ): Promise<HostedPlanResult> {
+  const projects = [...new Set(plans.map((plan) => plan.row.project))]
+  if (projects.length > 1)
+    throw new Error(
+      `tracker plan batch spans more than one project: ${projects[0]} and ${projects[1]}`,
+    )
   const changed = plans.filter(
     (plan) =>
       plan.stored?.source !== 'local' && collectorTaskShouldQueue('mcp', plan.row, plan.changed),
@@ -67,20 +77,6 @@ type CollectorPorts = {
   prefix(key: string): string
 }
 
-function taskRowAsTrackerTask(row: TaskRow): TrackerTask {
-  return {
-    externalId: row.external_id,
-    key: row.key,
-    project: row.project,
-    title: row.title ?? '',
-    status: row.status ?? '',
-    category: row.status_category ?? 'open',
-    updatedAt: row.updated_at,
-    assignee: row.assignee,
-    parentKey: row.parent_key,
-  }
-}
-
 function changedObservation(plan: TrackerTaskRowPlan, at: string) {
   return {
     task: plan.task,
@@ -91,7 +87,7 @@ function changedObservation(plan: TrackerTaskRowPlan, at: string) {
       event: plan.event
         ? {
             recordId: plan.event.record_id,
-            fromCategory: plan.event.from_status,
+            fromCategory: plan.event.from_status!,
             toCategory: plan.event.to_status,
           }
         : null,
@@ -103,7 +99,7 @@ function changedObservation(plan: TrackerTaskRowPlan, at: string) {
         updatedAt: plan.row.updated_at ?? at,
       },
       changed: plan.changed,
-      ambiguousParentKeys: [],
+      ambiguousParentKeys: plan.ambiguousParentKeys,
       priorCategory: plan.stored?.status_category ?? null,
     },
   }
@@ -120,7 +116,7 @@ function deletionPlans(project: string, keys: Iterable<string>, at: string, port
       .get(project, key)
     if (!row || row.status_category === 'dropped') continue
     const plan = ports.planTask({
-      ...taskRowAsTrackerTask(row),
+      ...trackerTaskFromRow(row),
       status: 'deleted',
       category: 'dropped',
       updatedAt: at,
@@ -147,16 +143,15 @@ function retirementPlans(
     .all(source.project)
   for (const row of rows) {
     if (ports.inScope(row.key)) continue
-    const reason =
-      `out of scope: key prefix ${ports.prefix(row.key)} is not among ${source.project}'s declared key prefixes ` +
-      prefixes.join(', ')
+    const reason = trackerOutOfScopeReason(source.project, row.key, prefixes, ports.prefix)
     const retired = retireTrackerRowPlan(row, at, reason)
     plans.push({
-      task: taskRowAsTrackerTask(retired.row),
+      task: trackerTaskFromRow(retired.row),
       stored: row,
       row: retired.row,
       changed: retired.changed,
       event: null,
+      ambiguousParentKeys: [],
     })
   }
   return plans
@@ -181,18 +176,23 @@ export async function applyHostedCollectorPass(input: {
   const plans = [...regular, ...deleted, ...retired, ...backfill]
   const sent = await sendTrackerPlans(plans, input.options)
   input.ports.applyPlans(sent.accepted)
+  const accepted = new Set(sent.accepted)
+  const acceptedRegular = regular.filter((plan) => accepted.has(plan))
+  const acceptedDeleted = deleted.filter((plan) => accepted.has(plan))
+  const acceptedRetired = retired.filter((plan) => accepted.has(plan))
+  const acceptedBackfill = backfill.filter((plan) => accepted.has(plan))
   return {
-    observations: regular.map((plan) => changedObservation(plan, input.at)),
-    retired: retired.length,
+    observations: acceptedRegular.map((plan) => changedObservation(plan, input.at)),
+    retired: acceptedRetired.length,
     deletions: {
-      dropped: deleted.length,
-      activity: deleted.length > 0,
-      changed: deleted.filter((plan) => plan.event).length,
+      dropped: acceptedDeleted.length,
+      activity: acceptedDeleted.length > 0,
+      changed: acceptedDeleted.filter((plan) => plan.event).length,
     },
     backfill: {
-      filled: backfill.length,
-      activity: backfill.some((plan) => plan.changed),
-      ambiguousParentKeys: [] as string[],
+      filled: acceptedBackfill.length,
+      activity: acceptedBackfill.some((plan) => plan.changed),
+      ambiguousParentKeys: acceptedBackfill.flatMap((plan) => plan.ambiguousParentKeys),
     },
     rejected: sent.rejected,
   }

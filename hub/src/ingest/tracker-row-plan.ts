@@ -1,32 +1,18 @@
 import { createHash } from 'node:crypto'
 import type { TrackerTask } from '../../../shared/trackers.ts'
+import type { StatusEventRow } from '../outbox-row.ts'
 import type { TaskRow } from '../task-row.ts'
+import { trackerObservationTimes, trackerTaskDiffers } from './tracker-observation-times.ts'
 
 const TRACKER_ROW_NAMESPACE = '65a73d30-9607-5a4c-a02e-2fb5573b37c4'
 
-type StoredTrackerRow = TaskRow & { external_id: string | null }
-
-type PlannedStatusEvent = {
-  record_id: string
-  task_key: string
-  task_record_id: string
-  at: string
-  from_status: string
-  to_status: string
-  actor_user_id: null
-  actor_name: null
-  agent: null
-  run_id: null
-  project_name: string
-  project_record_id: string | null
-}
-
 export type TrackerTaskRowPlan = {
   task: TrackerTask
-  stored: StoredTrackerRow | null
+  stored: TaskRow | null
   row: TaskRow
   changed: boolean
-  event: PlannedStatusEvent | null
+  event: StatusEventRow | null
+  ambiguousParentKeys: string[]
 }
 
 function uuidBytes(uuid: string): Uint8Array {
@@ -52,74 +38,48 @@ function trackerNameId(time: string | null, name: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-function differs(
-  task: TrackerTask,
-  stored: StoredTrackerRow | null,
-  effectiveKey: string,
-): boolean {
-  if (!stored) return true
-  return (
-    stored.key !== effectiveKey ||
-    stored.project !== task.project ||
-    (task.parentKey !== undefined && stored.parent_key !== task.parentKey) ||
-    (task.externalId !== null && stored.external_id !== task.externalId) ||
-    stored.title !== task.title ||
-    stored.status !== task.status ||
-    stored.status_category !== task.category ||
-    stored.assignee !== task.assignee ||
-    (task.updatedAt !== null && stored.updated_at !== task.updatedAt) ||
-    stored.retired_reason !== null
-  )
+export function trackerTaskFromRow(row: TaskRow): TrackerTask {
+  return {
+    externalId: row.external_id,
+    key: row.key,
+    project: row.project,
+    title: row.title ?? '',
+    status: row.status ?? '',
+    category: row.status_category ?? 'open',
+    updatedAt: row.updated_at,
+    assignee: row.assignee,
+    parentKey: row.parent_key,
+  }
 }
 
-function observationTimes(
-  task: TrackerTask,
-  stored: StoredTrackerRow | null,
-  at: string,
-  changed: boolean,
-) {
-  if (stored && !changed) {
-    const updatedAt = stored.updated_at ?? at
-    return {
-      openedAt: stored.opened_at ?? updatedAt,
-      closedAt: stored.closed_at,
-      firstSeen: stored.first_seen,
-      lastSeen: stored.last_seen,
-      updatedAt,
-    }
-  }
-  const sourceTime = task.updatedAt ?? at
-  if (stored?.status_category === 'done' && task.category === 'done')
-    return {
-      openedAt: stored.opened_at ?? sourceTime,
-      closedAt: stored.closed_at ?? at,
-      firstSeen: stored.first_seen,
-      lastSeen: at,
-      updatedAt: sourceTime,
-    }
-  return {
-    openedAt: stored?.opened_at ?? sourceTime,
-    closedAt: task.category === 'done' ? at : null,
-    firstSeen: stored?.first_seen ?? at,
-    lastSeen: at,
-    updatedAt: sourceTime,
-  }
+export function trackerOutOfScopeReason(
+  project: string,
+  key: string,
+  prefixes: readonly string[],
+  prefix: (key: string) => string,
+): string {
+  return (
+    `out of scope: key prefix ${prefix(key)} is not among ${project}'s declared key prefixes ` +
+    prefixes.join(', ')
+  )
 }
 
 export function trackerTaskRowPlan(input: {
   task: TrackerTask
-  stored: StoredTrackerRow | null
+  stored: TaskRow | null
   effectiveKey: string
   parentRecordId: string | null
+  parentAmbiguous?: boolean
   at: string
   projectRecordId: string | null
 }): TrackerTaskRowPlan {
   const { task, stored, effectiveKey, parentRecordId, at, projectRecordId } = input
-  const changed = differs(task, stored, effectiveKey)
-  const times = observationTimes(task, stored, at, changed)
+  const locallyOwned = stored?.source === 'local'
+  const changed = locallyOwned ? false : trackerTaskDiffers(task, stored ?? undefined, effectiveKey)
+  const times = trackerObservationTimes(task, stored ?? undefined, at, effectiveKey)
   const recordId =
     stored?.record_id ??
-    trackerNameId(task.updatedAt, `${projectRecordId}\0${task.externalId ?? `key:${effectiveKey}`}`)
+    trackerNameId(null, `${projectRecordId}\0${task.externalId ?? `key:${effectiveKey}`}`)
   const row: TaskRow = {
     record_id: recordId,
     external_id: task.externalId ?? stored?.external_id ?? null,
@@ -146,7 +106,7 @@ export function trackerTaskRowPlan(input: {
   }
   const from = stored?.status_category
   const event =
-    stored && stored.source !== 'local' && typeof from === 'string' && from !== task.category
+    stored && !locallyOwned && typeof from === 'string' && from !== task.category
       ? {
           record_id: trackerNameId(
             stored.updated_at ?? stored.last_seen,
@@ -165,7 +125,14 @@ export function trackerTaskRowPlan(input: {
           project_record_id: projectRecordId,
         }
       : null
-  return { task, stored, row, changed: changed || stored?.updated_at === null, event }
+  return {
+    task,
+    stored,
+    row,
+    changed: locallyOwned ? false : changed || stored?.updated_at === null,
+    event,
+    ambiguousParentKeys: input.parentAmbiguous && task.parentKey ? [task.parentKey] : [],
+  }
 }
 
 export type RetireRowPlan = { before: TaskRow; row: TaskRow; changed: boolean }

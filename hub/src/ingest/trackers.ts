@@ -38,7 +38,13 @@ import {
   type TrackerReadMode,
   trackerReadMode,
 } from './tracker-read-mode.ts'
-import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
+import {
+  retireTrackerRowPlan,
+  trackerOutOfScopeReason,
+  trackerTaskFromRow,
+  type TrackerTaskRowPlan,
+  trackerTaskRowPlan,
+} from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -215,6 +221,13 @@ export function recordTrackerReadState(
   })
 }
 
+export function trackerReadPassComplete(
+  fetchedComplete: boolean,
+  rejectedChanges: readonly string[],
+): boolean {
+  return fetchedComplete && rejectedChanges.length === 0
+}
+
 export function trackerProjectsReadSince(
   projectNames: readonly Project[],
   cutoffMs: number,
@@ -327,24 +340,29 @@ function plannedTrackerLabel(conn: Database, task: TrackerTask, row: TrackerIden
   return collision ? row.key : task.key
 }
 
-function planTrackerTaskOn(conn: Database, task: TrackerTask, at: string): TrackerTaskRowPlan {
+export function planTrackerTaskOn(
+  conn: Database,
+  task: TrackerTask,
+  at: string,
+): TrackerTaskRowPlan {
   const stored = trackerIdentityRow(conn, task)
   const effectiveKey = plannedTrackerLabel(conn, task, stored)
   const parentResolution =
     task.parentKey === undefined || task.parentKey === null
-      ? { recordId: null }
+      ? { recordId: null, ambiguous: false }
       : resolveParentRecordId(conn, task.parentKey, task.project)
   return trackerTaskRowPlan({
     task,
     stored,
     effectiveKey,
     parentRecordId: parentResolution.recordId,
+    parentAmbiguous: parentResolution.ambiguous,
     at,
     projectRecordId: stored?.project_record_id ?? projectRecordIdFor(task.project),
   })
 }
 
-function applyTrackerPlanOn(conn: Database, plan: TrackerTaskRowPlan): void {
+export function applyTrackerPlanOn(conn: Database, plan: TrackerTaskRowPlan): void {
   if (plan.stored?.source === 'local') return
   const row = plan.row
   conn
@@ -388,7 +406,9 @@ function applyTrackerPlanOn(conn: Database, plan: TrackerTaskRowPlan): void {
     )
   if (plan.stored)
     trackerLabelAfterCollisionCheck(conn, plan.task, plan.stored as TrackerIdentityRow)
-  reconcileParentRecordId(conn, row.key, row.project)
+  const childResolution = reconcileParentRecordId(conn, row.key, row.project)
+  if (childResolution.ambiguous && !plan.ambiguousParentKeys.includes(row.key))
+    plan.ambiguousParentKeys.push(row.key)
   refreshTrackerClaim(conn, plan.task, plan.event?.at ?? row.last_seen)
   if (plan.event)
     conn
@@ -554,7 +574,7 @@ function observeTrackerTaskOn(
   conn: Database,
   task: TrackerTask,
   at: string,
-  queueSite: string | null | undefined,
+  queueSite: string | undefined,
 ): CachedTrackerTaskObservation {
   const { stored, times, changed, ambiguousParentKeys } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
@@ -568,7 +588,6 @@ function observeTrackerTaskOn(
   const taskRecordId = observed?.source === 'local' ? null : (observed?.record_id ?? null)
   const taskKey = observed?.key ?? task.key
   if (
-    queueSite !== null &&
     taskRecordId &&
     collectorTaskShouldQueue('mcp', observed, changed || stored?.updated_at === null)
   )
@@ -595,7 +614,7 @@ function observeTrackerTaskOn(
     .run(recordId, task.key, taskRecordId!, at, was, task.category, null, null, null, null)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
-  if (queueSite !== null && event)
+  if (event)
     queueHostedChange(
       conn,
       HOSTED_STATUS_EVENT_TABLE,
@@ -644,7 +663,7 @@ export async function observeTrackerTask(
       event: plan.event
         ? {
             recordId: plan.event.record_id,
-            fromCategory: plan.event.from_status,
+            fromCategory: plan.event.from_status!,
             toCategory: plan.event.to_status,
           }
         : null,
@@ -656,7 +675,7 @@ export async function observeTrackerTask(
       changed: _changed,
       priorCategory,
       ...observation
-    } = observeTrackerTaskOn(conn, task, at, hosted ? null : 'trackers.observeTrackerTask')
+    } = observeTrackerTaskOn(conn, task, at, 'trackers.observeTrackerTask')
     return { observation, priorCategory }
   })
   return cached.observation
@@ -771,23 +790,29 @@ export function retireOutOfScopeTrackerTasks(
   if (!prefixes.length) return 0
   return writeTransaction((conn) => {
     const rows = conn
-      .query<{ record_id: string; key: string }, [string]>(
-        `SELECT record_id,key FROM task
+      .query<TaskRow, [string]>(
+        `SELECT * FROM task
          WHERE project=? AND source='mcp' AND retired_reason IS NULL`,
       )
       .all(project)
-    const update = conn.query(
-      `UPDATE task SET status_category='dropped', closed_at=COALESCE(closed_at,?),
-       retired_reason=? WHERE record_id=? AND retired_reason IS NULL`,
-    )
     let retired = 0
     for (const row of rows) {
       if (trackerKeyInScope(row.key, prefixes)) continue
-      const prefix = trackerKeyPrefix(row.key)
-      const reason =
-        `out of scope: key prefix ${prefix} is not among ${project}'s declared key prefixes ` +
-        prefixes.join(', ')
-      if (update.run(at, reason, row.record_id).changes === 0) continue
+      const retiredRow = retireTrackerRowPlan(
+        row,
+        at,
+        trackerOutOfScopeReason(project, row.key, prefixes, trackerKeyPrefix),
+      )
+      const plan: TrackerTaskRowPlan = {
+        task: trackerTaskFromRow(retiredRow.row),
+        stored: row,
+        row: retiredRow.row,
+        changed: retiredRow.changed,
+        event: null,
+        ambiguousParentKeys: [],
+      }
+      if (!plan.changed) continue
+      applyTrackerPlanOn(conn, plan)
       queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, null, undefined)
       retired++
     }
@@ -809,32 +834,46 @@ export function dropDeletedTrackerTasks(
       `SELECT ${TRACKER_IDENTITY_COLUMNS} FROM task
        WHERE project=? AND key=? AND source='mcp'`,
     )
-    const restoreLifecycle = conn.query(
-      'UPDATE task SET opened_at=?, closed_at=? WHERE record_id=?',
-    )
     for (const key of new Set(keys)) {
       if (!trackerKeyInScope(key, prefixes)) continue
       const row = read.get(project, key)
       // A tombstone repeats while it stays inside the since overlap; one drop is the event.
       if (!row || row.status_category === 'dropped') continue
-      const observation = observeTrackerTaskOn(
+      const plan = planTrackerTaskOn(
         conn,
         {
-          externalId: row.external_id,
-          key: row.key,
-          project: row.project,
-          title: row.title ?? '',
+          ...trackerTaskFromRow(row),
           status: 'deleted',
           category: 'dropped',
           updatedAt: at,
-          assignee: row.assignee,
         },
         at,
-        undefined,
       )
-      restoreLifecycle.run(row.opened_at, row.closed_at ?? at, row.record_id)
+      plan.row.opened_at = row.opened_at
+      plan.row.closed_at = row.closed_at ?? at
+      applyTrackerPlanOn(conn, plan)
+      if (collectorTaskShouldQueue('mcp', plan.row, plan.changed))
+        queueHostedChange(
+          conn,
+          HOSTED_TASK_TABLE,
+          plan.row.record_id,
+          'upsert',
+          at,
+          null,
+          undefined,
+        )
+      if (plan.event)
+        queueHostedChange(
+          conn,
+          HOSTED_STATUS_EVENT_TABLE,
+          plan.event.record_id,
+          'upsert',
+          at,
+          null,
+          undefined,
+        )
       dropped++
-      if (observation.event) changed++
+      if (plan.event) changed++
     }
   })
   return { dropped, activity: dropped > 0, changed }
@@ -996,7 +1035,12 @@ async function collectTrackerSource(
   const deletions =
     applied?.deletions ?? dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
   const backfill = applied?.backfill ?? (await backfillTrackerTasks(s, m, missing, at, prefixes))
-  recordTrackerReadState(s.project, read.mode, startedAt, fetched.complete)
+  recordTrackerReadState(
+    s.project,
+    read.mode,
+    startedAt,
+    trackerReadPassComplete(fetched.complete, applied?.rejected ?? []),
+  )
   return {
     result: {
       project: s.project,
