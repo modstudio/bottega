@@ -16,7 +16,7 @@ paths:
 
 # Docs
 
-Operator docs are markdown facts about an installation, stored in `orchestrator.db` rather than baked into code. Scopes are `DOC_SCOPES` in `shared/docs.ts`: `global` applies everywhere; `project`, `agent`, and `job` each name a registered subject; `stack` names a register stack, and its documents serve every project on that stack; `resume` names a project as its subject (the epic is the slug); `machine` and `global` have no subject.
+Operator docs are markdown facts about an installation, held in the document store rather than baked into code. Scopes are `DOC_SCOPES` in `shared/docs.ts`: `global` applies everywhere; `project`, `agent`, and `job` each name a registered subject; `stack` names a register stack, and its documents serve every project on that stack; `resume` names a project as its subject (the epic is the slug); `machine` and `global` have no subject.
 
 **Canon rows are scope `canon` and hydrate into the tree.** Canon is stored in `orchestrator.db`, edited through `bottega doc` under write-time gates, and hydrated by script into each project's committed files. Estate facts stay in the doc store and are never hydrated. Worker prompts receive canon through the pack (global always-on rows, then the project's, then a context index) and job documents whose delivery is `inject`. `setDoc` refuses `inject` for project and global documents: an instruction is canon, and anything else is fetched on demand. Agent, machine and resume documents never enter a worker prompt.
 
