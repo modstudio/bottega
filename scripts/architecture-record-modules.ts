@@ -7,6 +7,7 @@ import { recordCacheModules } from './architecture-record-cache-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
 import { recordQuestionModules } from './architecture-record-question-modules.ts'
+import { recordSecretMaskModules } from './architecture-record-secret-mask-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
@@ -28,6 +29,7 @@ export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...recordInvariantModules,
   ...recordQuestionModules,
+  ...recordSecretMaskModules,
   ...recordSyncModules,
   ...recordTaskFlowModules,
   ...storageRecordModules,
@@ -305,10 +307,6 @@ export const recordModules: RecordModule[] = [
     './record-task-flow-contract.ts',
     './record-task-flow-write-contract.ts',
     './record-api-errors.ts',
-  ]),
-  module('orchestrator/src/record/record-api-secret-mask.ts', [
-    'hono',
-    '../../../shared/hosted-secret-mask.ts',
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',

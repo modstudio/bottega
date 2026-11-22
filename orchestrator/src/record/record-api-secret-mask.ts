@@ -1,12 +1,12 @@
 // concern: record-api-secret-mask
 /** Installs the value-free warning scope and fail-closed hosted write mask at the API edge. */
-import type { Hono } from 'hono'
+import type { Env, Hono } from 'hono'
 import {
   maskHostedRoutePayload,
   withHostedMaskWarnings,
 } from '../../../shared/hosted-secret-mask.ts'
 
-export function registerRecordSecretMask(app: Hono): void {
+export function registerRecordSecretMask<Environment extends Env>(app: Hono<Environment>): void {
   app.use('/v1/*', async (context, next) => {
     context.res = await withHostedMaskWarnings(async () => {
       if (['POST', 'PUT', 'PATCH'].includes(context.req.method)) {

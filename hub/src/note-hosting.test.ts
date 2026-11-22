@@ -103,7 +103,9 @@ test('note reap masks staleness reasons and preserves its timestamp', async () =
     },
   )
   expect(response?.status).toBe(200)
-  expect(stored?.stale[0]).toEqual({
+  expect(
+    (stored as { stale: Array<{ recordId: string; reason: string; at: string }> } | null)?.stale[0],
+  ).toEqual({
     recordId: 'record',
     reason: redactSecretShaped(secret, { precision: 'high' }).text,
     at: cutoff,
