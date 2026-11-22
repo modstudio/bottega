@@ -475,7 +475,7 @@ function recordRoutingWaits(
 
 const ROUTING_WAIT_PREFIX = 'waiting on routing:'
 
-export type HostedRoutingWait = { project: string; message: string }
+type HostedRoutingWait = { project: string; message: string }
 
 function routingWaitMessage(project: string, reason: string): string {
   if (reason === 'unregistered-project')
@@ -492,7 +492,7 @@ function routingWaitMessage(project: string, reason: string): string {
   return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
 }
 
-export function parseHostedRoutingWait(
+function parseHostedRoutingWait(
   message: string | null | undefined,
 ): HostedRoutingWait | null {
   if (!message?.startsWith(`${ROUTING_WAIT_PREFIX} project "`)) return null
