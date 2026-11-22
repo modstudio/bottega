@@ -34,6 +34,6 @@ SET body=jsonb_set(
 WHERE scope='settings'
   AND pg_temp.dev_2592_settings_body(body) IS NOT NULL
   AND pg_temp.dev_2592_settings_body(body)->'options'->>'subagentHooks' IS DISTINCT FROM 'on';--> statement-breakpoint
-DROP FUNCTION pg_temp.dev_2592_settings_body(text);--> statement-breakpoint
 ALTER TABLE doc FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE doc_revision FORCE ROW LEVEL SECURITY;
+ALTER TABLE doc_revision FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP FUNCTION pg_temp.dev_2592_settings_body(text);
