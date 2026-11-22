@@ -23,6 +23,7 @@ import { createBoardStreamRegistry } from '../../src/record/record-board-stream.
 import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { memoryContextItemClient } from './record-api-context-items.ts'
+import { matchesStoredDoc, type StoredDoc, type StoredRevision } from './record-api-docs.ts'
 import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
 import { type MemoryQuestionInput, memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
@@ -127,6 +128,7 @@ export function idleRecordApiDeps() {
       changes: [],
     }),
     waitForRecordChange: async () => undefined,
+    readDocRevision: async () => null,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,
     clientAddresses: {
@@ -165,37 +167,6 @@ export function idleSubjectDeps(): RecordSubjectRouteDeps {
     reorderSubjects: async () => [],
     retireSubject: async () => subject,
   }
-}
-
-type StoredDoc = {
-  id: string
-  scope: string
-  subject: string | null
-  owner: string | null
-  slug: string
-  title: string
-  body: string
-  delivery: 'inject' | 'demand'
-  projectName: string | null
-  createdAt: string
-  updatedAt: string
-  deletedAt: string | null
-  latestRevisionId: string | null
-}
-
-type StoredRevision = {
-  id: string
-  docId: string
-  scope: string
-  subject: string | null
-  slug: string
-  op: string
-  title: string
-  body: string
-  delivery: string
-  author: string
-  reason: string
-  at: string
 }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
@@ -599,17 +570,7 @@ export function createMemoryRecordApiClient(
       return { items: [] }
     },
     async listDocs(query) {
-      const items = [...docs.values()].filter((doc) => {
-        if (query.scope && doc.scope !== query.scope) return false
-        if (query.subject !== undefined && doc.subject !== query.subject) return false
-        if (query.slug !== undefined && doc.slug !== query.slug) return false
-        if (query.owner !== undefined && doc.owner !== query.owner) return false
-        if (query.status !== undefined && doc.status !== query.status) return false
-        if (query.kind !== undefined && doc.kind !== query.kind) return false
-        if (!query.includeDeleted && doc.deletedAt) return false
-        if (query.updatedSince && doc.updatedAt <= query.updatedSince) return false
-        return true
-      })
+      const items = [...docs.values()].filter((doc) => matchesStoredDoc(query, doc))
       return { items, nextCursor: null }
     },
     async getDoc(id) {
@@ -672,6 +633,8 @@ export function createMemoryRecordApiClient(
         title: input.title,
         body: input.body,
         delivery: input.delivery,
+        status: input.status ?? 'current',
+        kind: input.kind ?? 'working',
         projectName: input.projectName ?? null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -735,6 +698,8 @@ export function createMemoryRecordApiClient(
         title: input.doc.title,
         body: input.doc.body,
         delivery: input.doc.delivery,
+        status: input.doc.status ?? 'current',
+        kind: input.doc.kind ?? 'working',
         projectName: input.doc.projectName ?? null,
         createdAt: input.doc.createdAt,
         updatedAt: input.doc.updatedAt,
@@ -822,6 +787,8 @@ export function createMemoryRecordApiClient(
           title: row.title,
           body: row.body,
           delivery: 'demand',
+          status: 'current',
+          kind: 'working',
           projectName: null,
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
@@ -962,6 +929,8 @@ export function createMemoryRecordApiClient(
         title: source.title,
         body: source.body,
         delivery: source.delivery as 'inject' | 'demand',
+        status: doc?.status ?? 'current',
+        kind: doc?.kind ?? 'working',
         projectName: doc?.projectName ?? null,
         createdAt: doc?.createdAt ?? now,
         updatedAt: now,

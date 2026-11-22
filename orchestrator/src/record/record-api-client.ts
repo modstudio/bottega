@@ -320,6 +320,10 @@ export type RecordApiClient = ProjectIdentityClient &
       endCursor?: string | null
     }>
     getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
+    getDocRevision(
+      id: string,
+      destination?: RecordRequestDestination,
+    ): Promise<Record<string, unknown>>
     listRevisions(
       id: string,
       destination?: RecordRequestDestination,

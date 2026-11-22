@@ -433,9 +433,12 @@ function assertDocAddressWriteAllowed(input: DocWriteInput): void {
   validate(input.scope, input.subject, input.slug)
 }
 
+function docWritePrelude(input: DocWriteInput) {
+  return [scanDocBody(input, defaultDocSecretScanner), resolvedDocWriteIdentity(input)] as const
+}
+
 async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
-  const secretScan = scanDocBody(input, defaultDocSecretScanner)
-  const identity = resolvedDocWriteIdentity(input)
+  const [secretScan, identity] = docWritePrelude(input)
   const { owner, prior } = await docWriteState(input)
   assertDocWriteRevisionForAuthority(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
@@ -954,9 +957,6 @@ export async function restoreDoc(
       subject,
       owner,
       slug,
-      title: revision.title,
-      body: revision.body,
-      delivery: revision.delivery,
       audiences: revision.audiences,
       parentSlug,
       position: revision.position,

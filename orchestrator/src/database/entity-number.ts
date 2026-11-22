@@ -30,26 +30,13 @@ export function nextEntityNumber(database: Database, entity: NumberedEntity): nu
   return row.last_number
 }
 
-const NUMBER_COLUMN = 'number'
-
-export function numberedEntityRecordId(
-  database: Database,
-  entity: NumberedEntity,
-  number: number,
-): string | null {
-  return (
-    database
-      .query<{ record_id: string }, [number]>(
-        `SELECT record_id FROM ${entity} WHERE ${NUMBER_COLUMN}=?`,
-      )
-      .get(number)?.record_id ?? null
-  )
+export function docRevisionRecordId(database: Database, number: number): string | null {
+  const rows = database
+    .query<{ record_id: string; number: number }, []>('SELECT record_id,number FROM doc_revision')
+    .all()
+  return rows.find((row) => row.number === number)?.record_id ?? null
 }
 
-export function numberedEntityRecordExists(
-  database: Database,
-  entity: NumberedEntity,
-  recordId: string,
-): boolean {
-  return database.query(`SELECT 1 FROM ${entity} WHERE record_id=?`).get(recordId) !== null
+export function docRevisionRecordExists(database: Database, recordId: string): boolean {
+  return database.query('SELECT 1 FROM doc_revision WHERE record_id=?').get(recordId) !== null
 }
