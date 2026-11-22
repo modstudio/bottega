@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 
 import { fileURLToPath } from 'node:url'
-import { gitAt } from '../shared/git.ts'
-import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
+import { readLiveCommit } from '../orchestrator/src/release/live-reading.ts'
 import { tagRungLiveDecision } from '../orchestrator/src/release/release-decision.ts'
 import { entryClosureAtCommit } from '../orchestrator/src/release/release-entry-closure.ts'
-import { readLiveCommit } from '../orchestrator/src/release/live-reading.ts'
 import { decideRequiredRungs } from '../orchestrator/src/release/release-required.ts'
 import { readTrackedReleaseRungs } from '../orchestrator/src/release/release-rungs.ts'
+import { gitAt } from '../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -15,7 +15,7 @@ function gitOutput(args: string[]): string {
   const result = gitAt(root, args)
   if (result.code !== 0) {
     throw new Error(
-      `git ${args.join(' ')} failed: ${result.stderr.trim() || `exit ${result.code}`}`,
+      `git ${args.join(' ')} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
     )
   }
   return result.stdout.trim()
@@ -26,7 +26,7 @@ function isAncestor(ancestor: string, descendant: string): boolean {
   if (result.code === 0) return true
   if (result.code === 1) return false
   throw new Error(
-    `git merge-base --is-ancestor ${ancestor} ${descendant} failed: ${result.stderr.trim() || `exit ${result.code}`}`,
+    `git merge-base --is-ancestor ${ancestor} ${descendant} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
   )
 }
 
@@ -35,7 +35,7 @@ function changedPaths(from: string, to: string): string[] {
   const result = gitAt(root, args)
   if (result.code !== 0) {
     throw new Error(
-      `git diff --name-only ${from}..${to} failed: ${result.stderr.trim() || `exit ${result.code}`}`,
+      `git diff --name-only ${from}..${to} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
     )
   }
   return splitNulPaths(result.stdout)

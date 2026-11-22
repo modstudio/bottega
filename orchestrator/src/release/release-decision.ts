@@ -1,6 +1,7 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -66,8 +67,8 @@ export type TagRungLiveDecisionInput = {
 /** Decide whether one hosted rung is sufficiently live for a release tag. */
 export function tagRungLiveDecision(input: TagRungLiveDecisionInput): Decision {
   const remedy =
-    `deploy the rung with bottega release run bottega --rung ${input.rung} --at ${input.tagCommit}, ` +
-    'or land with bottega pr merge --release-required'
+    `deploy the rung with ${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung ${input.rung} --at ${input.tagCommit}, ` +
+    `or land with ${PLATFORM_SLUG} pr merge --release-required`
   if ('error' in input.probe) {
     return {
       ok: false,

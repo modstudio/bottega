@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   parseReleaseRungs,
   releaseRungsDriftDecision,
@@ -29,7 +30,7 @@ describe('release rung snapshot drift', () => {
     )
     const decision = releaseRungsDriftDecision(edited, { ok: true, rungs: tracked })
     expect(decision.status).toBe('different')
-    expect(decision.message).toContain('bottega release rungs --write')
+    expect(decision.message).toContain(`${PLATFORM_SLUG} release rungs --write`)
   })
 
   test('reports that an unreadable register was not compared', () => {

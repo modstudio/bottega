@@ -8,10 +8,10 @@ import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseRung } from './release-required.ts'
 
-export const RELEASE_RUNGS_FILE = 'scripts/quality/release-rungs.json'
-export const RELEASE_RUNGS_GENERATOR = `${PLATFORM_SLUG} release rungs --write`
+const RELEASE_RUNGS_FILE = 'scripts/quality/release-rungs.json'
+const RELEASE_RUNGS_GENERATOR = `${PLATFORM_SLUG} release rungs --write`
 
-export type TrackedReleaseRung = Pick<RequiredReleaseRung, 'name' | 'branch'> & {
+type TrackedReleaseRung = Pick<RequiredReleaseRung, 'name' | 'branch'> & {
   live: string
   requiredWhenChanged?: readonly string[]
   entryPoints?: readonly string[]
@@ -164,7 +164,7 @@ export function registeredReleaseRungs():
 }
 
 export function writeRegisteredReleaseRungs(
-  fromDirectory = import.meta.dir,
+  fromDirectory = process.cwd(),
   environment: Record<string, string | undefined> = process.env,
 ): string {
   const registered = registeredReleaseRungs()

@@ -19,8 +19,8 @@ import {
   releaseRungProofRefusal,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
-  tagRungLiveDecision,
   selectReleaseRung,
+  tagRungLiveDecision,
   trunkFreshnessDecision,
   unprovableReleaseRungMessage,
 } from './release-decision.ts'
@@ -52,8 +52,10 @@ describe('release tag rung liveness', () => {
     expect(decision.message).toContain('hosted-hub')
     expect(decision.message).toContain('19c5bce3d18c')
     expect(decision.message).toContain('package.json')
-    expect(decision.message).toContain('bottega release run bottega --rung hosted-hub')
-    expect(decision.message).toContain('bottega pr merge --release-required')
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-hub`,
+    )
+    expect(decision.message).toContain(`${PLATFORM_SLUG} pr merge --release-required`)
   })
 
   test('refuses a diverged live commit', () => {
