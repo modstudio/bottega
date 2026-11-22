@@ -9,7 +9,7 @@ import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { releaseAtCommit } from './release-at-commit.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
-import { entryClosureAtCommit, type EntryClosure } from './release-entry-closure.ts'
+import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
   type ReleaseResult,
@@ -110,9 +110,10 @@ export function machineUpdateRungRefusal(input: {
       input.requiredSinceLive.get(rung) === false
     )
       continue
-    const releaseCommand = input.checkoutDeployable?.get(rung) === false
-      ? `${PLATFORM_SLUG} release run ${input.project} --rung ${rung}`
-      : `${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}`
+    const releaseCommand =
+      input.checkoutDeployable?.get(rung) === false
+        ? `${PLATFORM_SLUG} release run ${input.project} --rung ${rung}`
+        : `${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}`
     return (
       `refusing machine update: required rung ${rung} has not proved incoming commit ${input.incomingCommit} live; ` +
       `run ${releaseCommand}, then retry ${PLATFORM_SLUG} machine update`
@@ -265,7 +266,7 @@ const requiredReleaseRunner: RequiredReleaseRunner = {
   },
 }
 
-export function releaseCommitContains(
+function releaseCommitContains(
   project: Pick<Project, 'path'>,
   ancestor: string,
   descendant: string,
@@ -273,7 +274,7 @@ export function releaseCommitContains(
   return gitResult(['merge-base', '--is-ancestor', ancestor, descendant], project.path).ok
 }
 
-export function changedPathsBetween(
+function changedPathsBetween(
   project: Pick<Project, 'path'>,
   from: string,
   to: string,

@@ -2,14 +2,13 @@
 /** Provisions, deploys from, and releases one detached checkout at an exact commit. */
 
 import { randomUUID } from 'node:crypto'
-import { resolvedWorktreeTool, type Project } from '../project/projects.ts'
+import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import {
   createWithTool,
   createWorktree,
   withoutRunWorktreeAttribution,
 } from '../worktree/worktree-create.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
-import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   checkoutReleaseProject,
   type ReleaseResult,
@@ -26,9 +25,13 @@ export type ReleaseAtCommitReport = {
 
 export type ReleaseAtCommitDependencies = {
   project(project: string, rung: string): Project
-  create(project: Project, treeId: string, commit: string): Worktree
+  create(project: Project, treeId: string, commit: string): ReturnType<typeof createWorktree>
   deploy(project: string, rung: string, path: string, commit: string): ReleaseResult
-  remove(worktree: Worktree, project: Project, treeId: string): { removed: boolean; detail: string }
+  remove(
+    worktree: ReturnType<typeof createWorktree>,
+    project: Project,
+    treeId: string,
+  ): { removed: boolean; detail: string }
   id(): string
   now(): number
 }
@@ -48,17 +51,10 @@ const releaseAtCommitDependencies: ReleaseAtCommitDependencies = {
           withoutRunWorktreeAttribution,
           true,
         )
-      : createWorktree(
-          project.path,
-          treeId,
-          commit,
-          withoutRunWorktreeAttribution,
-          true,
-        )
+      : createWorktree(project.path, treeId, commit, withoutRunWorktreeAttribution, true)
   },
   deploy: releaseProjectFromCheckout,
-  remove: (worktree, project, treeId) =>
-    removeFor(worktree, project.path, false, false, treeId),
+  remove: (worktree, project, treeId) => removeFor(worktree, project.path, false, false, treeId),
   id: randomUUID,
   now: Date.now,
 }

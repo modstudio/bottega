@@ -352,7 +352,13 @@ function releaseTarget(
     release.rungs,
   )
   if (proofRefusal) throw new Error(proofRefusal)
-  return { project, selected, deploy: selected.deploy, trunk, checkout: checkout ?? { path: project.path } }
+  return {
+    project,
+    selected,
+    deploy: selected.deploy,
+    trunk,
+    checkout: checkout ?? { path: project.path },
+  }
 }
 
 function releaseTrunkPositionFacts(
@@ -417,13 +423,7 @@ function postDeployFacts(
       warning: null,
     }
   }
-  const waited = waitForCiDeploy(
-    target,
-    rung,
-    candidate,
-    initialLive,
-    'post-deploy live',
-  )
+  const waited = waitForCiDeploy(target, rung, candidate, initialLive, 'post-deploy live')
   const timedOut = waited.terminal.ledgerResult.exitCode !== 0
   const remedy = timedOut
     ? `; re-run ${PLATFORM_SLUG} release run ${project} --rung ${rung} once the deploy has finished, and confirm the live observation`
@@ -834,14 +834,7 @@ function releaseCommandTargetAtRung(
     checkoutPath,
     releaseCommandEnvironment(projectName, selected.name, checkout.head, forward.rollback),
   )
-  const checked = postDeployFacts(
-    deployed,
-    target,
-    projectName,
-    selected.name,
-    checkout.head,
-    live,
-  )
+  const checked = postDeployFacts(deployed, target, projectName, selected.name, checkout.head, live)
   const outputTail = checked.outputTail
   const warning = releaseWarning(redeployReason, checked.warning)
   return {

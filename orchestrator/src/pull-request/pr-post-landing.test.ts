@@ -190,6 +190,7 @@ test('a successful move fences this process and hands off the exact fixed identi
 
 test('a required rung is proved before main moves and is not delegated again', async () => {
   const events: string[] = []
+  let handOffStarted = ''
   const deployProject = {
     ...project,
     settings: {
@@ -218,7 +219,9 @@ test('a required rung is proved before main moves and is not delegated again', a
       },
       moveMain: () => events.push('move-main'),
       fence: () => {},
-      handOff: (payload) => {
+      handOff: async (payload) => {
+        handOffStarted = new Date().toISOString()
+        await Bun.sleep(10)
         events.push(payload.provedRequiredRelease ? 'hand-off-proved' : 'hand-off-unproved')
         return { output: 'child output', exitCode: 0 }
       },
@@ -228,11 +231,30 @@ test('a required rung is proved before main moves and is not delegated again', a
   expect(outcome.output.indexOf('already live at release-commit')).toBeLessThan(
     outcome.output.indexOf('main moved to merge-commit'),
   )
+  const movedAt = outcome.output.match(/main moved to merge-commit (\S+)/)?.[1]
+  expect(new Date(movedAt!).getTime()).toBeLessThanOrEqual(new Date(handOffStarted).getTime())
 })
 
 test('an unproved pre-move rung leaves main unmoved and exits 21', async () => {
   const events: string[] = []
+  const deployProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release,
+        rungs: [
+          {
+            ...project.settings.release!.rungs[0],
+            deploy: 'deploy hosted api',
+            live: 'read hosted api commit',
+          },
+        ],
+      },
+    },
+  } as Project
   const outcome = await complete({
+    project: deployProject,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),

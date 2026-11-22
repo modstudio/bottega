@@ -1,10 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import {
-  releaseAtCommit,
-  type ReleaseAtCommitDependencies,
-} from './release-at-commit.ts'
+import { type ReleaseAtCommitDependencies, releaseAtCommit } from './release-at-commit.ts'
 import type { ReleaseResult } from './release-service.ts'
 
 const project = {

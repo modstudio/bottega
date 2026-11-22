@@ -36,6 +36,76 @@ function writeReleaseResult(result: ReleaseResult): void {
   if (result.warning) log(`warning: ${result.warning}`)
 }
 
+type ReleaseOptions = {
+  rung?: string
+  at?: string
+  rollback?: string
+  behindTrunk?: string
+  redeploy?: string
+  json?: boolean
+}
+
+async function runRelease(project: string | undefined, options: ReleaseOptions): Promise<void> {
+  if (!project)
+    throw new Error(
+      `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
+    )
+  const releaseTree = options.at ? await runReleaseAtCommit(project, options) : undefined
+  const result =
+    releaseTree?.result ??
+    releaseProject(
+      project,
+      options.rung,
+      options.rollback,
+      options.behindTrunk,
+      options.redeploy,
+    )
+  writeReleaseOutput(result, releaseTree, Boolean(options.json))
+  if (result.exitCode !== 0) process.exitCode = result.exitCode
+}
+
+async function runReleaseAtCommit(
+  project: string,
+  options: ReleaseOptions,
+): Promise<ReleaseAtCommitReport> {
+  if (!options.at) throw new Error('--at requires a commit')
+  if (!options.rung) throw new Error('--at requires --rung')
+  if (options.rollback || options.behindTrunk || options.redeploy)
+    throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
+  return releaseAtCommit({ project, rung: options.rung, commit: options.at })
+}
+
+function writeReleaseOutput(
+  result: ReleaseResult,
+  releaseTree: ReleaseAtCommitReport | undefined,
+  json: boolean,
+): void {
+  if (json) {
+    log(
+      JSON.stringify(
+        releaseTree
+          ? {
+              ...result,
+              releaseTreeTiming: {
+                provisionMs: releaseTree.provisionMs,
+                deployMs: releaseTree.deployMs,
+                releaseMs: releaseTree.releaseMs,
+              },
+              ...(releaseTree.residue ? { releaseTreeResidue: releaseTree.residue } : {}),
+            }
+          : result,
+      ),
+    )
+    return
+  }
+  if (releaseTree) {
+    log(
+      `release tree timing: provision ${releaseTree.provisionMs}ms, deploy ${releaseTree.deployMs}ms, release ${releaseTree.releaseMs}ms${releaseTree.residue ? `; residue: ${releaseTree.residue}` : ''}`,
+    )
+  }
+  writeReleaseResult(result)
+}
+
 export function register(program: Command): void {
   const release = program
     .command('release [project]')
@@ -49,58 +119,7 @@ export function register(program: Command): void {
     .option('--redeploy <reason>', 'deploy again even when this commit is already live')
     .option('--json', 'write the release result as JSON')
     .allowExcessArguments(false)
-    .action(async (project, options) => {
-      if (!project)
-        throw new Error(
-          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
-        )
-      let result: ReleaseResult
-      let releaseTree: ReleaseAtCommitReport | undefined
-      if (options.at) {
-        if (!options.rung) throw new Error('--at requires --rung')
-        if (options.rollback || options.behindTrunk || options.redeploy)
-          throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
-        releaseTree = await releaseAtCommit({
-          project,
-          rung: options.rung,
-          commit: options.at,
-        })
-        result = releaseTree.result
-      } else {
-        result = releaseProject(
-          project,
-          options.rung,
-          options.rollback,
-          options.behindTrunk,
-          options.redeploy,
-        )
-      }
-      if (options.json) {
-        log(
-          JSON.stringify(
-            releaseTree
-              ? {
-                  ...result,
-                  releaseTreeTiming: {
-                    provisionMs: releaseTree.provisionMs,
-                    deployMs: releaseTree.deployMs,
-                    releaseMs: releaseTree.releaseMs,
-                  },
-                  ...(releaseTree.residue ? { releaseTreeResidue: releaseTree.residue } : {}),
-                }
-              : result,
-          ),
-        )
-      } else {
-        if (releaseTree) {
-          log(
-            `release tree timing: provision ${releaseTree.provisionMs}ms, deploy ${releaseTree.deployMs}ms, release ${releaseTree.releaseMs}ms${releaseTree.residue ? `; residue: ${releaseTree.residue}` : ''}`,
-          )
-        }
-        writeReleaseResult(result)
-      }
-      if (result.exitCode !== 0) process.exitCode = result.exitCode
-    })
+    .action(runRelease)
 
   release
     .command('check <tag>')

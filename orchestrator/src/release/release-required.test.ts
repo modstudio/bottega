@@ -5,8 +5,8 @@ import { releaseProofDecision } from './release-decision.ts'
 import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
-  incomingRequiredRungGuard,
   type IncomingRequiredRungDependencies,
+  incomingRequiredRungGuard,
   machineUpdateRungRefusal,
   type RequiredReleaseRung,
   type RequiredReleaseRunner,

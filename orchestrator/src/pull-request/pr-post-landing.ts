@@ -412,7 +412,7 @@ function postLandingTimingTrace(
   ]
 }
 
-export async function completePullRequestPostLanding(input: {
+type CompletePullRequestPostLandingInput = {
   adapter: RemainingStageAdapter
   postLandingAdapter?: PullRequestPostLandingAdapter
   database: Database
@@ -426,7 +426,11 @@ export async function completePullRequestPostLanding(input: {
   recordingError?: string
   requeueOutput?: string
   movesInstallation?: boolean
-}): Promise<PullRequestMergeOutcome> {
+}
+
+export async function completePullRequestPostLanding(
+  input: CompletePullRequestPostLandingInput,
+): Promise<PullRequestMergeOutcome> {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
@@ -591,14 +595,36 @@ function releaseAfterPreDeploy(
   const after = adapter.release({ project, mergeCommit, rungs: remainingPlans })
   const provedByRung = new Map(proved.releases.map((release) => [release.rung, release]))
   const afterByRung = new Map(after.releases.map((release) => [release.rung, release]))
-  const releases = plans.map(
-    ({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!,
-  )
+  const releases = plans.map(({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!)
   return {
     required: plans.filter(({ required }) => required).map(({ rung }) => rung),
     releases,
     satisfied: releases.every(({ satisfied }) => satisfied),
   }
+}
+
+function requiredReleaseForChild(input: {
+  adapter: PullRequestPostLandingChildAdapter
+  checkoutFailure: string | null
+  payload: PullRequestPostLandingPayload
+  plans: ReleaseRungPlan[]
+  project: Project
+}): RequiredReleaseReport {
+  const { adapter, checkoutFailure, payload, plans, project } = input
+  if (payload.rungDecisionError)
+    return undecidedRequiredRelease(plans, payload.rungDecisionError)
+  if (!payload.releaseRequired) return releaseRequiredFlagAbsent(plans)
+  if (checkoutFailure) return failedRequiredRelease(plans, checkoutFailure)
+  if (payload.provedRequiredRelease) {
+    return releaseAfterPreDeploy(
+      adapter,
+      project,
+      payload.mergeCommit,
+      plans,
+      payload.provedRequiredRelease,
+    )
+  }
+  return adapter.release({ project, mergeCommit: payload.mergeCommit, rungs: plans })
 }
 
 function guardRealPostLandingChildAdapter(
@@ -688,25 +714,13 @@ export async function runPullRequestPostLanding(
       payload.requiredRungs,
       project.settings.trunk ?? '',
     )
-  const requiredRelease = payload.rungDecisionError
-      ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
-      : !payload.releaseRequired
-        ? releaseRequiredFlagAbsent(rungPlans)
-        : checkoutFailure
-          ? failedRequiredRelease(rungPlans, checkoutFailure)
-          : payload.provedRequiredRelease
-            ? releaseAfterPreDeploy(
-                adapter,
-                project,
-                payload.mergeCommit,
-                rungPlans,
-                payload.provedRequiredRelease,
-              )
-          : adapter.release({
-              project,
-              mergeCommit: payload.mergeCommit,
-              rungs: rungPlans,
-            })
+  const requiredRelease = requiredReleaseForChild({
+    adapter,
+    checkoutFailure,
+    payload,
+    plans: rungPlans,
+    project,
+  })
   if (checkoutFailure && !payload.promoteWorkflowDrafts && requiredRelease.satisfied) {
     promotion = {
       output: `${checkoutFailure}; ${postLandingRecovery(payload.target, payload.depth ?? undefined)}`,
