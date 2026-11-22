@@ -1,11 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
-import { TASK_PUSH_REPAIRS_QUEUE_SITE } from './hosted-queue-decision.ts'
+import { chunks } from './ingest/batches.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
-  DIRECT_RECORD_TABLES,
   drainHostedOutbox,
+  HOSTED_OUTBOX_BATCH_SIZE,
   type HostedOutboxReport,
   queueHostedChange,
 } from './outbox.ts'
@@ -23,7 +23,9 @@ import {
   HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
+  SYNCED_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
+import { orderHostedPushChanges } from './push-order.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -66,6 +68,10 @@ type Options = {
 
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set(
+  PUSHABLE_HUB_CHANGE_TABLES.filter((table) => !SYNCED_HUB_CHANGE_TABLES.has(table)),
+)
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
@@ -232,20 +238,12 @@ async function hostedTableIds(
 function queueRepairs(candidates: readonly RepairCandidate[]) {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
     const rows = candidates.filter(
-      (candidate) => candidate.table === table && !DIRECT_RECORD_TABLES.has(candidate.table),
+      (candidate) => candidate.table === table && !DIRECT_REPAIR_TABLES.has(candidate.table),
     )
     if (!rows.length) continue
     writeTransaction((conn) => {
       for (const row of rows)
-        queueHostedChange(
-          conn,
-          table,
-          row.id,
-          'upsert',
-          undefined,
-          row.fields,
-          TASK_PUSH_REPAIRS_QUEUE_SITE,
-        )
+        queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
     })
   }
 }
@@ -257,7 +255,7 @@ async function sendDirectRepairs(
 ): Promise<number> {
   const directCandidates = new Map(
     candidates
-      .filter((candidate) => DIRECT_RECORD_TABLES.has(candidate.table))
+      .filter((candidate) => DIRECT_REPAIR_TABLES.has(candidate.table))
       .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
   )
   let sent = 0
@@ -272,16 +270,20 @@ async function sendDirectRepairs(
           operation: 'upsert',
           fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
         })
-        if (!loaded)
-          throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
-        return [loaded.change]
+        if (!loaded) return []
+        return [
+          loaded.change.op === 'upsert' && candidate.fields !== null
+            ? { ...loaded.change, fields: candidate.fields }
+            : loaded.change,
+        ]
       }),
     )
     if (!changes.length) continue
-    await sendHostedChanges('note acknowledgement repair', [changes], {
+    const ordered = orderHostedPushChanges(changes)
+    await sendHostedChanges('record repair', [...chunks(ordered, HOSTED_OUTBOX_BATCH_SIZE)], {
       ...requestOptions,
       recordSpace: space.spaceId,
-      conflictRemedy: `${PLATFORM_SLUG} note list`,
+      conflictRemedy: `${PLATFORM_SLUG} task push`,
     })
     sent += changes.length
   }
@@ -339,8 +341,10 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
-  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   queueRepairs(plan.repair)
+  const deliveryOffReason = hostedDeliveryRefusal()
+  if (deliveryOffReason) throw new Error(deliveryOffReason)
+  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,

@@ -34,7 +34,7 @@ import {
   type RegisteredTaskSpace,
 } from './task-project-space.ts'
 
-const HOSTED_OUTBOX_BATCH_SIZE = 500
+export const HOSTED_OUTBOX_BATCH_SIZE = 500
 const HOSTED_OUTBOX_LEASE_MS = 60_000
 const HOSTED_OUTBOX_LEASE_RENEW_MS = 20_000
 const HOSTED_OUTBOX_LEASE_KEY = 'hosted-outbox.lease'
@@ -58,7 +58,7 @@ export type OutboxEntry = {
   kept_values: string | null
 }
 
-export const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
   HOSTED_NOTE_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
 ])

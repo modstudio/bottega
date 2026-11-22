@@ -1,7 +1,6 @@
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import type { HostedWriteMode } from './hosted-write-mode.ts'
 import {
-  HOSTED_COMMENT_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
@@ -21,7 +20,6 @@ export const TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE = 'trackers.retireOutOfScop
 export const TRACKERS_BACKFILL_QUEUE_SITE = 'trackers.backfillTrackerTasks'
 export const TRACKERS_WRITE_CACHE_QUEUE_SITE = 'trackers.writeTrackerCache'
 export const TRACKERS_DROP_DELETED_QUEUE_SITE = 'trackers.dropDeletedTrackerTasks'
-export const TASK_PUSH_REPAIRS_QUEUE_SITE = 'task-push.queueRepairs'
 
 export const HOSTED_QUEUE_ALLOWLIST = [
   {
@@ -43,12 +41,6 @@ export const HOSTED_QUEUE_ALLOWLIST = [
     { site: TRACKERS_WRITE_CACHE_QUEUE_SITE, table, removedBy: `note ${note}#2924` },
     { site: TRACKERS_DROP_DELETED_QUEUE_SITE, table, removedBy: `note ${note}#2924` },
   ]),
-  ...[
-    HOSTED_TASK_TABLE,
-    HOSTED_COMMENT_TABLE,
-    HOSTED_DOCUMENT_TABLE,
-    HOSTED_STATUS_EVENT_TABLE,
-  ].map((table) => ({ site: TASK_PUSH_REPAIRS_QUEUE_SITE, table, removedBy: `note ${note}#2925` })),
 ] as const
 
 export function hostedQueueRefusal({

@@ -10,7 +10,6 @@ import {
   HOSTED_QUEUE_ALLOWLIST,
   hostedQueueRefusal,
   OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
-  TASK_PUSH_REPAIRS_QUEUE_SITE,
   TRACKERS_BACKFILL_QUEUE_SITE,
   TRACKERS_DROP_DELETED_QUEUE_SITE,
   TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
@@ -132,13 +131,6 @@ describe('hosted outbox', () => {
         {
           source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
           label: 'TRACKERS_DROP_DELETED_QUEUE_SITE',
-        },
-      ],
-      [
-        TASK_PUSH_REPAIRS_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8'),
-          label: 'TASK_PUSH_REPAIRS_QUEUE_SITE',
         },
       ],
     ])
