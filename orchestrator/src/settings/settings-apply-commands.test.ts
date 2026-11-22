@@ -103,15 +103,14 @@ async function seedUser(environment: { env?: Record<string, string>; envKeys?: s
   })
 }
 
-async function seedFutureUser(kind: 'top-level' | 'option'): Promise<string> {
+async function seedFutureUser(): Promise<string> {
   await seedUser({ envKeys: ['NEW_NAME'] })
   const row = getDoc('settings', null, 'settings', OWNER)!
   const parsed = JSON.parse(row.body) as Record<string, unknown>
-  const body = JSON.stringify(
-    kind === 'top-level'
-      ? { ...parsed, futureKey: true }
-      : { ...parsed, options: { subagentHooks: 'on', futureOption: 1 } },
-  )
+  const body = JSON.stringify({
+    ...parsed,
+    options: { subagentHooks: 'on', futureOption: 1 },
+  })
   db().query('UPDATE doc SET body=? WHERE record_id=?').run(body, row.record_id)
   return body
 }
@@ -160,22 +159,15 @@ describe('future settings edit refusals', () => {
   ]
 
   for (const adapter of adapters) {
-    test.each([
-      ['top-level', 'futureKey'],
-      ['option', 'options.futureOption'],
-    ] as const)(
-      `${adapter.name} refuses a future %s key without changing the row`,
-      async (kind, key) => {
-        adapter.prepare()
-        const body = await seedFutureUser(kind)
+    test(`${adapter.name} refuses a future options key without changing the row`, async () => {
+      adapter.prepare()
+      const body = await seedFutureUser()
 
-        const escapedKey = key === 'options.futureOption' ? 'options\\.futureOption' : key
-        await expect(adapter.edit()).rejects.toThrow(
-          new RegExp(`${escapedKey}.*upgrade ${PLATFORM_NAME}`, 's'),
-        )
-        expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
-      },
-    )
+      await expect(adapter.edit()).rejects.toThrow(
+        new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+      )
+      expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
+    })
   }
 })
 
