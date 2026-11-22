@@ -48,7 +48,7 @@ test('a no-drift pass reclaims a dirty owned leftover', async () => {
     const leftoverRunId = readWorktreeMarker(tree).runRecordId
     expect(leftoverRunId).not.toBeNull()
     const base = mirrorFixturePort(root)
-    let closeOutOutcome: string | null = null
+    const observedCloseOut: { outcome: string | null } = { outcome: null }
     const result = await mirrorRepositoryCanon({
       project: 'cm-leftover-reclaim',
       dryRun: false,
@@ -57,14 +57,14 @@ test('a no-drift pass reclaims a dirty owned leftover', async () => {
           if (existsSync(tree) && base.treeDirty(tree) === true)
             return { outcome: 'held', detail: 'refused; dirty fixture tree' }
           const closed = base.releaseRun(id, preparation)
-          if (id === leftoverRunId) closeOutOutcome = closed.outcome
+          if (id === leftoverRunId) observedCloseOut.outcome = closed.outcome
           return closed
         },
       }),
       noteFailure: async () => {},
     })
     expect(result[0]).toMatchObject({ failed: false, text: 'nothing to do' })
-    expect(closeOutOutcome).toBe('released')
+    expect(observedCloseOut.outcome).toBe('released')
     expect(existsSync(tree)).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })

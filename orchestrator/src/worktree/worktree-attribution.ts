@@ -36,8 +36,7 @@ export function cleanRunTree(path: string): void {
   const result = gitResult(['clean', '-fdx', '-e', ORCH_RUN_MARKER], path)
   if (!result.ok)
     throw new Error(
-      `git clean -fdx -e ${ORCH_RUN_MARKER} failed: ${result.stderr || 'unknown error'}; ` +
-        `cleared by: resolve the reported git clean error in ${path}, then retry the operation`,
+      `git clean -fdx -e ${ORCH_RUN_MARKER} failed in ${path}; resolve the checkout's git clean error, then retry the operation`,
     )
 }
 
