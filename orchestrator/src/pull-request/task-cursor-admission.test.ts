@@ -12,6 +12,8 @@ const input = {
   taskKey: 'DEV-2387',
   harnessSession: 'session-a',
   systemJob: null,
+  branch: 'DEV-2387-change',
+  canonMirrorBranch: 'DEV-1007-canon-mirror',
   heldCursors: [] as Array<{
     number: number
     project: string
@@ -130,13 +132,15 @@ describe('pull-request task cursor admission', () => {
         ...input,
         taskKey: 'DEV-1007',
         systemJob: CANON_MIRROR_JOB,
+        branch: 'DEV-1007-canon-mirror',
       }),
     ).toEqual({ kind: 'allow' })
     expect(
       decidePullRequestTaskCursorAdmission({
         ...input,
         taskKey: 'DEV-2581',
-        systemJob: null,
+        systemJob: CANON_MIRROR_JOB,
+        branch: 'DEV-2581-change',
       }).kind,
     ).toBe('refuse')
   })

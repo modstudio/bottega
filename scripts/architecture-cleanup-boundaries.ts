@@ -439,6 +439,7 @@ export const cleanupBoundarySpecs = [
       './branch-trunk-tip.ts',
       './branches.ts',
       './other-branch-state.ts',
+      './task-branch.ts',
       './task-status-observation.ts',
       '../../../shared/bounded-process.ts',
     ],

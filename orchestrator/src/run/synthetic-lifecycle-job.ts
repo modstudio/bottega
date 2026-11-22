@@ -11,9 +11,15 @@ export const SYNTHETIC_LIFECYCLE_JOBS = [
   CANON_MIRROR_JOB,
   ISSUE_BEFORE_TREE_JOB,
 ] as const
+export const SYSTEM_LIFECYCLE_JOBS = [CANON_MIRROR_JOB] as const
 
+/** Which jobs act as the system rather than under a session's task cursor. */
 export function isSystemLifecycleJob(job: string | null): boolean {
-  return job === CANON_MIRROR_JOB
+  return job !== null && (SYSTEM_LIFECYCLE_JOBS as readonly string[]).includes(job)
+}
+
+export function canonMirrorBranchName(key: string): string {
+  return `${key}-canon-mirror`
 }
 
 export function isSyntheticLifecycleJob(job: string): boolean {

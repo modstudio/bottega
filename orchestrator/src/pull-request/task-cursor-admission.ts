@@ -9,7 +9,10 @@ import { classifyCaller, resolveCallerIdentity } from '../caller-classification.
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-import { isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
+import {
+  canonMirrorBranchName,
+  isSystemLifecycleJob,
+} from '../run/synthetic-lifecycle-job.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 
 type HeldTaskCursor = {
@@ -30,8 +33,15 @@ export function decidePullRequestTaskCursorAdmission(input: {
   harnessSession: string | null
   heldCursors: readonly HeldTaskCursor[]
   systemJob: string | null
+  branch: string
+  canonMirrorBranch: string | null
 }): PullRequestTaskCursorAdmission {
-  if (isSystemLifecycleJob(input.systemJob)) return { kind: 'allow' }
+  if (
+    isSystemLifecycleJob(input.systemJob) &&
+    input.canonMirrorBranch !== null &&
+    input.branch === input.canonMirrorBranch
+  )
+    return { kind: 'allow' }
   if (!input.taskKey || !input.harnessSession) return { kind: 'allow' }
   const matching = input.heldCursors.filter(
     (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
@@ -118,6 +128,10 @@ export async function assertPullRequestTaskCursorAdmission(
     harnessSession,
     heldCursors,
     systemJob: input.systemJob ?? null,
+    branch: input.branch,
+    canonMirrorBranch: input.project.settings.canonMirrorKey?.trim()
+      ? canonMirrorBranchName(input.project.settings.canonMirrorKey.trim())
+      : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }

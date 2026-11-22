@@ -25,6 +25,7 @@ import { isProbeOnlyMint } from './branch-state.ts'
 import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { taskKeyToken } from './other-branch-state.ts'
+import { taskBranchContentLanded } from './task-branch.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -127,21 +128,6 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
-function branchContentLanded(
-  project: NonNullable<ReturnType<typeof projectByName>>,
-  tip: string,
-): boolean {
-  try {
-    const trunk = project.settings.trunk?.trim() ?? ''
-    if (!trunk) return false
-    const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, args))
-    const trunkTree = git(project.path, ['rev-parse', '--verify', `${trunkTip}^{tree}`])
-    return git(project.path, ['merge-tree', '--write-tree', trunkTip, tip]) === trunkTree
-  } catch {
-    return false
-  }
-}
-
 export function composeBranchDisposalRefusal(input: {
   reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
   project: string
@@ -211,7 +197,19 @@ async function planBranchDisposal(input: {
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
   const systemJobMinted = runMinted && mintingRuns.every((run) => isSystemLifecycleJob(run.job))
-  const contentLanded = row ? branchContentLanded(project, row.tip) : false
+  const trunk = project.settings.trunk?.trim() ?? ''
+  let contentLanded = false
+  if (row && trunk) {
+    try {
+      contentLanded = taskBranchContentLanded({
+        cwd: project.path,
+        trunkTip: resolveLandingTrunkTip(trunk, (args) => git(project.path, args)),
+        branchTip: row.tip,
+      })
+    } catch {
+      contentLanded = false
+    }
+  }
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
