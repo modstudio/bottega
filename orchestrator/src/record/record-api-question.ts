@@ -100,6 +100,23 @@ export function registerRecordQuestionRoutes(
   deps: RecordQuestionRouteDeps,
   ports: Ports,
 ): void {
+  app.get('/v1/questions/memberships', async (context) => {
+    const tenant = ports.scope(context)
+    if (!tenant) return ports.noSpace(context)
+    if (!deps.readQuestions)
+      return context.json({ error: 'hosted question reads are unavailable' }, 503)
+    const query = questionReadSchema.safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
+    const allowed =
+      (query.data.read === 'inbox' && query.data.changedAfter === undefined) ||
+      query.data.read === 'open-for-tasks'
+    if (!allowed)
+      return context.json(
+        { error: 'question memberships reads allow only inbox without changedAfter and open-for-tasks' },
+        400,
+      )
+    return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
+  })
   app.get('/v1/questions', async (context) => {
     const tenant = ports.scope(context)
     if (!tenant) return ports.noSpace(context)

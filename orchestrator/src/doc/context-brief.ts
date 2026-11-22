@@ -238,24 +238,26 @@ export async function storedBriefHolders(
   )
   const openByTask = new Map<string, Array<{ number: number; question: string }>>()
   const unresolvedProjects = new Set<string>()
+  const resolvedTaskReferences: typeof taskReferences = []
   for (const projectName of new Set(taskReferences.map(({ project }) => project))) {
     const project = projectByName(projectName, database)
     if (!project) {
       unresolvedProjects.add(projectName)
       continue
     }
-    const projectTasks = taskReferences.filter((reference) => reference.project === projectName)
-    const rows = await openQuestionsForTasks(
-      database,
-      projectTasks.map(({ recordId }) => recordId),
-      project.recordId,
+    resolvedTaskReferences.push(
+      ...taskReferences.filter((reference) => reference.project === projectName),
     )
-    for (const row of rows) {
-      const taskId = String(row.workflow_task_record_id)
-      const questions = openByTask.get(taskId) ?? []
-      questions.push({ number: Number(row.number), question: String(row.question) })
-      openByTask.set(taskId, questions)
-    }
+  }
+  const rows = await openQuestionsForTasks(
+    database,
+    resolvedTaskReferences.map(({ recordId }) => recordId),
+  )
+  for (const row of rows) {
+    const taskId = String(row.workflow_task_record_id)
+    const questions = openByTask.get(taskId) ?? []
+    questions.push({ number: Number(row.number), question: String(row.question) })
+    openByTask.set(taskId, questions)
   }
   const holderAddresses = references.map((reference) =>
     reference.kind === 'session'

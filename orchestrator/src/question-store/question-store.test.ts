@@ -463,6 +463,13 @@ test('SQLite and record question adapters satisfy their shared read and write co
             })),
           }
         },
+        readMembershipQuestions: async (input) => {
+          const result = await hostedStore.read(input)
+          return {
+            ...result,
+            items: result.items.map((row) => ({ ...row, space_id: SPACE_ID })),
+          }
+        },
         writeQuestion: (intent, input) => hostedStore.write(intent, input),
       },
     }),
@@ -573,6 +580,30 @@ test('record question reads fan a bare number across reachable record spaces', a
 })
 
 test.each([
+  { read: 'inbox' },
+  { read: 'open-for-tasks', taskRecordIds: [newRecordId()] },
+] satisfies QuestionReadInput[])('record $read uses one memberships request', async (input) => {
+  const database = migratedTestDatabase()
+  const requests: string[] = []
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      readQuestions: async () => {
+        requests.push('destination')
+        return { items: [] }
+      },
+      readMembershipQuestions: async () => {
+        requests.push('memberships')
+        return { items: [] }
+      },
+    },
+  })
+  await store.read(input)
+  expect(requests).toEqual(['memberships'])
+  database.close()
+})
+
+test.each([
   { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] },
   { read: 'for-run', runId: RUN_ID },
   { read: 'for-runs', runIds: [RUN_ID, SECOND_RUN_ID] },
@@ -648,7 +679,7 @@ test('record inbox paging advances independently across every reachable space', 
     },
   })
   const seen: string[] = []
-  let changedAfter: string | undefined
+  let changedAfter: string | undefined = '0'
   let more = true
   while (more) {
     const page = await store.read({ read: 'inbox', limit: 1, changedAfter })
@@ -729,7 +760,7 @@ test('merged questions follow asking order, because numbers repeat across spaces
   database.close()
 })
 
-test('a reused record store retries identity after a failed read', async () => {
+test('a reused record store retries identity after a failed destination list read', async () => {
   const database = migratedTestDatabase()
   let identityReads = 0
   const store = new RecordQuestionStore({
@@ -743,8 +774,10 @@ test('a reused record store retries identity after a failed read', async () => {
       readQuestions: async () => ({ items: [], more: false }),
     },
   })
-  await expect(store.read({ read: 'inbox' })).rejects.toThrow('record API unavailable')
-  expect((await store.read({ read: 'inbox' })).items).toEqual([])
+  await expect(store.read({ read: 'by-number', number: 1 })).rejects.toThrow(
+    'record API unavailable',
+  )
+  expect((await store.read({ read: 'by-number', number: 1 })).items).toEqual([])
   expect(identityReads).toBe(2)
   database.close()
 })
@@ -825,6 +858,13 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
           { id: newRecordId(), run_id: runId, session_id: 'missing-session' },
         ],
       }),
+      readMembershipQuestions: async () => ({
+        items: [
+          { id: question.id, run_id: runId, session_id: 'live-session', space_id: SPACE_ID },
+          { id: newRecordId(), run_id: runId, session_id: 'stale-session', space_id: SPACE_ID },
+          { id: newRecordId(), run_id: runId, session_id: 'missing-session', space_id: SPACE_ID },
+        ],
+      }),
     },
   })
   await store.write('ask', body(question))
@@ -881,6 +921,9 @@ test('hosted question selection and pending delivery never touch the local quest
             )
           : [...rows.values()],
       cursor: input.read === 'rulings' ? 'record-cursor' : undefined,
+    }),
+    readMembershipQuestions: async () => ({
+      items: [...rows.values()].map((row) => ({ ...row, space_id: SPACE_ID })),
     }),
   } as unknown as RecordApiClient
   const previous = process.env.BOTTEGA_RECORD_API_URL
