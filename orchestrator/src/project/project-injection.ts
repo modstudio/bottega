@@ -151,6 +151,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           name: z.string(),
           branch: z.string(),
           deploy: z.string().optional(),
+          preflight: z.string().trim().min(1).optional(),
           live: z.string().trim().min(1).optional(),
           liveVersion: objectIn(mode)({
             command: z.string().trim().min(1),

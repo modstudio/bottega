@@ -182,7 +182,7 @@ export function mappedVersionCommit(
   )
 }
 
-const runLiveCommand: LiveReadingRunner = (command, cwd, timeoutMs) => {
+export const runLiveCommand: LiveReadingRunner = (command, cwd, timeoutMs) => {
   const result = Bun.spawnSync(['/bin/sh', '-lc', command], {
     cwd,
     env: releaseProcessEnvironment(targetGitEnvironment(cwd)),

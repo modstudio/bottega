@@ -20,6 +20,7 @@ export type RequiredReleaseRung = {
   name: string
   branch: string
   deploy?: string
+  preflight?: string
   onDemand?: boolean
   live?: string
   liveVersion?: { command: string; file: string; key: string }
