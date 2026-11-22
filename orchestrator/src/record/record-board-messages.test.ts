@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { BOARD_BODY_MAX_CHARS } from '../board/board-policy.ts'
 import { hostedBoardFilingFailRefusal } from './record-board-message-refusal.ts'
 
@@ -19,7 +20,7 @@ test('filing-fail error is bounded and refused when secret-shaped without echoin
   expect(secretRefusal).not.toContain(secret)
   for (const task of [
     '--arg key=DEV-1007',
-    'bottega workflow compose fix-defect --arg key=DEV-1007 --arg branch=x',
+    `${PLATFORM_NAME.toLowerCase()} workflow compose fix-defect --arg key=DEV-1007 --arg branch=x`,
     'key=STO-1349 and more',
     'remedy: --arg key=DEV-2568 --arg worktree=/tmp/x',
   ])
@@ -28,9 +29,7 @@ test('filing-fail error is bounded and refused when secret-shaped without echoin
     'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
   )
   expect(
-    hostedBoardFilingFailRefusal(
-      '--arg token=ghp_123456789012345678901234567890123456 --arg x=y',
-    ),
+    hostedBoardFilingFailRefusal('--arg token=ghp_123456789012345678901234567890123456 --arg x=y'),
   ).toBe(
     'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
   )

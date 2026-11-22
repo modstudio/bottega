@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from './brand.ts'
 import {
   containsSecretShaped,
   redactSecretShaped,
@@ -49,7 +50,7 @@ test('whole 40-hex and 64-hex tokens retain detection semantics', () => {
 test('assignment excludes delimited uppercase task keys but still catches credentials', () => {
   for (const text of [
     '--arg key=DEV-1007',
-    'bottega workflow compose fix-defect --arg key=DEV-1007 --arg branch=x',
+    `${PLATFORM_NAME.toLowerCase()} workflow compose fix-defect --arg key=DEV-1007 --arg branch=x`,
     'key=STO-1349 and more',
     'remedy: --arg key=DEV-2568 --arg worktree=/tmp/x',
   ]) {
@@ -63,18 +64,25 @@ test('assignment excludes delimited uppercase task keys but still catches creden
 })
 
 test.each([
-  ['million-character token-shaped input', (() => {
-    const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url')
-    const remaining = 1_000_000 - header.length - 2
-    const payloadLength = Math.floor(remaining / 2)
-    return `${header}.${'a'.repeat(payloadLength)}.${'b'.repeat(remaining - payloadLength)}`
-  })()],
+  [
+    'million-character token-shaped input',
+    (() => {
+      const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url')
+      const remaining = 1_000_000 - header.length - 2
+      const payloadLength = Math.floor(remaining / 2)
+      return `${header}.${'a'.repeat(payloadLength)}.${'b'.repeat(remaining - payloadLength)}`
+    })(),
+  ],
   ['million-character dotless word run', 'a'.repeat(1_000_000)],
-] as const)('%s is scanned within the gate test budget', (_name, input) => {
-  const started = performance.now()
-  redactSecretShaped(input)
-  expect(performance.now() - started).toBeLessThan(1_000)
-}, 5_000)
+] as const)(
+  '%s is scanned within the gate test budget',
+  (_name, input) => {
+    const started = performance.now()
+    redactSecretShaped(input)
+    expect(performance.now() - started).toBeLessThan(1_000)
+  },
+  5_000,
+)
 
 test('rules table validation refuses an unknown kind', () => {
   expect(() =>
