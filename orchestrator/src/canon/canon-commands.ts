@@ -9,8 +9,8 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
 import { listDocsStore as listDocs } from '../doc/doc-read-store.ts'
+import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
 import {
   isProjectRepository,

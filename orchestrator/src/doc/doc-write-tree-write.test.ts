@@ -9,7 +9,7 @@ import { projectByName, upsertProject } from '../project/projects.ts'
 import { docCommand } from './doc-commands.ts'
 import { canonRemovalRefusal } from './doc-write-allowed.ts'
 import { selectDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
-import { getDoc } from './docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 
 let fixtureRoot: string | null = null
 

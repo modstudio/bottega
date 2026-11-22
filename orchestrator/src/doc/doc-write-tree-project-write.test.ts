@@ -8,7 +8,7 @@ import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { upsertProject } from '../project/projects.ts'
 import { docCommand } from './doc-commands.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
-import { getDoc } from './docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 
 let fixtureRoot: string | null = null
 

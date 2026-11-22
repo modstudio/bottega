@@ -2,8 +2,8 @@
 /** Reports cached customer articles whose command mentions no longer resolve. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { checkCustomerGuideCommands } from '../doc/doc-command-check.ts'
 import { readDocs } from '../doc/doc-authoritative-read.ts'
+import { checkCustomerGuideCommands } from '../doc/doc-command-check.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export async function staleCustomerGuideCommandConditions(): Promise<MonitorCondition[]> {

@@ -5,7 +5,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { upsertProject } from '../project/projects.ts'
-import { getDoc, setDoc } from './docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
+import { setDoc } from './docs.ts'
 
 let priorRecordApiUrl: string | undefined
 

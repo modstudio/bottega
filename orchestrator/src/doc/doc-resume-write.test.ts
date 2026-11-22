@@ -13,7 +13,8 @@ import {
 } from '../record/record-docs.ts'
 import { resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { openResumeViolations, resumeWriteRefusal } from './doc-resume-write.ts'
-import { getDoc, listDocRevisions, restoreDoc } from './docs.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import { restoreDoc } from './docs.ts'
 
 const written = '2026-10-20T12:34:56.000Z'
 const actorUrl = process.env.BOTTEGA_RECORD_URL

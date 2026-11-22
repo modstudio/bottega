@@ -12,7 +12,8 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { getDoc, setDoc } from '../doc/docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
+import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseStoredOwnedSettings, serializeOwnedSettings } from './settings.ts'
 import {

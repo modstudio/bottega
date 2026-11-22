@@ -6,7 +6,8 @@ import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
-import { getDoc, listDocRevisions, listOpenResumes, restoreDoc } from './docs.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import { listOpenResumes, restoreDoc } from './docs.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const knownRepository = repositoryRoot

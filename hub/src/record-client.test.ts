@@ -584,11 +584,11 @@ describe('record client', () => {
     const client = clientWith(fetch)
     await client.docs()
     await client.docs({ acrossReadableSpaces: true })
-    await client.docs({ slug: 'guide', owner: null })
+    await client.docs({ slug: 'guide', owner: '01990000-0000-7000-8000-000000000001' })
     expect(urls).toEqual([
       'https://api.example.test/v1/docs',
       'https://api.example.test/v1/docs?acrossReadableSpaces=true',
-      'https://api.example.test/v1/docs?slug=guide&owner=',
+      'https://api.example.test/v1/docs?slug=guide&owner=01990000-0000-7000-8000-000000000001',
     ])
   })
 

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { getDoc, getDocRevision, listDocRevisions, listDocs, setDoc } from './docs.ts'
+import { getDoc, getDocRevision, listDocRevisions, listDocs } from '../../test/fixtures/doc-local-read.ts'
+import { setDoc } from './docs.ts'
 
 test('audience, parent, position, and featured round trip through set, list, and history', async () => {
   const parent = await setDoc({

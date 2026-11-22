@@ -25,16 +25,18 @@ import { db } from '../database/db.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import {
-  type AuthoritativeDocHistory,
-  type DocListFilters,
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
-  readDocHistory,
   readDocs as authoritativeDocs,
+  type DocListFilters,
+  type DocRevision,
+  type DocRevisionMetadata,
+  readDocHistory,
   readOpenResumes,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
+import type { DocHistoryPresentation } from './doc-history-source.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
@@ -72,7 +74,10 @@ type DocPresentation = {
   cwd(): string
   exitCode?(code: number): void
 }
-type DocHistory = AuthoritativeDocHistory
+type DocHistory = DocHistoryPresentation<
+  DocRevisionMetadata & { authorName?: string | null },
+  DocRevision & { authorName?: string | null }
+>
 type DocCommandPorts = {
   selectDocWriteTree(input: {
     scope: string
@@ -132,7 +137,7 @@ async function lintDocs(flags: DocFlags, presentation: DocPresentation): Promise
 
 async function listedLintedDocs(
   flags: DocFlags,
-  lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
+  lint: (doc: Awaited<ReturnType<typeof authoritativeDocs>>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
@@ -146,7 +151,7 @@ async function listedLintedDocs(
 
 async function listedDocFindings(
   flags: DocFlags,
-  lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
+  lint: (doc: Awaited<ReturnType<typeof authoritativeDocs>>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
   return (await listedLintedDocs(flags, lint)).flatMap(projectListedDocFindings)
 }
@@ -843,8 +848,9 @@ async function selectedDocHistory(
   owner: string | null,
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<DocHistory | null> {
-  void ports
-  return readDocHistory(address.scope, address.subject, address.slug, owner)
+  return readDocHistory(address.scope, address.subject, address.slug, owner, (doc) =>
+    ports.revisionHistory({ ...address, recordId: doc.record_id }),
+  )
 }
 
 async function restoreDocCommand(
@@ -917,10 +923,6 @@ async function handleHistoryDocCommand(
   }
   if (handleHistoryOutput(sub, revisions, flags, presentation)) return true
   if (sub === 'diff') {
-    if (selectedHistory) {
-      presentation.write(selectedHistory.diff(argv[5], argv[6]))
-      return true
-    }
     if (!selectedHistory) throw new Error(`no document ${scope}/${subject ?? '_'}/${slug}`)
     presentation.write(selectedHistory.diff(argv[5], argv[6]))
     return true

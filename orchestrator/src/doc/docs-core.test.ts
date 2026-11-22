@@ -6,6 +6,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
+  getDoc,
+  getDocRevision,
+  listDocMetadata,
+  listDocRevisions,
+  listDocs,
+} from '../../test/fixtures/doc-local-read.ts'
+import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
@@ -21,11 +28,6 @@ import {
   diffDocRevisions,
   docsForRun,
   exportDocs,
-  getDoc,
-  getDocRevision,
-  listDocMetadata,
-  listDocRevisions,
-  listDocs,
   importDocs as readDocs,
   restoreDoc,
   signedInDocOwner,

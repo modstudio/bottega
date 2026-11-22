@@ -7,7 +7,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { consumeDoc, getDoc, importDoc, listDocRevisions, restoreDoc, setDoc } from './docs.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import { consumeDoc, importDoc, restoreDoc, setDoc } from './docs.ts'
 import { publishReferenceDocs, slugLinkedBody } from './reference-publish.ts'
 
 test('reference publishing is the only write path and is idempotent and removing', async () => {

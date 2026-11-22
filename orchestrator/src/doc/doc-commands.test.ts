@@ -30,12 +30,11 @@ import {
 } from './doc-commands.ts'
 import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
   docSubjects,
-  getDoc,
-  listDocRevisions,
   readDocRevision,
   restoreDoc,
   setDoc as writeDoc,

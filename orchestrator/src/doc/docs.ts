@@ -96,7 +96,6 @@ import {
   assertLocalRevisionWrite,
   diffStoredDocRevisions,
   getStoredDocRevision,
-  listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import {
   addCanonWriteWarnings,
@@ -280,9 +279,8 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 }
 
 export { readHostedUserSettingsDocuments } from './doc-hosted-client.ts'
-export { docSubjects }
-
 export { signedInDocOwner } from './doc-owner.ts'
+export { docSubjects }
 
 const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {

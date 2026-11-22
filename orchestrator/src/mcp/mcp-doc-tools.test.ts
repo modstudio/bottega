@@ -4,7 +4,7 @@ import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { getDoc } from '../doc/docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { registerDocTools, rethrowMcpDocWriteError } from './mcp-doc-tools.ts'
 

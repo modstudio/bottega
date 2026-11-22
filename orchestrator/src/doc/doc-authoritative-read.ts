@@ -27,6 +27,7 @@ import {
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { DocListFilters }
+export type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 
 type HostedRow = Record<string, unknown>
 
@@ -266,6 +267,7 @@ export function readDocHistory(
   subject: string | null,
   slug: string,
   owner: string | null = null,
+  hostedRead?: (doc: Doc) => Promise<AuthoritativeDocHistory | null>,
 ): Promise<AuthoritativeDocHistory | null> {
   return applyRecordReadAuthority({
     local: () => {
@@ -274,10 +276,11 @@ export function readDocHistory(
       const resolve = (identifier: string) => {
         const numeric = /^[0-9]+$/.test(identifier) ? Number(identifier) : null
         return (
-          numeric === null
+          (numeric === null
             ? revisions.find(({ record_id }) => record_id === identifier)
             : revisions.find(({ number }) => number === numeric)
-        )?.record_id ?? identifier
+          )?.record_id ?? identifier
+        )
       }
       return {
         revisions,
@@ -301,6 +304,7 @@ export function readDocHistory(
       withReadRemedy(async () => {
         const doc = await hostedSingleDoc({ scope, subject, slug, owner })
         if (!doc) return null
+        if (hostedRead) return hostedRead(doc)
         const revisions = (await (
           await hostedDocClient(scope, subject)
         ).listRevisions(doc.record_id)) as HostedDocRevision[]

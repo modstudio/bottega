@@ -10,7 +10,8 @@ import {
   exportDocFiles,
   importDocFiles,
 } from './doc-files.ts'
-import { exportDocs, getDoc } from './docs.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
+import { exportDocs } from './docs.ts'
 
 const subjectDirectory = join('export', 'canon', 'alephbeis')
 
