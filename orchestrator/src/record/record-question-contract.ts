@@ -266,6 +266,21 @@ export const questionReadSchema = z.discriminatedUnion('read', [
   }),
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
+export type MembershipQuestionReadInput =
+  | (Extract<QuestionReadInput, { read: 'inbox' }> & {
+      limit?: undefined
+      changedAfter?: undefined
+    })
+  | Extract<QuestionReadInput, { read: 'open-for-tasks' }>
+
+export function isMembershipQuestionRead(
+  input: QuestionReadInput,
+): input is MembershipQuestionReadInput {
+  return (
+    (input.read === 'inbox' && input.limit === undefined && input.changedAfter === undefined) ||
+    input.read === 'open-for-tasks'
+  )
+}
 type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>
 export const QUESTION_RULINGS_PAGE_SIZE = 100
 export type RulingPageCursor = {

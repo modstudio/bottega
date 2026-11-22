@@ -4,6 +4,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import type { MemoryQuestionReadCounts } from '../../test/fixtures/record-api-question.ts'
 import { installTaskRows } from '../../test/fixtures/task-reader.ts'
 import { boardClaimTake } from '../board/board-operations.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
@@ -11,6 +12,7 @@ import { contextBrief } from '../doc/context-brief.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { reviewContext } from '../session/context-review.ts'
@@ -44,6 +46,7 @@ const taskFlowTables = [
 ] as const
 
 const destinationSpaceId = 'fixture-space'
+const questionSpaceIds = [destinationSpaceId, 'question-space-b', 'question-space-c'] as const
 const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
@@ -51,7 +54,27 @@ const secondProjectId = '00000000-0000-4000-8001-000000000002'
 const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
 const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
-const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
+const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 3
+// shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
+const BRIEF_RECORD_API_CALL_BUDGET = 10
+// shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
+const REVIEW_RECORD_API_CALL_BUDGET = 10
+const BRIEF_RECORD_API_BREAKDOWN = {
+  'record-whoami': 3,
+  'record-task-flow': 3,
+  'record-questions': 3,
+  'record-context-items': 1,
+}
+const REVIEW_RECORD_API_BREAKDOWN = {
+  'record-whoami': 3,
+  'record-task-flow': 3,
+  'record-questions': 3,
+  'record-context-items': 1,
+}
+// Membership inbox + membership open-for-tasks + task-flow's space-keyed open-for-cursors.
+const BRIEF_RECORD_QUESTION_CALL_LIMIT = 3
+// Membership inbox + membership open-for-tasks + task-flow's space-keyed open-for-cursors.
+const REVIEW_RECORD_QUESTION_CALL_LIMIT = 3
 const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 262_144
 
 type TaskFlowReadCounts = NonNullable<
@@ -69,6 +92,36 @@ function taskFlowReadDelta(before: TaskFlowReadCounts, after: TaskFlowReadCounts
   }
   return { byKind, total: Object.values(byKind).reduce((sum, count) => sum + count, 0) }
 }
+
+type RecordApiCallCounts = Record<string, number>
+
+function recordApiRouteClass(method: string): string {
+  if (method === 'whoami') return 'record-whoami'
+  if (method === 'listContextItems') return 'record-context-items'
+  if (method === 'readQuestions' || method === 'readMembershipQuestions') return 'record-questions'
+  if (/TaskFlow/.test(method)) return 'record-task-flow'
+  throw new Error(`unclassified fixture record API call ${method}`)
+}
+
+function countedRecordApiClient(
+  client: RecordApiClient,
+  counts: RecordApiCallCounts,
+): RecordApiClient {
+  return new Proxy(client, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver)
+      if (typeof property !== 'string' || typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        const routeClass = recordApiRouteClass(property)
+        counts[routeClass] = (counts[routeClass] ?? 0) + 1
+        return Reflect.apply(value, target, args)
+      }
+    },
+  })
+}
+
+const totalCalls = (counts: RecordApiCallCounts) =>
+  Object.values(counts).reduce((total, count) => total + count, 0)
 
 afterEach(() => {
   installRecordApiClient(null)
@@ -142,17 +195,36 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       obligationsById: 0,
       stageSummaries: 0,
     },
+    questionReadCounts: {
+      questions: {},
+      memberships: {},
+    } satisfies MemoryQuestionReadCounts,
+    questions: questionSpaceIds.map((spaceId, index) => ({
+      id: `00000000-0000-4000-8004-${String(index + 1).padStart(12, '0')}`,
+      workflowTaskId: taskId,
+      space_id: spaceId,
+      number: index + 1,
+      askedAt: `2026-11-21T12:00:0${index}.000Z`,
+      question: `Question from ${spaceId}?`,
+      answeredAt: null,
+      closedAt: null,
+    })),
   }
   const memory = createMemoryRecordApiClient(memoryInput)
+  const allQuestionRows = [...memoryInput.questions]
+  memoryInput.questions.splice(1)
+  let memberQuestionSpaces: readonly string[] = questionSpaceIds.slice(0, 1)
   const taskFlowClient = {
     ...memory,
     whoami: async () => ({
       user: { id: 'fixture-user' },
       activeSpaceId: destinationSpaceId,
       personalSpaceId: destinationSpaceId,
-      memberships: [
-        { space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' as const },
-      ],
+      memberships: memberQuestionSpaces.map((spaceId) => ({
+        space_id: spaceId,
+        slug: spaceId,
+        permission: 'write' as const,
+      })),
     }),
   }
   installRecordApiClient(taskFlowClient)
@@ -361,12 +433,33 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     obligations: [openObligation],
   })
 
-  const measure = async (entry: () => Promise<unknown>) => {
+  const measure = async <T>(entry: () => Promise<T>) => {
     const before = { ...memoryInput.taskFlowReadCounts }
-    await entry()
-    return taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
+    const beforeQuestions = structuredClone(memoryInput.questionReadCounts)
+    const recordApiCalls: RecordApiCallCounts = {}
+    installRecordApiClient(countedRecordApiClient(taskFlowClient, recordApiCalls))
+    const value = await entry()
+    installRecordApiClient(taskFlowClient)
+    const questionCalls = Object.fromEntries(
+      (['questions', 'memberships'] as const).map((route) => [
+        route,
+        Object.fromEntries(
+          Object.entries(memoryInput.questionReadCounts[route]).map(([read, count]) => [
+            read,
+            Number(count) -
+              (beforeQuestions[route][read as keyof typeof beforeQuestions.questions] ?? 0),
+          ]),
+        ),
+      ]),
+    ) as MemoryQuestionReadCounts
+    return {
+      value,
+      taskFlow: taskFlowReadDelta(before, memoryInput.taskFlowReadCounts),
+      questionCalls,
+      recordApiCalls,
+    }
   }
-  const measureEntryPoints = async () => {
+  const measureEntryPoints = async (expectedQuestionSpaces: readonly string[]) => {
     const cwd = process.cwd()
     process.chdir('/tmp')
     try {
@@ -407,20 +500,49 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       }
       for (const [name, { result, limit }] of Object.entries(entries)) {
         expect(
-          result.total,
-          `${name} task-flow reads ${JSON.stringify(result.byKind)}`,
+          result.taskFlow.total,
+          `${name} task-flow reads ${JSON.stringify(result.taskFlow.byKind)}`,
         ).toBeLessThanOrEqual(limit)
-        expect(result.byKind.stagesById, `${name} stage-by-id reads`).toBe(0)
+        expect(result.taskFlow.byKind.stagesById, `${name} stage-by-id reads`).toBe(0)
       }
+      for (const [name, result, questionLimit, totalBudget] of [
+        ['brief', brief, BRIEF_RECORD_QUESTION_CALL_LIMIT, BRIEF_RECORD_API_CALL_BUDGET],
+        ['review', review, REVIEW_RECORD_QUESTION_CALL_LIMIT, REVIEW_RECORD_API_CALL_BUDGET],
+      ] as const) {
+        expect(
+          result.recordApiCalls['record-questions'],
+          `${name} question reads ${JSON.stringify(result.questionCalls)}`,
+        ).toBeLessThanOrEqual(questionLimit)
+        expect(result.questionCalls.questions.inbox ?? 0).toBe(0)
+        expect(result.questionCalls.questions['open-for-tasks'] ?? 0).toBe(0)
+        expect(result.questionCalls.memberships.inbox).toBe(1)
+        expect(result.questionCalls.memberships['open-for-tasks']).toBe(1)
+        expect(
+          totalCalls(result.recordApiCalls),
+          `${name} record API calls ${JSON.stringify(result.recordApiCalls)}`,
+        ).toBe(totalBudget)
+        expect(result.recordApiCalls).toEqual(
+          name === 'brief' ? BRIEF_RECORD_API_BREAKDOWN : REVIEW_RECORD_API_BREAKDOWN,
+        )
+      }
+      const visibleQuestions = brief.value.holders.flatMap(
+        (holder) => holder.openQuestions?.map(({ question }) => question) ?? [],
+      )
+      expect(visibleQuestions).toEqual(
+        expectedQuestionSpaces.map((space) => `Question from ${space}?`),
+      )
       return Object.fromEntries(
         Object.entries(entries).map(([name, entry]) => [name, entry.result]),
-      ) as Record<keyof typeof entries, ReturnType<typeof taskFlowReadDelta>>
+      ) as Record<keyof typeof entries, (typeof entries)[keyof typeof entries]['result']>
     } finally {
       process.chdir(cwd)
     }
   }
 
-  const one = await measureEntryPoints()
+  const one = await measureEntryPoints(questionSpaceIds.slice(0, 1))
+
+  memoryInput.questions.push(...allQuestionRows.slice(1))
+  memberQuestionSpaces = questionSpaceIds
 
   for (let index = 2; index <= 10; index++) {
     const stageId = `00000000-0000-4000-8002-${String(index).padStart(12, '0')}`
@@ -444,15 +566,18 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       },
     })
   }
-  const ten = await measureEntryPoints()
+  const ten = await measureEntryPoints(questionSpaceIds)
   expect(
     Object.fromEntries(
       Object.keys(one).map((name) => [
         name,
-        [one[name as keyof typeof one].total, ten[name as keyof typeof ten].total],
+        [
+          one[name as keyof typeof one].taskFlow.total,
+          ten[name as keyof typeof ten].taskFlow.total,
+        ],
       ]),
     ),
-  ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [5, 5] })
+  ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [3, 3] })
 
   memoryInput.taskFlowStages.push({
     flow: {

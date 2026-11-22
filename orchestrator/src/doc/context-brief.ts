@@ -10,7 +10,7 @@ import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { openQuestionsForTasks } from '../question-store/question-store-read.ts'
+import { openQuestionsForMemberTasks } from '../question-store/question-store-read.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
@@ -238,24 +238,26 @@ export async function storedBriefHolders(
   )
   const openByTask = new Map<string, Array<{ number: number; question: string }>>()
   const unresolvedProjects = new Set<string>()
+  const resolvedTaskReferences: typeof taskReferences = []
   for (const projectName of new Set(taskReferences.map(({ project }) => project))) {
     const project = projectByName(projectName, database)
     if (!project) {
       unresolvedProjects.add(projectName)
       continue
     }
-    const projectTasks = taskReferences.filter((reference) => reference.project === projectName)
-    const rows = await openQuestionsForTasks(
-      database,
-      projectTasks.map(({ recordId }) => recordId),
-      project.recordId,
+    resolvedTaskReferences.push(
+      ...taskReferences.filter((reference) => reference.project === projectName),
     )
-    for (const row of rows) {
-      const taskId = String(row.workflow_task_record_id)
-      const questions = openByTask.get(taskId) ?? []
-      questions.push({ number: Number(row.number), question: String(row.question) })
-      openByTask.set(taskId, questions)
-    }
+  }
+  const rows = await openQuestionsForMemberTasks(
+    database,
+    resolvedTaskReferences.map(({ recordId }) => recordId),
+  )
+  for (const row of rows) {
+    const taskId = String(row.workflow_task_record_id)
+    const questions = openByTask.get(taskId) ?? []
+    questions.push({ number: Number(row.number), question: String(row.question) })
+    openByTask.set(taskId, questions)
   }
   const holderAddresses = references.map((reference) =>
     reference.kind === 'session'
@@ -387,13 +389,13 @@ function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext
   ].join(' · ')
 }
 
-export async function contextBrief(
+export async function contextBriefWithCursors(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
   hubTaskReader: ProjectTaskListReader = readProjectTaskList,
   hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
-): Promise<ContextBrief> {
+): Promise<{ brief: ContextBrief; cursors: WorkflowCursorListRow[] }> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
@@ -430,7 +432,7 @@ export async function contextBrief(
   const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims, handoffLinks)
-  return {
+  const brief: ContextBrief = {
     session,
     fullCommand: fullHolder
       ? `${PLATFORM_SLUG} agent context show --task ${fullHolder.key}`
@@ -466,4 +468,11 @@ export async function contextBrief(
     },
     autonomy: autonomyLine(autonomy),
   }
+  return { brief, cursors }
+}
+
+export async function contextBrief(
+  ...args: Parameters<typeof contextBriefWithCursors>
+): Promise<ContextBrief> {
+  return (await contextBriefWithCursors(...args)).brief
 }
