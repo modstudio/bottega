@@ -621,14 +621,14 @@ function throwIfRecordApiRequestRefused(): void {
   }
 }
 
-async function publicRequest<T>(path: string): Promise<T> {
+async function publicRequest<T>(path: string, transport: typeof fetch = apiFetch): Promise<T> {
   let response: Response
   try {
     response = await recordTransport(recordApiBaseUrl(), path, {
       method: 'GET',
       credentials: 'omit',
       headers: new Headers(),
-    })
+    }, transport)
   } catch (error) {
     throw recordApiUnreachable(error, 'probe')
   }
@@ -728,8 +728,12 @@ async function listDocRevisionsRequest(
 
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
+  transport: typeof fetch = apiFetch,
 ): RecordApiClient {
-  return recordApiClient((path, init) => recordApiRequest(path, init, authentication))
+  return recordApiClientOver(
+    (path, init) => recordApiRequest(path, init, authentication, transport),
+    transport,
+  )
 }
 
 export function recordApiClient(request = recordApiRequest, transport = apiFetch): RecordApiClient {
@@ -739,10 +743,14 @@ export function recordApiClient(request = recordApiRequest, transport = apiFetch
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
     selectTransport(request, recordApiRequest, recordApiBaseUrl, transport),
+    transport,
   )
 }
 
-export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
+export function recordApiClientOver(
+  request: RecordClientRequest,
+  transport: typeof fetch = apiFetch,
+): RecordApiClient {
   const client: RecordApiClient = {
     storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
     ...recordChangesClient(request),
@@ -752,7 +760,7 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...recordOutsideClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
-    ...recordSnapshotAndPublicDocClient(request),
+    ...recordSnapshotAndPublicDocClient(request, transport),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordContextItemClient(request),
@@ -772,13 +780,14 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     ...recordBoardClient(request),
-    ...recordApiBoardWatchClient(request),
+    ...recordApiBoardWatchClient(request, transport),
   }
   return client
 }
 
 const recordSnapshotAndPublicDocClient = (
   request = recordApiRequest,
+  transport: typeof fetch = apiFetch,
 ): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
   putSnapshot: (kind, input, destination) =>
     request(`/v1/snapshots/${kind}`, {
@@ -787,10 +796,10 @@ const recordSnapshotAndPublicDocClient = (
       ...destination,
     }),
   listSnapshots: () => request('/v1/snapshots'),
-  listPublicDocs: () => publicRequest('/public/v1/docs'),
-  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
+  listPublicDocs: () => publicRequest('/public/v1/docs', transport),
+  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`, transport),
   searchPublicDocs: (query) =>
-    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
+    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`, transport),
 })
 
 const recordDocReadClient = (
@@ -974,6 +983,7 @@ function recordIdentityAndSpaceClient(
 
 function recordApiBoardWatchClient(
   request: RecordClientRequest = recordApiRequest,
+  transport: typeof fetch = apiFetch,
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
     releaseBoardTaskClaims: (input, destination) =>
@@ -982,11 +992,14 @@ function recordApiBoardWatchClient(
         body: JSON.stringify(input),
         ...destination,
       }),
-    openBoardStream: (signal) => fetchBoardStream(signal),
+    openBoardStream: (signal) => fetchBoardStream(signal, transport),
   }
 }
 
-async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
+async function fetchBoardStream(
+  signal?: AbortSignal,
+  transport: typeof fetch = apiFetch,
+): Promise<RecordBoardStreamOpen> {
   if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
   const token = storedRecordToken()
   if (!token) return { kind: 'unauthorized' }
@@ -1011,7 +1024,7 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
         headers: boardStreamHeaders(token),
         signal: connection.signal,
       },
-      ((url, init) => fetch(url, init)) as typeof fetch,
+      transport,
     )
     const opened = classifyBoardStreamResponse(response.status, response.body, close)
     if (opened.kind !== 'stream') {

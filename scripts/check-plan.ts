@@ -307,6 +307,8 @@ export const ROOT_TEST_FILES = [
   'scripts/check-record-request-headers.test.ts',
   'scripts/check-task-single-read.test.ts',
   'scripts/check-record-route-contracts.test.ts',
+  'scripts/record-client-contract.test.ts',
+  'scripts/check-release-client-contract.test.ts',
   'scripts/check-hosted-secret-writers.test.ts',
   'scripts/check-hosted-local-sql.test.ts',
   'scripts/check-doc-local-sql-authority.test.ts',
