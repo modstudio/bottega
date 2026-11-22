@@ -23,7 +23,10 @@ export const DOC_LOCAL_SQL_ALLOWANCES: readonly DocLocalSqlAllowance[] = [
     pattern: /orchestrator\/src\/doc\/canon-import\.ts$/,
     reason: 'hosted canon mirror write-back',
   },
-  { pattern: /orchestrator\/src\/canon\/canon\.ts$/, reason: 'temporary local canon read path' },
+  {
+    pattern: /orchestrator\/src\/canon\/canon\.ts$/,
+    reason: 'DEV-2584 PR 2 moves canon reads to the hosted record',
+  },
   {
     pattern: /orchestrator\/src\/record\/record-cache[^/]*\.ts$/,
     reason: 'document mirror engine',
@@ -44,21 +47,27 @@ export const DOC_LOCAL_SQL_ALLOWANCES: readonly DocLocalSqlAllowance[] = [
   },
   {
     pattern: /orchestrator\/src\/doc\/doc-reference-read\.ts$/,
-    reason: 'temporary local reference read path',
+    reason: 'DEV-2584 PR 2 moves workflow-floor reads to the hosted record',
   },
   {
     pattern: /orchestrator\/src\/canon\/canon-mirror-revisions\.ts$/,
-    reason: 'temporary local canon mirror revision path',
+    reason: 'DEV-2584 PR 2 moves canon reads to the hosted record',
+  },
+  {
+    pattern: /orchestrator\/src\/identity\/doc-revision-identity\.ts$/,
+    reason: 'local-install revision identifier lookup',
   },
 ]
 
 const SQL_WITH_DOC_TABLE =
-  /\b(?:select|insert|update|delete|from|join|create|drop|alter)\b[\s\S]*\b(?:doc|doc_revision|doc_related_subject)\b/i
-const LOCAL_SQL_CALL =
-  /(?:\bdb\(\)|\bdatabase|\blocal)\s*\.\s*(?:query|exec)\s*\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`)/gs
+  /\b(?:from|join|into|update|table)\s+(?:(?:[a-z_][a-z0-9_]*|"[^"]+")\s*\.\s*)?["`\[]?(?:doc|doc_revision|doc_related_subject)\b/i
+const LOCAL_SQL_IMPORT =
+  /(?:from\s*['"]bun:sqlite['"]|import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"](?:\.\.?\/)+(?:database\/)?db\.ts['"])/s
+const STRING_LITERAL = /'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`/gs
 
 function hasDocTableSql(source: string): boolean {
-  return [...source.matchAll(LOCAL_SQL_CALL)].some((match) =>
+  if (!LOCAL_SQL_IMPORT.test(source)) return false
+  return [...source.matchAll(STRING_LITERAL)].some((match) =>
     SQL_WITH_DOC_TABLE.test(match[1] ?? match[2] ?? match[3] ?? ''),
   )
 }
@@ -68,7 +77,8 @@ export function docLocalSqlViolation(
   source: string,
   allowances: readonly DocLocalSqlAllowance[] = DOC_LOCAL_SQL_ALLOWANCES,
 ): string | null {
-  if (file.endsWith('.test.ts') || !hasDocTableSql(source)) return null
+  if (file.endsWith('.test.ts') || file.endsWith('.fixture.ts') || !hasDocTableSql(source))
+    return null
   if (allowances.some(({ pattern }) => pattern.test(file))) return null
   return `${file}: document-table SQL is outside a declared local-store or mirror path`
 }

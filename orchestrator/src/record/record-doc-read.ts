@@ -256,13 +256,49 @@ export async function listRecordDocRevisions(
 export async function getRecordDocRevision(
   input: Tenant & { id: string; audience?: DocAudience },
 ): Promise<RecordDocRevision | null> {
-  const docId = await tenant(input, async (tx) => {
-    const rows = await tx`SELECT doc_id FROM doc_revision WHERE id=${input.id}::uuid`
-    return rows[0]?.doc_id == null ? null : String(rows[0].doc_id)
+  return tenant(input, async (tx) => {
+    const rows = (await tx`
+      SELECT r.*, own.name AS article_subject_name,
+        COALESCE(NULLIF(author_user.name,''),author_user.email) AS author_name
+      FROM doc_revision r
+      LEFT JOIN subject own ON own.id=r.article_subject_id
+      LEFT JOIN "user" author_user ON author_user.id::text=r.author
+      WHERE r.id=${input.id}::uuid
+    `) as Array<Record<string, unknown>>
+    const row = rows[0]
+    if (!row) return null
+    const docs = await tx`
+      SELECT scope,subject,slug,audiences,body FROM doc WHERE id=${String(row.doc_id)}::uuid
+    `
+    if (!docs.length) return null
+    const live = docs[0] as Record<string, unknown>
+    const liveDocument = {
+      scope: String(live.scope),
+      subject: live.subject == null ? null : String(live.subject),
+      slug: String(live.slug),
+      audiences: live.audiences as DocAudiences,
+      body: String(live.body),
+    }
+    const relatedIds = hostedDocList(row.related_subject_ids, {
+      document: `revision ${String(row.id)} of document ${String(row.doc_id)}`,
+      column: 'doc_revision.related_subject_ids',
+    }).map(String)
+    const subjects = relatedIds.length
+      ? await tx`SELECT id,name FROM subject WHERE space_id=${String(row.space_id)}::uuid AND id=ANY(${tx.array(relatedIds, 'uuid')})`
+      : []
+    const subjectNames = new Map(
+      subjects.map((subject: Record<string, unknown>) => [
+        String(subject.id),
+        String(subject.name),
+      ]),
+    )
+    row.related_subjects = relatedIds.map((id) => ({ id, name: subjectNames.get(id) ?? '' }))
+    return recordDocRevisionHistoryForAudience(
+      liveDocument,
+      [recordDocRevisionRow(row)],
+      input.audience,
+    )[0]!
   })
-  if (!docId) return null
-  const revisions = await listRecordDocRevisions({ ...input, id: docId })
-  return revisions?.find(({ id }) => id === input.id) ?? null
 }
 
 /** Apply the hosted audience contract to one document body. */

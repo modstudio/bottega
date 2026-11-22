@@ -29,14 +29,3 @@ export function nextEntityNumber(database: Database, entity: NumberedEntity): nu
   if (!row) throw new Error(`${entity} number counter is missing`)
   return row.last_number
 }
-
-export function docRevisionRecordId(database: Database, number: number): string | null {
-  const rows = database
-    .query<{ record_id: string; number: number }, []>('SELECT record_id,number FROM doc_revision')
-    .all()
-  return rows.find((row) => row.number === number)?.record_id ?? null
-}
-
-export function docRevisionRecordExists(database: Database, recordId: string): boolean {
-  return database.query('SELECT 1 FROM doc_revision WHERE record_id=?').get(recordId) !== null
-}

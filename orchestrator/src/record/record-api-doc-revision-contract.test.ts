@@ -24,3 +24,23 @@ test('a revision outside the caller readable spaces is not found', async () => {
   expect(response.status).toBe(404)
   expect(await response.json()).toEqual({ error: 'doc revision not found' })
 })
+
+test('a revision in a readable space is returned with its body', async () => {
+  const revision = {
+    id: revisionId,
+    docId: '01990000-0000-7000-8000-000000000502',
+    body: 'readable revision body',
+  }
+  const app = recordApiTestApp(
+    identity,
+    { ...idleSubjectDeps(), ...idleRecordApiDeps() },
+    {
+      readDocRevision: async (input: { spaceIds: string[] }) =>
+        input.spaceIds.includes('space-a') ? revision : null,
+    },
+  )
+
+  const response = await app.request(`/v1/doc-revisions/${revisionId}`)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(revision)
+})
