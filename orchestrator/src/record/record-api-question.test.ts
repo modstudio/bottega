@@ -181,15 +181,19 @@ test('one question memberships request returns rows from three spaces', async ()
   })
 })
 
-test('question memberships refuses reads outside its two allowed kinds', async () => {
-  const response = await app({ readQuestions: async () => ({ items: [] }) }).request(
-    '/v1/questions/memberships?read=waiting',
-  )
-  expect(response.status).toBe(400)
-  expect(await response.json()).toEqual({
-    error: 'question memberships reads allow only inbox without changedAfter and open-for-tasks',
-  })
-})
+test.each(['read=waiting', 'read=inbox&limit=1'])(
+  'question memberships refuses unsupported read %s',
+  async (query) => {
+    const response = await app({ readQuestions: async () => ({ items: [] }) }).request(
+      `/v1/questions/memberships?${query}`,
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error:
+        'question memberships reads allow only inbox without limit or changedAfter and open-for-tasks',
+    })
+  },
+)
 
 test('a destinationless question by-id miss returns the membership-safe refusal', async () => {
   const response = await app(

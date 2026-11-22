@@ -1,13 +1,25 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
+  isMembershipQuestionRead,
   QUESTION_JSON_FIELDS,
+  type QuestionReadInput,
   type QuestionWriteBody,
   questionJsonFieldStructuredMessage,
   questionWriteSchema,
 } from './record-question-contract.ts'
 
 const STAMP = '2026-11-16T12:00:00.000Z'
+
+test.each([
+  [{ read: 'inbox' }, true],
+  [{ read: 'inbox', limit: 1 }, false],
+  [{ read: 'inbox', changedAfter: '0' }, false],
+  [{ read: 'open-for-tasks', taskRecordIds: [newRecordId()] }, true],
+  [{ read: 'waiting' }, false],
+] satisfies Array<[QuestionReadInput, boolean]>)('membership question read %j is %s', (input, expected) => {
+  expect(isMembershipQuestionRead(input)).toBe(expected)
+})
 
 function questionWrite(): QuestionWriteBody {
   return {

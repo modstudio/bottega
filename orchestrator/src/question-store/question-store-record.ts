@@ -19,6 +19,7 @@ import type {
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
 import {
+  isMembershipQuestionRead,
   QUESTION_RULINGS_PAGE_SIZE,
   questionChangedAfterRefusal,
 } from '../record/record-question-contract.ts'
@@ -205,15 +206,19 @@ export class RecordQuestionStore implements QuestionStore {
       if (isAbsentRecordKeyedRead(error)) return { items: [] }
       throw error
     })
-    for (const row of value.items) {
+    return {
+      items: this.rememberSpacesAndSort(value.items),
+    }
+  }
+
+  private rememberSpacesAndSort(items: QuestionReadResult['items']): QuestionReadResult['items'] {
+    for (const row of items) {
       const id = questionRowRecordId(row)
       const spaceId = row.space_id
       if (id && typeof spaceId === 'string')
         this.questionSpaces.set(id, { destinationSpaceId: spaceId })
     }
-    return {
-      items: value.items.sort(compareQuestionsByAsk),
-    }
+    return items.sort(compareQuestionsByAsk)
   }
 
   private async membershipRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -222,13 +227,7 @@ export class RecordQuestionStore implements QuestionStore {
         'record API predates membership question reads; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
       )
     const value = await this.input.client.readMembershipQuestions(input)
-    for (const row of value.items) {
-      const id = questionRowRecordId(row)
-      const spaceId = row.space_id
-      if (id && typeof spaceId === 'string')
-        this.questionSpaces.set(id, { destinationSpaceId: spaceId })
-    }
-    return { ...value, items: value.items.sort(compareQuestionsByAsk) }
+    return { ...value, items: this.rememberSpacesAndSort(value.items) }
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -297,10 +296,7 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
-    const membershipRead =
-      !projectId &&
-      ((input.read === 'inbox' && input.changedAfter === undefined) ||
-        input.read === 'open-for-tasks')
+    const membershipRead = !projectId && isMembershipQuestionRead(input)
     const result = projectId
       ? await this.readAt(input, await this.destination(projectId))
       : membershipRead

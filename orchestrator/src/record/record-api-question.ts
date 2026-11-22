@@ -13,6 +13,7 @@ import {
   type QuestionIntent,
   type QuestionIntentBody,
   type QuestionReadInput,
+  isMembershipQuestionRead,
   questionChangedAfterRefusal,
   questionImportSchema,
   questionIntentSchema,
@@ -107,14 +108,12 @@ export function registerRecordQuestionRoutes(
       return context.json({ error: 'hosted question reads are unavailable' }, 503)
     const query = questionReadSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
-    if (query.data.read === 'inbox' && query.data.changedAfter === undefined)
-      return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
-    if (query.data.read === 'open-for-tasks')
+    if (isMembershipQuestionRead(query.data))
       return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
     return context.json(
       {
         error:
-          'question memberships reads allow only inbox without changedAfter and open-for-tasks',
+          'question memberships reads allow only inbox without limit or changedAfter and open-for-tasks',
       },
       400,
     )

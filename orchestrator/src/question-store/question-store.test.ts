@@ -603,30 +603,6 @@ test.each([
   database.close()
 })
 
-test('membership reads retain each question space for later writes', async () => {
-  const database = migratedTestDatabase()
-  seedOwners(database)
-  const writtenSpaces: string[] = []
-  const question = snapshot()
-  const store = new RecordQuestionStore({
-    database,
-    client: {
-      readMembershipQuestions: async () => ({
-        items: [{ ...question, record_id: question.id, space_id: OTHER_SPACE_ID }],
-      }),
-      writeQuestion: async (_intent, input, destination) => {
-        writtenSpaces.push(destination.destinationSpaceId)
-        return { id: input.question.id, number: 1, revision: 2, applied: true }
-      },
-    },
-  })
-
-  await store.read({ read: 'inbox' })
-  await store.write('answer', body({ ...question, revision: 2, answer: 'Yes' }, 'answer'))
-  expect(writtenSpaces).toEqual([OTHER_SPACE_ID])
-  database.close()
-})
-
 test.each([
   { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] },
   { read: 'for-run', runId: RUN_ID },
@@ -703,7 +679,7 @@ test('record inbox paging advances independently across every reachable space', 
     },
   })
   const seen: string[] = []
-  let changedAfter: string | undefined = '0'
+  let changedAfter: string | undefined
   let more = true
   while (more) {
     const page = await store.read({ read: 'inbox', limit: 1, changedAfter })

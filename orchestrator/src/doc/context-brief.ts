@@ -10,7 +10,7 @@ import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { openQuestionsForTasks } from '../question-store/question-store-read.ts'
+import { openQuestionsForMemberTasks } from '../question-store/question-store-read.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
@@ -249,7 +249,7 @@ export async function storedBriefHolders(
       ...taskReferences.filter((reference) => reference.project === projectName),
     )
   }
-  const rows = await openQuestionsForTasks(
+  const rows = await openQuestionsForMemberTasks(
     database,
     resolvedTaskReferences.map(({ recordId }) => recordId),
   )
@@ -472,11 +472,7 @@ export async function contextBriefWithCursors(
 }
 
 export async function contextBrief(
-  session: string,
-  cwd = process.cwd(),
-  database: Database = db(),
-  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
-  hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
+  ...args: Parameters<typeof contextBriefWithCursors>
 ): Promise<ContextBrief> {
-  return (await contextBriefWithCursors(session, cwd, database, hubTaskReader, hubTaskLookup)).brief
+  return (await contextBriefWithCursors(...args)).brief
 }
