@@ -199,13 +199,13 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       questions: {},
       memberships: {},
     } satisfies MemoryQuestionReadCounts,
-    questions: questionSpaceIds.map((space_id, index) => ({
+    questions: questionSpaceIds.map((spaceId, index) => ({
       id: `00000000-0000-4000-8004-${String(index + 1).padStart(12, '0')}`,
       workflowTaskId: taskId,
-      space_id,
+      space_id: spaceId,
       number: index + 1,
       askedAt: `2026-11-21T12:00:0${index}.000Z`,
-      question: `Question from ${space_id}?`,
+      question: `Question from ${spaceId}?`,
       answeredAt: null,
       closedAt: null,
     })),
@@ -220,9 +220,9 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       user: { id: 'fixture-user' },
       activeSpaceId: destinationSpaceId,
       personalSpaceId: destinationSpaceId,
-      memberships: memberQuestionSpaces.map((space_id) => ({
-        space_id,
-        slug: space_id,
+      memberships: memberQuestionSpaces.map((spaceId) => ({
+        space_id: spaceId,
+        slug: spaceId,
         permission: 'write' as const,
       })),
     }),
@@ -446,7 +446,8 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         Object.fromEntries(
           Object.entries(memoryInput.questionReadCounts[route]).map(([read, count]) => [
             read,
-            count - (beforeQuestions[route][read as keyof typeof beforeQuestions.questions] ?? 0),
+            Number(count) -
+              (beforeQuestions[route][read as keyof typeof beforeQuestions.questions] ?? 0),
           ]),
         ),
       ]),

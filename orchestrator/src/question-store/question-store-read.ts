@@ -114,15 +114,15 @@ export async function openQuestionStages(
     .items as TaskFlowOpenSessionStageRow[]
 }
 
-export async function inboxWorkflowQuestions(
-  database: Database,
-): Promise<TaskFlowInboxQuestionRow[]> {
+export async function inboxQuestionGroups(database: Database): Promise<{
+  workflow: TaskFlowInboxQuestionRow[]
+  run: Record<string, unknown>[]
+}> {
   const items = (await questionStore(database).read({ read: 'inbox' })).items
-  return items.filter((row) => 'cursor_record_id' in row) as TaskFlowInboxQuestionRow[]
-}
-
-export async function inboxQuestions(database: Database): Promise<Record<string, unknown>[]> {
-  return (await questionStore(database).read({ read: 'inbox' })).items as Record<string, unknown>[]
+  return {
+    workflow: items.filter((row) => 'cursor_record_id' in row) as TaskFlowInboxQuestionRow[],
+    run: items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[],
+  }
 }
 
 export async function inboxRunQuestions(database: Database): Promise<Record<string, unknown>[]> {

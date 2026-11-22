@@ -606,7 +606,7 @@ test.each([
 test('membership reads retain each question space for later writes', async () => {
   const database = migratedTestDatabase()
   seedOwners(database)
-  let writtenSpace: string | null = null
+  const writtenSpaces: string[] = []
   const question = snapshot()
   const store = new RecordQuestionStore({
     database,
@@ -615,7 +615,7 @@ test('membership reads retain each question space for later writes', async () =>
         items: [{ ...question, record_id: question.id, space_id: OTHER_SPACE_ID }],
       }),
       writeQuestion: async (_intent, input, destination) => {
-        writtenSpace = destination.destinationSpaceId
+        writtenSpaces.push(destination.destinationSpaceId)
         return { id: input.question.id, number: 1, revision: 2, applied: true }
       },
     },
@@ -623,7 +623,7 @@ test('membership reads retain each question space for later writes', async () =>
 
   await store.read({ read: 'inbox' })
   await store.write('answer', body({ ...question, revision: 2, answer: 'Yes' }, 'answer'))
-  expect(writtenSpace).toBe(OTHER_SPACE_ID)
+  expect(writtenSpaces).toEqual([OTHER_SPACE_ID])
   database.close()
 })
 

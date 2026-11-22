@@ -162,7 +162,10 @@ test('one question memberships request returns rows from three spaces', async ()
     api,
     {
       readQuestions: async (input) => ({
-        items: input.spaceIds.map((space_id, index) => ({ space_id, number: index + 1 })),
+        items: input.spaceIds.map((spaceId, index) => ({
+          space_id: spaceId,
+          number: index + 1,
+        })),
       }),
     },
     {
@@ -174,7 +177,7 @@ test('one question memberships request returns rows from three spaces', async ()
   const response = await api.request('/v1/questions/memberships?read=inbox')
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({
-    items: spaceIds.map((space_id, index) => ({ space_id, number: index + 1 })),
+    items: spaceIds.map((spaceId, index) => ({ space_id: spaceId, number: index + 1 })),
   })
 })
 

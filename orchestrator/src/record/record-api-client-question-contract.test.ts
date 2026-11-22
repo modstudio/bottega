@@ -16,6 +16,7 @@ const RUN = '01990000-0000-7000-8000-000000024582'
 const QUESTION = '01990000-0000-7000-8000-000000024583'
 const REQUEST = '01990000-0000-7000-8000-000000024584'
 const STAMP = '2026-11-20T05:00:00.000Z'
+const contractRoutes = ['GET /v1/questions/memberships'] as const
 
 let fixture: RecordContractFixture
 
@@ -129,4 +130,11 @@ test('an old hosted API refuses membership reads without falling back', async ()
     'route not found; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
   )
   expect(routes).toEqual(['/v1/questions/memberships?read=inbox'])
+})
+
+test('the hosted question client reaches the memberships route', async () => {
+  await expect(fixture.client.readMembershipQuestions?.({ read: 'inbox' })).resolves.toMatchObject({
+    items: expect.any(Array),
+  })
+  expect(fixture.requestedRoutes).toContain(contractRoutes[0])
 })
