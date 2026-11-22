@@ -93,8 +93,8 @@ test('hosted exclusion schema validation rejects a misspelled table and path', (
   expect(
     exclusionSchemaFindings({
       ...HOSTED_SECRET_EXCLUSIONS.tables,
-      hub_taks: [{ path: 'title' }],
-      hub_task: [{ path: 'titel' }],
+      hub_unknown_table: [{ path: 'title' }],
+      hub_task: [{ path: 'unknown_column' }],
     }),
-  ).toEqual(['unknown column hub_task.titel', 'unknown table hub_taks'])
+  ).toEqual(['unknown column hub_task.unknown_column', 'unknown table hub_unknown_table'])
 })
