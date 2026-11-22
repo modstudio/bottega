@@ -674,6 +674,42 @@ describe('settings permission', () => {
     expect(getDoc('settings', 'permission-future-option', 'settings')?.body).toBe(futureBody)
   })
 
+  test('refuses a future auto-mode key without changing the row', async () => {
+    fixtureProject('permission-future-auto-mode')
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-future-auto-mode',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: {}, hooks: {} }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+    const futureBody = JSON.stringify({
+      permissions: {},
+      hooks: {},
+      autoMode: { allow: [], futureList: ['x'] },
+      env: {},
+      envKeys: [],
+    })
+    db()
+      .query("UPDATE doc SET body=? WHERE scope='settings' AND subject=? AND slug='settings'")
+      .run(futureBody, 'permission-future-auto-mode')
+
+    await expect(
+      settingsPermissionCommand(
+        presentation().flags({
+          project: 'permission-future-auto-mode',
+          list: 'allow',
+          rule: 'Bash(git *)',
+          expect: seeded.revision!,
+        }),
+        'add',
+      ),
+    ).rejects.toThrow(new RegExp(`autoMode\\.futureList.*upgrade ${PLATFORM_NAME}`, 's'))
+    expect(getDoc('settings', 'permission-future-auto-mode', 'settings')?.body).toBe(futureBody)
+  })
+
   test('preserves options through an edit', async () => {
     fixtureProject('permission-options')
     const options = { subagentHooks: 'on' as const }

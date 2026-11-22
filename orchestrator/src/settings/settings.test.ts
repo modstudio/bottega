@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  OWNED_SETTINGS_KEYS,
-  OWNED_SETTINGS_OPTION_KEYS,
-  OWNED_SETTINGS_OPTIONS_SCHEMA,
-  OWNED_SETTINGS_SCHEMA,
-} from '../../../shared/stored-settings.ts'
+import type { OwnedSettings } from '../../../shared/stored-settings.ts'
 import {
   containsSecretShaped,
   editSettingsEnv,
@@ -14,6 +9,7 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
+  secretShapedPaths,
   SETTINGS_PARSE_REFUSAL,
   serializeOwnedSettings,
   validateOwnedSettingsBody,
@@ -210,11 +206,6 @@ test('options round trip but do not participate in harness-file equality', () =>
   expect(ownedSettingsEqual(parsed, { permissions: {}, hooks: {} })).toBe(true)
 })
 
-test('known stored settings keys are derived from their schemas', () => {
-  expect(OWNED_SETTINGS_KEYS).toEqual(Object.keys(OWNED_SETTINGS_SCHEMA.shape))
-  expect(OWNED_SETTINGS_OPTION_KEYS).toEqual(Object.keys(OWNED_SETTINGS_OPTIONS_SCHEMA.shape))
-})
-
 test('a stored row without auto-mode round trips without gaining ownership', () => {
   const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
   const parsed = parseStoredOwnedSettings(body)
@@ -245,6 +236,17 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
       }),
     ),
   ).toMatch(new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'))
+  const futureAutoMode = JSON.stringify({
+    permissions: {},
+    hooks: {},
+    autoMode: { allow: ['Bash(git status)'], futureList: ['x'] },
+  })
+  expect(parseStoredOwnedSettings(futureAutoMode)).toMatchObject({
+    autoMode: { allow: ['Bash(git status)'] },
+  })
+  expect(refuseUnknownStoredSettingsEdit(futureAutoMode)).toMatch(
+    new RegExp(`autoMode\\.futureList.*upgrade ${PLATFORM_NAME}`, 's'),
+  )
   expect(() =>
     parseStoredOwnedSettings(
       JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
@@ -425,6 +427,16 @@ describe('secretShapedSettingsRefusal', () => {
     )
     expect(refusal).toContain('autoMode.allow[0]')
     expect(refusal).not.toContain(credential)
+  })
+
+  test('screens future option strings from writes', () => {
+    const credential = ['ghp_', 'testtoken', '0'.repeat(28)].join('')
+    const settings = {
+      permissions: {},
+      hooks: {},
+      options: { futureCredential: credential },
+    } as unknown as OwnedSettings
+    expect(secretShapedPaths(settings)).toEqual(['options.futureCredential'])
   })
 
   test('accepts a clean hook command', () => {

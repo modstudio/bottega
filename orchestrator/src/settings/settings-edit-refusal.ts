@@ -2,10 +2,10 @@
 /** Renders the forward-compatibility refusal shared by settings row edit adapters. */
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { unknownStoredSettingsTopLevelKey } from './settings.ts'
+import { unknownStoredSettingsKeyPath } from './settings.ts'
 
 export function refuseUnknownStoredSettingsEdit(body: string): string | null {
-  const unknown = unknownStoredSettingsTopLevelKey(body)
+  const unknown = unknownStoredSettingsKeyPath(body)
   if (unknown === null) return null
   return renderRefusal(
     refusal(

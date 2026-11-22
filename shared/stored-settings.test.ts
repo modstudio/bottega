@@ -22,6 +22,7 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
       JSON.stringify({
         permissions: {},
         hooks: {},
+        autoMode: { allow: ['Bash(git status)'], futureList: ['x'] },
         options: { subagentHooks: 'on', futureOption: 1 },
         envKeys: [],
         futureKey: true,
@@ -30,6 +31,7 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
   ).toEqual({
     permissions: {},
     hooks: {},
+    autoMode: { allow: ['Bash(git status)'] },
     options: { subagentHooks: 'on' },
     env: {},
     envKeys: [],

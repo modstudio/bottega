@@ -17,12 +17,9 @@ export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
   .strict()
 type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
 
-export const OWNED_SETTINGS_OPTION_KEYS = Object.keys(OWNED_SETTINGS_OPTIONS_SCHEMA.shape)
 const OWNED_SETTINGS_SUBAGENT_HOOK_VALUES =
   OWNED_SETTINGS_OPTIONS_SCHEMA.shape.subagentHooks.unwrap().options
 export const OWNED_SETTINGS_OPTIONS_ACCEPTED = `accepted options.subagentHooks=${OWNED_SETTINGS_SUBAGENT_HOOK_VALUES.map((value) => JSON.stringify(value)).join('|')}`
-
-const STORED_SETTINGS_OPTIONS_SCHEMA = OWNED_SETTINGS_OPTIONS_SCHEMA.strip()
 
 export const OWNED_AUTO_MODE_SCHEMA = z
   .object(
@@ -58,16 +55,31 @@ export const OWNED_SETTINGS_SCHEMA = z
   })
   .strict()
 
-export const OWNED_SETTINGS_KEYS = Object.keys(OWNED_SETTINGS_SCHEMA.shape)
+function storedSchema(schema: z.ZodType): z.ZodType {
+  if (schema instanceof z.ZodOptional) return storedSchema(schema.unwrap()).optional()
+  if (schema instanceof z.ZodObject) return storedObjectSchema(schema)
+  return schema
+}
 
-const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
-  options: STORED_SETTINGS_OPTIONS_SCHEMA.optional(),
+function storedObjectSchema(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawShape> {
+  return z
+    .object(
+      Object.fromEntries(
+        Object.entries(schema.shape).map(([key, child]) => [key, storedSchema(child)]),
+      ),
+    )
+    .strip()
+}
+
+const STORED_SETTINGS_ROW_SCHEMA = storedObjectSchema(OWNED_SETTINGS_SCHEMA).extend({
   envKeys: ENV_KEYS_SCHEMA.default([]),
-}).strip()
+}) as z.ZodType<OwnedSettings>
 
-export const STORED_SETTINGS_REMEDY =
-  'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names'
+const OWNED_SETTINGS_KEYS_TEXT = Object.keys(OWNED_SETTINGS_SCHEMA.shape).join(', ')
+
+export const STORED_SETTINGS_REMEDY = `cleared by: write a JSON object with only these keys: ${OWNED_SETTINGS_KEYS_TEXT}`
 export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; upgrade ${PLATFORM_NAME} before reading this settings row`
+const STORED_SETTINGS_NESTED_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)
@@ -77,9 +89,14 @@ function firstIssuePath(issue: z.core.$ZodIssue): string {
 
 function storedSettingsShapeMessage(path: string): string {
   const condition = `stored settings row has an invalid shape at ${JSON.stringify(path)}`
-  return path.startsWith('options.')
-    ? renderRefusal(refusal(condition, { kind: 'edit', text: STORED_SETTINGS_OPTIONS_REMEDY }))
-    : `${condition}\n${STORED_SETTINGS_REMEDY}`
+  const remedy = path.startsWith('options.')
+    ? STORED_SETTINGS_OPTIONS_REMEDY
+    : path.startsWith('autoMode.')
+      ? STORED_SETTINGS_NESTED_REMEDY
+      : null
+  return remedy === null
+    ? `${condition}\n${STORED_SETTINGS_REMEDY}`
+    : renderRefusal(refusal(condition, { kind: 'edit', text: remedy }))
 }
 
 export class StoredSettingsRowError extends Error {

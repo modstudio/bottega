@@ -1,5 +1,6 @@
 // concern: settings
 /** Owned Claude settings policy over the shared stored shape. */
+import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
@@ -11,10 +12,9 @@ import {
   type AutoModeList,
   ENV_NAME,
   OWNED_AUTO_MODE_SCHEMA,
-  OWNED_SETTINGS_KEYS,
-  OWNED_SETTINGS_OPTION_KEYS,
   OWNED_SETTINGS_OPTIONS_ACCEPTED,
   OWNED_SETTINGS_SCHEMA,
+  STORED_SETTINGS_REMEDY,
   type OwnedAutoMode,
   type OwnedSettings,
   parseStoredSettingsRow,
@@ -78,9 +78,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
   try {
     parsed = JSON.parse(body) as unknown
   } catch {
-    throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, options, env, and envKeys',
-    )
+    throw new Error(`refusing settings body: cannot parse JSON\n${STORED_SETTINGS_REMEDY}`)
   }
   const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
   if (!result.success) {
@@ -88,8 +86,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
       throw new Error(`refusing settings body: invalid options; ${OWNED_SETTINGS_OPTIONS_ACCEPTED}`)
     }
     throw new Error(
-      'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names',
+      `refusing settings body: unknown or missing top-level keys\n${STORED_SETTINGS_REMEDY}`,
     )
   }
   assertValidEnvironment(result.data, 'settings body')
@@ -114,7 +111,7 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
   }
 }
 
-export function unknownStoredSettingsTopLevelKey(body: string): string | null {
+export function unknownStoredSettingsKeyPath(body: string): string | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(body) as unknown
@@ -122,13 +119,7 @@ export function unknownStoredSettingsTopLevelKey(body: string): string | null {
     return null
   }
   if (!isPlainObject(parsed)) return null
-  const known = new Set<string>(OWNED_SETTINGS_KEYS)
-  const unknown = Object.keys(parsed).find((key) => !known.has(key))
-  if (unknown !== undefined) return unknown
-  if (!isPlainObject(parsed.options)) return null
-  const knownOptions = new Set<string>(OWNED_SETTINGS_OPTION_KEYS)
-  const unknownOption = Object.keys(parsed.options).find((key) => !knownOptions.has(key))
-  return unknownOption === undefined ? null : `options.${unknownOption}`
+  return firstUnknownObjectKeyPath(parsed, OWNED_SETTINGS_SCHEMA)
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -249,8 +240,33 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
   return [
     ...permissionSecretPaths(owned.permissions),
     ...autoModeSecretPaths(owned.autoMode ?? {}),
+    ...optionSecretPaths(owned.options ?? {}),
     ...hookSecretPaths(owned.hooks),
   ]
+}
+
+function firstUnknownObjectKeyPath(
+  value: Record<string, unknown>,
+  schema: z.ZodObject<z.ZodRawShape>,
+  prefix = '',
+): string | null {
+  for (const key of Object.keys(value)) {
+    const childSchema = schema.shape[key]
+    const path = prefix === '' ? key : `${prefix}.${key}`
+    if (childSchema === undefined) return path
+    const nested = unwrapObjectSchema(childSchema)
+    if (nested !== null && isPlainObject(value[key])) {
+      const unknown = firstUnknownObjectKeyPath(value[key], nested, path)
+      if (unknown !== null) return unknown
+    }
+  }
+  return null
+}
+
+function unwrapObjectSchema(schema: z.ZodType): z.ZodObject<z.ZodRawShape> | null {
+  let current = schema
+  while (current instanceof z.ZodOptional) current = current.unwrap()
+  return current instanceof z.ZodObject ? current : null
 }
 
 function parseAutoMode(value: unknown): OwnedAutoMode {
@@ -271,6 +287,12 @@ function autoModeSecretPaths(autoMode: OwnedAutoMode): string[] {
     }
   }
   return paths
+}
+
+function optionSecretPaths(options: Record<string, unknown>): string[] {
+  return Object.entries(options).flatMap(([key, value]) =>
+    typeof value === 'string' && containsSecretShaped(value) ? [`options.${key}`] : [],
+  )
 }
 
 function permissionSecretPaths(permissions: unknown): string[] {
