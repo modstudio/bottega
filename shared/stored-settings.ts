@@ -40,15 +40,6 @@ export type OwnedSettings = {
   envKeys?: string[]
 }
 
-export function subagentBlockingState(options: OwnedSettings['options']): {
-  blocking: 'on' | 'off'
-  source: 'user' | 'default'
-} {
-  return options?.subagentHooks === 'on'
-    ? { blocking: 'on', source: 'user' }
-    : { blocking: 'off', source: 'default' }
-}
-
 const ENV_KEYS_SCHEMA = z
   .array(z.string().regex(ENV_NAME))
   .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name))

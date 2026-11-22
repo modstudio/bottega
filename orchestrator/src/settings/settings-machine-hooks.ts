@@ -18,6 +18,8 @@ import {
 } from '../session/context-review-decision.ts'
 import { isPlainObject, type OwnedSettings } from './settings.ts'
 
+export { subagentBlockingState } from './settings.ts'
+
 export const SCRIPT_FILES = [
   'block-agent.py',
   'no-attribution.py',

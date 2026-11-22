@@ -2,7 +2,6 @@
 /** Reads only local session and Claude settings state for setup planning. */
 
 import { runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
-import { subagentBlockingState } from '../../../shared/stored-settings.ts'
 import { recordSessionPresent } from '../record/record-session.ts'
 import {
   claudeHomeFromEnvironment,
@@ -12,6 +11,7 @@ import {
 import {
   type ProductHookDeclaration,
   productHookDeclarations,
+  subagentBlockingState,
 } from '../settings/settings-machine-hooks.ts'
 import { readSignedInSubagentHooks } from '../settings/settings-user-row.ts'
 import { classifySetupProductHooks, type SetupProductHookFact } from './setup-install-verify.ts'
