@@ -33,6 +33,8 @@ export function disposalTaskState(observation: TaskStatusObservation): 'open' | 
 export function decideBranchDisposal(input: {
   runMinted: boolean
   probeOnly: boolean
+  systemJobMinted: boolean
+  contentLanded: boolean
   refExists: boolean
   liveRun: boolean
   checkedOut: boolean
@@ -46,7 +48,12 @@ export function decideBranchDisposal(input: {
   if (input.liveRun || input.checkedOut) return { eligible: false, reason: 'live-owner' }
   if (!input.uniqueWork) return { eligible: false, reason: 'proved-safe' }
   if (!input.supersededTargetNamed) return { eligible: false, reason: 'superseded-target-missing' }
-  if (input.taskStatus === 'open' && !input.probeOnly && !input.operator)
+  if (
+    input.taskStatus === 'open' &&
+    !input.probeOnly &&
+    !input.operator &&
+    !(input.systemJobMinted && input.contentLanded)
+  )
     return { eligible: false, reason: 'open-task' }
   return { eligible: true }
 }

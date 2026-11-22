@@ -12,6 +12,7 @@ import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import {
   BRANCH_DISPOSAL_REASONS,
   type BranchDisposalReason,
@@ -21,6 +22,7 @@ import {
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
+import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { taskKeyToken } from './other-branch-state.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
@@ -125,6 +127,21 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
+function branchContentLanded(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  tip: string,
+): boolean {
+  try {
+    const trunk = project.settings.trunk?.trim() ?? ''
+    if (!trunk) return false
+    const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, args))
+    const trunkTree = git(project.path, ['rev-parse', '--verify', `${trunkTip}^{tree}`])
+    return git(project.path, ['merge-tree', '--write-tree', trunkTip, tip]) === trunkTree
+  } catch {
+    return false
+  }
+}
+
 export function composeBranchDisposalRefusal(input: {
   reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
   project: string
@@ -189,13 +206,17 @@ async function planBranchDisposal(input: {
   const taskKey = keyGroup?.key === UNKEYED_BRANCH_GROUP ? null : (keyGroup?.key ?? null)
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
   const mintingRuns = db()
-    .query('SELECT probe FROM run WHERE project_record_id=? AND minted_branch=?')
-    .all(project.recordId, branch) as { probe: number }[]
+    .query('SELECT probe,job FROM run WHERE project_record_id=? AND minted_branch=?')
+    .all(project.recordId, branch) as { probe: number; job: string }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
+  const systemJobMinted = runMinted && mintingRuns.every((run) => isSystemLifecycleJob(run.job))
+  const contentLanded = row ? branchContentLanded(project, row.tip) : false
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
+    systemJobMinted,
+    contentLanded,
     refExists: true,
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,

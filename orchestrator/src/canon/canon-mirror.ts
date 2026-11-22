@@ -270,7 +270,12 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
       ]),
     ),
   admitPullRequest: (project, branch) =>
-    assertPullRequestTaskCursorAdmission({ command: 'pr create', project, branch }),
+    assertPullRequestTaskCursorAdmission({
+      command: 'pr create',
+      project,
+      branch,
+      systemJob: CANON_MIRROR_JOB,
+    }),
   openPullRequest: (path, title, bodyFile) => {
     createPullRequestAdmitted(['--title', title, '--body-file', bodyFile], {}, path)
     const opened = systemCanonMirrorPort.pullRequest(

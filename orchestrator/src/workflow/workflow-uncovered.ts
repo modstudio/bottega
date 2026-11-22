@@ -14,8 +14,8 @@ import {
   failedBeforeClaimRunEvidence,
 } from '../run/cursorless-run-evidence.ts'
 import {
-  CANON_MIRROR_JOB,
   HOOK_TREE_JOB,
+  isSystemLifecycleJob,
   LANDING_TREE_JOB,
 } from '../run/synthetic-lifecycle-job.ts'
 import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
@@ -115,7 +115,7 @@ export function decideWorkflowUncovered(input: {
   const uncovered = input.evidence.filter(
     (item) =>
       wanted.has(item.at.slice(0, 10)) &&
-      item.job !== CANON_MIRROR_JOB &&
+      !isSystemLifecycleJob(item.job ?? null) &&
       !input.cursors.some((coverage) => covers(coverage, item)) &&
       !input.cursors.some((coverage) => lifecycleCursorCovers(coverage, item)) &&
       !input.claims.some((coverage) => covers(coverage, item)),

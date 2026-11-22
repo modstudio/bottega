@@ -12,6 +12,10 @@ export const SYNTHETIC_LIFECYCLE_JOBS = [
   ISSUE_BEFORE_TREE_JOB,
 ] as const
 
+export function isSystemLifecycleJob(job: string | null): boolean {
+  return job === CANON_MIRROR_JOB
+}
+
 export function isSyntheticLifecycleJob(job: string): boolean {
   return (SYNTHETIC_LIFECYCLE_JOBS as readonly string[]).includes(job)
 }

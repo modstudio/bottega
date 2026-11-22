@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import {
   assertPullRequestTaskCursorAdmission,
   decidePullRequestTaskCursorAdmission,
@@ -10,6 +11,7 @@ const input = {
   project: 'alpha',
   taskKey: 'DEV-2387',
   harnessSession: 'session-a',
+  systemJob: null,
   heldCursors: [] as Array<{
     number: number
     project: string
@@ -120,6 +122,23 @@ describe('pull-request task cursor admission', () => {
         heldCursors: [cursor(1212, 'apply-findings', [])],
       }),
     ).toEqual({ kind: 'allow' })
+  })
+
+  test('allows the system canon mirror without a held cursor but still refuses ordinary task work', () => {
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        taskKey: 'DEV-1007',
+        systemJob: CANON_MIRROR_JOB,
+      }),
+    ).toEqual({ kind: 'allow' })
+    expect(
+      decidePullRequestTaskCursorAdmission({
+        ...input,
+        taskKey: 'DEV-2581',
+        systemJob: null,
+      }).kind,
+    ).toBe('refuse')
   })
 })
 
