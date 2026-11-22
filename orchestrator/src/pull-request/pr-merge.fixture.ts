@@ -47,6 +47,7 @@ export function adapter(
   input: {
     view?: (target: string) => PullRequestMergeFacts
     taskCursorAdmission?: PullRequestMergeAdapter['taskCursorAdmission']
+    releasePreflight?: PullRequestMergeAdapter['releasePreflight']
     checks?: PullRequestCheck[] | (() => PullRequestCheck[])
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
@@ -71,6 +72,7 @@ export function adapter(
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
     queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
+    enqueue?: () => void
     wait?: () => void
     releaseRequired?: (enabled: boolean) => RequiredReleaseReport
   } = {},
@@ -83,6 +85,7 @@ export function adapter(
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     ...(input.taskCursorAdmission ? { taskCursorAdmission: input.taskCursorAdmission } : {}),
+    ...(input.releasePreflight ? { releasePreflight: input.releasePreflight } : {}),
     checks: () => (typeof input.checks === 'function' ? input.checks() : (input.checks ?? [])),
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: input.hasCommit ?? (() => true),
@@ -127,7 +130,7 @@ export function adapter(
         entryState: null,
         enqueuedAt: null,
       })),
-    enqueue: () => {},
+    enqueue: () => input.enqueue?.(),
     requeue: () => {},
     failedMergeGroupRun: () => null,
     now: Date.now,

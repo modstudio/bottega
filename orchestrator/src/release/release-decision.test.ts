@@ -122,14 +122,14 @@ test('an unprovable rung names the complete register remedy', () => {
       { name: 'production', branch: 'master' },
     ]),
   ).toBe(
-    `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+    `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare live or liveVersion so its probe prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
 })
 
 test('a deploy-only rung names the complete live-probe remedy', () => {
   const rungs = [{ name: 'production', branch: 'master', deploy: 'dispatch production' }]
   expect(releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs)).toBe(
-    `release rung production declares a deploy command but no live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"master","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+    `release rung production declares a deploy command but no live probe and cannot be proved; declare live or liveVersion so its probe prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"master","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
 })
 

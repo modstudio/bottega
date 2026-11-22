@@ -9,7 +9,12 @@ import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
-import { claimSettlement, settleClaims } from '../resources/resource-claims.ts'
+import {
+  claimedWorktreeRefusal,
+  claimSettlement,
+  isSharedReaderWorktreeClaim,
+  settleClaims,
+} from '../resources/resource-claims.ts'
 import {
   otherConversationWorktreeSharers,
   recordedWorktreeSharerRunIds,
@@ -492,6 +497,52 @@ function releaseSharedWorktreePointer(
   throw claim
 }
 
+function releaseSharedReaderPointer(
+  row: CleanupRow,
+  sharers: WorktreeSharerRow[],
+  auditAuthority: RootAuthority | undefined,
+  options: CleanupOptions,
+): void {
+  if (sharers.length && isSharedReaderWorktreeClaim(db(), row.worktree)) {
+    releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
+  }
+}
+
+function discardWorktreeSharers(
+  row: CleanupRow,
+  auditAuthority: RootAuthority | undefined,
+  options: CleanupOptions,
+): WorktreeSharerRow[] {
+  const sharers = otherConversationWorktreeSharers(db(), row)
+  releaseSharedReaderPointer(row, sharers, auditAuthority, options)
+  assertNoOtherWorktreeClaim(row.worktree, row.record_id)
+  return sharers
+}
+
+function assertNoOtherWorktreeClaim(path: string, actingRunId: string): void {
+  const refusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, actingRunId)
+  if (refusal) throw new Error(refusal)
+}
+
+function assertNoWorktreeClaimAcquiredDuringCleanup(path: string, actingRunId: string): void {
+  const refusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, actingRunId)
+  if (!refusal) return
+  throw new Error(
+    `another run claimed ${path} during cleanup; the tree has already been removed and ` +
+      `this conversation's pointer was not released. ${refusal}`,
+  )
+}
+
+function worktreeWasReleasedBeforeDiscard(
+  row: CleanupRow,
+  repoRoot: string,
+  force: boolean,
+): boolean {
+  const released = !existsSync(row.worktree)
+  assertDiscardTreeOwnership(row, repoRoot, force)
+  return released
+}
+
 export function discardWorktree(
   row: CleanupRow,
   verb: 'discarded' | 'abandoned',
@@ -502,9 +553,8 @@ export function discardWorktree(
 ): void {
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
-    const treeWasAlreadyReleased = !existsSync(row.worktree)
-    assertDiscardTreeOwnership(row, repoRoot, force)
-    const sharers = otherConversationWorktreeSharers(db(), row)
+    const treeWasAlreadyReleased = worktreeWasReleasedBeforeDiscard(row, repoRoot, force)
+    const sharers = discardWorktreeSharers(row, auditAuthority, options)
     if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
 
     const minted = mintedBranchForCleanup(row)
@@ -534,6 +584,7 @@ export function discardWorktree(
       row.record_id,
       force && !forceBusy,
     )
+    assertNoWorktreeClaimAcquiredDuringCleanup(row.worktree, row.record_id)
     const sharersAfter = otherConversationWorktreeSharers(db(), row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null

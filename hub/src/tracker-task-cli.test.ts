@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask, writeTrackerCache } from './ingest/trackers.ts'
 import type { RegisteredProject } from './projects.ts'
 import { showTask } from './task.ts'
+import { hostedTaskRow } from './task-hosted-record.ts'
 import { refreshTrackerTask } from './tracker-task-cli.ts'
 
 const project = {
@@ -17,6 +19,8 @@ const project = {
     tracker: { protocol: 'workspace-mcp', envPrefix: 'FIXTURE' },
   },
 } as RegisteredProject
+
+declareFixtureProjectSpace('fixture', 'fixture-space')
 
 const task: TrackerTask = {
   externalId: 'task-1',
@@ -66,7 +70,7 @@ describe('fresh tracker task read', () => {
     const observed: TrackerTask[] = []
     const result = await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
-      observe: (value) => {
+      observe: async (value) => {
         observed.push(value)
         return {
           at: '2026-10-05T00:00:00.000Z',
@@ -83,6 +87,131 @@ describe('fresh tracker task read', () => {
       commentsVerifiable: false,
       commentIds: [],
       shown,
+    })
+  })
+
+  test('hosted fresh read sends the observed task before its first record read-back', async () => {
+    const hostedProject = {
+      ...project,
+      record_id: '01990000-0000-7000-8000-000000002580',
+    } as RegisteredProject
+    let hostedRow: Record<string, unknown> | null = null
+    const hosted = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input: string, init?: RequestInit) => {
+        const url = new URL(input)
+        if (url.pathname === '/v1/changes') {
+          const changes = JSON.parse(String(init?.body)) as Array<{
+            id: string
+            row?: Record<string, unknown>
+          }>
+          hostedRow = changes[0]!.row ?? null
+          return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
+        }
+        if (url.pathname.startsWith('/v1/tasks/')) {
+          if (!hostedRow) return Response.json({ error: 'missing' }, { status: 404 })
+          return Response.json({
+            task: { ...hostedRow, revision: 1 },
+            comments: [],
+            documents: [],
+          })
+        }
+        return Response.json({ error: 'unexpected fixture route' }, { status: 500 })
+      },
+    }
+    const result = await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => task),
+      registeredProjects: () => [hostedProject],
+      observe: (task, at, prefixes) => observeTrackerTask(task, at, prefixes, hosted),
+      readBack: async () => {
+        if (!hostedRow) throw new Error('the first read-back ran before the hosted write')
+        return { task: hostedTaskRow(hostedRow as never), comments: [], documents: [] }
+      },
+    })
+
+    expect(result.shown?.task).toMatchObject({ key: 'FIX-1', title: 'Fresh task' })
+    expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
+  })
+
+  test('a failed hosted observation leaves local unchanged so the next observe resends it', async () => {
+    const open = { ...task, status: 'Open', category: 'open' as const }
+    await observeTrackerTask(open, '2026-10-05T00:00:00.000Z', [], { baseUrl: '' })
+    writeTransaction((conn) => conn.query('DELETE FROM hosted_outbox').run())
+
+    const unavailable = new Error('record unavailable')
+    const failing = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async () => {
+        throw unavailable
+      },
+    }
+    const changed = { ...task, status: 'In Progress', category: 'active' as const }
+    await expect(
+      observeTrackerTask(changed, '2026-10-05T00:01:00.000Z', [], failing),
+    ).rejects.toThrow('record unavailable')
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'open',
+    })
+    expect(db().query('SELECT 1 FROM task_status_event').all()).toHaveLength(0)
+    expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
+
+    const sent: Array<{ table: string }> = []
+    const working = {
+      ...failing,
+      fetch: async (_input: string, init?: RequestInit) => {
+        const changes = JSON.parse(String(init?.body)) as Array<{ id: string; table: string }>
+        sent.push(...changes)
+        return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
+      },
+    }
+    const retried = await observeTrackerTask(changed, '2026-10-05T00:02:00.000Z', [], working)
+    expect(retried.event).not.toBeNull()
+    expect(sent.map(({ table }) => table)).toEqual(['hub_task', 'hub_task_status_event'])
+  })
+
+  test('a crash after send retries the same ids and converges without a duplicate event', async () => {
+    const open = { ...task, status: 'Open', category: 'open' as const }
+    await observeTrackerTask(open, '2026-10-05T00:00:00.000Z', [], { baseUrl: '' })
+    writeTransaction((conn) => conn.query('DELETE FROM hosted_outbox').run())
+    const seen = new Set<string>()
+    const requests: string[][] = []
+    const fetch = async (_input: string, init?: RequestInit) => {
+      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+      requests.push(changes.map(({ id }) => id))
+      const outcomes = changes.map(({ id }) => ({
+        id,
+        status: seen.has(id) ? ('duplicate' as const) : ('applied' as const),
+      }))
+      for (const { id } of changes) seen.add(id)
+      return Response.json(outcomes)
+    }
+    const active = { ...task, status: 'In Progress', category: 'active' as const }
+    await expect(
+      observeTrackerTask(active, '2026-10-05T00:01:00.000Z', [], {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch,
+        afterTrackerSend: () => {
+          throw new Error('simulated crash')
+        },
+      }),
+    ).rejects.toThrow('simulated crash')
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'open',
+    })
+
+    await observeTrackerTask(active, '2026-10-05T00:01:00.000Z', [], {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch,
+    })
+    expect(requests.slice(0, 2)).toEqual(requests.slice(2, 4))
+    expect(seen).toHaveLength(2)
+    expect(db().query('SELECT 1 FROM task_status_event').all()).toHaveLength(1)
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'active',
     })
   })
 
@@ -245,7 +374,7 @@ describe('fresh tracker task read', () => {
         return task
       }),
       lease: withLease,
-      observe: (value) => ({
+      observe: async (value) => ({
         at: '2026-10-05T00:00:00.000Z',
         taskRecordId: null,
         taskKey: value.key,
@@ -287,7 +416,8 @@ describe('fresh tracker task read', () => {
 
   test('records one first-observed category change and the following collect records none', async () => {
     expect(
-      observeTrackerTask({ ...task, status: 'Open', category: 'open' }, undefined, []).event,
+      (await observeTrackerTask({ ...task, status: 'Open', category: 'open' }, undefined, []))
+        .event,
     ).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
@@ -326,7 +456,7 @@ describe('fresh tracker task read', () => {
   })
 
   test('an unchanged fresh task leaves no queued status event', async () => {
-    observeTrackerTask(task, undefined, [])
+    await observeTrackerTask(task, undefined, [])
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
@@ -345,7 +475,7 @@ describe('fresh tracker task read', () => {
   })
 
   test('an unchanged fresh task records no category event', async () => {
-    expect(observeTrackerTask(task, undefined, []).event).toBeNull()
+    expect((await observeTrackerTask(task, undefined, [])).event).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),

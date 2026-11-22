@@ -105,7 +105,7 @@ export async function refreshTrackerTask(
           guard.assertHeld()
           const commentIds = await reportedCommentIds(source, client, task.key)
           guard.assertHeld()
-          ;(dependencies.observe ?? observeTrackerTask)(
+          await (dependencies.observe ?? observeTrackerTask)(
             task,
             undefined,
             project.settings.keyPrefixes ?? [],

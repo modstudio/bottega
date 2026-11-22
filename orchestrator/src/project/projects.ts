@@ -77,7 +77,13 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
-import { type Project, projectByName, projectRowByName, projects } from './project-read.ts'
+import {
+  type Project,
+  projectByName,
+  projectByRecordId,
+  projectRowByName,
+  projects,
+} from './project-read.ts'
 import {
   PROJECT_REFERENCE_REPORT,
   type ProjectReferenceCounts,
@@ -116,7 +122,7 @@ import {
 export { treeRunScriptProblems } from './project-settings-refusals.ts'
 export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, Project, ProjectSettings, WorktreeTool }
-export { projectByName, projectRowByName, projects }
+export { projectByName, projectByRecordId, projectRowByName, projects }
 
 /** Every registered project, including retired rows. */
 export function projectsIncludingRetired(database: Database = db()): Project[] {

@@ -91,7 +91,7 @@ const readRemedy = `run \`${PLATFORM_SLUG} record doctor\`, then retry`
 
 function hostedReadFailure(cause: unknown): Error {
   const message = cause instanceof Error ? cause.message : String(cause)
-  return new Error(`${message}. ${readRemedy}`)
+  return new Error(message.endsWith(readRemedy) ? message : `${message}. ${readRemedy}`)
 }
 
 async function readHostedNote(recordId: string, options?: NoteClientOptions): Promise<NoteRow> {

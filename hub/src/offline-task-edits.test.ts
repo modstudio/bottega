@@ -14,7 +14,7 @@ afterAll(resetFixtureStore)
 
 test('a delivery-off drain reports the edit as queued with the refusal reason', async () => {
   const queuedAt = '2026-10-11T12:00:00.000Z'
-  observeTrackerTask(
+  await observeTrackerTask(
     {
       externalId: 'tracker-fix-1',
       key: 'FIX-1',
@@ -54,7 +54,7 @@ test('a delivery-off drain reports the edit as queued with the refusal reason', 
 
 test('a queued write reports its routing wait instead of another drainer', async () => {
   const queuedAt = '2026-10-11T12:00:00.000Z'
-  observeTrackerTask(
+  await observeTrackerTask(
     {
       externalId: 'tracker-ghost-1',
       key: 'GHO-1',
@@ -98,7 +98,7 @@ test('a queued write reports its routing wait instead of another drainer', async
 
 test('a queued write reports its routing wait while the collector holds the lease', async () => {
   const queuedAt = '2026-10-11T12:00:00.000Z'
-  observeTrackerTask(
+  await observeTrackerTask(
     {
       externalId: 'tracker-ghost-1',
       key: 'GHO-1',

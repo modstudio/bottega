@@ -1,12 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
+import { chunks } from './ingest/batches.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
-  DIRECT_RECORD_TABLE_NAMES,
-  DIRECT_RECORD_TABLES,
-  type DirectRecordTable,
   drainHostedOutbox,
+  HOSTED_OUTBOX_BATCH_SIZE,
   type HostedOutboxReport,
   queueHostedChange,
 } from './outbox.ts'
@@ -24,7 +23,9 @@ import {
   HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
+  SYNCED_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
+import { orderHostedPushChanges } from './push-order.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -68,34 +69,15 @@ type Options = {
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
-const DIRECT_REPAIR_COPY = {
-  [HOSTED_DOCUMENT_TABLE]: {
-    label: 'task document repair',
-    remedy: `${PLATFORM_SLUG} record pull`,
-  },
-  [HOSTED_NOTE_TABLE]: {
-    label: 'note acknowledgement repair',
-    remedy: `${PLATFORM_SLUG} note list`,
-  },
-  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
-    label: 'note acknowledgement repair',
-    remedy: `${PLATFORM_SLUG} note list`,
-  },
-} as const satisfies Record<DirectRecordTable, { label: string; remedy: string }>
-
-type DirectRepairFailure = {
-  table: DirectRecordTable
-  label: string
-  reason: string
-  remedy: string
-}
+const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set(
+  PUSHABLE_HUB_CHANGE_TABLES.filter((table) => !SYNCED_HUB_CHANGE_TABLES.has(table)),
+)
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
   unroutable: UnroutableRows[]
   stuck: StuckRow[]
   unrepairable: UnrepairableRow[]
-  directRepairFailures: DirectRepairFailure[]
   drain: HostedOutboxReport | null
   ok: boolean
 }
@@ -256,7 +238,7 @@ async function hostedTableIds(
 function queueRepairs(candidates: readonly RepairCandidate[]) {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
     const rows = candidates.filter(
-      (candidate) => candidate.table === table && !DIRECT_RECORD_TABLES.has(candidate.table),
+      (candidate) => candidate.table === table && !DIRECT_REPAIR_TABLES.has(candidate.table),
     )
     if (!rows.length) continue
     writeTransaction((conn) => {
@@ -270,50 +252,42 @@ async function sendDirectRepairs(
   candidates: readonly RepairCandidate[],
   spaces: readonly SpaceAudit[],
   requestOptions: RequestOptions,
-): Promise<{ sent: number; failures: DirectRepairFailure[] }> {
+): Promise<number> {
   const directCandidates = new Map(
     candidates
-      .filter((candidate) => DIRECT_RECORD_TABLES.has(candidate.table))
+      .filter((candidate) => DIRECT_REPAIR_TABLES.has(candidate.table))
       .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
   )
   let sent = 0
-  const failures: DirectRepairFailure[] = []
   for (const space of spaces) {
-    for (const directTable of DIRECT_RECORD_TABLE_NAMES) {
-      const copy = DIRECT_REPAIR_COPY[directTable]
-      try {
-        const table = space.tables.find((candidate) => candidate.table === directTable)
-        const changes = (table?.machineOnly ?? []).flatMap((id) => {
-          const candidate = directCandidates.get(`${directTable}:${id}`)
-          if (!candidate) return []
-          const loaded = loadOutboxChange(db(), {
-            table_name: candidate.table,
-            row_id: candidate.id,
-            operation: 'upsert',
-            fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
-          })
-          if (!loaded)
-            throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
-          return [loaded.change]
+    const changes = space.tables.flatMap((table) =>
+      table.machineOnly.flatMap((id) => {
+        const candidate = directCandidates.get(`${table.table}:${id}`)
+        if (!candidate) return []
+        const loaded = loadOutboxChange(db(), {
+          table_name: candidate.table,
+          row_id: candidate.id,
+          operation: 'upsert',
+          fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
         })
-        if (!changes.length) continue
-        await sendHostedChanges(copy.label, [changes], {
-          ...requestOptions,
-          recordSpace: space.spaceId,
-          conflictRemedy: copy.remedy,
-        })
-        sent += changes.length
-      } catch (cause) {
-        failures.push({
-          table: directTable,
-          label: copy.label,
-          reason: cause instanceof Error ? cause.message : String(cause),
-          remedy: copy.remedy,
-        })
-      }
-    }
+        if (!loaded) return []
+        return [
+          loaded.change.op === 'upsert' && candidate.fields !== null
+            ? { ...loaded.change, fields: candidate.fields }
+            : loaded.change,
+        ]
+      }),
+    )
+    if (!changes.length) continue
+    const ordered = orderHostedPushChanges(changes)
+    await sendHostedChanges('record repair', [...chunks(ordered, HOSTED_OUTBOX_BATCH_SIZE)], {
+      ...requestOptions,
+      recordSpace: space.spaceId,
+      conflictRemedy: `${PLATFORM_SLUG} task push`,
+    })
+    sent += changes.length
   }
-  return { sent, failures }
+  return sent
 }
 
 function drainAudit(drain: HostedOutboxReport): DrainAudit {
@@ -364,27 +338,27 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       unroutable: plan.unroutable,
       stuck: plan.stuck,
       unrepairable: plan.unrepairable,
-      directRepairFailures: [],
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
-  const direct = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   queueRepairs(plan.repair)
+  const deliveryOffReason = hostedDeliveryRefusal()
+  if (deliveryOffReason) throw new Error(deliveryOffReason)
+  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,
     push: (changes, pushOptions) =>
       hostedPushChanges(changes, { ...requestOptions, ...pushOptions }),
   })
-  const drain = { ...drained, sent: drained.sent + direct.sent }
+  const drain = { ...drained, sent: drained.sent + directlySent }
   return {
     spaces: plan.spaces,
     unroutable: plan.unroutable,
     stuck: plan.stuck,
     unrepairable: plan.unrepairable,
-    directRepairFailures: direct.failures,
     drain,
-    ok: direct.failures.length === 0 && taskPushVerdict(plan, drainAudit(drain)),
+    ok: taskPushVerdict(plan, drainAudit(drain)),
   }
 }
 
@@ -423,13 +397,6 @@ function unrepairableLines(rows: readonly UnrepairableRow[]): string[] {
   return rows.flatMap((row) => [
     `unrepairable ${row.table} ${row.id} ${row.reason}`,
     `  remedy: ${row.remedy}`,
-  ])
-}
-
-function directRepairFailureLines(failures: readonly DirectRepairFailure[]): string[] {
-  return failures.flatMap((failure) => [
-    `direct repair failed ${failure.table}: ${failure.label}: ${failure.reason}`,
-    `  remedy: ${failure.remedy}`,
   ])
 }
 
@@ -486,7 +453,6 @@ export function formatTaskPushReport(report: TaskPushReport): string {
     for (const id of row.ids) lines.push(`  ${id}`)
   }
   lines.push(...unrepairableLines(report.unrepairable))
-  lines.push(...directRepairFailureLines(report.directRepairFailures))
   if (report.drain) {
     lines.push(
       `drain queued=${report.drain.queued} sent=${report.drain.sent} rejected=${report.drain.rejected} quarantined=${report.drain.quarantined}`,

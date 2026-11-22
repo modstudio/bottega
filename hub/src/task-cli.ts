@@ -467,8 +467,11 @@ function registerTaskLifecycleCommands(task: Command): void {
     })
   task
     .command('push')
-    .description('audit hosted identity sets; --repair queues missing machine rows')
-    .option('--repair', 'queue machine task rows missing from the hosted record')
+    .description('audit hosted identity sets; --repair writes missing machine rows to the record')
+    .option(
+      '--repair',
+      'write machine rows missing from the hosted record (hosted task tables directly, synced tables through the outbox)',
+    )
     .option('--json', 'write the audit report as JSON')
     .action(async (_options, command) => {
       open()

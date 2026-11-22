@@ -69,6 +69,30 @@ export const releaseModules = [
     typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
   },
   {
+    file: 'orchestrator/src/release/release-preflight.ts',
+    allowed: [
+      'shared/brand.ts',
+      'shared/refusal.ts',
+      'orchestrator/src/release/release-entry-closure.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/release/release-entry-closure.ts'],
+  },
+  {
+    file: 'orchestrator/src/release/release-preflight-adapter.ts',
+    allowed: [
+      'shared/git-path-list.ts',
+      'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-entry-closure.ts',
+      'orchestrator/src/release/live-reading.ts',
+      'orchestrator/src/release/release-preflight.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
+  },
+  {
     file: 'orchestrator/src/release/ship-to-reach.ts',
     allowed: [
       'shared/brand.ts',

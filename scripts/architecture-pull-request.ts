@@ -10,6 +10,7 @@ export const pullRequestModuleSpecs = [
       '../database/db.ts',
       '../project/projects.ts',
       '../question-store/question-store-read.ts',
+      '../run/synthetic-lifecycle-job.ts',
       '../workflow/workflow-step-action.ts',
     ],
     typeOnlyAllowed: [

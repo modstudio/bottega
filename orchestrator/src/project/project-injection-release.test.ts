@@ -43,6 +43,20 @@ describe('release entry-point settings', () => {
 
 describe('release rung settings', () => {
   test.each([
+    ['present', { ...release.rungs[0]!, preflight: 'check credentials' }, []],
+    [
+      'empty',
+      { ...release.rungs[0]!, preflight: ' ' },
+      [expect.stringContaining('release.rungs.0.preflight: Too small')],
+    ],
+    ['absent', release.rungs[0]!, []],
+  ])('validates a %s preflight command', (_name, rung, expected) => {
+    expect(validateProjectSettings({ release: { ...release, rungs: [rung] } }, 'strict')).toEqual(
+      expected,
+    )
+  })
+
+  test.each([
     [
       { ...release.rungs[0]!, live: ' ' },
       [expect.stringContaining('release.rungs.0.live: Too small')],

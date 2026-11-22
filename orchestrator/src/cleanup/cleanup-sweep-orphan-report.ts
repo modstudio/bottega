@@ -7,7 +7,18 @@ import { resourcesForConversation } from './cleanup.ts'
 import {
   decideFilesystemOrphanAfterInventory,
   type decideFilesystemOrphanAfterRemoval,
+  type FilesystemOrphanUnderLockRuling,
 } from './cleanup-sweep-decisions.ts'
+
+export function reportClaimedOrphanKeep(
+  ruling: FilesystemOrphanUnderLockRuling,
+  label: string,
+  keep: (line: string, reason: string) => void,
+): boolean {
+  if (ruling.action !== 'claimed') return false
+  keep(`${label}  ${ruling.keepLine}`, ruling.keepReason)
+  return true
+}
 
 export function reportOrphanAfterRemovalKeep(
   ruling: ReturnType<typeof decideFilesystemOrphanAfterRemoval>,

@@ -262,7 +262,7 @@ export function unprovableReleaseRungMessage(
   const condition = rungs.find((candidate) => candidate.name === rung)?.deploy
     ? `release rung ${rung} declares a deploy command but no live probe and cannot be proved`
     : `release rung ${rung} declares neither a deploy command nor a live probe and cannot be proved`
-  return `${condition}; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
+  return `${condition}; declare live or liveVersion so its probe prints the commit the running deployment was built from, not a reachability check, with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
 }
 
 /** Refuse a selected release rung until it can prove liveness by observation. */
