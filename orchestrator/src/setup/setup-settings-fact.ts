@@ -2,10 +2,7 @@
 /** Reads only local session and Claude settings state for setup planning. */
 
 import { runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
-import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
-import { signedInDocOwner } from '../doc/docs.ts'
 import { recordSessionPresent } from '../record/record-session.ts'
-import { parseStoredOwnedSettings, SETTINGS_SCOPE, SETTINGS_SLUG } from '../settings/settings.ts'
 import {
   claudeHomeFromEnvironment,
   readSettingsJsonLenient,
@@ -15,6 +12,7 @@ import {
   type ProductHookDeclaration,
   productHookDeclarations,
 } from '../settings/settings-machine-hooks.ts'
+import { readSignedInSubagentHooks } from '../settings/settings-user-row.ts'
 import { classifySetupProductHooks, type SetupProductHookFact } from './setup-install-verify.ts'
 
 export type SetupSettingsFact = {
@@ -28,21 +26,16 @@ export async function gatherSetupSettingsFact(
   adapters: {
     sessionPresent?: () => boolean
     assetRoot?: () => string
-    owner?: () => Promise<string>
-    settingsBody?: (owner: string) => string | null
+    subagentHooks?: () => Promise<'on' | undefined>
   } = {},
 ): Promise<SetupSettingsFact> {
   const settings = readSettingsJsonLenient(userSettingsPath(claudeHomeFromEnvironment(environment)))
   const assetRoot = (adapters.assetRoot ?? (() => runtimeAssetRoot(environment)))()
   const signedIn = (adapters.sessionPresent ?? recordSessionPresent)()
-  const owner = signedIn ? await (adapters.owner ?? signedInDocOwner)() : null
-  const body = owner
-    ? (
-        adapters.settingsBody ??
-        ((value) => getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, value)?.body ?? null)
-      )(owner)
-    : null
-  const options = body ? parseStoredOwnedSettings(body).options : undefined
+  const subagentHooks = signedIn
+    ? await (adapters.subagentHooks ?? readSignedInSubagentHooks)()
+    : undefined
+  const options = subagentHooks === 'on' ? { subagentHooks } : undefined
   const declarations: readonly ProductHookDeclaration[] = productHookDeclarations(options)
   return {
     state: signedIn ? 'signed-in' : 'waiting-for-sign-in',

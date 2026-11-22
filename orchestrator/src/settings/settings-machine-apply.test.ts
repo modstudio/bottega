@@ -30,10 +30,7 @@ import {
   printMachineSettingsApplyResults,
   settingsApplyDecision,
 } from './settings-machine-apply.ts'
-import {
-  productHookDeclarations,
-  withMachineProductHooks,
-} from './settings-machine-hooks.ts'
+import { productHookDeclarations, withMachineProductHooks } from './settings-machine-hooks.ts'
 import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 

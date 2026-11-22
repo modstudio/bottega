@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/settings/settings-subagents.ts#settingsSubagentsCommand": {
+      "test": "orchestrator/src/settings/settings-apply-commands.test.ts: a missing row names the import command that clears the refusal"
+    },
     "orchestrator/src/record/record-api-errors.ts#renderRecordApiRefusal": {
       "test": "orchestrator/src/record/record-projects.test.ts: the real record app refuses a stale project revision and names the pull remedy"
     },

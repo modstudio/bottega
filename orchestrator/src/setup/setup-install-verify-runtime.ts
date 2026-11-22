@@ -9,7 +9,6 @@ import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { runtimeAssetPath, runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
-import { isPlainObject } from '../settings/settings.ts'
 import {
   claudeHomeFromEnvironment,
   managedSettingsPaths,
@@ -23,7 +22,11 @@ import {
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import { productHookDeclarations, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import {
+  productHookDeclarations,
+  renderedSubagentHookOptions,
+  SCRIPT_FILES,
+} from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -98,10 +101,7 @@ function gatherSetupInstallVerifyFacts(
     ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
   ]
   const userSettings = settingsFiles.find((file) => file.kind === 'user')?.settings
-  const settingsOptions =
-    isPlainObject(userSettings) && isPlainObject(userSettings.options)
-      ? { subagentHooks: userSettings.options.subagentHooks === 'on' ? ('on' as const) : undefined }
-      : undefined
+  const settingsOptions = renderedSubagentHookOptions(userSettings)
   return {
     installRoot,
     hooks: productHookDeclarations(settingsOptions),

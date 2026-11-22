@@ -153,6 +153,11 @@ async function seedFutureUser(): Promise<string> {
   return body
 }
 
+const readLocalUserSettings = async () => ({
+  owner: OWNER,
+  row: getDoc('settings', null, 'settings', OWNER),
+})
+
 describe('future settings edit refusals', () => {
   const adapters = [
     {
@@ -197,7 +202,7 @@ describe('future settings edit refusals', () => {
     {
       name: 'subagent choice',
       prepare: () => {},
-      edit: () => settingsSubagentsCommand('allow'),
+      edit: () => settingsSubagentsCommand('allow', { read: readLocalUserSettings }),
     },
   ]
 
@@ -336,10 +341,18 @@ describe('settings env import', () => {
 })
 
 describe('settings subagents', () => {
+  test('a missing row names the import command that clears the refusal', async () => {
+    await expect(settingsSubagentsCommand()).rejects.toThrow(
+      `${PLATFORM_SLUG} machine settings import --user`,
+    )
+  })
+
   test('block and allow round trip the option and report its source', async () => {
     await seedUser()
-    expect(await settingsSubagentsCommand()).toMatchObject({ blocking: 'off', source: 'default' })
-    expect(await settingsSubagentsCommand('block')).toMatchObject({
+    expect(
+      await settingsSubagentsCommand(undefined, { read: readLocalUserSettings }),
+    ).toMatchObject({ blocking: 'off', source: 'default' })
+    expect(await settingsSubagentsCommand('block', { read: readLocalUserSettings })).toMatchObject({
       blocking: 'on',
       source: 'user',
       changed: true,
@@ -347,7 +360,7 @@ describe('settings subagents', () => {
     expect(
       parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).options,
     ).toEqual({ subagentHooks: 'on' })
-    expect(await settingsSubagentsCommand('allow')).toMatchObject({
+    expect(await settingsSubagentsCommand('allow', { read: readLocalUserSettings })).toMatchObject({
       blocking: 'off',
       source: 'default',
       changed: true,

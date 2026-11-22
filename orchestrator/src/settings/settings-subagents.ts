@@ -2,8 +2,7 @@
 /** Owns the signed-in user's subagent-blocking choice. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
-import { setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { setDoc } from '../doc/docs.ts'
 import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
@@ -11,6 +10,7 @@ import {
   serializeOwnedSettings,
 } from './settings.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
+import { readSignedInUserSettingsRow } from './settings-user-row.ts'
 
 type SubagentResult = {
   blocking: 'on' | 'off'
@@ -39,12 +39,14 @@ function editSubagentChoice(
   return subagentResult(next, true)
 }
 
-export async function settingsSubagentsCommand(choice?: string): Promise<SubagentResult> {
+export async function settingsSubagentsCommand(
+  choice?: string,
+  adapters: { read?: typeof readSignedInUserSettingsRow } = {},
+): Promise<SubagentResult> {
   if (choice !== undefined && choice !== 'allow' && choice !== 'block') {
     throw new Error('refusing settings subagents: expected allow or block')
   }
-  const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const { owner, row } = await (adapters.read ?? readSignedInUserSettingsRow)()
   if (!row) {
     throw new Error(
       renderRefusal(
