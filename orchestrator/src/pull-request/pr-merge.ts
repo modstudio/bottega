@@ -887,6 +887,7 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
+      const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (input.releaseRequired)
         await input.adapter.releasePreflight?.({
           project: input.project,
@@ -894,7 +895,6 @@ async function completeMerge(input: {
           headCommit: pullRequest.headCommit,
           target: input.target,
         })
-      const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {
         mergeCommitLookupFailed = true
