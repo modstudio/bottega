@@ -28,7 +28,7 @@ const project = {
   retiredAt: null,
   settings: {
     trunk: 'main',
-    worktree: { recipePath: 'bottega.jsonc' },
+    worktree: { recipePath: `${PLATFORM_SLUG}.jsonc` },
     release: {
       rungs: [
         {

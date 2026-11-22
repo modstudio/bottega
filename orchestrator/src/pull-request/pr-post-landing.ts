@@ -30,7 +30,6 @@ import {
   releaseAfterProvedRequiredRelease,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
-  releaseRequiredRungsBeforeMainMove,
   requiredReleaseStepOrder,
   requiredRungDecision,
   undecidedRequiredRelease,
@@ -177,48 +176,52 @@ function guardRealPostLandingAdapter(
   }
 }
 
-const cliPostLandingAdapter = guardRealPostLandingAdapter({
-  changedPaths,
-  entryClosure: entryClosureAtCommit,
-  mainHead: mainCheckoutHead,
-  moveMain(project, mergeCommit, movesInstallation) {
-    routeMainCheckoutMove(movesInstallation, {
-      installation() {
-        verifyMainCheckout(project)
-        const result = moveRegisteredMainCheckout(project)
-        throwMainCheckoutUpdateFailure(result)
-        verifyMainCheckout(project, mergeCommit)
-      },
-      otherProject() {
-        moveNonInstallationMainCheckout(project, mergeCommit)
-      },
-    })
-  },
-  releaseBeforeMove: releaseRequiredRungsBeforeMainMove,
-  fence: fenceStoreAfterCheckoutMove,
-  async handOff(payload, project, movesInstallation) {
-    try {
-      const command = postLandingHandOffInvocation(project.path, movesInstallation)
-      const result = Bun.spawnSync(
-        [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
-        {
-          cwd: command.cwd,
-          env: process.env,
-          stdin: Buffer.from(encodePullRequestPostLandingPayload(payload)),
-          stdout: 'pipe',
-          stderr: 'inherit',
+export function cliPostLandingAdapter(
+  releaseBeforeMove: PullRequestPostLandingAdapter['releaseBeforeMove'],
+): PullRequestPostLandingAdapter {
+  return guardRealPostLandingAdapter({
+    changedPaths,
+    entryClosure: entryClosureAtCommit,
+    mainHead: mainCheckoutHead,
+    moveMain(project, mergeCommit, movesInstallation) {
+      routeMainCheckoutMove(movesInstallation, {
+        installation() {
+          verifyMainCheckout(project)
+          const result = moveRegisteredMainCheckout(project)
+          throwMainCheckoutUpdateFailure(result)
+          verifyMainCheckout(project, mergeCommit)
         },
-      )
-      return { exitCode: result.exitCode, output: result.stdout.toString().replace(/\n$/, '') }
-    } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause)
-      return {
-        exitCode: MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-        output: `post-landing hand-off failed: ${detail}; ${postLandingRecovery(payload.target, payload.depth)}`,
+        otherProject() {
+          moveNonInstallationMainCheckout(project, mergeCommit)
+        },
+      })
+    },
+    releaseBeforeMove,
+    fence: fenceStoreAfterCheckoutMove,
+    async handOff(payload, project, movesInstallation) {
+      try {
+        const command = postLandingHandOffInvocation(project.path, movesInstallation)
+        const result = Bun.spawnSync(
+          [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
+          {
+            cwd: command.cwd,
+            env: process.env,
+            stdin: Buffer.from(encodePullRequestPostLandingPayload(payload)),
+            stdout: 'pipe',
+            stderr: 'inherit',
+          },
+        )
+        return { exitCode: result.exitCode, output: result.stdout.toString().replace(/\n$/, '') }
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        return {
+          exitCode: MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+          output: `post-landing hand-off failed: ${detail}; ${postLandingRecovery(payload.target, payload.depth)}`,
+        }
       }
-    }
-  },
-})
+    },
+  })
+}
 
 /** Re-enter moved Bottega code, or retain the current installation for another project. */
 export function postLandingHandOffInvocation(
@@ -448,7 +451,8 @@ function tracedPostLandingOutcome(
 export async function completePullRequestPostLanding(
   input: CompletePullRequestPostLandingInput,
 ): Promise<PullRequestMergeOutcome> {
-  const post = input.postLandingAdapter ?? cliPostLandingAdapter
+  const post = input.postLandingAdapter
+  if (!post) throw new Error('pull-request post-landing adapter was not composed')
   const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
   const traceEnabled = deploysBeforeMain(input.releaseRequired, decision)

@@ -3,7 +3,6 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReleaseAtCommitReport } from '../release/release-at-commit.ts'
-import { releaseAtCommit } from '../release/release-at-commit.ts'
 import {
   checkRelease,
   type ReleaseResult,
@@ -11,6 +10,7 @@ import {
   releaseProject,
 } from '../release/release-service.ts'
 import { log } from './support.ts'
+import { releaseAtCommitFromHookTree } from './release-tree.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
   if (result.alreadyLive) {
@@ -66,7 +66,7 @@ async function runReleaseAtCommit(
   if (!options.rung) throw new Error('--at requires --rung')
   if (options.rollback || options.behindTrunk || options.redeploy)
     throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
-  return releaseAtCommit({ project, rung: options.rung, commit: options.at })
+  return releaseAtCommitFromHookTree({ project, rung: options.rung, commit: options.at })
 }
 
 function writeReleaseOutput(

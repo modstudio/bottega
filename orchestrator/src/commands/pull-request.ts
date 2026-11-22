@@ -16,8 +16,14 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
-import { mergePullRequest } from '../pull-request/pr-merge.ts'
-import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
+import {
+  cliPullRequestMergeAdapterWithPostLanding,
+  mergePullRequest,
+} from '../pull-request/pr-merge.ts'
+import {
+  cliPostLandingAdapter,
+  runPullRequestPostLanding,
+} from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
   type PullRequestPostLandingPayload,
@@ -25,6 +31,8 @@ import {
   postLandingRecovery,
 } from '../pull-request/pr-post-landing-payload.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
+import { releaseRequiredRungsBeforeMainMove } from '../release/release-required.ts'
+import { releaseAtCommitFromHookTree } from './release-tree.ts'
 import { log } from './support.ts'
 
 export const PR_CREATE_OPTIONS = [
@@ -210,10 +218,13 @@ export async function mergePullRequestCommand(
     return
   }
   const cwd = resolveReviewCommandCwd(options.cwd)
+  const postLanding = cliPostLandingAdapter((input) =>
+    releaseRequiredRungsBeforeMainMove({ ...input, releaseAt: releaseAtCommitFromHookTree }),
+  )
   const outcome = await mergePullRequest(
     target,
     cwd,
-    undefined,
+    cliPullRequestMergeAdapterWithPostLanding(postLanding),
     undefined,
     Boolean(options.releaseRequired),
     options.depth,

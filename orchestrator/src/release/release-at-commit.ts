@@ -2,11 +2,7 @@
 /** Provisions, deploys from, and releases one checkout at an exact commit. */
 
 import { randomUUID } from 'node:crypto'
-import {
-  createHookTree,
-  type HookTreeRemovalResult,
-  removeHookTreeResult,
-} from '../hook-tree/tree.ts'
+import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import {
   type CheckoutReleaseTarget,
   type ReleaseResult,
@@ -24,25 +20,37 @@ export type ReleaseAtCommitReport = {
 
 export type ReleaseAtCommitDependencies = {
   resolve(project: string, rung: string, commit: string): CheckoutReleaseTarget
-  create(target: CheckoutReleaseTarget, name: string, commit: string): string
   deploy(target: CheckoutReleaseTarget, path: string, commit: string): ReleaseResult
-  remove(path: string): Promise<HookTreeRemovalResult>
   id(): string
   now(): number
 }
 
+type ReleaseTreeRemovalResult =
+  | { outcome: 'released' | 'absent' }
+  | { outcome: 'kept'; reason: string }
+  | { outcome: 'failed'; detail: string }
+
+export type ReleaseTreeLifecycle = {
+  create(projectPath: string, name: string, commit: string): string
+  remove(path: string): Promise<ReleaseTreeRemovalResult>
+}
+
 const releaseAtCommitDependencies: ReleaseAtCommitDependencies = {
   resolve: resolveCheckoutReleaseTarget,
-  create(target, name, commit) {
-    return createHookTree({ cwd: target.project.path, name, base: commit })
-  },
   deploy: releaseProjectFromCheckout,
-  remove: (path) => removeHookTreeResult(path, 'operator-removal'),
   id: randomUUID,
   now: Date.now,
 }
 
-function removalResidue(result: HookTreeRemovalResult): string | undefined {
+/** The single capability predicate shared by merge ordering and machine update. */
+export function canDeployRungFromReleaseTree(
+  project: Pick<Project, 'path' | 'settings'>,
+  rung: { deploy?: string },
+): boolean {
+  return rung.deploy !== undefined && resolvedWorktreeTool(project)?.recipePath !== undefined
+}
+
+function removalResidue(result: ReleaseTreeRemovalResult): string | undefined {
   if (result.outcome === 'kept') return result.reason
   if (result.outcome === 'failed') return result.detail
   return undefined
@@ -52,13 +60,14 @@ export async function releaseAtCommit(input: {
   project: string
   rung: string
   commit: string
+  lifecycle: ReleaseTreeLifecycle
   dependencies?: ReleaseAtCommitDependencies
 }): Promise<ReleaseAtCommitReport> {
   const dependencies = input.dependencies ?? releaseAtCommitDependencies
   const target = dependencies.resolve(input.project, input.rung, input.commit)
   const provisionStarted = dependencies.now()
   const treeName = `release-${input.rung}-${dependencies.id()}`
-  const path = dependencies.create(target, treeName, input.commit)
+  const path = input.lifecycle.create(target.project.path, treeName, input.commit)
   const provisionMs = dependencies.now() - provisionStarted
   let result: ReleaseResult | undefined
   let failure: unknown
@@ -72,7 +81,7 @@ export async function releaseAtCommit(input: {
   const releaseStarted = dependencies.now()
   let residue: string | undefined
   try {
-    residue = removalResidue(await dependencies.remove(path))
+    residue = removalResidue(await input.lifecycle.remove(path))
   } catch (cause) {
     residue = cause instanceof Error ? cause.message : String(cause)
   }

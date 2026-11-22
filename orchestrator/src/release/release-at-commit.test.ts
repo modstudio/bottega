@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
-import { type ReleaseAtCommitDependencies, releaseAtCommit } from './release-at-commit.ts'
+import {
+  type ReleaseAtCommitDependencies,
+  releaseAtCommit,
+  type ReleaseTreeLifecycle,
+} from './release-at-commit.ts'
 import type { CheckoutReleaseTarget, ReleaseResult } from './release-service.ts'
 
 const project = {
@@ -11,7 +15,11 @@ const project = {
 
 const path = '/projects/fixture/.claude/worktrees/release'
 
-const target = { project, selected: { name: 'production' }, deploy: 'deploy' } as CheckoutReleaseTarget
+const target = {
+  project,
+  selected: { name: 'production' },
+  deploy: 'deploy',
+} as CheckoutReleaseTarget
 
 const released = {
   exitCode: 0,
@@ -29,20 +37,29 @@ function dependencies(
       calls.push(`resolve:${name}:${rung}:${commit}`)
       return target
     },
-    create: (_target, treeName, commit) => {
-      calls.push(`create:${treeName}:${commit}`)
-      return path
-    },
     deploy: (_target, checkout, commit) => {
       calls.push(`deploy:${checkout}:${commit}`)
       return released
+    },
+    id: () => 'tree-id',
+    now: () => now++,
+    ...overrides,
+  }
+}
+
+function lifecycle(
+  calls: string[],
+  overrides: Partial<ReleaseTreeLifecycle> = {},
+): ReleaseTreeLifecycle {
+  return {
+    create: (_projectPath, treeName, commit) => {
+      calls.push(`create:${treeName}:${commit}`)
+      return path
     },
     remove: async (checkout) => {
       calls.push(`remove:${checkout}`)
       return { outcome: 'released' }
     },
-    id: () => 'tree-id',
-    now: () => now++,
     ...overrides,
   }
 }
@@ -53,6 +70,7 @@ test('releaseAtCommit provisions the requested commit, deploys from it, and remo
     project: 'fixture',
     rung: 'production',
     commit: 'merge-commit',
+    lifecycle: lifecycle(calls),
     dependencies: dependencies(calls),
   })
 
@@ -72,6 +90,7 @@ test('releaseAtCommit removes the tree after a deploy failure', async () => {
       project: 'fixture',
       rung: 'production',
       commit: 'merge-commit',
+      lifecycle: lifecycle(calls),
       dependencies: dependencies(calls, {
         deploy: () => {
           calls.push('deploy-failed')
@@ -89,9 +108,10 @@ test('releaseAtCommit preserves a proved deploy when removal leaves residue', as
     project: 'fixture',
     rung: 'production',
     commit: 'merge-commit',
-    dependencies: dependencies(calls, {
+    lifecycle: lifecycle(calls, {
       remove: async () => ({ outcome: 'kept', reason: 'untracked build output remains' }),
     }),
+    dependencies: dependencies(calls),
   })
 
   expect(report.result.liveMatchesCandidate).toBe(true)

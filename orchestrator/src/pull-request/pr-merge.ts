@@ -384,6 +384,12 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
 }
 
+export function cliPullRequestMergeAdapterWithPostLanding(
+  postLanding: PullRequestPostLandingAdapter,
+): PullRequestMergeAdapter {
+  return { ...cliPullRequestMergeAdapter, postLanding }
+}
+
 function mergedChangeNeedsWorkflowPromotion(paths: readonly string[]): boolean {
   return paths.some((path) => matchWorkflowTreePath(path) !== null)
 }

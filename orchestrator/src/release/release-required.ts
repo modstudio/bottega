@@ -5,9 +5,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
-import { projectLifecycleForm, type Project } from '../project/projects.ts'
+import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
-import { releaseAtCommit } from './release-at-commit.ts'
+import { canDeployRungFromReleaseTree } from './release-at-commit.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
 import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {
@@ -87,7 +87,8 @@ export function requiredReleaseStepOrder(
   releaseRequired: boolean,
   plans: readonly Pick<ReleaseRungPlan, 'required' | 'canDeployFromTree'>[],
 ): RequiredReleaseStep[] {
-  return releaseRequired && plans.some(({ required, canDeployFromTree }) => required && canDeployFromTree)
+  return releaseRequired &&
+    plans.some(({ required, canDeployFromTree }) => required && canDeployFromTree)
     ? ['deploy-rungs', 'move-main', 'hand-off']
     : ['move-main', 'hand-off']
 }
@@ -140,7 +141,7 @@ function releaseRungPlans(
   skipped: ReadonlyMap<string, string>,
   beyondDepth: ReadonlySet<string>,
   landingBranch: string,
-  trackedRecipeLifecycle: boolean,
+  project: Pick<Project, 'path' | 'settings'> | null,
 ): ReleaseRungPlan[] {
   return rungs.map((rung) => {
     const requiredBy = explicitlyRequired.has(rung.name)
@@ -162,7 +163,7 @@ function releaseRungPlans(
             : notRequiredReason(rung, depth, skipped, beyondDepth),
       declaresLive: rung.live !== undefined || rung.liveVersion !== undefined,
       declaresDeploy: rung.deploy !== undefined,
-      canDeployFromTree: trackedRecipeLifecycle && rung.deploy !== undefined,
+      canDeployFromTree: project ? canDeployRungFromReleaseTree(project, rung) : false,
     }
   })
 }
@@ -187,7 +188,7 @@ export function legacyRungPlans(
     new Map(),
     new Set(),
     landingBranch,
-    false,
+    null,
   )
 }
 
@@ -218,7 +219,7 @@ export function requiredRungDecision(
       skipped,
       beyondDepth,
       project.settings.trunk!,
-      projectLifecycleForm(project) === 'tracked-recipe',
+      project,
     )
     return {
       decided: true,
@@ -293,7 +294,11 @@ export type ReleaseGuardProject = Pick<Project, 'name' | 'path' | 'settings'>
 export type IncomingRequiredRungDependencies = {
   resolve(ref: string, project: ReleaseGuardProject): string
   changedPaths(project: ReleaseGuardProject, from: string, to: string): string[]
-  entryClosure(project: ReleaseGuardProject, commit: string, entries: readonly string[]): EntryClosure
+  entryClosure(
+    project: ReleaseGuardProject,
+    commit: string,
+    entries: readonly string[],
+  ): EntryClosure
   newestLive(project: ReleaseGuardProject, rung: string): string | null
   contains(project: ReleaseGuardProject, ancestor: string, descendant: string): boolean
   now(): number
@@ -329,11 +334,7 @@ export function incomingRequiredRungGuard(
     entryClosure,
   ).filter((name) => {
     const rung = rungs.find((candidate) => candidate.name === name)
-    return (
-      rung?.branch === project.settings.trunk &&
-      rung.deploy !== undefined &&
-      projectLifecycleForm(project) === 'tracked-recipe'
-    )
+    return rung?.branch === project.settings.trunk && canDeployRungFromReleaseTree(project, rung)
   })
   const proved = new Map<string, string | null>()
   const contains = new Map<string, boolean>()
@@ -542,7 +543,13 @@ export async function releaseRequiredRungsBeforeMainMove(input: {
   project: Project
   mergeCommit: string
   rungs: ReleaseRungPlan[]
-  releaseAt?: typeof releaseAtCommit
+  releaseAt(input: { project: string; rung: string; commit: string }): Promise<{
+    result: ReleaseResult
+    provisionMs: number
+    deployMs: number
+    releaseMs: number
+    residue?: string
+  }>
   now?: () => Date
 }): Promise<RequiredReleaseReport> {
   const plans = input.rungs.filter(
@@ -552,7 +559,7 @@ export async function releaseRequiredRungsBeforeMainMove(input: {
   const outcomes = new Map<string, RequiredRungRelease>()
   for (const plan of prepared.actionable) {
     try {
-      const report = await (input.releaseAt ?? releaseAtCommit)({
+      const report = await input.releaseAt({
         project: input.project.name,
         rung: plan.rung,
         commit: input.mergeCommit,

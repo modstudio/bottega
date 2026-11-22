@@ -22,12 +22,8 @@ import {
   returnMainCheckoutToTrunkCommand,
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
-import type { Project } from '../project/projects.ts'
 import { projectAt } from '../project/projects.ts'
-import {
-  incomingRequiredRungGuard,
-  type ReleaseGuardProject,
-} from '../release/release-required.ts'
+import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'

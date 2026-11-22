@@ -45,9 +45,9 @@ const project = {
 
 const deployProject = {
   ...project,
+  path: cwd,
   settings: {
     ...project.settings,
-    worktree: { recipePath: 'bottega.jsonc' },
     release: {
       ...project.settings.release,
       rungs: [
@@ -169,8 +169,7 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(outcome.exitCode).toBe(0)
   expect(outcome.output).toEndWith('child output')
   expect(handOffProjects).toEqual([project.path])
-  expect(moveDecisions).toEqual([true])
-  expect(handOffDecisions).toEqual([true])
+  expect([moveDecisions, handOffDecisions]).toEqual([[true], [true]])
   expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
@@ -203,7 +202,6 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
-
 test('a required rung is proved before main moves and is not delegated again', async () => {
   const events: string[] = []
   let handOffStarted = ''
