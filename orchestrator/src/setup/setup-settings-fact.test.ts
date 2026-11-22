@@ -30,7 +30,8 @@ test('setup settings fact reports matching and absent hooks from the local setti
     runtime,
   ).settings
   const first = PRODUCT_HOOKS[0]!
-  const groups = settings.hooks?.[first.event] as Array<{
+  const hooks = settings.hooks as Record<string, unknown>
+  const groups = hooks[first.event] as Array<{
     matcher?: string
     hooks: Array<{ command: string }>
   }>
@@ -46,7 +47,7 @@ test('setup settings fact reports matching and absent hooks from the local setti
   expect(fact.state).toBe('signed-in')
   expect(fact.hooks[0]).toEqual({
     event: first.event,
-    matcher: first.matcher,
+    matcher: first.matcher ?? null,
     script: first.script,
     state: 'missing',
   })

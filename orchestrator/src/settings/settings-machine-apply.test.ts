@@ -131,7 +131,7 @@ describe('settings apply', () => {
   test('check mode bounds hosted reads to identity and document routes', async () => {
     process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
     const routes: string[] = []
-    const transport: RecordClientRequest = async <T>(path: string, init = {}): Promise<T> => {
+    const transport: RecordClientRequest = async (path, init = {}) => {
       routes.push(recordRouteClass(path))
       const body =
         path === '/v1/whoami'
@@ -158,7 +158,7 @@ describe('settings apply', () => {
               unreadable: [],
               nextCursor: null,
             }
-      return (init.schema ? init.schema(body) : body) as T
+      return (init.schema ? init.schema(body) : body) as never
     }
     installRecordApiClient(recordApiClientOver(transport))
 

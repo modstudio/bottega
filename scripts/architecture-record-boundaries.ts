@@ -49,6 +49,7 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
       '../project/default-local-project-retirement.ts',
       '../project/project-checkout-adoption.ts',
       '../project/project-relink.ts',
+      '../settings/settings-machine-apply.ts',
       './install-binding-write.ts',
       './record-api-client.ts',
       './record-email-verification-client.ts',
