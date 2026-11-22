@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { registerLocalProject } from '../project/project-registration.ts'
+import { compactionCaptureSource } from '../session-losses/session-losses.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -67,6 +68,7 @@ test('post-compaction first act prints an accepted context set command', async (
     const argv = parse(expanded).filter((part): part is string => typeof part === 'string')
 
     expect(argv.slice(0, 2)).toEqual([PLATFORM_SLUG, 'agent'])
+    expect(argv[argv.indexOf('--source') + 1]).toBe(compactionCaptureSource('session-a'))
     expect(await run(argv.slice(2))).toBe(0)
     expect((await getContextItem(`task:${task.record_id}`, 'compaction-fact'))?.body).toBe(
       'A fact retained across compaction',
