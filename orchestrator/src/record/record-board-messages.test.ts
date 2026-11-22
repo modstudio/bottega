@@ -17,8 +17,21 @@ test('filing-fail error is bounded and refused when secret-shaped without echoin
     'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
   )
   expect(secretRefusal).not.toContain(secret)
-  expect(hostedBoardFilingFailRefusal('--arg key=DEV-1007')).toBeNull()
+  for (const task of [
+    '--arg key=DEV-1007',
+    'bottega workflow compose fix-defect --arg key=DEV-1007 --arg branch=x',
+    'key=STO-1349 and more',
+    'remedy: --arg key=DEV-2568 --arg worktree=/tmp/x',
+  ])
+    expect(hostedBoardFilingFailRefusal(task)).toBeNull()
   expect(hostedBoardFilingFailRefusal('api_key=ghp_123456789012345678901234567890123456')).toBe(
+    'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
+  )
+  expect(
+    hostedBoardFilingFailRefusal(
+      '--arg token=ghp_123456789012345678901234567890123456 --arg x=y',
+    ),
+  ).toBe(
     'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
   )
   const hex = '0123456789abcdef0123456789abcdef01234567'

@@ -197,13 +197,24 @@ test('a bare 64-hex evidence word stays readable', () => {
 })
 
 test('task-key assignment evidence stays byte-identical while credential assignments mask', () => {
-  const task = '--arg key=DEV-1007'
-  expect(sanitizeOutboxPayload('run', { error: task })).toMatchObject({
-    error: task,
-    withheldFields: [],
-  })
+  for (const task of [
+    '--arg key=DEV-1007',
+    'bottega workflow compose fix-defect --arg key=DEV-1007 --arg branch=x',
+    'key=STO-1349 and more',
+    'remedy: --arg key=DEV-2568 --arg worktree=/tmp/x',
+  ])
+    expect(sanitizeOutboxPayload('run', { error: task })).toMatchObject({
+      error: task,
+      withheldFields: [],
+    })
   expect(sanitizeOutboxPayload('run', { error: `api_key=${SECRET}` })).toMatchObject({
     error: '[withheld: assignment]',
+    withheldFields: ['error'],
+  })
+  expect(
+    sanitizeOutboxPayload('run', { error: `--arg token=${SECRET} --arg x=y` }),
+  ).toMatchObject({
+    error: '--arg [withheld: assignment]',
     withheldFields: ['error'],
   })
 })
