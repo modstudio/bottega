@@ -1,6 +1,5 @@
 import {
   FUTURE_CLOCK_GUARDED_TESTS,
-  FUTURE_CLOCK_TEST_INSTANT,
   ORCHESTRATOR_GATE_TEST_SELECTION,
 } from '../orchestrator/test/gate-test-selection.ts'
 
@@ -46,7 +45,6 @@ export const CHECK_LEGS = [
     name: 'orchestrator/future-clock',
     directory: 'orchestrator',
     ciJob: 'orchestrator-future-clock',
-    clock: FUTURE_CLOCK_TEST_INSTANT,
     testDirectories: [],
     testPatterns: FUTURE_CLOCK_GUARDED_TESTS.map(({ reach }) => reach),
     excludedTestDirectories: [],
