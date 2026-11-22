@@ -443,8 +443,10 @@ function taskBranchGit(
   cwd: string,
   args: string[],
   env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
+  conflictIsNotLanded = false,
 ): string {
   const p = startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env })
+  if (conflictIsNotLanded && p.exitCode === 1) return ''
   if (p.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed while resolving the task branch: ` +
@@ -452,6 +454,23 @@ function taskBranchGit(
     )
   }
   return p.stdout.toString().trim()
+}
+
+/** Whether merging the branch tip into trunk would leave the trunk tree unchanged. */
+export function taskBranchContentLanded(input: {
+  cwd: string
+  trunkTip: string
+  branchTip: string
+}): boolean {
+  const trunkTree = taskBranchGit(input.cwd, ['rev-parse', '--verify', `${input.trunkTip}^{tree}`])
+  return (
+    taskBranchGit(
+      input.cwd,
+      ['merge-tree', '--write-tree', input.trunkTip, input.branchTip],
+      targetGitEnvironment(input.cwd),
+      true,
+    ) === trunkTree
+  )
 }
 
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */

@@ -4,6 +4,8 @@ import { decideBranchDisposal, disposalTaskState } from './branch-disposal-decis
 const facts = (overrides: Partial<Parameters<typeof decideBranchDisposal>[0]> = {}) => ({
   runMinted: true,
   probeOnly: false,
+  systemJobMinted: false,
+  contentLanded: false,
   refExists: true,
   liveRun: false,
   checkedOut: false,
@@ -100,4 +102,15 @@ test('probe-only disposal bypasses only the open-task refusal', () => {
     eligible: false,
     reason: 'missing-ref',
   })
+})
+
+test('a system-job branch bypasses the open task only when its content is landed', () => {
+  expect(
+    decideBranchDisposal(facts({ taskStatus: 'open', systemJobMinted: true, contentLanded: true })),
+  ).toEqual({ eligible: true })
+  expect(
+    decideBranchDisposal(
+      facts({ taskStatus: 'open', systemJobMinted: true, contentLanded: false }),
+    ),
+  ).toEqual({ eligible: false, reason: 'open-task' })
 })

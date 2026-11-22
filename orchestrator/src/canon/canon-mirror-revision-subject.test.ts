@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
-import { revisionRows } from './canon-mirror.ts'
 import { mirrorRepository, registerManagedMirror } from './canon-mirror-ownership.fixture.ts'
+import { revisionRows } from './canon-mirror-revisions.ts'
 
 test('revision rows ignore another project revision of the same canon path', async () => {
   const root = mirrorRepository('cm-revision-subject')

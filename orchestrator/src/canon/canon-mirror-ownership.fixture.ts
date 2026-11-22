@@ -7,6 +7,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { type CanonMirrorPort, systemCanonMirrorPort } from './canon-mirror.ts'
@@ -52,6 +53,10 @@ export function mirrorFixturePort(
     fetch: () => {},
     localBranch: () => false,
     refTip: () => head,
+    treeDirty: systemCanonMirrorPort.treeDirty,
+    unpushedCommitCount: systemCanonMirrorPort.unpushedCommitCount,
+    resetTree: systemCanonMirrorPort.resetTree,
+    lastPathCommit: systemCanonMirrorPort.lastPathCommit,
     remoteBranchTip: () => null,
     remoteTrunkTip: () => head,
     push: () => {},
@@ -63,9 +68,12 @@ export function mirrorFixturePort(
       headSha: 'different-head',
       checks: 'passed',
     }),
-    releaseRun: () => {
+    releaseRun: (runId) => {
       const tree = join(root, '.claude', 'worktrees', 'canon-mirror')
-      if (existsSync(join(tree, '.git')))
+      const recordedTree = db()
+        .query<{ worktree: string | null }, [string]>('SELECT worktree FROM run WHERE record_id=?')
+        .get(runId)?.worktree
+      if (existsSync(join(tree, '.git')) && recordedTree === tree)
         spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
       return { outcome: 'released', detail: 'fixture release' }
     },

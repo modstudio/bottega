@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
+import { OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE } from './hosted-queue-decision.ts'
 import {
   drainHostedOutbox,
   type HostedRoutingWait,
@@ -94,7 +95,15 @@ function reportHostedEditDelivery(result: HostedEditDelivery): void {
 }
 
 export function queueHostedDocumentDelete(conn: Database, id: string, project: string, at: string) {
-  queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete', at)
+  queueHostedChange(
+    conn,
+    HOSTED_DOCUMENT_TABLE,
+    id,
+    'delete',
+    at,
+    null,
+    OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
+  )
   conn
     .query(
       `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,
