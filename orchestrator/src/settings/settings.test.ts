@@ -45,6 +45,15 @@ describe('extractOwnedSettings', () => {
     expect(() => extractOwnedSettings([])).toThrow(SETTINGS_PARSE_REFUSAL)
     expect(() => extractOwnedSettings(JSON.parse('[]'))).toThrow(SETTINGS_PARSE_REFUSAL)
   })
+
+  test('refuses invalid options instead of dropping them', () => {
+    expect(() => extractOwnedSettings({ options: { subagentHooks: 'warn' } })).toThrow(
+      /invalid options.*accepted value "on"/s,
+    )
+    expect(() => extractOwnedSettings({ options: { futureOption: 1 } })).toThrow(
+      /invalid options.*accepted value "on"/s,
+    )
+  })
 })
 
 describe('validateOwnedSettingsBody', () => {
@@ -217,6 +226,20 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
       JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
     ),
   ).toMatch(new RegExp(`futureKey.*upgrade ${PLATFORM_NAME}`, 's'))
+  expect(
+    refuseUnknownStoredSettingsEdit(
+      JSON.stringify({
+        permissions: {},
+        hooks: {},
+        options: { subagentHooks: 'on', futureOption: 1 },
+      }),
+    ),
+  ).toMatch(new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'))
+  expect(() =>
+    parseStoredOwnedSettings(
+      JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
+    ),
+  ).toThrow(new RegExp(`options\\.subagentHooks.*upgrade ${PLATFORM_NAME}`, 's'))
 })
 
 describe('editSettingsEnv', () => {

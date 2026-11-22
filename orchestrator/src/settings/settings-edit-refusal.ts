@@ -9,7 +9,7 @@ export function refuseUnknownStoredSettingsEdit(body: string): string | null {
   if (unknown === null) return null
   return renderRefusal(
     refusal(
-      `refusing settings edit: stored settings row has unknown top-level key ${JSON.stringify(unknown)}`,
+      `refusing settings edit: stored settings row has unknown key ${JSON.stringify(unknown)}`,
       {
         kind: 'edit',
         text: `upgrade ${PLATFORM_NAME} before editing this settings row`,

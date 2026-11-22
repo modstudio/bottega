@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   OWNED_SETTINGS_SCHEMA,
   parseStoredSettingsRow,
+  STORED_SETTINGS_OPTIONS_REMEDY,
   STORED_SETTINGS_REMEDY,
   StoredSettingsRowError,
 } from './stored-settings.ts'
@@ -21,7 +22,7 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
       JSON.stringify({
         permissions: {},
         hooks: {},
-        options: { subagentHooks: 'on' },
+        options: { subagentHooks: 'on', futureOption: 1 },
         envKeys: [],
         futureKey: true,
       }),
@@ -33,6 +34,12 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
     env: {},
     envKeys: [],
   })
+
+  expect(() =>
+    parseStoredSettingsRow(
+      JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
+    ),
+  ).toThrow(new RegExp(`options\\.subagentHooks.*${STORED_SETTINGS_OPTIONS_REMEDY}`, 's'))
 
   try {
     parseStoredSettingsRow('{')

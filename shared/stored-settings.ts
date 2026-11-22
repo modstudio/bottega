@@ -3,6 +3,7 @@
  * module writes it; the hub's hosted settings read parses it.
  */
 import { z } from 'zod'
+import { PLATFORM_NAME } from './brand.ts'
 
 export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'] as const
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
@@ -14,6 +15,10 @@ export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
   })
   .strict()
 type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
+
+export const OWNED_SETTINGS_OPTION_KEYS = ['subagentHooks'] as const
+
+const STORED_SETTINGS_OPTIONS_SCHEMA = OWNED_SETTINGS_OPTIONS_SCHEMA.strip()
 
 export const OWNED_AUTO_MODE_SCHEMA = z
   .object(
@@ -59,11 +64,14 @@ export const OWNED_SETTINGS_SCHEMA = z
   .strict()
 
 const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
+  options: STORED_SETTINGS_OPTIONS_SCHEMA.optional(),
   envKeys: ENV_KEYS_SCHEMA.default([]),
 }).strip()
 
 export const STORED_SETTINGS_REMEDY =
   'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names'
+export const STORED_SETTINGS_OPTIONS_REMEDY =
+  `cleared by: upgrade ${PLATFORM_NAME} before reading this settings row`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)
@@ -81,7 +89,11 @@ export class StoredSettingsRowError extends Error {
     super(
       reason === 'json'
         ? `stored settings row cannot parse JSON\n${STORED_SETTINGS_REMEDY}`
-        : `stored settings row has an invalid shape at ${JSON.stringify(path)}\n${STORED_SETTINGS_REMEDY}`,
+        : `stored settings row has an invalid shape at ${JSON.stringify(path)}\n${
+            path?.startsWith('options.')
+              ? STORED_SETTINGS_OPTIONS_REMEDY
+              : STORED_SETTINGS_REMEDY
+          }`,
     )
     this.name = 'StoredSettingsRowError'
     this.reason = reason

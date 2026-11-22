@@ -12,6 +12,7 @@ import {
   ENV_NAME,
   OWNED_AUTO_MODE_SCHEMA,
   OWNED_SETTINGS_KEYS,
+  OWNED_SETTINGS_OPTION_KEYS,
   OWNED_SETTINGS_OPTIONS_SCHEMA,
   OWNED_SETTINGS_SCHEMA,
   type OwnedAutoMode,
@@ -109,7 +110,7 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
       throw new Error('refusing stored settings row: cannot parse JSON')
     }
     if (error instanceof StoredSettingsRowError && error.reason === 'shape') {
-      throw new Error('refusing stored settings row: invalid owned settings shape')
+      throw new Error(`refusing stored settings row: invalid owned settings shape\n${error.message}`)
     }
     throw error
   }
@@ -125,7 +126,11 @@ export function unknownStoredSettingsTopLevelKey(body: string): string | null {
   if (!isPlainObject(parsed)) return null
   const known = new Set<string>(OWNED_SETTINGS_KEYS)
   const unknown = Object.keys(parsed).find((key) => !known.has(key))
-  return unknown ?? null
+  if (unknown !== undefined) return unknown
+  if (!isPlainObject(parsed.options)) return null
+  const knownOptions = new Set<string>(OWNED_SETTINGS_OPTION_KEYS)
+  const unknownOption = Object.keys(parsed.options).find((key) => !knownOptions.has(key))
+  return unknownOption === undefined ? null : `options.${unknownOption}`
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -266,7 +271,13 @@ function parseAutoMode(value: unknown): OwnedAutoMode {
 
 function parseOptions(value: unknown): OwnedSettings['options'] {
   const result = OWNED_SETTINGS_OPTIONS_SCHEMA.safeParse(value)
-  return result.success ? result.data : undefined
+  if (!result.success) {
+    throw new Error(
+      'refusing settings file: invalid options\n' +
+        'cleared by: use only subagentHooks with accepted value "on"',
+    )
+  }
+  return result.data
 }
 
 function autoModeSecretPaths(autoMode: OwnedAutoMode): string[] {
