@@ -782,29 +782,6 @@ async function routeOutboxRows(
   return routed
 }
 
-/** Classify selected rows without acquiring the drainer lease or changing the store. */
-export async function hostedRoutingWaitForEntries(
-  entries: OutboxEntry[],
-  dependencies: Pick<DrainDependencies, 'identity' | 'personalSpace' | 'registered'> = {},
-): Promise<HostedRoutingWait | null> {
-  let rows = prepareOutboxRows(entries).rows
-  if (!rows.length) return null
-  const identity = await (dependencies.identity ?? hostedTaskIdentity)()
-  const accepted = new Set(
-    identity.capabilities?.spacePushTables ?? [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE],
-  )
-  rows = rows.filter((row) => accepted.has(row.change.table))
-  const { refusals } = await routeOutboxRows(
-    rows,
-    (dependencies.registered ?? projects)(),
-    identity,
-    dependencies.personalSpace ?? personalRecordSpace,
-  )
-  for (const [project, refusal] of refusals)
-    return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
-  return null
-}
-
 async function drainHostedOutboxHeld(
   dependencies: DrainDependencies = {},
 ): Promise<HostedOutboxReport> {
