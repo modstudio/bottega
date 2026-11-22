@@ -217,18 +217,32 @@ realPostgres('RLS proof against real Postgres', () => {
     installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
-    await signUpCommand(SIGN_UP_AUTH.emailA, 'Auth A', async () => SIGN_UP_AUTH.password, {
-      log: (value) => cliOutput.push(value),
-    })
+    await signUpCommand(
+      SIGN_UP_AUTH.emailA,
+      'Auth A',
+      async () => SIGN_UP_AUTH.password,
+      {
+        log: (value) => cliOutput.push(value),
+      },
+      undefined,
+      { applySettings: async () => [] },
+    )
     tokenA = storedToken()
     const first = await actorSession(tokenA)
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
 
-    await signUpCommand(SIGN_UP_AUTH.emailB, 'Auth B', async () => SIGN_UP_AUTH.password, {
-      log: (value) => cliOutput.push(value),
-    })
+    await signUpCommand(
+      SIGN_UP_AUTH.emailB,
+      'Auth B',
+      async () => SIGN_UP_AUTH.password,
+      {
+        log: (value) => cliOutput.push(value),
+      },
+      undefined,
+      { applySettings: async () => [] },
+    )
     tokenB = storedToken()
     const second = await actorSession(tokenB)
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')

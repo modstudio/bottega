@@ -442,7 +442,7 @@ redact secret material from synchronized record payloads
 
 **Synopsis:** `bottega record sign-in --email <email>`
 
-sign in to the hosted record
+sign in to the hosted record and apply machine settings
 
 ### Options
 
@@ -456,7 +456,7 @@ sign in to the hosted record
 
 **Synopsis:** `bottega record sign-up --email <email> --name <name>`
 
-create a hosted record account and sign in
+create a hosted record account, sign in, and apply machine settings
 
 ### Options
 

@@ -22,6 +22,8 @@ export function registerCustomerAuthProof(input: {
         async () => input.password,
         { log: (value) => output.push(value) },
         withDatabaseForMigrationStep,
+        undefined,
+        { applySettings: async () => [] },
       )
       const identity: string[] = []
       await whoamiCommand({ log: (value) => identity.push(value) })
