@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   containsSecretShaped,
   editSettingsEnv,
@@ -8,11 +8,11 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
-  refuseUnknownStoredSettingsEdit,
   SETTINGS_PARSE_REFUSAL,
   serializeOwnedSettings,
   validateOwnedSettingsBody,
 } from './settings.ts'
+import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 
 const extra = {
   env: { SECRET: 'do-not-store' },
@@ -216,7 +216,7 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
     refuseUnknownStoredSettingsEdit(
       JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
     ),
-  ).toMatch(/futureKey.*upgrade Bottega/s)
+  ).toMatch(new RegExp(`futureKey.*upgrade ${PLATFORM_NAME}`, 's'))
 })
 
 describe('editSettingsEnv', () => {

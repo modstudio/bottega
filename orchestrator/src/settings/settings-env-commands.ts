@@ -5,12 +5,12 @@ import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import {
   editSettingsEnv,
   parseStoredOwnedSettings,
-  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   type SettingsEnvOperation,
   serializeOwnedSettings,
 } from './settings.ts'
+import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 
 export type { SettingsEnvOperation } from './settings.ts'
 

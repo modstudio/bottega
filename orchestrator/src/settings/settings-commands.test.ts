@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
@@ -596,7 +596,7 @@ describe('settings permission', () => {
         }),
         'add',
       ),
-    ).rejects.toThrow(/futureKey.*upgrade Bottega/s)
+    ).rejects.toThrow(new RegExp(`futureKey.*upgrade ${PLATFORM_NAME}`, 's'))
     expect(getDoc('settings', 'permission-future', 'settings')?.body).toBe(futureBody)
   })
 

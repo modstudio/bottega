@@ -6,11 +6,11 @@ import {
   type AutoModeList,
   type PermissionList,
   parseStoredOwnedSettings,
-  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from '../settings/settings.ts'
+import { refuseUnknownStoredSettingsEdit } from '../settings/settings-edit-refusal.ts'
 import {
   editSettingsAutoMode,
   type SettingsAutoModeOperation,

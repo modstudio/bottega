@@ -17,11 +17,11 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
-  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
+import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import {
   mergeSettingsEnv,
   readSettingsEnv,

@@ -24,11 +24,11 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
-  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
+import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import { editSettingsAutoMode, type SettingsAutoModeOperation } from './settings-auto-mode.ts'
 import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {

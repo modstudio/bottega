@@ -13,7 +13,7 @@ export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
     subagentHooks: z.enum(['on']).optional(),
   })
   .strict()
-export type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
+type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
 
 export const OWNED_AUTO_MODE_SCHEMA = z
   .object(

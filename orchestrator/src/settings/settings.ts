@@ -116,7 +116,7 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
   }
 }
 
-export function refuseUnknownStoredSettingsEdit(body: string): string | null {
+export function unknownStoredSettingsTopLevelKey(body: string): string | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(body) as unknown
@@ -126,9 +126,7 @@ export function refuseUnknownStoredSettingsEdit(body: string): string | null {
   if (!isPlainObject(parsed)) return null
   const known = new Set<string>(OWNED_SETTINGS_KEYS)
   const unknown = Object.keys(parsed).find((key) => !known.has(key))
-  return unknown === undefined
-    ? null
-    : `refusing settings edit: stored settings row has unknown top-level key ${JSON.stringify(unknown)}\ncleared by: upgrade Bottega before editing this settings row`
+  return unknown ?? null
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -269,12 +267,7 @@ function parseAutoMode(value: unknown): OwnedAutoMode {
 
 function parseOptions(value: unknown): OwnedSettings['options'] {
   const result = OWNED_SETTINGS_OPTIONS_SCHEMA.safeParse(value)
-  if (!result.success) {
-    throw new Error(
-      'refusing settings file: invalid options\ncleared by: use only subagentHooks with accepted value on',
-    )
-  }
-  return result.data
+  return result.success ? result.data : undefined
 }
 
 function autoModeSecretPaths(autoMode: OwnedAutoMode): string[] {
