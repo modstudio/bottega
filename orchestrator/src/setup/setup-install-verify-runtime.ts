@@ -23,7 +23,6 @@ import {
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { productHookDeclarations, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
-import { readSignedInSubagentHooks } from '../settings/settings-user-row.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -34,7 +33,6 @@ export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
   facts?: (subagentHooks: 'on' | undefined) => SetupInstallVerifyFacts
   prepareRuntime?: () => void
-  subagentHooks?: () => Promise<'on' | undefined>
 }
 
 const SIGN_IN_FOLLOW_UP =
@@ -151,9 +149,9 @@ export async function applySetupInstallVerify(
       condition: 'waiting-for-sign-in',
     }
   }
-  const subagentHooks = sessionPresent
-    ? await (adapters.subagentHooks ?? readSignedInSubagentHooks)()
-    : undefined
+  const subagentHooks = results.find((result) =>
+    result.target.startsWith('settings '),
+  )?.subagentHooks
   const checks = verifySetupInstall(
     adapters.facts
       ? adapters.facts(subagentHooks)

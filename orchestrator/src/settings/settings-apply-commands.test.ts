@@ -265,6 +265,17 @@ describe('settings env import', () => {
     expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
   })
 
+  test('unknown stored keys refuse before changing settings.env', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    writeFileSync(join(claude, 'settings.env'), 'EXISTING="kept"\n', { mode: 0o600 })
+    await seedFutureUser()
+
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+    )
+    expect(readFileSync(join(claude, 'settings.env'), 'utf8')).toBe('EXISTING="kept"\n')
+  })
+
   test('never sends or prints a sentinel value', async () => {
     const sentinel = 'sentinel-env-value-that-must-not-escape'
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { API_TOKEN: sentinel } }))

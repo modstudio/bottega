@@ -30,7 +30,7 @@ import {
   printMachineSettingsApplyResults,
   settingsApplyDecision,
 } from './settings-machine-apply.ts'
-import { productHookDeclarations, withMachineProductHooks } from './settings-machine-hooks.ts'
+import { PRODUCT_HOOKS, withMachineProductHooks } from './settings-machine-hooks.ts'
 import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
@@ -396,7 +396,8 @@ describe('settings apply', () => {
     )
     expect(settingsApplyDecision(true, results).action).toBe('refuse')
     const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined))
+      expect(rendered).toContain(hook.script)
     expect(rendered).not.toContain('block-agent.py')
   })
 
@@ -425,7 +426,8 @@ describe('settings apply', () => {
     expect(statSync(claudeHome).mode & 0o777).toBe(0o700)
     expect(existsSync(settingsPath)).toBe(true)
     const rendered = readFileSync(settingsPath, 'utf8')
-    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined))
+      expect(rendered).toContain(hook.script)
     expect(rendered).not.toContain('block-agent.py')
   })
 
@@ -442,7 +444,8 @@ describe('settings apply', () => {
     expect(existsSync(settingsPath)).toBe(true)
     const rendered = readFileSync(settingsPath, 'utf8')
     expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(orch *)'] })
-    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined))
+      expect(rendered).toContain(hook.script)
     expect(rendered).not.toContain('block-agent.py')
   })
 
@@ -479,7 +482,7 @@ describe('settings apply', () => {
 
     const results = await applyMachineSettings({ check: false }, deps())
 
-    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true, subagentHooks: 'on' })
     const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
     expect(rendered).not.toContain('subagentHooks')
     expect(rendered).not.toContain('futureOption')
@@ -517,7 +520,7 @@ describe('settings apply', () => {
     expect(rendered.permissions).toEqual({ allow: ['Bash(git status)'] })
     expect(rendered.hooks.PreToolUse).toContainEqual(personalHook)
     expect(rendered.env).toEqual({ PERSONAL_TOKEN: 'fixture-value' })
-    for (const hook of productHookDeclarations(undefined)) {
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined)) {
       expect(readFileSync(settingsPath, 'utf8')).toContain(hook.script)
     }
     expect(readFileSync(settingsPath, 'utf8')).not.toContain('block-agent.py')

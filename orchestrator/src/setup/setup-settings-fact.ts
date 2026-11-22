@@ -8,6 +8,7 @@ import {
   readSettingsJsonLenient,
   userSettingsPath,
 } from '../settings/settings-files.ts'
+import { subagentBlockingState } from '../settings/settings.ts'
 import {
   type ProductHookDeclaration,
   productHookDeclarations,
@@ -45,9 +46,6 @@ export async function gatherSetupSettingsFact(
       declarations,
       assetRoot: () => assetRoot,
     }),
-    subagents: {
-      blocking: options?.subagentHooks === 'on' ? 'on' : 'off',
-      source: options?.subagentHooks === 'on' ? 'user' : 'default',
-    },
+    subagents: subagentBlockingState(options),
   }
 }

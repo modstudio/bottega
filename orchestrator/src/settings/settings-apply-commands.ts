@@ -114,6 +114,7 @@ export async function settingsEnvImportCommand(
   const nextOwned = { ...owned, envKeys: Object.keys(selected).sort() }
   const refusal = refuseSettingsBody(SETTINGS_SCOPE, serializeOwnedSettings(nextOwned))
   if (refusal) throw new Error(refusal)
+  if (!flags.has('dry-run')) assertNoUnknownStoredSettingsEdit(row.body)
   const result = mergeSettingsEnv(secretsPath, selected, flags.has('dry-run'))
   presentation.log(
     `env keys: ${result.names.length}${result.names.length ? ` ${result.names.join(', ')}` : ''}`,
@@ -126,7 +127,6 @@ export async function settingsEnvImportCommand(
     presentation.log('dry-run: settings.env and the settings row were not changed')
     return
   }
-  assertNoUnknownStoredSettingsEdit(row.body)
   await writeOwned(
     targetAddress({ kind: 'user' }, owner),
     nextOwned,

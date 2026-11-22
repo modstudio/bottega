@@ -82,6 +82,7 @@ export type MachineSettingsApplyResult = {
   changed: boolean
   superseded?: SupersededProfileHook[]
   subagentHooksRemoved?: boolean
+  subagentHooks?: 'on'
 }
 
 export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyResult): boolean {
@@ -240,6 +241,7 @@ function applyUserSettings(
       runtime,
     ).superseded.some((hook) => hook.script === 'block-agent.py')
     const owned = productHooks.settings
+    const subagentHooks = row && merged.settings.options?.subagentHooks === 'on' ? 'on' : undefined
     let environment: Record<string, string> | undefined
     if (row) {
       const secretsPath = userSettingsEnvPath(home)
@@ -272,6 +274,7 @@ function applyUserSettings(
         merged.settings.options?.subagentHooks !== 'on' &&
         (renderedBlockAgentPresent ||
           productHooks.superseded.some((hook) => hook.script === 'block-agent.py')),
+      subagentHooks,
       deps,
     })
   } catch (error) {
@@ -289,6 +292,7 @@ function applyRenderedUserSettings(input: {
   unmatchedDropDetail?: string
   superseded: SupersededProfileHook[]
   subagentHooksRemoved: boolean
+  subagentHooks?: 'on'
   deps: Dependencies
 }): MachineSettingsApplyResult {
   const plan = input.exists ? planSettingsWrite(input.path, input.rendered) : null
@@ -301,6 +305,7 @@ function applyRenderedUserSettings(input: {
       changed: false,
       ...(!input.check && input.superseded.length ? { superseded: input.superseded } : {}),
       ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+      subagentHooks: input.subagentHooks,
     }
   }
   if (input.check) {
@@ -309,6 +314,7 @@ function applyRenderedUserSettings(input: {
       outcome: 'applied',
       detail: ['would apply', detail].filter(Boolean).join('; '),
       changed: true,
+      subagentHooks: input.subagentHooks,
     }
   }
   let result: { backup: string | null }
@@ -328,6 +334,7 @@ function applyRenderedUserSettings(input: {
     changed: true,
     ...(input.superseded.length ? { superseded: input.superseded } : {}),
     ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+    subagentHooks: input.subagentHooks,
   }
 }
 

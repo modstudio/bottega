@@ -17,7 +17,7 @@ import type { SetupInstallVerifyFacts } from './setup-install-verify.ts'
 import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 
 const current: MachineSettingsApplyResult[] = [
-  { target: 'settings user', outcome: 'current', changed: false },
+  { target: 'settings user', outcome: 'current', changed: false, subagentHooks: 'on' },
 ]
 
 function facts(): SetupInstallVerifyFacts {
@@ -71,7 +71,6 @@ test('rendered and verified install settings succeed with every named check', as
   const result = await applySetupInstallVerify(true, {
     applySettings: async () => current,
     facts,
-    subagentHooks: async () => 'on',
   })
   expect(result.status).toBe('unchanged')
   expect(result.message).toContain('hooks-present: ok')
@@ -85,19 +84,17 @@ test('the rendered success fixture fails when one product hook is removed', asyn
     applySetupInstallVerify(true, {
       applySettings: async () => current,
       facts: () => input,
-      subagentHooks: async () => 'on',
     }),
   ).rejects.toThrow('hooks-present: failed')
 })
 
-test('a signed-in blocking choice requires block-agent hooks absent from rendered settings', async () => {
+test('an applied blocking choice requires block-agent hooks even without a session', async () => {
   const input = facts()
   removeRenderedHook(input, 'block-agent.py')
   let gatheredChoice: 'on' | undefined
   await expect(
-    applySetupInstallVerify(true, {
+    applySetupInstallVerify(false, {
       applySettings: async () => current,
-      subagentHooks: async () => 'on',
       facts: (subagentHooks) => {
         gatheredChoice = subagentHooks
         return {
@@ -125,7 +122,6 @@ test('a settings-row refusal names its target, condition, and row remedy', async
         },
       ],
       facts,
-      subagentHooks: async () => 'on',
     }),
   ).rejects.toThrow('no-settings-row')
 })
@@ -197,7 +193,6 @@ test('an absent hook after render refuses naming hooks-present', async () => {
     applySetupInstallVerify(true, {
       applySettings: async () => current,
       facts: () => input,
-      subagentHooks: async () => 'on',
     }),
   ).rejects.toThrow('hooks-present: failed')
 })
@@ -241,7 +236,6 @@ test('a skipped registered project does not prevent verification', async () => {
       },
     ],
     facts,
-    subagentHooks: async () => 'on',
   })
   expect(result.status).toBe('unchanged')
   expect(result.message).toContain('hooks-present: ok')

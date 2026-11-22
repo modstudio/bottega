@@ -8,6 +8,7 @@ import {
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
+  subagentBlockingState,
 } from './settings.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import { readSignedInUserSettingsRow } from './settings-user-row.ts'
@@ -18,8 +19,11 @@ type SubagentResult = {
   changed: boolean
 }
 
-function subagentResult(on: boolean, changed: boolean): SubagentResult {
-  return { blocking: on ? 'on' : 'off', source: on ? 'user' : 'default', changed }
+function subagentResult(
+  options: ReturnType<typeof parseStoredOwnedSettings>['options'],
+  changed: boolean,
+): SubagentResult {
+  return { ...subagentBlockingState(options), changed }
 }
 
 function editSubagentChoice(
@@ -27,16 +31,16 @@ function editSubagentChoice(
   choice: string | undefined,
 ): SubagentResult {
   const current = owned.options?.subagentHooks === 'on'
-  if (choice === undefined) return subagentResult(current, false)
+  if (choice === undefined) return subagentResult(owned.options, false)
   const next = choice === 'block'
-  if (next === current) return subagentResult(next, false)
+  if (next === current) return subagentResult(owned.options, false)
   if (next) owned.options = { ...owned.options, subagentHooks: 'on' }
   else {
     const remaining = { ...owned.options }
     delete remaining.subagentHooks
     owned.options = Object.keys(remaining).length ? remaining : undefined
   }
-  return subagentResult(next, true)
+  return subagentResult(owned.options, true)
 }
 
 export async function settingsSubagentsCommand(

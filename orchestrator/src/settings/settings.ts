@@ -29,6 +29,15 @@ export type PermissionList = SettingsPermissionList
 export type { AutoModeList, OwnedAutoMode, OwnedSettings }
 export { AUTO_MODE_LISTS, ENV_NAME }
 
+export function subagentBlockingState(options: OwnedSettings['options']): {
+  blocking: 'on' | 'off'
+  source: 'user' | 'default'
+} {
+  return options?.subagentHooks === 'on'
+    ? { blocking: 'on', source: 'user' }
+    : { blocking: 'off', source: 'default' }
+}
+
 export type SettingsEnvOperation = 'set' | 'unset'
 
 export type SettingsEnvEdit = {
