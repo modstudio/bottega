@@ -492,9 +492,7 @@ function routingWaitMessage(project: string, reason: string): string {
   return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
 }
 
-function parseHostedRoutingWait(
-  message: string | null | undefined,
-): HostedRoutingWait | null {
+function parseHostedRoutingWait(message: string | null | undefined): HostedRoutingWait | null {
   if (!message?.startsWith(`${ROUTING_WAIT_PREFIX} project "`)) return null
   const project = /^waiting on routing: project "([^"]+)"/.exec(message)?.[1]
   return project ? { project, message } : null
