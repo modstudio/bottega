@@ -4,12 +4,32 @@ import { resolve } from 'node:path'
 import { Glob } from 'bun'
 import {
   CURRENT_CONTRACT_PATH,
+  createRecordingTransport,
   generateRecordClientContract,
-  recordClientContractApp,
   RELEASED_CONTRACT_DIRECTORY,
-  serializeRecordClientContract,
   type RecordClientContractEntry,
+  recordClientContractApp,
+  serializeRecordClientContract,
 } from './record-client-contract.ts'
+
+test('the recording transport captures a normalized in-process request', async () => {
+  const entries: RecordClientContractEntry[] = []
+  const transport = createRecordingTransport(entries, () => 'transport.sample')
+  await transport('https://record.example.test/v1/board/changes?after=0', {
+    headers: { 'x-record-space': 'space-a' },
+  })
+  expect(entries).toEqual([
+    {
+      sample: 'transport.sample',
+      method: 'GET',
+      path: '/v1/board/changes',
+      query: [['after', '0']],
+      body: null,
+      recordSpace: true,
+      status: 200,
+    },
+  ])
+})
 
 function routeRegistered(
   app: ReturnType<typeof recordClientContractApp>,

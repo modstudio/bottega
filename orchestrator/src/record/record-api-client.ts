@@ -10,21 +10,14 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import {
-  type HostedRequestSafety,
-  RECORD_SIGN_IN_REMEDY,
-  recordUnreachableRefusal,
-} from '../../../shared/record-remedies.ts'
+import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
-import {
-  classifyBoardStreamResponse,
-  releaseUnopenedStream,
-} from './record-api-client-board-stream.ts'
+import { openBoardStream } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import {
@@ -81,7 +74,7 @@ import {
   recordSessionClient,
 } from './record-api-client-session.ts'
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
-import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
+import { recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import type {
   HostedBoardAcceptInput,
@@ -1003,6 +996,7 @@ function recordApiBoardWatchClient(
   readToken: () => string | null = storedRecordToken,
   preflight: () => void = throwIfRecordApiRequestRefused,
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
+  const selectedTransport = transport ?? (((url, init) => fetch(url, init)) as typeof fetch)
   return {
     releaseBoardTaskClaims: (input, destination) =>
       request('/v1/board/claims/release-task', {
@@ -1010,56 +1004,13 @@ function recordApiBoardWatchClient(
         body: JSON.stringify(input),
         ...destination,
       }),
-    openBoardStream: (signal) => fetchBoardStream(signal, transport, readToken, preflight),
-  }
-}
-
-async function fetchBoardStream(
-  signal?: AbortSignal,
-  transport: typeof fetch = ((url, init) => fetch(url, init)) as typeof fetch,
-  readToken: () => string | null = storedRecordToken,
-  preflight: () => void = throwIfRecordApiRequestRefused,
-): Promise<RecordBoardStreamOpen> {
-  if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-  const token = readToken()
-  if (!token) return { kind: 'unauthorized' }
-  const connection = new AbortController()
-  const stop = () => connection.abort()
-  signal?.addEventListener('abort', stop)
-  const drop = () => signal?.removeEventListener('abort', stop)
-  const close = () => {
-    drop()
-    connection.abort()
-  }
-  let origin: string | null = null
-  try {
-    preflight()
-    origin = recordApiBaseUrl()
-    // The stream is unbounded until a streaming budget exists.
-    const response = await recordTransport(
-      origin,
-      '/v1/board/stream',
-      {
-        method: 'GET',
-        headers: boardStreamHeaders(token),
-        signal: connection.signal,
-      },
-      transport,
-    )
-    const opened = classifyBoardStreamResponse(response.status, response.body, close)
-    if (opened.kind !== 'stream') {
-      releaseUnopenedStream(response, connection)
-      drop()
-    }
-    return opened
-  } catch (error) {
-    connection.abort()
-    drop()
-    if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      kind: 'error',
-      reason: origin ? recordUnreachableRefusal(origin, detail, 'probe') : detail,
-    }
+    openBoardStream: (signal) =>
+      openBoardStream({
+        signal,
+        transport: selectedTransport,
+        readToken,
+        preflight,
+        origin: recordApiBaseUrl,
+      }),
   }
 }

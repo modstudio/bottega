@@ -1,16 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { configClient, type ConfigClient } from '../shared/config-client.ts'
 import {
-  recordApiClientOver,
   type RecordApiClient,
+  recordApiClientOver,
 } from '../orchestrator/src/record/record-api-client.ts'
 import { recordTransport } from '../orchestrator/src/record/record-api-client-transport.ts'
 import { identity } from '../orchestrator/src/record/record-api-identity.fixture.ts'
+import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
-import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { type ConfigClient, configClient } from '../shared/config-client.ts'
 import { recordRequestHeaders } from '../shared/record-request-headers.ts'
+import { formatRecordClientContractJson } from './record-client-contract-json.ts'
 
 export type RecordClientContractEntry = {
   sample: string
@@ -27,6 +29,10 @@ export const CURRENT_CONTRACT_PATH = resolve(ROOT, 'scripts/quality/record-clien
 export const RELEASED_CONTRACT_DIRECTORY = resolve(ROOT, 'scripts/quality/record-client-contracts')
 
 const SAMPLE_ID = '01990000-0000-7000-8000-000000000001'
+const CONTRACT_ORIGIN = 'https://record.example.test'
+const CONTRACT_ENVIRONMENT = Object.fromEntries([
+  ['BOTTEGA_RECORD_API_URL', CONTRACT_ORIGIN],
+]) as Record<string, string>
 const SAMPLE_DESTINATION = { destinationSpaceId: 'space-a', projectId: SAMPLE_ID }
 const SAMPLE_INPUT = {
   ...SAMPLE_DESTINATION,
@@ -211,10 +217,10 @@ const CONFIG_SAMPLE_NAMES = [
   'whoami',
 ] as const
 
-export const recordClientSamples = Object.fromEntries(
+const recordClientSamples = Object.fromEntries(
   RECORD_SAMPLE_NAMES.map((name) => [`record.${name}`, name]),
 ) as Record<string, keyof RecordApiClient>
-export const configClientSamples = Object.fromEntries(
+const configClientSamples = Object.fromEntries(
   CONFIG_SAMPLE_NAMES.map((name) => [`config.${name}`, name]),
 ) as Record<string, keyof ConfigClient>
 
@@ -275,14 +281,12 @@ export function createRecordingTransport(
     const request = new Request(input, init)
     const recordedRequest = request.clone()
     const url = new URL(request.url)
-    const response = await app
-      .request(request)
-      .catch((error) =>
-        Response.json(
-          { error: error instanceof Error ? error.message : String(error) },
-          { status: 500 },
-        ),
-      )
+    const response = await Promise.resolve(app.request(request)).catch((error) =>
+      Response.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        { status: 500 },
+      ),
+    )
     entries.push({
       sample: sampleName(),
       method: request.method,
@@ -305,7 +309,7 @@ function clientMembers(client: object, prefix: string): string[] {
     .sort()
 }
 
-export function missingClientSamples(record: RecordApiClient, config: ConfigClient): string[] {
+function missingClientSamples(record: RecordApiClient, config: ConfigClient): string[] {
   const sampled = new Set([
     ...Object.keys(recordClientSamples),
     ...Object.keys(configClientSamples),
@@ -323,34 +327,38 @@ const genericArguments = [
   SAMPLE_INPUT,
 ] as const
 
+const SAMPLE_ARGUMENTS: Record<string, () => unknown[]> = {
+  listBoardChanges: () => [{ after: '0' }, SAMPLE_DESTINATION],
+  listConfigAccess: () => ['space-a'],
+  grantConfigAccess: () => ['a@example.test', 'space-a'],
+  withdrawConfigAccess: () => ['a@example.test', 'space-a'],
+  hideRow: () => [{ message: SAMPLE_ID, reason: 'spam' }, 'space-a'],
+  unhideRow: () => [{ message: SAMPLE_ID }, 'space-a'],
+  blockOutsideAuthor: () => [{ message: SAMPLE_ID, hours: 1 }, 'space-a'],
+  unblockOutsideAuthor: () => [SAMPLE_ID, 'space-a'],
+  setOutsideIntake: () => ['sample', 'space-a'],
+  pauseOutsideIntake: () => [1, 'space-a'],
+  resumeOutsideIntake: () => ['space-a'],
+  listBoardMessages: () => [SAMPLE_INPUT],
+  listContextItems: () => [['sample'], SAMPLE_DESTINATION],
+  openBoardStream: () => [],
+  postBoardMessage: () => [SAMPLE_INPUT, SAMPLE_DESTINATION],
+  putBoardReceipt: () => [SAMPLE_INPUT, SAMPLE_DESTINATION],
+  withdrawBoardMessage: () => [SAMPLE_ID, SAMPLE_DESTINATION, SAMPLE_INPUT],
+  postMachineJoinMessage: () => [
+    'sample',
+    'client',
+    'one',
+    new Uint8Array([1]),
+    SAMPLE_DESTINATION,
+  ],
+  appendTrustLogEntry: () => [null, new Uint8Array([1]), SAMPLE_DESTINATION],
+}
+
 async function invokeSample(client: object, member: string): Promise<void> {
   const method = (client as Record<string, (...args: unknown[]) => unknown>)[member]
   if (!method) return
-  const args: unknown[] = [...genericArguments]
-  if (member === 'listBoardChanges') args.splice(0, args.length, { after: '0' }, SAMPLE_DESTINATION)
-  if (member === 'listConfigAccess') args.splice(0, args.length, 'space-a')
-  if (member === 'grantConfigAccess' || member === 'withdrawConfigAccess')
-    args.splice(0, args.length, 'a@example.test', 'space-a')
-  if (member === 'hideRow')
-    args.splice(0, args.length, { message: SAMPLE_ID, reason: 'spam' }, 'space-a')
-  if (member === 'unhideRow') args.splice(0, args.length, { message: SAMPLE_ID }, 'space-a')
-  if (member === 'blockOutsideAuthor')
-    args.splice(0, args.length, { message: SAMPLE_ID, hours: 1 }, 'space-a')
-  if (member === 'unblockOutsideAuthor') args.splice(0, args.length, SAMPLE_ID, 'space-a')
-  if (member === 'setOutsideIntake') args.splice(0, args.length, 'sample', 'space-a')
-  if (member === 'pauseOutsideIntake') args.splice(0, args.length, 1, 'space-a')
-  if (member === 'resumeOutsideIntake') args.splice(0, args.length, 'space-a')
-  if (member === 'listBoardMessages') args.splice(0, args.length, SAMPLE_INPUT)
-  if (member === 'listContextItems') args.splice(0, args.length, ['sample'], SAMPLE_DESTINATION)
-  if (member === 'openBoardStream') args.splice(0, args.length)
-  if (member === 'postBoardMessage' || member === 'putBoardReceipt')
-    args.splice(0, args.length, SAMPLE_INPUT, SAMPLE_DESTINATION)
-  if (member === 'withdrawBoardMessage')
-    args.splice(0, args.length, SAMPLE_ID, SAMPLE_DESTINATION, SAMPLE_INPUT)
-  if (member === 'postMachineJoinMessage')
-    args.splice(0, args.length, 'sample', 'client', 'one', new Uint8Array([1]), SAMPLE_DESTINATION)
-  if (member === 'appendTrustLogEntry')
-    args.splice(0, args.length, null, new Uint8Array([1]), SAMPLE_DESTINATION)
+  const args = SAMPLE_ARGUMENTS[member]?.() ?? [...genericArguments]
   try {
     const result = await method(...args)
     if (member === 'openBoardStream' && result && typeof result === 'object' && 'close' in result)
@@ -376,12 +384,12 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
     })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
     const response = await recordTransport(
-      'https://record.example.test',
+      CONTRACT_ORIGIN,
       path,
       { ...init, headers },
       transport,
       () => undefined,
-      () => 'bottega/contract',
+      () => `${PLATFORM_SLUG}/contract`,
     )
     const body = await response.json().catch(() => null)
     if (!response.ok) throw new Error(`record contract response ${response.status}`)
@@ -394,21 +402,15 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
     transport,
     () => undefined,
   )
-  const config = configClient(
-    { BOTTEGA_RECORD_API_URL: 'https://record.example.test' },
-    transport,
-    'contract-token',
-  )
+  const config = configClient(CONTRACT_ENVIRONMENT, transport, 'contract-token')
   const missing = missingClientSamples(record, config)
   if (missing.length) throw new Error(`record client contract lacks samples: ${missing.join(', ')}`)
-  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
-  const previousNodeEnv = process.env.NODE_ENV
-  const previousKeystore = process.env.BOTTEGA_KEYSTORE
-  const previousTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  process.env.NODE_ENV = 'development'
-  process.env.BOTTEGA_KEYSTORE = 'keychain'
-  process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'contract'
+  const urlKey = 'BOTTEGA_RECORD_API_URL'
+  const containerKey = 'BOTTEGA_TEST_POSTGRES_CONTAINER'
+  const previousUrl = Reflect.get(process.env, urlKey) as string | undefined
+  const previousTestContainer = Reflect.get(process.env, containerKey) as string | undefined
+  Reflect.set(process.env, urlKey, CONTRACT_ORIGIN)
+  Reflect.set(process.env, containerKey, 'contract')
   try {
     for (const [sample, member] of Object.entries(recordClientSamples)) {
       activeSample = sample
@@ -419,14 +421,10 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
       await invokeSample(config, member)
     }
   } finally {
-    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
-    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
-    else process.env.NODE_ENV = previousNodeEnv
-    if (previousKeystore === undefined) delete process.env.BOTTEGA_KEYSTORE
-    else process.env.BOTTEGA_KEYSTORE = previousKeystore
-    if (previousTestContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-    else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousTestContainer
+    if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
+    else Reflect.set(process.env, urlKey, previousUrl)
+    if (previousTestContainer === undefined) Reflect.deleteProperty(process.env, containerKey)
+    else Reflect.set(process.env, containerKey, previousTestContainer)
   }
   const recorded = new Set(entries.map((entry) => entry.sample))
   const unrecorded = [
@@ -438,8 +436,7 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
   return entries.sort((a, b) => a.sample.localeCompare(b.sample))
 }
 
-export const serializeRecordClientContract = (entries: RecordClientContractEntry[]) =>
-  `${JSON.stringify(entries, null, 2)}\n`
+export const serializeRecordClientContract = formatRecordClientContractJson
 
 async function main() {
   const entries = await generateRecordClientContract()

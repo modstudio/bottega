@@ -21,9 +21,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -78,9 +76,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -104,9 +100,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -139,9 +133,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -165,12 +157,7 @@
     "sample": "config.currentDataKey",
     "method": "GET",
     "path": "/v1/config/data-keys/current",
-    "query": [
-      [
-        "recipientKeyId",
-        "[object Object]"
-      ]
-    ],
+    "query": [["recipientKeyId", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 422
@@ -196,9 +183,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -230,9 +215,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -247,12 +230,7 @@
     "sample": "config.deleteSecret",
     "method": "DELETE",
     "path": "/v1/config/secrets/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ]
-    ],
+    "query": [["projectId", "01990000-0000-7000-8000-000000000001"]],
     "body": {
       "scope": "user",
       "environment": "default",
@@ -283,9 +261,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -301,12 +277,7 @@
     "sample": "config.getDataKey",
     "method": "GET",
     "path": "/v1/config/data-keys/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "recipientKeyId",
-        "[object Object]"
-      ]
-    ],
+    "query": [["recipientKeyId", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 422
@@ -315,16 +286,7 @@
     "sample": "config.getEntry",
     "method": "GET",
     "path": "/v1/config/entries/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "environment",
-        "[object Object]"
-      ],
-      [
-        "scope",
-        "[object Object]"
-      ]
-    ],
+    "query": [["environment", "[object Object]"], ["scope", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 422
@@ -334,18 +296,9 @@
     "method": "GET",
     "path": "/v1/config/secrets/%5Bobject%20Object%5D",
     "query": [
-      [
-        "environment",
-        "[object Object]"
-      ],
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "scope",
-        "[object Object]"
-      ]
+      ["environment", "[object Object]"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["scope", "[object Object]"]
     ],
     "body": null,
     "recordSpace": true,
@@ -373,12 +326,7 @@
     "sample": "config.listEntries",
     "method": "GET",
     "path": "/v1/config/entries",
-    "query": [
-      [
-        "environment",
-        "[object Object]"
-      ]
-    ],
+    "query": [["environment", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 200
@@ -396,12 +344,7 @@
     "sample": "config.listSecrets",
     "method": "GET",
     "path": "/v1/config/secrets",
-    "query": [
-      [
-        "environment",
-        "[object Object]"
-      ]
-    ],
+    "query": [["environment", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 200
@@ -440,9 +383,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -474,9 +415,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -508,9 +447,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -525,12 +462,7 @@
     "sample": "config.readMachineJoinMessages",
     "method": "GET",
     "path": "/v1/config/join/nameplates/%5Bobject%20Object%5D/messages",
-    "query": [
-      [
-        "side",
-        "[object Object]"
-      ]
-    ],
+    "query": [["side", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -566,9 +498,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -592,9 +522,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -618,9 +546,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -680,9 +606,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -714,9 +638,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -749,9 +671,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -784,9 +704,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -818,9 +736,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -852,9 +768,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -886,9 +800,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -920,9 +832,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -954,9 +864,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -988,9 +896,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1017,12 +923,7 @@
     "sample": "record.cacheCounts",
     "method": "GET",
     "path": "/v1/docs/counts",
-    "query": [
-      [
-        "by",
-        "scope"
-      ]
-    ],
+    "query": [["by", "scope"]],
     "body": null,
     "recordSpace": true,
     "status": 200
@@ -1048,9 +949,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1082,9 +981,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1116,9 +1013,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1150,9 +1045,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1193,9 +1086,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1240,9 +1131,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1274,9 +1163,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1309,9 +1196,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1335,9 +1220,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1370,9 +1253,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1405,9 +1286,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1440,9 +1319,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1483,9 +1360,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1518,16 +1393,7 @@
     "sample": "record.getContextItem",
     "method": "GET",
     "path": "/v1/context-items",
-    "query": [
-      [
-        "holder",
-        "[object Object]"
-      ],
-      [
-        "slug",
-        "[object Object]"
-      ]
-    ],
+    "query": [["holder", "[object Object]"], ["slug", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -1582,9 +1448,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1628,9 +1492,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1662,9 +1524,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1696,9 +1556,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1730,9 +1588,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1764,9 +1620,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1798,9 +1652,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1832,9 +1684,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1866,9 +1716,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -1883,12 +1731,7 @@
     "sample": "record.listBoardChanges",
     "method": "GET",
     "path": "/v1/board/changes",
-    "query": [
-      [
-        "after",
-        "0"
-      ]
-    ],
+    "query": [["after", "0"]],
     "body": null,
     "recordSpace": true,
     "status": 200
@@ -1897,16 +1740,7 @@
     "sample": "record.listBoardClaims",
     "method": "GET",
     "path": "/v1/board/claims",
-    "query": [
-      [
-        "project",
-        "[object Object]"
-      ],
-      [
-        "projectId",
-        "[object Object]"
-      ]
-    ],
+    "query": [["project", "[object Object]"], ["projectId", "[object Object]"]],
     "body": null,
     "recordSpace": false,
     "status": 400
@@ -1924,12 +1758,7 @@
     "sample": "record.listChanges",
     "method": "GET",
     "path": "/v1/changes",
-    "query": [
-      [
-        "wait",
-        "undefined"
-      ]
-    ],
+    "query": [["wait", "undefined"]],
     "body": null,
     "recordSpace": false,
     "status": 400
@@ -1947,12 +1776,7 @@
     "sample": "record.listContextHolders",
     "method": "GET",
     "path": "/v1/context-items/holders",
-    "query": [
-      [
-        "kind",
-        "[object Object]"
-      ]
-    ],
+    "query": [["kind", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -1961,12 +1785,7 @@
     "sample": "record.listContextItems",
     "method": "GET",
     "path": "/v1/context-items",
-    "query": [
-      [
-        "holder",
-        "sample"
-      ]
-    ],
+    "query": [["holder", "sample"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -1976,26 +1795,11 @@
     "method": "GET",
     "path": "/v1/docs",
     "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "scope",
-        "user"
-      ],
-      [
-        "slug",
-        "sample"
-      ],
-      [
-        "subject",
-        ""
-      ]
+      ["cursor", "0"],
+      ["limit", "1"],
+      ["scope", "user"],
+      ["slug", "sample"],
+      ["subject", ""]
     ],
     "body": null,
     "recordSpace": true,
@@ -2023,16 +1827,7 @@
     "sample": "record.listLensCatalogue",
     "method": "GET",
     "path": "/v1/lens-catalogue/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ]
-    ],
+    "query": [["cursor", "0"], ["limit", "1"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -2050,16 +1845,7 @@
     "sample": "record.listPortCatalogue",
     "method": "GET",
     "path": "/v1/port-catalogue/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ]
-    ],
+    "query": [["cursor", "0"], ["limit", "1"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -2078,22 +1864,10 @@
     "method": "GET",
     "path": "/v1/subjects",
     "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "project",
-        "sample"
-      ],
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ]
+      ["cursor", "0"],
+      ["limit", "1"],
+      ["project", "sample"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"]
     ],
     "body": null,
     "recordSpace": true,
@@ -2121,20 +1895,7 @@
     "sample": "record.listRoutingEvidence",
     "method": "GET",
     "path": "/v1/routing-evidence",
-    "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "spaceId",
-        "undefined"
-      ]
-    ],
+    "query": [["cursor", "0"], ["limit", "1"], ["spaceId", "undefined"]],
     "body": null,
     "recordSpace": false,
     "status": 400
@@ -2143,16 +1904,7 @@
     "sample": "record.listScores",
     "method": "GET",
     "path": "/v1/scores",
-    "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ]
-    ],
+    "query": [["cursor", "0"], ["limit", "1"]],
     "body": null,
     "recordSpace": false,
     "status": 400
@@ -2171,18 +1923,9 @@
     "method": "GET",
     "path": "/v1/task-flow/stages",
     "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ]
+      ["cursor", "0"],
+      ["limit", "1"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"]
     ],
     "body": null,
     "recordSpace": true,
@@ -2192,16 +1935,7 @@
     "sample": "record.listWorkflowCatalogue",
     "method": "GET",
     "path": "/v1/workflow-catalogue/%5Bobject%20Object%5D",
-    "query": [
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "limit",
-        "1"
-      ]
-    ],
+    "query": [["cursor", "0"], ["limit", "1"]],
     "body": null,
     "recordSpace": true,
     "status": 400
@@ -2256,9 +1990,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2290,9 +2022,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2325,9 +2055,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2360,9 +2088,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2394,9 +2120,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2412,94 +2136,28 @@
     "method": "GET",
     "path": "/v1/questions/memberships",
     "query": [
-      [
-        "author",
-        "contract"
-      ],
-      [
-        "count",
-        "1"
-      ],
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "definition",
-        "sample"
-      ],
-      [
-        "destinationSpaceId",
-        "space-a"
-      ],
-      [
-        "environment",
-        "default"
-      ],
-      [
-        "expectedRevision",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "expectedRowVersion",
-        "1"
-      ],
-      [
-        "id",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "ids",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "key",
-        "DEV-1"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "machineId",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "name",
-        "sample"
-      ],
-      [
-        "payload",
-        "[object Object]"
-      ],
-      [
-        "project",
-        "sample"
-      ],
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "reason",
-        "contract sample"
-      ],
-      [
-        "scope",
-        "user"
-      ],
-      [
-        "slug",
-        "sample"
-      ],
-      [
-        "subject",
-        "null"
-      ],
-      [
-        "wraps",
-        ""
-      ]
+      ["author", "contract"],
+      ["count", "1"],
+      ["cursor", "0"],
+      ["definition", "sample"],
+      ["destinationSpaceId", "space-a"],
+      ["environment", "default"],
+      ["expectedRevision", "01990000-0000-7000-8000-000000000001"],
+      ["expectedRowVersion", "1"],
+      ["id", "01990000-0000-7000-8000-000000000001"],
+      ["ids", "01990000-0000-7000-8000-000000000001"],
+      ["key", "DEV-1"],
+      ["limit", "1"],
+      ["machineId", "01990000-0000-7000-8000-000000000001"],
+      ["name", "sample"],
+      ["payload", "[object Object]"],
+      ["project", "sample"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["reason", "contract sample"],
+      ["scope", "user"],
+      ["slug", "sample"],
+      ["subject", "null"],
+      ["wraps", ""]
     ],
     "body": null,
     "recordSpace": false,
@@ -2510,94 +2168,28 @@
     "method": "GET",
     "path": "/v1/questions",
     "query": [
-      [
-        "author",
-        "contract"
-      ],
-      [
-        "count",
-        "1"
-      ],
-      [
-        "cursor",
-        "0"
-      ],
-      [
-        "definition",
-        "sample"
-      ],
-      [
-        "destinationSpaceId",
-        "space-a"
-      ],
-      [
-        "environment",
-        "default"
-      ],
-      [
-        "expectedRevision",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "expectedRowVersion",
-        "1"
-      ],
-      [
-        "id",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "ids",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "key",
-        "DEV-1"
-      ],
-      [
-        "limit",
-        "1"
-      ],
-      [
-        "machineId",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "name",
-        "sample"
-      ],
-      [
-        "payload",
-        "[object Object]"
-      ],
-      [
-        "project",
-        "sample"
-      ],
-      [
-        "projectId",
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      [
-        "reason",
-        "contract sample"
-      ],
-      [
-        "scope",
-        "user"
-      ],
-      [
-        "slug",
-        "sample"
-      ],
-      [
-        "subject",
-        "null"
-      ],
-      [
-        "wraps",
-        ""
-      ]
+      ["author", "contract"],
+      ["count", "1"],
+      ["cursor", "0"],
+      ["definition", "sample"],
+      ["destinationSpaceId", "space-a"],
+      ["environment", "default"],
+      ["expectedRevision", "01990000-0000-7000-8000-000000000001"],
+      ["expectedRowVersion", "1"],
+      ["id", "01990000-0000-7000-8000-000000000001"],
+      ["ids", "01990000-0000-7000-8000-000000000001"],
+      ["key", "DEV-1"],
+      ["limit", "1"],
+      ["machineId", "01990000-0000-7000-8000-000000000001"],
+      ["name", "sample"],
+      ["payload", "[object Object]"],
+      ["project", "sample"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["reason", "contract sample"],
+      ["scope", "user"],
+      ["slug", "sample"],
+      ["subject", "null"],
+      ["wraps", ""]
     ],
     "body": null,
     "recordSpace": true,
@@ -2642,9 +2234,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2659,12 +2249,7 @@
     "sample": "record.readTaskFlowProjectReferenceCounts",
     "method": "GET",
     "path": "/v1/task-flow/project-reference-counts",
-    "query": [
-      [
-        "projectId",
-        "[object Object]"
-      ]
-    ],
+    "query": [["projectId", "[object Object]"]],
     "body": null,
     "recordSpace": true,
     "status": 503
@@ -2699,9 +2284,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2742,9 +2325,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2776,9 +2357,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2819,9 +2398,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2866,9 +2443,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2900,9 +2475,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2934,9 +2507,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -2968,9 +2539,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3002,9 +2571,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3036,9 +2603,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3070,9 +2635,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3114,9 +2677,7 @@
         "expectedRevision": "01990000-0000-7000-8000-000000000001",
         "reason": "contract sample",
         "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
+        "ids": ["01990000-0000-7000-8000-000000000001"],
         "wraps": [],
         "payload": {},
         "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3170,9 +2731,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3187,20 +2746,7 @@
     "sample": "record.searchDocs",
     "method": "GET",
     "path": "/v1/docs/search",
-    "query": [
-      [
-        "q",
-        "undefined"
-      ],
-      [
-        "scope",
-        "user"
-      ],
-      [
-        "subject",
-        ""
-      ]
-    ],
+    "query": [["q", "undefined"], ["scope", "user"], ["subject", ""]],
     "body": null,
     "recordSpace": false,
     "status": 200
@@ -3209,12 +2755,7 @@
     "sample": "record.searchPublicDocs",
     "method": "GET",
     "path": "/public/v1/docs/search",
-    "query": [
-      [
-        "q",
-        "[object Object]"
-      ]
-    ],
+    "query": [["q", "[object Object]"]],
     "body": null,
     "recordSpace": false,
     "status": 200
@@ -3240,9 +2781,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3274,9 +2813,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3337,9 +2874,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3371,9 +2906,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3405,9 +2938,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3439,9 +2970,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3493,9 +3022,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3527,9 +3054,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3561,9 +3086,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3595,9 +3118,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3629,9 +3150,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3663,9 +3182,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3706,9 +3223,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3751,9 +3266,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
@@ -3785,9 +3298,7 @@
       "expectedRevision": "01990000-0000-7000-8000-000000000001",
       "reason": "contract sample",
       "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
+      "ids": ["01990000-0000-7000-8000-000000000001"],
       "wraps": [],
       "payload": {},
       "machineId": "01990000-0000-7000-8000-000000000001",
