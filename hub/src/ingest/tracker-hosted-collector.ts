@@ -109,12 +109,7 @@ function changedObservation(plan: TrackerTaskRowPlan, at: string) {
   }
 }
 
-function deletionPlans(
-  project: string,
-  keys: Iterable<string>,
-  at: string,
-  ports: CollectorPorts,
-) {
+function deletionPlans(project: string, keys: Iterable<string>, at: string, ports: CollectorPorts) {
   const plans: TrackerTaskRowPlan[] = []
   for (const key of new Set(keys)) {
     if (!ports.inScope(key)) continue
@@ -174,14 +169,17 @@ export async function applyHostedCollectorPass(input: {
   backfillTasks: TrackerTask[]
   prefixes: readonly string[]
   at: string
+  options?: HostedTaskWriteOptions
   ports: CollectorPorts
 }) {
-  const regular = [...input.tasks].filter((task) => input.ports.inScope(task.key)).map(input.ports.planTask)
+  const regular = [...input.tasks]
+    .filter((task) => input.ports.inScope(task.key))
+    .map(input.ports.planTask)
   const deleted = deletionPlans(input.source.project, input.deletedKeys, input.at, input.ports)
   const retired = retirementPlans(input.source, input.prefixes, input.at, input.ports)
   const backfill = input.backfillTasks.map(input.ports.planTask)
   const plans = [...regular, ...deleted, ...retired, ...backfill]
-  const sent = await sendTrackerPlans(plans)
+  const sent = await sendTrackerPlans(plans, input.options)
   input.ports.applyPlans(sent.accepted)
   return {
     observations: regular.map((plan) => changedObservation(plan, input.at)),

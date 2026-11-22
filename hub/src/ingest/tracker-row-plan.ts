@@ -33,14 +33,20 @@ function uuidBytes(uuid: string): Uint8Array {
   return Uint8Array.from(Buffer.from(uuid.replaceAll('-', ''), 'hex'))
 }
 
-/** RFC 9562 UUID version 5. */
-function trackerNameId(name: string): string {
+/** Deterministic RFC 9562 UUID version 7 with name-derived random bits. */
+function trackerNameId(time: string | null, name: string): string {
   const bytes = createHash('sha1')
     .update(uuidBytes(TRACKER_ROW_NAMESPACE))
     .update(name)
     .digest()
     .subarray(0, 16)
-  bytes[6] = (bytes[6]! & 0x0f) | 0x50
+  const parsed = time === null ? Number.NaN : Date.parse(time)
+  let timestamp = BigInt(Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : 0)
+  for (let index = 5; index >= 0; index--) {
+    bytes[index] = Number(timestamp & 0xffn)
+    timestamp >>= 8n
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   const hex = bytes.toString('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
@@ -113,7 +119,7 @@ export function trackerTaskRowPlan(input: {
   const times = observationTimes(task, stored, at, changed)
   const recordId =
     stored?.record_id ??
-    trackerNameId(`${projectRecordId}\0${task.externalId ?? `key:${effectiveKey}`}`)
+    trackerNameId(task.updatedAt, `${projectRecordId}\0${task.externalId ?? `key:${effectiveKey}`}`)
   const row: TaskRow = {
     record_id: recordId,
     external_id: task.externalId ?? stored?.external_id ?? null,
@@ -143,6 +149,7 @@ export function trackerTaskRowPlan(input: {
     stored && stored.source !== 'local' && typeof from === 'string' && from !== task.category
       ? {
           record_id: trackerNameId(
+            stored.updated_at ?? stored.last_seen,
             `${recordId}\0${from}\0${task.category}\0${stored.updated_at ?? stored.last_seen}`,
           ),
           task_key: effectiveKey,

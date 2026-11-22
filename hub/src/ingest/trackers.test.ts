@@ -5,6 +5,7 @@ import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
+import { trackerObservationTimes } from './tracker-observation-times.ts'
 import {
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
@@ -18,7 +19,6 @@ import {
   trackerKeyInScope,
   trackerKeyPrefix,
   trackerLegError,
-  trackerObservationTimes,
   trackerProjectsReadSince,
   trackerRegistrations,
   writeTrackerCache,
