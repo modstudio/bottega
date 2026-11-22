@@ -45,6 +45,7 @@ type BuilderSite = {
 type SqlWrite = { table: string; columns: Map<string, readonly ts.Expression[]> }
 
 type SchemaTableMapCache = Map<string, ReadonlyMap<string, string>>
+type MaskHelperCache = Map<string, ReadonlySet<string>>
 
 function schemaTableNames(source: string): ReadonlyMap<string, string> {
   const file = ts.createSourceFile(
@@ -370,11 +371,15 @@ function bindingsForWrite(
   node: ts.Node,
   table: string,
   sourceFile: ts.SourceFile,
+  maskHelpers: MaskHelperCache,
 ): ReadonlySet<string> {
   const scope = namedFunction(node)
-  return scope
-    ? precedingMaskBindings(scope, table, node.getStart(), maskHelperNames(sourceFile, table))
-    : new Set<string>()
+  let helpers = maskHelpers.get(table)
+  if (!helpers) {
+    helpers = maskHelperNames(sourceFile, table)
+    maskHelpers.set(table, helpers)
+  }
+  return scope ? precedingMaskBindings(scope, table, node.getStart(), helpers) : new Set<string>()
 }
 
 function builderNodeInspection(
@@ -383,6 +388,7 @@ function builderNodeInspection(
   sourceFile: ts.SourceFile,
   tableBindings: ReadonlyMap<string, string>,
   policies: ReadonlyMap<string, TablePolicy>,
+  maskHelpers: MaskHelperCache,
 ): WriteInspection | null {
   const write = builderWrite(node, tableBindings)
   if (!write) return null
@@ -390,7 +396,7 @@ function builderNodeInspection(
   const site = { file, line, table: write.table, operation: write.operation } as const
   const policy = policies.get(write.table)
   if (!policy) return { builderSite: { ...site, verdict: 'outside-inventory' } }
-  const bindings = bindingsForWrite(node, write.table, sourceFile)
+  const bindings = bindingsForWrite(node, write.table, sourceFile, maskHelpers)
   const shape = objectShape(write.value)
   const directMasked = shape === null && expressionUsesBinding(write.value, bindings)
   const spreadMasked = shape?.spreads.some((spread) => expressionUsesBinding(spread, bindings))
@@ -446,6 +452,7 @@ function sqlNodeInspection(
   file: string,
   sourceFile: ts.SourceFile,
   policies: ReadonlyMap<string, TablePolicy>,
+  maskHelpers: MaskHelperCache,
 ): WriteInspection | null {
   const write = sqlWrite(node)
   const policy = write && policies.get(write.table)
@@ -453,7 +460,7 @@ function sqlNodeInspection(
   const freeText = [...write.columns].filter(([column]) => policy.freeText.has(column))
   if (!freeText.length) return { verdict: 'structured' }
   const line = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1
-  const bindings = bindingsForWrite(node, write.table, sourceFile)
+  const bindings = bindingsForWrite(node, write.table, sourceFile, maskHelpers)
   if (!bindings.size)
     return {
       verdict: 'masked',
@@ -485,12 +492,12 @@ function inspectHostedWriters(
   source: string,
   root = resolve(import.meta.dir, '..'),
   schemaTables: SchemaTableMapCache = new Map(),
+  policies: ReadonlyMap<string, TablePolicy> = tablePolicies(),
 ): {
   findings: HostedWriterFinding[]
   verdicts: HostedWriterVerdicts
   builderSites: BuilderSite[]
 } {
-  const policies = tablePolicies()
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -501,6 +508,7 @@ function inspectHostedWriters(
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   const builderSites: BuilderSite[] = []
+  const maskHelpers: MaskHelperCache = new Map()
   const tableBindings = importedTableBindings(file, sourceFile, root, schemaTables)
   const record = (inspected: WriteInspection | null) => {
     if (!inspected) return
@@ -510,9 +518,9 @@ function inspectHostedWriters(
   }
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node))
-      record(builderNodeInspection(node, file, sourceFile, tableBindings, policies))
+      record(builderNodeInspection(node, file, sourceFile, tableBindings, policies, maskHelpers))
     if (ts.isTaggedTemplateExpression(node))
-      record(sqlNodeInspection(node, file, sourceFile, policies))
+      record(sqlNodeInspection(node, file, sourceFile, policies, maskHelpers))
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
@@ -528,19 +536,14 @@ async function currentHostedWriterInspection(root = resolve(import.meta.dir, '..
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   const builderSites: BuilderSite[] = []
   const schemaTables: SchemaTableMapCache = new Map()
+  const policies = tablePolicies()
   for (const pattern of ['hub/src/**/*.ts', 'orchestrator/src/record/**/*.ts']) {
     for await (const file of new Glob(pattern).scan({ cwd: root })) {
       if (file.endsWith('.test.ts') || file.includes('/migrations')) continue
       const source = readFileSync(resolve(root, file), 'utf8')
-      if (
-        !source.includes('tx`') &&
-        !source.includes('.insert(') &&
-        !source.includes('.update(') &&
-        !source.includes('.values(') &&
-        !source.includes('.set(')
-      )
+      if (!source.includes('tx`') && !source.includes('.insert(') && !source.includes('.update('))
         continue
-      const inspected = inspectHostedWriters(file, source, root, schemaTables)
+      const inspected = inspectHostedWriters(file, source, root, schemaTables, policies)
       findings.push(...inspected.findings)
       verdicts.masked += inspected.verdicts.masked
       verdicts.structured += inspected.verdicts.structured
