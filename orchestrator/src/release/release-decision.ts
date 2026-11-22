@@ -54,6 +54,42 @@ export function releaseProcessEnvironment(
   return { ...environment, ...release }
 }
 
+export type TagRungLiveDecisionInput = {
+  rung: string
+  tagCommit: string
+  probe: { commit: string } | { error: string }
+  liveContainsTag: boolean
+  tagContainsLive: boolean
+  requiringPaths: readonly string[]
+}
+
+/** Decide whether one hosted rung is sufficiently live for a release tag. */
+export function tagRungLiveDecision(input: TagRungLiveDecisionInput): Decision {
+  const remedy =
+    `deploy the rung with bottega release run bottega --rung ${input.rung} --at ${input.tagCommit}, ` +
+    'or land with bottega pr merge --release-required'
+  if ('error' in input.probe) {
+    return {
+      ok: false,
+      message:
+        `release tag refused for rung ${input.rung}: live commit unknown (${input.probe.error}); ` +
+        `requiring paths: unknown; ${remedy}`,
+    }
+  }
+  if (input.liveContainsTag) return { ok: true, message: '' }
+  if (input.tagContainsLive && input.requiringPaths.length === 0) return { ok: true, message: '' }
+  const paths = input.requiringPaths.length > 0 ? input.requiringPaths.join(', ') : '(none)'
+  const relationship = input.tagContainsLive
+    ? `does not contain tag commit ${input.tagCommit}`
+    : `is unrelated to or diverged from tag commit ${input.tagCommit}`
+  return {
+    ok: false,
+    message:
+      `release tag refused for rung ${input.rung}: live commit ${input.probe.commit} ${relationship}; ` +
+      `requiring paths: ${paths}; ${remedy}`,
+  }
+}
+
 /** Identify the release and checked candidate to the registered deploy command. */
 export function releaseCommandEnvironment(
   project: string,

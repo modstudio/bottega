@@ -19,10 +19,59 @@ import {
   releaseRungProofRefusal,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
+  tagRungLiveDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
   unprovableReleaseRungMessage,
 } from './release-decision.ts'
+
+describe('release tag rung liveness', () => {
+  const base = {
+    rung: 'hosted-hub',
+    tagCommit: 'e35bebce5f9b',
+    probe: { commit: '19c5bce3d18c' },
+    liveContainsTag: false,
+    tagContainsLive: true,
+    requiringPaths: [] as string[],
+  }
+
+  test('passes when live contains the tag', () => {
+    expect(tagRungLiveDecision({ ...base, liveContainsTag: true })).toEqual({
+      ok: true,
+      message: '',
+    })
+  })
+
+  test('passes when live is an ancestor with no requiring path', () => {
+    expect(tagRungLiveDecision(base)).toEqual({ ok: true, message: '' })
+  })
+
+  test('reproduces the v0.5.13 refusal when an ancestor has a requiring path', () => {
+    const decision = tagRungLiveDecision({ ...base, requiringPaths: ['package.json'] })
+    expect(decision.ok).toBe(false)
+    expect(decision.message).toContain('hosted-hub')
+    expect(decision.message).toContain('19c5bce3d18c')
+    expect(decision.message).toContain('package.json')
+    expect(decision.message).toContain('bottega release run bottega --rung hosted-hub')
+    expect(decision.message).toContain('bottega pr merge --release-required')
+  })
+
+  test('refuses a diverged live commit', () => {
+    const decision = tagRungLiveDecision({ ...base, tagContainsLive: false })
+    expect(decision.ok).toBe(false)
+    expect(decision.message).toContain('unrelated to or diverged')
+  })
+
+  test.each([
+    ['probe failure', 'live command failed (exit 22): unavailable'],
+    ['non-commit output', 'live command did not print one full commit sha: "not-a-commit"'],
+  ])('refuses %s', (_case, error) => {
+    const decision = tagRungLiveDecision({ ...base, probe: { error } })
+    expect(decision.ok).toBe(false)
+    expect(decision.message).toContain(error)
+    expect(decision.message).toContain('live commit unknown')
+  })
+})
 
 describe('release binary runtime-config guard', () => {
   test('runs with the pinned Bun whether or not the marker is set', () => {

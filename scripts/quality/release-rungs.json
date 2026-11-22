@@ -1,0 +1,25 @@
+{
+  "rungs": [
+    {
+      "name": "hosted-api",
+      "branch": "main",
+      "live": "curl -fsS -m 20 https://api.bottega.run/version | jq -er .commit",
+      "requiredWhenChanged": [
+        "shared/record/migrations/**",
+        "orchestrator/deploy/api/**",
+        "package.json",
+        "bun.lock"
+      ],
+      "entryPoints": ["orchestrator/src/record/record-api-server.ts"],
+      "onDemand": true
+    },
+    {
+      "name": "hosted-hub",
+      "branch": "main",
+      "live": "curl -fsS -m 20 https://app.bottega.run/version | jq -er .commit",
+      "requiredWhenChanged": ["hub/web/**", "hub/deploy/**", "package.json", "bun.lock"],
+      "entryPoints": ["hub/src/hosted.ts", "hub/web/src/main.tsx"],
+      "onDemand": true
+    }
+  ]
+}

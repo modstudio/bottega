@@ -1,5 +1,30 @@
 export const releaseModules = [
   {
+    file: 'orchestrator/src/release/release-check.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/bun-version.ts',
+      'shared/install-root.ts',
+      'shared/refusal.ts',
+      'orchestrator/src/release/release-binary-autoload-check.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-rungs.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/release/release-rungs.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/brand.ts',
+      'shared/install-root.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/release/release-required.ts'],
+  },
+  {
     file: 'orchestrator/src/release/release-decision.ts',
     allowed: ['shared/refusal.ts', 'shared/release-tag.ts', 'shared/secret-shaped.ts'],
   },

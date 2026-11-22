@@ -29,6 +29,8 @@ Run `bun run check` on the reviewed branch, open the pull request with `bottega 
 
 Where Bottega is developed, the installed copy is the `main` checkout and stays on its landing branch. Run `bottega release check`, then tag the release commit and push the tag; never check out the tag in the development checkout. The pushed tag reruns that check before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
 
+The tag publish refuses until each hosted rung is live for the tag; regenerate the tracked rungs file with `bottega release rungs --write`.
+
 Elsewhere, install a release in its own directory and update it by replacing the directory.
 
 Deploy images run `RELEASE_BUN_VERSION`; `scripts/check-bun-versions.ts` enforces it.

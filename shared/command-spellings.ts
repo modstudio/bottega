@@ -342,6 +342,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'release run',
   'release run check',
   'release run log',
+  'release run rungs',
+  'release rungs',
   'report',
   'report push',
   'report send',
