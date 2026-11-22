@@ -222,7 +222,7 @@ describe('hosted-authoritative existing-row edits', () => {
     expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   })
 
-  test('an unreachable duplicate-reason comment refuses without queueing it', async () => {
+  test('an unreachable duplicate-reason comment refuses without queuing it', async () => {
     const fetch = async (input: string, init?: RequestInit) => {
       if (new URL(input).pathname === '/v1/changes') throw new Error('record unavailable')
       return hosted.fetch(input, init)
