@@ -67,8 +67,10 @@ test('board tables remain refusal-only', () => {
     expect(() => maskHostedTableWrite(getTableName(entry.table), {})).toThrow('uses refusal')
 })
 
-function exclusionSchemaFindings(exclusions: Record<string, readonly { path: string }[]>): string[] {
-  const inventory = new Map(
+function exclusionSchemaFindings(
+  exclusions: Record<string, readonly { path: string }[]>,
+): string[] {
+  const inventory = new Map<string, Set<string>>(
     HOSTED_SECRET_TABLES.map((entry) => [
       getTableName(entry.table),
       new Set(Object.values(getTableColumns(entry.table)).map((column) => column.name)),
@@ -91,8 +93,8 @@ test('hosted exclusion schema validation rejects a misspelled table and path', (
   expect(
     exclusionSchemaFindings({
       ...HOSTED_SECRET_EXCLUSIONS.tables,
-      hub_taks: [{ path: 'title', reason: 'mutation' }],
-      hub_task: [{ path: 'titel', reason: 'mutation' }],
+      hub_taks: [{ path: 'title' }],
+      hub_task: [{ path: 'titel' }],
     }),
   ).toEqual(['unknown column hub_task.titel', 'unknown table hub_taks'])
 })
