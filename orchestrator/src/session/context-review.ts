@@ -10,7 +10,7 @@ import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-d
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
 import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
-import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
+import type { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
   type ContextReviewFacts,

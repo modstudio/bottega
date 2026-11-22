@@ -478,7 +478,5 @@ export async function contextBrief(
   hubTaskReader: ProjectTaskListReader = readProjectTaskList,
   hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
 ): Promise<ContextBrief> {
-  return (
-    await contextBriefWithCursors(session, cwd, database, hubTaskReader, hubTaskLookup)
-  ).brief
+  return (await contextBriefWithCursors(session, cwd, database, hubTaskReader, hubTaskLookup)).brief
 }
