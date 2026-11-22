@@ -40,7 +40,7 @@ test('reference publish compares and revises hosted pages when the local mirror 
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     const requests: RecordDocUpsertInput[] = []
     const client = createMemoryRecordApiClient()
-    const row = (overrides: Record<string, unknown>) => ({
+    const row = (overrides: Record<string, unknown>): Record<string, unknown> => ({
       scope: 'project',
       subject: PLATFORM_SLUG,
       owner: null,

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identity.ts'
@@ -19,7 +20,7 @@ test('a hosted numeric revision refuses with the revision-id listing remedy with
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   try {
     expect(() => resolveDocRevisionIdentifier(db(), number)).toThrow(
-      /pass the revision id.*bottega doc history/,
+      new RegExp(`pass the revision id.*${PLATFORM_SLUG} doc history`),
     )
   } finally {
     delete process.env.BOTTEGA_RECORD_API_URL
