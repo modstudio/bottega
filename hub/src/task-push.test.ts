@@ -762,7 +762,7 @@ test('repair fails when the drain rejects a queued row', async () => {
   expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
 })
 
-test('repair refuses a direct task send from a non-installation store after queueing synced rows', async () => {
+test('repair refuses a direct task send from a non-installation store after queuing synced rows', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   insertMachineInterval(intervalId)
   const installationStateHome = process.env[STATE_HOME_ENV]
