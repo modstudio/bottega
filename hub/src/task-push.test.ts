@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -762,13 +762,23 @@ test('repair fails when the drain rejects a queued row', async () => {
   expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
 })
 
-test('repair refuses a direct task send from a non-installation store after queuing synced rows', async () => {
-  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
-  insertMachineInterval(intervalId)
-  const installationStateHome = process.env[STATE_HOME_ENV]
-  let posts = 0
-  process.env[STATE_HOME_ENV] = `/tmp/${PLATFORM_SLUG}-non-installation-task-push-test`
-  try {
+describe('from a non-installation store', () => {
+  let installationStateHome: string | undefined
+
+  beforeEach(() => {
+    installationStateHome = process.env[STATE_HOME_ENV]
+    process.env[STATE_HOME_ENV] = `/tmp/${PLATFORM_SLUG}-non-installation-task-push-test`
+  })
+
+  afterEach(() => {
+    if (installationStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = installationStateHome
+  })
+
+  test('repair refuses a direct task send after queuing synced rows', async () => {
+    insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+    insertMachineInterval(intervalId)
+    let posts = 0
     await expect(
       pushTasks({
         baseUrl: 'https://hub.example.test',
@@ -784,14 +794,11 @@ test('repair refuses a direct task send from a non-installation store after queu
         registered: () => registered,
       }),
     ).rejects.toThrow(NON_INSTALLATION_STORE_DELIVERY_REASON)
-  } finally {
-    if (installationStateHome === undefined) delete process.env[STATE_HOME_ENV]
-    else process.env[STATE_HOME_ENV] = installationStateHome
-  }
-  expect(posts).toBe(0)
-  expect(listHostedOutbox()).toEqual([
-    expect.objectContaining({ table_name: HOSTED_INTERVAL_TABLE, row_id: intervalId }),
-  ])
+    expect(posts).toBe(0)
+    expect(listHostedOutbox()).toEqual([
+      expect.objectContaining({ table_name: HOSTED_INTERVAL_TABLE, row_id: intervalId }),
+    ])
+  })
 })
 
 test('--repair with an unroutable project reports the refusal and queues nothing', async () => {
