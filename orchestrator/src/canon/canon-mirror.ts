@@ -54,6 +54,9 @@ import {
   warningCanonFindings,
 } from './canon-lint.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
+import { composeMirrorFailure } from './canon-mirror-failure.ts'
+import { decideLeftoverDisposition } from './canon-mirror-leftover.ts'
+import { assertHydrationDoesNotRevertBranchCanon } from './canon-mirror-revisions.ts'
 
 export type ChecksState = 'passed' | 'failed' | 'pending'
 export type MergeDecision = { merge: true } | { merge: false; reason: string }
@@ -97,6 +100,10 @@ export type CanonMirrorPort = {
   remoteBranchTip(project: Project, branch: string): string | null
   remoteTrunkTip(project: Project, trunk: string): string | null
   refTip(project: Project, ref: string): string
+  treeDirty(path: string): boolean
+  hasCommitsBeyond(path: string, ref: string): boolean
+  resetTree(path: string, base: string): void
+  lastPathCommit(path: string, base: string, file: string): { sha: string; at: string } | null
   createTree(input: {
     project: Project
     path: string
@@ -203,6 +210,18 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     return out ? (out.split(/\s+/)[0] ?? null) : null
   },
   refTip: (p, ref) => command(p.path, ['git', 'rev-parse', ref]),
+  treeDirty: (path) => command(path, ['git', 'status', '--porcelain']).length > 0,
+  hasCommitsBeyond: (path, ref) => Number(command(path, ['git', 'rev-list', '--count', `${ref}..HEAD`])) > 0,
+  resetTree: (path, base) => {
+    command(path, ['git', 'reset', '--hard', base])
+    command(path, ['git', 'clean', '-fdx'])
+  },
+  lastPathCommit: (path, base, file) => {
+    const out = command(path, ['git', 'log', '-1', '--format=%H%x00%cI', base, '--', file])
+    if (!out) return null
+    const [sha, at] = out.split('\0')
+    return sha && at ? { sha, at } : null
+  },
   createTree: ({ project, path, branch, base, record }) => {
     mkdirSync(dirname(path), { recursive: true })
     assertBranchRefMayBeCreated(project.path, branch)
@@ -445,8 +464,9 @@ function releaseOwnedLeftover(
   port: CanonMirrorPort,
   preparation: CloseOutPreparation,
   execution: MirrorExecution,
-): void {
-  if (!existsSync(path)) return
+  dryRun: boolean,
+): string | null {
+  if (!existsSync(path)) return null
   const owners = db()
     .query<{ record_id: string }, [string, string, string]>(
       `SELECT record_id FROM run WHERE job=? AND worktree=?
@@ -461,20 +481,36 @@ function releaseOwnedLeftover(
   const markerRecordId = readWorktreeMarker(path).runRecordId
   const markerRun = markerRecordId
     ? (db()
-        .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-        .get(markerRecordId)?.record_id ?? null)
+        .query<{ record_id: string; branch: string | null; base_commit: string | null }, [string]>(
+          'SELECT record_id,branch,base_commit FROM run WHERE record_id=?',
+        )
+        .get(markerRecordId) ?? null)
     : null
   if (
     markerRun === null ||
     ownership !== 'owned' ||
-    !owners.some((r) => r.record_id === markerRun)
+    !owners.some((r) => r.record_id === markerRun.record_id)
   ) {
     throw new Error(
       'refusing unowned canon mirror worktree .claude/worktrees/canon-mirror; it was left intact',
     )
   }
-  if (markerRun === null) return
-  const closed = port.releaseRun(markerRun, preparation)
+  if (!markerRun.branch || !markerRun.base_commit)
+    throw new Error('refusing owned canon mirror worktree with no recorded branch or base')
+  const remoteTip = port.remoteBranchTip(project, markerRun.branch)
+  const dirty = port.treeDirty(path)
+  const hasUnpushedCommit = port.hasCommitsBeyond(path, remoteTip ?? markerRun.base_commit)
+  const disposition = decideLeftoverDisposition({
+    exists: true,
+    owned: true,
+    dirty,
+    hasUnpushedCommit,
+    dryRun,
+  })
+  if (disposition.action === 'report')
+    return `owned leftover would ${disposition.would === 'reclaim' ? 'be reset and released' : disposition.would === 'release' ? 'be released' : 'be refused because it has an unpushed commit'}`
+  if (disposition.action === 'reclaim') port.resetTree(path, markerRun.base_commit)
+  const closed = port.releaseRun(markerRun.record_id, preparation)
   execution.questionRootIds.push(...(closed.questionRootIds ?? []))
   if (closed.cursorCleanup) execution.cursorCleanups.push(closed.cursorCleanup)
   if (!['released', 'absent'].includes(closed.outcome) || existsSync(path)) {
@@ -482,7 +518,9 @@ function releaseOwnedLeftover(
       `owned canon mirror worktree ${path} could not be released: ${closed.outcome}: ${closed.detail}`,
     )
   }
+  return null
 }
+
 function proveLocalBranchOwnership(
   branch: string,
   previous: Publication | null,
@@ -599,23 +637,41 @@ function performMirrorPublication(input: {
   const rows = storedRepositoryCanonRows(project.name)
   const plan = planHydration({ rows, tree: landed.tree })
   const drift = hydrationDrift(plan)
+  const leftoverReport = releaseOwnedLeftover(
+    project,
+    path,
+    port,
+    input.releasePreparation,
+    execution,
+    dryRun,
+  )
   if (drift.length === 0) {
     setRunTerminal(runId, started)
-    return { project: project.name, failed: false, text: 'nothing to do' }
+    return {
+      project: project.name,
+      failed: false,
+      text: leftoverReport ? `left open, dry-run: ${leftoverReport}; nothing to do` : 'nothing to do',
+    }
   }
   if (dryRun) {
     setRunTerminal(runId, started)
     return {
       project: project.name,
       failed: false,
-      text: `left open, dry-run: ${drift.length} paths differ`,
+      text: `left open, dry-run: ${leftoverReport ? `${leftoverReport}; ` : ''}${drift.length} paths differ`,
     }
   }
   refuseEmptyStoreHydration(
     rows.filter((row) => row.subject === project.name).length,
     plan.deletes.length,
   )
-  releaseOwnedLeftover(project, path, port, input.releasePreparation, execution)
+  assertHydrationDoesNotRevertBranchCanon({
+    project: project.name,
+    base,
+    plan,
+    rows,
+    lastPathCommit: (file) => port.lastPathCommit(project.path, base, file),
+  })
   const { previous, remoteTip } = mirrorOwnership(project, branch, runId, port, execution)
   port.createTree({
     project,
@@ -780,11 +836,29 @@ function runMirrorLocked(input: {
       return outcome
     } finally {
       lease?.release()
-      const cleanupFailure = releaseLifecycle(port, runId, releasePreparation, execution)
+      let cleanupFailure: string | null = null
+      if (execution.treeCreated && !execution.pushed && !execution.commit && execution.base) {
+        try {
+          port.resetTree(input.path, execution.base)
+        } catch (cause) {
+          cleanupFailure = screenCanonMirrorError(
+            `canon mirror cleanup reset failed: ${screenCanonMirrorError(cause)}`,
+          )
+        }
+      }
+      const lifecycleFailure = input.dryRun
+        ? null
+        : releaseLifecycle(port, runId, releasePreparation, execution)
+      if (lifecycleFailure)
+        cleanupFailure = cleanupFailure
+          ? composeMirrorFailure(cleanupFailure, lifecycleFailure)
+          : lifecycleFailure
       if (cleanupFailure) {
-        setRunTerminal(runId, input.started, cleanupFailure)
+        const original = outcome.failed ? outcome.text.replace(/^failed, /, '') : null
+        const combined = composeMirrorFailure(original, cleanupFailure)
+        setRunTerminal(runId, input.started, combined)
         outcome.failed = true
-        outcome.text = `failed, ${cleanupFailure}`
+        outcome.text = `failed, ${combined}`
       }
       const releasableTip = execution.pushed
         ? execution.commit
@@ -871,7 +945,11 @@ async function mirrorProject(
     const cleanupFailure = releasePreparation
       ? releaseLifecycle(port, runId, releasePreparation, execution)
       : null
-    if (cleanupFailure) outcome.text = `failed, ${cleanupFailure}`
+    if (cleanupFailure) {
+      const combined = composeMirrorFailure(outcome.text.replace(/^failed, /, ''), cleanupFailure)
+      setRunTerminal(runId, started, combined)
+      outcome.text = `failed, ${combined}`
+    }
     return await finishMirrorQuestionCleanup(
       runId,
       started,
