@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -81,6 +82,7 @@ export {
 
 type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
+type MaskedStoredDocRow = StoredDocRow & { title: string; body: string; summary: string | null }
 
 function assertRestoredRecordDoc(
   scope: string,
@@ -102,6 +104,11 @@ function assertRecordDocUpsert(input: RecordDocWriteInput): void {
   if (input.scope === 'resume') {
     assertWrite(resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)))
   }
+}
+
+function preparedRecordDocWrite(input: RecordDocWriteInput): RecordDocWriteInput {
+  assertRecordDocUpsert(input)
+  return input
 }
 
 function assertImportedRecordDoc(
@@ -206,7 +213,7 @@ function assertRecordDocUpsertRevision(
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
-  assertRecordDocUpsert(input)
+  input = maskHostedTableWrite('doc', preparedRecordDocWrite(input))
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
@@ -438,6 +445,7 @@ export async function consumeRecordDoc(
     ).map((row: Record<string, unknown>) => String(row.subject_id))
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
+    consumed.body = maskHostedTableWrite('doc', consumed).body
     assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
     await tx`
       UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
@@ -526,7 +534,7 @@ export async function restoreRecordDoc(
     } catch (error) {
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
-    const body = String(revision.body)
+    const restored = maskHostedTableWrite('doc', revision) as MaskedStoredDocRow
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
@@ -535,7 +543,7 @@ export async function restoreRecordDoc(
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const articleFields = restoredArticleFields(revision)
-    assertRestoredRecordDoc(scope, slug, body, kind, articleFields.form, audiences)
+    assertRestoredRecordDoc(scope, slug, restored.body, kind, articleFields.form, audiences)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -551,14 +559,14 @@ export async function restoreRecordDoc(
         parentWasSpecified: true,
       }),
     )
-    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, body, owner)
+    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, restored.body, owner)
     assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope,
         subject,
         slug,
-        body,
+        body: restored.body,
         delivery,
         packBytes: 0,
         ...facts,
@@ -567,8 +575,8 @@ export async function restoreRecordDoc(
     const now = new Date().toISOString()
     await tx`
       UPDATE doc
-      SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${articleFields.form}, article_subject_id=${articleFields.articleSubjectId}::uuid, source_files=${bindJsonb(tx, articleFields.sourceFiles)}, checked_against_commit=${articleFields.checkedAgainstCommit}, summary=${articleFields.summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+      SET title=${restored.title}, body=${restored.body}, delivery=${delivery},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${articleFields.form}, article_subject_id=${articleFields.articleSubjectId}::uuid, source_files=${bindJsonb(tx, articleFields.sourceFiles)}, checked_against_commit=${articleFields.checkedAgainstCommit}, summary=${restored.summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -584,7 +592,7 @@ export async function restoreRecordDoc(
       projectId: resolvedProjectId ?? revisionProjectId,
       op: 'restore',
       title: String(revision.title),
-      body,
+      body: restored.body,
       delivery,
       audiences,
       parentId,
@@ -606,6 +614,8 @@ export async function restoreRecordDoc(
 export async function renameRecordDocSubject(
   input: Tenant & { from: string; to: string; count: number },
 ): Promise<{ docs: number; revisions: number }> {
+  const docRename = maskHostedTableWrite('doc', { subject: input.to })
+  const revisionRename = maskHostedTableWrite('doc_revision', { subject: input.to })
   return tenant(input, async (tx) => {
     const docs = await tx`
       SELECT count(*)::integer AS n FROM doc
@@ -625,13 +635,13 @@ export async function renameRecordDocSubject(
     }
     if (docCount) {
       await tx`
-        UPDATE doc SET subject=${input.to}, updated_at=now()
+        UPDATE doc SET subject=${docRename.subject}, updated_at=now()
         WHERE space_id=${input.spaceId}::uuid AND subject=${input.from}
       `
     }
     if (revisionCount) {
       await tx`
-        UPDATE doc_revision SET subject=${input.to}
+        UPDATE doc_revision SET subject=${revisionRename.subject}
         WHERE space_id=${input.spaceId}::uuid AND subject=${input.from}
       `
     }
@@ -730,6 +740,7 @@ function insertImportedRevision(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
+  input = maskHostedTableWrite('doc', input)
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   assertImportAddress(importedDoc)
   assertImportedRevisions(importedDoc, revisions)

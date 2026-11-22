@@ -40,7 +40,9 @@ export const recordSyncModules: RecordSyncModule[] = [
     './outbox-sanitize.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
-  module('orchestrator/src/record/record-sync-contract.ts', []),
+  module('orchestrator/src/record/record-sync-contract.ts', [
+    '../../../shared/record-sync-limits.ts',
+  ]),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-sync-results.ts', [
     'bun:sqlite',

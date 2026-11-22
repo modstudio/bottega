@@ -1,5 +1,6 @@
 /** Writes one normalized hosted document import. Must not know validation or transaction ownership. */
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
@@ -15,7 +16,10 @@ export async function writeImportedRecordDoc(
     doc: NormalizedRecordDocImport['doc']
   },
 ): Promise<void> {
-  const { doc, spaceId, id, projectId } = input
+  const { doc, spaceId, id, projectId } = {
+    ...input,
+    doc: maskHostedTableWrite('doc', input.doc),
+  }
   if (input.exists) {
     await tx`
       UPDATE doc

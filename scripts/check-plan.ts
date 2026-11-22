@@ -306,6 +306,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-record-request-headers.test.ts',
   'scripts/check-task-single-read.test.ts',
   'scripts/check-record-route-contracts.test.ts',
+  'scripts/check-hosted-secret-writers.test.ts',
   'scripts/check-hosted-local-sql.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',
   'scripts/check-self-spawn.test.ts',

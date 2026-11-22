@@ -124,7 +124,7 @@ function registerIdentityCommands(record: Command): void {
   const presentation = { log }
   record
     .command('sign-up')
-    .description('create a hosted record account and sign in')
+    .description('create a hosted record account, sign in, and apply machine settings')
     .requiredOption('--email <email>', 'email address for the new account')
     .requiredOption('--name <name>', 'display name for the new account')
     .action((options) =>
@@ -134,7 +134,7 @@ function registerIdentityCommands(record: Command): void {
     )
   record
     .command('sign-in')
-    .description('sign in to the hosted record')
+    .description('sign in to the hosted record and apply machine settings')
     .requiredOption('--email <email>', 'email address of the account')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>
@@ -591,12 +591,19 @@ export function register(program: Command): void {
   registerSpaceCommands(record)
   record
     .command('audit-secrets')
-    .description('scan local outbox payloads for secret material')
+    .description('scan local outbox or hosted free text for secret material')
     .option('--json', 'write the audit findings as JSON')
     .option('--ids', 'include row identifiers in text output')
+    .option('--hosted', 'scan hosted record free-text columns instead of the local outbox')
+    .option('--rule <name>', 'include only matches from one named rule')
     .action((options) =>
       recordAuditSecretsCommand(
-        { json: Boolean(options.json), ids: Boolean(options.ids) },
+        {
+          json: Boolean(options.json),
+          ids: Boolean(options.ids),
+          hosted: Boolean(options.hosted),
+          ...(options.rule === undefined ? {} : { rule: String(options.rule) }),
+        },
         presentation,
       ),
     )

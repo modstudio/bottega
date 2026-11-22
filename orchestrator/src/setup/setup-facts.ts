@@ -36,6 +36,7 @@ import {
   gatherScheduleSetupFacts,
   gatherScheduleUserFact,
 } from './setup-schedule-runtime.ts'
+import { gatherSetupSettingsFact, type SetupSettingsFact } from './setup-settings-fact.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
 
@@ -78,6 +79,7 @@ export type SetupFactsCapture = {
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
+  settings?: SetupSettingsFact
 }
 
 export type SetupFacts = {
@@ -110,6 +112,7 @@ export type SetupFacts = {
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
+  settings: SetupSettingsFact
 }
 
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
@@ -153,6 +156,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
     ) as SetupFacts['harnesses'],
     localModelHost: capture.localModelHost,
     sandboxRuntime: capture.sandboxRuntime,
+    settings: capture.settings ?? { state: 'waiting-for-sign-in', hooks: [] },
   }
 }
 
@@ -296,5 +300,6 @@ export async function gatherSetupFacts(
     harnesses,
     localModelHost: await localReachable(),
     sandboxRuntime: await sandboxRuntimeAvailability(),
+    settings: gatherSetupSettingsFact(),
   })
 }

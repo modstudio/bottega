@@ -40,6 +40,7 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-question.ts', [
     'hono',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record/record-changes.ts',
     './record-auth.ts',
     './record-cursor.ts',
@@ -88,6 +89,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-values.ts',
   ]),
   module('orchestrator/src/record/record-question-write.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/brand.ts',

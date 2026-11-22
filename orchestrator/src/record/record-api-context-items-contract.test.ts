@@ -21,6 +21,36 @@ const readDeps = {
   readContextHolders: async () => [],
 }
 
+test('context-item route forwards validated free text to its masked writer', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  let storedBody = ''
+  const app = recordApiTestApp(identity, {
+    ...idleSubjectDeps(),
+    ...idleRecordApiDeps(),
+    upsertContextItem: async (input: { body: string }) => {
+      storedBody = input.body
+      return {}
+    },
+  })
+  const response = await app.request('/v1/context-items', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      holderKind: 'task',
+      holderId: newRecordId(),
+      slug: 'secret-reproduction',
+      kind: 'fact',
+      body: `${generic} quoted ${secret}`,
+      source: 'test',
+      questionNumber: null,
+      target: null,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
+})
+
 test('hosted context-item delete returns removed false when the row is absent', async () => {
   const id = newRecordId()
   const app = new Hono<{

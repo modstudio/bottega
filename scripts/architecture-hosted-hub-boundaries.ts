@@ -9,6 +9,7 @@ export const hostedHubBoundarySpecs = [
       '@trpc/server/adapters/fetch',
       '../../shared/built-commit.ts',
       '../../shared/hosted-server.ts',
+      '../../shared/hosted-secret-mask.ts',
       '../../shared/install-root.ts',
       '../../shared/record-caller.ts',
       '../../shared/record-no-destination-write-counter.ts',

@@ -271,6 +271,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
+      '../../shared/hosted-secret-mask.ts',
       '../../shared/record-space-request.ts',
       '../../shared/record/record-changes.ts',
       './hosted-identity-set.ts',
@@ -461,6 +462,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
+      '../../shared/hosted-secret-mask.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',

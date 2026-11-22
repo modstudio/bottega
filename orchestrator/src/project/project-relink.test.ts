@@ -303,15 +303,23 @@ test('record sign-in adopts a local project with a hosted namesake', async () =>
   const session = memoryRecordSession()
   installRecordSessionRunner(session.runner)
   const output: string[] = []
+  let settingsApplies = 0
   try {
     await completeSignInCommand(
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
       withDatabaseForMigrationStep,
+      {
+        applySettings: async () => {
+          settingsApplies += 1
+          return [{ target: 'settings fixture', outcome: 'current', changed: false }]
+        },
+      },
     )
   } finally {
     installRecordSessionRunner(null)
   }
+  expect(settingsApplies).toBe(1)
   expect(projectByName(name)?.recordId).toBe(hostedId)
   expect(output).toContain(`signed in a@example.test`)
   expect(output.some((line) => line.includes(`${oldId} -> ${hostedId}`))).toBe(true)
@@ -367,6 +375,7 @@ test('record sign-in reports one adoption failure and continues to a later proje
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
       withDatabaseForMigrationStep,
+      { applySettings: async () => [] },
     )
   } finally {
     installRecordSessionRunner(null)
@@ -447,6 +456,7 @@ describe('record sign-in machine key claim failure', () => {
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
       withDatabaseForMigrationStep,
+      { applySettings: async () => [] },
     )
     expect(output).toEqual([
       'signed in a@example.test',

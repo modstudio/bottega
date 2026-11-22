@@ -236,6 +236,20 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep install verification as a pure decision over adapter-supplied facts.',
   },
   {
+    name: 'setup-settings-fact-boundary',
+    file: 'orchestrator/src/setup/setup-settings-fact.ts',
+    allowed: [
+      '../../../shared/runtime-assets.ts',
+      '../record/record-session.ts',
+      '../settings/settings-files.ts',
+      '../settings/settings-machine-hooks.ts',
+      './setup-install-verify.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep setup settings facts local-only and independent of hosted reads and setup policy.',
+  },
+  {
     name: 'setup-install-verify-runtime-boundary',
     file: 'orchestrator/src/setup/setup-install-verify-runtime.ts',
     allowed: [

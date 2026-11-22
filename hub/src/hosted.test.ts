@@ -69,6 +69,22 @@ describe('hostedRouter', () => {
     expect(body.error.data).not.toHaveProperty('stack')
   })
 
+  test('a JSON POST to tRPC reaches the router without hosted-route masking', async () => {
+    const response = await hostedRequestHandler({
+      recordApiUrl: 'https://api.example.test',
+      recordDatabaseUrl: {} as never,
+      noDestinationWriteCounter: createNoDestinationWriteCounter(),
+    })(
+      new Request('https://hub.example.test/trpc/notFound', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ json: null }),
+      }),
+    )
+    expect(response.status).toBe(404)
+    expect(await response.text()).not.toContain('has no secret policy entry')
+  })
+
   test('exposes the record and hosted context namespaces', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([

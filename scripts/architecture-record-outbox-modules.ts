@@ -2,6 +2,31 @@ import type { ArchitectureModule } from './architecture.ts'
 
 export const recordOutboxModules: ArchitectureModule[] = [
   {
+    file: 'orchestrator/src/record/outbox-secret-audit.ts',
+    allowed: [
+      'bun:sqlite',
+      'shared/brand.ts',
+      'orchestrator/src/record/outbox-prune-payload.ts',
+      'orchestrator/src/record/outbox-sanitize.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/record/hosted-secret-audit.ts',
+    allowed: [
+      'bun',
+      'shared/record/schema-board.ts',
+      'shared/record/schema-context-items.ts',
+      'shared/record/schema-docs.ts',
+      'shared/record/schema-hub.ts',
+      'shared/record/schema-question.ts',
+      'shared/record/schema-task-flow.ts',
+      'shared/record/schema-workflow-catalogue.ts',
+      'shared/record/tenant.ts',
+      'shared/hosted-secret-mask.ts',
+      'shared/secret-shaped.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/record/outbox-enqueue.ts',
     allowed: [
       'node:fs',

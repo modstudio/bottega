@@ -40,6 +40,7 @@ import {
 import { recordDocumentScopes } from './record-api-doc-tenant.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { registerRecordMaskWarnings } from './record-api-mask-warnings.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import {
@@ -408,8 +409,14 @@ function registerRecordCoreRoutes(
   registerRecordQuestionRoutes(app, deps, ports)
 }
 
-export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+function maskedRecordApiApp(): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
+  registerRecordMaskWarnings(app)
+  return app
+}
+
+export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+  const app = maskedRecordApiApp()
   app.onError((error, context) => {
     const refusal = renderRecordApiRefusal(context, error)
     if (refusal) return refusal

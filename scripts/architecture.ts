@@ -604,6 +604,7 @@ const declaredModules: ArchitectureModule[] = [
     './setup-mcp.ts',
     './setup-schedule-policy.ts',
     './setup-schedule-runtime.ts',
+    './setup-settings-fact.ts',
     '../../../shared/bounded-process.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),

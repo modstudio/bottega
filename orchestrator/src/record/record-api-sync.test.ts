@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
-import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
+import { noDestinationWriteTestDeps, recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import { registerRecordSyncRoute } from './record-api-sync.ts'
 import type { RecordWriteTelemetryEnvironment } from './record-api-write-telemetry.ts'
@@ -11,6 +11,41 @@ import {
 import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
 
 const id = '01990000-0000-7000-8000-000000000001'
+const SECRET = 'ghp_123456789012345678901234567890123456'
+
+test('sync text-body route forwards validated payloads without an API mask seam', async () => {
+  let received: Record<string, unknown> | undefined
+  const app = recordApiTestApp(identity, {
+    syncRecord: async ({ request }: { request: Record<string, unknown> }) => {
+      received = request
+      return { results: [] }
+    },
+  })
+  const response = await app.request('/v1/sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      machine: { id, name: SECRET, seenAt: '2026-10-13T12:00:00.000Z' },
+      rows: [{ id: 1, kind: 'run', payload: JSON.stringify({ body: SECRET }), spaceHint: null }],
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(received).toEqual({
+    machine: {
+      id,
+      name: SECRET,
+      seenAt: '2026-10-13T12:00:00.000Z',
+    },
+    rows: [
+      {
+        id: 1,
+        kind: 'run',
+        payload: JSON.stringify({ body: SECRET }),
+        spaceHint: null,
+      },
+    ],
+  })
+})
 
 test('sync forwards raw payloads with the authenticated identity and enforces byte limits', async () => {
   const syncRecord = mock(async (input: { request: { rows: Array<{ id: number }> } }) => ({

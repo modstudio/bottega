@@ -21,6 +21,8 @@ const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
+const SECRET = 'ghp_123456789012345678901234567890123456'
+const GENERIC = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
 
 const recordApiAppWith = (overrides: Record<string, unknown>) =>
   recordApiTestApp(
@@ -58,6 +60,114 @@ function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   )
   return app
 }
+
+test('task-flow routes forward validated text to the masked writer', async () => {
+  let stored = ''
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      writeTaskFlow: async (_intent, input) => {
+        stored = (input as { rows: Array<{ body: string }> }).rows[0]!.body
+        return {}
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/task-flow/attach-text', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      requestId: KNOWN_ID,
+      rows: [
+        {
+          id: UNKNOWN_ID,
+          stageRecordId: PROJECT,
+          stepOrdinal: 1,
+          stepSlug: 'measure',
+          body: `${GENERIC} quoted ${SECRET}`,
+          createdAt: '2026-11-21T12:00:00.000Z',
+        },
+      ],
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(`${GENERIC} quoted ${SECRET}`)
+})
+
+test('workflow draft forwards validated fields to the masked writer', async () => {
+  let stored: Record<string, unknown> | null = null
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async (input) => {
+        stored = input
+        return input
+      },
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/workflow-catalogue/draft', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      event: 'set',
+      definition: `${GENERIC} quoted ${SECRET}`,
+      author: `author ${SECRET}`,
+      reason: `reason ${SECRET}`,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toMatchObject({
+    definition: `${GENERIC} quoted ${SECRET}`,
+    author: `author ${SECRET}`,
+    reason: `reason ${SECRET}`,
+  })
+})
+
+test('workflow promote forwards its validated transition reason to the masked writer', async () => {
+  let reason = ''
+  const app = recordApiAppWith({
+    promoteWorkflow: async (input: { reason: string }) => {
+      reason = input.reason
+      return input
+    },
+  })
+  const response = await app.request('/v1/workflow-catalogue/promote', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      n: 1,
+      expectedProductionVersion: null,
+      author: 'tester',
+      reason: SECRET,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(reason).toBe(SECRET)
+})
 
 test('task-flow stage list validates combined filters and applies its default limit', async () => {
   const calls: TaskFlowStageListQuery[] = []

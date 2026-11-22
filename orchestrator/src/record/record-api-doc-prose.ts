@@ -26,7 +26,10 @@ export async function hostedDocUpsert<
   const prior = input.id ? await deps.readDoc({ ...tenant, id: input.id }) : null
   const checked = await proseGate(docProseFields(input, prior), hostedProseOptions(identity))
   if (checked.refusal) throw new RecordDocError(checked.refusal)
-  const written = await deps.upsertDoc({ ...tenant, ...input })
+  const written = await deps.upsertDoc({
+    ...tenant,
+    ...input,
+  })
   if (!checked.notices.length) return written
   return { ...written, writeWarnings: [...(written.writeWarnings ?? []), ...checked.notices] }
 }

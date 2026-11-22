@@ -103,7 +103,12 @@ export function registerRecordContextItemRoutes(
     if (!tenant) return ports.noSpace(context)
     const parsed = body.safeParse(await context.req.json().catch(() => null))
     if (!parsed.success) return context.json({ error: 'invalid context item' }, 400)
-    return context.json(await deps.upsertContextItem({ ...tenant, ...parsed.data }))
+    return context.json(
+      await deps.upsertContextItem({
+        ...tenant,
+        ...parsed.data,
+      }),
+    )
   })
   app.delete(`${RECORD_CONTEXT_ITEMS_ROUTE}/:id`, async (context) => {
     const tenant = ports.scope(context)

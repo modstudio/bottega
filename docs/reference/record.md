@@ -102,14 +102,16 @@ the hosted record and outbox
 
 ## bottega record audit-secrets
 
-**Synopsis:** `bottega record audit-secrets [--json] [--ids]`
+**Synopsis:** `bottega record audit-secrets [--json] [--ids] [--hosted] [--rule <name>]`
 
-scan local outbox payloads for secret material
+scan local outbox or hosted free text for secret material
 
 ### Options
 
 - `--json`: write the audit findings as JSON
 - `--ids`: include row identifiers in text output
+- `--hosted`: scan hosted record free-text columns instead of the local outbox
+- `--rule <name>`: include only matches from one named rule
 
 ### Related
 
@@ -440,7 +442,7 @@ redact secret material from synchronized record payloads
 
 **Synopsis:** `bottega record sign-in --email <email>`
 
-sign in to the hosted record
+sign in to the hosted record and apply machine settings
 
 ### Options
 
@@ -454,7 +456,7 @@ sign in to the hosted record
 
 **Synopsis:** `bottega record sign-up --email <email> --name <name>`
 
-create a hosted record account and sign in
+create a hosted record account, sign in, and apply machine settings
 
 ### Options
 
