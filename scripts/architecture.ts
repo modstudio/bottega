@@ -170,6 +170,10 @@ const declaredModules: ArchitectureModule[] = [
     '../health/launch-agent-refresh.ts',
     '../setup/setup-schedule-policy.ts',
   ]),
+  module('orchestrator/src/commands/release-tree.ts', [
+    '../hook-tree/tree.ts',
+    '../release/release-at-commit.ts',
+  ]),
   module('orchestrator/src/health/launch-agent-refresh.ts', [
     'node:path',
     '../../../shared/brand.ts',

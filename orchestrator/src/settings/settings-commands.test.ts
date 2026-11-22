@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
@@ -145,6 +145,12 @@ describe('settings import', () => {
 
   test('extracts only owned keys into the store', async () => {
     const root = fixtureProject('alpha')
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const source = readFileSync(settingsPath, 'utf8')
+    writeFileSync(
+      settingsPath,
+      source.replace('  "permissions":', '  "options": {"anything":  1},\n  "permissions":'),
+    )
     const shown = presentation()
     await settingsImportCommand(shown.flags({ project: 'alpha', 'dry-run': true }), {
       ...shown.port(root),
@@ -164,6 +170,7 @@ describe('settings import', () => {
       }),
     )
     expect(stored?.body).not.toContain('SECRET')
+    expect(stored?.body).not.toContain('options')
     expect(stored?.delivery).toBe('demand')
     await expect(
       setDoc({
@@ -428,6 +435,37 @@ describe('settings render --check', () => {
     expect(shown.code()).toBe(0)
   })
 
+  test('stored options are not harness-file drift in text or JSON output', async () => {
+    const root = fixtureProject('options-no-drift')
+    await setDoc({
+      scope: 'settings',
+      subject: 'options-no-drift',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
+        hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+        options: { subagentHooks: 'on' },
+      }),
+      reason: 'seed store',
+    })
+    const text = presentation()
+    await settingsRenderCheckCommand(
+      text.flags({ project: 'options-no-drift', check: true }),
+      text.port(root),
+    )
+    expect(text.logs.join('\n')).toContain('drift: none')
+    expect(text.code()).toBe(0)
+
+    const json = presentation()
+    await settingsRenderCheckCommand(
+      json.flags({ project: 'options-no-drift', check: true, json: true }),
+      json.port(root),
+    )
+    expect(JSON.parse(json.logs[0]!)).toMatchObject({ drifted: false })
+    expect(json.code()).toBe(0)
+  })
+
   test('drift output fingerprints hooks and never prints commands', async () => {
     const root = fixtureProject('hook-print')
     const command = `${PLATFORM_SLUG} note new`
@@ -564,6 +602,69 @@ test('adoption output containing a sentinel prints no sentinel', async () => {
 })
 
 describe('settings permission', () => {
+  test('refuses a future auto-mode key without changing the row', async () => {
+    fixtureProject('permission-future-auto-mode')
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-future-auto-mode',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: {}, hooks: {} }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+    const futureBody = JSON.stringify({
+      permissions: {},
+      hooks: {},
+      autoMode: { allow: [], futureList: ['x'] },
+      env: {},
+      envKeys: [],
+    })
+    db()
+      .query("UPDATE doc SET body=? WHERE scope='settings' AND subject=? AND slug='settings'")
+      .run(futureBody, 'permission-future-auto-mode')
+
+    await expect(
+      settingsPermissionCommand(
+        presentation().flags({
+          project: 'permission-future-auto-mode',
+          list: 'allow',
+          rule: 'Bash(git *)',
+          expect: seeded.revision!,
+        }),
+        'add',
+      ),
+    ).rejects.toThrow(new RegExp(`autoMode\\.futureList.*upgrade ${PLATFORM_NAME}`, 's'))
+    expect(getDoc('settings', 'permission-future-auto-mode', 'settings')?.body).toBe(futureBody)
+  })
+
+  test('preserves options through an edit', async () => {
+    fixtureProject('permission-options')
+    const options = { subagentHooks: 'on' as const }
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-options',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: {}, hooks: {}, options }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+
+    await settingsPermissionCommand(
+      presentation().flags({
+        project: 'permission-options',
+        list: 'allow',
+        rule: 'Bash(git *)',
+        expect: seeded.revision!,
+      }),
+      'add',
+    )
+
+    const body = getDoc('settings', 'permission-options', 'settings')!.body
+    expect(JSON.stringify(JSON.parse(body).options)).toBe(JSON.stringify(options))
+  })
+
   test('refuses unknown and unmanaged projects', async () => {
     const shown = presentation()
     await expect(

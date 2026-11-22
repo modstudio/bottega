@@ -2,7 +2,11 @@
 /** Identity fixed by the parent before the main checkout moves. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RELEASE_REQUIREMENT_SOURCES, type ReleaseRungPlan } from '../release/release-required.ts'
+import {
+  RELEASE_REQUIREMENT_SOURCES,
+  type ReleaseRungPlan,
+  type RequiredReleaseReport,
+} from '../release/release-required.ts'
 import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
@@ -31,6 +35,7 @@ export type PullRequestPostLandingPayload = {
   promoteWorkflowDrafts: boolean
   recordingError: string | null
   requeueOutput: string | null
+  provedRequiredRelease?: RequiredReleaseReport
 }
 
 export function encodePullRequestPostLandingPayload(
@@ -64,7 +69,8 @@ function validRungPlans(value: unknown): boolean {
         )) &&
       (plan.reason === null || typeof plan.reason === 'string') &&
       typeof plan.declaresLive === 'boolean' &&
-      typeof plan.declaresDeploy === 'boolean'
+      typeof plan.declaresDeploy === 'boolean' &&
+      (plan.canDeployFromTree === undefined || typeof plan.canDeployFromTree === 'boolean')
     )
   })
 }
@@ -72,6 +78,37 @@ function validRungPlans(value: unknown): boolean {
 function validateRungPlans(value: unknown): void {
   if (value !== undefined && !validRungPlans(value))
     throw refusal('rungPlans', 'an array of release-rung plans')
+}
+
+function validateProvedRequiredRelease(value: unknown): void {
+  if (value === undefined) return
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw refusal('provedRequiredRelease', 'a required-release report')
+  const report = value as Record<string, unknown>
+  if (
+    !Array.isArray(report.required) ||
+    report.required.some((rung) => typeof rung !== 'string' || !rung) ||
+    !Array.isArray(report.releases) ||
+    !report.releases.every(validRequiredRungRelease) ||
+    !(report.decisionError === undefined || typeof report.decisionError === 'string') ||
+    typeof report.satisfied !== 'boolean'
+  )
+    throw refusal('provedRequiredRelease', 'a required-release report')
+}
+
+function validRequiredRungRelease(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const release = value as Record<string, unknown>
+  return (
+    typeof release.rung === 'string' &&
+    Boolean(release.rung) &&
+    typeof release.required === 'boolean' &&
+    (release.deployExit === null || Number.isInteger(release.deployExit)) &&
+    typeof release.outputTail === 'string' &&
+    typeof release.satisfied === 'boolean' &&
+    typeof release.deployed === 'boolean' &&
+    (release.unprovable === undefined || release.unprovable === true)
+  )
 }
 
 function validateDepth(value: unknown): string | null {
@@ -110,6 +147,7 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
   )
     throw refusal('requiredRungs', 'an array of non-empty strings')
   validateRungPlans(row.rungPlans)
+  validateProvedRequiredRelease(row.provedRequiredRelease)
   if (!(row.rungDecisionError === null || typeof row.rungDecisionError === 'string'))
     throw refusal('rungDecisionError', 'a string or null')
   if (typeof row.releaseRequired !== 'boolean') throw refusal('releaseRequired', 'a boolean')

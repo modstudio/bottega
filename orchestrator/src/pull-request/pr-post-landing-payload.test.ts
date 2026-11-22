@@ -99,6 +99,37 @@ test('post-landing payload carries the release plan requirement source', () => {
   )
 })
 
+test.each([
+  ['rung', ''],
+  ['required', 'yes'],
+  ['deployExit', 1.5],
+  ['outputTail', null],
+  ['satisfied', 'yes'],
+  ['deployed', 'yes'],
+] as const)('post-landing payload refuses malformed proved release field %s', (field, value) => {
+  const release: Record<string, unknown> = {
+    rung: 'hosted-api',
+    required: true,
+    deployExit: 0,
+    outputTail: 'healthy',
+    satisfied: true,
+    deployed: true,
+  }
+  release[field] = value
+  expect(() =>
+    parsePullRequestPostLandingPayload(
+      JSON.stringify({
+        ...payload,
+        provedRequiredRelease: {
+          required: ['hosted-api'],
+          releases: [release],
+          satisfied: true,
+        },
+      }),
+    ),
+  ).toThrow('provedRequiredRelease')
+})
+
 test.each(
   Object.keys(payload).filter((field) => field !== 'depth' && field !== 'workflowImportSince'),
 )('post-landing payload refuses missing %s', (field) => {

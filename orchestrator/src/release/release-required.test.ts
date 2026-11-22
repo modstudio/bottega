@@ -5,9 +5,15 @@ import { releaseProofDecision } from './release-decision.ts'
 import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
+  type IncomingRequiredRungDependencies,
+  incomingRequiredRungGuard,
+  machineUpdateRungRefusal,
+  type RequiredReleaseRung,
   type RequiredReleaseRunner,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
+  releaseRequiredRungsBeforeMainMove,
+  requiredReleaseStepOrder,
   requiredRungDecision,
   undecidedRequiredRelease,
 } from './release-required.ts'
@@ -22,6 +28,7 @@ const project = {
   retiredAt: null,
   settings: {
     trunk: 'main',
+    worktree: { recipePath: `${PLATFORM_SLUG}.jsonc` },
     release: {
       rungs: [
         {
@@ -37,6 +44,134 @@ const project = {
     },
   },
 } as Project
+
+test.each(['alephbeis', 'starship'])(
+  '%s production uses CI live-wait after the main checkout moves',
+  (name) => {
+    const production: RequiredReleaseRung = {
+      name: 'production',
+      branch: 'master',
+      live: 'read production commit',
+      onDemand: false,
+    }
+    const registered = {
+      ...project,
+      name,
+      settings: {
+        ...project.settings,
+        trunk: 'master',
+        release: { ...project.settings.release!, rungs: [production] },
+      },
+    } as Project
+    const plan = {
+      rung: 'production',
+      branch: 'master',
+      required: true,
+      requiredBy: 'explicit' as const,
+      reason: null,
+      declaresLive: true,
+      declaresDeploy: false,
+      canDeployFromTree: false,
+    }
+    let childReleased = false
+
+    expect(requiredReleaseStepOrder(true, [plan])).toEqual(['move-main', 'hand-off'])
+    expect(
+      releaseRequiredRungsAfterMainMove({
+        project: registered,
+        mergeCommit: 'merge',
+        rungs: [plan],
+        runner: runner({
+          release: () => {
+            childReleased = true
+            return successfulRelease()
+          },
+        }),
+      }).satisfied,
+    ).toBe(true)
+    expect(childReleased).toBe(true)
+  },
+)
+
+test('machine update refuses an incoming commit until every required rung proves it live', () => {
+  const input = {
+    incomingCommit: 'incoming-tip',
+    requiredRungs: ['hosted-api'],
+    provedCommits: new Map([['hosted-api', 'live-tip']]),
+    liveIsAncestorOfIncoming: new Map([['hosted-api', false]]),
+    requiredSinceLive: new Map([['hosted-api', true]]),
+    project: 'fixture',
+  }
+  expect(
+    machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', false]]) }),
+  ).toContain(`${PLATFORM_SLUG} release run fixture --rung hosted-api --at incoming-tip`)
+  expect(
+    machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', true]]) }),
+  ).toBeNull()
+})
+
+test('machine update accepts unrelated commits after the newest proved release', () => {
+  expect(
+    machineUpdateRungRefusal({
+      incomingCommit: 'unrelated-y',
+      requiredRungs: ['hosted-api'],
+      provedCommits: new Map([['hosted-api', 'released-x']]),
+      liveContainsIncoming: new Map([['hosted-api', false]]),
+      liveIsAncestorOfIncoming: new Map([['hosted-api', true]]),
+      requiredSinceLive: new Map([['hosted-api', false]]),
+      project: 'fixture',
+    }),
+  ).toBeNull()
+})
+
+test('machine update derives the X-then-unrelated-Y allowance from required rung settings', () => {
+  const guarded = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            deploy: 'deploy hosted-api',
+            live: 'read hosted-api live commit',
+            requiredWhenChanged: ['shared/record/**'],
+            entryPoints: ['orchestrator/src/record/server.ts'],
+          },
+          {
+            name: 'reach-only',
+            branch: 'main',
+            deploy: 'deploy reach-only',
+            live: 'read reach-only live commit',
+          },
+        ],
+      },
+    },
+  } as Project
+  let now = 0
+  let closureReads = 0
+  const dependencies: IncomingRequiredRungDependencies = {
+    resolve: (ref) => (ref === 'HEAD' ? 'before-x' : 'unrelated-y'),
+    changedPaths: (_project, from) =>
+      from === 'before-x' ? ['shared/record/schema.ts', 'docs/guide.md'] : ['docs/guide.md'],
+    entryClosure: () => {
+      closureReads++
+      return new Map()
+    },
+    newestLive: (_project, rung) => (rung === 'hosted-api' ? 'released-x' : null),
+    contains: (_project, ancestor, descendant) =>
+      ancestor === 'released-x' && descendant === 'unrelated-y',
+    now: () => now++,
+  }
+
+  expect(incomingRequiredRungGuard(guarded, 'main', dependencies)).toEqual({
+    refusal: null,
+    elapsedMs: 1,
+  })
+  expect(closureReads).toBe(1)
+})
 
 const successfulRelease = (overrides: Partial<ReleaseResult> = {}): ReleaseResult =>
   ({
@@ -476,6 +611,84 @@ describe('requiredRungDecision', () => {
   })
 })
 
+describe('releaseRequiredRungsBeforeMainMove', () => {
+  const plan = (rung: string, canDeployFromTree: boolean) => ({
+    rung,
+    branch: 'main',
+    required: true,
+    requiredBy: 'explicit' as const,
+    reason: null,
+    declaresLive: true,
+    declaresDeploy: true,
+    canDeployFromTree,
+  })
+
+  test('deploys only required rungs that can release from a tracked tree', async () => {
+    const deployed: string[] = []
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true), plan('other', false)],
+      releaseAt: async ({ rung }) => {
+        deployed.push(rung)
+        return {
+          result: successfulRelease(),
+          provisionMs: 1,
+          deployMs: 2,
+          releaseMs: 3,
+        }
+      },
+      now: () => new Date('2026-11-22T20:00:00.000Z'),
+    })
+
+    expect(deployed).toEqual(['hosted-api'])
+    expect(report.required).toEqual(['hosted-api'])
+    expect(report.satisfied).toBe(true)
+  })
+
+  test('scores an unproved deploy unsatisfied and names teardown residue', async () => {
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true)],
+      releaseAt: async () => ({
+        result: successfulRelease({
+          exitCode: 7,
+          liveMatchesCandidate: false,
+          outputTail: 'deploy failed',
+        }),
+        provisionMs: 1,
+        deployMs: 2,
+        releaseMs: 3,
+        residue: 'release tree kept',
+      }),
+    })
+
+    expect(report.satisfied).toBe(false)
+    expect(report.releases[0]?.outputTail).toContain('deploy failed')
+    expect(report.releases[0]?.outputTail).toContain('release checkout residue: release tree kept')
+  })
+
+  test('keeps a proved deploy satisfied while naming teardown residue', async () => {
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true)],
+      releaseAt: async () => ({
+        result: successfulRelease(),
+        provisionMs: 1,
+        deployMs: 2,
+        releaseMs: 3,
+        residue: 'release tree kept',
+      }),
+      now: () => new Date('2026-11-22T20:00:00.000Z'),
+    })
+
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]?.outputTail).toContain('release checkout residue: release tree kept')
+  })
+})
+
 describe('releaseRequiredRungsAfterMainMove', () => {
   const requiredPlan = {
     rung: 'hosted-api',
@@ -485,6 +698,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     reason: null,
     declaresLive: true,
     declaresDeploy: true,
+    canDeployFromTree: true,
   }
 
   test('releases required rungs after the main checkout move', () => {

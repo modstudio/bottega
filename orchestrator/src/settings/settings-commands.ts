@@ -29,6 +29,7 @@ import {
   serializeOwnedSettings,
 } from './settings.ts'
 import { editSettingsAutoMode, type SettingsAutoModeOperation } from './settings-auto-mode.ts'
+import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {
   claudeHomeFromEnvironment,
@@ -154,6 +155,7 @@ async function applySettingsListEdit<Counts>(input: {
 }): Promise<{ revision: string; counts: Counts; changed: boolean; message?: string }> {
   const row = await settingsRow(input.target, input.owner)
   if (!row) throw new Error(input.missingRowMessage)
+  assertNoUnknownStoredSettingsEdit(row.body)
   const revision = decideDocRevisionWrite({
     expected: input.expectedRevision,
     current: row.revision ?? null,
@@ -328,6 +330,7 @@ export async function settingsRenderCheckCommand(
         file: { path, exists: parsed !== null },
         revision: existing?.revision ?? null,
         settings: summarizeSettings(storeOwned),
+        drifted,
         drift: redactedDrift(drift, fileOwned, storeOwned),
         findings: findings.map((finding) => ({
           ...finding,

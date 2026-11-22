@@ -44,6 +44,16 @@ describe('renderOwnedSettingsFile', () => {
     )
   })
 
+  test('parses and byte-preserves unowned options', () => {
+    const text = source.replace('  "tui":', '  "options": {"anything":  1},\n  "tui":')
+    expect(parseSettingsFile(text).owned).not.toHaveProperty('options')
+    const rendered = renderOwnedSettingsFile(text, {
+      permissions: { allow: ['new'] },
+      hooks: {},
+    })
+    expect(rendered).toContain('"options": {"anything":  1}')
+  })
+
   test('renders exactly the selected env keys with supplied values', () => {
     const rendered = renderOwnedSettingsFile(
       source,
@@ -92,6 +102,16 @@ describe('parseSettingsFile', () => {
 })
 
 describe('diffOwnedSettings', () => {
+  test('ignores stored options that the harness file cannot own', () => {
+    const file = { permissions: {}, hooks: {} }
+    const store = {
+      permissions: {},
+      hooks: {},
+      options: { subagentHooks: 'on' as const },
+    }
+    expect(ownedSettingsEqual(file, store)).toBe(true)
+    expect(diffOwnedSettings(file, store)).toEqual(diffOwnedSettings(file, file))
+  })
   test('reports added and removed rules and hooks without hook bodies', () => {
     const file = {
       permissions: { allow: ['keep', 'added'], deny: ['gone-from-store'] },

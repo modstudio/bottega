@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { OwnedSettings } from '../../../shared/stored-settings.ts'
 import {
   containsSecretShaped,
   editSettingsEnv,
@@ -9,9 +10,11 @@ import {
   permissionLists,
   refuseSettingsBody,
   SETTINGS_PARSE_REFUSAL,
+  secretShapedPaths,
   serializeOwnedSettings,
   validateOwnedSettingsBody,
 } from './settings.ts'
+import { refuseUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 
 const extra = {
   env: { SECRET: 'do-not-store' },
@@ -44,6 +47,14 @@ describe('extractOwnedSettings', () => {
     expect(() => extractOwnedSettings([])).toThrow(SETTINGS_PARSE_REFUSAL)
     expect(() => extractOwnedSettings(JSON.parse('[]'))).toThrow(SETTINGS_PARSE_REFUSAL)
   })
+
+  test('does not own options from a harness settings file', () => {
+    expect(extractOwnedSettings({ options: { subagentHooks: 'warn', futureOption: 1 } })).toEqual({
+      permissions: {},
+      hooks: {},
+      envKeys: [],
+    })
+  })
 })
 
 describe('validateOwnedSettingsBody', () => {
@@ -65,6 +76,18 @@ describe('validateOwnedSettingsBody', () => {
       ...withoutAutoMode,
       env: {},
     })
+  })
+
+  test('accepts subagent hooks on and lists the only accepted option value', () => {
+    const accepted = { permissions: {}, hooks: {}, options: { subagentHooks: 'on' as const } }
+    expect(validateOwnedSettingsBody(serializeOwnedSettings(accepted)).options).toEqual(
+      accepted.options,
+    )
+    for (const options of [{ subagentHooks: 'off' }, { futureOption: true }]) {
+      expect(() =>
+        validateOwnedSettingsBody(JSON.stringify({ permissions: {}, hooks: {}, options })),
+      ).toThrow(/accepted options\.subagentHooks="on"/)
+    }
   })
 
   test('refuses unknown auto-mode members and non-string lists', () => {
@@ -175,6 +198,14 @@ test('ownedSettingsEqual requires auto-mode ownership on both sides', () => {
   expect(ownedSettingsEqual(owned, unowned)).toBe(false)
 })
 
+test('options round trip but do not participate in harness-file equality', () => {
+  const owned = { permissions: {}, hooks: {}, options: { subagentHooks: 'on' as const } }
+  const parsed = parseStoredOwnedSettings(serializeOwnedSettings(owned))
+  expect(parsed.options).toEqual(owned.options)
+  expect(ownedSettingsEqual(parsed, owned)).toBe(true)
+  expect(ownedSettingsEqual(parsed, { permissions: {}, hooks: {} })).toBe(true)
+})
+
 test('a stored row without auto-mode round trips without gaining ownership', () => {
   const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
   const parsed = parseStoredOwnedSettings(body)
@@ -186,11 +217,46 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
   expect(() => parseStoredOwnedSettings('{')).toThrow(
     'refusing stored settings row: cannot parse JSON',
   )
+  expect(
+    parseStoredOwnedSettings(
+      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
+    ),
+  ).toMatchObject({ permissions: {}, hooks: {}, envKeys: [] })
+  expect(
+    refuseUnknownStoredSettingsEdit(
+      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
+    ),
+  ).toMatch(new RegExp(`futureKey.*upgrade ${PLATFORM_NAME}`, 's'))
+  expect(
+    refuseUnknownStoredSettingsEdit(
+      JSON.stringify({
+        permissions: {},
+        hooks: {},
+        options: { subagentHooks: 'on', futureOption: 1 },
+      }),
+    ),
+  ).toMatch(new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'))
+  const futureAutoMode = JSON.stringify({
+    permissions: {},
+    hooks: {},
+    autoMode: { allow: ['Bash(git status)'], futureList: ['x'] },
+  })
+  expect(parseStoredOwnedSettings(futureAutoMode)).toMatchObject({
+    autoMode: { allow: ['Bash(git status)'] },
+  })
+  expect(refuseUnknownStoredSettingsEdit(futureAutoMode)).toMatch(
+    new RegExp(`autoMode\\.futureList.*upgrade ${PLATFORM_NAME}`, 's'),
+  )
   expect(() =>
     parseStoredOwnedSettings(
-      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], undeclared: true }),
+      JSON.stringify({ permissions: {}, hooks: {}, options: { subagentHooks: 'warn' } }),
     ),
-  ).toThrow('refusing stored settings row: invalid owned settings shape')
+  ).toThrow(
+    new RegExp(
+      `options\\.subagentHooks.*accepted options\\.subagentHooks="on".*upgrade ${PLATFORM_NAME}`,
+      's',
+    ),
+  )
 })
 
 describe('editSettingsEnv', () => {
@@ -361,6 +427,16 @@ describe('secretShapedSettingsRefusal', () => {
     )
     expect(refusal).toContain('autoMode.allow[0]')
     expect(refusal).not.toContain(credential)
+  })
+
+  test('screens future option strings from writes', () => {
+    const credential = ['ghp_', 'testtoken', '0'.repeat(28)].join('')
+    const settings = {
+      permissions: {},
+      hooks: {},
+      options: { futureCredential: credential },
+    } as unknown as OwnedSettings
+    expect(secretShapedPaths(settings)).toEqual(['options.futureCredential'])
   })
 
   test('accepts a clean hook command', () => {

@@ -871,6 +871,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/personal-item-space.ts',
     '../doc/doc-write-allowed.ts',
     '../settings/settings.ts',
+    '../settings/settings-edit-refusal.ts',
     '../settings/settings-auto-mode.ts',
     '../settings/settings-permission.ts',
     './record-docs.ts',

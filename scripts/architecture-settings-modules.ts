@@ -22,6 +22,11 @@ export const settingsModules: SettingsModule[] = [
     './settings-permission-lists.ts',
     './stored-settings.ts',
   ]),
+  module('orchestrator/src/settings/settings-edit-refusal.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    './settings.ts',
+  ]),
   module('orchestrator/src/project/project-injection.ts', [
     '../../../shared/brand.ts',
     'zod',
@@ -330,6 +335,7 @@ export const settingsModules: SettingsModule[] = [
     '../doc/doc-authoritative-read.ts',
     '../doc/docs.ts',
     './settings.ts',
+    './settings-edit-refusal.ts',
   ]),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
