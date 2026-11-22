@@ -61,10 +61,15 @@ type Presentation = {
 }
 type Target = { kind: 'user' } | { kind: 'project'; name: string }
 
-function withProductHooksForTarget(target: Target, settings: OwnedSettings): OwnedSettings {
+function withProductHooksForTarget(
+  target: Target,
+  settings: OwnedSettings,
+  options: OwnedSettings['options'],
+): OwnedSettings {
   if (target.kind === 'project') return settings
   return withMachineProductHooks(
     settings,
+    options,
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
     resolveMachineHookRuntime(),
@@ -95,7 +100,6 @@ export async function settingsEnvImportCommand(
   const owner = await signedInDocOwner()
   const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error('refusing settings env import: no user settings row')
-  assertNoUnknownStoredSettingsEdit(row.body)
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
   const imported = settingsEnvironmentFromJson(settingsPath)
@@ -122,6 +126,7 @@ export async function settingsEnvImportCommand(
     presentation.log('dry-run: settings.env and the settings row were not changed')
     return
   }
+  assertNoUnknownStoredSettingsEdit(row.body)
   await writeOwned(
     targetAddress({ kind: 'user' }, owner),
     nextOwned,
@@ -235,7 +240,7 @@ export async function settingsRenderWriteCommand(
     target.kind === 'user'
       ? mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
       : hosted
-  const owned = withProductHooksForTarget(target, merged)
+  const owned = withProductHooksForTarget(target, merged, hosted.options)
   const droppedEnv = flags.values?.('drop-env') ?? []
   if (target.kind === 'project' && droppedEnv.length > 0) {
     throw new Error('refusing settings render: --drop-env is user-only')

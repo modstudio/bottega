@@ -32,7 +32,8 @@ function facts(): SetupInstallVerifyFacts {
         required: true,
         state: 'readable',
         settings: withMachineProductHooks(
-          { permissions: {}, hooks: {} },
+          { permissions: {}, hooks: {}, options: { subagentHooks: 'on' } },
+          { subagentHooks: 'on' },
           '/state/orchestrator.db',
           'on',
           {

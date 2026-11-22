@@ -1,6 +1,5 @@
 // concern: settings
 /** Owned Claude settings policy over the shared stored shape. */
-import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
@@ -118,8 +117,11 @@ export function unknownStoredSettingsKeyPath(body: string): string | null {
   } catch {
     return null
   }
-  if (!isPlainObject(parsed)) return null
-  return firstUnknownObjectKeyPath(parsed, OWNED_SETTINGS_SCHEMA)
+  const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
+  if (result.success) return null
+  const issue = result.error.issues.find((candidate) => candidate.code === 'unrecognized_keys')
+  if (!issue || issue.code !== 'unrecognized_keys') return null
+  return [...issue.path.map(String), issue.keys[0] ?? '(root)'].join('.')
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -243,30 +245,6 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
     ...optionSecretPaths(owned.options ?? {}),
     ...hookSecretPaths(owned.hooks),
   ]
-}
-
-function firstUnknownObjectKeyPath(
-  value: Record<string, unknown>,
-  schema: z.ZodObject,
-  prefix = '',
-): string | null {
-  for (const key of Object.keys(value)) {
-    const childSchema = schema.shape[key]
-    const path = prefix === '' ? key : `${prefix}.${key}`
-    if (childSchema === undefined) return path
-    const nested = unwrapObjectSchema(childSchema)
-    if (nested !== null && isPlainObject(value[key])) {
-      const unknown = firstUnknownObjectKeyPath(value[key], nested, path)
-      if (unknown !== null) return unknown
-    }
-  }
-  return null
-}
-
-function unwrapObjectSchema(schema: unknown): z.ZodObject | null {
-  let current = schema
-  while (current instanceof z.ZodOptional) current = current.unwrap()
-  return current instanceof z.ZodObject ? current : null
 }
 
 function parseAutoMode(value: unknown): OwnedAutoMode {

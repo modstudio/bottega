@@ -27,6 +27,7 @@ import {
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
 import { settingsEnvCommand } from './settings-env-commands.ts'
+import { settingsSubagentsCommand } from './settings-subagents.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const priorHome = process.env.HOME
@@ -193,6 +194,11 @@ describe('future settings edit refusals', () => {
       edit: () =>
         restoreStoredSettingsEnvironmentNames([{ oldName: 'OLD_NAME', newName: 'NEW_NAME' }]),
     },
+    {
+      name: 'subagent choice',
+      prepare: () => {},
+      edit: () => settingsSubagentsCommand('allow'),
+    },
   ]
 
   for (const adapter of adapters) {
@@ -247,6 +253,13 @@ test('stored settings environment migration can be restored from its recorded na
 })
 
 describe('settings env import', () => {
+  test('dry-run tolerates unknown stored keys because it writes nothing', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    const body = await seedFutureUser()
+    await settingsEnvImportCommand(flags({ user: true, 'dry-run': true }), shown().port)
+    expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
+  })
+
   test('never sends or prints a sentinel value', async () => {
     const sentinel = 'sentinel-env-value-that-must-not-escape'
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { API_TOKEN: sentinel } }))
@@ -319,6 +332,33 @@ describe('settings env import', () => {
     expect(message).toContain('cannot parse JSON')
     expect(message).not.toContain(sentinel)
     expect(output.logs.join('\n')).not.toContain(sentinel)
+  })
+})
+
+describe('settings subagents', () => {
+  test('block and allow round trip the option and report its source', async () => {
+    await seedUser()
+    expect(await settingsSubagentsCommand()).toMatchObject({ blocking: 'off', source: 'default' })
+    expect(await settingsSubagentsCommand('block')).toMatchObject({
+      blocking: 'on',
+      source: 'user',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).options,
+    ).toEqual({ subagentHooks: 'on' })
+    expect(await settingsSubagentsCommand('allow')).toMatchObject({
+      blocking: 'off',
+      source: 'default',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body),
+    ).not.toHaveProperty('options')
+  })
+
+  test('unknown choice lists allow and block', async () => {
+    await expect(settingsSubagentsCommand('maybe')).rejects.toThrow(/allow or block/)
   })
 })
 

@@ -14,6 +14,7 @@ import {
   CONTEXT_REVIEW_MIN_MS,
 } from '../session/context-review-decision.ts'
 import { commandNamesHookScript, withMachineProductHooks } from './settings-machine-hooks.ts'
+import { productHookDeclarations, PRODUCT_HOOKS } from './settings-machine-hooks.ts'
 
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orchestrator.db'
@@ -75,7 +76,13 @@ const profileHooks = {
 }
 
 function render(hooks: unknown) {
-  return withMachineProductHooks({ permissions: {}, hooks }, DATABASE, 'on', RUNTIME)
+  return withMachineProductHooks(
+    { permissions: {}, hooks },
+    { subagentHooks: 'on' },
+    DATABASE,
+    'on',
+    RUNTIME,
+  )
 }
 
 test('hook script command recognition requires both token boundaries', () => {
@@ -161,6 +168,18 @@ test('typed profile hooks and an empty profile render the same canonical product
   expect(commands).not.toContain(['bin', 'orch'].join('/'))
 })
 
+test('subagent hook option controls both blocking and audit declarations', () => {
+  expect(productHookDeclarations(undefined)).toHaveLength(PRODUCT_HOOKS.length - 2)
+  expect(
+    productHookDeclarations(undefined).filter((hook) => hook.script === 'block-agent.py'),
+  ).toEqual([])
+  expect(
+    productHookDeclarations({ subagentHooks: 'on' }).filter(
+      (hook) => hook.script === 'block-agent.py',
+    ),
+  ).toHaveLength(2)
+})
+
 test('unrelated profile handlers survive unchanged and in place', () => {
   const before = { type: 'command', command: 'notify-before' }
   const after = { type: 'command', command: 'notify-after' }
@@ -205,13 +224,24 @@ test('test substance guard covers every editor tool from the rendered install', 
 
 test('product hook rendering is a fixed point', () => {
   const first = render({})
-  const second = withMachineProductHooks(first.settings, DATABASE, 'on', RUNTIME)
+  const second = withMachineProductHooks(
+    first.settings,
+    { subagentHooks: 'on' },
+    DATABASE,
+    'on',
+    RUNTIME,
+  )
   expect(second.settings.hooks).toEqual(first.settings.hooks)
 })
 
 test('global use off is rendered into every product hook command', () => {
-  const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, DATABASE, 'off', RUNTIME)
-    .settings.hooks
+  const hooks = withMachineProductHooks(
+    { permissions: {}, hooks: {} },
+    { subagentHooks: 'on' },
+    DATABASE,
+    'off',
+    RUNTIME,
+  ).settings.hooks
   const commands = JSON.stringify(hooks)
   expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)
 })

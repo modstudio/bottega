@@ -16,13 +16,14 @@ import {
   userLocalSettingsPath,
   userSettingsPath,
 } from '../settings/settings-files.ts'
+import { isPlainObject } from '../settings/settings.ts'
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import { productHookDeclarations, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -91,14 +92,20 @@ function gatherSetupInstallVerifyFacts(
     environment,
     resolveRunsDirectory(environment),
   ).filter((home) => home.installed)
+  const settingsFiles = [
+    readSettingsFact(userSettingsPath(claudeHome), 'user', true),
+    readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
+    ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
+  ]
+  const userSettings = settingsFiles.find((file) => file.kind === 'user')?.settings
+  const settingsOptions =
+    isPlainObject(userSettings) && isPlainObject(userSettings.options)
+      ? { subagentHooks: userSettings.options.subagentHooks === 'on' ? ('on' as const) : undefined }
+      : undefined
   return {
     installRoot,
-    hooks: PRODUCT_HOOKS,
-    settingsFiles: [
-      readSettingsFact(userSettingsPath(claudeHome), 'user', true),
-      readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
-      ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
-    ],
+    hooks: productHookDeclarations(settingsOptions),
+    settingsFiles,
     scripts: scriptFacts,
     canonEntries: homes.map((home) => {
       const path = join(home.path, home.mapping.entry.home)

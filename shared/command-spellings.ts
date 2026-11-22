@@ -210,6 +210,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine settings permission undrop',
   'machine settings render',
   'machine settings restore',
+  'machine settings subagents',
   'machine setup',
   'machine setup apply',
   'machine setup facts',

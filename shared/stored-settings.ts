@@ -78,8 +78,8 @@ const STORED_SETTINGS_ROW_SCHEMA = storedObjectSchema(OWNED_SETTINGS_SCHEMA).ext
 const OWNED_SETTINGS_KEYS_TEXT = Object.keys(OWNED_SETTINGS_SCHEMA.shape).join(', ')
 
 export const STORED_SETTINGS_REMEDY = `cleared by: write a JSON object with only these keys: ${OWNED_SETTINGS_KEYS_TEXT}`
-export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; upgrade ${PLATFORM_NAME} before reading this settings row`
-const STORED_SETTINGS_NESTED_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
+export const STORED_SETTINGS_UPGRADE_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
+export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; ${STORED_SETTINGS_UPGRADE_REMEDY}`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)
@@ -87,12 +87,11 @@ function firstIssuePath(issue: z.core.$ZodIssue): string {
   return path.join('.') || '(root)'
 }
 
-function storedSettingsShapeMessage(path: string): string {
+function storedSettingsShapeMessage(path: string, issue: z.core.$ZodIssue): string {
   const condition = `stored settings row has an invalid shape at ${JSON.stringify(path)}`
-  const remedy = path.startsWith('options.')
-    ? STORED_SETTINGS_OPTIONS_REMEDY
-    : path.startsWith('autoMode.')
-      ? STORED_SETTINGS_NESTED_REMEDY
+  const remedy =
+    path.startsWith('options.') && issue.code === 'invalid_value'
+      ? STORED_SETTINGS_OPTIONS_REMEDY
       : null
   return remedy === null
     ? `${condition}\n${STORED_SETTINGS_REMEDY}`
@@ -104,12 +103,12 @@ export class StoredSettingsRowError extends Error {
   readonly path?: string
 
   constructor(reason: 'json')
-  constructor(reason: 'shape', path: string)
-  constructor(reason: 'json' | 'shape', path?: string) {
+  constructor(reason: 'shape', path: string, issue: z.core.$ZodIssue)
+  constructor(reason: 'json' | 'shape', path?: string, issue?: z.core.$ZodIssue) {
     super(
       reason === 'json'
         ? `stored settings row cannot parse JSON\n${STORED_SETTINGS_REMEDY}`
-        : storedSettingsShapeMessage(path!),
+        : storedSettingsShapeMessage(path!, issue!),
     )
     this.name = 'StoredSettingsRowError'
     this.reason = reason
@@ -126,7 +125,8 @@ export function parseStoredSettingsRow(body: string): OwnedSettings {
   }
   const result = STORED_SETTINGS_ROW_SCHEMA.safeParse(parsed)
   if (!result.success) {
-    throw new StoredSettingsRowError('shape', firstIssuePath(result.error.issues[0]!))
+    const issue = result.error.issues[0]!
+    throw new StoredSettingsRowError('shape', firstIssuePath(issue), issue)
   }
   return result.data
 }

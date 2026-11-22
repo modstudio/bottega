@@ -259,6 +259,14 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
   )
 })
 
+test('prototype-named stored keys are refused as unknown edits', () => {
+  for (const key of ['constructor', 'toString']) {
+    expect(
+      refuseUnknownStoredSettingsEdit(`{"permissions":{},"hooks":{},"envKeys":[],"${key}":true}`),
+    ).toContain(`unknown key "${key}"`)
+  }
+})
+
 describe('editSettingsEnv', () => {
   test('set then unset sorts names and preserves other owned settings', () => {
     const original = {

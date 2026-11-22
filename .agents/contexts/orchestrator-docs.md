@@ -83,7 +83,9 @@ The test is whether the fact varies **by project**; if it does not, it does not 
 
 # The subagent gate
 
-A `PreToolUse` hook (`hooks/block-agent.py`) denies Claude-subagent spawns for work an external agent could do. **Web work is allowed, but it declares itself** — `NEEDS-WEB` in the opening of the prompt or description. Only that opening is checked so a quoted repository excerpt deep in a prompt does not become a declaration.
+Claude-subagent blocking is opt-in per user and off by default. Set the choice with `bottega machine settings subagents`. While blocking is on, a `PreToolUse` hook (`hooks/block-agent.py`) denies Claude-subagent spawns for work an external agent could do and every spawn is logged. While it is off, spawns are neither gated nor logged.
+
+**Web work is allowed while blocking is on, but it declares itself** — `NEEDS-WEB` in the opening of the prompt or description. Only that opening is checked so a quoted repository excerpt deep in a prompt does not become a declaration.
 
 **A URL is not a declaration.** A prompt can quote a docs link or stack trace without anyone deciding it needs the network. A URL is noted in the log and nothing more.
 
@@ -93,7 +95,7 @@ The declaration is not a lock. Anyone can write `NEEDS-WEB`, and preventing that
 
 **A denial has to name a route that exists.** The refusal names the path, rather than forbidding the only available one.
 
-**Every spawn is logged, allowed and denied alike.** A gate that cannot report what it let through cannot be tuned.
+**While the gate is on, every spawn is logged, allowed and denied alike.** A gate that cannot report what it let through cannot be tuned.
 
 For this Claude adapter, the architect's web-capable path for the required pre-spec research is a Claude subagent whose prompt begins `NEEDS-WEB`. The root canon states the harness-neutral requirement and puts the resulting ruling in the spec; this is the adapter-specific mechanism that performs it here.
 

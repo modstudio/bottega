@@ -60,6 +60,7 @@ export type ProductHookDeclaration = {
   script: ScriptFile
   timeout?: number
   boardEnvironment?: boolean
+  option?: keyof NonNullable<OwnedSettings['options']>
 }
 
 export type SupersededProfileHook = {
@@ -74,7 +75,12 @@ export type MachineProductHooksResult = {
 }
 
 export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
-  { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
+  {
+    event: 'PreToolUse',
+    matcher: 'Agent|Task|Workflow',
+    script: 'block-agent.py',
+    option: 'subagentHooks',
+  },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
@@ -94,7 +100,12 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     matcher: 'Write|Edit|MultiEdit',
     script: 'hub-import-guard.py',
   },
-  { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
+  {
+    event: 'SubagentStart',
+    matcher: '*',
+    script: 'block-agent.py',
+    option: 'subagentHooks',
+  },
   {
     event: 'PostToolUse',
     matcher: 'Bash',
@@ -178,6 +189,14 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreCompact', script: 'context-precompact.py' },
 ]
 
+export function productHookDeclarations(
+  options: OwnedSettings['options'],
+): readonly ProductHookDeclaration[] {
+  return PRODUCT_HOOKS.filter(
+    (declaration) => declaration.option === undefined || options?.[declaration.option] === 'on',
+  )
+}
+
 export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
   const needle = assetRoot
     ? join(assetRoot, 'orchestrator', 'hooks', file)
@@ -258,12 +277,13 @@ function declaredHandler(
 }
 
 function declaredGroups(
+  options: OwnedSettings['options'],
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
 ) {
   const groups = new Map<HookEvent, Array<Record<string, unknown>>>()
-  for (const declaration of PRODUCT_HOOKS) {
+  for (const declaration of productHookDeclarations(options)) {
     const eventGroups = groups.get(declaration.event) ?? []
     const previous = eventGroups.at(-1)
     const previousMatcher = isPlainObject(previous) ? previous.matcher : undefined
@@ -290,6 +310,7 @@ function declaredScript(command: unknown): RecognizedScriptFile | undefined {
 /** Replace profile copies of product hooks and append the canonical product declaration. */
 export function withMachineProductHooks(
   settings: OwnedSettings,
+  options: OwnedSettings['options'],
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
@@ -298,7 +319,7 @@ export function withMachineProductHooks(
   const superseded: SupersededProfileHook[] = []
   const hooks = withoutSupersededProfileHooks(profileHooks, superseded)
 
-  for (const [event, groups] of declaredGroups(databasePath, globalUse, runtime)) {
+  for (const [event, groups] of declaredGroups(options, databasePath, globalUse, runtime)) {
     const existing = Array.isArray(hooks[event]) ? hooks[event] : []
     hooks[event] = [...existing, ...groups]
   }

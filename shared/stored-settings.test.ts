@@ -56,3 +56,11 @@ test('stored settings rows default legacy fields and tolerate newer top-level ke
     )
   }
 })
+
+test('a wrongly typed known option neighbor gets the editable shape remedy', () => {
+  expect(() =>
+    parseStoredSettingsRow(
+      JSON.stringify({ permissions: {}, hooks: {}, autoMode: { allow: [1] } }),
+    ),
+  ).toThrow(new RegExp(`autoMode\\.allow.*${STORED_SETTINGS_REMEDY}`, 's'))
+})

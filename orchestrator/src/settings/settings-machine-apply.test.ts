@@ -30,7 +30,11 @@ import {
   printMachineSettingsApplyResults,
   settingsApplyDecision,
 } from './settings-machine-apply.ts'
-import { PRODUCT_HOOKS, withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  productHookDeclarations,
+  PRODUCT_HOOKS,
+  withMachineProductHooks,
+} from './settings-machine-hooks.ts'
 import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
@@ -128,6 +132,7 @@ function writeCurrentSettings() {
             hooks: {},
             autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
           },
+          undefined,
           join(root, 'state', 'orchestrator', 'orchestrator.db'),
           'on',
           resolveMachineHookRuntime(),
@@ -395,7 +400,8 @@ describe('settings apply', () => {
     )
     expect(settingsApplyDecision(true, results).action).toBe('refuse')
     const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    expect(rendered).not.toContain('block-agent.py')
   })
 
   test('without a settings row creates an absent Claude home and settings file', async () => {
@@ -423,7 +429,8 @@ describe('settings apply', () => {
     expect(statSync(claudeHome).mode & 0o777).toBe(0o700)
     expect(existsSync(settingsPath)).toBe(true)
     const rendered = readFileSync(settingsPath, 'utf8')
-    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    expect(rendered).not.toContain('block-agent.py')
   })
 
   test('with a settings row creates an absent settings file with owned values', async () => {
@@ -439,7 +446,27 @@ describe('settings apply', () => {
     expect(existsSync(settingsPath)).toBe(true)
     const rendered = readFileSync(settingsPath, 'utf8')
     expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(orch *)'] })
-    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+    for (const hook of productHookDeclarations(undefined)) expect(rendered).toContain(hook.script)
+    expect(rendered).not.toContain('block-agent.py')
+  })
+
+  test('an off choice removes both rendered block-agent hooks and reports it once', async () => {
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const previouslyOn = withMachineProductHooks(
+      { permissions: {}, hooks: {}, options: { subagentHooks: 'on' } },
+      { subagentHooks: 'on' },
+      resolveOrchestratorDatabase(environment),
+      'on',
+      resolveMachineHookRuntime(),
+    ).settings
+    writeFileSync(settingsPath, serializeOwnedSettings(previouslyOn))
+
+    const results = await applyMachineSettings({ check: false }, deps())
+    const logs: string[] = []
+    printMachineSettingsApplyResults(results, (...parts) => logs.push(parts.join(' ')))
+
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('block-agent.py')
+    expect(logs.filter((line) => line.includes('block-agent hooks removed'))).toHaveLength(1)
   })
 
   test('options with future members and future top-level keys do not change applied Claude settings', async () => {
@@ -494,9 +521,10 @@ describe('settings apply', () => {
     expect(rendered.permissions).toEqual({ allow: ['Bash(git status)'] })
     expect(rendered.hooks.PreToolUse).toContainEqual(personalHook)
     expect(rendered.env).toEqual({ PERSONAL_TOKEN: 'fixture-value' })
-    for (const hook of PRODUCT_HOOKS) {
+    for (const hook of productHookDeclarations(undefined)) {
       expect(readFileSync(settingsPath, 'utf8')).toContain(hook.script)
     }
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('block-agent.py')
   })
 
   test('pre-sign-in missing user rows still wait for sign-in after product hooks apply', async () => {
@@ -579,6 +607,7 @@ describe('settings apply', () => {
       {
         ...withMachineProductHooks(
           { permissions: { allow: ['Bash(orch *)'] }, hooks: {} },
+          undefined,
           resolveOrchestratorDatabase(environment),
           'on',
           resolveMachineHookRuntime(),

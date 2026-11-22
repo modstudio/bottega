@@ -156,7 +156,11 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
     ) as SetupFacts['harnesses'],
     localModelHost: capture.localModelHost,
     sandboxRuntime: capture.sandboxRuntime,
-    settings: capture.settings ?? { state: 'waiting-for-sign-in', hooks: [] },
+    settings: capture.settings ?? {
+      state: 'waiting-for-sign-in',
+      hooks: [],
+      subagents: { blocking: 'off', source: 'default' },
+    },
   }
 }
 
@@ -300,6 +304,6 @@ export async function gatherSetupFacts(
     harnesses,
     localModelHost: await localReachable(),
     sandboxRuntime: await sandboxRuntimeAvailability(),
-    settings: gatherSetupSettingsFact(),
+    settings: await gatherSetupSettingsFact(),
   })
 }
