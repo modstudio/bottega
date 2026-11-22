@@ -56,11 +56,7 @@ function schemaTableNames(source: string): ReadonlyMap<string, string> {
   )
   const tables = new Map<string, string>()
   const visit = (node: ts.Node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer
-    ) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       let found: string | null = null
       const findTableCall = (child: ts.Node): void => {
         if (
