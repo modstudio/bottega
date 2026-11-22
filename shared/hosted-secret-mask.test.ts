@@ -8,7 +8,8 @@ import { redactSecretShaped } from './secret-shaped.ts'
 
 test('hosted mask redacts high-precision leaves and preserves generic prose byte-identically', () => {
   const token = 'ghp_123456789012345678901234567890123456'
-  const generic = 'a key=value line with bearer prose'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const input = { title: `quoted ${token}`, body: generic, untouched: token }
   const masked = maskHostedWrite('hub.task.create', input)
   expect(masked).toEqual({

@@ -1,11 +1,102 @@
 import { expect, test } from 'bun:test'
+import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
+import { contextItem } from '../../../shared/record/schema-context-items.ts'
+import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
+import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from '../../../shared/record/schema-hub.ts'
+import { question } from '../../../shared/record/schema-question.ts'
+import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
+import { workflowVersion } from '../../../shared/record/schema-workflow-catalogue.ts'
 import {
   auditHostedSecretRows,
+  HOSTED_SECRET_AUDIT_SCHEMA,
   HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS,
   renderHostedSecretAudit,
 } from './hosted-secret-audit.ts'
 
 const SECRET = 'ghp_123456789012345678901234567890123456'
+
+test('hosted audit table, free-text, and timestamp columns are pinned to the record schema', () => {
+  expect(HOSTED_SECRET_AUDIT_SCHEMA).toEqual([
+    {
+      table: hubNote,
+      id: hubNote.id,
+      timestamp: hubNote.createdAt,
+      columns: [hubNote.text, hubNote.area, hubNote.staleReason, hubNote.anchors],
+    },
+    {
+      table: hubTask,
+      id: hubTask.id,
+      timestamp: hubTask.createdAt,
+      columns: [hubTask.title, hubTask.body],
+    },
+    {
+      table: hubTaskComment,
+      id: hubTaskComment.id,
+      timestamp: hubTaskComment.createdAt,
+      columns: [hubTaskComment.body],
+    },
+    {
+      table: hubTaskDocument,
+      id: hubTaskDocument.id,
+      timestamp: hubTaskDocument.createdAt,
+      columns: [hubTaskDocument.title, hubTaskDocument.body],
+    },
+    {
+      table: contextItem,
+      id: contextItem.id,
+      timestamp: contextItem.createdAt,
+      columns: [contextItem.body, contextItem.source, contextItem.target],
+    },
+    {
+      table: question,
+      id: question.id,
+      timestamp: question.createdAt,
+      columns: [
+        question.question,
+        question.answer,
+        question.answerBasis,
+        question.replacement,
+        question.overturnReason,
+      ],
+    },
+    {
+      table: workflowStepText,
+      id: workflowStepText.id,
+      timestamp: workflowStepText.createdAt,
+      columns: [workflowStepText.body],
+    },
+    {
+      table: workflowVersion,
+      id: workflowVersion.id,
+      timestamp: workflowVersion.createdAt,
+      columns: [workflowVersion.definition, workflowVersion.author, workflowVersion.reason],
+    },
+    {
+      table: boardMessage,
+      id: boardMessage.id,
+      timestamp: boardMessage.createdAt,
+      columns: [boardMessage.body],
+    },
+    {
+      table: boardMessageTag,
+      id: boardMessageTag.id,
+      timestamp: null,
+      columns: [boardMessageTag.value],
+    },
+    {
+      table: doc,
+      id: doc.id,
+      timestamp: doc.createdAt,
+      columns: [doc.title, doc.body],
+    },
+    {
+      table: docRevision,
+      id: docRevision.id,
+      timestamp: docRevision.at,
+      columns: [docRevision.title, docRevision.body],
+    },
+  ])
+})
 
 test('hosted audit counts table x column x rule without retaining evidence', () => {
   const counts = auditHostedSecretRows([

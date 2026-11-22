@@ -152,6 +152,8 @@ const id = '01990000-0000-7000-8000-000000000001'
 
 test('server doc write stores a fixture credential masked when the client scan is skipped', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedBody = ''
   const app = appWith(identity, {
     upsertDoc: async (input: { body: string }) => {
@@ -167,7 +169,7 @@ test('server doc write stores a fixture credential masked when the client scan i
       subject: null,
       slug: 'secret-reproduction',
       title: 'Secret reproduction',
-      body: `a key=value line with bearer prose quoted ${secret}`,
+      body: `${generic} quoted ${secret}`,
       delivery: 'demand',
       reason: 'reproduce server masking',
       author: 'tester',
@@ -175,7 +177,7 @@ test('server doc write stores a fixture credential masked when the client scan i
   })
   expect(response.status).toBe(200)
   expect(storedBody).toBe(
-    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
   )
 })
 const personalIdentity: RecordIdentity = {

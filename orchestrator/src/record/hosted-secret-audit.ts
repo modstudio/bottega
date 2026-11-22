@@ -1,6 +1,15 @@
 // concern: hosted-secret-audit
 /** Reads declared hosted free-text columns and counts secret-shaped values without retaining evidence. */
 import type { SQL } from 'bun'
+import { getTableName, type Table } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import { contextItem } from '../../../shared/record/schema-context-items.ts'
+import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
+import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from '../../../shared/record/schema-hub.ts'
+import { question } from '../../../shared/record/schema-question.ts'
+import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
+import { workflowVersion } from '../../../shared/record/schema-workflow-catalogue.ts'
+import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import {
   redactSecretShaped,
@@ -38,20 +47,94 @@ export type HostedSecretAuditReport = {
   matches: HostedSecretAuditMatch[]
 }
 
-const HOSTED_SECRET_AUDIT_COLUMNS = {
-  hub_note: ['text', 'area', 'stale_reason', 'anchors'],
-  hub_task: ['title', 'body'],
-  hub_task_comment: ['body'],
-  hub_task_document: ['title', 'body'],
-  context_item: ['body', 'source', 'target'],
-  question: ['question', 'answer', 'answer_basis', 'replacement', 'overturn_reason'],
-  workflow_step_text: ['body'],
-  workflow_version: ['definition', 'author', 'reason'],
-  board_message: ['body'],
-  board_message_tag: ['value'],
-  doc: ['title', 'body'],
-  doc_revision: ['title', 'body'],
-} as const
+type HostedSecretAuditSchemaEntry = {
+  table: Table
+  id: AnyPgColumn
+  timestamp: AnyPgColumn | null
+  columns: readonly AnyPgColumn[]
+}
+
+/** Schema-bound declaration for every hosted table and free-text column scanned by the audit. */
+export const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] = [
+  {
+    table: hubNote,
+    id: hubNote.id,
+    timestamp: hubNote.createdAt,
+    columns: [hubNote.text, hubNote.area, hubNote.staleReason, hubNote.anchors],
+  },
+  {
+    table: hubTask,
+    id: hubTask.id,
+    timestamp: hubTask.createdAt,
+    columns: [hubTask.title, hubTask.body],
+  },
+  {
+    table: hubTaskComment,
+    id: hubTaskComment.id,
+    timestamp: hubTaskComment.createdAt,
+    columns: [hubTaskComment.body],
+  },
+  {
+    table: hubTaskDocument,
+    id: hubTaskDocument.id,
+    timestamp: hubTaskDocument.createdAt,
+    columns: [hubTaskDocument.title, hubTaskDocument.body],
+  },
+  {
+    table: contextItem,
+    id: contextItem.id,
+    timestamp: contextItem.createdAt,
+    columns: [contextItem.body, contextItem.source, contextItem.target],
+  },
+  {
+    table: question,
+    id: question.id,
+    timestamp: question.createdAt,
+    columns: [
+      question.question,
+      question.answer,
+      question.answerBasis,
+      question.replacement,
+      question.overturnReason,
+    ],
+  },
+  {
+    table: workflowStepText,
+    id: workflowStepText.id,
+    timestamp: workflowStepText.createdAt,
+    columns: [workflowStepText.body],
+  },
+  {
+    table: workflowVersion,
+    id: workflowVersion.id,
+    timestamp: workflowVersion.createdAt,
+    columns: [workflowVersion.definition, workflowVersion.author, workflowVersion.reason],
+  },
+  {
+    table: boardMessage,
+    id: boardMessage.id,
+    timestamp: boardMessage.createdAt,
+    columns: [boardMessage.body],
+  },
+  {
+    table: boardMessageTag,
+    id: boardMessageTag.id,
+    timestamp: null,
+    columns: [boardMessageTag.value],
+  },
+  {
+    table: doc,
+    id: doc.id,
+    timestamp: doc.createdAt,
+    columns: [doc.title, doc.body],
+  },
+  {
+    table: docRevision,
+    id: docRevision.id,
+    timestamp: docRevision.at,
+    columns: [docRevision.title, docRevision.body],
+  },
+]
 
 export const HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS = [
   { table: 'question', column: 'reason' },
@@ -114,21 +197,19 @@ function auditHostedSecretMatches(
 
 async function hostedAuditCells(postgres: SQL): Promise<HostedSecretAuditCell[]> {
   const cells: HostedSecretAuditCell[] = []
-  for (const [table, columns] of Object.entries(HOSTED_SECRET_AUDIT_COLUMNS)) {
-    for (const column of columns) {
-      const createdAt =
-        table === 'board_message_tag'
-          ? '(SELECT created_at FROM board_message WHERE board_message.id=board_message_tag.message_id)'
-          : 'created_at'
+  for (const declaration of HOSTED_SECRET_AUDIT_SCHEMA) {
+    const table = getTableName(declaration.table)
+    for (const column of declaration.columns) {
+      const timestamp = declaration.timestamp ? `${declaration.timestamp.name}::text` : 'NULL::text'
       const rows = await postgres.unsafe(
-        `SELECT id::text, ${createdAt}::text AS created_at, ${column}::text AS value FROM ${table} WHERE ${column} IS NOT NULL`,
+        `SELECT ${declaration.id.name}::text AS id, ${timestamp} AS created_at, ${column.name}::text AS value FROM ${table} WHERE ${column.name} IS NOT NULL`,
       )
       for (const row of rows as Array<Record<string, unknown>>) {
         cells.push({
           table,
-          column,
+          column: column.name,
           id: String(row.id),
-          createdAt: String(row.created_at),
+          createdAt: typeof row.created_at === 'string' ? row.created_at : '-',
           value: typeof row.value === 'string' ? row.value : null,
         })
       }

@@ -391,7 +391,8 @@ function mutationBody(
 
 test('question writes mask high-precision leaves and preserve generic-rule prose', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
-  const generic = 'a key=value line with bearer prose'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const body = mutationBody('answer', contractId(29001), contractId(29002), 1)
   body.question.answer = `${generic} quoted ${secret}`
   let stored = ''

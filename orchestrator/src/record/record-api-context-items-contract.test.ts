@@ -24,6 +24,8 @@ const readDeps = {
 
 test('context-item write stores fixture credentials masked', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedBody = ''
   const app = recordApiTestApp(identity, {
     ...idleSubjectDeps(),
@@ -41,7 +43,7 @@ test('context-item write stores fixture credentials masked', async () => {
       holderId: newRecordId(),
       slug: 'secret-reproduction',
       kind: 'fact',
-      body: `a key=value line with bearer prose quoted ${secret}`,
+      body: `${generic} quoted ${secret}`,
       source: 'test',
       questionNumber: null,
       target: null,
@@ -49,7 +51,7 @@ test('context-item write stores fixture credentials masked', async () => {
   })
   expect(response.status).toBe(200)
   expect(storedBody).toBe(
-    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
   )
 })
 

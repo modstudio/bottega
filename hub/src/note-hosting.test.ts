@@ -30,6 +30,8 @@ const unreachable = {
 
 test('note create stores fixture credentials masked', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedText = ''
   const response = await noteApi(
     new Request('https://hub.example.test/v1/notes', {
@@ -42,7 +44,7 @@ test('note create stores fixture credentials masked', async () => {
       body: JSON.stringify({
         project: 'workshop',
         projectId: '01990000-0000-7000-8000-000000000001',
-        text: `a key=value line with bearer prose quoted ${secret}`,
+        text: `${generic} quoted ${secret}`,
         anchor: '{}',
       }),
     }),
@@ -62,7 +64,7 @@ test('note create stores fixture credentials masked', async () => {
   )
   expect(response?.status).toBe(201)
   expect(storedText).toBe(
-    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
   )
 })
 

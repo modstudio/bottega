@@ -38,6 +38,8 @@ const pushRequest = (body: unknown, space = 'space-b') =>
 
 test('task-comment push stores fixture credentials masked', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
+  const generic =
+    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const id = '01990000-0000-7000-8000-000000000101'
   let storedBody = ''
   const response = await changeApi(
@@ -51,7 +53,7 @@ test('task-comment push stores fixture credentials masked', async () => {
           task_key: 'DEV-2578',
           task_id: '01990000-0000-7000-8000-000000000102',
           project_name: 'workshop',
-          body: `a key=value line with bearer prose quoted ${secret}`,
+          body: `${generic} quoted ${secret}`,
           created_at: '2026-11-21T20:00:00.000Z',
           updated_at: '2026-11-21T20:00:00.000Z',
           deleted_at: null,
@@ -69,7 +71,7 @@ test('task-comment push stores fixture credentials masked', async () => {
   )
   expect(response?.status).toBe(200)
   expect(storedBody).toBe(
-    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
   )
 })
 
