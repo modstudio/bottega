@@ -286,6 +286,7 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
+    '../identity/doc-revision-identity.ts',
     '../record/record-read-authority.ts',
     '../subject/subjects.ts',
     '../project/projects.ts',

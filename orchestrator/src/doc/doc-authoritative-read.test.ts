@@ -7,7 +7,13 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { upsertProject } from '../project/projects.ts'
-import { readDoc, readDocRevisions, readDocs } from './doc-authoritative-read.ts'
+import {
+  readDoc,
+  readDocForAudience,
+  readDocMetadata,
+  readDocRevisions,
+  readDocs,
+} from './doc-authoritative-read.ts'
 import { reorderDocs, setDocCheckedAgainst } from './docs.ts'
 
 afterEach(() => {
@@ -109,6 +115,128 @@ test('a hosted project listing without a subject reads all spaces and never the 
   expect(calls).toEqual([
     expect.objectContaining({ scope: 'project', acrossReadableSpaces: true, limit: 100 }),
   ])
+})
+
+test('a hosted listing applies the local position order after transport', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({
+          slug: 'third',
+          title: 'Alpha',
+          position: 30,
+          updatedAt: '2026-11-23T00:00:00.000Z',
+        }),
+        hostedRow({
+          id: '01990000-0000-7000-8000-000000000002',
+          slug: 'first',
+          title: 'Zulu',
+          position: 10,
+        }),
+        hostedRow({
+          id: '01990000-0000-7000-8000-000000000003',
+          slug: 'second',
+          title: 'Mike',
+          position: 20,
+        }),
+      ],
+      nextCursor: null,
+    }),
+  })
+  expect((await readDocs({ scope: 'global' })).map(({ slug }) => slug)).toEqual([
+    'first',
+    'second',
+    'third',
+  ])
+  expect(
+    (await readDocs({ scope: 'global', updatedAtOrder: 'desc' })).map(({ slug }) => slug),
+  ).toEqual(['third', 'first', 'second'])
+})
+
+test('hosted metadata derives blank summaries and preserves written summaries', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({ slug: 'null-summary', body: 'Derived from null.', summary: null, position: 1 }),
+        hostedRow({
+          id: '01990000-0000-7000-8000-000000000002',
+          slug: 'blank-summary',
+          body: 'Derived from blank.',
+          summary: '   ',
+          position: 2,
+        }),
+        hostedRow({
+          id: '01990000-0000-7000-8000-000000000003',
+          slug: 'written-summary',
+          body: 'Ignored body.',
+          summary: ' Written summary. ',
+          position: 3,
+        }),
+      ],
+      nextCursor: null,
+    }),
+  })
+  expect(
+    (await readDocMetadata({ scope: 'global' })).map(({ slug, summary, summarySource }) => ({
+      slug,
+      summary,
+      summarySource,
+    })),
+  ).toEqual([
+    { slug: 'null-summary', summary: 'Derived from null.', summarySource: 'derived' },
+    { slug: 'blank-summary', summary: 'Derived from blank.', summarySource: 'derived' },
+    { slug: 'written-summary', summary: 'Written summary.', summarySource: 'written' },
+  ])
+})
+
+test('hosted metadata read failures include the sign-in and retry remedy', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => {
+      throw new Error('record unavailable')
+    },
+  })
+  await expect(readDocMetadata({ scope: 'global' })).rejects.toThrow(
+    `record unavailable; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry when the hosted record is reachable`,
+  )
+})
+
+test('a hosted audience read projects the hosted row body', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({
+          audiences: ['customer', 'technical'],
+          body: [
+            'Shared.',
+            '',
+            ':::section{audience="customer"}',
+            'Customer only.',
+            ':::',
+            '',
+            ':::section{audience="technical"}',
+            'Technical only.',
+            ':::',
+          ].join('\n'),
+        }),
+      ],
+      nextCursor: null,
+    }),
+  })
+  const doc = await readDocForAudience('global', null, 'authority', 'customer')
+  expect(doc?.body).toContain('Customer only.')
+  expect(doc?.body).not.toContain('Technical only.')
 })
 
 test('hosted reorder validates against authoritative siblings when the local mirror is empty', async () => {

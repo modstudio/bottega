@@ -2,7 +2,8 @@
 /** Routes operator document reads to their authoritative store. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { DocAudience } from '../../../shared/docs.ts'
+import { effectiveDocSummary, type DocAudience } from '../../../shared/docs.ts'
+import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient, listAllHostedDocs } from './doc-hosted-client.ts'
@@ -25,15 +26,8 @@ import {
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
-
-export function projectDocForAudience<T extends Doc | import('./doc-read-store.ts').DocRevision>(
-  doc: T,
-  audience: DocAudience,
-  address: string,
-): T {
-  return docForAudience(doc, audience, address)
-}
 
 type HostedRow = Record<string, unknown>
 
@@ -96,21 +90,22 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
   })
   if (page.unreadable.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
+  return filterAndOrderDocs(page.items.map(docFromHosted), filters)
+}
+
+function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[] {
   const match = filters.match?.toLocaleLowerCase()
   const body = filters.bodyMatch?.toLocaleLowerCase()
-  return page.items
-    .map(docFromHosted)
+  const hasArticleSubject = (subject: Doc['articleSubject']) =>
+    subject?.id === filters.articleSubject || subject?.name === filters.articleSubject
+  return rows
     .filter((doc) => filters.owner === undefined || doc.owner === filters.owner)
     .filter((doc) => !filters.scopes || filters.scopes.includes(doc.scope))
     .filter(
       (doc) =>
         !filters.articleSubject ||
-        doc.articleSubject?.id === filters.articleSubject ||
-        doc.articleSubject?.name === filters.articleSubject ||
-        doc.relatedSubjects.some(
-          (subject) =>
-            subject.id === filters.articleSubject || subject.name === filters.articleSubject,
-        ),
+        hasArticleSubject(doc.articleSubject) ||
+        doc.relatedSubjects.some(hasArticleSubject),
     )
     .filter(
       (doc) =>
@@ -120,10 +115,19 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     .filter((doc) => !body || doc.body.toLocaleLowerCase().includes(body))
     .sort((a, b) =>
       filters.updatedAtOrder
-        ? (filters.updatedAtOrder === 'asc' ? 1 : -1) * a.updated_at.localeCompare(b.updated_at)
-        : a.scope.localeCompare(b.scope) ||
+        ? (filters.updatedAtOrder === 'asc' ? 1 : -1) * a.updated_at.localeCompare(b.updated_at) ||
+          a.scope.localeCompare(b.scope) ||
           (a.subject ?? '').localeCompare(b.subject ?? '') ||
-          a.slug.localeCompare(b.slug),
+          a.position - b.position ||
+          a.title.localeCompare(b.title)
+        : (filters.articleSubject
+            ? Number(!hasArticleSubject(a.articleSubject)) -
+              Number(!hasArticleSubject(b.articleSubject))
+            : 0) ||
+          a.scope.localeCompare(b.scope) ||
+          (a.subject ?? '').localeCompare(b.subject ?? '') ||
+          a.position - b.position ||
+          a.title.localeCompare(b.title),
     )
 }
 
@@ -181,21 +185,23 @@ export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
   return applyRecordReadAuthority({
     local: () => listDocMetadataStore(resolvedFilters(filters)),
-    hosted: async () =>
-      (await hostedRows(filters)).map(
-        ({
-          body,
-          created_at: _created,
-          delivery: _delivery,
-          owner: _owner,
-          project_record_id: _project,
-          article_subject_id: _article,
-          ...doc
-        }) => ({
-          ...doc,
-          bytes: Buffer.byteLength(body),
-          summarySource: doc.summary === null ? 'derived' : 'written',
-        }),
+    hosted: () =>
+      withReadRemedy(async () =>
+        (await hostedRows(filters)).map(
+          ({
+            body,
+            created_at: _created,
+            delivery: _delivery,
+            owner: _owner,
+            project_record_id: _project,
+            article_subject_id: _article,
+            ...doc
+          }) => ({
+            ...doc,
+            bytes: Buffer.byteLength(body),
+            ...effectiveDocSummary(doc.summary, body),
+          }),
+        ),
       ),
   })
 }
@@ -246,16 +252,22 @@ export function readDocRevisions(
 ) {
   return applyRecordReadAuthority({
     local: () => listStoredDocRevisions(scope, subject, slug, owner),
-    hosted: () =>
-      withReadRemedy(async () => {
-        const doc = await hostedSingleDoc({ scope, subject, slug, owner })
-        if (!doc) return []
-        const revisions = (await (
-          await hostedDocClient(scope, subject)
-        ).listRevisions(doc.record_id)) as HostedDocRevision[]
-        return hostedDocRevisionRead(revisions).revisions
-      }),
+    hosted: () => withReadRemedy(async () => (await hostedRevisionRead(scope, subject, slug, owner))?.revisions ?? []),
   })
+}
+
+async function hostedRevisionRead(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null,
+): Promise<AuthoritativeDocHistory | null> {
+  const doc = await hostedSingleDoc({ scope, subject, slug, owner })
+  if (!doc) return null
+  const revisions = (await (
+    await hostedDocClient(scope, subject)
+  ).listRevisions(doc.record_id)) as HostedDocRevision[]
+  return hostedDocRevisionRead(revisions)
 }
 
 export function readDocHistory(
@@ -269,11 +281,11 @@ export function readDocHistory(
       const revisions = listStoredDocRevisions(scope, subject, slug, owner)
       if (!revisions.length) return null
       const resolve = (identifier: string) => {
-        const numeric = /^[0-9]+$/.test(identifier) ? Number(identifier) : null
+        const parsed = parseDocRevisionIdentifier(identifier)
         return (
-          (numeric === null
-            ? revisions.find(({ record_id }) => record_id === identifier)
-            : revisions.find(({ number }) => number === numeric)
+          (parsed.kind === 'record-id'
+            ? revisions.find(({ record_id }) => record_id === parsed.recordId)
+            : revisions.find(({ number }) => number === parsed.number)
           )?.record_id ?? identifier
         )
       }
@@ -295,14 +307,6 @@ export function readDocHistory(
         },
       }
     },
-    hosted: () =>
-      withReadRemedy(async () => {
-        const doc = await hostedSingleDoc({ scope, subject, slug, owner })
-        if (!doc) return null
-        const revisions = (await (
-          await hostedDocClient(scope, subject)
-        ).listRevisions(doc.record_id)) as HostedDocRevision[]
-        return hostedDocRevisionRead(revisions)
-      }),
+    hosted: () => withReadRemedy(() => hostedRevisionRead(scope, subject, slug, owner)),
   })
 }

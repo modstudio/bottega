@@ -29,10 +29,10 @@ import {
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
   readDocs as authoritativeDocs,
+  docForAudience,
   type DocListFilters,
   type DocRevision,
   type DocRevisionMetadata,
-  projectDocForAudience,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
@@ -702,7 +702,7 @@ async function handledRevisionDocCommand(
   const revision = hosted.revision(revisionIdentifier)
   const audience = docReadAudience(flags.flag('audience'))
   const projected = audience
-    ? projectDocForAudience(
+    ? docForAudience(
         revision,
         audience,
         `${scope}/${subject ?? '_'}/${slug} revision ${revisionIdentifier}`,

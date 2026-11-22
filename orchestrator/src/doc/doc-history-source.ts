@@ -1,5 +1,5 @@
-// concern: document-history-source
-/** Decides whether revision history is authoritative locally or in the hosted record. */
+// concern: document-history-presentation
+/** Shared revision-history presentation contract and diff-pair selection. */
 
 export type DocHistoryPresentation<RevisionRow, Revision> = {
   revisions: RevisionRow[]
