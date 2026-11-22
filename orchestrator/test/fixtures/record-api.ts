@@ -23,6 +23,12 @@ import { createBoardStreamRegistry } from '../../src/record/record-board-stream.
 import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { memoryContextItemClient } from './record-api-context-items.ts'
+import {
+  hostedStoredRevision,
+  matchesStoredDoc,
+  type StoredDoc,
+  type StoredRevision,
+} from './record-api-docs.ts'
 import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
 import { type MemoryQuestionInput, memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
@@ -127,6 +133,7 @@ export function idleRecordApiDeps() {
       changes: [],
     }),
     waitForRecordChange: async () => undefined,
+    readDocRevision: async () => null,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,
     clientAddresses: {
@@ -165,36 +172,6 @@ export function idleSubjectDeps(): RecordSubjectRouteDeps {
     reorderSubjects: async () => [],
     retireSubject: async () => subject,
   }
-}
-
-type StoredDoc = {
-  id: string
-  scope: string
-  subject: string | null
-  owner: string | null
-  slug: string
-  title: string
-  body: string
-  delivery: 'inject' | 'demand'
-  projectName: string | null
-  createdAt: string
-  updatedAt: string
-  deletedAt: string | null
-}
-
-type StoredRevision = {
-  id: string
-  docId: string
-  scope: string
-  subject: string | null
-  slug: string
-  op: string
-  title: string
-  body: string
-  delivery: string
-  author: string
-  reason: string
-  at: string
 }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
@@ -598,19 +575,20 @@ export function createMemoryRecordApiClient(
       return { items: [] }
     },
     async listDocs(query) {
-      const items = [...docs.values()].filter((doc) => {
-        if (query.scope && doc.scope !== query.scope) return false
-        if (query.subject !== undefined && doc.subject !== query.subject) return false
-        if (!query.includeDeleted && doc.deletedAt) return false
-        if (query.updatedSince && doc.updatedAt <= query.updatedSince) return false
-        return true
-      })
+      const items = [...docs.values()].filter((doc) => matchesStoredDoc(query, doc))
       return { items, nextCursor: null }
     },
     async getDoc(id) {
       const doc = docs.get(id)
       if (!doc) throw new Error('doc not found')
       return doc
+    },
+    async getDocRevision(id) {
+      for (const rows of revisions.values()) {
+        const revision = rows.find((row) => row.id === id)
+        if (revision) return hostedStoredRevision(revision, docs.get(revision.docId))
+      }
+      throw new Error('doc revision not found')
     },
     async listRevisions(id) {
       return revisions.get(id) ?? []
@@ -660,10 +638,13 @@ export function createMemoryRecordApiClient(
         title: input.title,
         body: input.body,
         delivery: input.delivery,
+        status: input.status ?? 'current',
+        kind: input.kind ?? 'working',
         projectName: input.projectName ?? null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         deletedAt: null,
+        latestRevisionId: revisionId,
       })
       const list = revisions.get(id) ?? []
       list.push({
@@ -722,10 +703,13 @@ export function createMemoryRecordApiClient(
         title: input.doc.title,
         body: input.doc.body,
         delivery: input.doc.delivery,
+        status: input.doc.status ?? 'current',
+        kind: input.doc.kind ?? 'working',
         projectName: input.doc.projectName ?? null,
         createdAt: input.doc.createdAt,
         updatedAt: input.doc.updatedAt,
         deletedAt: input.doc.deletedAt,
+        latestRevisionId: existing?.latestRevisionId ?? null,
       })
       const list = revisions.get(id) ?? []
       const revisionIds: string[] = []
@@ -759,6 +743,8 @@ export function createMemoryRecordApiClient(
         revisionIds.push(revisionId)
       }
       revisions.set(id, list)
+      const stored = docs.get(id)!
+      docs.set(id, { ...stored, latestRevisionId: revisionIds.at(-1) ?? stored.latestRevisionId })
       return { id, revisionIds }
     },
     async importCanon(input: RecordCanonImportInput) {
@@ -806,10 +792,13 @@ export function createMemoryRecordApiClient(
           title: row.title,
           body: row.body,
           delivery: 'demand',
+          status: 'current',
+          kind: 'working',
           projectName: null,
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
           deletedAt: null,
+          latestRevisionId: revisionId,
         })
         const list = revisions.get(id) ?? []
         list.push({
@@ -834,7 +823,12 @@ export function createMemoryRecordApiClient(
         .filter(({ slug }) => deletionSlugs.has(slug))
         .map((doc) => {
           const revisionId = newRecordId()
-          docs.set(doc.id, { ...doc, deletedAt: now, updatedAt: now })
+          docs.set(doc.id, {
+            ...doc,
+            deletedAt: now,
+            updatedAt: now,
+            latestRevisionId: revisionId,
+          })
           return { slug: doc.slug, id: doc.id, revisionId }
         })
       return { rows, deletions, findings: plan.findings, bootstrap: plan.bootstrap }
@@ -853,7 +847,7 @@ export function createMemoryRecordApiClient(
       })
       const now = new Date().toISOString()
       const revisionId = newRecordId()
-      docs.set(id, { ...doc, deletedAt: now, updatedAt: now })
+      docs.set(id, { ...doc, deletedAt: now, updatedAt: now, latestRevisionId: revisionId })
       const list = revisions.get(id) ?? []
       list.push({
         id: revisionId,
@@ -888,7 +882,7 @@ export function createMemoryRecordApiClient(
       const consumed = consumeDocBody(doc.body, now, input.author)
       if (consumed.alreadyConsumed) return { id, revisionId: '', alreadyConsumed: true }
       const revisionId = newRecordId()
-      docs.set(id, { ...doc, body: consumed.body, updatedAt: now })
+      docs.set(id, { ...doc, body: consumed.body, updatedAt: now, latestRevisionId: revisionId })
       const list = revisions.get(id) ?? []
       list.push({
         id: revisionId,
@@ -940,10 +934,13 @@ export function createMemoryRecordApiClient(
         title: source.title,
         body: source.body,
         delivery: source.delivery as 'inject' | 'demand',
+        status: doc?.status ?? 'current',
+        kind: doc?.kind ?? 'working',
         projectName: doc?.projectName ?? null,
         createdAt: doc?.createdAt ?? now,
         updatedAt: now,
         deletedAt: null,
+        latestRevisionId: revisionId,
       }
       docs.set(id, restored)
       list.push({

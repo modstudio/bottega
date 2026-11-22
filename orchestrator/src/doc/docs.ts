@@ -26,6 +26,7 @@ import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
+import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import {
   assertLocalArticleDelivery,
@@ -37,10 +38,11 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
-import { readDoc, readDocs } from './doc-authoritative-read.ts'
+import { readDoc, readDocRevision, readDocs } from './doc-authoritative-read.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
+import { hostedUnmirroredDoc } from './doc-hosted-unmirrored.ts'
 import {
   assertDocWriteRevisionForAuthority,
   hostedDocWriteOperation,
@@ -66,14 +68,11 @@ import {
   validateHistoricDocAddress,
   validDocSubjects,
 } from './doc-subjects.ts'
+import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
-import {
-  localDocTreeFields,
-  localParentRecordId,
-  localRestoredParentSlug,
-} from './local-doc-tree-service.ts'
+import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
   commitDocRestore,
@@ -85,9 +84,10 @@ import {
 
 export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
+type WrittenDoc = Doc & { writeWarnings?: string[] }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
-import { assertLocalRevisionWrite, getStoredDocRevision } from './doc-revision-store.ts'
+import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import {
   addCanonWriteWarnings,
   canonFindingsRefusal,
@@ -374,33 +374,46 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
-function localDocWriteState(input: DocWriteInput): { owner: string | null; prior: Doc | null } {
+async function docWriteState(
+  input: DocWriteInput,
+): Promise<{ owner: string | null; prior: Doc | null }> {
   const owner = input.owner ?? null
-  return { owner, prior: getDoc(input.scope, input.subject, input.slug, owner) }
+  return { owner, prior: await readDoc(input.scope, input.subject, input.slug, owner) }
 }
 
 const hostedDocWriteClient = (input: DocWriteInput) =>
   hostedDocClient(input.scope, input.subject, contextTaskOwner(input.contextTask))
 
-async function setDocWithOp(
-  input: DocWriteInput,
-  requestedOp?: 'import',
-): Promise<Doc & { writeWarnings?: string[] }> {
+function assertDocAddressWriteAllowed(input: DocWriteInput): void {
   writableDb()
-  const ownedAddress =
+  const refusal =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
-  if (ownedAddress) throw new Error(ownedAddress)
+  if (refusal) throw new Error(refusal)
   validate(input.scope, input.subject, input.slug)
-  const secretScan = scanDocBody(input, defaultDocSecretScanner)
-  const identity = resolvedDocWriteIdentity(input)
-  const { owner, prior } = localDocWriteState(input)
+}
+
+function docWritePrelude(input: DocWriteInput) {
+  return [scanDocBody(input, defaultDocSecretScanner), resolvedDocWriteIdentity(input)] as const
+}
+
+function assertHostedDocCompatible(
+  input: Parameters<Awaited<ReturnType<typeof hostedDocWriteClient>>['upsertDoc']>[0],
+  result: Awaited<ReturnType<Awaited<ReturnType<typeof hostedDocWriteClient>>['upsertDoc']>>,
+): void {
+  const refusal = recordDocArticleCompatibilityRefusal([input], result)
+  if (refusal) throw new Error(refusal)
+}
+
+async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
+  const [secretScan, identity] = docWritePrelude(input)
+  const { owner, prior } = await docWriteState(input)
   assertDocWriteRevisionForAuthority(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
   const articleFields = resolveLocalDocArticleFields(input, prior, kind, projectName)
-  const tree = localDocTreeFields(input, prior)
+  const tree = await docTreeWriteFields(input, prior)
   assertDocBodyCommands(input, { kind, form: articleFields.form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
   assertLocalArticleDelivery(input, delivery, kind)
@@ -432,13 +445,7 @@ async function setDocWithOp(
         body: input.body,
         delivery,
         audiences: tree.audiences,
-        parentRecordId: localParentRecordId({
-          scope: input.scope,
-          subject: input.subject,
-          owner,
-          parent_record_id: tree.parentId,
-          parent_slug: tree.parentSlug,
-        }),
+        parentRecordId: tree.parentId,
         position: tree.position,
         featured: tree.featured,
         kind,
@@ -450,14 +457,28 @@ async function setDocWithOp(
         forceInject: input.forceInject,
         op: hostedDocWriteOperation(requestedOp, prior, input.expectedRevision),
         id: prior?.record_id ?? undefined,
-        expectedRevision: input.expectedRevision,
+        expectedRevision: input.expectedRevision ?? prior?.revision ?? undefined,
       }
       const hosted = await client.upsertDoc(hostedInput)
-      const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
-      if (compatibilityRefusal) throw new Error(compatibilityRefusal)
+      assertHostedDocCompatible(hostedInput, hosted)
+      const mirrored = getDoc(input.scope, input.subject, input.slug, owner)
+      if (prior && !mirrored) {
+        return hostedUnmirroredDoc({
+          prior,
+          write: input,
+          recordId: hosted.id,
+          revisionId: hosted.revisionId,
+          updatedAt: nowIso(),
+          delivery,
+          kind,
+          tree,
+          lifecycle,
+          article: articleFields,
+        })
+      }
       return commitDocSet({
         ...input,
-        expectedRevision: prior?.revision ?? undefined,
+        expectedRevision: mirrored?.revision ?? undefined,
         owner,
         projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
@@ -474,9 +495,14 @@ async function setDocWithOp(
   return addSecretScanWarning(addCanonWriteWarnings(written, canonWarnings), input, secretScan)
 }
 
+async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
+  assertDocAddressWriteAllowed(input)
+  return writeDocWithOp(input, requestedOp)
+}
+
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
   await assertSetDocAllowed(input)
-  const prior = getDoc(input.scope, input.subject, input.slug, input.owner ?? null)
+  const prior = await readDoc(input.scope, input.subject, input.slug, input.owner ?? null)
   const refusal = rw.resumeConsumptionWriteRefusal(input, prior?.body ?? null)
   if (refusal) throw new Error(refusal)
   return setDocWithOp(input)
@@ -510,7 +536,7 @@ export async function setDocStatus(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
-  const current = getDoc(scope, subject, slug, owner)
+  const current = await readDoc(scope, subject, slug, owner)
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
@@ -589,7 +615,7 @@ export async function removeDoc(
   writableDb()
   validScope(scope)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = getDoc(scope, subject, slug, owner)
+  const doc = await readDoc(scope, subject, slug, owner)
   if (!doc) return false
   return removeStoredDoc(doc, context, identity)
 }
@@ -611,7 +637,7 @@ export async function consumeDoc(
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = suppliedDoc === undefined ? getDoc(scope, requestedSubject, slug) : suppliedDoc
+  const doc = suppliedDoc === undefined ? await readDoc(scope, requestedSubject, slug) : suppliedDoc
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
@@ -645,7 +671,7 @@ export async function consumeDoc(
     hosted: async () => {
       const client = await hostedDocClient(doc.scope, doc.subject)
       let recordId = doc.record_id
-      let hostedExpected = context.expectedRevision
+      let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined
       if (!recordId) {
         const created = await client.upsertDoc({
           scope: doc.scope,
@@ -670,6 +696,14 @@ export async function consumeDoc(
         expectedRevision: hostedExpected,
       })
       if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
+      if (!getDoc(scope, doc.subject, slug)) {
+        return hostedUnmirroredDoc({
+          prior: doc,
+          body: patched.body,
+          revisionId: hosted.revisionId,
+          alreadyConsumed: false,
+        })
+      }
       return commitDocConsume({
         scope,
         subject: doc.subject,
@@ -779,7 +813,7 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
       {
         ...doc,
         ...context,
-        expectedRevision: getDoc(doc.scope, doc.subject, doc.slug)?.revision ?? undefined,
+        expectedRevision: (await readDoc(doc.scope, doc.subject, doc.slug))?.revision ?? undefined,
       },
       'import',
     )
@@ -787,8 +821,6 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
   })
   return { count, writeWarnings }
 }
-
-const getDocRevision = getStoredDocRevision
 
 function isAddressRevision(
   revision: DocRevision,
@@ -805,6 +837,38 @@ function isAddressRevision(
   )
 }
 
+async function restoreReadState(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null,
+  revision: DocRevision,
+): Promise<readonly [string | null, Doc | null]> {
+  return applyRecordReadAuthority({
+    local: () => referenceRestoreState(scope, subject, slug, owner, revision),
+    hosted: async () => {
+      const live = await readDoc(scope, subject, slug, owner)
+      return [live?.revision ?? null, live] as const
+    },
+  })
+}
+
+async function restoredParentSlug(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  parentId: string | null,
+): Promise<string | null> {
+  return applyRecordReadAuthority({
+    local: () => localRestoredParentSlug({ scope, subject, slug, parentId }),
+    hosted: async () =>
+      parentId === null
+        ? null
+        : ((await readDocs({ scope, subject })).find(({ record_id }) => record_id === parentId)
+            ?.slug ?? null),
+  })
+}
+
 export async function restoreDoc(
   scope: string,
   subject: string | null,
@@ -817,13 +881,14 @@ export async function restoreDoc(
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const revision = context.suppliedRead?.revision ?? getDocRevision(revisionId, owner)
+  const revision =
+    context.suppliedRead?.revision ?? (await readDocRevision(revisionId, owner, scope, subject))
   if (!revision || !isAddressRevision(revision, scope, subject, owner, slug)) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
   const [expectedCurrent, current] = context.suppliedRead
     ? [context.suppliedRead.current?.revision ?? null, context.suppliedRead.current]
-    : referenceRestoreState(scope, subject, slug, owner, revision)
+    : await restoreReadState(scope, subject, slug, owner, revision)
   assertLocalReferenceRestore(current, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },
@@ -858,23 +923,15 @@ export async function restoreDoc(
   )
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectByName(subject!)?.recordId ?? null) : null
-  const restoredParentSlug = localRestoredParentSlug({
-    scope,
-    subject,
-    slug,
-    parentId: revision.parent_record_id,
-  })
-  const tree = localDocTreeFields(
+  const parentSlug = await restoredParentSlug(scope, subject, slug, revision.parent_record_id)
+  const tree = await docTreeWriteFields(
     {
       scope,
       subject,
       owner,
       slug,
-      title: revision.title,
-      body: revision.body,
-      delivery: revision.delivery,
       audiences: revision.audiences,
-      parentSlug: restoredParentSlug,
+      parentSlug,
       position: revision.position,
       featured: revision.featured,
       ...context,

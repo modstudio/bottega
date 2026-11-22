@@ -2,7 +2,9 @@
 /** Resolves a user-facing document-revision number or UUID at the identity door. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 
 const ACCEPTED = 'a positive decimal document-revision number or a full document-revision UUID'
 
@@ -23,16 +25,36 @@ export function parseDocRevisionIdentifier(input: string | number): ParsedDocRev
   return { kind: 'record-id', recordId: given.toLowerCase() }
 }
 
-export function resolveDocRevisionIdentifier(database: Database, input: string | number): string {
+export async function resolveDocRevisionIdentifier(
+  database: Database,
+  input: string | number,
+): Promise<string> {
   const parsed = parseDocRevisionIdentifier(input)
-  if (parsed.kind === 'number') {
-    const row = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM doc_revision WHERE number=?')
-      .get(parsed.number)
-    if (row) return row.record_id
-    throw new Error(`no document revision has number ${parsed.number}; pass ${ACCEPTED}`)
-  }
-  if (database.query('SELECT 1 FROM doc_revision WHERE record_id=?').get(parsed.recordId))
-    return parsed.recordId
-  throw new Error(`no document revision has UUID ${JSON.stringify(input)}; pass ${ACCEPTED}`)
+  return applyRecordReadAuthority(
+    {
+      local: () => {
+        if (parsed.kind === 'number') {
+          const row = database
+            .query<{ record_id: string }, [number]>(
+              'SELECT record_id FROM doc_revision WHERE number=?',
+            )
+            .get(parsed.number)
+          if (row) return row.record_id
+          throw new Error(`no document revision has number ${parsed.number}; pass ${ACCEPTED}`)
+        }
+        if (database.query('SELECT 1 FROM doc_revision WHERE record_id=?').get(parsed.recordId))
+          return parsed.recordId
+        throw new Error(`no document revision has UUID ${JSON.stringify(input)}; pass ${ACCEPTED}`)
+      },
+      hosted: () => {
+        if (parsed.kind === 'number') {
+          throw new Error(
+            `hosted document revisions have no numeric identifier; pass the revision id listed by ${PLATFORM_SLUG} doc history`,
+          )
+        }
+        return parsed.recordId
+      },
+    },
+    database,
+  )
 }

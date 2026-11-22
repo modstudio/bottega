@@ -234,16 +234,16 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
     '../../../shared/git-path-list.ts',
+    './doc-authoritative-read.ts',
     './docs.ts',
-    './doc-read-store.ts',
     './doc-generator.ts',
     '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/doc/doc-generator.ts', []),
   module('orchestrator/src/doc/doc-source-files.ts', []),
   module('orchestrator/src/doc/doc-set-source-files.ts', [
+    './doc-authoritative-read.ts',
     './docs.ts',
-    './doc-read-store.ts',
     './doc-source-files.ts',
   ]),
   module('orchestrator/src/doc/doc-reference-write.ts', [
@@ -281,6 +281,10 @@ export const docModules: DocModule[] = [
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',
+  ]),
+  module('orchestrator/src/doc/doc-hosted-unmirrored.ts', [
+    './doc-authoritative-read.ts',
+    './doc-tree-rules.ts',
   ]),
   module('orchestrator/src/doc/doc-authoritative-read.ts', [
     '../../../shared/brand.ts',
@@ -333,6 +337,13 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-tree-rules.ts', [
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
+  ]),
+  module('orchestrator/src/doc/doc-tree-write.ts', [
+    '../../../shared/docs.ts',
+    '../record/record-read-authority.ts',
+    './doc-authoritative-read.ts',
+    './doc-tree-rules.ts',
+    './local-doc-tree-service.ts',
   ]),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',

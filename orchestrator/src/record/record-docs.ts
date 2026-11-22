@@ -73,6 +73,7 @@ export { assertRevisionWrite, RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 export {
   getRecordDoc,
+  getRecordDocRevision,
   listRecordDocEntries,
   listRecordDocRevisions,
   listRecordDocs,

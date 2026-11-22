@@ -51,6 +51,7 @@ export const recordApiTestApp = (
     searchPublicDocs: async () => [],
     searchDocs: async () => [],
     readDoc: async () => null,
+    readDocRevision: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
     reorderDocs: async ({ orderedIds }: { orderedIds: string[] }) => ({ orderedIds }),

@@ -146,7 +146,7 @@ function registerDocRevisionTool(server: McpServer): void {
     },
     async ({ id, user }) => {
       const revision = getDocRevision(
-        resolveDocRevisionIdentifier(db(), id),
+        await resolveDocRevisionIdentifier(db(), id),
         user ? await signedInDocOwner() : null,
       )
       if (!revision) throw new Error(`no doc revision ${id}`)

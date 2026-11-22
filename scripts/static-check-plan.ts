@@ -165,6 +165,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     ),
   },
   script('scripts/check-machine-state.ts', run),
+  script('scripts/check-doc-local-sql-authority.ts', run),
   script(
     'scripts/check-cascade-preservation.ts',
     omit('slow: 2.7s CPU under the worker check; the landing gate and CI run it', 'run 25620', {

@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type DocumentTreeWrite, documentTreeWriteRefusal } from './doc-tree-rules.ts'
+import {
+  type DocumentTreeWrite,
+  deriveDocumentTreeWriteFields,
+  documentTreeWriteRefusal,
+} from './doc-tree-rules.ts'
 
 const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => ({
   slug: 'child',
@@ -15,6 +19,53 @@ const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => 
 })
 
 describe('document tree write rules', () => {
+  test('derives parent identity, slug, and position from gathered facts', () => {
+    expect(
+      deriveDocumentTreeWriteFields(
+        { scope: 'project', subject: PLATFORM_SLUG, slug: 'child', parentSlug: 'parent' },
+        null,
+        {
+          parent: { ...base(), record_id: 'parent-id', slug: 'parent' },
+          children: [],
+          ancestorSlugs: ['root'],
+        },
+      ),
+    ).toMatchObject({ parentId: 'parent-id', parentSlug: 'parent', position: 0 })
+  })
+
+  test('keeps the prior parent and position when neither is requested', () => {
+    expect(
+      deriveDocumentTreeWriteFields(
+        { scope: 'project', subject: PLATFORM_SLUG, slug: 'child' },
+        {
+          audiences: ['technical'],
+          parent_slug: 'parent',
+          position: 3,
+          featured: false,
+        },
+        {
+          parent: { ...base(), record_id: 'parent-id', slug: 'parent' },
+          children: [],
+          ancestorSlugs: [],
+        },
+      ),
+    ).toMatchObject({ parentId: 'parent-id', parentSlug: 'parent', position: 3 })
+  })
+
+  test('refuses a cycle from gathered ancestor facts', () => {
+    expect(() =>
+      deriveDocumentTreeWriteFields(
+        { scope: 'project', subject: PLATFORM_SLUG, slug: 'child', parentSlug: 'leaf' },
+        null,
+        {
+          parent: { ...base(), record_id: 'leaf-id', slug: 'leaf' },
+          children: [],
+          ancestorSlugs: ['child'],
+        },
+      ),
+    ).toThrow('creates a document cycle')
+  })
+
   test('internal and customer audiences are accepted in project and global scopes only', () => {
     for (const audience of ['internal', 'customer'] as const) {
       expect(documentTreeWriteRefusal(base({ audiences: [audience] }))).toBeNull()

@@ -4,6 +4,32 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudiences } from '../../../shared/docs.ts'
 
+export type TreeWriteInput = {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+  audiences?: DocAudiences
+  parentSlug?: string | null
+  position?: number
+  featured?: boolean
+}
+
+export type TreeWritePrior = {
+  audiences: DocAudiences
+  parent_slug: string | null
+  position: number
+  featured: boolean
+}
+
+export type TreeWriteFields = {
+  audiences: DocAudiences
+  parentId: string | null
+  parentSlug: string | null
+  position: number
+  featured: boolean
+}
+
 type DocumentTreeNode = {
   slug: string
   scope: string
@@ -92,4 +118,41 @@ export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | nul
     return `refusing ${address}: parent "${input.parent.slug}" creates a document cycle; cleared by: re-run ${set} --no-parent or choose a parent outside this document's descendants`
   }
   return null
+}
+
+export function deriveDocumentTreeWriteFields(
+  input: TreeWriteInput,
+  prior: TreeWritePrior | null,
+  facts: {
+    parent: (DocumentTreeNode & { record_id: string }) | null
+    children: Array<Pick<DocumentTreeNode, 'slug'>>
+    ancestorSlugs: string[]
+  },
+): TreeWriteFields {
+  const audiences = input.audiences ?? prior?.audiences ?? ['technical']
+  if (input.position !== undefined && !Number.isInteger(input.position)) {
+    throw new Error('--position must be an integer')
+  }
+  const requestedParentSlug = input.parentSlug
+  const parentSlug =
+    requestedParentSlug === undefined ? (prior?.parent_slug ?? null) : requestedParentSlug
+  const refusal = documentTreeWriteRefusal({
+    slug: input.slug,
+    scope: input.scope,
+    subject: input.subject,
+    owner: input.owner ?? null,
+    audiences,
+    parent: facts.parent,
+    requestedParentSlug,
+    ancestorSlugs: facts.ancestorSlugs,
+    children: facts.children,
+  })
+  if (refusal) throw new Error(refusal)
+  return {
+    audiences,
+    parentId: facts.parent?.record_id ?? null,
+    parentSlug,
+    position: input.position ?? prior?.position ?? 0,
+    featured: input.featured ?? prior?.featured ?? false,
+  }
 }

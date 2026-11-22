@@ -7,11 +7,16 @@ import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient, listAllHostedDocs } from './doc-hosted-client.ts'
-import { type HostedDocRevision, hostedDocRevisionRead } from './doc-hosted-history.ts'
+import {
+  type HostedDocRevision,
+  hostedDocRevisionRead,
+  mapHostedDocRevisions,
+} from './doc-hosted-history.ts'
 import {
   type Doc,
   type DocListFilters,
   type DocMetadata,
+  type DocRevision,
   docForAudience,
   getDocForAudienceStore,
   getDocStore,
@@ -25,7 +30,7 @@ import {
 } from './doc-revision-store.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
-export type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
@@ -258,6 +263,22 @@ export function readDocRevisions(
       withReadRemedy(
         async () => (await hostedRevisionRead(scope, subject, slug, owner))?.revisions ?? [],
       ),
+  })
+}
+
+export function readDocRevision(
+  revisionId: string,
+  owner: string | null = null,
+  scope = 'global',
+  subject: string | null = null,
+): Promise<DocRevision | null> {
+  return applyRecordReadAuthority({
+    local: () => getStoredDocRevision(revisionId, owner),
+    hosted: () =>
+      withReadRemedy(async () => {
+        const revision = await (await hostedDocClient(scope, subject)).getDocRevision(revisionId)
+        return mapHostedDocRevisions([revision])[0] ?? null
+      }),
   })
 }
 

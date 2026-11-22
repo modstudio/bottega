@@ -1,6 +1,6 @@
 // concern: settings-env-commands
 /** Owns edits to plain canonical user settings environment values. */
-import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { readDoc } from '../doc/doc-authoritative-read.ts'
 import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import {
   editSettingsEnv,
@@ -20,7 +20,7 @@ export async function settingsEnvCommand(
   value?: string,
 ): Promise<{ changed: boolean; revision: string; message: string }> {
   const owner = await signedInDocOwner()
-  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  const row = await readDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error(`refusing settings env ${operation}: no user settings row`)
   assertNoUnknownStoredSettingsEdit(row.body)
   const edit = editSettingsEnv(parseStoredOwnedSettings(row.body), { operation, name, value })

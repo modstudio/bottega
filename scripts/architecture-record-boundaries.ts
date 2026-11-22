@@ -117,7 +117,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../doc/doc-generator.ts',
     ],
     'Enforce the record API client concern boundary.',
-    ['../canon/canon-lint.ts', './record-public-docs.ts'],
+    ['../canon/canon-lint.ts', './record-public-docs.ts', './record-doc-mapping.ts'],
   ),
   boundary(
     'record-port-catalogue-boundary',
@@ -197,6 +197,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-tenant.ts',
       './record-api-doc-order.ts',
       './record-api-doc-list.ts',
+      './record-api-doc-read-routes.ts',
       './record-api-write-routes.ts',
       './record-api-settings.ts',
       './record-api-subjects.ts',
@@ -307,6 +308,20 @@ export const recordApiBoundaries: ImportBoundary[] = [
 ]
 
 export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
+  boundary(
+    'record-doc-read-routes-boundary',
+    'orchestrator/src/record/record-api-doc-read-routes.ts',
+    [
+      'hono',
+      'zod',
+      '../../../shared/docs.ts',
+      './record-api-write-telemetry.ts',
+      './record-api-wire.ts',
+      './record-config.ts',
+      './record-docs.ts',
+    ],
+    'Keep id-keyed document read routes separate from the general record API surface.',
+  ),
   boundary(
     'record-canon-import-boundary',
     'orchestrator/src/record/record-canon-import.ts',

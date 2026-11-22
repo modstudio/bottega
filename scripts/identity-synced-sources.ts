@@ -72,6 +72,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'getBoardThread',
     'getContextItem',
     'getDoc',
+    'getDocRevision',
     'getPublicDoc',
     'listBoardChanges',
     'listChanges',

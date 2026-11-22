@@ -15,8 +15,30 @@ import type { RecordApiClient } from './record-api-client.ts'
 import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
+import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
+  const unusedRevision: RecordDocRevision = {
+    id: newRecordId(),
+    docId: newRecordId(),
+    scope: 'global',
+    subject: null,
+    owner: null,
+    slug: 'unused',
+    op: 'set',
+    title: 'Unused',
+    body: '',
+    withheldForAudience: false,
+    delivery: 'demand',
+    audiences: ['technical'],
+    parentId: null,
+    position: 0,
+    author: 'fixture',
+    authorName: null,
+    reason: 'unused fixture revision',
+    sessionId: null,
+    at: '2026-01-01T00:00:00.000Z',
+  }
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
@@ -34,6 +56,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     listDocs: async () => ({ items: [], nextCursor: null }),
     listChanges: async () => ({ reset: { cursor: 'test-change-cursor', tables: [] } }),
     getDoc: async () => ({}),
+    getDocRevision: async () => unusedRevision,
     listRevisions: async () => [],
     upsertDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
     reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
