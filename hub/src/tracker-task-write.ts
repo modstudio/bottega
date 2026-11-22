@@ -154,7 +154,7 @@ async function writeExternalStatus(
     updatedAt: null,
     assignee: task.assignee,
   }
-  ;(dependencies.observe ?? observeTrackerTask)(
+  await (dependencies.observe ?? observeTrackerTask)(
     observed,
     undefined,
     project.settings.keyPrefixes ?? [],

@@ -207,7 +207,7 @@ describe('project.list', () => {
   test('returns the project register rows', async () => {
     const rows = await caller.project.list()
 
-    expect(rows).toHaveLength(10)
+    expect(rows).toHaveLength(11)
     expect(rows[0]).toEqual({
       record_id: '01990000-0000-7000-8000-000000001101',
       name: 'alpha',
