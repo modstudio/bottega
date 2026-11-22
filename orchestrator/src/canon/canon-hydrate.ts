@@ -98,6 +98,16 @@ export function generatedLinks(rows: CanonRow[]): { path: string; target: string
   return links.sort((a, b) => a.path.localeCompare(b.path))
 }
 
+/** Generated files and links have no independently adoptable store slug. */
+export function isGeneratedCanonOutputPath(path: string): boolean {
+  return (
+    path === CODEX_PROJECT_DOC_PATH ||
+    posix.basename(path) === 'CLAUDE.md' ||
+    path === '.claude/rules' ||
+    path === '.agents/rules/contexts'
+  )
+}
+
 export function planHydration(input: { rows: CanonRow[]; tree: CanonFile[] }): HydrationPlan {
   for (const row of input.rows) {
     if (!classifyCanonFile({ path: row.slug, text: row.body })) {
