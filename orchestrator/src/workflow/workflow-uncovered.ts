@@ -19,6 +19,7 @@ import {
   LANDING_TREE_JOB,
 } from '../run/synthetic-lifecycle-job.ts'
 import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
+import { workflowCursorBranchAndWorktree } from './workflow-cursor-worktrees.ts'
 
 const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
 // Plan-to-ship tree rows preceded their cursor by 8.9 to 25.8 s on 2026-11-21; this allows headroom without binding later work.
@@ -38,6 +39,7 @@ export type TaskCoverage = {
   key: string
   openedAt: string
   closedAt: string | null
+  // Only cursor coverage carries a branch; claims never set it.
   branch?: string
 }
 export type HandoffTransition = {
@@ -76,7 +78,7 @@ const lifecycleCursorCovers = (coverage: TaskCoverage, evidence: KeyedWorkEviden
     !evidence.branch ||
     coverage.project !== evidence.project ||
     coverage.key !== evidence.key ||
-    coverage.branch !== evidence.branch
+    coverage.branch !== evidence.branch.trim()
   )
     return false
   const evidenceAt = Date.parse(evidence.at)
@@ -87,17 +89,6 @@ const lifecycleCursorCovers = (coverage: TaskCoverage, evidence: KeyedWorkEviden
     evidenceAt <= openedAt &&
     openedAt <= evidenceAt + LIFECYCLE_TREE_COVER_WINDOW_MS
   )
-}
-
-function cursorBranch(args: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(args)
-    if (typeof parsed !== 'object' || parsed === null || !('branch' in parsed)) return undefined
-    const branch = parsed.branch
-    return typeof branch === 'string' && branch.length > 0 ? branch : undefined
-  } catch {
-    return undefined
-  }
 }
 
 export function decideWorkflowUncovered(input: {
@@ -263,7 +254,7 @@ export async function workflowUncoveredReport(
     key: row.workflow_key,
     openedAt: row.created_at,
     closedAt: isClosedStageState(row.state) ? row.updated_at : null,
-    branch: cursorBranch(row.args),
+    branch: workflowCursorBranchAndWorktree(row.args).branch ?? undefined,
   }))
   const byRecordId = new Map(cursorRows.map((row) => [row.record_id, row]))
   const handoffs = cursorRows.flatMap((row): HandoffTransition[] => {

@@ -140,7 +140,7 @@ test('branch-matched lifecycle tree cursors opening inside the window cover earl
     days: 1,
     now: '2026-11-17T20:00:00.000Z',
     evidence: [
-      { ...evidence[0]!, job: LANDING_TREE_JOB, branch: 'DEV-1-change' },
+      { ...evidence[0]!, job: LANDING_TREE_JOB, branch: ' DEV-1-change ' },
       { ...evidence[0]!, key: 'DEV-2', job: HOOK_TREE_JOB, branch: 'DEV-2-change' },
     ],
     cursors,

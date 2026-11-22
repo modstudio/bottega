@@ -157,6 +157,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../run/cursorless-run-evidence.ts',
     '../run/synthetic-lifecycle-job.ts',
     './task-flow-store.ts',
+    './workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/workflow/explore-graduation.ts', []),
   module('orchestrator/src/workflow/task-flow-store-hosted.ts', [
