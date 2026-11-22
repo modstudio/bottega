@@ -14,6 +14,7 @@ import {
   editSettingsAutoMode,
   type SettingsAutoModeOperation,
 } from '../settings/settings-auto-mode.ts'
+import { refuseUnknownStoredSettingsEdit } from '../settings/settings-edit-refusal.ts'
 import {
   editSettingsPermission,
   type SettingsPermissionOperation,
@@ -137,6 +138,8 @@ async function applyRecordSettingsEdit<
       candidate.subject === subject,
   )
   if (!row) throw new RecordDocError('settings doc not found', 404)
+  const unknownKeyRefusal = refuseUnknownStoredSettingsEdit(row.body)
+  if (unknownKeyRefusal) throw new RecordDocError(unknownKeyRefusal, 409)
   const revisions = await dependencies.listRevisions({ ...tenant, id: row.id })
   const current = revisions?.[0]?.id ?? null
   assertRevisionWrite({

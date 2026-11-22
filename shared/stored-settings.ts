@@ -3,10 +3,23 @@
  * module writes it; the hub's hosted settings read parses it.
  */
 import { z } from 'zod'
+import { PLATFORM_NAME } from './brand.ts'
+import { refusal, renderRefusal } from './refusal.ts'
 
 export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'] as const
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
 export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
+
+const OWNED_SETTINGS_OPTIONS_SCHEMA = z
+  .object({
+    subagentHooks: z.enum(['on']).optional(),
+  })
+  .strict()
+type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
+
+const OWNED_SETTINGS_SUBAGENT_HOOK_VALUES =
+  OWNED_SETTINGS_OPTIONS_SCHEMA.shape.subagentHooks.unwrap().options
+export const OWNED_SETTINGS_OPTIONS_ACCEPTED = `accepted options.subagentHooks=${OWNED_SETTINGS_SUBAGENT_HOOK_VALUES.map((value) => JSON.stringify(value)).join('|')}`
 
 export const OWNED_AUTO_MODE_SCHEMA = z
   .object(
@@ -22,6 +35,7 @@ export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
   autoMode?: OwnedAutoMode
+  options?: OwnedSettingsOptions
   env?: Record<string, string>
   envKeys?: string[]
 }
@@ -35,22 +49,54 @@ export const OWNED_SETTINGS_SCHEMA = z
     permissions: z.unknown(),
     hooks: z.unknown(),
     autoMode: OWNED_AUTO_MODE_SCHEMA.optional(),
+    options: OWNED_SETTINGS_OPTIONS_SCHEMA.optional(),
     env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
     envKeys: ENV_KEYS_SCHEMA,
   })
   .strict()
 
-const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
-  envKeys: ENV_KEYS_SCHEMA.default([]),
-})
+function storedSchema(schema: unknown): z.ZodType {
+  if (schema instanceof z.ZodOptional) return storedSchema(schema.unwrap()).optional()
+  if (schema instanceof z.ZodObject) return storedObjectSchema(schema)
+  return schema as z.ZodType
+}
 
-export const STORED_SETTINGS_REMEDY =
-  'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names'
+function storedObjectSchema(schema: z.ZodObject): z.ZodObject {
+  return z
+    .object(
+      Object.fromEntries(
+        Object.entries(schema.shape).map(([key, child]) => [key, storedSchema(child)]),
+      ),
+    )
+    .strip()
+}
+
+const STORED_SETTINGS_ROW_SCHEMA = storedObjectSchema(OWNED_SETTINGS_SCHEMA).extend({
+  envKeys: ENV_KEYS_SCHEMA.default([]),
+}) as unknown as z.ZodType<OwnedSettings>
+
+const OWNED_SETTINGS_KEYS_TEXT = Object.keys(OWNED_SETTINGS_SCHEMA.shape).join(', ')
+
+export const STORED_SETTINGS_REMEDY = `cleared by: write a JSON object with only these keys: ${OWNED_SETTINGS_KEYS_TEXT}`
+export const STORED_SETTINGS_OPTIONS_REMEDY = `${OWNED_SETTINGS_OPTIONS_ACCEPTED}; upgrade ${PLATFORM_NAME} before reading this settings row`
+const STORED_SETTINGS_NESTED_REMEDY = `upgrade ${PLATFORM_NAME} before reading this settings row`
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)
   if (issue.code === 'unrecognized_keys') path.push(issue.keys[0] ?? '(root)')
   return path.join('.') || '(root)'
+}
+
+function storedSettingsShapeMessage(path: string): string {
+  const condition = `stored settings row has an invalid shape at ${JSON.stringify(path)}`
+  const remedy = path.startsWith('options.')
+    ? STORED_SETTINGS_OPTIONS_REMEDY
+    : path.startsWith('autoMode.')
+      ? STORED_SETTINGS_NESTED_REMEDY
+      : null
+  return remedy === null
+    ? `${condition}\n${STORED_SETTINGS_REMEDY}`
+    : renderRefusal(refusal(condition, { kind: 'edit', text: remedy }))
 }
 
 export class StoredSettingsRowError extends Error {
@@ -63,7 +109,7 @@ export class StoredSettingsRowError extends Error {
     super(
       reason === 'json'
         ? `stored settings row cannot parse JSON\n${STORED_SETTINGS_REMEDY}`
-        : `stored settings row has an invalid shape at ${JSON.stringify(path)}\n${STORED_SETTINGS_REMEDY}`,
+        : storedSettingsShapeMessage(path!),
     )
     this.name = 'StoredSettingsRowError'
     this.reason = reason

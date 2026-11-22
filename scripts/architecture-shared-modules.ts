@@ -120,7 +120,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts', './refusal.ts']),
   module('shared/record-migrate-secret.ts', []),
-  module('shared/stored-settings.ts', ['zod']),
+  module('shared/stored-settings.ts', ['./brand.ts', './refusal.ts', 'zod']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [
     './brand.ts',

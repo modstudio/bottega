@@ -141,6 +141,20 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('keeps unowned options in the harness settings file byte-for-byte', async () => {
+    writeCurrentSettings()
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const source = readFileSync(settingsPath, 'utf8').replace(
+      '  "permissions":',
+      '  "options": {"anything":  1},\n  "permissions":',
+    )
+    writeFileSync(settingsPath, source)
+
+    await applyMachineSettings({ check: false }, deps())
+
+    expect(readFileSync(settingsPath, 'utf8')).toContain('"options": {"anything":  1}')
+  })
+
   test('check mode bounds hosted reads to identity and document routes', async () => {
     process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
     const routes: string[] = []
@@ -426,6 +440,28 @@ describe('settings apply', () => {
     const rendered = readFileSync(settingsPath, 'utf8')
     expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(orch *)'] })
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+  })
+
+  test('options with future members and future top-level keys do not change applied Claude settings', async () => {
+    const row = getDoc('settings', null, 'settings', OWNER)!
+    const body = JSON.stringify({
+      ...JSON.parse(row.body),
+      options: { subagentHooks: 'on', futureOption: 1 },
+      futureKey: true,
+    })
+    db().query('UPDATE doc SET body=? WHERE record_id=?').run(body, row.record_id)
+
+    const checked = await applyMachineSettings({ check: true }, deps())
+    expect(checked[0]).toMatchObject({ outcome: 'applied', changed: true })
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
+    expect(rendered).not.toContain('subagentHooks')
+    expect(rendered).not.toContain('futureOption')
+    expect(rendered).not.toContain('futureKey')
+    expect(rendered).toContain('block-agent.py')
   })
 
   test('without a settings row preserves file-owned settings while adding product hooks', async () => {

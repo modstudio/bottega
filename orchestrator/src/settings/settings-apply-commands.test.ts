@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
@@ -13,6 +13,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseStoredOwnedSettings, serializeOwnedSettings } from './settings.ts'
@@ -25,6 +26,7 @@ import {
   settingsRestoreCommand,
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
+import { settingsEnvCommand } from './settings-env-commands.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const priorHome = process.env.HOME
@@ -100,6 +102,74 @@ async function seedUser(environment: { env?: Record<string, string>; envKeys?: s
     reason: 'fixture',
   })
 }
+
+async function seedFutureUser(): Promise<string> {
+  await seedUser({ envKeys: ['NEW_NAME'] })
+  const row = getDoc('settings', null, 'settings', OWNER)!
+  const parsed = JSON.parse(row.body) as Record<string, unknown>
+  const body = JSON.stringify({
+    ...parsed,
+    options: { subagentHooks: 'on', futureOption: 1 },
+  })
+  db().query('UPDATE doc SET body=? WHERE record_id=?').run(body, row.record_id)
+  return body
+}
+
+describe('future settings edit refusals', () => {
+  const adapters = [
+    {
+      name: 'env set',
+      prepare: () => {},
+      edit: () => settingsEnvCommand('set', 'PLAIN', 'value'),
+    },
+    {
+      name: 'env unset',
+      prepare: () => {},
+      edit: () => settingsEnvCommand('unset', 'PLAIN'),
+    },
+    {
+      name: 'env import',
+      prepare: () =>
+        writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } })),
+      edit: () => settingsEnvImportCommand(flags({ user: true }), shown().port),
+    },
+    {
+      name: 'adopt',
+      prepare: () =>
+        writeFileSync(
+          join(claude, 'settings.local.json'),
+          JSON.stringify({ permissions: { allow: ['Bash(git status)'] } }),
+        ),
+      edit: () => settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
+    },
+    {
+      name: 'environment-name migrate',
+      prepare: () => {},
+      edit: () =>
+        migrateStoredSettingsEnvironmentNames((name) =>
+          name === 'NEW_NAME' ? 'MIGRATED_NAME' : null,
+        ),
+    },
+    {
+      name: 'environment-name restore',
+      prepare: () => {},
+      edit: () =>
+        restoreStoredSettingsEnvironmentNames([{ oldName: 'OLD_NAME', newName: 'NEW_NAME' }]),
+    },
+  ]
+
+  for (const adapter of adapters) {
+    test(`${adapter.name} refuses a future options key without changing the row`, async () => {
+      adapter.prepare()
+      const body = await seedFutureUser()
+
+      await expect(adapter.edit()).rejects.toThrow(
+        new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+      )
+      expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
+    })
+  }
+})
 
 test('stored settings environment migration can be restored from its recorded name pairs', async () => {
   const oldName = ['ORCH', 'RECORD', 'MIGRATE', 'URL'].join('_')
