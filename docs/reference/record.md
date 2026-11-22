@@ -102,14 +102,15 @@ the hosted record and outbox
 
 ## bottega record audit-secrets
 
-**Synopsis:** `bottega record audit-secrets [--json] [--ids]`
+**Synopsis:** `bottega record audit-secrets [--json] [--ids] [--hosted]`
 
-scan local outbox payloads for secret material
+scan local outbox or hosted free text for secret material
 
 ### Options
 
 - `--json`: write the audit findings as JSON
 - `--ids`: include row identifiers in text output
+- `--hosted`: scan hosted record free-text columns instead of the local outbox
 
 ### Related
 

@@ -14,18 +14,25 @@ import {
 } from '../postgres/postgres-migrate.ts'
 import { projectByName, setProjectRecordSpace } from '../project/projects.ts'
 import {
+  auditHostedSecrets,
+  HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS,
+  renderHostedSecretAudit,
+} from './hosted-secret-audit.ts'
+import {
   redactSyncedOutbox,
   renderSyncedRedaction,
   syncedRedactionRules,
 } from './outbox-redaction.ts'
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 import { diagnoseRecord, recordDoctorExitCode, redactRecordPasswords } from './record-doctor.ts'
+import { recordPool } from './record-pool.ts'
 import {
   clearPublicDocProject,
   designatePublicDocProject,
   listPublicDocProjects,
   type PublicDocDesignation,
 } from './record-public-doc-designation.ts'
+import { currentRecordUserSession } from './record-session.ts'
 import {
   acceptRecordInvitation,
   blockRecordSpaceOutsideAuthor,
@@ -526,11 +533,37 @@ export async function recordSpaceMoveProjectCommand(
   presentation.log('local hosted-row caches were not rewritten; the next pull reconciles them')
 }
 
-export function recordAuditSecretsCommand(
-  options: { json: boolean; ids: boolean },
+export async function recordAuditSecretsCommand(
+  options: { json: boolean; ids: boolean; hosted?: boolean },
   presentation: Presentation,
   database?: Parameters<typeof auditOutboxSecrets>[0],
-): void {
+  dependencies = {
+    recordUrl,
+    currentSession: currentRecordUserSession,
+    memberships: recordMemberships,
+    pool: recordPool,
+  },
+): Promise<void> {
+  if (options.hosted) {
+    const url = dependencies.recordUrl()
+    const session = await dependencies.currentSession(url)
+    const membershipSpaceIds = (await dependencies.memberships()).memberships.map(
+      (membership) => membership.spaceId,
+    )
+    const spaceId = session.activeSpaceId ?? membershipSpaceIds[0]
+    if (!spaceId) throw new Error('record audit found no readable record spaces')
+    const counts = await auditHostedSecrets(dependencies.pool(url), {
+      userId: String((session.user as { id: string }).id),
+      spaceId,
+      spaceIds: membershipSpaceIds,
+    })
+    presentation.log(
+      options.json
+        ? JSON.stringify({ counts, unavailable: HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS })
+        : renderHostedSecretAudit(counts),
+    )
+    return
+  }
   const owned = database === undefined
   const conn = database ?? openReadOnlyDatabase()
   try {

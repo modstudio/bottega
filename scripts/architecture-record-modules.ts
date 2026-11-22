@@ -556,6 +556,11 @@ export const recordModules: RecordModule[] = [
     './outbox-prune-payload.ts',
     './outbox-sanitize.ts',
   ]),
+  module('orchestrator/src/record/hosted-secret-audit.ts', [
+    '../../../shared/record/tenant.ts',
+    '../../../shared/secret-shaped.ts',
+    'bun',
+  ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -577,6 +582,9 @@ export const recordModules: RecordModule[] = [
     '../project/projects.ts',
     './outbox-secret-audit.ts',
     './outbox-redaction.ts',
+    './hosted-secret-audit.ts',
+    './record-pool.ts',
+    './record-session.ts',
     './record-doctor.ts',
     './record-public-doc-designation.ts',
     './record-space-move.ts',

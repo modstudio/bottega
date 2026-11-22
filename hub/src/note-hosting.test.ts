@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -26,6 +27,42 @@ const unreachable = {
     throw new Error('offline')
   },
 }
+
+test('note create stores fixture credentials masked', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  let storedText = ''
+  const response = await noteApi(
+    new Request('https://hub.example.test/v1/notes', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+        'x-record-space': 'space-a',
+      },
+      body: JSON.stringify({
+        project: 'workshop',
+        projectId: '01990000-0000-7000-8000-000000000001',
+        text: `quoted ${secret}`,
+        anchor: '{}',
+      }),
+    }),
+    hostedRouteTestConfig,
+    {
+      fetch: (async () =>
+        Response.json({
+          user: { id: 'user-1' },
+          activeSpaceId: 'space-a',
+          memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+        })) as unknown as typeof fetch,
+      create: async (_url, _identity, input: { text: string }) => {
+        storedText = input.text
+        return { id: '01990000-0000-7000-8000-000000000002' } as never
+      },
+    },
+  )
+  expect(response?.status).toBe(201)
+  expect(storedText).toBe(redactSecretShaped(`quoted ${secret}`).text)
+})
 
 describe('hosted-only note safety', () => {
   test('the outside route preserves a service refusal status', async () => {

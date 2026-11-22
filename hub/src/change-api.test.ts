@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { encodeRecordChangeCursor } from '../../shared/record/record-changes.ts'
+import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
 import { HostedChangeIdMismatchError, HostedRevisionConflictError } from './hosted-push-conflict.ts'
@@ -34,6 +35,41 @@ const pushRequest = (body: unknown, space = 'space-b') =>
     },
     body: JSON.stringify(body),
   })
+
+test('task-comment push stores fixture credentials masked', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const id = '01990000-0000-7000-8000-000000000101'
+  let storedBody = ''
+  const response = await changeApi(
+    pushRequest([
+      {
+        table: 'hub_task_comment',
+        id,
+        op: 'upsert',
+        row: {
+          id,
+          task_key: 'DEV-2578',
+          task_id: '01990000-0000-7000-8000-000000000102',
+          project_name: 'workshop',
+          body: `quoted ${secret}`,
+          created_at: '2026-11-21T20:00:00.000Z',
+          updated_at: '2026-11-21T20:00:00.000Z',
+          deleted_at: null,
+        },
+      },
+    ]),
+    config,
+    {
+      fetch: whoami,
+      push: async (_url, _identity, inputs) => {
+        storedBody = String(inputs[0]?.row.body)
+        return [{ id, status: 'applied' }]
+      },
+    },
+  )
+  expect(response?.status).toBe(200)
+  expect(storedBody).toBe(redactSecretShaped(`quoted ${secret}`).text)
+})
 
 test('legacy table-scoped change requests name the upgrade remedy', async () => {
   const response = await changeApi(request('after=0&tables=hub_task,hub_note'), config)

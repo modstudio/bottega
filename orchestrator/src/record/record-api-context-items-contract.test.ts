@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import {
@@ -20,6 +21,35 @@ const readDeps = {
   readContextItems: async () => [],
   readContextHolders: async () => [],
 }
+
+test('context-item write stores fixture credentials masked', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  let storedBody = ''
+  const app = recordApiTestApp(identity, {
+    ...idleSubjectDeps(),
+    ...idleRecordApiDeps(),
+    upsertContextItem: async (input: { body: string }) => {
+      storedBody = input.body
+      return {}
+    },
+  })
+  const response = await app.request('/v1/context-items', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      holderKind: 'task',
+      holderId: newRecordId(),
+      slug: 'secret-reproduction',
+      kind: 'fact',
+      body: `quoted ${secret}`,
+      source: 'test',
+      questionNumber: null,
+      target: null,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(storedBody).toBe(redactSecretShaped(`quoted ${secret}`).text)
+})
 
 test('hosted context-item delete returns removed false when the row is absent', async () => {
   const id = newRecordId()

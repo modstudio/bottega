@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   createMemoryRecordApiClient,
   idleRecordApiDeps,
@@ -148,6 +149,33 @@ test('an explicit create against an existing document returns the typed 409 reme
 })
 
 const id = '01990000-0000-7000-8000-000000000001'
+
+test('server doc write stores a fixture credential masked when the client scan is skipped', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  let storedBody = ''
+  const app = appWith(identity, {
+    upsertDoc: async (input: { body: string }) => {
+      storedBody = input.body
+      return { id, revisionId: id }
+    },
+  })
+  const response = await app.request('/v1/docs', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      scope: 'global',
+      subject: null,
+      slug: 'secret-reproduction',
+      title: 'Secret reproduction',
+      body: `quoted ${secret}`,
+      delivery: 'demand',
+      reason: 'reproduce server masking',
+      author: 'tester',
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(storedBody).toBe(redactSecretShaped(`quoted ${secret}`).text)
+})
 const personalIdentity: RecordIdentity = {
   ...identity,
   user: { ...identity.user, id: '01990000-0000-7000-8000-0000000000aa' },
