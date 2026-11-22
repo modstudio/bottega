@@ -149,8 +149,20 @@ test('tasks must change during the active step when their tracker reports an upd
       },
     ]),
   ).rejects.toThrow(
-    'task record time is 2026-08-01, before step activation 2026-09-01; the tracker-transition floor is met by passing `--task DEV-977`, which needs no write during the step',
+    'task record time is 2026-08-01, before step activation 2026-09-01; make the tracker transition and pass `--task DEV-977`',
   )
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }, identity, [
+      {
+        kind: 'tracker-transition',
+        deferrable: false,
+        expectedExitCode: 0,
+        expectedStatus: 'active',
+        requirePullRequest: false,
+        operatorRuling: false,
+      },
+    ]),
+  ).rejects.not.toThrow('needs no write')
   await expect(
     gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()

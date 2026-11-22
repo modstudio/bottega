@@ -9,7 +9,7 @@ import {
   invokeFloorEvidencePort,
 } from './workflow-floor-evidence-replay.ts'
 
-type TaskDocumentCursor = {
+export type FloorTaskCursor = {
   project: string
   workflowKey: string
   workflowTaskRecordId?: string | null
@@ -17,7 +17,7 @@ type TaskDocumentCursor = {
 }
 
 export function artifactTaskIsNotCursorTask(
-  identity: TaskDocumentCursor,
+  identity: FloorTaskCursor,
   task: { key: string; recordId?: string | null },
 ): boolean {
   return identity.workflowTaskRecordId
@@ -28,7 +28,7 @@ export function artifactTaskIsNotCursorTask(
 export async function resolveTaskDocumentArtifact(
   ref: Extract<ArtifactRef, { kind: 'task-document' }>,
   raw: string,
-  identity: TaskDocumentCursor,
+  identity: FloorTaskCursor,
   ports: FloorEvidencePorts,
 ): Promise<{ ref: string; exists: boolean }> {
   if (!identity.workflowTaskRecordId && artifactTaskIsNotCursorTask(identity, { key: ref.key }))

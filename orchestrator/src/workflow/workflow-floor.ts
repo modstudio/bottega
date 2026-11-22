@@ -79,6 +79,10 @@ export const floorGuidance = {
   'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
 } satisfies Record<FloorKind, string>
 
+export function trackerTransitionTaskRemedy(key: string): string {
+  return floorGuidance['tracker-transition'].replace('<KEY>', key)
+}
+
 export function evidenceGuidance(
   kind: FloorKind,
   operatorRuling: boolean,

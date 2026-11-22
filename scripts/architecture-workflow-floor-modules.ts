@@ -383,6 +383,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     './workflow-artifact-evidence.ts',
     './workflow-artifact-reference.ts',
+    './workflow-floor.ts',
     './workflow-floor-artifact-freshness.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-comment-evidence.ts',

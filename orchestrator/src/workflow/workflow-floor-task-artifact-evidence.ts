@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ArtifactEvidence } from './workflow-artifact-evidence.ts'
 import type { ArtifactRef } from './workflow-artifact-reference.ts'
+import { trackerTransitionTaskRemedy } from './workflow-floor.ts'
 import { TIMED_FRESHNESS as FRESHNESS } from './workflow-floor-artifact-freshness.ts'
 import {
   type FloorEvidencePorts,
@@ -12,20 +13,14 @@ import {
 import { resolveTaskCommentArtifact } from './workflow-floor-task-comment-evidence.ts'
 import {
   artifactTaskIsNotCursorTask,
+  type FloorTaskCursor,
   resolveTaskDocumentArtifact,
 } from './workflow-floor-task-document-evidence.ts'
-
-type TaskArtifactCursor = {
-  project: string
-  workflowKey: string
-  workflowTaskRecordId?: string | null
-  stepActivatedAt: string
-}
 
 export async function resolveTaskArtifact(
   ref: Extract<ArtifactRef, { kind: 'task' | 'comment' | 'task-document' }>,
   raw: string,
-  identity: TaskArtifactCursor,
+  identity: FloorTaskCursor,
   ports: FloorEvidencePorts,
   hasTrackerTransitionFloor: boolean,
 ): Promise<ArtifactEvidence> {
@@ -43,9 +38,7 @@ export async function resolveTaskArtifact(
       FRESHNESS.task,
       task.updatedAt,
       identity.stepActivatedAt,
-      hasTrackerTransitionFloor
-        ? `the tracker-transition floor is met by passing \`--task ${ref.key}\`, which needs no write during the step`
-        : undefined,
+      hasTrackerTransitionFloor ? trackerTransitionTaskRemedy(ref.key) : undefined,
     )
     return { ref: raw, exists: task.key === ref.key, ...(notice ? { notice } : {}) }
   }
