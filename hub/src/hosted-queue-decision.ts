@@ -32,6 +32,10 @@ export const HOSTED_QUEUE_ALLOWLIST = [
     table: HOSTED_TASK_TABLE,
     removedBy: `note ${note}#2924`,
   },
+  ...[HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE].flatMap((table) => [
+    { site: 'trackers.writeTrackerCache', table, removedBy: `note ${note}#2924` },
+    { site: 'trackers.dropDeletedTrackerTasks', table, removedBy: `note ${note}#2924` },
+  ]),
   ...[
     HOSTED_TASK_TABLE,
     HOSTED_COMMENT_TABLE,

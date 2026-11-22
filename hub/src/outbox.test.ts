@@ -102,6 +102,14 @@ describe('hosted outbox', () => {
         'trackers.backfillTrackerTasks',
         readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
       ],
+      [
+        'trackers.writeTrackerCache',
+        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+      ],
+      [
+        'trackers.dropDeletedTrackerTasks',
+        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+      ],
       ['task-push.queueRepairs', readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8')],
     ])
     for (const entry of HOSTED_QUEUE_ALLOWLIST) {

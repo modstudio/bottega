@@ -529,7 +529,7 @@ function observeTrackerTaskOn(
   conn: Database,
   task: TrackerTask,
   at: string,
-  queue: boolean,
+  queueSite: string | null,
 ): CachedTrackerTaskObservation {
   const { stored, times, changed, ambiguousParentKeys } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
@@ -543,11 +543,11 @@ function observeTrackerTaskOn(
   const taskRecordId = observed?.source === 'local' ? null : (observed?.record_id ?? null)
   const taskKey = observed?.key ?? task.key
   if (
-    queue &&
+    queueSite &&
     taskRecordId &&
     collectorTaskShouldQueue('mcp', observed, changed || stored?.updated_at === null)
   )
-    queueHostedChange(conn, HOSTED_TASK_TABLE, taskRecordId, 'upsert', at)
+    queueHostedChange(conn, HOSTED_TASK_TABLE, taskRecordId, 'upsert', at, null, queueSite)
   if (!recordsTransition)
     return { at, taskRecordId, taskKey, times, changed, ambiguousParentKeys, event: null }
 
@@ -561,8 +561,16 @@ function observeTrackerTaskOn(
     .run(recordId, task.key, taskRecordId!, at, was, task.category, null, null, null, null)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
-  if (queue && event)
-    queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, event.recordId, 'upsert', at)
+  if (queueSite && event)
+    queueHostedChange(
+      conn,
+      HOSTED_STATUS_EVENT_TABLE,
+      event.recordId,
+      'upsert',
+      at,
+      null,
+      queueSite,
+    )
   return {
     at,
     taskRecordId,
@@ -618,13 +626,6 @@ export async function sendObservedTrackerTask(
   )
 }
 
-async function sendDirectTrackerObservations(
-  observations: Iterable<TrackerTaskObservation>,
-): Promise<void> {
-  if (hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured') return
-  for (const observation of observations) await sendObservedTrackerTask(observation)
-}
-
 export async function observeTrackerTask(
   task: TrackerTask,
   at = nowIso(),
@@ -640,7 +641,7 @@ export async function observeTrackerTask(
       times: _times,
       changed: _changed,
       ...observation
-    } = observeTrackerTaskOn(conn, task, at, !hosted)
+    } = observeTrackerTaskOn(conn, task, at, hosted ? null : 'trackers.observeTrackerTask')
     return observation
   })
   if (hosted) await sendObservedTrackerTask(observation, options)
@@ -705,11 +706,13 @@ export function writeTrackerCache(
   prefixes: readonly string[],
 ): TrackerCacheObservation[] {
   const observations: TrackerCacheObservation[] = []
-  const queue = hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured'
   writeTransaction((conn) => {
     for (const task of tasks) {
       if (!trackerKeyInScope(task.key, prefixes)) continue
-      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at, queue) })
+      observations.push({
+        task,
+        observation: observeTrackerTaskOn(conn, task, at, 'trackers.writeTrackerCache'),
+      })
     }
   })
   return observations
@@ -794,16 +797,9 @@ export function dropDeletedTrackerTasks(
   keys: Iterable<string>,
   at: string,
   prefixes: readonly string[],
-): {
-  dropped: number
-  activity: boolean
-  changed: number
-  observations: TrackerTaskObservation[]
-} {
+): { dropped: number; activity: boolean; changed: number } {
   let dropped = 0
   let changed = 0
-  const observations: TrackerTaskObservation[] = []
-  const queue = hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured'
   writeTransaction((conn) => {
     const read = conn.query<TrackerIdentityRow, [string, string]>(
       `SELECT ${TRACKER_IDENTITY_COLUMNS} FROM task
@@ -830,15 +826,14 @@ export function dropDeletedTrackerTasks(
           assignee: row.assignee,
         },
         at,
-        queue,
+        'trackers.dropDeletedTrackerTasks',
       )
-      observations.push(observation)
       restoreLifecycle.run(row.opened_at, row.closed_at ?? at, row.record_id)
       dropped++
       if (observation.event) changed++
     }
   })
-  return { dropped, activity: dropped > 0, changed, observations }
+  return { dropped, activity: dropped > 0, changed }
 }
 
 async function backfillTrackerTasks(
@@ -1008,10 +1003,8 @@ export async function ingestTrackers(
             // transition that did not happen. Last wins: the lookup is the fresher read.
             const unique = scopedTrackerTasks(fetched.tasks, prefixes)
             const observations = writeTrackerCache(unique.values(), at, prefixes)
-            await sendDirectTrackerObservations(observations.map(({ observation }) => observation))
             const retired = retireOutOfScopeTrackerTasks(s.project, prefixes, at)
             const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
-            await sendDirectTrackerObservations(deletions.observations)
             let activity =
               deletions.activity || observations.some(({ observation }) => observation.changed)
             const changed =
