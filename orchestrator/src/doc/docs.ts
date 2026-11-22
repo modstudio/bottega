@@ -491,7 +491,8 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
       const hosted = await client.upsertDoc(hostedInput)
       const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
       if (compatibilityRefusal) throw new Error(compatibilityRefusal)
-      if (prior && !getDoc(input.scope, input.subject, input.slug, owner)) {
+      const mirrored = getDoc(input.scope, input.subject, input.slug, owner)
+      if (prior && !mirrored) {
         return hostedUnmirroredDoc({
           prior,
           write: input,
@@ -506,7 +507,7 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
       }
       return commitDocSet({
         ...input,
-        expectedRevision: undefined,
+        expectedRevision: mirrored?.revision ?? undefined,
         owner,
         projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,

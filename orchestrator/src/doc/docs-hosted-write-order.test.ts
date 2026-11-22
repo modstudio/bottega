@@ -79,12 +79,12 @@ test('a hosted document upsert carries the writing session', async () => {
 })
 
 test('a hosted write declares requested, derived create, and derived set operations', async () => {
-  const local = await setDoc({
+  const localOnly = await setDoc({
     scope: 'global',
     subject: null,
-    slug: 'hosted-derived-set-local',
-    title: 'Hosted derived set local',
-    body: 'The local row makes the hosted write a set.',
+    slug: 'hosted-derived-create-local',
+    title: 'Hosted derived create local',
+    body: 'A local-only row does not make the hosted write a set.',
     delivery: 'demand',
     reason: 'create local fixture',
   })
@@ -124,13 +124,13 @@ test('a hosted write declares requested, derived create, and derived set operati
       reason: 'pin requested operation',
     })
     await writeDoc({
-      scope: local.scope,
-      subject: local.subject,
-      slug: local.slug,
-      title: local.title,
-      body: 'The local row is revised through hosted set.',
-      delivery: local.delivery,
-      reason: 'pin set with local prior',
+      scope: localOnly.scope,
+      subject: localOnly.subject,
+      slug: localOnly.slug,
+      title: localOnly.title,
+      body: 'The local-only row is created in the hosted record.',
+      delivery: localOnly.delivery,
+      reason: 'pin create without hosted prior',
     })
     await writeDoc({
       scope: 'global',
@@ -143,7 +143,7 @@ test('a hosted write declares requested, derived create, and derived set operati
       reason: 'pin set without local prior',
     })
 
-    expect(requests.map(({ op }) => op)).toEqual(['import', 'set', 'set'])
+    expect(requests.map(({ op }) => op)).toEqual(['import', 'create', 'set'])
   } finally {
     delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
