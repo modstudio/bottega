@@ -66,6 +66,22 @@ test('post-sign-in settings refusal preserves completion and prints its remedy',
   ])
 })
 
+test('post-sign-in settings lock skip preserves completion and prints its remedy', async () => {
+  const output: string[] = []
+  await applySignedInMachineSettings({ log: (line) => output.push(line) }, async () => [
+    {
+      target: 'settings apply',
+      outcome: 'skipped',
+      detail: 'another settings apply holds the settings-apply lock',
+      changed: false,
+    },
+  ])
+  expect(output).toEqual([
+    'settings apply already running; skipped',
+    `run \`${PLATFORM_SLUG} machine settings apply\``,
+  ])
+})
+
 test('post-sign-in settings error preserves completion and prints its remedy', async () => {
   const output: string[] = []
   await applySignedInMachineSettings({ log: (line) => output.push(line) }, async () => {

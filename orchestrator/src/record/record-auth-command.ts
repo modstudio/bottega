@@ -14,6 +14,7 @@ import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
   printMachineSettingsApplyResults,
+  settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
@@ -167,7 +168,8 @@ export async function applySignedInMachineSettings(
   try {
     const results = await applySettings()
     printMachineSettingsApplyResults(results, (value) => presentation.log(String(value)))
-    if (results.some((result) => result.outcome === 'refused')) presentation.log(remedy)
+    if (results.some((result) => result.outcome === 'refused' || settingsApplyLockSkipped(result)))
+      presentation.log(remedy)
   } catch (error) {
     presentation.log(
       `machine settings apply failed: ${error instanceof Error ? error.message : String(error)}`,

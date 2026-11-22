@@ -116,17 +116,6 @@ export function classifySetupProductHooks(input: {
   })
 }
 
-function setupProductHookFacts(facts: SetupInstallVerifyFacts): SetupProductHookFact[] {
-  const file = userSettings(facts)
-  return classifySetupProductHooks({
-    settings: file?.settings,
-    readable: file?.state === 'readable',
-    declarations: facts.hooks,
-    assetRoot: (script) =>
-      facts.scripts.find((candidate) => candidate.file === script)?.assetRoot ?? facts.installRoot,
-  })
-}
-
 function missingHooks(
   facts: SetupInstallVerifyFacts,
   declarations: readonly ProductHookDeclaration[],
@@ -135,9 +124,14 @@ function missingHooks(
   if (file?.state !== 'readable') {
     return [`${file?.path ?? 'Claude user settings'} is ${file?.state ?? 'absent'}`]
   }
-  const selected = new Set(declarations)
-  return setupProductHookFacts(facts)
-    .filter((hook, index) => selected.has(facts.hooks[index]!) && hook.state !== 'present')
+  return classifySetupProductHooks({
+    settings: file.settings,
+    readable: true,
+    declarations,
+    assetRoot: (script) =>
+      facts.scripts.find((candidate) => candidate.file === script)?.assetRoot ?? facts.installRoot,
+  })
+    .filter((hook) => hook.state !== 'present')
     .map((hook) => `${hook.event} ${hook.matcher ?? '(no matcher)'} ${hook.script}`)
 }
 
