@@ -40,6 +40,7 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-question.ts', [
     'hono',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record/record-changes.ts',
     './record-auth.ts',
     './record-cursor.ts',

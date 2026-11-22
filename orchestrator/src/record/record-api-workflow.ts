@@ -2,6 +2,7 @@
 /** Exposes validated tenant-bound workflow catalogue routes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -96,7 +97,12 @@ function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
     const body = validate(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
     try {
-      return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data }))
+      return context.json(
+        await deps.writeTaskFlow(
+          intent,
+          maskHostedWrite('record.task-flow.write', { ...active, ...body.data }),
+        ),
+      )
     } catch (error) {
       if (error instanceof DocRevisionConflictError) return renderRecordApiRefusal(context, error)!
       throw error
@@ -335,7 +341,11 @@ export function registerRecordWorkflowRoutes(
     const body = recordWorkflowDraftSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid workflow catalogue draft' }, 400)
     try {
-      return context.json(await deps.draftWorkflow({ ...active, ...body.data }))
+      return context.json(
+        await deps.draftWorkflow(
+          maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+        ),
+      )
     } catch (error) {
       return failure(context, error)
     }
@@ -347,7 +357,11 @@ export function registerRecordWorkflowRoutes(
     if (!body.success) return context.json({ error: 'invalid workflow catalogue import' }, 400)
     if (!deps.importWorkflowCatalogue)
       return context.json({ error: 'workflow catalogue import is unavailable' }, 503)
-    return context.json(await deps.importWorkflowCatalogue({ ...active, ...body.data }))
+    return context.json(
+      await deps.importWorkflowCatalogue(
+        maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+      ),
+    )
   })
   for (const action of ['promote', 'retire'] as const)
     app.post(`/v1/workflow-catalogue/${action}`, async (context) => {

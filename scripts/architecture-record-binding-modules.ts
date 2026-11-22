@@ -29,6 +29,7 @@ export const recordBindingModules: RecordModule[] = [
     'hono',
     'zod',
     '../../../shared/context-item-vocabulary.ts',
+    '../../../shared/hosted-secret-mask.ts',
     './record-api-client-paths.ts',
     './record-auth.ts',
     './record-context-items.ts',

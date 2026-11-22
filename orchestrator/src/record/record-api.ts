@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import { type HostedWriteRoute, maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
@@ -371,6 +372,14 @@ function registerRecordCoreRoutes(
   registerSignedDocSearchRoute(app, deps, ports)
   registerRecordReadRoutes(app, deps, ports)
   registerRecordQuestionRoutes(app, deps, ports)
+}
+
+function maskedTenantWrite<TenantValue extends object, Input>(
+  route: HostedWriteRoute,
+  tenant: TenantValue,
+  input: Input,
+): TenantValue & Input {
+  return { ...tenant, ...maskHostedWrite(route, input) }
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
@@ -822,7 +831,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     )
     if (!tenant) return noSpace(context)
     try {
-      return context.json(await deps.importDoc({ ...tenant, ...body.data }))
+      return context.json(
+        await deps.importDoc(maskedTenantWrite('record.doc.import', tenant, body.data)),
+      )
     } catch (error) {
       return writeError(context, error)
     }
@@ -840,7 +851,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     )
     if (!tenant) return noSpace(context)
     try {
-      return context.json(await deps.importCanon({ ...tenant, ...body.data }))
+      return context.json(
+        await deps.importCanon(maskedTenantWrite('record.doc.canon-import', tenant, body.data)),
+      )
     } catch (error) {
       return writeError(context, error)
     }

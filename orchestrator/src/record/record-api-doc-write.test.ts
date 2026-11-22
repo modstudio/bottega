@@ -167,14 +167,16 @@ test('server doc write stores a fixture credential masked when the client scan i
       subject: null,
       slug: 'secret-reproduction',
       title: 'Secret reproduction',
-      body: `quoted ${secret}`,
+      body: `a key=value line with bearer prose quoted ${secret}`,
       delivery: 'demand',
       reason: 'reproduce server masking',
       author: 'tester',
     }),
   })
   expect(response.status).toBe(200)
-  expect(storedBody).toBe(redactSecretShaped(`quoted ${secret}`).text)
+  expect(storedBody).toBe(
+    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+  )
 })
 const personalIdentity: RecordIdentity = {
   ...identity,

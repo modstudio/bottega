@@ -13,10 +13,11 @@ test.each([
 ] as const)('$name stores fixture credentials masked', async ({ path, dependency }) => {
   const secret = 'ghp_123456789012345678901234567890123456'
   let stored = ''
+  const generic = 'a key=value line with bearer prose'
   const input =
     dependency === 'create'
-      ? { project: 'workshop', title: `quoted ${secret}`, body: `quoted ${secret}` }
-      : { title: 'Reproduction', body: `quoted ${secret}`, version: '1' }
+      ? { project: 'workshop', title: generic, body: `${generic} quoted ${secret}` }
+      : { title: generic, body: `${generic} quoted ${secret}`, version: '1' }
   const writer = async (...args: unknown[]) => {
     const value = args.at(-1) as { body?: string; title?: string }
     stored = value.body ?? value.title ?? ''
@@ -44,5 +45,8 @@ test.each([
     },
   )
   expect(response?.status).toBe(201)
-  expect(stored).toBe(redactSecretShaped(`quoted ${secret}`).text)
+  expect(stored).toBe(
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+  )
+  expect(input.title).toBe(generic)
 })

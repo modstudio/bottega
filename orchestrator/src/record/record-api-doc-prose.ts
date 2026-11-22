@@ -1,6 +1,7 @@
 // concern: hosted document prose gate
 /** Checks a hosted document request against its stored current revision, then writes it. */
 
+import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { proseGate } from '../../../shared/prose/prose-gate.ts'
 import { docProseFields } from '../doc/doc-body-prose.ts'
 import { hostedProseOptions } from './record-api-prose.ts'
@@ -26,7 +27,10 @@ export async function hostedDocUpsert<
   const prior = input.id ? await deps.readDoc({ ...tenant, id: input.id }) : null
   const checked = await proseGate(docProseFields(input, prior), hostedProseOptions(identity))
   if (checked.refusal) throw new RecordDocError(checked.refusal)
-  const written = await deps.upsertDoc({ ...tenant, ...input })
+  const written = await deps.upsertDoc({
+    ...tenant,
+    ...maskHostedWrite('record.doc.put', input),
+  })
   if (!checked.notices.length) return written
   return { ...written, writeWarnings: [...(written.writeWarnings ?? []), ...checked.notices] }
 }

@@ -42,7 +42,7 @@ test('note create stores fixture credentials masked', async () => {
       body: JSON.stringify({
         project: 'workshop',
         projectId: '01990000-0000-7000-8000-000000000001',
-        text: `quoted ${secret}`,
+        text: `a key=value line with bearer prose quoted ${secret}`,
         anchor: '{}',
       }),
     }),
@@ -61,7 +61,9 @@ test('note create stores fixture credentials masked', async () => {
     },
   )
   expect(response?.status).toBe(201)
-  expect(storedText).toBe(redactSecretShaped(`quoted ${secret}`).text)
+  expect(storedText).toBe(
+    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+  )
 })
 
 describe('hosted-only note safety', () => {

@@ -4,6 +4,7 @@ import {
   encodeRecordChangeCursor,
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   createRecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
@@ -387,6 +388,28 @@ function mutationBody(
     audit: { action: intent, actorSession: 'contract-test', at: CONTRACT_STAMP, reason: null },
   }
 }
+
+test('question writes mask high-precision leaves and preserve generic-rule prose', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose'
+  const body = mutationBody('answer', contractId(29001), contractId(29002), 1)
+  body.question.answer = `${generic} quoted ${secret}`
+  let stored = ''
+  const response = await app({
+    writeQuestion: async (_intent, input) => {
+      stored = input.question.answer ?? ''
+      return { id: input.question.id, number: 1, revision: 1, applied: true, replayed: false }
+    },
+  }).request('/v1/questions/answer', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(
+    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+  )
+})
 
 test('existing question mutations keep the stored project while asks still resolve payload projects', async () => {
   const fixture = await createRecordContractFixture()

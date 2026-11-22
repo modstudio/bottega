@@ -1,5 +1,6 @@
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { maskHostedWrite } from '../../shared/hosted-secret-mask.ts'
 import {
   decodeRecordChangeCursor,
   encodeRecordChangeCursor,
@@ -124,7 +125,7 @@ async function pushResponse(
     const applied = await (dependencies.push ?? applyHostedPushChanges)(
       config.recordDatabaseUrl,
       who,
-      decision.inputs,
+      maskHostedWrite('hub.change.push', decision.inputs),
     )
     const outcomes: HostedPushOutcome[] = []
     let appliedIndex = 0

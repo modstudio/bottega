@@ -534,7 +534,7 @@ export async function recordSpaceMoveProjectCommand(
 }
 
 export async function recordAuditSecretsCommand(
-  options: { json: boolean; ids: boolean; hosted?: boolean },
+  options: { json: boolean; ids: boolean; hosted?: boolean; rule?: string },
   presentation: Presentation,
   database?: Parameters<typeof auditOutboxSecrets>[0],
   dependencies = {
@@ -552,16 +552,16 @@ export async function recordAuditSecretsCommand(
     )
     const spaceId = session.activeSpaceId ?? membershipSpaceIds[0]
     if (!spaceId) throw new Error('record audit found no readable record spaces')
-    const counts = await auditHostedSecrets(dependencies.pool(url), {
-      userId: String((session.user as { id: string }).id),
-      spaceId,
-      spaceIds: membershipSpaceIds,
-    })
-    presentation.log(
-      options.json
-        ? JSON.stringify({ counts, unavailable: HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS })
-        : renderHostedSecretAudit(counts),
+    const report = await auditHostedSecrets(
+      dependencies.pool(url),
+      {
+        userId: String((session.user as { id: string }).id),
+        spaceId,
+        spaceIds: membershipSpaceIds,
+      },
+      { ...(options.rule ? { rule: options.rule } : {}) },
     )
+    presentation.log(hostedSecretAuditOutput(report, options))
     return
   }
   const owned = database === undefined
@@ -577,6 +577,19 @@ export async function recordAuditSecretsCommand(
   } finally {
     if (owned) conn.close()
   }
+}
+
+function hostedSecretAuditOutput(
+  report: Awaited<ReturnType<typeof auditHostedSecrets>>,
+  options: { json: boolean; ids: boolean },
+): string {
+  if (!options.json)
+    return renderHostedSecretAudit(report.counts, options.ids ? report.matches : [])
+  return JSON.stringify({
+    counts: report.counts,
+    ...(options.ids ? { matches: report.matches } : {}),
+    unavailable: HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS,
+  })
 }
 
 export function recordRedactSyncedCommand(

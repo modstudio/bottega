@@ -295,6 +295,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-workflow.ts', [
     'hono',
     'zod',
+    '../../../shared/hosted-secret-mask.ts',
     '../doc/doc-revision-conflict.ts',
     './record-auth.ts',
     './record-cursor.ts',

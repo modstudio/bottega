@@ -75,6 +75,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     [
       '../../../shared/bounded-fetch.ts',
       '../../../shared/docs.ts',
+      '../../../shared/hosted-secret-mask.ts',
       '../../../shared/record-api-url.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record-request-headers.ts',

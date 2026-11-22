@@ -41,14 +41,16 @@ test('context-item write stores fixture credentials masked', async () => {
       holderId: newRecordId(),
       slug: 'secret-reproduction',
       kind: 'fact',
-      body: `quoted ${secret}`,
+      body: `a key=value line with bearer prose quoted ${secret}`,
       source: 'test',
       questionNumber: null,
       target: null,
     }),
   })
   expect(response.status).toBe(200)
-  expect(storedBody).toBe(redactSecretShaped(`quoted ${secret}`).text)
+  expect(storedBody).toBe(
+    `a key=value line with bearer prose ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
+  )
 })
 
 test('hosted context-item delete returns removed false when the row is absent', async () => {

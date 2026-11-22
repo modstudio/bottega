@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { identity } from './record-api-identity.fixture.ts'
@@ -21,6 +22,8 @@ const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
+const SECRET = 'ghp_123456789012345678901234567890123456'
+const GENERIC = 'a key=value line with bearer prose'
 
 const recordApiAppWith = (overrides: Record<string, unknown>) =>
   recordApiTestApp(
@@ -58,6 +61,92 @@ function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   )
   return app
 }
+
+test('task-flow attached text masks high-precision leaves and preserves generic prose', async () => {
+  let stored = ''
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      writeTaskFlow: async (_intent, input) => {
+        stored = (input as { rows: Array<{ body: string }> }).rows[0]!.body
+        return {}
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/task-flow/attach-text', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      requestId: KNOWN_ID,
+      rows: [
+        {
+          id: UNKNOWN_ID,
+          stageRecordId: PROJECT,
+          stepOrdinal: 1,
+          stepSlug: 'measure',
+          body: `${GENERIC} quoted ${SECRET}`,
+          createdAt: '2026-11-21T12:00:00.000Z',
+        },
+      ],
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(
+    `${GENERIC} ${redactSecretShaped(`quoted ${SECRET}`, { precision: 'high' }).text}`,
+  )
+})
+
+test('workflow draft masks high-precision definition, author, and reason leaves', async () => {
+  let stored: Record<string, unknown> | null = null
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async (input) => {
+        stored = input
+        return input
+      },
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/workflow-catalogue/draft', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      event: 'set',
+      definition: `${GENERIC} quoted ${SECRET}`,
+      author: `author ${SECRET}`,
+      reason: `reason ${SECRET}`,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toMatchObject({
+    definition: `${GENERIC} ${redactSecretShaped(`quoted ${SECRET}`, { precision: 'high' }).text}`,
+    author: redactSecretShaped(`author ${SECRET}`, { precision: 'high' }).text,
+    reason: redactSecretShaped(`reason ${SECRET}`, { precision: 'high' }).text,
+  })
+})
 
 test('task-flow stage list validates combined filters and applies its default limit', async () => {
   const calls: TaskFlowStageListQuery[] = []

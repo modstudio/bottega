@@ -2,6 +2,7 @@
 /** Exposes validated tenant-bound question reads and writes. */
 
 import type { Context, Hono } from 'hono'
+import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import {
   decodeRecordChangeCursor,
   type RecordChangeCursor,
@@ -145,6 +146,11 @@ export function registerRecordQuestionRoutes(
         },
         400,
       )
-    return context.json(await deps.writeQuestion(intent.data, { ...tenant, ...body.data }))
+    return context.json(
+      await deps.writeQuestion(
+        intent.data,
+        maskHostedWrite('record.question.write', { ...tenant, ...body.data }),
+      ),
+    )
   })
 }
