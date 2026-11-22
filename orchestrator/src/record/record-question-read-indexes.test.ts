@@ -7,6 +7,7 @@ import { readRecordQuestionRows } from './record-question-read.ts'
 const spaceId = '01990000-0000-7000-8000-000000006001'
 const userId = '01990000-0000-7000-8000-000000006002'
 const lookupId = '01990000-0000-7000-8000-000000006003'
+const secondSpaceId = '01990000-0000-7000-8000-000000006004'
 
 type QuestionReadInput = Parameters<typeof readRecordQuestionRows>[1]
 type CapturedQuery = { statement: string; parameters: unknown[] }
@@ -24,7 +25,18 @@ let database: PGlite
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
-  await database.exec('SET enable_seqscan=off')
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${secondSpaceId}','Second mirror test','second-mirror-test',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000006005','${secondSpaceId}','${userId}','member','write',now());
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId},${secondSpaceId}',false);
+    SET enable_seqscan=off;
+  `)
 })
 
 afterAll(async () => {
@@ -93,10 +105,15 @@ test('hosted question reads use tenant-table key indexes under RLS', async () =>
   }> = [
     { name: 'for-runs detail', input: { read: 'for-runs', runIds: [lookupId] }, query: 0 },
     {
-      name: 'inbox',
+      name: 'membership inbox',
       input: { read: 'inbox' },
       query: 1,
       driver: { relation: 'run', alias: 'owner' },
+    },
+    {
+      name: 'membership open-for-tasks',
+      input: { read: 'open-for-tasks', taskRecordIds: [lookupId] },
+      query: 0,
     },
     {
       name: 'open-for-cursors',
