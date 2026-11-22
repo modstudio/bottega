@@ -74,6 +74,18 @@ test('task-flow stage list validates combined filters and applies its default li
   })
 })
 
+test('task-flow stage list accepts summary only alongside a real filter', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const summaryOnly = await taskFlowApp(calls).request('/v1/task-flow/stages?view=summary')
+  expect(summaryOnly.status).toBe(400)
+  const filtered = await taskFlowApp(calls).request(
+    `/v1/task-flow/stages?projectId=${PROJECT}&view=summary`,
+  )
+  expect(filtered.status).toBe(200)
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ projectId: PROJECT, view: 'summary' })
+})
+
 test.each(['', '?number=2', '?taskKey=DEV-2234&limit=0', '?taskKey=DEV-2234&limit=1001'])(
   'task-flow stage list refuses invalid query %s with the filter remedy',
   async (query) => {

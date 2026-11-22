@@ -39,6 +39,7 @@ export async function gatherChildTaskFacts(
     project,
     workflowKeys,
     states: [...TASK_FLOW_STAGE_STATES],
+    view: 'summary',
   })) {
     const existing = cursors.get(cursor.workflow_key)
     if (!existing || existing.number < cursor.id)

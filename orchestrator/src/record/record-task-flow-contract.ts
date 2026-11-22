@@ -127,6 +127,11 @@ const hostedTaskFlowStageSummarySchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 })
+export type HostedTaskFlowStageSummary = z.infer<typeof hostedTaskFlowStageSummarySchema>
+
+const hostedTaskFlowStageListItemSchema = hostedTaskFlowStageSummarySchema.extend({
+  closedStepNotes: z.array(z.unknown()).optional(),
+})
 
 const hostedTaskFlowStageBatchSummarySchema = hostedTaskFlowStageSummarySchema.extend({
   obligations: z.array(hostedTaskFlowObligationSchema),
@@ -192,7 +197,7 @@ export type HostedTaskFlowObligationById = z.infer<typeof hostedTaskFlowObligati
 export const hostedTaskFlowStageListSchema = z
   .object({
     items: z.array(
-      z.object({ stage: hostedTaskFlowStageSummarySchema, flow: hostedTaskFlowSummarySchema }),
+      z.object({ stage: hostedTaskFlowStageListItemSchema, flow: hostedTaskFlowSummarySchema }),
     ),
     truncated: z.boolean(),
     nextCursor: z.string().nullable(),
@@ -304,6 +309,7 @@ export const taskFlowStageListQuerySchema = z
     unlinked: trueFlag,
     linked: trueFlag,
     openedMachineId: z.string().uuid().optional(),
+    view: z.enum(['summary']).optional(),
     order: z.enum(['project', 'newest']).default('project'),
     cursor: taskFlowStageListCursor.optional(),
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),

@@ -322,9 +322,16 @@ class SqliteTaskFlowStore {
       clauses.push(`cursor.workflow_key IN (${input.workflowKeys.map(() => '?').join(',')})`)
       values.push(...input.workflowKeys)
     }
+    const columns =
+      input.view === 'summary'
+        ? LISTED_STAGE_COLUMNS.replace('cursor.autonomy', 'NULL autonomy').replace(
+            'cursor.closed',
+            "'[]' closed",
+          )
+        : LISTED_STAGE_COLUMNS
     return this.database
       .query<TaskFlowListedStageRow, string[]>(
-        `SELECT ${LISTED_STAGE_COLUMNS},NULL question_number
+        `SELECT ${columns},NULL question_number
          FROM workflow_cursor cursor WHERE ${clauses.join(' AND ')}
          ORDER BY cursor.updated_at,cursor.number`,
       )

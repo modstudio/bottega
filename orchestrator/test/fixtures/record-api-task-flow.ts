@@ -284,7 +284,11 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         selector.limit ?? 200,
         input.taskFlowPageSize ?? Number.MAX_SAFE_INTEGER,
       )
-      const items = rows.slice(offset, offset + size)
+      const items = rows.slice(offset, offset + size).map((item) => {
+        if (selector.view !== 'summary') return item
+        const { closedStepNotes: _closedStepNotes, autonomy: _autonomy, ...stage } = item.stage
+        return { ...item, stage }
+      })
       const next = offset + items.length
       const last = items.at(-1)
       return {
