@@ -105,6 +105,24 @@ function assertRecordDocUpsert(input: RecordDocWriteInput): void {
   }
 }
 
+function preparedRecordDocWrite(input: RecordDocWriteInput): RecordDocWriteInput {
+  assertRecordDocUpsert(input)
+  return input
+}
+
+function maskConsumedDocBody<T extends { body: string }>(consumed: T): T {
+  consumed.body = maskHostedTableWrite('doc', { body: consumed.body }).body
+  return consumed
+}
+
+function maskRestoredDoc(revision: StoredDocRow, summary: unknown) {
+  return maskHostedTableWrite('doc', {
+    title: String(revision.title),
+    body: String(revision.body),
+    summary,
+  })
+}
+
 function assertImportedRecordDoc(
   doc: ReturnType<typeof normalizeRecordDocImport>['doc'] &
     ReturnType<typeof importedLiveArticleFields>,
@@ -207,8 +225,7 @@ function assertRecordDocUpsertRevision(
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
-  assertRecordDocUpsert(input)
-  input = maskHostedTableWrite('doc', input)
+  input = maskHostedTableWrite('doc', preparedRecordDocWrite(input))
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
@@ -440,10 +457,9 @@ export async function consumeRecordDoc(
     ).map((row: Record<string, unknown>) => String(row.subject_id))
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
-    const masked = maskHostedTableWrite('doc', { body: consumed.body })
-    assertDocSections(masked.body, recordDocAudiences(doc.audiences))
+    assertDocSections(maskConsumedDocBody(consumed).body, recordDocAudiences(doc.audiences))
     await tx`
-      UPDATE doc SET body=${masked.body}, updated_at=${now}::timestamptz
+      UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
     const revisionId = await insertRecordDocRevision(tx, {
@@ -456,7 +472,7 @@ export async function consumeRecordDoc(
       projectId: doc.project_id == null ? null : String(doc.project_id),
       op: 'consume',
       title: String(doc.title),
-      body: masked.body,
+      body: consumed.body,
       delivery: String(doc.delivery) as DocDelivery,
       audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
@@ -529,7 +545,7 @@ export async function restoreRecordDoc(
     } catch (error) {
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
-    const body = String(revision.body)
+    const restored = maskRestoredDoc(revision, restoredArticleFields(revision).summary)
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
@@ -538,7 +554,7 @@ export async function restoreRecordDoc(
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const articleFields = restoredArticleFields(revision)
-    assertRestoredRecordDoc(scope, slug, body, kind, articleFields.form, audiences)
+    assertRestoredRecordDoc(scope, slug, restored.body, kind, articleFields.form, audiences)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -554,24 +570,19 @@ export async function restoreRecordDoc(
         parentWasSpecified: true,
       }),
     )
-    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, body, owner)
+    const facts = await canonFacts(tx, input.spaceId, scope, subject, slug, restored.body, owner)
     assertWrite(facts.canonRefusal)
     assertWrite(
       refuseDocWrite({
         scope,
         subject,
         slug,
-        body,
+        body: restored.body,
         delivery,
         packBytes: 0,
         ...facts,
       }),
     )
-    const restored = maskHostedTableWrite('doc', {
-      title: String(revision.title),
-      body,
-      summary: articleFields.summary,
-    })
     const now = new Date().toISOString()
     await tx`
       UPDATE doc
@@ -592,7 +603,7 @@ export async function restoreRecordDoc(
       projectId: resolvedProjectId ?? revisionProjectId,
       op: 'restore',
       title: String(revision.title),
-      body,
+      body: restored.body,
       delivery,
       audiences,
       parentId,

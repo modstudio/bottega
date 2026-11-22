@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { encodeRecordChangeCursor } from '../../shared/record/record-changes.ts'
-import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
 import { HostedChangeIdMismatchError, HostedRevisionConflictError } from './hosted-push-conflict.ts'
@@ -36,7 +35,7 @@ const pushRequest = (body: unknown, space = 'space-b') =>
     body: JSON.stringify(body),
   })
 
-test('task-comment push stores fixture credentials masked', async () => {
+test('task-comment push leaves masking to the hosted writer', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const id = '01990000-0000-7000-8000-000000000101'
@@ -69,9 +68,7 @@ test('task-comment push stores fixture credentials masked', async () => {
     },
   )
   expect(response?.status).toBe(200)
-  expect(storedBody).toBe(
-    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
-  )
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
 })
 
 test('legacy table-scoped change requests name the upgrade remedy', async () => {

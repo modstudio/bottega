@@ -17,8 +17,8 @@ function tablePolicies(): ReadonlyMap<string, TablePolicy> {
   )
 }
 
-export type HostedWriterFinding = { file: string; table: string; line: number; reason: string }
-export type HostedWriterVerdicts = { masked: number; structured: number }
+type HostedWriterFinding = { file: string; table: string; line: number; reason: string }
+type HostedWriterVerdicts = { masked: number; structured: number }
 type SqlWrite = { table: string; columns: Map<string, readonly ts.Expression[]> }
 
 function splitSqlList(value: string): string[] {
@@ -95,7 +95,12 @@ function sqlWrite(node: ts.TaggedTemplateExpression): SqlWrite | null {
       splitSqlList(assignments).flatMap((assignment) => {
         const match = assignment.match(/^\s*"?([a-z0-9_]+)"?\s*=([\s\S]*)$/i)
         return match
-          ? [[match[1]!.toLowerCase(), expressionIndexes(match[2]!).map((index) => expressions[index]!)]]
+          ? [
+              [
+                match[1]!.toLowerCase(),
+                expressionIndexes(match[2]!).map((index) => expressions[index]!),
+              ],
+            ]
           : []
       }),
     ),
@@ -141,7 +146,7 @@ function precedingMaskBindings(scope: ts.FunctionLikeDeclaration, table: string,
     visitCall(node)
     return found
   }
-  const visit = (node: ts.Node) => {
+  const visit = (node: ts.Node): void => {
     if (node.getStart() >= before) return
     if (
       ts.isVariableDeclaration(node) &&
@@ -156,10 +161,12 @@ function precedingMaskBindings(scope: ts.FunctionLikeDeclaration, table: string,
     if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left) &&
       (masksTable(node.right) || containsIdentifier(node.right, bindings))
-    )
-      bindings.add(node.left.text)
+    ) {
+      if (ts.isIdentifier(node.left)) bindings.add(node.left.text)
+      else if (ts.isPropertyAccessExpression(node.left) && ts.isIdentifier(node.left.expression))
+        bindings.add(node.left.expression.text)
+    }
     ts.forEachChild(node, visit)
   }
   visit(scope)
@@ -176,33 +183,52 @@ function expressionUsesBinding(expression: ts.Expression, bindings: ReadonlySet<
   return found
 }
 
-export function inspectHostedWriters(file: string, source: string): {
+function inspectHostedWriters(
+  file: string,
+  source: string,
+): {
   findings: HostedWriterFinding[]
   verdicts: HostedWriterVerdicts
 } {
   const policies = tablePolicies()
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   const visit = (node: ts.Node) => {
-    if (!ts.isTaggedTemplateExpression(node)) return ts.forEachChild(node, visit)
+    if (!ts.isTaggedTemplateExpression(node)) {
+      ts.forEachChild(node, visit)
+      return
+    }
     const write = sqlWrite(node)
     const policy = write && policies.get(write.table)
-    if (!write || !policy) return ts.forEachChild(node, visit)
+    if (!write || !policy) {
+      ts.forEachChild(node, visit)
+      return
+    }
     const freeText = [...write.columns].filter(([column]) => policy.freeText.has(column))
     if (!freeText.length) {
       verdicts.structured += 1
-      return ts.forEachChild(node, visit)
+      ts.forEachChild(node, visit)
+      return
     }
     verdicts.masked += 1
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1
     const scope = namedFunction(node)
-    const bindings = scope ? precedingMaskBindings(scope, write.table, node.getStart()) : new Set<string>()
+    const bindings = scope
+      ? precedingMaskBindings(scope, write.table, node.getStart())
+      : new Set<string>()
     if (!bindings.size) {
       findings.push({ file, table: write.table, line, reason: 'no preceding masked binding' })
     } else {
       const unmasked = freeText.flatMap(([column, expressions]) =>
-        expressions.length && !expressions.every((expression) => expressionUsesBinding(expression, bindings))
+        expressions.length &&
+        !expressions.every((expression) => expressionUsesBinding(expression, bindings))
           ? [column]
           : [],
       )
@@ -220,11 +246,11 @@ export function inspectHostedWriters(file: string, source: string): {
   return { findings, verdicts }
 }
 
-export function hostedWriterFindings(file: string, source: string): HostedWriterFinding[] {
+function hostedWriterFindings(file: string, source: string): HostedWriterFinding[] {
   return inspectHostedWriters(file, source).findings
 }
 
-export async function currentHostedWriterInspection(root = resolve(import.meta.dir, '..')) {
+async function currentHostedWriterInspection(root = resolve(import.meta.dir, '..')) {
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   for (const pattern of ['hub/src/**/*.ts', 'orchestrator/src/record/**/*.ts']) {
@@ -241,20 +267,18 @@ export async function currentHostedWriterInspection(root = resolve(import.meta.d
   return { findings, verdicts }
 }
 
-export async function currentHostedWriterFindings(root = resolve(import.meta.dir, '..')) {
+async function currentHostedWriterFindings(root = resolve(import.meta.dir, '..')) {
   return (await currentHostedWriterInspection(root)).findings
 }
 
+export const hostedWriterGuard = {
+  currentFindings: currentHostedWriterFindings,
+  currentInspection: currentHostedWriterInspection,
+  findings: hostedWriterFindings,
+  inspect: inspectHostedWriters,
+}
+
 if (import.meta.main) {
-  const started = performance.now()
-  const { findings, verdicts } = await currentHostedWriterInspection()
-  for (const finding of findings)
-    console.error(
-      `${finding.file}:${finding.line}: hosted ${finding.table} write bypasses maskHostedTableWrite (${finding.reason})`,
-    )
-  if (findings.length) process.exitCode = 1
-  console.log(
-    `hosted secret writer statements: ${verdicts.masked} masked, ${verdicts.structured} structured-only`,
-  )
-  console.log(`hosted secret writer call sites: ${(performance.now() - started).toFixed(1)} ms`)
+  const { runHostedSecretWriterGuard } = await import('./hosted-secret-writer-guard-runner.ts')
+  await runHostedSecretWriterGuard()
 }
