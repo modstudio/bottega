@@ -39,9 +39,10 @@ FULL_CONTEXT_POINTER = "Full context: " + CONTEXT_SHOW_COMMAND.format(
 )
 COMPACT_FIRST_ACT = (
     "First act: store each line of the summary's 'Unstored facts and pointers' section "
-    "with `bottega agent context set --kind fact|pointer --source \"compaction {session}\"` "
-    "on the narrowest task, before "
-    "any other work."
+    "with `bottega agent context set --task <KEY> --id <slug> --kind fact --source \"compaction {session}\" '<line>'` "
+    "on the narrowest task, before any other work. Use `--kind pointer` only when the line "
+    "is a single reference; anything else is refused with the accepted forms. A line "
+    "containing a single quote must be escaped for the shell."
 )
 
 
