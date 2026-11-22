@@ -334,7 +334,11 @@ export function incomingRequiredRungGuard(
     entryClosure,
   ).filter((name) => {
     const rung = rungs.find((candidate) => candidate.name === name)
-    return rung?.branch === project.settings.trunk && canDeployRungFromReleaseTree(project, rung)
+    return (
+      rung !== undefined &&
+      rung.branch === project.settings.trunk &&
+      canDeployRungFromReleaseTree(project, rung)
+    )
   })
   const proved = new Map<string, string | null>()
   const contains = new Map<string, boolean>()
