@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { HOSTED_QUEUE_ALLOWLIST, hostedQueueRefusal } from './hosted-queue-decision.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
   discardHostedOutboxEntryCommand,
@@ -61,9 +62,9 @@ const trackerTask = (key: string, category: 'open' | 'active') => ({
   assignee: null,
 })
 
-function queueTransition(key: string, at: string) {
-  observeTrackerTask(trackerTask(key, 'open'), at, [])
-  const event = observeTrackerTask(trackerTask(key, 'active'), at, []).event!.recordId
+async function queueTransition(key: string, at: string) {
+  await observeTrackerTask(trackerTask(key, 'open'), at, [])
+  const event = (await observeTrackerTask(trackerTask(key, 'active'), at, [])).event!.recordId
   writeTransaction((conn) =>
     conn.query(`DELETE FROM hosted_outbox WHERE table_name='hub_task'`).run(),
   )
@@ -73,6 +74,48 @@ function queueTransition(key: string, at: string) {
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('the hosted queue decision refuses unlabeled hosted tables only in hosted mode', () => {
+    expect(
+      hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'hosted-configured' }),
+    ).toContain('sendHostedChanges')
+    expect(
+      hostedQueueRefusal({
+        table: HOSTED_TASK_TABLE,
+        mode: 'hosted-configured',
+        site: 'trackers.retireOutOfScopeTrackerTasks',
+      }),
+    ).toBeNull()
+    expect(
+      hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' }),
+    ).toBeNull()
+  })
+
+  test('every hosted queue exception still labels a queueHostedChange call', () => {
+    const sources = new Map([
+      [
+        'offline-task-edits.queueHostedDocumentDelete',
+        readFileSync(new URL('./offline-task-edits.ts', import.meta.url), 'utf8'),
+      ],
+      [
+        'trackers.retireOutOfScopeTrackerTasks',
+        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+      ],
+      [
+        'trackers.backfillTrackerTasks',
+        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+      ],
+      [
+        'task-push.queueRepairs',
+        readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8'),
+      ],
+    ])
+    for (const entry of HOSTED_QUEUE_ALLOWLIST) {
+      const source = sources.get(entry.site)
+      expect(source).toContain('queueHostedChange(')
+      expect(source).toContain(`'${entry.site}'`)
+    }
+  })
+
   test('direct record tables refuse before inserting while other tables still queue', () => {
     writeTransaction((conn) => {
       expect(() => queueHostedChange(conn, 'hub_note', crypto.randomUUID(), 'upsert')).toThrow(
@@ -89,7 +132,7 @@ describe('hosted outbox', () => {
   })
 
   test('a non-installation store keeps pending rows and sends nothing', async () => {
-    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const previousStateHome = process.env[STATE_HOME_ENV]
     const otherStateHome = mkdtempSync(join(tmpdir(), 'hub-non-installation-'))
     let pushes = 0
@@ -170,13 +213,13 @@ describe('hosted outbox', () => {
     expect(discardHostedOutboxEntryCommand(id)).toEqual([`outbox entry ${id} discarded`])
     expect(listHostedOutbox()).toHaveLength(0)
   })
-  test('a tracker task queues only when its machine row changes', () => {
-    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z', [])
+  test('a tracker task queues only when its machine row changes', async () => {
+    await observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z', [])
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
     writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
-    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:01:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:01:00.000Z', [])
     expect(listHostedOutbox()).toHaveLength(0)
-    observeTrackerTask(
+    await observeTrackerTask(
       { ...trackerTask('FIX-0', 'open'), title: 'changed' },
       '2026-10-11T11:02:00.000Z',
       [],
@@ -184,18 +227,18 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
   })
 
-  test('the status event and pointer commit and roll back together', () => {
-    const committed = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+  test('the status event and pointer commit and roll back together', async () => {
+    const committed = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     expect(listHostedOutbox().map((entry) => entry.row_id)).toEqual([committed])
 
-    observeTrackerTask(trackerTask('FIX-2', 'open'), '2026-10-11T12:01:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-2', 'open'), '2026-10-11T12:01:00.000Z', [])
     writeTransaction((conn) =>
       conn.exec(`CREATE TEMP TRIGGER refuse_outbox BEFORE INSERT ON hosted_outbox
         BEGIN SELECT RAISE(ABORT,'refuse outbox'); END`),
     )
-    expect(() =>
+    await expect(
       observeTrackerTask(trackerTask('FIX-2', 'active'), '2026-10-11T12:02:00.000Z', []),
-    ).toThrow('refuse outbox')
+    ).rejects.toThrow('refuse outbox')
     expect(
       db()
         .query<{ count: number }, []>(
@@ -231,8 +274,8 @@ describe('hosted outbox', () => {
   })
 
   test('upsert then delete sends only the delete and still delivers an unrelated entry', async () => {
-    const replacedId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
-    const unrelatedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    const replacedId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const unrelatedId = await queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
     writeTransaction((conn) =>
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'delete'),
     )
@@ -257,8 +300,8 @@ describe('hosted outbox', () => {
   })
 
   test('delete then upsert sends only the current row and still delivers an unrelated entry', async () => {
-    const replacedId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
-    const unrelatedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    const replacedId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const unrelatedId = await queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
     writeTransaction((conn) => {
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'delete')
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'upsert')
@@ -283,8 +326,8 @@ describe('hosted outbox', () => {
   })
 
   test('sends current state, accepts success, and continues after rejection', async () => {
-    const rejectedId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
-    const appliedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    const rejectedId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const appliedId = await queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
     writeTransaction((conn) =>
       conn
         .query(`UPDATE task_status_event SET from_status='current' WHERE record_id=?`)
@@ -314,7 +357,7 @@ describe('hosted outbox', () => {
   })
 
   test('duplicate marks sent and repeated rejection quarantines', async () => {
-    const duplicateId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const duplicateId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     await drainHostedOutbox({
       identity: async () => identity,
       registered: () => [project],
@@ -322,7 +365,7 @@ describe('hosted outbox', () => {
     })
     expect(listHostedOutbox()).toHaveLength(0)
 
-    const rejectedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    const rejectedId = await queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
     const reject = async (): Promise<HostedPushOutcome[]> => [
       { id: rejectedId, status: 'rejected', reason: 'invalid' },
     ]
@@ -347,7 +390,7 @@ describe('hosted outbox', () => {
   })
 
   test('request failure and absent capability leave the entry untouched', async () => {
-    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     await drainHostedOutbox({
       identity: async () => identity,
       registered: () => [project],
@@ -367,7 +410,7 @@ describe('hosted outbox', () => {
   })
 
   test('two drains do not overlap and an expired outbox lease is taken over', async () => {
-    const eventId = queueTransition('FIX-LOCK', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-LOCK', '2026-10-11T12:00:00.000Z')
     let releaseFirst!: () => void
     const firstCanFinish = new Promise<void>((resolve) => {
       releaseFirst = resolve
@@ -403,7 +446,7 @@ describe('hosted outbox', () => {
     releaseFirst()
     await first
 
-    const takeoverId = queueTransition('FIX-TAKEOVER', '2026-10-11T12:01:00.000Z')
+    const takeoverId = await queueTransition('FIX-TAKEOVER', '2026-10-11T12:01:00.000Z')
     writeTransaction((conn) =>
       conn
         .query(`INSERT OR REPLACE INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
@@ -419,7 +462,7 @@ describe('hosted outbox', () => {
   })
 
   test('a lease lost while a push is in flight traces delivery and leaves the generation queued', async () => {
-    const eventId = queueTransition('FIX-LOST', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-LOST', '2026-10-11T12:00:00.000Z')
     const first = await drainHostedOutbox({
       identity: async () => identity,
       registered: () => [project],
@@ -462,7 +505,7 @@ describe('hosted outbox', () => {
   })
 
   test('an older hosted hub sends supported task rows and waits on evidence tables', async () => {
-    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const intervalId = '01990000-0000-7000-8000-000000009001'
     const dayId = '01990000-0000-7000-8000-000000009002'
     writeTransaction((conn) => {
@@ -507,7 +550,7 @@ describe('hosted outbox', () => {
   })
 
   test('an unroutable entry records its wait without attempts and clears it when routing resolves', async () => {
-    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     let registered: (typeof project)[] = []
     const waiting = await drainHostedOutbox({
       identity: async () => identity,
@@ -541,8 +584,8 @@ describe('hosted outbox', () => {
   })
 
   test('listing summarizes each blocked project with its count and oldest row', async () => {
-    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
-    queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    await queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
     await drainHostedOutbox({
       identity: async () => identity,
       registered: () => [],
@@ -566,7 +609,7 @@ describe('hosted outbox', () => {
   })
 
   test('an acknowledgement completes only the generation that was sent', async () => {
-    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const seen: Array<string | null> = []
     let first = true
     const push = async (changes: HostedPushChange[]) => {
@@ -605,7 +648,7 @@ describe('hosted outbox', () => {
   })
 
   test('an acknowledgement for an old operation leaves the replacement queued', async () => {
-    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     writeTransaction((conn) =>
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, eventId, 'delete'),
     )
@@ -649,7 +692,7 @@ describe('hosted outbox', () => {
   })
 
   test('routes a queued transition using the project declaration at drain time', async () => {
-    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const eventId = await queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const destinations: string[] = []
     await drainHostedOutbox({
       identity: async () => ({
@@ -669,8 +712,8 @@ describe('hosted outbox', () => {
   })
 
   test('orders a parent task before its task children and status event', async () => {
-    observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z', [])
-    observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z', [])
     const parentId = db()
       .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-10'`)
       .get()!.record_id
@@ -700,7 +743,7 @@ describe('hosted outbox', () => {
       queueHostedChange(conn, 'hub_task_comment', commentId, 'upsert')
       queueHostedChange(conn, 'hub_task_document', documentId, 'upsert')
     })
-    observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z', [])
     const sent: HostedPushChange[] = []
     await drainHostedOutbox({
       identity: async () => identity,
@@ -727,7 +770,7 @@ describe('hosted outbox', () => {
   })
 
   test('adopts the hosted task id in the transaction that completes its entry', async () => {
-    observeTrackerTask(trackerTask('FIX-20', 'open'), '2026-10-11T12:00:00.000Z', [])
+    await observeTrackerTask(trackerTask('FIX-20', 'open'), '2026-10-11T12:00:00.000Z', [])
     const oldId = listHostedOutbox()[0]!.row_id
     const adoptedId = '01990000-0000-7000-8000-000000000020'
     const report = await drainHostedOutbox({
@@ -739,6 +782,26 @@ describe('hosted outbox', () => {
     expect(
       db().query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-20'`).get(),
     ).toEqual({ record_id: adoptedId })
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+})
+
+describe('hosted queue adapter guard', () => {
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+  beforeEach(() => {
+    process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+  })
+  afterEach(() => {
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
+  })
+
+  test('queueHostedChange refuses a hosted table before inserting it', () => {
+    expect(() =>
+      writeTransaction((conn) =>
+        queueHostedChange(conn, HOSTED_TASK_TABLE, crypto.randomUUID(), 'upsert'),
+      ),
+    ).toThrow('cannot be queued in hosted-configured mode')
     expect(listHostedOutbox()).toHaveLength(0)
   })
 })

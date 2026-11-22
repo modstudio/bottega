@@ -94,7 +94,15 @@ function reportHostedEditDelivery(result: HostedEditDelivery): void {
 }
 
 export function queueHostedDocumentDelete(conn: Database, id: string, project: string, at: string) {
-  queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete', at)
+  queueHostedChange(
+    conn,
+    HOSTED_DOCUMENT_TABLE,
+    id,
+    'delete',
+    at,
+    null,
+    'offline-task-edits.queueHostedDocumentDelete',
+  )
   conn
     .query(
       `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,

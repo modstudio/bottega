@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ToolCaller } from '../../../shared/tracker-list-scope.ts'
 import { TrackerLookupUnverifiable } from '../../../shared/tracker-task-text.ts'
@@ -11,14 +12,22 @@ import {
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
+import { sendHostedChanges } from '../hosted-change-sender.ts'
+import { resolveHostedUrl } from '../hosted-url.ts'
+import { hostedWriteMode } from '../hosted-write-mode.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { queueHostedChange } from '../outbox.ts'
+import { loadOutboxChange } from '../outbox-row.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
 import { reconcileParentRecordId, resolveParentRecordId } from '../task-cache.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
+import {
+  hostedTaskChangeSendOptions,
+  type HostedTaskWriteOptions,
+} from '../task-write-destination.ts'
 import {
   TRACKER_SINCE_OVERLAP_MS,
   type TrackerReadMode,
@@ -507,6 +516,8 @@ export type TrackerTaskObservation = {
   } | null
 }
 
+type ObservedTrackerTaskOptions = HostedTaskWriteOptions & { recordSpace?: string }
+
 type CachedTrackerTaskObservation = TrackerTaskObservation & {
   times: TrackerObservationTimes
   changed: boolean
@@ -518,6 +529,7 @@ function observeTrackerTaskOn(
   conn: Database,
   task: TrackerTask,
   at: string,
+  queue: boolean,
 ): CachedTrackerTaskObservation {
   const { stored, times, changed, ambiguousParentKeys } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
@@ -531,6 +543,7 @@ function observeTrackerTaskOn(
   const taskRecordId = observed?.source === 'local' ? null : (observed?.record_id ?? null)
   const taskKey = observed?.key ?? task.key
   if (
+    queue &&
     taskRecordId &&
     collectorTaskShouldQueue('mcp', observed, changed || stored?.updated_at === null)
   )
@@ -548,7 +561,8 @@ function observeTrackerTaskOn(
     .run(recordId, task.key, taskRecordId!, at, was, task.category, null, null, null, null)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
-  if (event) queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, event.recordId, 'upsert', at)
+  if (queue && event)
+    queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, event.recordId, 'upsert', at)
   return {
     at,
     taskRecordId,
@@ -560,22 +574,70 @@ function observeTrackerTaskOn(
   }
 }
 
-export function observeTrackerTask(
+export async function sendObservedTrackerTask(
+  observation: TrackerTaskObservation,
+  options?: ObservedTrackerTaskOptions,
+): Promise<void> {
+  if (!observation.taskRecordId) return
+  const pointers = [
+    {
+      table_name: HOSTED_TASK_TABLE,
+      row_id: observation.taskRecordId,
+      operation: 'upsert' as const,
+    },
+    ...(observation.event
+      ? [
+          {
+            table_name: HOSTED_STATUS_EVENT_TABLE,
+            row_id: observation.event.recordId,
+            operation: 'upsert' as const,
+          },
+        ]
+      : []),
+  ]
+  const loaded = pointers.map((pointer) => loadOutboxChange(db(), pointer))
+  const missing = loaded.findIndex((change) => change === null)
+  if (missing !== -1)
+    throw new Error(
+      `could not load ${pointers[missing]!.table_name} ${pointers[missing]!.row_id} for direct tracker observation`,
+    )
+  const changes = loaded.map((change) => change!.change)
+  const project = loaded[0]!.projectName
+  if (!project) throw new Error(`could not resolve project for tracker task ${observation.taskKey}`)
+  const { recordSpace, ...hostedOptions } = options ?? {}
+  await sendHostedChanges(
+    'the record',
+    [changes],
+    recordSpace
+      ? {
+          ...hostedOptions,
+          recordSpace,
+          conflictRemedy: `${PLATFORM_SLUG} task show ${observation.taskKey}`,
+        }
+      : hostedTaskChangeSendOptions(observation.taskKey, project, hostedOptions),
+  )
+}
+
+export async function observeTrackerTask(
   task: TrackerTask,
   at = nowIso(),
   prefixes: readonly string[],
-): TrackerTaskObservation {
+  options?: ObservedTrackerTaskOptions,
+): Promise<TrackerTaskObservation> {
   if (!trackerKeyInScope(task.key, prefixes)) {
     return { at, taskRecordId: null, taskKey: task.key, event: null }
   }
-  return writeTransaction((conn) => {
+  const hosted = hostedWriteMode(options?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
+  const observation = writeTransaction((conn) => {
     const {
       times: _times,
       changed: _changed,
       ...observation
-    } = observeTrackerTaskOn(conn, task, at)
+    } = observeTrackerTaskOn(conn, task, at, !hosted)
     return observation
   })
+  if (hosted) await sendObservedTrackerTask(observation, options)
+  return observation
 }
 
 export async function fetchTrackerTasks(
@@ -636,10 +698,11 @@ export function writeTrackerCache(
   prefixes: readonly string[],
 ): TrackerCacheObservation[] {
   const observations: TrackerCacheObservation[] = []
+  const queue = hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured'
   writeTransaction((conn) => {
     for (const task of tasks) {
       if (!trackerKeyInScope(task.key, prefixes)) continue
-      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at) })
+      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at, queue) })
     }
   })
   return observations
@@ -703,7 +766,15 @@ export function retireOutOfScopeTrackerTasks(
         `out of scope: key prefix ${prefix} is not among ${project}'s declared key prefixes ` +
         prefixes.join(', ')
       if (update.run(at, reason, row.record_id).changes === 0) continue
-      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at)
+      queueHostedChange(
+        conn,
+        HOSTED_TASK_TABLE,
+        row.record_id,
+        'upsert',
+        at,
+        null,
+        'trackers.retireOutOfScopeTrackerTasks',
+      )
       retired++
     }
     return retired
@@ -716,9 +787,16 @@ export function dropDeletedTrackerTasks(
   keys: Iterable<string>,
   at: string,
   prefixes: readonly string[],
-): { dropped: number; activity: boolean; changed: number } {
+): {
+  dropped: number
+  activity: boolean
+  changed: number
+  observations: TrackerTaskObservation[]
+} {
   let dropped = 0
   let changed = 0
+  const observations: TrackerTaskObservation[] = []
+  const queue = hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured'
   writeTransaction((conn) => {
     const read = conn.query<TrackerIdentityRow, [string, string]>(
       `SELECT ${TRACKER_IDENTITY_COLUMNS} FROM task
@@ -745,13 +823,15 @@ export function dropDeletedTrackerTasks(
           assignee: row.assignee,
         },
         at,
+        queue,
       )
+      observations.push(observation)
       restoreLifecycle.run(row.opened_at, row.closed_at ?? at, row.record_id)
       dropped++
       if (observation.event) changed++
     }
   })
-  return { dropped, activity: dropped > 0, changed }
+  return { dropped, activity: dropped > 0, changed, observations }
 }
 
 async function backfillTrackerTasks(
@@ -781,7 +861,15 @@ async function backfillTrackerTasks(
             result.changed || result.stored?.updated_at === null,
           )
         )
-          queueHostedChange(conn, HOSTED_TASK_TABLE, stored.record_id, 'upsert', at)
+          queueHostedChange(
+            conn,
+            HOSTED_TASK_TABLE,
+            stored.record_id,
+            'upsert',
+            at,
+            null,
+            'trackers.backfillTrackerTasks',
+          )
         return result
       })
       filled++
@@ -910,8 +998,14 @@ export async function ingestTrackers(
             // transition that did not happen. Last wins: the lookup is the fresher read.
             const unique = scopedTrackerTasks(fetched.tasks, prefixes)
             const observations = writeTrackerCache(unique.values(), at, prefixes)
+            if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
+              for (const { observation } of observations)
+                await sendObservedTrackerTask(observation)
             const retired = retireOutOfScopeTrackerTasks(s.project, prefixes, at)
             const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
+            if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
+              for (const observation of deletions.observations)
+                await sendObservedTrackerTask(observation)
             let activity =
               deletions.activity || observations.some(({ observation }) => observation.changed)
             const changed =

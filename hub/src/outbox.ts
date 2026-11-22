@@ -3,9 +3,12 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
+import { hostedQueueRefusal } from './hosted-queue-decision.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
+import { hostedWriteMode } from './hosted-write-mode.ts'
 import { type OutboxProcessKind, recordOutboxTrace } from './outbox-trace.ts'
 import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
@@ -140,9 +143,12 @@ export function queueHostedChange(
   operation: 'upsert' | 'delete',
   queuedAt = nowIso(),
   fields: readonly string[] | null = null,
+  site?: string,
 ) {
   if (DIRECT_RECORD_TABLES.has(table))
     throw new Error(`${table} writes go through sendHostedChanges and cannot be queued`)
+  const refusal = hostedQueueRefusal({ table, mode: hostedWriteMode(resolveHostedUrl()), site })
+  if (refusal) throw new Error(refusal)
   const prior = conn
     .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
       `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,
