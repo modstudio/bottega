@@ -128,6 +128,23 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
+function observeDisposalContentLanded(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  branchTip: string | null,
+): boolean {
+  const trunk = project.settings.trunk?.trim() ?? ''
+  if (!branchTip || !trunk) return false
+  try {
+    return taskBranchContentLanded({
+      cwd: project.path,
+      trunkTip: resolveLandingTrunkTip(trunk, (args) => git(project.path, args)),
+      branchTip,
+    })
+  } catch {
+    return false
+  }
+}
+
 export function composeBranchDisposalRefusal(input: {
   reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
   project: string
@@ -197,19 +214,7 @@ async function planBranchDisposal(input: {
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
   const systemJobMinted = runMinted && mintingRuns.every((run) => isSystemLifecycleJob(run.job))
-  const trunk = project.settings.trunk?.trim() ?? ''
-  let contentLanded = false
-  if (row && trunk) {
-    try {
-      contentLanded = taskBranchContentLanded({
-        cwd: project.path,
-        trunkTip: resolveLandingTrunkTip(trunk, (args) => git(project.path, args)),
-        branchTip: row.tip,
-      })
-    } catch {
-      contentLanded = false
-    }
-  }
+  const contentLanded = observeDisposalContentLanded(project, row?.tip ?? null)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,

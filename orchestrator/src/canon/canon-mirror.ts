@@ -37,10 +37,7 @@ import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-curso
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
-import {
-  canonMirrorBranchName,
-  CANON_MIRROR_JOB,
-} from '../run/synthetic-lifecycle-job.ts'
+import { CANON_MIRROR_JOB, canonMirrorBranchName } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'

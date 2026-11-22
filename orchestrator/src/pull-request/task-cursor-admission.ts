@@ -9,10 +9,7 @@ import { classifyCaller, resolveCallerIdentity } from '../caller-classification.
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-import {
-  canonMirrorBranchName,
-  isSystemLifecycleJob,
-} from '../run/synthetic-lifecycle-job.ts'
+import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 
 type HeldTaskCursor = {
