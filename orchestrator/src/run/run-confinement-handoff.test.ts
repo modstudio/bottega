@@ -38,6 +38,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
       if (input.callerCwd !== caller) return originalClaimRun(input)
       const id = newRecordId()
       const started = Date.now()
+      const runProjectRecordId = input.rowProjectId(null)
       db()
         .query(
           `INSERT INTO run
@@ -51,7 +52,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
           Buffer.byteLength(input.prompt),
           input.callerCwd,
           input.runProjectName,
-          input.runProjectId,
+          runProjectRecordId,
         )
       const promptPath = join(input.callerCwd, '.fixture-prompt.md')
       return {
@@ -62,6 +63,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         schemaPath: undefined,
         started,
         launchKey: null,
+        runProjectRecordId,
         runToken: 'fixture-token',
         claim: { id, recordId: id, number: 1, parentRunRecordId: null },
         keepTree: undefined,

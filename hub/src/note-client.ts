@@ -1,6 +1,8 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { processMemo } from '../../shared/process-memo.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import {
@@ -24,6 +26,29 @@ const REMEDY = MISSING_HOSTED_URL_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
 export type NoteWriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
+type NoteIdentity = Awaited<ReturnType<typeof hostedTaskIdentity>>
+type NoteIdentityMemo = ReturnType<typeof processMemo<NoteIdentity>>
+const defaultIdentityMemos = new Map<string, NoteIdentityMemo>()
+const transportIdentityMemos = new WeakMap<NoteFetch, Map<string, NoteIdentityMemo>>()
+
+function noteIdentity(options: Options = {}): Promise<NoteIdentity> {
+  const memos = options.fetch
+    ? (transportIdentityMemos.get(options.fetch) ??
+      (() => {
+        const created = new Map<string, NoteIdentityMemo>()
+        transportIdentityMemos.set(options.fetch!, created)
+        return created
+      })())
+    : defaultIdentityMemos
+  const key = JSON.stringify([options.baseUrl ?? null, options.token ?? null])
+  const existing = memos.get(key)
+  if (existing) return existing.get()
+  const created = processMemo(() => hostedTaskIdentity(options), {
+    maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+  })
+  memos.set(key, created)
+  return created.get()
+}
 class HostedNoteRequestError extends Error {
   readonly status: number
   constructor(status: number, message: string) {
@@ -57,7 +82,7 @@ async function requestValue<T>(url: string, response: Response, safety: HostedRe
 
 function requestSetup(options: Options) {
   if (options.recordSpace) {
-    return hostedTaskIdentity(options).then((identity) => {
+    return noteIdentity(options).then((identity) => {
       if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
     })
   }
@@ -112,7 +137,7 @@ async function writeRequest<T>(
   return requestValue<T>(url, response, safety)
 }
 async function assertNoteCapabilities(options?: Options) {
-  const identity = await hostedTaskIdentity(options)
+  const identity = await noteIdentity(options)
   assertProjectNoteCounters(identity)
 }
 export const hostedCreateNote = async (body: unknown, options: NoteWriteOptions) => {
@@ -132,7 +157,7 @@ export const hostedPromoteNote = (
     'non-idempotent',
   )
 export const hostedReapNotes = async (body: unknown, options: NoteWriteOptions) => {
-  const identity = await hostedTaskIdentity(options)
+  const identity = await noteIdentity(options)
   assertNoteTriageStaleness(identity)
   return writeRequest<{
     marked: number
@@ -167,8 +192,41 @@ export const hostedMirrorNotes = async (body: unknown, options: NoteWriteOptions
 }
 export const hostedNoteCounts = (options?: Options) =>
   request<{ note: number; note_acknowledgement: number }>('/v1/notes/counts', options)
+const normalizeHostedNote = (row: HostedNote & { project_id?: string | null }): HostedNote => ({
+  ...row,
+  projectId: row.projectId ?? row.project_id ?? null,
+})
 export const hostedGetNote = (recordId: string, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${recordId}`, options)
+  request<HostedNote & { project_id?: string | null }>(`/v1/notes/${recordId}`, options).then(
+    normalizeHostedNote,
+  )
+export async function hostedListNotes(
+  filters: { project?: string; stale?: boolean; actionable?: boolean },
+  options?: Options,
+) {
+  await noteIdentity(options)
+  const query = new URLSearchParams()
+  if (filters.project) query.set('project', filters.project)
+  if (filters.stale !== undefined) query.set('stale', String(filters.stale))
+  if (filters.actionable !== undefined) query.set('actionable', String(filters.actionable))
+  const notes: HostedNote[] = []
+  const acknowledgements: HostedAcknowledgement[] = []
+  let cursor: string | undefined
+  for (;;) {
+    const pageQuery = new URLSearchParams(query)
+    if (cursor) pageQuery.set('cursor', cursor)
+    const page = await request<{
+      notes: HostedNote[]
+      acknowledgements: HostedAcknowledgement[]
+      cursor: string
+      more?: boolean
+    }>(`/v1/notes?${pageQuery}`, options)
+    notes.push(...page.notes.map(normalizeHostedNote))
+    acknowledgements.push(...page.acknowledgements)
+    if (!page.more) return { notes, acknowledgements }
+    cursor = page.cursor
+  }
+}
 export type OutsideNote = {
   id: string
   number: number

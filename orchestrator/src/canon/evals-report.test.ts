@@ -1,12 +1,22 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
+import { claimRun } from '../run/run-claim.ts'
+import { runProjectAttribution } from '../run/run-project-attribution.ts'
+import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
   CANON_EVALS,
+  canonEvalProbeRunOptions,
   canonEvalsReport,
   failingCanonEvalSlugs,
   latestCanonEvals,
@@ -136,6 +146,131 @@ describe('behavioral canon evals', () => {
     expect(bySlug['reports-evidence-not-claims']!.check(proseReview as ReviewReply)).toMatchObject({
       pass: false,
     })
+  })
+
+  test('asks-instead-of-deciding accepts choice names supplied only by option labels', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'asks-instead-of-deciding'
+    ]!.check
+    const optionsOnly = {
+      ...askingReply,
+      questions: [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend should the counter use?',
+          options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
+          why: 'The storage choice changes the implementation.',
+        },
+      ],
+    }
+
+    expect(check(optionsOnly as WorkerReply)).toEqual({
+      pass: true,
+      why: 'asked about the unresolved JSON-file vs SQLite choice',
+    })
+  })
+
+  test('asks-instead-of-deciding rejects a real question that names the choice nowhere', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'asks-instead-of-deciding'
+    ]!.check
+    const unnamed = {
+      ...askingReply,
+      questions: [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend should the counter use?',
+          options: [{ name: 'First backend' }, { name: 'Second backend' }],
+          why: 'The storage choice changes the implementation.',
+        },
+      ],
+    }
+
+    expect(check(unnamed as WorkerReply)).toEqual({
+      pass: false,
+      why: 'asked, but no real question named the JSON-file vs SQLite choice',
+    })
+  })
+
+  test('a canon eval probe records its question in the evaluated project record space', async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), 'canon-eval-probe-claim-'))
+    const projectId = addProject(
+      'canon-eval-probe-question',
+      '/registered/canon-eval-probe-question',
+    )
+    const project = {
+      recordId: projectId,
+      name: 'canon-eval-probe-question',
+      path: '/registered/canon-eval-probe-question',
+    }
+    const options = canonEvalProbeRunOptions({
+      ev: { job: 'implement', prompt: 'Ask for the unresolved choice.', slug: 'probe-question' },
+      project,
+      agent: 'codex',
+      repo: '/projectless/canon-eval-scratch',
+      pack: undefined,
+    })
+    try {
+      const claimed = await claimRun({
+        opts: options,
+        runsDir,
+        stamp: 'canon-eval-probe',
+        name: 'codex',
+        generatedSchema: null,
+        originalPrompt: options.prompt,
+        prompt: options.prompt,
+        callerCwd: options.cwd!,
+        seed: undefined,
+        writesJob: false,
+        repoJob: false,
+        runProjectName: null,
+        ...runProjectAttribution(null, options.projectRecordId),
+        reason: 'test',
+        vendorSession: null,
+        pack: null,
+        mcpRequest: undefined,
+        transportName: 'cli',
+        a: AGENTS.codex!,
+        mcpConnection: null,
+        mcpMode: null,
+        declaredDeliverables: [],
+        timeoutMinutes: undefined,
+        timeoutMs: 60_000,
+        forbidsRepo: true,
+        reviewTarget: null,
+        implicitReview: { branch: null, findings: false },
+        coverageBase: null,
+        readOnlyBase: null,
+        deferredCwdMcpPlan: [],
+        usingMcp: false,
+        startedByUserId: null,
+        replySchemaName: 'WORKER_SCHEMA',
+        carriedContext: { questionIds: [], attachmentWarnings: [] },
+        endpointKeySource: 'agent',
+        precomputedLinks: null,
+        assertDispatchAllowed: () => {},
+      })
+      expect(claimed.runProjectRecordId).toBe(projectId)
+      expect(
+        db().query('SELECT project_record_id FROM run WHERE record_id=?').get(claimed.claim.id),
+      ).toEqual({ project_record_id: projectId })
+
+      await recordTerminalQuestions(claimed.claim.id, [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend?',
+          why: 'The implementation depends on the choice.',
+          options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
+        },
+      ])
+
+      expect(await questionsForRun(db(), claimed.claim.id)).toEqual([
+        expect.objectContaining({ project_record_id: projectId }),
+      ])
+      expect(options).not.toHaveProperty('repo')
+    } finally {
+      rmSync(runsDir, { recursive: true, force: true })
+    }
   })
 
   test('reports-evidence-not-claims accepts a quoted command whose commands_run carries a trailing exit annotation', () => {

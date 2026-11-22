@@ -43,6 +43,7 @@ export type HostedNote = {
   hidden_at?: string | null
   hidden_by_user_id?: string | null
   hidden_reason?: string | null
+  revision?: number | string
 }
 export type HostedAcknowledgement = {
   id: string
@@ -73,7 +74,7 @@ export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: 
     identity,
     async (tx) =>
       rows<HostedNote>(
-        await tx`SELECT hub_note.*,number::int number FROM hub_note
+        await tx`SELECT hub_note.*,number::int number,revision::int revision FROM hub_note
     WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid AND deleted_at IS NULL`,
       )[0] ?? null,
   )
@@ -141,7 +142,7 @@ export async function createHostedNote(
       )
     if (input.sameAs) {
       const current = rows<HostedNote>(
-        await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number
+        await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number,revision::int revision
         FROM hub_note WHERE space_id=${identity.spaceId}::uuid
         AND id=${input.sameAs}::uuid AND deleted_at IS NULL FOR UPDATE`,
       )[0]
@@ -153,7 +154,7 @@ export async function createHostedNote(
         await tx`UPDATE hub_note SET anchors=${anchors},sightings=sightings+1,
         last_seen_at=now(),stale_at=NULL,stale_reason=NULL,updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND project_id=${input.projectId}::uuid
-        AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
+        AND id=${input.sameAs}::uuid RETURNING *,number::int number,revision::int revision`,
       )[0]!
     }
     const project = rows<{ id: string }>(
@@ -177,7 +178,7 @@ export async function createHostedNote(
       await tx`INSERT INTO hub_note
       (id,space_id,project_name,project_id,author_user_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${identity.userId}::uuid,${number},${input.project},
-      ${input.text},${input.area ?? null},${`[${input.anchor}]`},1,now(),now(),now()) RETURNING *,number::int number`,
+      ${input.text},${input.area ?? null},${`[${input.anchor}]`},1,now(),now(),now()) RETURNING *,number::int number,revision::int revision`,
     )[0]!
   })
 }
@@ -191,7 +192,7 @@ export async function promoteHostedNote(
 ): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
   return withHostedTenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
-      await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+      await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number,revision::int revision FROM hub_note WHERE space_id=${identity.spaceId}::uuid
       AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!note) return null
@@ -251,7 +252,7 @@ export async function promoteHostedNote(
     }
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number,revision::int revision`,
     )[0]!
     return { note: promoted, task, comment }
   })

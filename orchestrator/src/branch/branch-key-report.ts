@@ -2,6 +2,7 @@
 /** Builds one task key's run-branch report from gathered repository facts. */
 
 import type { Project } from '../project/projects.ts'
+import { isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { decideBranchContainment } from './branch-containment.ts'
 import { observeBranchLandingProof } from './branch-proof-observer.ts'
 import {
@@ -31,6 +32,7 @@ export type BranchReportRun = {
   launch_base: string | null
   status: string
   probe: number
+  job: string
 }
 
 export type BranchReportRow = BranchStateDecision & {
@@ -40,6 +42,7 @@ export type BranchReportRow = BranchStateDecision & {
   checkedOut: boolean
   liveRun: boolean
   probeOnly: boolean
+  systemJobMinted: boolean
   runIds: number[]
 }
 
@@ -209,6 +212,7 @@ export function branchKeyReport(input: Input): { key: string; branches: BranchRe
     checkedOut: input.checkedOut.has(branch),
     liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
     probeOnly: isProbeOnlyMint(branchRuns.map((run) => run.probe === 1)),
+    systemJobMinted: branchRuns.every((run) => isSystemLifecycleJob(run.job)),
     runIds: branchRuns.map((run) => run.number),
     recordedLanding: findRecordedBranchLanding(input.recordedLandings, input.project.name, branch),
     superseded: isTaskBranchSuperseded(branch, keyRows),

@@ -166,6 +166,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
         freshness?.trackerRead
           ? {
               ...shown,
+              tracker_updated_at: freshness.trackerUpdatedAt,
               tracker_comments_verifiable: freshness.commentsVerifiable,
               tracker_comment_ids: freshness.commentIds,
             }
@@ -466,8 +467,11 @@ function registerTaskLifecycleCommands(task: Command): void {
     })
   task
     .command('push')
-    .description('audit hosted identity sets; --repair queues missing machine rows')
-    .option('--repair', 'queue machine task rows missing from the hosted record')
+    .description('audit hosted identity sets; --repair writes missing machine rows to the record')
+    .option(
+      '--repair',
+      'write machine rows missing from the hosted record (hosted task tables directly, synced tables through the outbox)',
+    )
     .option('--json', 'write the audit report as JSON')
     .action(async (_options, command) => {
       open()

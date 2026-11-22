@@ -20,6 +20,7 @@ const args = { key: 'DEV-1422' }
 const testPorts = {
   readTask: (key: string) => ({
     key,
+    updatedAt: null,
     status: 'done' as const,
     statusCategory: 'done' as const,
     commentIds: [],

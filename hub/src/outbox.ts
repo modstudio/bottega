@@ -3,6 +3,9 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
+import { hostedQueueRefusal } from './hosted-queue-decision.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
+import { hostedWriteMode } from './hosted-write-mode.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
@@ -15,6 +18,7 @@ import {
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -30,7 +34,7 @@ import {
   type RegisteredTaskSpace,
 } from './task-project-space.ts'
 
-const HOSTED_OUTBOX_BATCH_SIZE = 500
+export const HOSTED_OUTBOX_BATCH_SIZE = 500
 const HOSTED_OUTBOX_LEASE_MS = 60_000
 const HOSTED_OUTBOX_LEASE_RENEW_MS = 20_000
 const HOSTED_OUTBOX_LEASE_KEY = 'hosted-outbox.lease'
@@ -53,6 +57,11 @@ export type OutboxEntry = {
   fields: string | null
   kept_values: string | null
 }
+
+const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+  HOSTED_NOTE_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+])
 
 export function mergeQueuedHostedChange(
   prior: {
@@ -134,7 +143,12 @@ export function queueHostedChange(
   operation: 'upsert' | 'delete',
   queuedAt = nowIso(),
   fields: readonly string[] | null = null,
+  site?: string,
 ) {
+  if (DIRECT_RECORD_TABLES.has(table))
+    throw new Error(`${table} writes go through sendHostedChanges and cannot be queued`)
+  const refusal = hostedQueueRefusal({ table, mode: hostedWriteMode(resolveHostedUrl()), site })
+  if (refusal) throw new Error(refusal)
   const prior = conn
     .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
       `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,

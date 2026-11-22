@@ -50,6 +50,7 @@ import {
   flagForFloor,
   floorGuidance,
   floorsAcceptCommandArtifact,
+  floorsIncludeTrackerTransition,
   githubPullRequestUrlIn,
   hasGateFloor,
   parseArtifactRef,
@@ -73,11 +74,7 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
-import { resolveTaskCommentArtifact } from './workflow-floor-task-comment-evidence.ts'
-import {
-  artifactTaskIsNotCursorTask,
-  resolveTaskDocumentArtifact,
-} from './workflow-floor-task-document-evidence.ts'
+import { resolveTaskArtifact } from './workflow-floor-task-artifact-evidence.ts'
 import { readHubTask, readHubTaskDocument } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
@@ -499,25 +496,6 @@ async function resolveNumericArtifact(
   throw new Error(`--artifact ${id} is not a recorded run`)
 }
 
-async function resolveTaskArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' | 'task-document' }>,
-  raw: string,
-  identity: CursorIdentity,
-  ports: FloorEvidencePorts,
-): Promise<ArtifactEvidence> {
-  if (ref.kind === 'task-document')
-    return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
-  if (!ports.readTask)
-    throw new Error(
-      `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
-    )
-  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
-  if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
-    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
-  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)
-}
-
 async function resolveStoredArtifact(
   ref: Extract<ArtifactRef, { kind: 'attached-text' | 'doc' | 'review-read' }>,
   identity: CursorIdentity,
@@ -568,6 +546,7 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
   requireCommandCheckout: boolean,
+  hasTrackerTransitionFloor: boolean,
 ): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
@@ -622,7 +601,7 @@ async function resolveArtifact(
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
-  return await resolveTaskArtifact(ref, raw, identity, ports)
+  return await resolveTaskArtifact(ref, raw, identity, ports, hasTrackerTransitionFloor)
 }
 
 function gatherTask(
@@ -963,6 +942,7 @@ async function gatherArtifactEntry(
           resolveCheckout,
           gathered.tree!.commit,
           floorsAcceptCommandArtifact(input.floors),
+          floorsIncludeTrackerTransition(input.floors),
         ),
     ...offeredArtifactRunEvidence(parsed, d),
   }

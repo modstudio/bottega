@@ -538,6 +538,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-carried-attachments.ts',
   ]),
   module('orchestrator/src/run/run-project-context.ts', ['../project/projects.ts']),
+  module('orchestrator/src/run/run-project-attribution.ts', ['../project/projects.ts']),
   module('orchestrator/src/run/run-mcp-main-stack.ts', [
     '../mcp/mcp-preflight.ts',
     '../project/projects.ts',

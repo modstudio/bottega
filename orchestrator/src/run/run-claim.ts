@@ -144,6 +144,7 @@ type ClaimOptions = {
   key?: string
   cwd?: string
   launchCwd?: string
+  projectRecordId?: string
   base?: string
   launchBase?: string
   resolvedTaskBranch?: TaskBranchCandidate | null
@@ -188,7 +189,8 @@ export type ClaimInput = {
   writesJob: boolean
   repoJob: boolean
   runProjectName: string | null
-  runProjectId: string | null
+  namedProjectRecordId: string | null
+  rowProjectId(derivedProjectRecordId?: string | null): string | null
   reason: string
   vendorSession: string | null
   pack: Pack | null
@@ -253,7 +255,7 @@ async function claimLinks(
     inheritedTaskRecordId: inherited?.task_record_id,
     inheritedProjectRecordId: inherited?.project_record_id,
     projectName: input.runProjectName,
-    projectRecordId: input.runProjectId,
+    projectRecordId: input.namedProjectRecordId,
     key: launchKey,
     cwd: input.repoJob ? null : input.callerCwd,
     launchCwd,
@@ -290,7 +292,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     writesJob,
     repoJob,
     runProjectName,
-    runProjectId,
+    rowProjectId,
     reason,
     vendorSession,
     pack,
@@ -363,7 +365,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
-  runProjectId = links.projectRecordId
+  const runProjectRecordId = rowProjectId(links.projectRecordId)
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const binding = inheritedRunBinding(opts.resume?.parent, opts.binding)
@@ -398,7 +400,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   assertBranchHasNoAliveOwner({
     branch: existingBranch,
     conversationRootId: resumePlan?.rootId ?? null,
-    projectId: runProjectId,
+    projectId: runProjectRecordId,
   })
   const claimedCwd = repoJob ? null : callerCwd
   const initiallyRecordedBranch = recordedBranch(repoJob ? null : branchOf(callerCwd))
@@ -423,7 +425,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         name,
         opts.job,
         runProjectName,
-        runProjectId,
+        runProjectRecordId,
         claimedCwd,
         sha(prompt),
         sha(originalPrompt),
@@ -474,7 +476,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         name,
         opts.job,
         runProjectName,
-        runProjectId,
+        runProjectRecordId,
         claimedCwd,
         sha(prompt),
         sha(originalPrompt),
@@ -671,7 +673,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const worktreeSteps = readOnlyWorktreeStepRecorder(db(), {
           rootRunId: sandboxRoot.record_id,
           runId: claim.id,
-          projectId: runProjectId,
+          projectId: runProjectRecordId,
           writesJob,
           claimedAt: nowIso,
         })
@@ -687,7 +689,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               expectedBranch: retryValidation.branch,
               validatedTip: retryValidation.tip,
               conversationRootId: claim.id,
-              projectId: runProjectId,
+              projectId: runProjectRecordId,
               projectName: runProjectName,
               operation: 'creation',
             })
@@ -697,7 +699,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             {
               rootRunId: sandboxRoot.record_id,
               runId: claim.id,
-              projectId: runProjectId,
+              projectId: runProjectRecordId,
               coverageBase,
               branch: recordedBranch(created.branch),
               steps: worktreeSteps,
@@ -712,7 +714,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             const identity = {
               rootRunId: sandboxRoot.record_id,
               runId: claim.id,
-              projectId: runProjectId,
+              projectId: runProjectRecordId,
               claimedAt: nowIso(),
             }
             recordDatabaseClaim(db(), {
@@ -727,7 +729,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             claimRecipePort(db(), {
               rootRunId: sandboxRoot.record_id,
               runId: claim.id,
-              projectId: runProjectId,
+              projectId: runProjectRecordId,
               claimedAt: nowIso(),
               band: RECIPE_PORT_BAND,
             }),
@@ -737,7 +739,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           assertBranchHasNoAliveOwner({
             branch: existingBranch,
             conversationRootId: resumePlan?.rootId ?? claim.id,
-            projectId: runProjectId,
+            projectId: runProjectRecordId,
           })
           prepareResumeBranchIfNeeded(repoRoot, resumePlan)
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
@@ -859,7 +861,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             expectedBranch: inheritedWorktree.branch,
             validatedTip: inheritedWorktree.base,
             conversationRootId: claim.id,
-            projectId: runProjectId,
+            projectId: runProjectRecordId,
             projectName: runProjectName,
             operation: 'reuse',
           })
@@ -1003,7 +1005,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       runtimeDirExisted,
       sandboxRootId: sandboxRoot.record_id,
       runId: claim.id,
-      runProjectId,
+      runProjectId: runProjectRecordId,
       runsDir,
       cwd,
       inherited: resume.workspaceSource === 'retained',
@@ -1033,6 +1035,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     schemaPath,
     started,
     launchKey,
+    runProjectRecordId,
     runToken,
     claim: { ...claim, recordId, parentRunRecordId: identity.parent_run_record_id },
     keepTree,

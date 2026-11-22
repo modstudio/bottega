@@ -23,6 +23,7 @@ test('a duplicated artifact reference is resolved once', async () => {
         return {
           recordId: `task-${key}`,
           key,
+          updatedAt: null,
           status: 'done',
           statusCategory: 'done',
           commentIds: [],

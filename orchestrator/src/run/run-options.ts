@@ -35,6 +35,7 @@ export type RunOptions = {
   canonPack?: Pack
   launchCwd?: string
   repo?: string
+  projectRecordId?: string
   retryOf?: string
   noFailover?: boolean
   noWaitCapacity?: boolean

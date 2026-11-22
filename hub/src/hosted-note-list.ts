@@ -45,7 +45,7 @@ async function noteCandidates(
 ): Promise<NoteCursorRow[]> {
   if (cursor.stream === 'notes')
     return hostedPullBodyCandidates<NoteCursorRow>(tx, tx.unsafe('text'), limit)`
-      SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+      SELECT hub_note.*,number::int number,revision::int revision FROM hub_note WHERE space_id=${identity.spaceId}::uuid
       AND (${filters.project ?? null}::text IS NULL OR project=${filters.project ?? null})
       AND (${filters.stale === undefined ? null : filters.stale}::boolean IS NULL
         OR (${filters.stale ?? false} AND stale_at IS NOT NULL)

@@ -285,6 +285,41 @@ export async function createTaskDocument(
     : createHostedTaskDocument(task, input, options.hosted)
 }
 
+function assertBodyUpdateVersion(body: string | undefined, expectedVersion: string | undefined) {
+  if (body !== undefined && !expectedVersion)
+    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
+}
+
+function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
+  return applyHostedWriteLocally(
+    `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
+    () =>
+      writeTransaction((conn) => {
+        if (document.role)
+          demoteOtherTaskDocumentRoleHolders(
+            conn,
+            document.task_record_id,
+            document.role,
+            document.id,
+          )
+        conn
+          .query(
+            `UPDATE task_document
+                SET role = ?, title = ?, body = ?, version = ?, updated_at = ?
+              WHERE record_id = ?`,
+          )
+          .run(
+            document.role,
+            document.title,
+            document.body,
+            document.version,
+            document.updated_at,
+            document.id,
+          )
+      }),
+  )
+}
+
 export async function updateTaskDocument(
   value: string,
   changes: {
@@ -300,21 +335,20 @@ export async function updateTaskDocument(
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
-  if (changes.body !== undefined && !expectedVersion)
-    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
-  const mode = taskWriteMode(task.project, options.hosted)
+  assertBodyUpdateVersion(changes.body, expectedVersion)
   const at = nowIso()
-  const fields = taskDocumentFields(changes)
-  if (mode === 'hosted-configured') {
+  if (taskWriteMode(task.project, options.hosted) === 'hosted-configured') {
     if (!expectedVersion)
       throw new Error(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
       )
     const role = changes.role === undefined ? current.role : documentRole(changes.role)
-    const writeOptions = hostedTaskWriteOptions(task.project, options.hosted)
+    const writeOptions = {
+      ...hostedTaskWriteOptions(task.project, options.hosted),
+      conflictRemedy: `${PLATFORM_SLUG} task show ${current.task_key}`,
+    }
     if (changes.role !== undefined && role)
       await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
-    const version = documentVersion()
     const row: PushedDocument = {
       id,
       number: current.number,
@@ -325,7 +359,7 @@ export async function updateTaskDocument(
       role,
       title: changes.title ?? current.title,
       body: changes.body ?? current.body,
-      version,
+      version: changes.body === undefined ? current.version : documentVersion(),
       created_at: current.created_at,
       updated_at: at,
       deleted_at: null,
@@ -335,16 +369,18 @@ export async function updateTaskDocument(
       id,
       op: 'upsert',
       row,
-      fields,
+      fields: taskDocumentFields(changes),
       expected_revision: expectedVersion,
     }
-    await sendHostedChanges(current.task_key, [[change]], writeOptions)
-    return withDocumentLabel({
+    await sendHostedChanges('the record', [[change]], writeOptions)
+    const document = withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,
       role: documentRole(row.role),
       number: current.number,
     })
+    const applied = applyHostedDocumentUpdateLocally(document)
+    return applied ? getTaskDocument(id) : document
   }
   writeTransaction((conn) => {
     const row = conn

@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+import {
+  FUTURE_CLOCK_GUARDED_TESTS,
+  ORCHESTRATOR_GATE_TEST_SELECTION,
+} from '../orchestrator/test/gate-test-selection.ts'
 import { categorizeFile } from '../shared/file-kind.ts'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES, suiteReachPatterns } from './check-plan.ts'
 import {
@@ -106,6 +109,18 @@ test('the orchestrator gate selectors are anchored and cover every declared excl
       ),
     ).toHaveLength(1)
   }
+})
+
+test('the future-clock leg derives its command and reach from one guarded set', () => {
+  const futureClock = CHECK_LEGS.find((leg) => leg.name === 'orchestrator/future-clock')!
+  expect(futureClock.testPatterns).toEqual(FUTURE_CLOCK_GUARDED_TESTS.map(({ reach }) => reach))
+  expect(futureClock.suite[0]!.argv).toEqual([
+    'bun',
+    'test',
+    '--preload',
+    './test/future-clock-preload.ts',
+    ...FUTURE_CLOCK_GUARDED_TESTS.map(({ selector }) => selector),
+  ])
 })
 
 test('the hub data package is reached only by its own package leg', () => {

@@ -5,10 +5,12 @@ import {
   CURSOR_RECORD_ID,
   database,
   gather,
+  identity,
   insertRun,
   projectId,
   unlinkedIdentity,
 } from './workflow-floor-evidence.fixture.ts'
+import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 test('a bare number still refuses a run bound to another cursor', async () => {
   const d = database()
@@ -114,11 +116,110 @@ test('a doc must change during the active step', async () => {
   await expect(gather(d, { artifacts: [`doc:${id}`] })).resolves.toBeDefined()
 })
 
+test('tasks must change during the active step when their tracker reports an update time', async () => {
+  const d = database()
+  const readTask = (updatedAt: string | null) => () => ({
+    recordId: 'task-DEV-977',
+    key: 'DEV-977',
+    updatedAt,
+    status: 'done',
+    statusCategory: 'done',
+    commentIds: [],
+    commentsVerifiable: true,
+  })
+
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }),
+  ).rejects.toThrow(
+    'task record time is 2026-08-01, before step activation 2026-09-01; write or change the task record during this step, then cite it',
+  )
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }),
+  ).rejects.not.toThrow('--task')
+
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }, identity, [
+      {
+        kind: 'tracker-transition',
+        deferrable: false,
+        expectedExitCode: 0,
+        expectedStatus: 'active',
+        requirePullRequest: false,
+        operatorRuling: false,
+      },
+    ]),
+  ).rejects.toThrow(
+    'task record time is 2026-08-01, before step activation 2026-09-01; make the tracker transition and pass `--task DEV-977`',
+  )
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }, identity, [
+      {
+        kind: 'tracker-transition',
+        deferrable: false,
+        expectedExitCode: 0,
+        expectedStatus: 'active',
+        requirePullRequest: false,
+        operatorRuling: false,
+      },
+    ]),
+  ).rejects.not.toThrow('needs no write')
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-09-02') }),
+  ).resolves.toBeDefined()
+
+  const untimed = await gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask(null) })
+  expect(
+    decideFloorSatisfaction({
+      floors: [
+        {
+          kind: 'recorded-artifact',
+          deferrable: false,
+          expectedExitCode: 0,
+          expectedStatus: 'done',
+          requirePullRequest: false,
+          operatorRuling: false,
+        },
+      ],
+      evidence: untimed,
+      enforcement: 'floors',
+      finishing: false,
+      openObligations: [],
+    }),
+  ).toMatchObject({
+    action: 'allow',
+    notices: ['freshness unchecked: the tracker returns no task update time'],
+  })
+})
+
+test('a fresh tracker task without its own update time reports freshness unchecked', async () => {
+  const d = database()
+  const trackerRead = hubTaskReadFromJson('DEV-977', {
+    task: {
+      record_id: 'task-DEV-977',
+      key: 'DEV-977',
+      updated_at: '2026-09-02',
+      status: 'done',
+      status_category: 'done',
+    },
+    tracker_updated_at: null,
+    tracker_comment_ids: [],
+    tracker_comments_verifiable: true,
+  })
+
+  const evidence = await gather(d, { artifacts: ['task:DEV-977'] }, { readTask: () => trackerRead })
+  expect(evidence.artifacts?.[0]?.artifact).toEqual({
+    ref: 'task:DEV-977',
+    exists: true,
+    notice: 'freshness unchecked: the tracker returns no task update time',
+  })
+})
+
 test('task comments and documents must change during the active step', async () => {
   const d = database()
   const readTask = (writtenAt: string) => () => ({
     recordId: 'task-DEV-977',
     key: 'DEV-977',
+    updatedAt: '2026-09-02',
     status: 'done',
     statusCategory: 'done',
     commentIds: ['4'],

@@ -19,6 +19,7 @@ import type {
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
 import {
+  isMembershipQuestionRead,
   QUESTION_RULINGS_PAGE_SIZE,
   questionChangedAfterRefusal,
 } from '../record/record-question-contract.ts'
@@ -205,15 +206,29 @@ export class RecordQuestionStore implements QuestionStore {
       if (isAbsentRecordKeyedRead(error)) return { items: [] }
       throw error
     })
-    for (const row of value.items) {
-      const id = questionRowRecordId(row)
-      const spaceId = row.space_id
+    return {
+      items: this.rememberSpacesAndSort(value.items),
+    }
+  }
+
+  private rememberSpacesAndSort(items: QuestionReadResult['items']): QuestionReadResult['items'] {
+    for (const row of items) {
+      const storedRow = row as Record<string, unknown>
+      const id = questionRowRecordId(storedRow)
+      const spaceId = storedRow.space_id
       if (id && typeof spaceId === 'string')
         this.questionSpaces.set(id, { destinationSpaceId: spaceId })
     }
-    return {
-      items: value.items.sort(compareQuestionsByAsk),
-    }
+    return items.sort(compareQuestionsByAsk)
+  }
+
+  private async membershipRead(input: QuestionReadInput): Promise<QuestionReadResult> {
+    if (!this.input.client.readMembershipQuestions)
+      throw new Error(
+        'record API predates membership question reads; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+      )
+    const value = await this.input.client.readMembershipQuestions(input)
+    return { ...value, items: this.rememberSpacesAndSort(value.items) }
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -282,11 +297,14 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
+    const membershipRead = !projectId && isMembershipQuestionRead(input)
     const result = projectId
       ? await this.readAt(input, await this.destination(projectId))
-      : (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
-        ? await this.spaceKeyedRead(input)
-        : await this.listRead(input)
+      : membershipRead
+        ? await this.membershipRead(input)
+        : (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
+          ? await this.spaceKeyedRead(input)
+          : await this.listRead(input)
     const enrichMachineFields =
       input.read !== 'open-for-cursors' &&
       (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)

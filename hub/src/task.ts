@@ -9,17 +9,16 @@ import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import type { HostedTaskLookupRow } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode, type TaskWriteMode } from './hosted-write-mode.ts'
-import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
-import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type StatusCategory } from './projects.ts'
-import { HOSTED_COMMENT_TABLE } from './push-contract.ts'
+import type { PushedComment } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { cacheCreatedHostedTask } from './task-cache.ts'
 import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
+import { sendTaskCommentRecord } from './task-comment-record.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
 import {
@@ -45,6 +44,7 @@ import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
 import {
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
   taskWriteMode,
@@ -147,6 +147,7 @@ function assertParent(key: string | null | undefined, project?: string) {
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = HostedTaskWriteOptions
 const hostedOptionsForProject = hostedTaskWriteOptions
+const hostedSendOptionsForTask = hostedTaskChangeSendOptions
 
 type DoneTransitionOptions = {
   abandonReason?: string
@@ -316,10 +317,9 @@ function writeLocalComment(
   task: Pick<TaskRow, 'key' | 'record_id'>,
   body: string,
   at: string,
-  queue: boolean,
   attribution: Attribution,
+  recordId = newRecordId(),
 ): TaskComment {
-  const recordId = newRecordId()
   conn
     .query(
       `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at,updated_at,
@@ -340,7 +340,6 @@ function writeLocalComment(
   conn
     .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
     .run(at, at, task.record_id)
-  if (queue) queueHostedChange(conn, HOSTED_COMMENT_TABLE, recordId, 'upsert', at)
   return {
     id: recordId,
     task_key: task.key,
@@ -378,41 +377,62 @@ export function attachLocalTaskEvidenceInTransaction(
   at: string,
 ): TaskComment {
   const task = localTaskInTransaction(conn, key, project)
-  return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
+  return writeLocalComment(conn, task, body, at, UNATTRIBUTED)
+}
+
+type NoteRelinkCommentInput = Record<
+  'project' | 'noteLabel' | 'previousTask' | 'targetTask' | 'reason' | 'at',
+  string
+>
+
+function prepareNoteRelinkComments(conn: Database, input: NoteRelinkCommentInput) {
+  const target = localTaskInTransaction(conn, input.targetTask, input.project)
+  const previous = localTaskInTransaction(conn, input.previousTask, input.project)
+  const row = (task: TaskRow, body: string): PushedComment => ({
+    id: newRecordId(),
+    task_key: task.key,
+    task_id: task.record_id,
+    project_name: task.project,
+    projectId: task.project_record_id,
+    body,
+    created_at: input.at,
+    updated_at: input.at,
+    deleted_at: null,
+  })
+  return {
+    targetTaskRecordId: target.record_id,
+    comments: [
+      row(target, `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`),
+      ...(previous.record_id === target.record_id
+        ? []
+        : [row(previous, `note ${input.noteLabel} relinked to ${target.key}: ${input.reason}`)]),
+    ],
+  }
+}
+
+function writePreparedNoteRelinkComments(
+  conn: Database,
+  prepared: ReturnType<typeof prepareNoteRelinkComments>,
+): void {
+  for (const comment of prepared.comments)
+    writeLocalComment(
+      conn,
+      { key: comment.task_key, record_id: comment.task_id! },
+      comment.body,
+      comment.created_at,
+      UNATTRIBUTED,
+      comment.id,
+    )
 }
 
 export function recordNoteRelinkCommentsInTransaction(
   conn: Database,
-  input: {
-    project: string
-    noteLabel: string
-    previousTask: string
-    targetTask: string
-    reason: string
-    at: string
-    queue: boolean
-  },
-): { targetTaskRecordId: string } {
-  const target = localTaskInTransaction(conn, input.targetTask, input.project)
-  writeLocalComment(
-    conn,
-    target,
-    `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`,
-    input.at,
-    input.queue,
-    UNATTRIBUTED,
-  )
-  const previous = localTaskInTransaction(conn, input.previousTask, input.project)
-  if (previous.record_id !== target.record_id)
-    writeLocalComment(
-      conn,
-      previous,
-      `note ${input.noteLabel} relinked to ${target.key}: ${input.reason}`,
-      input.at,
-      input.queue,
-      UNATTRIBUTED,
-    )
-  return { targetTaskRecordId: target.record_id }
+  input: NoteRelinkCommentInput | ReturnType<typeof prepareNoteRelinkComments>,
+  record = true,
+) {
+  const prepared = 'comments' in input ? input : prepareNoteRelinkComments(conn, input)
+  if (record) writePreparedNoteRelinkComments(conn, prepared)
+  return prepared
 }
 
 export async function createTask(
@@ -479,24 +499,31 @@ export async function createTask(
     hostedOptionsForProject(input.project, options.hosted),
   )
   const commentAt = nowIso()
+  const duplicateComment = options.allowDuplicateReason
+    ? pushedComment(
+        hostedTaskRow(hosted),
+        options.allowDuplicateReason,
+        commentAt,
+        options.attribution ?? UNATTRIBUTED,
+      )
+    : null
+  if (duplicateComment) await sendTaskCommentRecord(duplicateComment, { hosted: options.hosted })
   const applied = applyHostedWriteLocally(
     `${hosted.key} was created in the hosted record; its local copy will arrive on the next record pull`,
     () =>
       writeTransaction((conn) => {
         cacheCreatedHostedTask(conn, hosted)
-        if (options.allowDuplicateReason)
+        if (duplicateComment)
           writeLocalComment(
             conn,
             { key: hosted.key, record_id: hosted.id },
-            options.allowDuplicateReason,
+            duplicateComment.body,
             commentAt,
-            true,
             options.attribution ?? UNATTRIBUTED,
+            duplicateComment.id,
           )
       }),
   )
-  if (applied && options.allowDuplicateReason)
-    await drainHostedEditOutbox(commentAt, options.hosted)
   return applied
     ? (
         await showHostedTask(
@@ -565,7 +592,7 @@ export async function setTaskBody(
     if (!capability.allowed) throw new Error(capability.reason)
     const at = nowIso()
     await sendHostedChanges(
-      current.key,
+      'the record',
       hostedTaskBatch({
         current,
         changes: { body },
@@ -574,7 +601,7 @@ export async function setTaskBody(
         attribution: UNATTRIBUTED,
         expectedRevision: Number(expectedVersion),
       }),
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -747,9 +774,9 @@ export async function setTask(
       expectedRevision: options.expectedRevision,
     })
     await sendHostedChanges(
-      current.key,
+      'the record',
       batch,
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -779,7 +806,7 @@ export async function closeTask(
   const at = nowIso()
   if (hosted) {
     await sendHostedChanges(
-      current.key,
+      'the record',
       hostedTaskBatch({
         current,
         changes: { status: 'done' },
@@ -787,7 +814,7 @@ export async function closeTask(
         at,
         attribution,
       }),
-      hostedOptionsForProject(current.project, options.hosted),
+      hostedSendOptionsForTask(current.key, current.project, options.hosted),
     )
     return (
       await showHostedTask(
@@ -834,21 +861,7 @@ export async function commentTask(
   const at = nowIso()
   if (hosted) {
     const comment = pushedComment(current, body, at, attribution)
-    await sendHostedChanges(
-      current.key,
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: comment.id,
-            op: 'upsert',
-            row: comment,
-            expected_revision: 0,
-          },
-        ],
-      ],
-      hostedOptionsForProject(current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(comment, { hosted: options.hosted })
     return { ...hostedComment(comment), revision: 1 }
   }
   const result = writeTransaction((conn) => {
@@ -857,9 +870,8 @@ export async function commentTask(
       .get(current.record_id)
     if (!row) throw new Error(missingTaskRecordLine(current.record_id))
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-    return writeLocalComment(conn, row, body, at, hosted, attribution)
+    return writeLocalComment(conn, row, body, at, attribution)
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }
 
@@ -917,22 +929,11 @@ export async function editTaskComment(
     )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { body }, at)
-    await sendHostedChanges(
-      current.key,
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: commentId,
-            op: 'upsert',
-            row,
-            fields: ['body', 'updated_at'],
-            expected_revision: options.expectedRevision,
-          },
-        ],
-      ],
-      hostedOptionsForProject(current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(row, {
+      hosted: options.hosted,
+      fields: ['body', 'updated_at'],
+      expected_revision: options.expectedRevision,
+    })
     return { ...comment, body, updated_at: at, revision: options.expectedRevision + 1 }
   }
   const result = writeTransaction((conn) => {
@@ -952,10 +953,8 @@ export async function editTaskComment(
     conn
       .query('UPDATE task_comment SET body=?,updated_at=? WHERE record_id=?')
       .run(body, at, commentId)
-    if (hosted) queueHostedChange(conn, HOSTED_COMMENT_TABLE, commentId, 'upsert', at)
     return { ...comment, body, updated_at: at }
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }
 
@@ -985,22 +984,11 @@ export async function deleteTaskComment(
     )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { deleted_at: at }, at)
-    await sendHostedChanges(
-      current.key,
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: commentId,
-            op: 'upsert',
-            row,
-            fields: ['updated_at', 'deleted_at'],
-            expected_revision: options.expectedRevision,
-          },
-        ],
-      ],
-      hostedOptionsForProject(current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(row, {
+      hosted: options.hosted,
+      fields: ['updated_at', 'deleted_at'],
+      expected_revision: options.expectedRevision,
+    })
     return
   }
   writeTransaction((conn) => {
@@ -1018,7 +1006,5 @@ export async function deleteTaskComment(
     conn
       .query('UPDATE task_comment SET updated_at=?,deleted_at=? WHERE record_id=?')
       .run(at, at, commentId)
-    if (hosted) queueHostedChange(conn, HOSTED_COMMENT_TABLE, commentId, 'upsert', at)
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
 }

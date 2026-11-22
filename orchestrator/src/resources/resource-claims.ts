@@ -97,7 +97,20 @@ export function isSharedReaderWorktreeClaim(database: Database, path: string): b
 }
 
 /** Runs whose live worktree claim resolves to the requested filesystem path. */
-export function runsClaimingWorktreePath(database: Database, path: string): ClaimedWorktreeOwner[] {
+export function runsClaimingWorktreePath(
+  database: Database,
+  path: string,
+  excludeRunId?: string,
+): ClaimedWorktreeOwner[] {
+  const excludedRoot = excludeRunId
+    ? ((
+        database
+          .query(
+            'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+          )
+          .get(excludeRunId) as { root_record_id: string } | null
+      )?.root_record_id ?? excludeRunId)
+    : null
   const canonicalPath = realpathOrSpelled(path)
   const claimed = database
     .query(
@@ -108,7 +121,28 @@ export function runsClaimingWorktreePath(database: Database, path: string): Clai
        ORDER BY run.number`,
     )
     .all() as ClaimedWorktreeOwner[]
-  return claimed.filter((row) => realpathOrSpelled(row.allocation_key) === canonicalPath)
+  return claimed.filter(
+    (row) =>
+      row.record_id !== excludedRoot && realpathOrSpelled(row.allocation_key) === canonicalPath,
+  )
+}
+
+/** One refusal for every surface that protects a worktree held by another conversation. */
+export function claimedWorktreeRefusal(
+  database: Database,
+  path: string,
+  platformSlug: string,
+  actingRunId?: string,
+): string | null {
+  const claimants = runsClaimingWorktreePath(database, path, actingRunId)
+  if (!claimants.length) return null
+  const ids = claimants.map((row) => row.record_id)
+  const first = ids[0]!
+  return (
+    `worktree ${path} is in use by run(s) ${ids.join(', ')}; ` +
+    `once run ${first} is finished with the tree, close it out with ` +
+    `${platformSlug} run close-out ${first}`
+  )
 }
 
 /** Attribution proved by a worktree claim explicitly released after a run began. */

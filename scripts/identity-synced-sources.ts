@@ -105,6 +105,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'readTaskFlowStageSummaries',
     'readTaskFlowText',
     'readQuestions',
+    'readMembershipQuestions',
     'searchDocs',
     'searchPublicDocs',
     'storage',
@@ -121,6 +122,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'readTaskFlowStageSummaries',
     'readTaskFlowText',
     'readQuestions',
+    'readMembershipQuestions',
   ]),
   ...writeEntries(
     'orchestrator',
@@ -557,6 +559,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ),
   ...readEntries('hub', 'noteClient', [
     'hostedGetNote',
+    'hostedListNotes',
     'hostedListOutsideNotes',
     'hostedNoteChanges',
     'hostedNoteCounts',

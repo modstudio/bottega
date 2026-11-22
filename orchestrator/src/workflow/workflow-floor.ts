@@ -60,6 +60,10 @@ export function floorsAcceptCommandArtifact(floors: ReadonlyArray<{ kind: string
   return floors.some((floor) => floor.kind === 'command-exit' || floor.kind === 'recorded-artifact')
 }
 
+export function floorsIncludeTrackerTransition(floors: ReadonlyArray<{ kind: string }>): boolean {
+  return floors.some((floor) => floor.kind === 'tracker-transition')
+}
+
 const ARTIFACT_FORMS =
   'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
 
@@ -74,6 +78,10 @@ export const floorGuidance = {
     'finish or drop every descendant, move the epic to done, and pass `--task <KEY>`',
   'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
 } satisfies Record<FloorKind, string>
+
+export function trackerTransitionTaskRemedy(key: string): string {
+  return floorGuidance['tracker-transition'].replace('<KEY>', key)
+}
 
 export function evidenceGuidance(
   kind: FloorKind,
