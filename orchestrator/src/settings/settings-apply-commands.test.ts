@@ -13,9 +13,9 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
+import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import { parseStoredOwnedSettings, serializeOwnedSettings } from './settings.ts'
 import {
   migrateStoredSettingsEnvironmentNames,
@@ -34,6 +34,9 @@ const priorState = process.env.BOTTEGA_STATE_HOME
 const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
 let root = ''
 let claude = ''
+let hostedClient: RecordApiClient
+let hostedBody: string | null = null
+let hostedWrites: RecordDocUpsertInput[] = []
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'settings-apply-'))
@@ -45,7 +48,32 @@ beforeEach(() => {
   const session = memoryRecordSession()
   session.setToken('fixture-session')
   installRecordSessionRunner(session.runner)
-  installRecordApiClient(createMemoryRecordApiClient())
+  const inner = createMemoryRecordApiClient()
+  hostedBody = null
+  hostedWrites = []
+  hostedClient = {
+    ...inner,
+    listDocs: async (query, destination) => {
+      const result = await inner.listDocs(query, destination)
+      return {
+        ...result,
+        items: result.items.map((item) =>
+          hostedBody !== null &&
+          item.scope === 'settings' &&
+          item.subject === null &&
+          item.owner === OWNER &&
+          item.slug === 'settings'
+            ? { ...item, body: hostedBody }
+            : item,
+        ),
+      }
+    },
+    upsertDoc: async (input, destination) => {
+      hostedWrites.push(input)
+      return inner.upsertDoc(input, destination)
+    },
+  }
+  installRecordApiClient(hostedClient)
 })
 
 afterEach(() => {
@@ -106,13 +134,21 @@ async function seedUser(environment: { env?: Record<string, string>; envKeys?: s
 
 async function seedFutureUser(): Promise<string> {
   await seedUser({ envKeys: ['NEW_NAME'] })
-  const row = getDoc('settings', null, 'settings', OWNER)!
+  const page = await hostedClient.listDocs({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+  })
+  const row = page.items[0]
+  if (!row || typeof row.body !== 'string') throw new Error('hosted settings fixture is missing')
   const parsed = JSON.parse(row.body) as Record<string, unknown>
   const body = JSON.stringify({
     ...parsed,
     options: { subagentHooks: 'on', futureOption: 1 },
   })
-  db().query('UPDATE doc SET body=? WHERE record_id=?').run(body, row.record_id)
+  hostedBody = body
+  hostedWrites = []
   return body
 }
 
@@ -167,7 +203,14 @@ describe('future settings edit refusals', () => {
       await expect(adapter.edit()).rejects.toThrow(
         new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
       )
-      expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
+      const page = await hostedClient.listDocs({
+        scope: 'settings',
+        subject: null,
+        owner: OWNER,
+        slug: 'settings',
+      })
+      expect(page.items[0]?.body).toBe(body)
+      expect(hostedWrites).toEqual([])
     })
   }
 })
