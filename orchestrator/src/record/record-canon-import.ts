@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -198,6 +199,7 @@ async function deleteMissingCanonRows(
 export async function importRecordCanon(
   input: Tenant & RecordCanonImportInput,
 ): Promise<RecordCanonImportResult> {
+  input = maskHostedWrite('record.doc.canon-import', input)
   for (const row of input.rows) assertDocSections(row.body, ['technical'])
   return tenant(input, async (tx) => {
     const address =

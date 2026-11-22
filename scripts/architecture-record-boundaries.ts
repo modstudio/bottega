@@ -75,7 +75,6 @@ export const recordApiBoundaries: ImportBoundary[] = [
     [
       '../../../shared/bounded-fetch.ts',
       '../../../shared/docs.ts',
-      '../../../shared/hosted-secret-mask.ts',
       '../../../shared/record-api-url.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record-request-headers.ts',
@@ -313,6 +312,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       'bun',
       '../../../shared/doc-sections.ts',
       '../../../shared/docs.ts',
+      '../../../shared/hosted-secret-mask.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../canon/canon-import-policy.ts',
@@ -412,6 +412,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       'bun',
       '../../../shared/doc-sections.ts',
       '../../../shared/docs.ts',
+      '../../../shared/hosted-secret-mask.ts',
       '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',

@@ -115,8 +115,12 @@ async function hostedAuditCells(postgres: SQL): Promise<HostedSecretAuditCell[]>
   const cells: HostedSecretAuditCell[] = []
   for (const [table, columns] of Object.entries(HOSTED_SECRET_AUDIT_COLUMNS)) {
     for (const column of columns) {
+      const createdAt =
+        table === 'board_message_tag'
+          ? '(SELECT created_at FROM board_message WHERE board_message.id=board_message_tag.message_id)'
+          : 'created_at'
       const rows = await postgres.unsafe(
-        `SELECT id::text, created_at::text AS created_at, ${column}::text AS value FROM ${table} WHERE ${column} IS NOT NULL`,
+        `SELECT id::text, ${createdAt}::text AS created_at, ${column}::text AS value FROM ${table} WHERE ${column} IS NOT NULL`,
       )
       for (const row of rows as Array<Record<string, unknown>>) {
         cells.push({
