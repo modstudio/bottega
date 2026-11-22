@@ -46,7 +46,11 @@ import {
   selectedSettingsEnvironment,
   userSettingsEnvPath,
 } from './settings-env.ts'
-import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
+import {
+  claudeHomeFromEnvironment,
+  tryReadSettingsFile,
+  userSettingsPath,
+} from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
 import {
   readClaudeMcpPlacement,
@@ -58,8 +62,16 @@ import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import { renderedSettingsEnvironment, renderOwnedSettingsFile } from './settings-render.ts'
-import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
+import {
+  parseSettingsFile,
+  renderedSettingsEnvironment,
+  renderOwnedSettingsFile,
+} from './settings-render.ts'
+import {
+  applySettingsWrite,
+  planSettingsWrite,
+  writeNewSettingsFileAtomically,
+} from './settings-write.ts'
 
 export type MachineSettingsApplyResult = {
   target: string
@@ -201,7 +213,8 @@ function applyUserSettings(
   const path = userSettingsPath(home)
   const target = `settings ${path}`
   try {
-    const parsed = readSettingsFile(path)
+    const existing = tryReadSettingsFile(path)
+    const parsed = existing ?? parseSettingsFile('{}')
     const merged = mergeMachinePermissionOverlay(
       row ? parseStoredOwnedSettings(row.body) : parsed.owned,
       readMachinePermissions(deps.environment),
@@ -233,45 +246,63 @@ function applyUserSettings(
       )
     }
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-    const plan = planSettingsWrite(path, rendered)
-    if (plan.currentText === plan.renderedText) {
-      return {
-        target,
-        outcome: 'current',
-        detail: [settingsSourceDetail, unmatchedDropDetail(merged.unmatchedDrops)]
-          .filter(Boolean)
-          .join('; '),
-        changed: false,
-        ...(!check && productHooks.superseded.length
-          ? { superseded: productHooks.superseded }
-          : {}),
-      }
-    }
-    if (check)
-      return {
-        target,
-        outcome: 'applied',
-        detail: ['would apply', settingsSourceDetail, unmatchedDropDetail(merged.unmatchedDrops)]
-          .filter(Boolean)
-          .join('; '),
-        changed: true,
-      }
-    const result = deps.applySettings(plan, deps.environment)
-    return {
+    return applyRenderedUserSettings({
+      path,
       target,
-      outcome: 'applied',
-      detail: [
-        result.backup ? `backup ${result.backup}` : 'created new file',
-        settingsSourceDetail,
-        unmatchedDropDetail(merged.unmatchedDrops),
-      ]
-        .filter(Boolean)
-        .join('; '),
-      changed: true,
-      ...(!check && productHooks.superseded.length ? { superseded: productHooks.superseded } : {}),
-    }
+      rendered,
+      exists: existing !== null,
+      check,
+      settingsSourceDetail,
+      unmatchedDropDetail: unmatchedDropDetail(merged.unmatchedDrops),
+      superseded: productHooks.superseded,
+      deps,
+    })
   } catch (error) {
     return refusal(target, error)
+  }
+}
+
+function applyRenderedUserSettings(input: {
+  path: string
+  target: string
+  rendered: string
+  exists: boolean
+  check: boolean
+  settingsSourceDetail?: string
+  unmatchedDropDetail?: string
+  superseded: SupersededProfileHook[]
+  deps: Dependencies
+}): MachineSettingsApplyResult {
+  const plan = input.exists ? planSettingsWrite(input.path, input.rendered) : null
+  const detail = [input.settingsSourceDetail, input.unmatchedDropDetail].filter(Boolean).join('; ')
+  if (plan && plan.currentText === plan.renderedText) {
+    return {
+      target: input.target,
+      outcome: 'current',
+      detail,
+      changed: false,
+      ...(!input.check && input.superseded.length ? { superseded: input.superseded } : {}),
+    }
+  }
+  if (input.check) {
+    return {
+      target: input.target,
+      outcome: 'applied',
+      detail: ['would apply', detail].filter(Boolean).join('; '),
+      changed: true,
+    }
+  }
+  const result = plan
+    ? input.deps.applySettings(plan, input.deps.environment)
+    : (writeNewSettingsFileAtomically(input.path, input.rendered), { backup: null })
+  return {
+    target: input.target,
+    outcome: 'applied',
+    detail: [result.backup ? `backup ${result.backup}` : 'created new file', detail]
+      .filter(Boolean)
+      .join('; '),
+    changed: true,
+    ...(input.superseded.length ? { superseded: input.superseded } : {}),
   }
 }
 

@@ -186,11 +186,12 @@ export async function signInCommand(
   presentation: Presentation,
   withDatabase: WithMaintenanceDatabase,
   dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
+  machineDependencies: SignedInMachineSetupDependencies = signedInMachineSetupDependencies,
 ): Promise<void> {
   const password = await recordPassword(readPassword)
   dependencies.probeSessionStore()
   const result = await dependencies.signIn(email, password)
-  await completeSignInCommand(result, presentation, withDatabase)
+  await completeSignInCommand(result, presentation, withDatabase, machineDependencies)
 }
 
 export async function completeSignInCommand(

@@ -375,6 +375,45 @@ describe('settings apply', () => {
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
   })
 
+  test('without a settings row creates an absent settings file with product hooks', async () => {
+    db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
+    const settingsPath = join(root, '.claude', 'settings.json')
+
+    expect((await applyMachineSettings({ check: true }, deps()))[0]).toMatchObject({
+      outcome: 'applied',
+      detail: 'would apply; product hooks only; no user settings row',
+      changed: true,
+    })
+    expect(existsSync(settingsPath)).toBe(false)
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({
+      outcome: 'applied',
+      detail: 'created new file; product hooks only; no user settings row',
+      changed: true,
+    })
+    expect(existsSync(settingsPath)).toBe(true)
+    const rendered = readFileSync(settingsPath, 'utf8')
+    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+  })
+
+  test('with a settings row creates an absent settings file with owned values', async () => {
+    const settingsPath = join(root, '.claude', 'settings.json')
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({
+      outcome: 'applied',
+      detail: 'created new file',
+      changed: true,
+    })
+    expect(existsSync(settingsPath)).toBe(true)
+    const rendered = readFileSync(settingsPath, 'utf8')
+    expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(orch *)'] })
+    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+  })
+
   test('without a settings row preserves file-owned settings while adding product hooks', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
     const settingsPath = join(root, '.claude', 'settings.json')

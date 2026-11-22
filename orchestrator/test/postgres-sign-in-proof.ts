@@ -47,6 +47,8 @@ export function registerPostgresSignInProofs(input: {
         async () => input.repair.password,
         { log: (value) => output.push(value) },
         withDatabaseForMigrationStep,
+        undefined,
+        { applySettings: async () => [] },
       )
       expect(output.filter((line) => line !== 'board now uses the hosted record')).toEqual([
         `signed in ${input.repair.email}`,
