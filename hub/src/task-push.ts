@@ -243,14 +243,7 @@ function queueRepairs(candidates: readonly RepairCandidate[]) {
     if (!rows.length) continue
     writeTransaction((conn) => {
       for (const row of rows)
-        queueHostedChange(
-          conn,
-          table,
-          row.id,
-          'upsert',
-          undefined,
-          row.fields,
-        )
+        queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
     })
   }
 }

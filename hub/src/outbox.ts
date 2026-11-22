@@ -58,7 +58,7 @@ export type OutboxEntry = {
   kept_values: string | null
 }
 
-export const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
   HOSTED_NOTE_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
 ])
