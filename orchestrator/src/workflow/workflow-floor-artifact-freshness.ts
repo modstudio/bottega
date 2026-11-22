@@ -15,17 +15,19 @@ function mutableArtifactFreshnessRefusal(
   kind: MutableArtifactKind,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,
+  remedy?: string,
 ): string | null {
   if (writtenAt && createdAfterStepActivation(writtenAt, stepActivatedAt)) return null
-  return `${kind} record time is ${writtenAt ?? 'unavailable'}, before step activation ${stepActivatedAt}; write or change the ${kind} record during this step, then cite it`
+  return `${kind} record time is ${writtenAt ?? 'unavailable'}, before step activation ${stepActivatedAt}; ${remedy ?? `write or change the ${kind} record during this step, then cite it`}`
 }
 
 export function requireMutableArtifactFreshness(
   kind: MutableArtifactKind,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,
+  remedy?: string,
 ): void {
-  const refusal = mutableArtifactFreshnessRefusal(kind, writtenAt, stepActivatedAt)
+  const refusal = mutableArtifactFreshnessRefusal(kind, writtenAt, stepActivatedAt, remedy)
   if (refusal) throw new Error(refusal)
 }
 
@@ -45,8 +47,9 @@ function timedArtifactFreshnessNotice(
   config: TimedArtifactNotice,
   writtenAt: string | null | undefined,
   stepActivatedAt: string,
+  remedy?: string,
 ): string | null {
-  if (writtenAt) requireMutableArtifactFreshness(config.kind, writtenAt, stepActivatedAt)
+  if (writtenAt) requireMutableArtifactFreshness(config.kind, writtenAt, stepActivatedAt, remedy)
   return writtenAt ? null : config.untimed
 }
 
