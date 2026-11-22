@@ -63,17 +63,13 @@ export function releaseCheckoutFacts(path: string, branch: string, trunk: string
   }
 }
 
-export function verifyDetachedReleaseCheckout(
+export function verifyReleaseCheckoutAtCommit(
   checkout: ReturnType<typeof releaseCheckoutFacts>,
   path: string,
   expectedCommit: string,
 ): void {
   if (checkout.dirty)
     throw new Error(`release checkout ${path} is dirty; clean or recreate it, then retry`)
-  if (checkout.branch)
-    throw new Error(
-      `release checkout ${path} is on branch ${checkout.branch}; detach it at ${expectedCommit}, then retry`,
-    )
   if (checkout.head !== expectedCommit)
     throw new Error(
       `release checkout ${path} is at ${checkout.head}, not expected commit ${expectedCommit}; recreate it, then retry`,

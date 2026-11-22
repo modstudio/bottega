@@ -28,7 +28,7 @@ import {
 } from './release-binary-autoload-check.ts'
 import {
   releaseCheckoutFacts,
-  verifyDetachedReleaseCheckout,
+  verifyReleaseCheckoutAtCommit,
   withReleaseCheckout,
 } from './release-checkout.ts'
 import {
@@ -327,13 +327,17 @@ function unregisteredReleaseProjectRemedy(projectName: string): string {
   return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
 }
 
+type ReleaseTargetDependencies = { project: typeof projectByName }
+
+const releaseTargetDependencies: ReleaseTargetDependencies = { project: projectByName }
+
 function releaseTarget(
   projectName: string,
   requestedRung: string | undefined,
   checkout?: ReleaseCheckoutContext,
-  findProject: typeof projectByName = projectByName,
+  dependencies: ReleaseTargetDependencies = releaseTargetDependencies,
 ) {
-  const project = findProject(projectName)
+  const project = dependencies.project(projectName)
   if (!project) throw new Error(unregisteredReleaseProjectRemedy(projectName))
   const release = project.settings.release
   if (!release)
@@ -791,7 +795,7 @@ function releaseCommandTargetAtRung(
   const { path: checkoutPath, expectedCommit } = target.checkout
   const checkout = releaseCheckoutFacts(checkoutPath, selected.branch, trunk)
   if (expectedCommit) {
-    verifyDetachedReleaseCheckout(checkout, checkoutPath, expectedCommit)
+    verifyReleaseCheckoutAtCommit(checkout, checkoutPath, expectedCommit)
   } else {
     const checkoutDecision = checkoutReleaseDecision(checkout)
     if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
@@ -913,7 +917,9 @@ export function releaseProject(
     ['behind-trunk', behindTrunkReason],
     ['redeploy', redeployReason],
   ])
-  const target = releaseTarget(projectName, requestedRung, undefined, dependencies.project)
+  const target = releaseTarget(projectName, requestedRung, undefined, {
+    project: dependencies.project,
+  })
   const { project, selected } = target
   if (!target.deploy && (rollbackReason !== undefined || behindTrunkReason !== undefined)) {
     throw new Error(
@@ -939,41 +945,39 @@ export function releaseProject(
 
 /** Deploy from a lifecycle-provisioned detached checkout without moving or switching it. */
 export function releaseProjectFromCheckout(
-  projectName: string,
-  requestedRung: string,
+  resolved: CheckoutReleaseTarget,
   checkoutPath: string,
   expectedCommit: string,
 ): ReleaseResult {
-  const target = releaseTarget(projectName, requestedRung, {
-    path: checkoutPath,
-    expectedCommit,
-  })
+  const target = { ...resolved, checkout: { path: checkoutPath, expectedCommit } }
   const { project, selected } = target
   const deploy = target.deploy
-  if (!deploy) {
-    throw new Error(
-      `release rung ${selected.name} has no deploy command; it is deployed by CI, so after ${expectedCommit} reaches branch ${selected.branch}, run ${PLATFORM_SLUG} release run ${projectName} --rung ${selected.name}`,
-    )
-  }
+  if (!deploy) throw new Error('checkout release target was resolved without a deploy command')
   const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
   if (!lock.ok) throw new Error(lock.message)
   return withReleaseLock(
     project.path,
-    { session: sessionId(), what: `release ${projectName}/${selected.name} at ${expectedCommit}` },
-    () => releaseCommandTarget(target, deploy, projectName, undefined, undefined, undefined),
+    { session: sessionId(), what: `release ${project.name}/${selected.name} at ${expectedCommit}` },
+    () => releaseCommandTarget(target, deploy, project.name, undefined, undefined, undefined),
   )
 }
 
 /** Resolve and validate a checkout-backed release before provisioning its lifecycle tree. */
-export function checkoutReleaseProject(projectName: string, requestedRung: string) {
+export function resolveCheckoutReleaseTarget(
+  projectName: string,
+  requestedRung: string,
+  expectedCommit: string,
+) {
   const target = releaseTarget(projectName, requestedRung)
   if (!target.deploy) {
     throw new Error(
-      `release rung ${target.selected.name} has no deploy command; it is deployed by CI, so after the commit reaches branch ${target.selected.branch}, run ${PLATFORM_SLUG} release run ${projectName} --rung ${target.selected.name}`,
+      `release rung ${target.selected.name} has no deploy command; it is deployed by CI, so after ${expectedCommit} reaches branch ${target.selected.branch}, run ${PLATFORM_SLUG} release run ${projectName} --rung ${target.selected.name}`,
     )
   }
-  return target.project
+  return target
 }
+
+export type CheckoutReleaseTarget = ReturnType<typeof resolveCheckoutReleaseTarget>
 
 export function releaseLog(project: string, rung?: string): ReleaseLedgerRow[] {
   if (!projectByName(project)) throw new Error(`no project "${project}"`)

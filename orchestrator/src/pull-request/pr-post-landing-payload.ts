@@ -69,7 +69,8 @@ function validRungPlans(value: unknown): boolean {
         )) &&
       (plan.reason === null || typeof plan.reason === 'string') &&
       typeof plan.declaresLive === 'boolean' &&
-      typeof plan.declaresDeploy === 'boolean'
+      typeof plan.declaresDeploy === 'boolean' &&
+      (plan.canDeployFromTree === undefined || typeof plan.canDeployFromTree === 'boolean')
     )
   })
 }
@@ -86,10 +87,28 @@ function validateProvedRequiredRelease(value: unknown): void {
   const report = value as Record<string, unknown>
   if (
     !Array.isArray(report.required) ||
+    report.required.some((rung) => typeof rung !== 'string' || !rung) ||
     !Array.isArray(report.releases) ||
+    !report.releases.every(validRequiredRungRelease) ||
+    !(report.decisionError === undefined || typeof report.decisionError === 'string') ||
     typeof report.satisfied !== 'boolean'
   )
     throw refusal('provedRequiredRelease', 'a required-release report')
+}
+
+function validRequiredRungRelease(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const release = value as Record<string, unknown>
+  return (
+    typeof release.rung === 'string' &&
+    Boolean(release.rung) &&
+    typeof release.required === 'boolean' &&
+    (release.deployExit === null || Number.isInteger(release.deployExit)) &&
+    typeof release.outputTail === 'string' &&
+    typeof release.satisfied === 'boolean' &&
+    typeof release.deployed === 'boolean' &&
+    (release.unprovable === undefined || release.unprovable === true)
+  )
 }
 
 function validateDepth(value: unknown): string | null {

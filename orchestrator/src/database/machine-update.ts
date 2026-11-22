@@ -24,7 +24,10 @@ import {
 } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
 import { projectAt } from '../project/projects.ts'
-import { incomingRequiredRungGuard } from '../release/release-required.ts'
+import {
+  incomingRequiredRungGuard,
+  type ReleaseGuardProject,
+} from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
@@ -69,7 +72,6 @@ import {
 } from './release-update-decision.ts'
 
 type Presentation = { log(value: string): void }
-type UpdateProject = { name: string; path: string; settings: Project['settings'] }
 
 function assertNoActiveDrain(active: { migration: string; pid: number } | null): void {
   if (!active) return
@@ -243,8 +245,8 @@ type UpdateDependencies = {
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
-  project?: (cwd: string, database: import('bun:sqlite').Database) => UpdateProject | null
-  requiredRungRefusal?: (project: UpdateProject, branch: string) => string | null
+  project?: (cwd: string, database: import('bun:sqlite').Database) => ReleaseGuardProject | null
+  requiredRungRefusal?: (project: ReleaseGuardProject, branch: string) => string | null
   verifyMainCheckout?: (
     path: string,
     trunk: string,
@@ -610,7 +612,7 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   if (deps.requiredRungRefusal) rungRefusal = deps.requiredRungRefusal(project, branch)
   else if (deps.git) rungRefusal = null
   else {
-    const guard = incomingRequiredRungGuard(project as Project, branch)
+    const guard = incomingRequiredRungGuard(project, branch)
     presentation.log(`required release guard: ${guard.elapsedMs.toFixed(1)}ms`)
     rungRefusal = guard.refusal
   }

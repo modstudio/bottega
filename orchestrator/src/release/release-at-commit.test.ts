@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
-import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ReleaseAtCommitDependencies, releaseAtCommit } from './release-at-commit.ts'
-import type { ReleaseResult } from './release-service.ts'
+import type { CheckoutReleaseTarget, ReleaseResult } from './release-service.ts'
 
 const project = {
   name: 'fixture',
@@ -10,14 +9,9 @@ const project = {
   settings: { trunk: 'main' },
 } as Project
 
-const worktree: Worktree = {
-  path: '/projects/fixture/.claude/worktrees/release',
-  branch: '',
-  base: 'merge-commit',
-  repoRoot: project.path,
-  source: 'git',
-  mintedBranch: null,
-}
+const path = '/projects/fixture/.claude/worktrees/release'
+
+const target = { project, selected: { name: 'production' }, deploy: 'deploy' } as CheckoutReleaseTarget
 
 const released = {
   exitCode: 0,
@@ -31,21 +25,21 @@ function dependencies(
 ): ReleaseAtCommitDependencies {
   let now = 0
   return {
-    project: (name, rung) => {
-      calls.push(`project:${name}:${rung}`)
-      return project
+    resolve: (name, rung, commit) => {
+      calls.push(`resolve:${name}:${rung}:${commit}`)
+      return target
     },
-    create: (_project, treeId, commit) => {
-      calls.push(`create:${treeId}:${commit}`)
-      return worktree
+    create: (_target, treeName, commit) => {
+      calls.push(`create:${treeName}:${commit}`)
+      return path
     },
-    deploy: (name, rung, path, commit) => {
-      calls.push(`deploy:${name}:${rung}:${path}:${commit}`)
+    deploy: (_target, checkout, commit) => {
+      calls.push(`deploy:${checkout}:${commit}`)
       return released
     },
-    remove: (_tree, _project, treeId) => {
-      calls.push(`remove:${treeId}`)
-      return { removed: true, detail: 'removed' }
+    remove: async (checkout) => {
+      calls.push(`remove:${checkout}`)
+      return { outcome: 'released' }
     },
     id: () => 'tree-id',
     now: () => now++,
@@ -64,10 +58,10 @@ test('releaseAtCommit provisions the requested commit, deploys from it, and remo
 
   expect(report.result).toBe(released)
   expect(calls).toEqual([
-    'project:fixture:production',
+    'resolve:fixture:production:merge-commit',
     'create:release-production-tree-id:merge-commit',
-    'deploy:fixture:production:/projects/fixture/.claude/worktrees/release:merge-commit',
-    'remove:release-production-tree-id',
+    'deploy:/projects/fixture/.claude/worktrees/release:merge-commit',
+    'remove:/projects/fixture/.claude/worktrees/release',
   ])
 })
 
@@ -86,7 +80,7 @@ test('releaseAtCommit removes the tree after a deploy failure', async () => {
       }),
     }),
   ).rejects.toThrow('deploy failed')
-  expect(calls.at(-1)).toBe('remove:release-production-tree-id')
+  expect(calls.at(-1)).toBe('remove:/projects/fixture/.claude/worktrees/release')
 })
 
 test('releaseAtCommit preserves a proved deploy when removal leaves residue', async () => {
@@ -96,7 +90,7 @@ test('releaseAtCommit preserves a proved deploy when removal leaves residue', as
     rung: 'production',
     commit: 'merge-commit',
     dependencies: dependencies(calls, {
-      remove: () => ({ removed: false, detail: 'untracked build output remains' }),
+      remove: async () => ({ outcome: 'kept', reason: 'untracked build output remains' }),
     }),
   })
 

@@ -1,18 +1,17 @@
 // concern: lifecycle-backed release checkout
-/** Provisions, deploys from, and releases one detached checkout at an exact commit. */
+/** Provisions, deploys from, and releases one checkout at an exact commit. */
 
 import { randomUUID } from 'node:crypto'
-import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import {
-  createWithTool,
-  createWorktree,
-  withoutRunWorktreeAttribution,
-} from '../worktree/worktree-create.ts'
-import { removeFor } from '../worktree/worktree-remove.ts'
+  createHookTree,
+  type HookTreeRemovalResult,
+  removeHookTreeResult,
+} from '../hook-tree/tree.ts'
 import {
-  checkoutReleaseProject,
+  type CheckoutReleaseTarget,
   type ReleaseResult,
   releaseProjectFromCheckout,
+  resolveCheckoutReleaseTarget,
 } from './release-service.ts'
 
 export type ReleaseAtCommitReport = {
@@ -24,39 +23,29 @@ export type ReleaseAtCommitReport = {
 }
 
 export type ReleaseAtCommitDependencies = {
-  project(project: string, rung: string): Project
-  create(project: Project, treeId: string, commit: string): ReturnType<typeof createWorktree>
-  deploy(project: string, rung: string, path: string, commit: string): ReleaseResult
-  remove(
-    worktree: ReturnType<typeof createWorktree>,
-    project: Project,
-    treeId: string,
-  ): { removed: boolean; detail: string }
+  resolve(project: string, rung: string, commit: string): CheckoutReleaseTarget
+  create(target: CheckoutReleaseTarget, name: string, commit: string): string
+  deploy(target: CheckoutReleaseTarget, path: string, commit: string): ReleaseResult
+  remove(path: string): Promise<HookTreeRemovalResult>
   id(): string
   now(): number
 }
 
 const releaseAtCommitDependencies: ReleaseAtCommitDependencies = {
-  project: checkoutReleaseProject,
-  create(project, treeId, commit) {
-    const tool = resolvedWorktreeTool(project)
-    return tool
-      ? createWithTool(
-          tool,
-          project.path,
-          treeId,
-          undefined,
-          undefined,
-          commit,
-          withoutRunWorktreeAttribution,
-          true,
-        )
-      : createWorktree(project.path, treeId, commit, withoutRunWorktreeAttribution, true)
+  resolve: resolveCheckoutReleaseTarget,
+  create(target, name, commit) {
+    return createHookTree({ cwd: target.project.path, name, base: commit })
   },
   deploy: releaseProjectFromCheckout,
-  remove: (worktree, project, treeId) => removeFor(worktree, project.path, false, false, treeId),
+  remove: (path) => removeHookTreeResult(path, 'operator-removal'),
   id: randomUUID,
   now: Date.now,
+}
+
+function removalResidue(result: HookTreeRemovalResult): string | undefined {
+  if (result.outcome === 'kept') return result.reason
+  if (result.outcome === 'failed') return result.detail
+  return undefined
 }
 
 export async function releaseAtCommit(input: {
@@ -66,16 +55,16 @@ export async function releaseAtCommit(input: {
   dependencies?: ReleaseAtCommitDependencies
 }): Promise<ReleaseAtCommitReport> {
   const dependencies = input.dependencies ?? releaseAtCommitDependencies
-  const project = dependencies.project(input.project, input.rung)
+  const target = dependencies.resolve(input.project, input.rung, input.commit)
   const provisionStarted = dependencies.now()
-  const treeId = `release-${input.rung}-${dependencies.id()}`
-  const worktree = dependencies.create(project, treeId, input.commit)
+  const treeName = `release-${input.rung}-${dependencies.id()}`
+  const path = dependencies.create(target, treeName, input.commit)
   const provisionMs = dependencies.now() - provisionStarted
   let result: ReleaseResult | undefined
   let failure: unknown
   const deployStarted = dependencies.now()
   try {
-    result = dependencies.deploy(input.project, input.rung, worktree.path, input.commit)
+    result = dependencies.deploy(target, path, input.commit)
   } catch (cause) {
     failure = cause
   }
@@ -83,8 +72,7 @@ export async function releaseAtCommit(input: {
   const releaseStarted = dependencies.now()
   let residue: string | undefined
   try {
-    const removed = dependencies.remove(worktree, project, treeId)
-    if (!removed.removed) residue = removed.detail
+    residue = removalResidue(await dependencies.remove(path))
   } catch (cause) {
     residue = cause instanceof Error ? cause.message : String(cause)
   }

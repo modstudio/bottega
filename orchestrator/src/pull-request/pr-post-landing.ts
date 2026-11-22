@@ -27,6 +27,7 @@ import {
   type ReleaseRungPlan,
   type RequiredReleaseReport,
   type RequiredRungDecision,
+  releaseAfterProvedRequiredRelease,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   releaseRequiredRungsBeforeMainMove,
@@ -393,7 +394,7 @@ async function requiredReleaseBeforeMove(
   decision: RequiredRungDecision,
   releaseRequired: boolean,
 ): Promise<RequiredReleaseReport | undefined> {
-  if (requiredReleaseStepOrder(releaseRequired, decision.rungs)[0] !== 'deploy-rungs') return
+  if (!deploysBeforeMain(releaseRequired, decision)) return
   return post.releaseBeforeMove({ project, mergeCommit, rungs: decision.rungs })
 }
 
@@ -594,29 +595,6 @@ export type PullRequestPostLandingChildAdapter = {
   ): Promise<ShipCleanupReport> | ShipCleanupReport
 }
 
-function releaseAfterPreDeploy(
-  adapter: PullRequestPostLandingChildAdapter,
-  project: Project,
-  mergeCommit: string,
-  plans: ReleaseRungPlan[],
-  proved: RequiredReleaseReport,
-): RequiredReleaseReport {
-  const remainingPlans = plans.map((plan) =>
-    plan.required && plan.declaresDeploy
-      ? { ...plan, required: false, reason: 'proved before the main checkout moved' }
-      : plan,
-  )
-  const after = adapter.release({ project, mergeCommit, rungs: remainingPlans })
-  const provedByRung = new Map(proved.releases.map((release) => [release.rung, release]))
-  const afterByRung = new Map(after.releases.map((release) => [release.rung, release]))
-  const releases = plans.map(({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!)
-  return {
-    required: plans.filter(({ required }) => required).map(({ rung }) => rung),
-    releases,
-    satisfied: releases.every(({ satisfied }) => satisfied),
-  }
-}
-
 function requiredReleaseForChild(input: {
   adapter: PullRequestPostLandingChildAdapter
   checkoutFailure: string | null
@@ -629,13 +607,12 @@ function requiredReleaseForChild(input: {
   if (!payload.releaseRequired) return releaseRequiredFlagAbsent(plans)
   if (checkoutFailure) return failedRequiredRelease(plans, checkoutFailure)
   if (payload.provedRequiredRelease) {
-    return releaseAfterPreDeploy(
-      adapter,
-      project,
-      payload.mergeCommit,
+    return releaseAfterProvedRequiredRelease({
       plans,
-      payload.provedRequiredRelease,
-    )
+      proved: payload.provedRequiredRelease,
+      releaseAfter: (remaining) =>
+        adapter.release({ project, mergeCommit: payload.mergeCommit, rungs: remaining }),
+    })
   }
   return adapter.release({ project, mergeCommit: payload.mergeCommit, rungs: plans })
 }

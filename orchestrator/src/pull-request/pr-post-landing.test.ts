@@ -47,6 +47,7 @@ const deployProject = {
   ...project,
   settings: {
     ...project.settings,
+    worktree: { recipePath: 'bottega.jsonc' },
     release: {
       ...project.settings.release,
       rungs: [
@@ -188,6 +189,7 @@ test('a successful move fences this process and hands off the exact fixed identi
         reason: null,
         declaresLive: false,
         declaresDeploy: false,
+        canDeployFromTree: false,
       },
     ],
     rungDecisionError: null,

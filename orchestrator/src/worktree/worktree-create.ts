@@ -17,8 +17,6 @@ import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-t
 import type { Worktree } from './worktree-types.ts'
 
 export type RecordWorktree = (worktree: Worktree) => void
-/** Explicitly opt a short-lived service tree out of run ownership metadata. */
-export const withoutRunWorktreeAttribution: RecordWorktree = () => {}
 export type RecordRecipeResource = (resource: {
   kind: 'database'
   provider: RecipeDatabaseProvider
@@ -210,7 +208,6 @@ export function attributeWorktree(
   runId: string,
   record?: RecordWorktree,
 ): void {
-  if (record === withoutRunWorktreeAttribution) return
   try {
     record?.(worktree)
   } catch (e) {

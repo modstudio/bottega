@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
-import type { Project } from '../project/projects.ts'
+import { projectLifecycleForm, type Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { releaseAtCommit } from './release-at-commit.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
@@ -71,6 +71,7 @@ export type ReleaseRungPlan = {
   reason: string | null
   declaresLive: boolean
   declaresDeploy: boolean
+  canDeployFromTree?: boolean
 }
 
 export const RELEASE_REQUIREMENT_SOURCES = ['explicit', 'reach'] as const
@@ -84,9 +85,9 @@ export type RequiredReleaseStep = 'deploy-rungs' | 'move-main' | 'hand-off'
 /** Decide the only allowed ordering before adapters perform any side effect. */
 export function requiredReleaseStepOrder(
   releaseRequired: boolean,
-  plans: readonly Pick<ReleaseRungPlan, 'required' | 'declaresDeploy'>[],
+  plans: readonly Pick<ReleaseRungPlan, 'required' | 'canDeployFromTree'>[],
 ): RequiredReleaseStep[] {
-  return releaseRequired && plans.some(({ required, declaresDeploy }) => required && declaresDeploy)
+  return releaseRequired && plans.some(({ required, canDeployFromTree }) => required && canDeployFromTree)
     ? ['deploy-rungs', 'move-main', 'hand-off']
     : ['move-main', 'hand-off']
 }
@@ -98,7 +99,6 @@ export function machineUpdateRungRefusal(input: {
   liveContainsIncoming: ReadonlyMap<string, boolean>
   liveIsAncestorOfIncoming: ReadonlyMap<string, boolean>
   requiredSinceLive: ReadonlyMap<string, boolean>
-  checkoutDeployable?: ReadonlyMap<string, boolean>
   project: string
 }): string | null {
   for (const rung of input.requiredRungs) {
@@ -110,13 +110,9 @@ export function machineUpdateRungRefusal(input: {
       input.requiredSinceLive.get(rung) === false
     )
       continue
-    const releaseCommand =
-      input.checkoutDeployable?.get(rung) === false
-        ? `${PLATFORM_SLUG} release run ${input.project} --rung ${rung}`
-        : `${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}`
     return (
       `refusing machine update: required rung ${rung} has not proved incoming commit ${input.incomingCommit} live; ` +
-      `run ${releaseCommand}, then retry ${PLATFORM_SLUG} machine update`
+      `run ${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}, then retry ${PLATFORM_SLUG} machine update`
     )
   }
   return null
@@ -144,6 +140,7 @@ function releaseRungPlans(
   skipped: ReadonlyMap<string, string>,
   beyondDepth: ReadonlySet<string>,
   landingBranch: string,
+  trackedRecipeLifecycle: boolean,
 ): ReleaseRungPlan[] {
   return rungs.map((rung) => {
     const requiredBy = explicitlyRequired.has(rung.name)
@@ -165,6 +162,7 @@ function releaseRungPlans(
             : notRequiredReason(rung, depth, skipped, beyondDepth),
       declaresLive: rung.live !== undefined || rung.liveVersion !== undefined,
       declaresDeploy: rung.deploy !== undefined,
+      canDeployFromTree: trackedRecipeLifecycle && rung.deploy !== undefined,
     }
   })
 }
@@ -189,6 +187,7 @@ export function legacyRungPlans(
     new Map(),
     new Set(),
     landingBranch,
+    false,
   )
 }
 
@@ -219,6 +218,7 @@ export function requiredRungDecision(
       skipped,
       beyondDepth,
       project.settings.trunk!,
+      projectLifecycleForm(project) === 'tracked-recipe',
     )
     return {
       decided: true,
@@ -237,6 +237,7 @@ export function requiredRungDecision(
         reason: `requirement could not be decided: ${error}`,
         declaresLive: rung.live !== undefined || rung.liveVersion !== undefined,
         declaresDeploy: rung.deploy !== undefined,
+        canDeployFromTree: false,
       }),
     )
     return {
@@ -287,12 +288,14 @@ function changedPathsBetween(project: Pick<Project, 'path'>, from: string, to: s
 
 export type IncomingRequiredRungGuard = { refusal: string | null; elapsedMs: number }
 
+export type ReleaseGuardProject = Pick<Project, 'name' | 'path' | 'settings'>
+
 export type IncomingRequiredRungDependencies = {
-  resolve(ref: string, project: Project): string
-  changedPaths(project: Project, from: string, to: string): string[]
-  entryClosure(project: Project, commit: string, entries: readonly string[]): EntryClosure
-  newestLive(project: Project, rung: string): string | null
-  contains(project: Project, ancestor: string, descendant: string): boolean
+  resolve(ref: string, project: ReleaseGuardProject): string
+  changedPaths(project: ReleaseGuardProject, from: string, to: string): string[]
+  entryClosure(project: ReleaseGuardProject, commit: string, entries: readonly string[]): EntryClosure
+  newestLive(project: ReleaseGuardProject, rung: string): string | null
+  contains(project: ReleaseGuardProject, ancestor: string, descendant: string): boolean
   now(): number
 }
 
@@ -307,7 +310,7 @@ const incomingRequiredRungDependencies: IncomingRequiredRungDependencies = {
 
 /** Gather release facts for the machine-update boundary inside the release concern. */
 export function incomingRequiredRungGuard(
-  project: Project,
+  project: ReleaseGuardProject,
   branch: string,
   dependencies: IncomingRequiredRungDependencies = incomingRequiredRungDependencies,
 ): IncomingRequiredRungGuard {
@@ -326,23 +329,22 @@ export function incomingRequiredRungGuard(
     entryClosure,
   ).filter((name) => {
     const rung = rungs.find((candidate) => candidate.name === name)
-    return rung?.branch === project.settings.trunk
+    return (
+      rung?.branch === project.settings.trunk &&
+      rung.deploy !== undefined &&
+      projectLifecycleForm(project) === 'tracked-recipe'
+    )
   })
   const proved = new Map<string, string | null>()
   const contains = new Map<string, boolean>()
   const isAncestor = new Map<string, boolean>()
   const requiredSinceLive = new Map<string, boolean>()
-  const checkoutDeployable = new Map<string, boolean>()
   for (const rung of requiredRungs) {
     const commit = dependencies.newestLive(project, rung)
     proved.set(rung, commit)
     contains.set(rung, Boolean(commit && dependencies.contains(project, incoming, commit)))
     const commitIsAncestor = Boolean(commit && dependencies.contains(project, commit, incoming))
     isAncestor.set(rung, commitIsAncestor)
-    checkoutDeployable.set(
-      rung,
-      Boolean(rungs.find((candidate) => candidate.name === rung)?.deploy),
-    )
     if (commit && commitIsAncestor) {
       requiredSinceLive.set(
         rung,
@@ -362,7 +364,6 @@ export function incomingRequiredRungGuard(
       liveContainsIncoming: contains,
       liveIsAncestorOfIncoming: isAncestor,
       requiredSinceLive,
-      checkoutDeployable,
       project: project.name,
     }),
     elapsedMs: dependencies.now() - started,
@@ -524,14 +525,7 @@ export function releaseRequiredRungsAfterMainMove(input: {
     try {
       const live = runner.newestLive(input.project, plan.rung)
       if (live && runner.contains(input.project, input.mergeCommit, live)) {
-        outcomes.set(plan.rung, {
-          rung: plan.rung,
-          required: true,
-          deployExit: 0,
-          outputTail: `already live at ${live}`,
-          satisfied: true,
-          deployed: false,
-        })
+        outcomes.set(plan.rung, alreadyLiveOutcome(plan, live))
         continue
       }
       const result = runner.release(input.project, plan.rung)
@@ -548,33 +542,30 @@ export async function releaseRequiredRungsBeforeMainMove(input: {
   project: Project
   mergeCommit: string
   rungs: ReleaseRungPlan[]
+  releaseAt?: typeof releaseAtCommit
+  now?: () => Date
 }): Promise<RequiredReleaseReport> {
-  const plans = input.rungs.filter(({ required, declaresDeploy }) => required && declaresDeploy)
+  const plans = input.rungs.filter(
+    ({ required, canDeployFromTree }) => required && canDeployFromTree,
+  )
   const prepared = prepareRequiredReleaseReport(input.project, plans)
   const outcomes = new Map<string, RequiredRungRelease>()
   for (const plan of prepared.actionable) {
     try {
-      const report = await releaseAtCommit({
+      const report = await (input.releaseAt ?? releaseAtCommit)({
         project: input.project.name,
         rung: plan.rung,
         commit: input.mergeCommit,
       })
-      const satisfied = releaseProofDecision({
-        exitCode: report.result.exitCode,
-        liveMatchesCandidate: report.result.liveMatchesCandidate,
-        candidateContainsMerge: true,
-      })
       const timing = `provision ${report.provisionMs}ms, deploy ${report.deployMs}ms, release ${report.releaseMs}ms`
-      outcomes.set(plan.rung, {
-        rung: plan.rung,
-        required: true,
-        deployExit: report.result.exitCode,
-        outputTail: satisfied
-          ? `rung ${plan.rung} healthy at ${input.mergeCommit} ${new Date().toISOString()} (${timing})${report.residue ? `; release checkout residue: ${report.residue}` : ''}`
-          : `${report.result.outputTail || '(no deploy output)'} (${timing})`,
-        satisfied,
-        deployed: !report.result.alreadyLive,
-      })
+      const residue = report.residue ? `; release checkout residue: ${report.residue}` : ''
+      outcomes.set(
+        plan.rung,
+        releaseResultOutcome(plan, report.result, {
+          satisfiedOutput: `rung ${plan.rung} healthy at ${input.mergeCommit} ${(input.now ?? (() => new Date()))().toISOString()}`,
+          suffix: ` (${timing})${residue}`,
+        }),
+      )
     } catch (cause) {
       outcomes.set(plan.rung, failure(plan, cause instanceof Error ? cause.message : String(cause)))
     }
@@ -619,18 +610,56 @@ function prepareRequiredReleaseReport(
   }
 }
 
-function releaseResultOutcome(plan: ReleaseRungPlan, result: ReleaseResult): RequiredRungRelease {
+function alreadyLiveOutcome(plan: ReleaseRungPlan, live: string): RequiredRungRelease {
+  return {
+    rung: plan.rung,
+    required: true,
+    deployExit: 0,
+    outputTail: `already live at ${live}`,
+    satisfied: true,
+    deployed: false,
+  }
+}
+
+function releaseResultOutcome(
+  plan: ReleaseRungPlan,
+  result: ReleaseResult,
+  presentation?: { satisfiedOutput?: string; suffix?: string },
+): RequiredRungRelease {
+  const satisfied = releaseProofDecision({
+    exitCode: result.exitCode,
+    liveMatchesCandidate: result.liveMatchesCandidate,
+    candidateContainsMerge: true,
+  })
   return {
     rung: plan.rung,
     required: true,
     deployExit: result.exitCode,
-    outputTail: result.outputTail || result.warning || '(no deploy output)',
-    satisfied: releaseProofDecision({
-      exitCode: result.exitCode,
-      liveMatchesCandidate: result.liveMatchesCandidate,
-      candidateContainsMerge: true,
-    }),
+    outputTail: `${satisfied && presentation?.satisfiedOutput ? presentation.satisfiedOutput : result.outputTail || result.warning || '(no deploy output)'}${presentation?.suffix ?? ''}`,
+    satisfied,
     deployed: !result.alreadyLive,
+  }
+}
+
+/** Combine pre-move proofs with the required rungs that must still run after main moves. */
+export function releaseAfterProvedRequiredRelease(input: {
+  plans: ReleaseRungPlan[]
+  proved: RequiredReleaseReport
+  releaseAfter(plans: ReleaseRungPlan[]): RequiredReleaseReport
+}): RequiredReleaseReport {
+  const remainingPlans = input.plans.map((plan) =>
+    plan.required && plan.canDeployFromTree
+      ? { ...plan, required: false, reason: 'proved before the main checkout moved' }
+      : plan,
+  )
+  const after = input.releaseAfter(remainingPlans)
+  const provedByRung = new Map(input.proved.releases.map((release) => [release.rung, release]))
+  const afterByRung = new Map(after.releases.map((release) => [release.rung, release]))
+  const releases = input.plans.map(({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!)
+  return {
+    required: input.plans.filter(({ required }) => required).map(({ rung }) => rung),
+    releases,
+    satisfied: releases.every(({ satisfied }) => satisfied),
   }
 }
 

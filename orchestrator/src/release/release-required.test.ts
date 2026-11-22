@@ -12,6 +12,7 @@ import {
   type RequiredReleaseRunner,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
+  releaseRequiredRungsBeforeMainMove,
   requiredReleaseStepOrder,
   requiredRungDecision,
   undecidedRequiredRelease,
@@ -27,6 +28,7 @@ const project = {
   retiredAt: null,
   settings: {
     trunk: 'main',
+    worktree: { recipePath: 'bottega.jsonc' },
     release: {
       rungs: [
         {
@@ -69,6 +71,7 @@ test.each(['alephbeis', 'starship'])(
       reason: null,
       declaresLive: true,
       declaresDeploy: false,
+      canDeployFromTree: false,
     }
     let childReleased = false
 
@@ -608,6 +611,84 @@ describe('requiredRungDecision', () => {
   })
 })
 
+describe('releaseRequiredRungsBeforeMainMove', () => {
+  const plan = (rung: string, canDeployFromTree: boolean) => ({
+    rung,
+    branch: 'main',
+    required: true,
+    requiredBy: 'explicit' as const,
+    reason: null,
+    declaresLive: true,
+    declaresDeploy: true,
+    canDeployFromTree,
+  })
+
+  test('deploys only required rungs that can release from a tracked tree', async () => {
+    const deployed: string[] = []
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true), plan('other', false)],
+      releaseAt: async ({ rung }) => {
+        deployed.push(rung)
+        return {
+          result: successfulRelease(),
+          provisionMs: 1,
+          deployMs: 2,
+          releaseMs: 3,
+        }
+      },
+      now: () => new Date('2026-11-22T20:00:00.000Z'),
+    })
+
+    expect(deployed).toEqual(['hosted-api'])
+    expect(report.required).toEqual(['hosted-api'])
+    expect(report.satisfied).toBe(true)
+  })
+
+  test('scores an unproved deploy unsatisfied and names teardown residue', async () => {
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true)],
+      releaseAt: async () => ({
+        result: successfulRelease({
+          exitCode: 7,
+          liveMatchesCandidate: false,
+          outputTail: 'deploy failed',
+        }),
+        provisionMs: 1,
+        deployMs: 2,
+        releaseMs: 3,
+        residue: 'release tree kept',
+      }),
+    })
+
+    expect(report.satisfied).toBe(false)
+    expect(report.releases[0]?.outputTail).toContain('deploy failed')
+    expect(report.releases[0]?.outputTail).toContain('release checkout residue: release tree kept')
+  })
+
+  test('keeps a proved deploy satisfied while naming teardown residue', async () => {
+    const report = await releaseRequiredRungsBeforeMainMove({
+      project,
+      mergeCommit: 'merge',
+      rungs: [plan('hosted-api', true)],
+      releaseAt: async () => ({
+        result: successfulRelease(),
+        provisionMs: 1,
+        deployMs: 2,
+        releaseMs: 3,
+        residue: 'release tree kept',
+      }),
+      now: () => new Date('2026-11-22T20:00:00.000Z'),
+    })
+
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]?.outputTail).toContain('release checkout residue: release tree kept')
+  })
+})
+
 describe('releaseRequiredRungsAfterMainMove', () => {
   const requiredPlan = {
     rung: 'hosted-api',
@@ -617,6 +698,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     reason: null,
     declaresLive: true,
     declaresDeploy: true,
+    canDeployFromTree: true,
   }
 
   test('releases required rungs after the main checkout move', () => {
