@@ -8,8 +8,6 @@ export type DocOrderInput = {
   orderedIds: string[]
 }
 
-export type LocalDocOrderRow = { record_id: string; slug: string }
-
 export function docOrderRefusal(
   currentIds: readonly string[],
   orderedIds: readonly string[],

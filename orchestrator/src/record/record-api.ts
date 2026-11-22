@@ -10,7 +10,11 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
-import { RECORD_SIGN_IN_REMEDY, recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_SIGN_IN_REMEDY,
+  recordCrossSpaceDestinationRefusal,
+  recordWriteSpaceRefusal,
+} from '../../../shared/record-remedies.ts'
 import { recordRequestNature } from '../../../shared/record-space-request.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
@@ -357,7 +361,11 @@ function writeTelemetryDeps(deps: Deps) {
   }
 }
 
-function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
+function refusingRequestTenant(
+  context: Context<ApiEnvironment>,
+  recordUrl: string,
+  acrossReadableSpaces = false,
+): Tenant | null {
   const route = context.req.path
   const nature =
     context.req.method === 'POST' && RECORD_API_POST_READ_ROUTES.has(route)
@@ -372,10 +380,14 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
     recordUrl,
     route,
     readKind,
+    acrossReadableSpaces,
   )
   if (tenant && 'refused' in tenant) {
-    const refusal = recordWriteSpaceRefusal()
-    throw new HTTPException(409, {
+    const refusal =
+      tenant.refused === 'cross-space-destination'
+        ? recordCrossSpaceDestinationRefusal()
+        : recordWriteSpaceRefusal()
+    throw new HTTPException(refusal.status, {
       res: Response.json(refusal.body, { status: refusal.status }),
     })
   }
@@ -385,7 +397,10 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
 function registerRecordCoreRoutes(
   app: Hono<ApiEnvironment>,
   deps: Deps,
-  ports: { scope(context: Context<ApiEnvironment>): Tenant | null; noSpace: typeof noSpace },
+  ports: {
+    scope(context: Context<ApiEnvironment>, acrossReadableSpaces?: boolean): Tenant | null
+    noSpace: typeof noSpace
+  },
 ): void {
   registerRecordContextItemRoutes(app, deps, ports)
   registerSignedDocSearchRoute(app, deps, ports)
@@ -428,8 +443,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       throw error
     }
   })
-  const scope = (context: Context<ApiEnvironment>): Tenant | null =>
-    refusingRequestTenant(context, deps.recordUrl)
+  const scope = (context: Context<ApiEnvironment>, acrossReadableSpaces = false): Tenant | null =>
+    refusingRequestTenant(context, deps.recordUrl, acrossReadableSpaces)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerRecordCoreRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
@@ -750,7 +765,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       subject,
       context.get('identity').user.id,
     )
-    const tenant = listTarget ? docScope(context, listTarget) : scope(context)
+    const tenant = listTarget
+      ? docScope(context, listTarget)
+      : scope(context, Boolean(query.data.acrossReadableSpaces))
     if (!tenant) return noSpace(context)
     let cursor: RecordCursor | null = null
     try {

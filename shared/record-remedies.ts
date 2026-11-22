@@ -13,13 +13,24 @@ export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; r
 export const RECORD_PERSONAL_SPACE_REMEDY = `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
 export const RECORD_WRITE_SPACE_REMEDY =
   'send the destination space in the x-record-space header, then retry'
+const RECORD_CROSS_SPACE_DESTINATION_REMEDY = 'send the cross-space read without a destination'
 export type WriteSpaceRefusal = { refused: 'write-destination' }
+export type CrossSpaceDestinationRefusal = { refused: 'cross-space-destination' }
 export function recordWriteSpaceRefusal() {
   return {
     status: 409 as const,
     body: {
       error: 'write request names no destination space',
       remedy: RECORD_WRITE_SPACE_REMEDY,
+    },
+  }
+}
+export function recordCrossSpaceDestinationRefusal() {
+  return {
+    status: 400 as const,
+    body: {
+      error: 'cross-space read includes a destination',
+      remedy: RECORD_CROSS_SPACE_DESTINATION_REMEDY,
     },
   }
 }

@@ -47,7 +47,7 @@ import {
 } from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
+import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
 import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
@@ -487,21 +487,16 @@ export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: s
   return applyRecordWriteAuthority({
     local: () => executeLocalDocOrder(input),
     hosted: async () => {
-      const siblings = db()
-        .query<LocalDocOrderRow, [string, string, string | null]>(
-          `SELECT record_id, slug FROM doc
-           WHERE scope=? AND COALESCE(subject, '')=? AND parent_record_id IS ?
-           ORDER BY position, title, record_id`,
-        )
-        .all(input.scope, input.subject ?? '', input.parentId)
+      const siblings = (await readDocs({ scope: input.scope, subject: input.subject })).filter(
+        (doc) => doc.parent_record_id === input.parentId,
+      )
       const refusal = docOrderRefusal(
         siblings.map((row) => row.record_id),
         input.orderedIds,
       )
       if (refusal) throw new Error(refusal)
       const client = await hostedDocClient(input.scope, input.subject)
-      await client.reorderDocs(input)
-      return executeLocalDocOrder(input)
+      return client.reorderDocs(input)
     },
   })
 }

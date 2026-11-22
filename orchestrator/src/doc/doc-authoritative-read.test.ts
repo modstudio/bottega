@@ -8,7 +8,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { upsertProject } from '../project/projects.ts'
 import { readDoc, readDocRevisions, readDocs } from './doc-authoritative-read.ts'
-import { setDocCheckedAgainst } from './docs.ts'
+import { reorderDocs, setDocCheckedAgainst } from './docs.ts'
 
 afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
@@ -109,6 +109,38 @@ test('a hosted project listing without a subject reads all spaces and never the 
   expect(calls).toEqual([
     expect.objectContaining({ scope: 'project', acrossReadableSpaces: true, limit: 100 }),
   ])
+})
+
+test('hosted reorder validates against authoritative siblings when the local mirror is empty', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const parentId = '01990000-0000-7000-8000-000000000010'
+  const firstId = '01990000-0000-7000-8000-000000000011'
+  const secondId = '01990000-0000-7000-8000-000000000012'
+  const client = createMemoryRecordApiClient()
+  const writes: string[][] = []
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({ id: firstId, parentId, slug: 'first' }),
+        hostedRow({ id: secondId, parentId, slug: 'second' }),
+      ],
+      nextCursor: null,
+    }),
+    reorderDocs: async ({ orderedIds }) => {
+      writes.push(orderedIds)
+      return { orderedIds }
+    },
+  })
+  const input = {
+    scope: 'global',
+    subject: null,
+    parentId,
+    orderedIds: [secondId, firstId],
+  }
+  expect(await reorderDocs(input)).toEqual({ orderedIds: [secondId, firstId] })
+  await expect(reorderDocs({ ...input, orderedIds: [firstId] })).rejects.toThrow('missing ids')
+  expect(writes).toEqual([[secondId, firstId]])
 })
 
 test('an unqualified hosted read refuses two subjects with the same slug', async () => {
