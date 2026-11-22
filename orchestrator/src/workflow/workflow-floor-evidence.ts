@@ -50,6 +50,7 @@ import {
   flagForFloor,
   floorGuidance,
   floorsAcceptCommandArtifact,
+  floorsIncludeTrackerTransition,
   githubPullRequestUrlIn,
   hasGateFloor,
   parseArtifactRef,
@@ -505,6 +506,7 @@ async function resolveTaskArtifact(
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
+  hasTrackerTransitionFloor: boolean,
 ): Promise<ArtifactEvidence> {
   if (ref.kind === 'task-document')
     return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
@@ -516,7 +518,14 @@ async function resolveTaskArtifact(
   if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') {
-    const notice = FRESHNESS.notice(FRESHNESS.task, task.updatedAt, identity.stepActivatedAt)
+    const notice = FRESHNESS.notice(
+      FRESHNESS.task,
+      task.updatedAt,
+      identity.stepActivatedAt,
+      hasTrackerTransitionFloor
+        ? `the tracker-transition floor is met by passing \`--task ${ref.key}\`, which needs no write during the step`
+        : undefined,
+    )
     return { ref: raw, exists: task.key === ref.key, ...(notice ? { notice } : {}) }
   }
   return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)
@@ -572,6 +581,7 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
   requireCommandCheckout: boolean,
+  hasTrackerTransitionFloor: boolean,
 ): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
@@ -626,7 +636,7 @@ async function resolveArtifact(
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
-  return await resolveTaskArtifact(ref, raw, identity, ports)
+  return await resolveTaskArtifact(ref, raw, identity, ports, hasTrackerTransitionFloor)
 }
 
 function gatherTask(
@@ -967,6 +977,7 @@ async function gatherArtifactEntry(
           resolveCheckout,
           gathered.tree!.commit,
           floorsAcceptCommandArtifact(input.floors),
+          floorsIncludeTrackerTransition(input.floors),
         ),
     ...offeredArtifactRunEvidence(parsed, d),
   }

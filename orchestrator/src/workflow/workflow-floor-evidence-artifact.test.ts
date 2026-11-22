@@ -5,6 +5,7 @@ import {
   CURSOR_RECORD_ID,
   database,
   gather,
+  identity,
   insertRun,
   projectId,
   unlinkedIdentity,
@@ -129,7 +130,27 @@ test('tasks must change during the active step when their tracker reports an upd
 
   await expect(
     gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }),
-  ).rejects.toThrow('task record time is 2026-08-01, before step activation 2026-09-01')
+  ).rejects.toThrow(
+    'task record time is 2026-08-01, before step activation 2026-09-01; write or change the task record during this step, then cite it',
+  )
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }),
+  ).rejects.not.toThrow('--task')
+
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-08-01') }, identity, [
+      {
+        kind: 'tracker-transition',
+        deferrable: false,
+        expectedExitCode: 0,
+        expectedStatus: 'active',
+        requirePullRequest: false,
+        operatorRuling: false,
+      },
+    ]),
+  ).rejects.toThrow(
+    'task record time is 2026-08-01, before step activation 2026-09-01; the tracker-transition floor is met by passing `--task DEV-977`, which needs no write during the step',
+  )
   await expect(
     gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()
