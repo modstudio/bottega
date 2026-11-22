@@ -1,8 +1,6 @@
 // concern: release-preflight-adapter
 /** Collects read-only repository and endpoint facts for release preflight. */
 
-import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import {
   type LiveReadingRunner,
@@ -22,8 +20,8 @@ import {
 
 export type ReleasePreflightInput = {
   project: Project
-  baseBranch: string
   headCommit: string
+  changedPaths: readonly string[]
   target: string
 }
 
@@ -42,25 +40,13 @@ export function runProbe(
   }
 }
 
-function changedPaths(input: ReleasePreflightInput): string[] {
-  const { project } = input
-  return splitNulPaths(
-    git(
-      nulPathListArgs(['diff', '--name-only', `${input.baseBranch}...${input.headCommit}`]),
-      project.path,
-      targetGitEnvironment(project.path),
-      ' while reading pull-request paths for release preflight',
-    ),
-  )
-}
-
 function requiredRungs(input: ReleasePreflightInput): ReleasePreflightRung[] {
   const rungs = input.project.settings.release?.rungs ?? []
   const entries = [...new Set(rungs.flatMap((rung) => rung.entryPoints ?? []))]
   const closure = entries.length
     ? entryClosureAtCommit(input.project, input.headCommit, entries)
     : new Map()
-  return preflightRungs(rungs, changedPaths(input), closure, input.project.settings.trunk!)
+  return preflightRungs(rungs, input.changedPaths, closure, input.project.settings.trunk!)
 }
 
 function probeRung(

@@ -28,12 +28,14 @@ test('a release preflight refusal propagates before enqueue or merge', async () 
   recordPassingGate()
   let enqueued = false
   let merged = false
+  let receivedChangedPaths: readonly string[] | undefined
   await expect(
     mergePullRequest(
       '42',
       cwd,
       adapter({
-        releasePreflight: async () => {
+        releasePreflight: async (input) => {
+          receivedChangedPaths = input.changedPaths
           throw new Error('hosted-hub credentials probe failed; run fly auth login')
         },
         queueState: enqueueThenMerge(),
@@ -51,6 +53,7 @@ test('a release preflight refusal propagates before enqueue or merge', async () 
   ).rejects.toThrow('fly auth login')
   expect(enqueued).toBeFalse()
   expect(merged).toBeFalse()
+  expect(receivedChangedPaths).toEqual(['orchestrator/src/pull-request/pr-merge.ts'])
 })
 
 test('a passing release preflight reaches enqueue', async () => {

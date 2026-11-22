@@ -890,8 +890,8 @@ async function completeMerge(input: {
       if (input.releaseRequired)
         await input.adapter.releasePreflight?.({
           project: input.project,
-          baseBranch: pullRequest.baseBranch,
           headCommit: pullRequest.headCommit,
+          changedPaths: admittedChange.group.pathSet,
           target: input.target,
         })
       const merged = mergeAdmittedHead({ ...input, pullRequest })

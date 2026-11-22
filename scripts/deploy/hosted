@@ -5,6 +5,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# shellcheck source=scripts/deploy/hosted-required-secrets
+source "$SCRIPT_DIR/hosted-required-secrets"
+hosted_app_identity "$@"
 APP="${1:-}"
 
 release_command="bottega release run bottega --rung hosted-$APP"
@@ -64,12 +68,10 @@ fi
 
 case "$APP" in
   api)
-    fly_app="bottega-api"
     deploy_config="$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
     deploy_args=(--build-arg GIT_SHA="$commit")
     ;;
   hub)
-    fly_app="bottega-hub"
     deploy_config="$PROJECT_ROOT/hub/deploy/fly.toml"
     deploy_args=(
       --build-arg VITE_HUB_MODE=hosted

@@ -39,6 +39,27 @@ describe('release preflight', () => {
     expect(preflightRungs(rungs, ['docs/guide.md'], new Map(), 'main')).toEqual([])
   })
 
+  test('a changed path selects a required rung on the landing branch', () => {
+    expect(preflightRungs(rungs, ['hub/src/app.ts'], new Map(), 'main')).toEqual(rungs)
+  })
+
+  test('a required rung on a different branch is not selected', () => {
+    expect(preflightRungs(rungs, ['hub/src/app.ts'], new Map(), 'stable')).toEqual([])
+  })
+
+  test('an entry-point closure match selects a required rung', () => {
+    const entryRungs: ReleasePreflightRung[] = [
+      {
+        name: 'hosted-hub',
+        branch: 'main',
+        live: 'read hub endpoint',
+        entryPoints: ['hub/src/cli.ts'],
+      },
+    ]
+    const closure = new Map([['hub/src/cli.ts', new Set(['hub/src/app.ts'])]])
+    expect(preflightRungs(entryRungs, ['hub/src/app.ts'], closure, 'main')).toEqual(entryRungs)
+  })
+
   test('expired credentials on a required rung refuse with the probe remedy', () => {
     const command = 'scripts/deploy/hosted-preflight hub'
     const decision = decidePreflight([
