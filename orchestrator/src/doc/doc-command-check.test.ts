@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { checkCustomerGuideCommands, customerGuideCommandRefusal } from './doc-command-check.ts'
 import { getDocRevision, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import { checkCustomerGuideCommands, customerGuideCommandRefusal } from './doc-command-check.ts'
 import { restoreDoc, setDoc } from './docs.ts'
 import { commitDocSet } from './local-doc-write.ts'
 

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
   getDoc,
   getDocRevision,
@@ -12,6 +11,7 @@ import {
   listDocRevisions,
   listDocs,
 } from '../../test/fixtures/doc-local-read.ts'
+import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,

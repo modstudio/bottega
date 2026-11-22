@@ -137,7 +137,9 @@ async function lintDocs(flags: DocFlags, presentation: DocPresentation): Promise
 
 async function listedLintedDocs(
   flags: DocFlags,
-  lint: (doc: Awaited<ReturnType<typeof authoritativeDocs>>[number]) => ReturnType<typeof lintStoredDoc>,
+  lint: (
+    doc: Awaited<ReturnType<typeof authoritativeDocs>>[number],
+  ) => ReturnType<typeof lintStoredDoc>,
 ) {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
@@ -151,7 +153,9 @@ async function listedLintedDocs(
 
 async function listedDocFindings(
   flags: DocFlags,
-  lint: (doc: Awaited<ReturnType<typeof authoritativeDocs>>[number]) => ReturnType<typeof lintStoredDoc>,
+  lint: (
+    doc: Awaited<ReturnType<typeof authoritativeDocs>>[number],
+  ) => ReturnType<typeof lintStoredDoc>,
 ) {
   return (await listedLintedDocs(flags, lint)).flatMap(projectListedDocFindings)
 }
@@ -848,8 +852,11 @@ async function selectedDocHistory(
   owner: string | null,
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<DocHistory | null> {
-  return readDocHistory(address.scope, address.subject, address.slug, owner, (doc) =>
-    ports.revisionHistory({ ...address, recordId: doc.record_id }),
+  const doc = await authoritativeDoc(address.scope, address.subject, address.slug, owner)
+  if (!doc) return null
+  return (
+    (await ports.revisionHistory({ ...address, recordId: doc.record_id })) ??
+    readDocHistory(address.scope, address.subject, address.slug, owner)
   )
 }
 

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { importDocs, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import {
@@ -10,7 +11,6 @@ import {
   exportDocFiles,
   importDocFiles,
 } from './doc-files.ts'
-import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { exportDocs } from './docs.ts'
 
 const subjectDirectory = join('export', 'canon', 'alephbeis')

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { SecurityRunner } from '../../../shared/keychain.ts'
 import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
+import { listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY } from '../record/record-auth.ts'
 import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { decideDocRevisionAuthor } from './doc-revision-store.ts'
-import { listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from './docs.ts'
 
 const SECURITY_RUNNER_KEY = Symbol.for('orch.security-runner')

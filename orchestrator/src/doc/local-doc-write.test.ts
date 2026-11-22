@@ -1,19 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import {
-  getDocRevision,
-  listDocRevisions,
-  listDocs,
-} from '../../test/fixtures/doc-local-read.ts'
+import { getDocRevision, listDocRevisions, listDocs } from '../../test/fixtures/doc-local-read.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject, retireSubject } from '../subject/subjects.ts'
-import {
-  restoreDoc,
-  setDoc,
-  storedDocWarnings,
-} from './docs.ts'
+import { restoreDoc, setDoc, storedDocWarnings } from './docs.ts'
 import { commitDocRestore, commitDocSet } from './local-doc-write.ts'
 
 test('latest revision follows its sequence when record ids sort in the opposite order', async () => {
@@ -52,9 +44,10 @@ test('latest revision follows its sequence when record ids sort in the opposite 
     .query('UPDATE doc_revision SET record_id=? WHERE number=?')
     .run(newerRecordId, revisions[1]!.number)
 
-  expect((await import('../../test/fixtures/doc-local-read.ts')).getDoc('global', null, created.slug)?.revision).toBe(
-    newerRecordId,
-  )
+  expect(
+    (await import('../../test/fixtures/doc-local-read.ts')).getDoc('global', null, created.slug)
+      ?.revision,
+  ).toBe(newerRecordId)
   await expect(
     setDoc({
       scope: created.scope,

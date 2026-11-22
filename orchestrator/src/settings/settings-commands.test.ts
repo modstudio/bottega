@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
-import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { getDoc, listDocs } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
@@ -8,7 +9,6 @@ import {
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { importCanon } from './canon-import.ts'
 import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
-import { getDoc, listDocs } from '../../test/fixtures/doc-local-read.ts'
 
 const owner = '01990000-0000-7000-8000-000000000091'
 const scannerHolder = globalThis as typeof globalThis & {

@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
-import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { listOpenResumes, restoreDoc } from './docs.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')

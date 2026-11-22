@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { USER_CANON_MANAGED_MARKER } from '../canon/user-canon-home.ts'
 import { db } from '../database/db.ts'
-import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'

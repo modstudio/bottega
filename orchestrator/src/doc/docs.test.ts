@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
-import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { readDocRevision, setDoc, setDocCheckedAgainst } from './docs.ts'
 
 test('an addressed revision read refuses an id from another document with the history remedy', async () => {
