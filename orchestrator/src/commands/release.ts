@@ -141,7 +141,7 @@ export function register(program: Command): void {
       'run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback; for a rung CI deploys, wait for its live probe to contain the branch tip and record the proof',
     )
     .option('--rung <name>', 'release rung to run')
-    .option('--at <commit>', 'provision a detached release tree at this commit')
+    .option('--at <commit>', 'deploy from a release tree provisioned at this commit')
     .option('--rollback <reason>', 'reason for deploying the prior live commit')
     .option('--behind-trunk <reason>', 'reason for deploying a branch behind the project trunk')
     .option('--redeploy <reason>', 'deploy again even when this commit is already live')

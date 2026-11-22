@@ -57,7 +57,7 @@ run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, an
 ### Options
 
 - `--rung <name>`: release rung to run
-- `--at <commit>`: provision a detached release tree at this commit
+- `--at <commit>`: deploy from a release tree provisioned at this commit
 - `--rollback <reason>`: reason for deploying the prior live commit
 - `--behind-trunk <reason>`: reason for deploying a branch behind the project trunk
 - `--redeploy <reason>`: deploy again even when this commit is already live
