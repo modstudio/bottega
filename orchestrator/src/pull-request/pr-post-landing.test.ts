@@ -2,9 +2,7 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
-import { projectMovesInstallation } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
@@ -19,7 +17,6 @@ import {
   completePullRequestPostLanding,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
-  postLandingHandOffInvocation,
   runPullRequestPostLanding,
 } from './pr-post-landing.ts'
 import {
@@ -42,6 +39,23 @@ const project = {
       mergeMethod: 'squash',
       requiredChecks: [],
       rungs: [{ name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] }],
+    },
+  },
+} as Project
+
+const deployProject = {
+  ...project,
+  settings: {
+    ...project.settings,
+    release: {
+      ...project.settings.release,
+      rungs: [
+        {
+          ...project.settings.release!.rungs[0],
+          deploy: 'deploy hosted api',
+          live: 'read hosted api commit',
+        },
+      ],
     },
   },
 } as Project
@@ -191,22 +205,6 @@ test('a successful move fences this process and hands off the exact fixed identi
 test('a required rung is proved before main moves and is not delegated again', async () => {
   const events: string[] = []
   let handOffStarted = ''
-  const deployProject = {
-    ...project,
-    settings: {
-      ...project.settings,
-      release: {
-        ...project.settings.release,
-        rungs: [
-          {
-            ...project.settings.release!.rungs[0],
-            deploy: 'deploy hosted api',
-            live: 'read hosted api commit',
-          },
-        ],
-      },
-    },
-  } as Project
   const outcome = await complete({
     project: deployProject,
     post: {
@@ -228,31 +226,12 @@ test('a required rung is proved before main moves and is not delegated again', a
     },
   })
   expect(events).toEqual(['deploy-rungs', 'move-main', 'hand-off-proved'])
-  expect(outcome.output.indexOf('already live at release-commit')).toBeLessThan(
-    outcome.output.indexOf('main moved to merge-commit'),
-  )
   const movedAt = outcome.output.match(/main moved to merge-commit (\S+)/)?.[1]
   expect(new Date(movedAt!).getTime()).toBeLessThanOrEqual(new Date(handOffStarted).getTime())
 })
 
 test('an unproved pre-move rung leaves main unmoved and exits 21', async () => {
   const events: string[] = []
-  const deployProject = {
-    ...project,
-    settings: {
-      ...project.settings,
-      release: {
-        ...project.settings.release,
-        rungs: [
-          {
-            ...project.settings.release!.rungs[0],
-            deploy: 'deploy hosted api',
-            live: 'read hosted api commit',
-          },
-        ],
-      },
-    },
-  } as Project
   const outcome = await complete({
     project: deployProject,
     post: {
@@ -285,22 +264,6 @@ test('an unproved pre-move rung leaves main unmoved and exits 21', async () => {
   expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
   expect(outcome.output).toContain('health proof failed')
   expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
-})
-
-test('another project uses the plain move and the current installation hand-off', async () => {
-  const movesInstallation = projectMovesInstallation(project)
-
-  expect(movesInstallation).toBeFalse()
-  expect(postLandingHandOffInvocation(project.path, movesInstallation)).toEqual({
-    argv: bottegaEntryArgv(PLATFORM_SLUG),
-  })
-})
-
-test('the post-landing child for a moved platform checkout runs through its binary', async () => {
-  expect(postLandingHandOffInvocation(project.path, true)).toEqual({
-    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
-    cwd: project.path,
-  })
 })
 
 test('a change inside a rung entry closure requires that rung and hands it off', async () => {

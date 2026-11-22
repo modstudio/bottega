@@ -397,6 +397,10 @@ async function requiredReleaseBeforeMove(
   return post.releaseBeforeMove({ project, mergeCommit, rungs: decision.rungs })
 }
 
+function deploysBeforeMain(releaseRequired: boolean, decision: RequiredRungDecision): boolean {
+  return requiredReleaseStepOrder(releaseRequired, decision.rungs)[0] === 'deploy-rungs'
+}
+
 function postLandingTimingTrace(
   enabled: boolean,
   report: RequiredReleaseReport | undefined,
@@ -428,14 +432,25 @@ type CompletePullRequestPostLandingInput = {
   movesInstallation?: boolean
 }
 
+function tracedPostLandingOutcome(
+  handedOff: PullRequestMergeOutcome,
+  input: CompletePullRequestPostLandingInput,
+  traceEnabled: boolean,
+  report: RequiredReleaseReport | undefined,
+  movedAt: string,
+): PullRequestMergeOutcome {
+  const trace = postLandingTimingTrace(traceEnabled, report, input.mergeCommit, movedAt)
+  const outcome = postLandingHandOffOutcome(handedOff, input.target, input.depth)
+  return { ...outcome, output: [...trace, outcome.output].filter(Boolean).join('\n') }
+}
+
 export async function completePullRequestPostLanding(
   input: CompletePullRequestPostLandingInput,
 ): Promise<PullRequestMergeOutcome> {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
-  const traceEnabled =
-    requiredReleaseStepOrder(input.releaseRequired, decision.rungs)[0] === 'deploy-rungs'
+  const traceEnabled = deploysBeforeMain(input.releaseRequired, decision)
   const provedRequiredRelease = await requiredReleaseBeforeMove(
     post,
     input.project,
@@ -512,14 +527,13 @@ export async function completePullRequestPostLanding(
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target, input.depth)}`,
   )
   const handedOff = await post.handOff(payload, input.project, movesInstallation)
-  const trace = postLandingTimingTrace(
+  return tracedPostLandingOutcome(
+    handedOff,
+    input,
     traceEnabled,
     provedRequiredRelease,
-    input.mergeCommit,
     move.movedAt,
   )
-  const outcome = postLandingHandOffOutcome(handedOff, input.target, input.depth)
-  return { ...outcome, output: [...trace, outcome.output].filter(Boolean).join('\n') }
 }
 
 function promoteWorkflowTree(
@@ -611,8 +625,7 @@ function requiredReleaseForChild(input: {
   project: Project
 }): RequiredReleaseReport {
   const { adapter, checkoutFailure, payload, plans, project } = input
-  if (payload.rungDecisionError)
-    return undecidedRequiredRelease(plans, payload.rungDecisionError)
+  if (payload.rungDecisionError) return undecidedRequiredRelease(plans, payload.rungDecisionError)
   if (!payload.releaseRequired) return releaseRequiredFlagAbsent(plans)
   if (checkoutFailure) return failedRequiredRelease(plans, checkoutFailure)
   if (payload.provedRequiredRelease) {

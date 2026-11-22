@@ -274,11 +274,7 @@ function releaseCommitContains(
   return gitResult(['merge-base', '--is-ancestor', ancestor, descendant], project.path).ok
 }
 
-function changedPathsBetween(
-  project: Pick<Project, 'path'>,
-  from: string,
-  to: string,
-): string[] {
+function changedPathsBetween(project: Pick<Project, 'path'>, from: string, to: string): string[] {
   return splitNulPaths(
     git(
       nulPathListArgs(['diff', '--name-only', `${from}..${to}`, '--']),

@@ -53,13 +53,7 @@ async function runRelease(project: string | undefined, options: ReleaseOptions):
   const releaseTree = options.at ? await runReleaseAtCommit(project, options) : undefined
   const result =
     releaseTree?.result ??
-    releaseProject(
-      project,
-      options.rung,
-      options.rollback,
-      options.behindTrunk,
-      options.redeploy,
-    )
+    releaseProject(project, options.rung, options.rollback, options.behindTrunk, options.redeploy)
   writeReleaseOutput(result, releaseTree, Boolean(options.json))
   if (result.exitCode !== 0) process.exitCode = result.exitCode
 }
