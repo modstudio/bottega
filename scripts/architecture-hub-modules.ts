@@ -104,6 +104,10 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
+    file: 'hub/src/ingest/tracker-row-plan.ts',
+    allowed: ['node:crypto', '../../../shared/trackers.ts', '../task-row.ts'],
+  },
+  {
     file: 'hub/src/ingest/trackers.ts',
     allowed: [
       'bun:sqlite',
@@ -113,7 +117,6 @@ export const hubModuleSpecs = [
       '../../../shared/trackers.ts',
       '../db.ts',
       '../hosted-change-sender.ts',
-      '../hosted-queue-decision.ts',
       '../hosted-url.ts',
       '../hosted-write-mode.ts',
       '../mcp.ts',
@@ -125,8 +128,10 @@ export const hubModuleSpecs = [
       '../task-cache.ts',
       '../task-hosted-row.ts',
       '../task-identity.ts',
+      '../task-row.ts',
       '../task-write-destination.ts',
       './tracker-read-mode.ts',
+      './tracker-row-plan.ts',
     ],
   },
   {

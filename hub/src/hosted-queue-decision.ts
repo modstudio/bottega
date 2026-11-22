@@ -1,9 +1,6 @@
-import { PLATFORM_NAME } from '../../shared/brand.ts'
 import type { HostedWriteMode } from './hosted-write-mode.ts'
 import {
   HOSTED_DOCUMENT_TABLE,
-  HOSTED_STATUS_EVENT_TABLE,
-  HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   SYNCED_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
@@ -12,14 +9,8 @@ const GUARDED_HOSTED_TABLES: ReadonlySet<string> = new Set(
   PUSHABLE_HUB_CHANGE_TABLES.filter((table) => !SYNCED_HUB_CHANGE_TABLES.has(table)),
 )
 
-const note = PLATFORM_NAME.toLowerCase()
-
 export const OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE =
   'offline-task-edits.queueHostedDocumentDelete'
-export const TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE = 'trackers.retireOutOfScopeTrackerTasks'
-export const TRACKERS_BACKFILL_QUEUE_SITE = 'trackers.backfillTrackerTasks'
-export const TRACKERS_WRITE_CACHE_QUEUE_SITE = 'trackers.writeTrackerCache'
-export const TRACKERS_DROP_DELETED_QUEUE_SITE = 'trackers.dropDeletedTrackerTasks'
 
 export const HOSTED_QUEUE_ALLOWLIST = [
   {
@@ -27,20 +18,6 @@ export const HOSTED_QUEUE_ALLOWLIST = [
     table: HOSTED_DOCUMENT_TABLE,
     removedBy: 'DEV-2527',
   },
-  {
-    site: TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
-    table: HOSTED_TASK_TABLE,
-    removedBy: `note ${note}#2924`,
-  },
-  {
-    site: TRACKERS_BACKFILL_QUEUE_SITE,
-    table: HOSTED_TASK_TABLE,
-    removedBy: `note ${note}#2924`,
-  },
-  ...[HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE].flatMap((table) => [
-    { site: TRACKERS_WRITE_CACHE_QUEUE_SITE, table, removedBy: `note ${note}#2924` },
-    { site: TRACKERS_DROP_DELETED_QUEUE_SITE, table, removedBy: `note ${note}#2924` },
-  ]),
 ] as const
 
 export function hostedQueueRefusal({

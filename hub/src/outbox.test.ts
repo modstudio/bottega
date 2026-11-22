@@ -10,10 +10,6 @@ import {
   HOSTED_QUEUE_ALLOWLIST,
   hostedQueueRefusal,
   OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
-  TRACKERS_BACKFILL_QUEUE_SITE,
-  TRACKERS_DROP_DELETED_QUEUE_SITE,
-  TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
-  TRACKERS_WRITE_CACHE_QUEUE_SITE,
 } from './hosted-queue-decision.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
@@ -86,13 +82,6 @@ describe('hosted outbox', () => {
     expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'hosted-configured' })).toContain(
       'sendHostedChanges',
     )
-    expect(
-      hostedQueueRefusal({
-        table: HOSTED_TASK_TABLE,
-        mode: 'hosted-configured',
-        site: TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
-      }),
-    ).toBeNull()
     expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' })).toBeNull()
   })
 
@@ -103,34 +92,6 @@ describe('hosted outbox', () => {
         {
           source: readFileSync(new URL('./offline-task-edits.ts', import.meta.url), 'utf8'),
           label: 'OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE',
-        },
-      ],
-      [
-        TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
-          label: 'TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE',
-        },
-      ],
-      [
-        TRACKERS_BACKFILL_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
-          label: 'TRACKERS_BACKFILL_QUEUE_SITE',
-        },
-      ],
-      [
-        TRACKERS_WRITE_CACHE_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
-          label: 'TRACKERS_WRITE_CACHE_QUEUE_SITE',
-        },
-      ],
-      [
-        TRACKERS_DROP_DELETED_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
-          label: 'TRACKERS_DROP_DELETED_QUEUE_SITE',
         },
       ],
     ])
