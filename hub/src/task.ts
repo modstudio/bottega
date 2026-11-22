@@ -12,15 +12,15 @@ import { hostedWriteMode, type TaskWriteMode } from './hosted-write-mode.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type StatusCategory } from './projects.ts'
-import { HOSTED_COMMENT_TABLE, type PushedComment } from './push-contract.ts'
+import type { PushedComment } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
 import { cacheCreatedHostedTask } from './task-cache.ts'
 import { hostedCreateTask, hostedLookupTasks } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
+import { sendTaskCommentRecord } from './task-comment-record.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
-import { sendDuplicateReasonComment } from './task-duplicate-comment.ts'
 import {
   hostedComment,
   hostedTaskBatch,
@@ -499,13 +499,15 @@ export async function createTask(
     hostedOptionsForProject(input.project, options.hosted),
   )
   const commentAt = nowIso()
-  const duplicateComment = await sendDuplicateReasonComment(
-    hostedTaskRow(hosted),
-    options.allowDuplicateReason,
-    commentAt,
-    options.attribution ?? UNATTRIBUTED,
-    options.hosted,
-  )
+  const duplicateComment = options.allowDuplicateReason
+    ? pushedComment(
+        hostedTaskRow(hosted),
+        options.allowDuplicateReason,
+        commentAt,
+        options.attribution ?? UNATTRIBUTED,
+      )
+    : null
+  if (duplicateComment) await sendTaskCommentRecord(duplicateComment, { hosted: options.hosted })
   const applied = applyHostedWriteLocally(
     `${hosted.key} was created in the hosted record; its local copy will arrive on the next record pull`,
     () =>
@@ -859,21 +861,7 @@ export async function commentTask(
   const at = nowIso()
   if (hosted) {
     const comment = pushedComment(current, body, at, attribution)
-    await sendHostedChanges(
-      'the record',
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: comment.id,
-            op: 'upsert',
-            row: comment,
-            expected_revision: 0,
-          },
-        ],
-      ],
-      hostedSendOptionsForTask(current.key, current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(comment, { hosted: options.hosted })
     return { ...hostedComment(comment), revision: 1 }
   }
   const result = writeTransaction((conn) => {
@@ -941,22 +929,11 @@ export async function editTaskComment(
     )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { body }, at)
-    await sendHostedChanges(
-      'the record',
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: commentId,
-            op: 'upsert',
-            row,
-            fields: ['body', 'updated_at'],
-            expected_revision: options.expectedRevision,
-          },
-        ],
-      ],
-      hostedSendOptionsForTask(current.key, current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(row, {
+      hosted: options.hosted,
+      fields: ['body', 'updated_at'],
+      expected_revision: options.expectedRevision,
+    })
     return { ...comment, body, updated_at: at, revision: options.expectedRevision + 1 }
   }
   const result = writeTransaction((conn) => {
@@ -1007,22 +984,11 @@ export async function deleteTaskComment(
     )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
     const row = pushedCommentRevision(current, comment, { deleted_at: at }, at)
-    await sendHostedChanges(
-      'the record',
-      [
-        [
-          {
-            table: HOSTED_COMMENT_TABLE,
-            id: commentId,
-            op: 'upsert',
-            row,
-            fields: ['updated_at', 'deleted_at'],
-            expected_revision: options.expectedRevision,
-          },
-        ],
-      ],
-      hostedSendOptionsForTask(current.key, current.project, options.hosted),
-    )
+    await sendTaskCommentRecord(row, {
+      hosted: options.hosted,
+      fields: ['updated_at', 'deleted_at'],
+      expected_revision: options.expectedRevision,
+    })
     return
   }
   writeTransaction((conn) => {

@@ -108,12 +108,12 @@ export const hubModuleSpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/record/schema.ts',
-      '../../../shared/brand.ts',
       '../../../shared/tracker-list-scope.ts',
       '../../../shared/tracker-task-text.ts',
       '../../../shared/trackers.ts',
       '../db.ts',
       '../hosted-change-sender.ts',
+      '../hosted-queue-decision.ts',
       '../hosted-url.ts',
       '../hosted-write-mode.ts',
       '../mcp.ts',
@@ -130,15 +130,8 @@ export const hubModuleSpecs = [
     ],
   },
   {
-    file: 'hub/src/task-duplicate-comment.ts',
-    allowed: [
-      './hosted-change-sender.ts',
-      './push-contract.ts',
-      './task-attribution.ts',
-      './task-hosted-record.ts',
-      './task-row.ts',
-      './task-write-destination.ts',
-    ],
+    file: 'hub/src/task-comment-record.ts',
+    allowed: ['./hosted-change-sender.ts', './push-contract.ts', './task-write-destination.ts'],
   },
   {
     file: 'hub/src/hosted-push-decision.ts',

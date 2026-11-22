@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
+import { OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE } from './hosted-queue-decision.ts'
 import {
   drainHostedOutbox,
   type HostedRoutingWait,
@@ -101,7 +102,7 @@ export function queueHostedDocumentDelete(conn: Database, id: string, project: s
     'delete',
     at,
     null,
-    'offline-task-edits.queueHostedDocumentDelete',
+    OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
   )
   conn
     .query(

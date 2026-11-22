@@ -1,6 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
+import { TASK_PUSH_REPAIRS_QUEUE_SITE } from './hosted-queue-decision.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
   DIRECT_RECORD_TABLES,
@@ -243,7 +244,7 @@ function queueRepairs(candidates: readonly RepairCandidate[]) {
           'upsert',
           undefined,
           row.fields,
-          'task-push.queueRepairs',
+          TASK_PUSH_REPAIRS_QUEUE_SITE,
         )
     })
   }

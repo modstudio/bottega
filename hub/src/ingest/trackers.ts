@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ToolCaller } from '../../../shared/tracker-list-scope.ts'
 import { TrackerLookupUnverifiable } from '../../../shared/tracker-task-text.ts'
@@ -13,6 +12,12 @@ import {
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { sendHostedChanges } from '../hosted-change-sender.ts'
+import {
+  TRACKERS_BACKFILL_QUEUE_SITE,
+  TRACKERS_DROP_DELETED_QUEUE_SITE,
+  TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
+  TRACKERS_WRITE_CACHE_QUEUE_SITE,
+} from '../hosted-queue-decision.ts'
 import { resolveHostedUrl } from '../hosted-url.ts'
 import { hostedWriteMode } from '../hosted-write-mode.ts'
 import { credentials, Mcp } from '../mcp.ts'
@@ -516,12 +521,11 @@ export type TrackerTaskObservation = {
   } | null
 }
 
-type ObservedTrackerTaskOptions = HostedTaskWriteOptions & { recordSpace?: string }
-
 type CachedTrackerTaskObservation = TrackerTaskObservation & {
   times: TrackerObservationTimes
   changed: boolean
   ambiguousParentKeys: string[]
+  priorCategory: string | null
 }
 
 /** Observe one tracker row and its category transition in the same transaction. */
@@ -549,7 +553,16 @@ function observeTrackerTaskOn(
   )
     queueHostedChange(conn, HOSTED_TASK_TABLE, taskRecordId, 'upsert', at, null, queueSite)
   if (!recordsTransition)
-    return { at, taskRecordId, taskKey, times, changed, ambiguousParentKeys, event: null }
+    return {
+      at,
+      taskRecordId,
+      taskKey,
+      times,
+      changed,
+      ambiguousParentKeys,
+      priorCategory: was,
+      event: null,
+    }
 
   const recordId = newRecordId()
   const inserted = conn
@@ -578,13 +591,14 @@ function observeTrackerTaskOn(
     times,
     changed,
     ambiguousParentKeys,
+    priorCategory: was,
     event,
   }
 }
 
 export async function sendObservedTrackerTask(
   observation: TrackerTaskObservation,
-  options?: ObservedTrackerTaskOptions,
+  options?: HostedTaskWriteOptions,
 ): Promise<void> {
   if (!observation.taskRecordId) return
   const pointers = [
@@ -612,17 +626,10 @@ export async function sendObservedTrackerTask(
   const changes = loaded.map((change) => change!.change)
   const project = loaded[0]!.projectName
   if (!project) throw new Error(`could not resolve project for tracker task ${observation.taskKey}`)
-  const { recordSpace, ...hostedOptions } = options ?? {}
   await sendHostedChanges(
     'the record',
     [changes],
-    recordSpace
-      ? {
-          ...hostedOptions,
-          recordSpace,
-          conflictRemedy: `${PLATFORM_SLUG} task show ${observation.taskKey}`,
-        }
-      : hostedTaskChangeSendOptions(observation.taskKey, project, hostedOptions),
+    hostedTaskChangeSendOptions(observation.taskKey, project, options),
   )
 }
 
@@ -630,22 +637,39 @@ export async function observeTrackerTask(
   task: TrackerTask,
   at = nowIso(),
   prefixes: readonly string[],
-  options?: ObservedTrackerTaskOptions,
+  options?: HostedTaskWriteOptions,
 ): Promise<TrackerTaskObservation> {
   if (!trackerKeyInScope(task.key, prefixes)) {
     return { at, taskRecordId: null, taskKey: task.key, event: null }
   }
   const hosted = hostedWriteMode(options?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-  const observation = writeTransaction((conn) => {
+  const cached = writeTransaction((conn) => {
     const {
       times: _times,
       changed: _changed,
+      priorCategory,
       ...observation
     } = observeTrackerTaskOn(conn, task, at, hosted ? null : 'trackers.observeTrackerTask')
-    return observation
+    return { observation, priorCategory }
   })
-  if (hosted) await sendObservedTrackerTask(observation, options)
-  return observation
+  if (hosted) {
+    try {
+      await sendObservedTrackerTask(cached.observation, options)
+    } catch (error) {
+      writeTransaction((conn) => {
+        if (cached.observation.event)
+          conn
+            .query('DELETE FROM task_status_event WHERE record_id=?')
+            .run(cached.observation.event.recordId)
+        if (cached.observation.taskRecordId)
+          conn
+            .query('UPDATE task SET status_category=? WHERE record_id=?')
+            .run(cached.priorCategory, cached.observation.taskRecordId)
+      })
+      throw error
+    }
+  }
+  return cached.observation
 }
 
 export async function fetchTrackerTasks(
@@ -711,7 +735,7 @@ export function writeTrackerCache(
       if (!trackerKeyInScope(task.key, prefixes)) continue
       observations.push({
         task,
-        observation: observeTrackerTaskOn(conn, task, at, 'trackers.writeTrackerCache'),
+        observation: observeTrackerTaskOn(conn, task, at, TRACKERS_WRITE_CACHE_QUEUE_SITE),
       })
     }
   })
@@ -783,7 +807,7 @@ export function retireOutOfScopeTrackerTasks(
         'upsert',
         at,
         null,
-        'trackers.retireOutOfScopeTrackerTasks',
+        TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
       )
       retired++
     }
@@ -826,7 +850,7 @@ export function dropDeletedTrackerTasks(
           assignee: row.assignee,
         },
         at,
-        'trackers.dropDeletedTrackerTasks',
+        TRACKERS_DROP_DELETED_QUEUE_SITE,
       )
       restoreLifecycle.run(row.opened_at, row.closed_at ?? at, row.record_id)
       dropped++
@@ -870,7 +894,7 @@ async function backfillTrackerTasks(
             'upsert',
             at,
             null,
-            'trackers.backfillTrackerTasks',
+            TRACKERS_BACKFILL_QUEUE_SITE,
           )
         return result
       })

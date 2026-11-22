@@ -6,7 +6,16 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { HOSTED_QUEUE_ALLOWLIST, hostedQueueRefusal } from './hosted-queue-decision.ts'
+import {
+  HOSTED_QUEUE_ALLOWLIST,
+  hostedQueueRefusal,
+  OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
+  TASK_PUSH_REPAIRS_QUEUE_SITE,
+  TRACKERS_BACKFILL_QUEUE_SITE,
+  TRACKERS_DROP_DELETED_QUEUE_SITE,
+  TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
+  TRACKERS_WRITE_CACHE_QUEUE_SITE,
+} from './hosted-queue-decision.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
   discardHostedOutboxEntryCommand,
@@ -82,7 +91,7 @@ describe('hosted outbox', () => {
       hostedQueueRefusal({
         table: HOSTED_TASK_TABLE,
         mode: 'hosted-configured',
-        site: 'trackers.retireOutOfScopeTrackerTasks',
+        site: TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
       }),
     ).toBeNull()
     expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' })).toBeNull()
@@ -91,31 +100,53 @@ describe('hosted outbox', () => {
   test('every hosted queue exception still labels a queueHostedChange call', () => {
     const sources = new Map([
       [
-        'offline-task-edits.queueHostedDocumentDelete',
-        readFileSync(new URL('./offline-task-edits.ts', import.meta.url), 'utf8'),
+        OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./offline-task-edits.ts', import.meta.url), 'utf8'),
+          label: 'OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE',
+        },
       ],
       [
-        'trackers.retireOutOfScopeTrackerTasks',
-        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+        TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+          label: 'TRACKERS_RETIRE_OUT_OF_SCOPE_QUEUE_SITE',
+        },
       ],
       [
-        'trackers.backfillTrackerTasks',
-        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+        TRACKERS_BACKFILL_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+          label: 'TRACKERS_BACKFILL_QUEUE_SITE',
+        },
       ],
       [
-        'trackers.writeTrackerCache',
-        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+        TRACKERS_WRITE_CACHE_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+          label: 'TRACKERS_WRITE_CACHE_QUEUE_SITE',
+        },
       ],
       [
-        'trackers.dropDeletedTrackerTasks',
-        readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+        TRACKERS_DROP_DELETED_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
+          label: 'TRACKERS_DROP_DELETED_QUEUE_SITE',
+        },
       ],
-      ['task-push.queueRepairs', readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8')],
+      [
+        TASK_PUSH_REPAIRS_QUEUE_SITE,
+        {
+          source: readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8'),
+          label: 'TASK_PUSH_REPAIRS_QUEUE_SITE',
+        },
+      ],
     ])
     for (const entry of HOSTED_QUEUE_ALLOWLIST) {
-      const source = sources.get(entry.site)
-      expect(source).toContain('queueHostedChange(')
-      expect(source).toContain(`'${entry.site}'`)
+      const site = sources.get(entry.site)
+      expect(site).toBeDefined()
+      expect(site!.source).toContain('queueHostedChange(')
+      expect(site!.source).toContain(site!.label)
     }
   })
 

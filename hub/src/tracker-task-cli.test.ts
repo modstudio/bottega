@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask, writeTrackerCache } from './ingest/trackers.ts'
 import type { RegisteredProject } from './projects.ts'
 import { showTask } from './task.ts'
@@ -18,6 +19,8 @@ const project = {
     tracker: { protocol: 'workspace-mcp', envPrefix: 'FIXTURE' },
   },
 } as RegisteredProject
+
+declareFixtureProjectSpace('fixture', 'fixture-space')
 
 const task: TrackerTask = {
   externalId: 'task-1',
@@ -120,8 +123,7 @@ describe('fresh tracker task read', () => {
     const result = await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
       registeredProjects: () => [hostedProject],
-      observe: (task, at, prefixes) =>
-        observeTrackerTask(task, at, prefixes, { ...hosted, recordSpace: 'fixture-space' }),
+      observe: (task, at, prefixes) => observeTrackerTask(task, at, prefixes, hosted),
       readBack: async () => {
         if (!hostedRow) throw new Error('the first read-back ran before the hosted write')
         return { task: hostedTaskRow(hostedRow as never), comments: [], documents: [] }
@@ -130,6 +132,43 @@ describe('fresh tracker task read', () => {
 
     expect(result.shown?.task).toMatchObject({ key: 'FIX-1', title: 'Fresh task' })
     expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
+  })
+
+  test('a failed hosted observation restores its transition so the next observe resends it', async () => {
+    const open = { ...task, status: 'Open', category: 'open' as const }
+    await observeTrackerTask(open, '2026-10-05T00:00:00.000Z', [], { baseUrl: '' })
+    writeTransaction((conn) => conn.query('DELETE FROM hosted_outbox').run())
+
+    const unavailable = new Error('record unavailable')
+    const failing = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async () => {
+        throw unavailable
+      },
+    }
+    const changed = { ...task, status: 'In Progress', category: 'active' as const }
+    await expect(
+      observeTrackerTask(changed, '2026-10-05T00:01:00.000Z', [], failing),
+    ).rejects.toThrow('record unavailable')
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'open',
+    })
+    expect(db().query('SELECT 1 FROM task_status_event').all()).toHaveLength(0)
+    expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
+
+    const sent: Array<{ table: string }> = []
+    const working = {
+      ...failing,
+      fetch: async (_input: string, init?: RequestInit) => {
+        const changes = JSON.parse(String(init?.body)) as Array<{ id: string; table: string }>
+        sent.push(...changes)
+        return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
+      },
+    }
+    const retried = await observeTrackerTask(changed, '2026-10-05T00:02:00.000Z', [], working)
+    expect(retried.event).not.toBeNull()
+    expect(sent.map(({ table }) => table)).toEqual(['hub_task', 'hub_task_status_event'])
   })
 
   test("reports the tracker task's own update time", async () => {
