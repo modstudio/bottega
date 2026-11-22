@@ -20,6 +20,11 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
 ] as const
 
+export const SYNCED_HUB_CHANGE_TABLES: ReadonlySet<string> = new Set([
+  HOSTED_INTERVAL_TABLE,
+  HOSTED_DAY_TABLE,
+])
+
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
 export const GUARDED_REVISION_FIELDS = {

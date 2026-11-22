@@ -4,7 +4,6 @@ import { sendHostedChanges } from './hosted-change-sender.ts'
 import { chunks } from './ingest/batches.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
-  DIRECT_RECORD_TABLES,
   drainHostedOutbox,
   HOSTED_OUTBOX_BATCH_SIZE,
   type HostedOutboxReport,
@@ -24,6 +23,7 @@ import {
   HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
+  SYNCED_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
 import { orderHostedPushChanges } from './push-order.ts'
 import {
@@ -69,13 +69,9 @@ type Options = {
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
-const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set([
-  ...DIRECT_RECORD_TABLES,
-  HOSTED_TASK_TABLE,
-  HOSTED_COMMENT_TABLE,
-  HOSTED_DOCUMENT_TABLE,
-  HOSTED_STATUS_EVENT_TABLE,
-])
+const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set(
+  PUSHABLE_HUB_CHANGE_TABLES.filter((table) => !SYNCED_HUB_CHANGE_TABLES.has(table)),
+)
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
@@ -247,7 +243,14 @@ function queueRepairs(candidates: readonly RepairCandidate[]) {
     if (!rows.length) continue
     writeTransaction((conn) => {
       for (const row of rows)
-        queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
+        queueHostedChange(
+          conn,
+          table,
+          row.id,
+          'upsert',
+          undefined,
+          row.fields,
+        )
     })
   }
 }

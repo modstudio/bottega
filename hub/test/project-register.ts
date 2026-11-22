@@ -134,5 +134,15 @@ console.log(
       repository: true,
       settings: {},
     },
+    {
+      id: 11,
+      record_id: '01990000-0000-7000-8000-000000001111',
+      name: 'fixture',
+      path: '/fixtures/repos/fixture',
+      stack: null,
+      canon: true,
+      repository: true,
+      settings: { keyPrefixes: ['FIX'] },
+    },
   ]),
 )
