@@ -5,7 +5,10 @@ import { releaseProofDecision } from './release-decision.ts'
 import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
+  incomingRequiredRungGuard,
+  type IncomingRequiredRungDependencies,
   machineUpdateRungRefusal,
+  type RequiredReleaseRung,
   type RequiredReleaseRunner,
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
@@ -13,7 +16,7 @@ import {
   requiredRungDecision,
   undecidedRequiredRelease,
 } from './release-required.ts'
-import type { ReleaseResult } from './release-service.ts'
+import { type ReleaseResult, releaseRunPath } from './release-service.ts'
 
 const project = {
   recordId: '01990000-0000-7000-8000-000000001933',
@@ -40,15 +43,53 @@ const project = {
   },
 } as Project
 
-test('required releases run before the main checkout moves', () => {
-  expect(requiredReleaseStepOrder(true, [{ required: true }])).toEqual([
-    'deploy-rungs',
-    'move-main',
-    'hand-off',
-  ])
-  expect(requiredReleaseStepOrder(false, [{ required: true }])).toEqual(['move-main', 'hand-off'])
-  expect(requiredReleaseStepOrder(true, [{ required: false }])).toEqual(['move-main', 'hand-off'])
-})
+test.each(['alephbeis', 'starship'])(
+  '%s production uses CI live-wait after the main checkout moves',
+  (name) => {
+    const production: RequiredReleaseRung = {
+      name: 'production',
+      branch: 'master',
+      live: 'read production commit',
+      onDemand: false,
+    }
+    const registered = {
+      ...project,
+      name,
+      settings: {
+        ...project.settings,
+        trunk: 'master',
+        release: { ...project.settings.release!, rungs: [production] },
+      },
+    } as Project
+    const plan = {
+      rung: 'production',
+      branch: 'master',
+      required: true,
+      requiredBy: 'explicit' as const,
+      reason: null,
+      declaresLive: true,
+      declaresDeploy: false,
+    }
+    let childReleased = false
+
+    expect(releaseRunPath(production.deploy)).toBe('ci-live-wait')
+    expect(requiredReleaseStepOrder(true, [plan])).toEqual(['move-main', 'hand-off'])
+    expect(
+      releaseRequiredRungsAfterMainMove({
+        project: registered,
+        mergeCommit: 'merge',
+        rungs: [plan],
+        runner: runner({
+          release: () => {
+            childReleased = true
+            return successfulRelease()
+          },
+        }),
+      }).satisfied,
+    ).toBe(true)
+    expect(childReleased).toBe(true)
+  },
+)
 
 test('machine update refuses an incoming commit until every required rung proves it live', () => {
   const input = {
@@ -79,6 +120,55 @@ test('machine update accepts unrelated commits after the newest proved release',
       project: 'fixture',
     }),
   ).toBeNull()
+})
+
+test('machine update derives the X-then-unrelated-Y allowance from required rung settings', () => {
+  const guarded = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            deploy: 'deploy hosted-api',
+            live: 'read hosted-api live commit',
+            requiredWhenChanged: ['shared/record/**'],
+            entryPoints: ['orchestrator/src/record/server.ts'],
+          },
+          {
+            name: 'reach-only',
+            branch: 'main',
+            deploy: 'deploy reach-only',
+            live: 'read reach-only live commit',
+          },
+        ],
+      },
+    },
+  } as Project
+  let now = 0
+  let closureReads = 0
+  const dependencies: IncomingRequiredRungDependencies = {
+    resolve: (ref) => (ref === 'HEAD' ? 'before-x' : 'unrelated-y'),
+    changedPaths: (_project, from) =>
+      from === 'before-x' ? ['shared/record/schema.ts', 'docs/guide.md'] : ['docs/guide.md'],
+    entryClosure: () => {
+      closureReads++
+      return new Map()
+    },
+    newestLive: (_project, rung) => (rung === 'hosted-api' ? 'released-x' : null),
+    contains: (_project, ancestor, descendant) =>
+      ancestor === 'released-x' && descendant === 'unrelated-y',
+    now: () => now++,
+  }
+
+  expect(incomingRequiredRungGuard(guarded, 'main', dependencies)).toEqual({
+    refusal: null,
+    elapsedMs: 1,
+  })
+  expect(closureReads).toBe(1)
 })
 
 const successfulRelease = (overrides: Partial<ReleaseResult> = {}): ReleaseResult =>

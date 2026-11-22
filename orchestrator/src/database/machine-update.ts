@@ -17,16 +17,14 @@ import {
   withMachineUpdateLock,
 } from '../../../shared/update-lock.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
+import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import {
   returnMainCheckoutToTrunkCommand,
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
 import { projectAt } from '../project/projects.ts'
-import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
-import { machineUpdateRungRefusal, requiredRungDecision } from '../release/release-required.ts'
-import { newestSuccessfulProvenReleaseCommit } from '../release/release-service.ts'
+import { incomingRequiredRungGuard } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
@@ -591,66 +589,6 @@ function applyCheckoutPull(input: {
   return before
 }
 
-function incomingRequiredRungRefusal(project: UpdateProject, branch: string): string | null {
-  const incoming = git(['rev-parse', `origin/${branch}`], project.path)
-  const current = git(['rev-parse', 'HEAD'], project.path)
-  if (incoming === current) return null
-  const decision = requiredRungDecision(
-    project as Project,
-    () =>
-      splitNulPaths(
-        git(
-          nulPathListArgs(['diff', '--name-only', `${current}..${incoming}`, '--']),
-          project.path,
-        ),
-      ),
-    (entries) => entryClosureAtCommit(project as Project, incoming, entries),
-  )
-  if (!decision.decided)
-    return `refusing machine update: required release rungs could not be decided for ${incoming}: ${decision.error}`
-  const proved = new Map<string, string | null>()
-  const contains = new Map<string, boolean>()
-  const isAncestor = new Map<string, boolean>()
-  const requiredSinceLive = new Map<string, boolean>()
-  for (const rung of decision.required) {
-    const commit = newestSuccessfulProvenReleaseCommit(project.name, rung)
-    proved.set(rung, commit)
-    contains.set(
-      rung,
-      Boolean(
-        commit && gitResult(['merge-base', '--is-ancestor', incoming, commit], project.path).ok,
-      ),
-    )
-    const commitIsAncestor = Boolean(
-      commit && gitResult(['merge-base', '--is-ancestor', commit, incoming], project.path).ok,
-    )
-    isAncestor.set(rung, commitIsAncestor)
-    if (commit && commitIsAncestor) {
-      const sinceLive = requiredRungDecision(
-        project as Project,
-        () =>
-          splitNulPaths(
-            git(
-              nulPathListArgs(['diff', '--name-only', `${commit}..${incoming}`, '--']),
-              project.path,
-            ),
-          ),
-        (entries) => entryClosureAtCommit(project as Project, incoming, entries),
-      )
-      requiredSinceLive.set(rung, !sinceLive.decided || sinceLive.required.includes(rung))
-    }
-  }
-  return machineUpdateRungRefusal({
-    incomingCommit: incoming,
-    requiredRungs: decision.required,
-    provedCommits: proved,
-    liveContainsIncoming: contains,
-    liveIsAncestorOfIncoming: isAncestor,
-    requiredSinceLive,
-    project: project.name,
-  })
-}
-
 async function updateCheckout(presentation: Presentation, deps: UpdateDependencies): Promise<void> {
   const target = deps.cwd ?? installRoot()
   const callerCwd = deps.callerCwd ?? process.cwd()
@@ -668,11 +606,14 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
     presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
   }
   runGit(target, ['fetch', 'origin', branch])
-  const rungRefusal = deps.requiredRungRefusal
-    ? deps.requiredRungRefusal(project, branch)
-    : deps.git
-      ? null
-      : incomingRequiredRungRefusal(project, branch)
+  let rungRefusal: string | null
+  if (deps.requiredRungRefusal) rungRefusal = deps.requiredRungRefusal(project, branch)
+  else if (deps.git) rungRefusal = null
+  else {
+    const guard = incomingRequiredRungGuard(project as Project, branch)
+    presentation.log(`required release guard: ${guard.elapsedMs.toFixed(1)}ms`)
+    rungRefusal = guard.refusal
+  }
   if (rungRefusal) throw new Error(rungRefusal)
   const journal = incomingJournal(target, branch, runGit)
   const initial = withSynchronousDatabaseForMigrationStep((database) => {

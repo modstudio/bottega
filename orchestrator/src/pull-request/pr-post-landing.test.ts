@@ -178,7 +178,6 @@ test('a successful move fences this process and hands off the exact fixed identi
     ],
     rungDecisionError: null,
     releaseRequired: true,
-    provedRequiredRelease: satisfied,
     depth: null,
     promoteWorkflowDrafts: true,
     recordingError: null,
@@ -191,7 +190,24 @@ test('a successful move fences this process and hands off the exact fixed identi
 
 test('a required rung is proved before main moves and is not delegated again', async () => {
   const events: string[] = []
+  const deployProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release,
+        rungs: [
+          {
+            ...project.settings.release!.rungs[0],
+            deploy: 'deploy hosted api',
+            live: 'read hosted api commit',
+          },
+        ],
+      },
+    },
+  } as Project
   const outcome = await complete({
+    project: deployProject,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),

@@ -2,7 +2,7 @@
 /** Registers the release adapter. Must not own release policy or persistence. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { projectByName } from '../project/projects.ts'
+import type { ReleaseAtCommitReport } from '../release/release-at-commit.ts'
 import { releaseAtCommit } from '../release/release-at-commit.ts'
 import {
   checkRelease,
@@ -55,21 +55,17 @@ export function register(program: Command): void {
           `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
         )
       let result: ReleaseResult
+      let releaseTree: ReleaseAtCommitReport | undefined
       if (options.at) {
         if (!options.rung) throw new Error('--at requires --rung')
         if (options.rollback || options.behindTrunk || options.redeploy)
           throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
-        const registered = projectByName(project)
-        if (!registered) throw new Error(`no project "${project}"`)
-        const report = await releaseAtCommit({
-          project: registered,
+        releaseTree = await releaseAtCommit({
+          project,
           rung: options.rung,
           commit: options.at,
         })
-        result = report.result
-        log(
-          `release tree timing: provision ${report.provisionMs}ms, deploy ${report.deployMs}ms, release ${report.releaseMs}ms`,
-        )
+        result = releaseTree.result
       } else {
         result = releaseProject(
           project,
@@ -79,8 +75,30 @@ export function register(program: Command): void {
           options.redeploy,
         )
       }
-      if (options.json) log(JSON.stringify(result))
-      else writeReleaseResult(result)
+      if (options.json) {
+        log(
+          JSON.stringify(
+            releaseTree
+              ? {
+                  ...result,
+                  releaseTreeTiming: {
+                    provisionMs: releaseTree.provisionMs,
+                    deployMs: releaseTree.deployMs,
+                    releaseMs: releaseTree.releaseMs,
+                  },
+                  ...(releaseTree.residue ? { releaseTreeResidue: releaseTree.residue } : {}),
+                }
+              : result,
+          ),
+        )
+      } else {
+        if (releaseTree) {
+          log(
+            `release tree timing: provision ${releaseTree.provisionMs}ms, deploy ${releaseTree.deployMs}ms, release ${releaseTree.releaseMs}ms${releaseTree.residue ? `; residue: ${releaseTree.residue}` : ''}`,
+          )
+        }
+        writeReleaseResult(result)
+      }
       if (result.exitCode !== 0) process.exitCode = result.exitCode
     })
 

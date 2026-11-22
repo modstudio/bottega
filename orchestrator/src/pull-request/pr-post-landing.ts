@@ -91,7 +91,7 @@ function moveMainForPostLanding(
   movesInstallation: boolean,
   depth?: string,
 ):
-  | { moved: true; headBefore: string }
+  | { moved: true; headBefore: string; movedAt: string }
   | { moved: false; detail: string; recovery: string; cleanupWasFenced?: boolean } {
   const retry = requiredMergeCommand(target, depth)
   const recovery = movesInstallation
@@ -132,7 +132,7 @@ function moveMainForPostLanding(
       cleanupWasFenced: true,
     }
   }
-  return { moved: true, headBefore }
+  return { moved: true, headBefore, movedAt: new Date().toISOString() }
 }
 
 const refuseRealPostLandingAdapterInTest = (): void => {
@@ -401,13 +401,14 @@ function postLandingTimingTrace(
   enabled: boolean,
   report: RequiredReleaseReport | undefined,
   mergeCommit: string,
+  movedAt: string,
 ): string[] {
   if (!enabled) return []
   return [
     ...(report?.releases
       .filter(({ required, satisfied }) => required && satisfied)
       .map(({ outputTail }) => outputTail) ?? []),
-    `main moved to ${mergeCommit} ${new Date().toISOString()}`,
+    `main moved to ${mergeCommit} ${movedAt}`,
   ]
 }
 
@@ -507,7 +508,12 @@ export async function completePullRequestPostLanding(input: {
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target, input.depth)}`,
   )
   const handedOff = await post.handOff(payload, input.project, movesInstallation)
-  const trace = postLandingTimingTrace(traceEnabled, provedRequiredRelease, input.mergeCommit)
+  const trace = postLandingTimingTrace(
+    traceEnabled,
+    provedRequiredRelease,
+    input.mergeCommit,
+    move.movedAt,
+  )
   const outcome = postLandingHandOffOutcome(handedOff, input.target, input.depth)
   return { ...outcome, output: [...trace, outcome.output].filter(Boolean).join('\n') }
 }
@@ -568,6 +574,31 @@ export type PullRequestPostLandingChildAdapter = {
     prNumber: number,
     database: Database,
   ): Promise<ShipCleanupReport> | ShipCleanupReport
+}
+
+function releaseAfterPreDeploy(
+  adapter: PullRequestPostLandingChildAdapter,
+  project: Project,
+  mergeCommit: string,
+  plans: ReleaseRungPlan[],
+  proved: RequiredReleaseReport,
+): RequiredReleaseReport {
+  const remainingPlans = plans.map((plan) =>
+    plan.required && plan.declaresDeploy
+      ? { ...plan, required: false, reason: 'proved before the main checkout moved' }
+      : plan,
+  )
+  const after = adapter.release({ project, mergeCommit, rungs: remainingPlans })
+  const provedByRung = new Map(proved.releases.map((release) => [release.rung, release]))
+  const afterByRung = new Map(after.releases.map((release) => [release.rung, release]))
+  const releases = plans.map(
+    ({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!,
+  )
+  return {
+    required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+    releases,
+    satisfied: releases.every(({ satisfied }) => satisfied),
+  }
 }
 
 function guardRealPostLandingChildAdapter(
@@ -657,19 +688,25 @@ export async function runPullRequestPostLanding(
       payload.requiredRungs,
       project.settings.trunk ?? '',
     )
-  const requiredRelease =
-    payload.provedRequiredRelease ??
-    (payload.rungDecisionError
+  const requiredRelease = payload.rungDecisionError
       ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
       : !payload.releaseRequired
         ? releaseRequiredFlagAbsent(rungPlans)
         : checkoutFailure
           ? failedRequiredRelease(rungPlans, checkoutFailure)
+          : payload.provedRequiredRelease
+            ? releaseAfterPreDeploy(
+                adapter,
+                project,
+                payload.mergeCommit,
+                rungPlans,
+                payload.provedRequiredRelease,
+              )
           : adapter.release({
               project,
               mergeCommit: payload.mergeCommit,
               rungs: rungPlans,
-            }))
+            })
   if (checkoutFailure && !payload.promoteWorkflowDrafts && requiredRelease.satisfied) {
     promotion = {
       output: `${checkoutFailure}; ${postLandingRecovery(payload.target, payload.depth ?? undefined)}`,
