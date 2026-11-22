@@ -8,7 +8,7 @@ const projectRecordId = '01990000-0000-7000-8000-000000002583'
 const task: TrackerTask = {
   externalId: 'tracker-2583',
   key: 'DEV-2583',
-  project: 'bottega',
+  project: 'fixture',
   title: 'Record first',
   status: 'open',
   category: 'open',
