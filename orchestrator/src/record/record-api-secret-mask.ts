@@ -1,12 +1,13 @@
 // concern: record-api-secret-mask
 /** Installs the value-free warning scope and fail-closed hosted write mask at the API edge. */
 import type { Context, Env, Hono } from 'hono'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   hostedWriteRouteEntry,
   maskHostedRoutePayload,
   withHostedMaskWarnings,
 } from '../../../shared/hosted-secret-mask.ts'
-import { RECORD_SYNC_MAX_REQUEST_BYTES } from './record-sync-contract.ts'
+import { RECORD_SYNC_MAX_REQUEST_BYTES } from '../../../shared/record-sync-limits.ts'
 
 const SNAPSHOT_MAX_REQUEST_BYTES = 1024 * 1024
 
@@ -20,7 +21,7 @@ function byteCapRefusal(context: Context, bytes: number) {
     return context.json(
       {
         error: `record sync request exceeds ${RECORD_SYNC_MAX_REQUEST_BYTES} bytes`,
-        remedy: 'send a batch within the hosted sync limits, then retry `bottega record sync`',
+        remedy: `send a batch within the hosted sync limits, then retry \`${PLATFORM_SLUG} record sync\``,
       },
       413,
     )

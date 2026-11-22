@@ -89,6 +89,7 @@ async function hostedDiagnosticResponse(
 
 async function maskedHostedRequest(request: Request): Promise<Request> {
   if (!['POST', 'PUT', 'PATCH'].includes(request.method)) return request
+  if (isUnregisteredHostedWrite(request.method, new URL(request.url).pathname)) return request
   const body = await request
     .clone()
     .json()

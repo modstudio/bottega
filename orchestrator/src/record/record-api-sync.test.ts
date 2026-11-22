@@ -1,7 +1,9 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
-import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
-import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import {
+  noDestinationWriteTestDeps,
+  recordApiTestApp,
+} from '../../test/fixtures/record-api-app.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import { registerRecordSyncRoute } from './record-api-sync.ts'
 import type { RecordWriteTelemetryEnvironment } from './record-api-write-telemetry.ts'

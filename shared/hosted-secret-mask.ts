@@ -471,25 +471,29 @@ function walk(value: unknown, path: string[], exclusions: readonly Exclusion[]):
   }
 }
 
+function maskSyncSerializedPayloads(value: unknown, exclusions: readonly Exclusion[]): void {
+  if (!value || typeof value !== 'object') return
+  const rows = (value as { rows?: unknown }).rows
+  if (!Array.isArray(rows)) return
+  for (const [index, row] of rows.entries()) {
+    if (!row || typeof row !== 'object') continue
+    const payload = (row as { payload?: unknown }).payload
+    if (typeof payload !== 'string') continue
+    try {
+      const parsed = JSON.parse(payload) as unknown
+      walk(parsed, ['rows', String(index), 'payload'], exclusions)
+      ;(row as { payload: string }).payload = JSON.stringify(parsed)
+    } catch {
+      // The sync contract reports malformed serialized payloads after masking the string itself.
+    }
+  }
+}
+
 /** Clones a validated write value and masks every non-excluded string leaf. */
 export function maskHostedWrite<T>(route: HostedWriteRoute, value: T): T {
   const masked = structuredClone(value)
-  if (route === 'record.sync' && masked && typeof masked === 'object') {
-    const rows = (masked as { rows?: unknown }).rows
-    if (Array.isArray(rows))
-      for (const [index, row] of rows.entries()) {
-        if (!row || typeof row !== 'object') continue
-        const payload = (row as { payload?: unknown }).payload
-        if (typeof payload !== 'string') continue
-        try {
-          const parsed = JSON.parse(payload) as unknown
-          walk(parsed, ['rows', String(index), 'payload'], HOSTED_SECRET_EXCLUSIONS.routes[route])
-          ;(row as { payload: string }).payload = JSON.stringify(parsed)
-        } catch {
-          // The sync contract reports malformed serialized payloads after masking the string itself.
-        }
-      }
-  }
+  if (route === 'record.sync')
+    maskSyncSerializedPayloads(masked, HOSTED_SECRET_EXCLUSIONS.routes[route])
   walk(masked, [], HOSTED_SECRET_EXCLUSIONS.routes[route])
   return masked
 }
