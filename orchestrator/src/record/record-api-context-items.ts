@@ -8,7 +8,6 @@ import {
   type ContextItemHolderGroup,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
-import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
@@ -107,7 +106,7 @@ export function registerRecordContextItemRoutes(
     return context.json(
       await deps.upsertContextItem({
         ...tenant,
-        ...maskHostedWrite('record.context-item.put', parsed.data),
+        ...parsed.data,
       }),
     )
   })

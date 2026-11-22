@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted canon imports. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
@@ -80,7 +81,8 @@ async function writeCanonRows(
   at: string,
 ): Promise<RecordCanonImportResult['rows']> {
   const results: RecordCanonImportResult['rows'] = []
-  for (const row of input.rows) {
+  for (const sourceRow of input.rows) {
+    const row = maskHostedTableWrite('doc', sourceRow)
     const prior = existing.get(row.slug)
     const id = prior ? String(prior.id) : newRecordId()
     assertWrite(

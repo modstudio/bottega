@@ -1,6 +1,5 @@
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { maskHostedWrite } from '../../shared/hosted-secret-mask.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
@@ -68,10 +67,12 @@ async function outsideRoute(context: RouteContext): Promise<Response | null> {
     const area = typeof body?.area === 'string' ? body.area.trim() || null : undefined
     if (!project || !text || !anchor)
       return json({ error: 'outside note requires project, text, and anchor' }, 400)
-    const input = maskHostedWrite('hub.note.outside-create', { project, text, area, anchor })
     return json(
       await call(dependencies.outsideCreate, insertOutsideNote)(config.recordDatabaseUrl, who, {
-        ...input,
+        project,
+        text,
+        area,
+        anchor,
       }),
       201,
     )
@@ -109,11 +110,10 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
 async function noteWriteRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body } = context
   if (request.method === 'POST' && url.pathname === '/v1/notes') {
-    const input = maskHostedWrite('hub.note.create', body)
     const value = await call(dependencies.create, createHostedNote)(
       config.recordDatabaseUrl,
       who,
-      input as never,
+      body as never,
     )
     return value ? json(value, 201) : json({ error: 'note not found' }, 404)
   }
@@ -131,12 +131,10 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
     else {
       try {
         input = {
-          title: maskHostedWrite('hub.note.promote', {
-            title: requiredPromotionTitle(
-              typeof body?.title === 'string' ? body.title : undefined,
-              HOSTED_PROMOTION_TITLE_REFUSAL,
-            ),
-          }).title,
+          title: requiredPromotionTitle(
+            typeof body?.title === 'string' ? body.title : undefined,
+            HOSTED_PROMOTION_TITLE_REFUSAL,
+          ),
         }
       } catch (error) {
         return json({ error: (error as Error).message }, 400)
@@ -172,7 +170,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
       await call(dependencies.reap, reapHostedNotes)(
         config.recordDatabaseUrl,
         who,
-        maskHostedWrite('hub.note.reap', body) as never,
+        body as never,
       ),
     )
   }
@@ -181,7 +179,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
       await call(dependencies.mirror, mirrorHostedNotes)(
         config.recordDatabaseUrl,
         who,
-        maskHostedWrite('hub.note.mirror', body) as never,
+        body as never,
       ),
     )
   return null

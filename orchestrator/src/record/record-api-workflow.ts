@@ -2,7 +2,6 @@
 /** Exposes validated tenant-bound workflow catalogue routes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -100,7 +99,7 @@ function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
       return context.json(
         await deps.writeTaskFlow(
           intent,
-          maskHostedWrite('record.task-flow.write', { ...active, ...body.data }),
+          { ...active, ...body.data },
         ),
       )
     } catch (error) {
@@ -343,7 +342,7 @@ export function registerRecordWorkflowRoutes(
     try {
       return context.json(
         await deps.draftWorkflow(
-          maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+          { ...active, ...body.data },
         ),
       )
     } catch (error) {
@@ -359,7 +358,7 @@ export function registerRecordWorkflowRoutes(
       return context.json({ error: 'workflow catalogue import is unavailable' }, 503)
     return context.json(
       await deps.importWorkflowCatalogue(
-        maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+        { ...active, ...body.data },
       ),
     )
   })
@@ -374,7 +373,7 @@ export function registerRecordWorkflowRoutes(
       try {
         return context.json(
           await deps[action === 'promote' ? 'promoteWorkflow' : 'retireWorkflow'](
-            maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+            { ...active, ...body.data },
           ),
         )
       } catch (error) {

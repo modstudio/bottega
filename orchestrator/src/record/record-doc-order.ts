@@ -2,6 +2,7 @@
 /** Applies one validated hosted sibling order in its own tenant transaction. */
 
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { docOrderRefusal } from '../doc/doc-order.ts'
 import { referenceOrderRefusal } from '../doc/doc-write-allowed.ts'
 import { RecordDocError } from './record-doc-errors.ts'
@@ -46,6 +47,7 @@ export async function reorderRecordDocRows(
     )
     if (refusal) throw new RecordDocError(refusal)
     for (const [position, id] of input.orderedIds.entries()) {
+      maskHostedTableWrite('doc', { position })
       await tx`UPDATE doc SET position=${position} WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid`
     }
     return { orderedIds: input.orderedIds }

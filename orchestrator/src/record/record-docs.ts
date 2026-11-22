@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
@@ -207,6 +208,7 @@ export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
   assertRecordDocUpsert(input)
+  input = maskHostedTableWrite('doc', input)
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
@@ -606,6 +608,8 @@ export async function restoreRecordDoc(
 export async function renameRecordDocSubject(
   input: Tenant & { from: string; to: string; count: number },
 ): Promise<{ docs: number; revisions: number }> {
+  const docRename = maskHostedTableWrite('doc', { subject: input.to })
+  const revisionRename = maskHostedTableWrite('doc_revision', { subject: input.to })
   return tenant(input, async (tx) => {
     const docs = await tx`
       SELECT count(*)::integer AS n FROM doc
@@ -625,13 +629,13 @@ export async function renameRecordDocSubject(
     }
     if (docCount) {
       await tx`
-        UPDATE doc SET subject=${input.to}, updated_at=now()
+        UPDATE doc SET subject=${docRename.subject}, updated_at=now()
         WHERE space_id=${input.spaceId}::uuid AND subject=${input.from}
       `
     }
     if (revisionCount) {
       await tx`
-        UPDATE doc_revision SET subject=${input.to}
+        UPDATE doc_revision SET subject=${revisionRename.subject}
         WHERE space_id=${input.spaceId}::uuid AND subject=${input.from}
       `
     }
@@ -730,6 +734,7 @@ function insertImportedRevision(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
+  input = maskHostedTableWrite('doc', input)
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   assertImportAddress(importedDoc)
   assertImportedRevisions(importedDoc, revisions)

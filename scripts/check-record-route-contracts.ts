@@ -1,10 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
-import { HOSTED_WRITE_ROUTES } from '../hub/src/hosted-write-routes.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
-import { HOSTED_WRITE_ROUTE_ENTRIES } from '../shared/hosted-secret-mask.ts'
 import type { Finding } from '../shared/ratchet.ts'
 import { ratchetDecision } from '../shared/ratchet.ts'
 
@@ -65,36 +63,6 @@ export function hostedSecretRouteDrift(actual: readonly string[], declared: read
   }
 }
 
-function hostedSecretRouteFindings(): Finding[] {
-  const drift = currentHostedSecretRouteDrift()
-  return [
-    ...drift.missing.map((route) => ({
-      file: 'shared/hosted-secret-mask.ts',
-      line: 0,
-      rule: 'hosted-secret-route',
-      message: `write route has no secret policy entry: ${route}`,
-    })),
-    ...drift.stale.map((route) => ({
-      file: 'shared/hosted-secret-mask.ts',
-      line: 0,
-      rule: 'hosted-secret-route',
-      message: `secret policy entry has no registered write route: ${route}`,
-    })),
-  ]
-}
-
-export function currentHostedSecretRouteDrift() {
-  const writes = new Set(['POST', 'PUT', 'PATCH'])
-  const record = appRoutes().filter((route) => writes.has(route.split(' ')[0]!))
-  const hub = HOSTED_WRITE_ROUTES.filter((route) => writes.has(route.method)).map(
-    (route) => `${route.method} ${route.path}`,
-  )
-  return hostedSecretRouteDrift(
-    [...record, ...hub],
-    HOSTED_WRITE_ROUTE_ENTRIES.map((route) => `${route.method} ${route.path}`),
-  )
-}
-
 export function contractRoutesFromSource(path: string, source: string): string[] | null {
   if (!/\bcontractRoutes\b/.test(source)) return null
   const literal = source.match(/const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)
@@ -113,8 +81,6 @@ async function declaredRoutes(root: string): Promise<Set<string>> {
 }
 
 async function checkRecordRouteContracts(root = resolve(import.meta.dir, '..')) {
-  const hostedSecretFindings = hostedSecretRouteFindings()
-  if (hostedSecretFindings.length) return hostedSecretFindings
   const baselinePath = resolve(root, 'scripts/quality/record-route-contracts.json')
   const routes = appRoutes()
   const contracts = await declaredRoutes(root)

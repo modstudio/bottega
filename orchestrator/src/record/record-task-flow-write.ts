@@ -4,6 +4,7 @@
  * the seq row lock after the task_flow row lock, inside insertStage.
  */
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -288,6 +289,7 @@ async function deleteTexts(
 }
 
 async function insertText(tx: SQL, spaceId: string, row: Record<string, unknown>) {
+  row = maskHostedTableWrite('workflow_step_text', row)
   const existing = await existingRow(tx, 'workflow_step_text', String(row.id))
   if (existing) return assertSameInsert('workflow_step_text', String(row.id), existing, row)
   await tx`INSERT INTO workflow_step_text(id,space_id,stage_record_id,step_ordinal,step_slug,body,created_at)
@@ -296,6 +298,7 @@ async function insertText(tx: SQL, spaceId: string, row: Record<string, unknown>
 }
 
 async function insertCopy(tx: SQL, spaceId: string, row: Record<string, unknown>) {
+  row = maskHostedTableWrite('workflow_text_copy', row)
   const existing = await existingRow(tx, 'workflow_text_copy', String(row.id))
   if (existing) return assertSameInsert('workflow_text_copy', String(row.id), existing, row)
   await tx`INSERT INTO workflow_text_copy
@@ -649,7 +652,11 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   const inserted = await insertStage(tx, input.spaceId, body.requestId, body.newStage, { number })
   revisions[body.newStage.id] = inserted.revision
   revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
-  await tx`UPDATE context_item SET holder_id=${body.newStage.id},updated_at=${body.newStage.updatedAt}::timestamptz
+  const movedContext = maskHostedTableWrite('context_item', {
+    holder_id: body.newStage.id,
+    updated_at: body.newStage.updatedAt,
+  })
+  await tx`UPDATE context_item SET holder_id=${movedContext.holder_id},updated_at=${movedContext.updated_at}::timestamptz
     WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.oldStage.id}`
   await tx`UPDATE workflow_step_text SET stage_record_id=${body.newStage.id}
     WHERE space_id=${input.spaceId}::uuid AND stage_record_id=${body.oldStage.id}`

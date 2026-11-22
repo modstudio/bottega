@@ -1,6 +1,5 @@
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { maskHostedWrite } from '../../shared/hosted-secret-mask.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
@@ -107,7 +106,7 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
       await call(dependencies.create, createHostedTask)(
         config.recordDatabaseUrl,
         who,
-        maskHostedWrite('hub.task.create', body) as Parameters<typeof createHostedTask>[2],
+        body as Parameters<typeof createHostedTask>[2],
       ),
       201,
     )
@@ -173,7 +172,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
       config.recordDatabaseUrl,
       who,
       decodeURIComponent(documentsMatch[1]!),
-      maskHostedWrite('hub.task.document-create', body) as Parameters<
+      body as Parameters<
         typeof createHostedDocument
       >[3],
     )

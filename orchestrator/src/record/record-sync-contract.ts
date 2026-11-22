@@ -1,7 +1,7 @@
 // concern: record-sync-contract
 /** Plain transport contract for one ordered hosted-record evidence batch. */
 
-export { RECORD_SYNC_MAX_REQUEST_BYTES } from '../../../shared/record-sync-limits.ts'
+export const RECORD_SYNC_MAX_REQUEST_BYTES = 8 * 1024 * 1024
 
 export const RECORD_SYNC_BATCH_SIZE = 100
 export const RECORD_SYNC_MAX_PAYLOAD_BYTES = 1024 * 1024

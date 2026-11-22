@@ -203,7 +203,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-write-telemetry.ts',
       './record-api-routing-evidence.ts',
       './record-api-session-routes.ts',
-      './record-api-secret-mask.ts',
+      './record-api-mask-warnings.ts',
       './record-api-sync.ts',
       './record-api-machine.ts',
       './record-settings.ts',

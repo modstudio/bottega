@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted context-item reads and mutations. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import {
   type ContextHolderKind,
   type ContextItemHolderGroup,
@@ -140,6 +141,7 @@ export async function upsertRecordContextItem(input: Tenant & RecordContextItemI
       target: input.target,
     }),
   )
+  input = maskHostedTableWrite('context_item', input)
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT id,created_at,updated_at FROM context_item

@@ -1,7 +1,21 @@
 // concern: hosted-secret-mask
 /** The single deny-list declaration and masking decision for hosted writes. */
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { PLATFORM_SLUG } from './brand.ts'
+import { boardMessage, boardMessageTag } from './record/schema-board.ts'
+import { contextItem } from './record/schema-context-items.ts'
+import { doc, docRevision } from './record/schema-docs.ts'
+import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from './record/schema-hub.ts'
+import { question } from './record/schema-question.ts'
+import { workflowStepText, workflowTextCopy } from './record/schema-task-flow.ts'
+import {
+  stepCatalogueEvent,
+  stepCatalogueVersion,
+  workflowEvent,
+  workflowVersion,
+} from './record/schema-workflow-catalogue.ts'
 import { redactSecretShaped } from './secret-shaped.ts'
 
 type Exclusion = { path: string; reason: string }
@@ -10,7 +24,7 @@ type RouteEntry = {
   method: 'POST' | 'PUT' | 'PATCH'
   path: string
   reason?: string
-  declaration?: HostedWriteRoute
+  declaration?: HostedMaskDeclaration
   exclusions?: readonly Exclusion[]
 }
 
@@ -216,7 +230,7 @@ const HOSTED_SECRET_EXCLUSIONS = {
   },
 } as const
 
-export type HostedWriteRoute = keyof typeof HOSTED_SECRET_EXCLUSIONS.routes
+export type HostedMaskDeclaration = keyof typeof HOSTED_SECRET_EXCLUSIONS.routes
 
 const recordWriteRoutes = `
 POST /v1/catalogues/ensure-built-ins
@@ -318,7 +332,7 @@ const route = (line: string, kind: RouteEntry['kind'], reason?: string): RouteEn
 }
 const lines = (value: string) => value.trim().split('\n').filter(Boolean)
 
-const targetDeclarations: Record<string, HostedWriteRoute> = {
+const targetDeclarations: Record<string, HostedMaskDeclaration> = {
   'POST /v1/sync': 'record.sync',
   'POST /v1/questions/:intent': 'record.question.write',
   'PUT /v1/context-items': 'record.context-item.put',
@@ -425,18 +439,11 @@ function words(name: string): string[] {
 }
 
 function defaultExcluded(name: string): boolean {
-  const parts = words(name),
-    last = parts.at(-1)
-  return (
-    last === 'id' ||
-    last === 'key' ||
-    last === 'hash' ||
-    last === 'sha' ||
-    last === 'digest' ||
-    last === 'revision' ||
-    last === 'tokens' ||
-    (last === 'count' && parts.at(-2) === 'token')
-  )
+  const parts = words(name)
+  return HOSTED_SECRET_EXCLUSIONS.defaults.some(({ suffix }) => {
+    const wanted = words(suffix)
+    return wanted.length <= parts.length && wanted.every((part, index) => part === parts[parts.length - wanted.length + index])
+  })
 }
 
 function pathMatches(pattern: string, path: readonly string[]): boolean {
@@ -490,12 +497,92 @@ function maskSyncSerializedPayloads(value: unknown, exclusions: readonly Exclusi
 }
 
 /** Clones a validated write value and masks every non-excluded string leaf. */
-export function maskHostedWrite<T>(route: HostedWriteRoute, value: T): T {
+export function maskHostedWrite<T>(route: HostedMaskDeclaration, value: T): T {
   const masked = structuredClone(value)
   if (route === 'record.sync')
     maskSyncSerializedPayloads(masked, HOSTED_SECRET_EXCLUSIONS.routes[route])
   walk(masked, [], HOSTED_SECRET_EXCLUSIONS.routes[route])
   return masked
+}
+
+type HostedTableDefinition = {
+  table: Table
+  timestamp: AnyPgColumn | null
+  mask: boolean
+}
+
+/** The single hosted-table inventory used by both write masking and the audit. */
+export const HOSTED_SECRET_TABLES = [
+  { table: hubNote, timestamp: hubNote.createdAt, mask: true },
+  { table: hubTask, timestamp: hubTask.createdAt, mask: true },
+  { table: hubTaskComment, timestamp: hubTaskComment.createdAt, mask: true },
+  { table: hubTaskDocument, timestamp: hubTaskDocument.createdAt, mask: true },
+  { table: contextItem, timestamp: contextItem.createdAt, mask: true },
+  { table: question, timestamp: question.createdAt, mask: true },
+  { table: workflowStepText, timestamp: workflowStepText.createdAt, mask: true },
+  { table: workflowTextCopy, timestamp: null, mask: true },
+  { table: workflowVersion, timestamp: workflowVersion.createdAt, mask: true },
+  { table: workflowEvent, timestamp: workflowEvent.at, mask: true },
+  { table: stepCatalogueVersion, timestamp: stepCatalogueVersion.createdAt, mask: true },
+  { table: stepCatalogueEvent, timestamp: stepCatalogueEvent.at, mask: true },
+  { table: boardMessage, timestamp: boardMessage.createdAt, mask: false },
+  { table: boardMessageTag, timestamp: null, mask: false },
+  { table: doc, timestamp: doc.createdAt, mask: true },
+  { table: docRevision, timestamp: docRevision.at, mask: true },
+] as const satisfies readonly HostedTableDefinition[]
+
+export type HostedSecretTable = (typeof HOSTED_SECRET_TABLES)[number]
+export type HostedSecretTableName = ReturnType<typeof getTableName<HostedSecretTable['table']>>
+
+export function isHostedSecretColumn(column: AnyPgColumn): boolean {
+  const sqlType = column.getSQLType().toLowerCase()
+  return sqlType === 'text' || sqlType.startsWith('varchar') || sqlType === 'jsonb'
+}
+
+export function hostedSecretColumns(definition: HostedTableDefinition): AnyPgColumn[] {
+  const table = getTableName(definition.table)
+  return Object.values(getTableColumns(definition.table)).filter(
+    (column): column is AnyPgColumn =>
+      isHostedSecretColumn(column as AnyPgColumn) &&
+      !isHostedAuditColumnExcluded(table, (column as AnyPgColumn).name),
+  )
+}
+
+function maskColumnValue(value: unknown, path: string[]): unknown {
+  if (typeof value === 'string') {
+    const result = redactSecretShaped(value, { precision: 'high', exemptEvidenceTokens: true })
+    for (const rule of result.rules) {
+      const warning = { path: path.join('.'), rule }
+      warnings.getStore()?.push(warning)
+      console.warn(`${PLATFORM_SLUG}: masked ${warning.path} (${warning.rule})`)
+    }
+    return result.text
+  }
+  if (Array.isArray(value)) return value.map((child, index) => maskColumnValue(child, [...path, String(index)]))
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([name, child]) => [
+      name,
+      defaultExcluded(name) ? child : maskColumnValue(child, [...path, name]),
+    ]),
+  )
+}
+
+/** Masks the schema-derived free-text columns of one hosted insert or update row. */
+export function maskHostedTableWrite<T>(tableName: string, value: T): T {
+  const definition = HOSTED_SECRET_TABLES.find((entry) => getTableName(entry.table) === tableName)
+  if (!definition) throw new Error(`hosted table ${tableName} has no secret inventory entry`)
+  if (!definition.mask) throw new Error(`hosted table ${tableName} uses refusal, not masking`)
+  if (value === null || typeof value !== 'object') return value
+  const clone = structuredClone(value) as Record<string, unknown>
+  const columns = getTableColumns(definition.table)
+  for (const [property, column] of Object.entries(columns)) {
+    const typed = column as AnyPgColumn
+    if (!isHostedSecretColumn(typed) || isHostedAuditColumnExcluded(tableName, typed.name)) continue
+    const key = Object.hasOwn(clone, property) ? property : Object.hasOwn(clone, typed.name) ? typed.name : null
+    if (key) clone[key] = maskColumnValue(clone[key], [tableName, typed.name])
+  }
+  return clone as T
 }
 
 function routePathMatches(template: string, actual: string): boolean {

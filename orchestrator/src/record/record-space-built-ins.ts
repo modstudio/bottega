@@ -1,6 +1,7 @@
 // concern: record-space-built-ins
 /** Convergently installs the shared TypeScript built-ins into hosted spaces. */
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
@@ -57,6 +58,16 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
       ...builtIns.workflows.map((item) => ({ kind: 'workflow' as const, ...item })),
     ],
     async (item) => {
+      const workflowVersionRow = maskHostedTableWrite('workflow_version', item)
+      const stepVersionRow = maskHostedTableWrite('step_catalogue_version', item)
+      const workflowEventRow = maskHostedTableWrite('workflow_event', {
+        author: BUILT_IN_WORKFLOW_AUTHOR,
+        reason: item.reason,
+      })
+      const stepEventRow = maskHostedTableWrite('step_catalogue_event', {
+        author: BUILT_IN_WORKFLOW_AUTHOR,
+        reason: item.reason,
+      })
       let owners =
         item.kind === 'workflow'
           ? await tx`SELECT id FROM workflow WHERE space_id=${spaceId}::uuid AND slug=${item.slug}`
@@ -84,12 +95,12 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
           item.kind === 'workflow'
             ? await tx`INSERT INTO workflow_version
             (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
-            VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${item.definition},
-              ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now(),now()) RETURNING id`
+            VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${workflowVersionRow.definition},
+              ${workflowEventRow.author},${workflowVersionRow.reason},now(),now(),now()) RETURNING id`
             : await tx`INSERT INTO step_catalogue_version
             (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at,updated_at)
-            VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${item.definition},
-              ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now(),now()) RETURNING id`
+            VALUES (${id}::uuid,${spaceId}::uuid,${ownerId}::uuid,1,'production',${stepVersionRow.definition},
+              ${stepEventRow.author},${stepVersionRow.reason},now(),now(),now()) RETURNING id`
         result.inserted++
       }
       const versionId = String(versions[0]!.id)
@@ -102,13 +113,13 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
         await tx`INSERT INTO workflow_event
         (id,space_id,workflow_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now())`
+          ${workflowEventRow.author},${workflowEventRow.reason},now(),now())`
         result.inserted++
       } else {
         await tx`INSERT INTO step_catalogue_event
         (id,space_id,catalogue_version_id,event,author,reason,at,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${versionId}::uuid,'set',
-          ${BUILT_IN_WORKFLOW_AUTHOR},${item.reason},now(),now())`
+          ${stepEventRow.author},${stepEventRow.reason},now(),now())`
         result.inserted++
       }
     },

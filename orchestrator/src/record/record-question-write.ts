@@ -2,6 +2,7 @@
 /** Applies direct question snapshots and their audit atomically. */
 
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -201,13 +202,16 @@ export async function writeRecordQuestionTransaction(
     key: writeInput.question.workflowKey,
   })
   const projectId = await projectIdForQuestionWrite(intent, writeInput, existing[0], tx)
-  const values = await questionValuesForWrite(
-    tx,
-    payload,
-    projectId,
-    workflowTaskId,
-    writeInput.question.workflowCursorRecordId,
-    intent === 'ask',
+  const values = maskHostedTableWrite(
+    'question',
+    await questionValuesForWrite(
+      tx,
+      payload,
+      projectId,
+      workflowTaskId,
+      writeInput.question.workflowCursorRecordId,
+      intent === 'ask',
+    ),
   )
   const {
     id: _id,
@@ -306,7 +310,7 @@ async function importRecordQuestionTransaction(
     key: input.question.workflowKey,
   })
   const projectId = await projectRecordId(tx, input.question, input)
-  const values = {
+  const values = maskHostedTableWrite('question', {
     ...questionValues(
       { ...input.question, number, spaceId: input.spaceId },
       projectId,
@@ -315,7 +319,7 @@ async function importRecordQuestionTransaction(
     workflowStepOrdinal: input.question.workflowStepOrdinal ?? null,
     workflowStepSlug: input.question.workflowStepSlug ?? null,
     lastRequestId: input.requestId,
-  }
+  })
   if (existing[0]) assertSameQuestionRow('question', input.question.id, existing[0], values)
   else await drizzle({ client: tx }).insert(questionRecord).values(values)
   for (const audit of input.audits)

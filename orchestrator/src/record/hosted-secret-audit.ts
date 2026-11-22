@@ -3,24 +3,10 @@
 import type { SQL } from 'bun'
 import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
-import { isHostedAuditColumnExcluded } from '../../../shared/hosted-secret-mask.ts'
-import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
-import { contextItem } from '../../../shared/record/schema-context-items.ts'
-import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
 import {
-  hubNote,
-  hubTask,
-  hubTaskComment,
-  hubTaskDocument,
-} from '../../../shared/record/schema-hub.ts'
-import { question } from '../../../shared/record/schema-question.ts'
-import { workflowStepText, workflowTextCopy } from '../../../shared/record/schema-task-flow.ts'
-import {
-  stepCatalogueEvent,
-  stepCatalogueVersion,
-  workflowEvent,
-  workflowVersion,
-} from '../../../shared/record/schema-workflow-catalogue.ts'
+  HOSTED_SECRET_TABLES,
+  hostedSecretColumns,
+} from '../../../shared/hosted-secret-mask.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import {
   redactSecretShaped,
@@ -65,48 +51,15 @@ type HostedSecretAuditSchemaEntry = {
   columns: readonly AnyPgColumn[]
 }
 
-const auditTable = (table: Table, id: AnyPgColumn, timestamp: AnyPgColumn | null) => ({
-  table,
-  id,
-  timestamp,
-})
-
-/** One table inventory; scanned columns are derived from these Drizzle schema objects. */
-const HOSTED_SECRET_AUDIT_TABLES = [
-  auditTable(hubNote, hubNote.id, hubNote.createdAt),
-  auditTable(hubTask, hubTask.id, hubTask.createdAt),
-  auditTable(hubTaskComment, hubTaskComment.id, hubTaskComment.createdAt),
-  auditTable(hubTaskDocument, hubTaskDocument.id, hubTaskDocument.createdAt),
-  auditTable(contextItem, contextItem.id, contextItem.createdAt),
-  auditTable(question, question.id, question.createdAt),
-  auditTable(workflowStepText, workflowStepText.id, workflowStepText.createdAt),
-  auditTable(workflowTextCopy, workflowTextCopy.id, null),
-  auditTable(workflowVersion, workflowVersion.id, workflowVersion.createdAt),
-  auditTable(workflowEvent, workflowEvent.id, workflowEvent.at),
-  auditTable(stepCatalogueVersion, stepCatalogueVersion.id, stepCatalogueVersion.createdAt),
-  auditTable(stepCatalogueEvent, stepCatalogueEvent.id, stepCatalogueEvent.at),
-  auditTable(boardMessage, boardMessage.id, boardMessage.createdAt),
-  auditTable(boardMessageTag, boardMessageTag.id, null),
-  auditTable(doc, doc.id, doc.createdAt),
-  auditTable(docRevision, docRevision.id, docRevision.at),
-] as const
-
-function auditableColumn(column: AnyPgColumn): boolean {
-  const sqlType = column.getSQLType().toLowerCase()
-  return sqlType === 'text' || sqlType.startsWith('varchar') || sqlType === 'jsonb'
-}
-
 /** Every textual schema column except structured fields in the shared exclusion declaration. */
 const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] =
-  HOSTED_SECRET_AUDIT_TABLES.map((entry) => {
-    const table = getTableName(entry.table)
+  HOSTED_SECRET_TABLES.map((entry) => {
+    const columns = getTableColumns(entry.table)
     return {
-      ...entry,
-      columns: Object.values(getTableColumns(entry.table)).filter(
-        (column): column is AnyPgColumn =>
-          auditableColumn(column as AnyPgColumn) &&
-          !isHostedAuditColumnExcluded(table, (column as AnyPgColumn).name),
-      ),
+      table: entry.table,
+      id: columns.id as AnyPgColumn,
+      timestamp: entry.timestamp,
+      columns: hostedSecretColumns(entry),
     }
   })
 

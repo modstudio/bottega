@@ -45,7 +45,7 @@ import {
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
-import { registerRecordSecretMask } from './record-api-secret-mask.ts'
+import { registerRecordMaskWarnings } from './record-api-mask-warnings.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,
@@ -376,7 +376,7 @@ function registerRecordCoreRoutes(
 
 function maskedRecordApiApp(): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
-  registerRecordSecretMask(app)
+  registerRecordMaskWarnings(app)
   return app
 }
 

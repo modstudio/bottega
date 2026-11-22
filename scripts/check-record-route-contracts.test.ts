@@ -1,27 +1,10 @@
 import { expect, test } from 'bun:test'
 import {
   contractRoutesFromSource,
-  currentHostedSecretRouteDrift,
-  hostedSecretRouteDrift,
   mergeRecordRouteBaseline,
   staleRecordRouteBaseline,
   undeclaredRecordRoutes,
 } from './check-record-route-contracts.ts'
-
-test('hosted secret route guard fails closed in both directions', () => {
-  expect(hostedSecretRouteDrift(['POST /one', 'PUT /two'], ['POST /one'])).toEqual({
-    missing: ['PUT /two'],
-    stale: [],
-  })
-  expect(hostedSecretRouteDrift(['POST /one'], ['POST /one', 'PATCH /old'])).toEqual({
-    missing: [],
-    stale: ['PATCH /old'],
-  })
-})
-
-test('both deployed write route registries have a secret-policy entry', () => {
-  expect(currentHostedSecretRouteDrift()).toEqual({ missing: [], stale: [] })
-})
 
 test('an undeclared new record route is refused', () => {
   expect(

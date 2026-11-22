@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
-import { maskHostedRoutePayload, withHostedMaskWarnings } from '../../shared/hosted-secret-mask.ts'
+import { withHostedMaskWarnings } from '../../shared/hosted-secret-mask.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
@@ -87,18 +87,6 @@ async function hostedDiagnosticResponse(
   return hostedNoDestinationWriteApi(request, config, dependencies.noDestinationWrites)
 }
 
-async function maskedHostedRequest(request: Request): Promise<Request> {
-  if (!['POST', 'PUT', 'PATCH'].includes(request.method)) return request
-  if (isUnregisteredHostedWrite(request.method, new URL(request.url).pathname)) return request
-  const body = await request
-    .clone()
-    .json()
-    .catch(() => undefined)
-  if (body === undefined) return request
-  const masked = maskHostedRoutePayload(request.method, new URL(request.url).pathname, body)
-  return new Request(request, { body: JSON.stringify(masked), headers: request.headers })
-}
-
 async function hostedResponse(
   req: Request,
   config: HostedRouteConfig,
@@ -167,7 +155,7 @@ export function hostedRequestHandler(
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (request: Request): Promise<Response> =>
     withHostedMaskWarnings(async () =>
-      hostedResponse(await maskedHostedRequest(request), config, dependencies, dist),
+      hostedResponse(request, config, dependencies, dist),
     )
 }
 
