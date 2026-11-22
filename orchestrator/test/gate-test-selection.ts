@@ -21,9 +21,3 @@ export const FUTURE_CLOCK_GUARDED_TESTS = [
   },
   { selector: './src/judgment.test.ts', reach: 'orchestrator/src/judgment.test.ts' },
 ] as const
-
-/**
- * The guard stays later than fixed fixture dates in FUTURE_CLOCK_GUARDED_TESTS and earlier than
- * the tree's 2099 never-expires sentinels.
- */
-export const FUTURE_CLOCK_TEST_INSTANT = '2090-01-01T00:00:00.000Z'
