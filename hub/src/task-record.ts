@@ -2,7 +2,8 @@ import { db } from './db.ts'
 import { projects } from './projects.ts'
 import { runRef } from './reconcile.ts'
 import { localTaskDetail, type TaskDetail } from './task-detail.ts'
-import { getTaskDocument, type TaskDocumentSummary } from './task-document.ts'
+import { getLocalTaskDocument } from './task-document.ts'
+import type { TaskDocumentSummary } from './task-document-types.ts'
 import type { TaskRow } from './task-row.ts'
 import type { TaskComment } from './task-types.ts'
 import { taskWriteDecision } from './task-write-destination.ts'
@@ -30,7 +31,7 @@ export function taskRecordFromRows(
             version: document.version,
             created_at: document.created_at,
           }
-        : getTaskDocument(document.id),
+        : getLocalTaskDocument(document.id),
     )
     .sort((a, b) => Number(b.role === 'handoff') - Number(a.role === 'handoff'))
   const runs = db()

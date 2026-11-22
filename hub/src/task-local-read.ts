@@ -1,5 +1,6 @@
 import { db } from './db.ts'
-import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
+import { listLocalTaskDocuments } from './task-document.ts'
+import type { TaskDocumentSummary } from './task-document-types.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import type { HostedTaskLookupRow, TaskComment } from './task-types.ts'
@@ -73,5 +74,5 @@ export function showLocalTask(
        WHERE task_record_id = ? AND deleted_at IS NULL ORDER BY created_at, record_id`,
     )
     .all(recordId)
-  return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
+  return { task, comments, documents: listLocalTaskDocuments(upper, { recordId }) }
 }

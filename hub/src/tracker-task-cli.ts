@@ -4,6 +4,7 @@ import { observeTrackerTask } from './ingest/trackers.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { DuplicateTaskError, duplicateCandidates, listTasks, showTask } from './task.ts'
+import { projectOwningTaskKey, taskProjectResolutionRefusal } from './task-identity.ts'
 import { type TrackerConnection, withTrackerConnection } from './tracker-connection.ts'
 import {
   createAdvertisedTrackerTaskKey,
@@ -62,17 +63,14 @@ async function projectForTask(
     if (!project) throw new Error(`unknown project '${projectName}'`)
     return project
   }
-  const prefix = key.toUpperCase().split('-', 1)[0]
-  const matches = registered.filter((project) => project.settings.keyPrefixes?.includes(prefix!))
-  if (matches.length === 1) return matches[0]!
+  const owningProject = projectOwningTaskKey(key, registered)
+  if (owningProject) return owningProject
   const stored = (await listTasks()).filter((task) => task.key === key.toUpperCase())
   if (stored.length === 1) {
     const project = registered.find((candidate) => candidate.name === stored[0]!.project)
     if (project) return project
   }
-  throw new Error(
-    `cannot determine the project for task ${key}; pass --project <project> or register its key prefix`,
-  )
+  throw new Error(taskProjectResolutionRefusal(key))
 }
 
 /** Refresh one externally tracked task under the collection lease. */

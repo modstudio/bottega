@@ -108,7 +108,12 @@ test('a pulled task delete keeps values from queued child edits before cascade',
       (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
       VALUES (?,'GAM-1',?,1,'title','edited body','v1','2026-10-11T12:00:00.000Z','2026-10-11T12:00:00.000Z')`)
       .run(documentId, id)
-    queueHostedChange(conn, 'hub_task_document', documentId, 'upsert', undefined, ['body'])
+    conn
+      .query(
+        `INSERT INTO hosted_outbox(id,table_name,row_id,operation,queued_at,fields)
+         VALUES (?,'hub_task_document',?,'upsert',?,?)`,
+      )
+      .run(Bun.randomUUIDv7(), documentId, '2026-10-11T12:01:00.000Z', '["body"]')
     reconcilePulledRow(conn, {
       table: 'hub_task',
       id,

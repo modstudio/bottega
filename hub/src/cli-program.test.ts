@@ -116,7 +116,7 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
     expect(await run(createHubProgram(), ['task', 'doc', 'set', document.label, '--no-role'])).toBe(
       0,
     )
-    expect(getTaskDocument(document.label, {}).role).toBeNull()
+    expect((await getTaskDocument(document.label, {})).role).toBeNull()
   } finally {
     if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
   }

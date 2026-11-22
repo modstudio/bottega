@@ -2,7 +2,6 @@ import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { queueHostedChange } from './outbox.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
 
 const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
@@ -252,7 +251,12 @@ test('record role collision removes the pending role while preserving other docu
     resetFixtureStore()
     seedRoleHolder(recordId)
     writeTransaction((conn) =>
-      queueHostedChange(conn, 'hub_task_document', recordId, 'upsert', AT, fields),
+      conn
+        .query(
+          `INSERT INTO hosted_outbox(id,table_name,row_id,operation,queued_at,fields)
+           VALUES (?,'hub_task_document',?,'upsert',?,?)`,
+        )
+        .run(Bun.randomUUIDv7(), recordId, AT, fields === null ? null : JSON.stringify(fields)),
     )
 
     expect(applyRoleCollision(`incoming-${recordId}`)[0]).toEqual({

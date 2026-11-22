@@ -57,7 +57,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'hub/src/note-promotion-body.ts',
   'hub/src/note-push.ts',
   'hub/src/note.ts',
-  'hub/src/offline-task-edits.ts',
   'hub/src/orch-doc-revision.ts',
   'hub/src/orch-transforms.ts',
   'hub/src/orch.ts',

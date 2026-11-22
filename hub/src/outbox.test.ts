@@ -1,16 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import {
-  HOSTED_QUEUE_ALLOWLIST,
-  hostedQueueRefusal,
-  OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
-} from './hosted-queue-decision.ts'
+import { hostedQueueRefusal } from './hosted-queue-decision.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
   discardHostedOutboxEntryCommand,
@@ -85,26 +81,11 @@ describe('hosted outbox', () => {
     expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' })).toBeNull()
   })
 
-  test('every hosted queue exception still labels a queueHostedChange call', () => {
-    const sources = new Map([
-      [
-        OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE,
-        {
-          source: readFileSync(new URL('./offline-task-edits.ts', import.meta.url), 'utf8'),
-          label: 'OFFLINE_TASK_EDITS_DOCUMENT_DELETE_QUEUE_SITE',
-        },
-      ],
-    ])
-    for (const entry of HOSTED_QUEUE_ALLOWLIST) {
-      const site = sources.get(entry.site)
-      expect(site).toBeDefined()
-      expect(site!.source).toContain('queueHostedChange(')
-      expect(site!.source).toContain(site!.label)
-    }
-  })
-
   test('direct record tables refuse before inserting while other tables still queue', () => {
     writeTransaction((conn) => {
+      expect(() =>
+        queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, crypto.randomUUID(), 'upsert'),
+      ).toThrow('hub_task_document writes go through sendHostedChanges and cannot be queued')
       expect(() => queueHostedChange(conn, 'hub_note', crypto.randomUUID(), 'upsert')).toThrow(
         'hub_note writes go through sendHostedChanges and cannot be queued',
       )
@@ -712,7 +693,6 @@ describe('hosted outbox', () => {
         .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-11'`)
         .get()!
       const commentId = Bun.randomUUIDv7()
-      const documentId = Bun.randomUUIDv7()
       conn
         .query(
           `INSERT INTO task_comment
@@ -720,15 +700,7 @@ describe('hosted outbox', () => {
             VALUES (?,'FIX-11',?,'comment','2026-10-11T12:01:00.000Z')`,
         )
         .run(commentId, child.record_id)
-      conn
-        .query(
-          `INSERT INTO task_document
-            (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
-            VALUES (?,'FIX-11',?,1,'document','body','v1','2026-10-11T12:01:00.000Z','2026-10-11T12:01:00.000Z')`,
-        )
-        .run(documentId, child.record_id)
       queueHostedChange(conn, 'hub_task_comment', commentId, 'upsert')
-      queueHostedChange(conn, 'hub_task_document', documentId, 'upsert')
     })
     await observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z', [])
     const sent: HostedPushChange[] = []
@@ -744,7 +716,6 @@ describe('hosted outbox', () => {
       HOSTED_TASK_TABLE,
       HOSTED_TASK_TABLE,
       HOSTED_COMMENT_TABLE,
-      HOSTED_DOCUMENT_TABLE,
       HOSTED_STATUS_EVENT_TABLE,
     ])
     expect(

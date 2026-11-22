@@ -148,7 +148,12 @@ test('the record feed applies task upserts without losing pending machine fields
       )
       .run(documentId, taskId, at, at)
     queueHostedChange(conn, 'hub_task', taskId, 'upsert', at, ['title'])
-    queueHostedChange(conn, 'hub_task_document', documentId, 'delete', at)
+    conn
+      .query(
+        `INSERT INTO hosted_outbox(id,table_name,row_id,operation,queued_at)
+         VALUES (?,'hub_task_document',?,'delete',?)`,
+      )
+      .run(Bun.randomUUIDv7(), documentId, at)
     conn.query('DELETE FROM task_document WHERE record_id=?').run(documentId)
   })
   const unlinkedId = '01990000-0000-7000-8000-000000001249'
