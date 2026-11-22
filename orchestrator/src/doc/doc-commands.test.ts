@@ -812,7 +812,7 @@ describe('scoped operator docs', () => {
     expect(result.out).toBe('hosted body\n')
   })
 
-  test(`${PLATFORM_SLUG} doc restore refuses a hosted-only revision`, async () => {
+  test(`${PLATFORM_SLUG} doc restore accepts a hosted-only revision without local fallback`, async () => {
     const doc = await writeDoc({
       scope: 'global',
       subject: null,
@@ -830,13 +830,12 @@ describe('scoped operator docs', () => {
       async () => ({
         revisions: [],
         resolve: (identifier) => (identifier === '7' ? hostedId : identifier),
-        revision: () => ({ ...local, record_id: hostedId, number: 7 }),
+        revision: () => ({ ...local, record_id: hostedId, number: 7, body: 'hosted body\n' }),
         diff: () => '',
       }),
     )
-    expect(result.code).toBe(1)
-    expect(result.err).toContain('revision 7 exists only in the hosted record')
-    expect(result.err).toContain(`${PLATFORM_SLUG} record sync`)
+    expect(result.code).toBe(0)
+    expect(getDoc('global', null, 'hosted-only-restore')?.body).toBe('hosted body\n')
   })
 
   test(`${PLATFORM_SLUG} doc restore resolves hosted target and expectation numbers to local record ids`, async () => {

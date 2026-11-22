@@ -4,18 +4,20 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
-import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { projectAt } from '../project/projects.ts'
+import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
-import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
+import { type HostedDocRevision, hostedDocRevisionRead } from './doc-hosted-history.ts'
+import { listDocMetadata as listLocalDocMetadata, listDocs as listLocalDocs } from './doc-list.ts'
 import {
   type Doc,
   type DocListFilters,
   type DocMetadata,
   getDocForAudienceStore,
   getDocStore,
-  listDocsStore,
 } from './doc-read-store.ts'
+import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
+import { listStoredDocRevisions } from './doc-revision-store.ts'
 
 type HostedRow = Record<string, unknown>
 
@@ -81,6 +83,16 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     .filter((doc) => !filters.scopes || filters.scopes.includes(doc.scope))
     .filter(
       (doc) =>
+        !filters.articleSubject ||
+        doc.articleSubject?.id === filters.articleSubject ||
+        doc.articleSubject?.name === filters.articleSubject ||
+        doc.relatedSubjects.some(
+          (subject) =>
+            subject.id === filters.articleSubject || subject.name === filters.articleSubject,
+        ),
+    )
+    .filter(
+      (doc) =>
         !match ||
         [doc.title, doc.slug, doc.subject ?? ''].some((v) => v.toLocaleLowerCase().includes(match)),
     )
@@ -105,27 +117,31 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
 
 export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
   return applyRecordReadAuthority({
-    local: () => listDocsStore(filters),
+    local: () => listLocalDocs(filters),
     hosted: () => withReadRemedy(() => hostedRows(filters)),
   })
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
-  return (await readDocs(filters)).map(
-    ({
-      body,
-      created_at: _created,
-      delivery: _delivery,
-      owner: _owner,
-      project_record_id: _project,
-      article_subject_id: _article,
-      ...doc
-    }) => ({
-      ...doc,
-      bytes: Buffer.byteLength(body),
-      summarySource: doc.summary === null ? 'derived' : 'written',
-    }),
-  )
+  return applyRecordReadAuthority({
+    local: () => listLocalDocMetadata(filters),
+    hosted: async () =>
+      (await hostedRows(filters)).map(
+        ({
+          body,
+          created_at: _created,
+          delivery: _delivery,
+          owner: _owner,
+          project_record_id: _project,
+          article_subject_id: _article,
+          ...doc
+        }) => ({
+          ...doc,
+          bytes: Buffer.byteLength(body),
+          summarySource: doc.summary === null ? 'derived' : 'written',
+        }),
+      ),
+  })
 }
 
 export function readDoc(
@@ -191,4 +207,24 @@ export async function readOpenResumes(cwd: string, now = Date.now()) {
   }
   open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
   return { open, unreadable }
+}
+
+export function readDocRevisions(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null = null,
+) {
+  return applyRecordReadAuthority({
+    local: () => listStoredDocRevisions(scope, subject, slug, owner),
+    hosted: () =>
+      withReadRemedy(async () => {
+        const doc = (await hostedRows({ scope, subject, owner })).find((row) => row.slug === slug)
+        if (!doc) return []
+        const revisions = (await (
+          await hostedDocClient(scope, subject)
+        ).listRevisions(doc.record_id)) as HostedDocRevision[]
+        return hostedDocRevisionRead(revisions).revisions
+      }),
+  })
 }

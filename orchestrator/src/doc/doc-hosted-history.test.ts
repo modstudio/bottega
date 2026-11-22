@@ -104,14 +104,14 @@ describe('hosted document history', () => {
     )
   })
 
-  test('a definite hosted not-found selects local history', async () => {
-    expect(
-      await readHostedDocRevisions({
+  test('a definite hosted not-found refuses without local fallback', async () => {
+    await expect(
+      readHostedDocRevisions({
         address: 'global/_/local-only',
         listRevisions: async () => {
           throw new RecordApiRequestError('doc not found', 'refused', 404)
         },
       }),
-    ).toBeNull()
+    ).rejects.toThrow('could not read hosted revisions for global/_/local-only: doc not found')
   })
 })

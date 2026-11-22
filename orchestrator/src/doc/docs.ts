@@ -622,12 +622,13 @@ export async function consumeDoc(
   requestedSubject: string | null | undefined,
   slug: string,
   context: DocWriteContext,
+  suppliedDoc?: Doc | null,
 ): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = getDoc(scope, requestedSubject, slug)
+  const doc = suppliedDoc === undefined ? getDoc(scope, requestedSubject, slug) : suppliedDoc
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
@@ -829,12 +830,13 @@ export async function restoreDoc(
   revisionId: string,
   context: DocWriteContext,
   owner: string | null = null,
+  supplied?: { revision: DocRevision; current: Doc | null },
 ): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const revision = getDocRevision(revisionId, owner)
+  const revision = supplied?.revision ?? getDocRevision(revisionId, owner)
   if (
     !revision ||
     revision.scope !== scope ||
@@ -844,7 +846,9 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
+  const [expectedCurrent, current] = supplied
+    ? [supplied.current?.revision ?? null, supplied.current]
+    : referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },
     expectedCurrent,

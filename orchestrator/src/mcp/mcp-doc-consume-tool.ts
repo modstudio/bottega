@@ -31,10 +31,17 @@ export function registerMcpDocConsumeTool(
     async ({ scope, subject, slug }) => {
       const refusal = decideMcpDocWrite('consume_doc', scope)
       if (refusal) throw new Error(refusal)
-      const finishHandoff = await handoff.prepare(await readDoc(scope, subject, slug))
-      const result = await consumeDoc(scope, subject, slug, {
-        reason: 'consumed by session',
-      })
+      const selected = await readDoc(scope, subject, slug)
+      const finishHandoff = await handoff.prepare(selected)
+      const result = await consumeDoc(
+        scope,
+        subject,
+        slug,
+        {
+          reason: 'consumed by session',
+        },
+        selected,
+      )
       const handoffResult = await finishHandoff(result)
       return text({ ...result, handoff: handoffResult })
     },

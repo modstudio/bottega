@@ -868,7 +868,6 @@ async function restoreDocCommand(
   owner: string | null,
   address: DocAddress,
   hosted: DocHistory | null,
-  localRevisions: ReturnType<typeof listDocRevisions>,
 ): Promise<void> {
   const { scope, subject, slug } = address
   const revision = argv[5]
@@ -880,10 +879,6 @@ async function restoreDocCommand(
   const revisionId = hosted
     ? hosted.resolve(revision)
     : resolveDocRevisionIdentifier(db(), revision)
-  if (hosted && !localRevisions.some((candidate) => candidate.record_id === revisionId))
-    throw new Error(
-      `revision ${revision} exists only in the hosted record; run ${PLATFORM_SLUG} record sync and retry, or restore it on the machine that wrote it`,
-    )
   const expected = flags.flag('expect')
   const restored = await restoreDoc(
     scope,
@@ -898,6 +893,12 @@ async function restoreDocCommand(
         : undefined,
     },
     owner,
+    hosted
+      ? {
+          revision: hosted.revision(revision),
+          current: await authoritativeDoc(scope, subject, slug, owner),
+        }
+      : undefined,
   )
   printRestoreResult(restored, flags, presentation, scope, subject, slug)
 }
@@ -943,7 +944,7 @@ async function handleHistoryDocCommand(
   const selectedHistory = await selectedDocHistory(address, owner, ports)
   const revisions = selectedHistory ? [] : listDocRevisions(scope, subject, slug, owner)
   if (sub === 'restore') {
-    await restoreDocCommand(argv, flags, presentation, owner, address, selectedHistory, revisions)
+    await restoreDocCommand(argv, flags, presentation, owner, address, selectedHistory)
     return true
   }
   const selected = selectedHistory?.revisions ?? revisions

@@ -25,12 +25,12 @@ import {
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
+  readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   getDocRevision,
-  listDocRevisions,
   removeDoc,
   setDoc,
   setDocStatus,
@@ -443,7 +443,7 @@ function registerConsumeAndRevisionTools(server: McpServer): void {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       if (!user && !scope) throw new Error('scope is required unless user is true')
       return text(
-        listDocRevisions(
+        await readDocRevisions(
           user ? 'canon' : scope!,
           user ? null : (subject ?? null),
           slug,
