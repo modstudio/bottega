@@ -3,8 +3,7 @@
 
 import type { DocAudiences } from '../../../shared/docs.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
-import { readDocs } from './doc-authoritative-read.ts'
-import type { Doc } from './doc-read-store.ts'
+import { type Doc, readDocs } from './doc-authoritative-read.ts'
 import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
 import { type LocalDocTreeFields, localDocTreeFields } from './local-doc-tree-service.ts'
 

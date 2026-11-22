@@ -601,6 +601,10 @@ export function createMemoryRecordApiClient(
       const items = [...docs.values()].filter((doc) => {
         if (query.scope && doc.scope !== query.scope) return false
         if (query.subject !== undefined && doc.subject !== query.subject) return false
+        if (query.slug !== undefined && doc.slug !== query.slug) return false
+        if (query.owner !== undefined && doc.owner !== query.owner) return false
+        if (query.status !== undefined && doc.status !== query.status) return false
+        if (query.kind !== undefined && doc.kind !== query.kind) return false
         if (!query.includeDeleted && doc.deletedAt) return false
         if (query.updatedSince && doc.updatedAt <= query.updatedSince) return false
         return true

@@ -43,6 +43,7 @@ beforeEach(() => {
   const session = memoryRecordSession()
   session.setToken('fixture-session')
   installRecordSessionRunner(session.runner)
+  installRecordApiClient(createMemoryRecordApiClient())
 })
 
 afterEach(() => {

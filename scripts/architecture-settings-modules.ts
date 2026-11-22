@@ -327,8 +327,8 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-auto-mode.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-env-commands.ts', [
+    '../doc/doc-authoritative-read.ts',
     '../doc/docs.ts',
-    '../doc/doc-read-store.ts',
     './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),

@@ -29,7 +29,7 @@ import {
 } from './doc-revision-store.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
-export type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 

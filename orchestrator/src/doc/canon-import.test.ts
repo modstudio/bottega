@@ -76,6 +76,8 @@ test('an unavailable canon scanner writes all rows and returns one warning', asy
 
 test('a hosted batch failure leaves every local user canon row unchanged', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient(client)
   const first = await setDoc({
     scope: 'canon',
     subject: null,
@@ -94,7 +96,6 @@ test('a hosted batch failure leaves every local user canon row unchanged', async
     body: '---\ndescription: Current\nalways: true\n---\n\nCurrent rule.\n',
     allowCanonBootstrap: true,
   })
-  const client = createMemoryRecordApiClient()
   installRecordApiClient({
     ...client,
     importCanon: async () => {

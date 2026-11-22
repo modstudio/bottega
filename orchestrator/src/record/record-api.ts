@@ -547,8 +547,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (refusal) return refusal
     throw error
   }
-  registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
+  registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
 
   app.get('/v1/config/entries', async (context) => {
