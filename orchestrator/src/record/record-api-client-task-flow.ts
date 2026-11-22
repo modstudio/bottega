@@ -275,6 +275,7 @@ function taskFlowStageListSearchParams(
     workflowKey: selector.workflowKey,
     taskId: selector.taskId,
     openedMachineId: selector.openedMachineId,
+    view: selector.view,
     order: selector.order,
     cursor: selector.cursor,
   }

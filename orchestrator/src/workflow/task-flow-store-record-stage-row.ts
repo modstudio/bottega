@@ -43,7 +43,7 @@ export function stageRow(
     catalogue_version: required(stage.catalogueVersionNumber, 'catalogue version number'),
     args: JSON.stringify(stage.arguments),
     autonomy: stage.autonomy ?? null,
-    closed: JSON.stringify(stage.closedStepNotes),
+    closed: JSON.stringify(required(stage.closedStepNotes, 'closed step notes')),
     question: stage.question ?? null,
     total_steps: stage.totalSteps,
     created_at: stage.createdAt,
@@ -61,6 +61,15 @@ export function stageRow(
       ? { open_stage_count: flow.taskId === null ? 0 : flow.openStageCount }
       : {}),
   }
+}
+
+export function summaryStageRow(
+  item: ListedItem,
+): TaskFlowStageCursorRow & { open_stage_count?: number } {
+  return stageRow({
+    ...item,
+    stage: { ...item.stage, closedStepNotes: [], autonomy: null },
+  })
 }
 
 export function stageItem(result: HostedTaskFlowStageById): ListedItem {

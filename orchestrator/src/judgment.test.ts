@@ -190,16 +190,17 @@ describe('score ruling', () => {
   })
 
   test('a scored root is not relisted when its later turn is quota', async () => {
+    const now = Date.now()
     const root = addRun({
       agent: 'codex',
       job: 'file-question',
       status: 'failed',
       kind: 'other',
       session: process.env.CLAUDE_CODE_SESSION_ID,
-      startedAt: '2026-11-19T00:00:00.000Z',
+      startedAt: new Date(now - 60_000).toISOString(),
     })
     await score(root, ['full', 'right'])
-    insertTurn(root, 'quota', 2, '2027-11-19T00:01:00.000Z')
+    insertTurn(root, 'quota', 2, new Date(now + 60_000).toISOString())
     rollUp(root)
 
     expect(rootEvidence(root).failureKind).toBe('other')
@@ -208,16 +209,17 @@ describe('score ruling', () => {
   })
 
   test('a scored root is relisted when its later turn is contract', async () => {
+    const now = Date.now()
     const root = addRun({
       agent: 'codex',
       job: 'file-question',
       status: 'failed',
       kind: 'other',
       session: process.env.CLAUDE_CODE_SESSION_ID,
-      startedAt: '2026-11-19T00:00:00.000Z',
+      startedAt: new Date(now - 60_000).toISOString(),
     })
     await score(root, ['full', 'right'])
-    insertTurn(root, 'contract', 2, '2027-11-19T00:01:00.000Z')
+    insertTurn(root, 'contract', 2, new Date(now + 60_000).toISOString())
     rollUp(root)
 
     expect(rootEvidence(root).failureKind).toBe('contract')

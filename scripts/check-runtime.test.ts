@@ -122,6 +122,7 @@ describe('check mode arguments', () => {
     expect(selectedCheckLegs(parsed)).toEqual([
       'cli',
       'orchestrator',
+      'orchestrator/future-clock',
       'orchestrator/hooks',
       'hub',
       'hub/data',

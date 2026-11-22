@@ -5,12 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { db } from '../database/db.ts'
-import { contextBrief } from '../doc/context-brief.ts'
+import { contextBriefWithCursors } from '../doc/context-brief.ts'
 import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
 import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
-import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
+import type { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
   type ContextReviewFacts,
@@ -155,10 +155,7 @@ export async function reviewContext(
 ): Promise<ContextReviewResult> {
   const database = dependencies.database ?? db(true)
   const now = (dependencies.now ?? Date.now)()
-  const [brief, cursors] = await Promise.all([
-    contextBrief(session, process.cwd(), database),
-    listWorkflowCursors({ session }, database),
-  ])
+  const { brief, cursors } = await contextBriefWithCursors(session, process.cwd(), database)
   const tasks = await reviewTasks(
     cursors,
     brief.holders.flatMap((holder) => holder.items.map((item) => item.body)),

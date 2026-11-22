@@ -81,7 +81,9 @@ function typeScriptTestsUnder(directory: string): string[] {
 }
 
 export function focusedSuiteOwners(): FocusedSuiteOwner[] {
-  const checkLegSuites = CHECK_LEGS.filter((leg) => leg.testPatterns.length > 0).map((leg) => {
+  const checkLegSuites = CHECK_LEGS.filter((leg) =>
+    leg.testPatterns.some((pattern) => pattern.endsWith('.py')),
+  ).map((leg) => {
     const suite = leg.suite.find((candidate) => 'focused' in candidate)
     return {
       owner: `CHECK_LEGS leg ${JSON.stringify(leg.name)}`,

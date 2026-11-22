@@ -1,7 +1,7 @@
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HostedSessionTransportError } from './hosted-session-send.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
-import type { HostedPushChange } from './push-contract.ts'
+import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
 import { hostedPushChanges } from './task-client.ts'
 
 export type HostedChangeSendOptions = {
@@ -57,4 +57,30 @@ export async function sendHostedChanges(
       throw new HostedChangeStageError(stageIndex, cause)
     }
   }
+}
+
+export async function sendHostedChangesWithOutcomes(
+  stages: HostedPushChange[][],
+  options: HostedChangeSendOptions,
+): Promise<HostedPushOutcome[][]> {
+  const { conflictRemedy: _conflictRemedy, ...pushOptions } = options
+  const prepared = stages.map((stage) =>
+    stage.map((change) => ({ ...change, change_id: change.change_id ?? newRecordId() })),
+  )
+  const outcomes: HostedPushOutcome[][] = []
+  for (const [stageIndex, stage] of prepared.entries()) {
+    try {
+      outcomes.push(await hostedPushChanges(stage, pushOptions))
+    } catch (cause) {
+      if (cause instanceof HostedSessionTransportError) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        throw new HostedChangeStageError(
+          stageIndex,
+          new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`),
+        )
+      }
+      throw new HostedChangeStageError(stageIndex, cause)
+    }
+  }
+  return outcomes
 }

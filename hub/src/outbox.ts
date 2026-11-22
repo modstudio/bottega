@@ -59,6 +59,7 @@ export type OutboxEntry = {
 }
 
 const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_NOTE_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
 ])
@@ -474,7 +475,7 @@ function recordRoutingWaits(
 
 const ROUTING_WAIT_PREFIX = 'waiting on routing:'
 
-export type HostedRoutingWait = { project: string; message: string }
+type HostedRoutingWait = { project: string; message: string }
 
 function routingWaitMessage(project: string, reason: string): string {
   if (reason === 'unregistered-project')
@@ -491,9 +492,7 @@ function routingWaitMessage(project: string, reason: string): string {
   return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
 }
 
-export function parseHostedRoutingWait(
-  message: string | null | undefined,
-): HostedRoutingWait | null {
+function parseHostedRoutingWait(message: string | null | undefined): HostedRoutingWait | null {
   if (!message?.startsWith(`${ROUTING_WAIT_PREFIX} project "`)) return null
   const project = /^waiting on routing: project "([^"]+)"/.exec(message)?.[1]
   return project ? { project, message } : null
@@ -779,29 +778,6 @@ async function routeOutboxRows(
     routed.destinations.set(row.acknowledgedSpaceId!, selected)
   }
   return routed
-}
-
-/** Classify selected rows without acquiring the drainer lease or changing the store. */
-export async function hostedRoutingWaitForEntries(
-  entries: OutboxEntry[],
-  dependencies: Pick<DrainDependencies, 'identity' | 'personalSpace' | 'registered'> = {},
-): Promise<HostedRoutingWait | null> {
-  let rows = prepareOutboxRows(entries).rows
-  if (!rows.length) return null
-  const identity = await (dependencies.identity ?? hostedTaskIdentity)()
-  const accepted = new Set(
-    identity.capabilities?.spacePushTables ?? [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE],
-  )
-  rows = rows.filter((row) => accepted.has(row.change.table))
-  const { refusals } = await routeOutboxRows(
-    rows,
-    (dependencies.registered ?? projects)(),
-    identity,
-    dependencies.personalSpace ?? personalRecordSpace,
-  )
-  for (const [project, refusal] of refusals)
-    return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
-  return null
 }
 
 async function drainHostedOutboxHeld(

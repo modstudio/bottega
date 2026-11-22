@@ -108,6 +108,12 @@ test('routes a hook process test through unittest from the hooks directory', () 
   expect(group!.argv).toEqual(['python3', '-m', 'unittest', 'process_heartbeat_shell'])
 })
 
+test('keeps TypeScript test-pattern legs on the Bun focused runner', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/src/judgment.test.ts'])
+  expect(group!.directory).toEndWith('/orchestrator')
+  expect(group!.argv).toContain('./src/judgment.test.ts')
+})
+
 test('groups mixed Python and TypeScript selections by runner', () => {
   const groups = groupFocusedTestPaths([
     'orchestrator/hooks/test_secret_shaped_parity.py',

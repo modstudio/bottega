@@ -1,4 +1,7 @@
-import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+import {
+  FUTURE_CLOCK_GUARDED_TESTS,
+  ORCHESTRATOR_GATE_TEST_SELECTION,
+} from '../orchestrator/test/gate-test-selection.ts'
 
 export const DEPENDENCY_AUDIT_SCRIPT = 'scripts/check-dependency-audit.ts'
 
@@ -37,6 +40,30 @@ export const CHECK_LEGS = [
     typecheckConfigs: ['orchestrator/tsconfig.json'],
     worker: { run: true },
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
+  },
+  {
+    name: 'orchestrator/future-clock',
+    directory: 'orchestrator',
+    ciJob: 'orchestrator-future-clock',
+    testDirectories: [],
+    testPatterns: FUTURE_CLOCK_GUARDED_TESTS.map(({ reach }) => reach),
+    excludedTestDirectories: [],
+    excludedTestPatterns: [],
+    typecheck: null,
+    typecheckConfigs: [],
+    worker: { run: true },
+    suite: [
+      {
+        argv: [
+          'bun',
+          'test',
+          '--preload',
+          './test/future-clock-preload.ts',
+          ...FUTURE_CLOCK_GUARDED_TESTS.map(({ selector }) => selector),
+        ],
+        unitTests: true,
+      },
+    ],
   },
   {
     name: 'orchestrator/hooks',

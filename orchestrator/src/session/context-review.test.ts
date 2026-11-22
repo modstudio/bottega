@@ -68,6 +68,12 @@ test('reviewContext drives the brief and its own lookup within the task-call bud
     {},
     {},
   )
+  const cursor = d
+    .query<{ updated_at: string }, [number]>(
+      'SELECT updated_at FROM workflow_cursor WHERE number=?',
+    )
+    .get(opened.cursor!.id)
+  const itemAt = new Date(Date.parse(cursor!.updated_at) + 1).toISOString()
   d.query('UPDATE workflow_cursor SET workflow_key=?,task_record_id=? WHERE number=?').run(
     'DEV-1',
     'task-1',
@@ -77,13 +83,7 @@ test('reviewContext drives the brief and its own lookup within the task-call bud
     `INSERT INTO context_item
      (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
      VALUES (?,'task',?,'slice-reference','fact',?,'test',?,?)`,
-  ).run(
-    newRecordId(),
-    'task-1',
-    'DEV-1844/2 is complete and this note is stale.',
-    '2026-11-22T10:00:00Z',
-    '2026-11-22T10:00:00Z',
-  )
+  ).run(newRecordId(), 'task-1', 'DEV-1844/2 is complete and this note is stale.', itemAt, itemAt)
   d.query(
     `INSERT INTO hook_emission
      (record_id,session_id,at,event,hook,kind,chars,lines,text_hash)

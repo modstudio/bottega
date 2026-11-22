@@ -134,7 +134,7 @@ describe('fresh tracker task read', () => {
     expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
   })
 
-  test('a failed hosted observation restores its transition so the next observe resends it', async () => {
+  test('a failed hosted observation leaves local unchanged so the next observe resends it', async () => {
     const open = { ...task, status: 'Open', category: 'open' as const }
     await observeTrackerTask(open, '2026-10-05T00:00:00.000Z', [], { baseUrl: '' })
     writeTransaction((conn) => conn.query('DELETE FROM hosted_outbox').run())
@@ -169,6 +169,50 @@ describe('fresh tracker task read', () => {
     const retried = await observeTrackerTask(changed, '2026-10-05T00:02:00.000Z', [], working)
     expect(retried.event).not.toBeNull()
     expect(sent.map(({ table }) => table)).toEqual(['hub_task', 'hub_task_status_event'])
+  })
+
+  test('a crash after send retries the same ids and converges without a duplicate event', async () => {
+    const open = { ...task, status: 'Open', category: 'open' as const }
+    await observeTrackerTask(open, '2026-10-05T00:00:00.000Z', [], { baseUrl: '' })
+    writeTransaction((conn) => conn.query('DELETE FROM hosted_outbox').run())
+    const seen = new Set<string>()
+    const requests: string[][] = []
+    const fetch = async (_input: string, init?: RequestInit) => {
+      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+      requests.push(changes.map(({ id }) => id))
+      const outcomes = changes.map(({ id }) => ({
+        id,
+        status: seen.has(id) ? ('duplicate' as const) : ('applied' as const),
+      }))
+      for (const { id } of changes) seen.add(id)
+      return Response.json(outcomes)
+    }
+    const active = { ...task, status: 'In Progress', category: 'active' as const }
+    await expect(
+      observeTrackerTask(active, '2026-10-05T00:01:00.000Z', [], {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch,
+        afterTrackerSend: () => {
+          throw new Error('simulated crash')
+        },
+      }),
+    ).rejects.toThrow('simulated crash')
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'open',
+    })
+
+    await observeTrackerTask(active, '2026-10-05T00:01:00.000Z', [], {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch,
+    })
+    expect(requests.slice(0, 2)).toEqual(requests.slice(2, 4))
+    expect(seen).toHaveLength(2)
+    expect(db().query('SELECT 1 FROM task_status_event').all()).toHaveLength(1)
+    expect(db().query(`SELECT status_category FROM task WHERE key='FIX-1'`).get()).toEqual({
+      status_category: 'active',
+    })
   })
 
   test("reports the tracker task's own update time", async () => {

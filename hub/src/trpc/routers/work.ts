@@ -251,9 +251,9 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         } catch (cause) {
           const message = cause instanceof Error ? cause.message : String(cause)
           if (message.includes(`changed since version ${value.version}`)) {
-            let current: ReturnType<typeof deps.getTaskDocument>
+            let current: Awaited<ReturnType<typeof deps.getTaskDocument>>
             try {
-              current = deps.getTaskDocument(value.id)
+              current = await deps.getTaskDocument(value.id)
             } catch (lookupCause) {
               throw asWriteError(lookupCause)
             }

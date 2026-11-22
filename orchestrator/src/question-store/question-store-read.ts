@@ -56,20 +56,19 @@ export async function questionByUnscopedNumber(
   )
 }
 
-export async function openQuestionsForTasks(
+export async function openQuestionsForMemberTasks(
   database: Database,
   taskRecordIds: string[],
-  projectId: string,
 ): Promise<Record<string, unknown>[]> {
   if (!taskRecordIds.length) return []
   const rows: Record<string, unknown>[] = []
-  for (let offset = 0; offset < taskRecordIds.length; offset += 100) {
+  for (let offset = 0; offset < taskRecordIds.length; offset += QUESTION_ID_LIST_LIMIT) {
     rows.push(
       ...((
-        await questionStore(database).read(
-          { read: 'open-for-tasks', taskRecordIds: taskRecordIds.slice(offset, offset + 100) },
-          projectId,
-        )
+        await questionStore(database).read({
+          read: 'open-for-tasks',
+          taskRecordIds: taskRecordIds.slice(offset, offset + QUESTION_ID_LIST_LIMIT),
+        })
       ).items as Record<string, unknown>[]),
     )
   }
@@ -111,16 +110,19 @@ export async function openQuestionStages(
     .items as TaskFlowOpenSessionStageRow[]
 }
 
-export async function inboxWorkflowQuestions(
-  database: Database,
-): Promise<TaskFlowInboxQuestionRow[]> {
+export async function inboxQuestionGroups(database: Database): Promise<{
+  workflow: TaskFlowInboxQuestionRow[]
+  run: Record<string, unknown>[]
+}> {
   const items = (await questionStore(database).read({ read: 'inbox' })).items
-  return items.filter((row) => 'cursor_record_id' in row) as TaskFlowInboxQuestionRow[]
+  return {
+    workflow: items.filter((row) => 'cursor_record_id' in row) as TaskFlowInboxQuestionRow[],
+    run: items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[],
+  }
 }
 
 export async function inboxRunQuestions(database: Database): Promise<Record<string, unknown>[]> {
-  const items = (await questionStore(database).read({ read: 'inbox' })).items
-  return items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[]
+  return (await inboxQuestionGroups(database)).run
 }
 
 export async function questionsForRun(

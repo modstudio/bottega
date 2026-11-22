@@ -43,6 +43,12 @@ export type RecordQuestionClient = {
     more?: boolean
     reset?: boolean
   }>
+  readMembershipQuestions?(input: QuestionReadInput): Promise<{
+    items: Record<string, unknown>[]
+    cursor?: string
+    more?: boolean
+    reset?: boolean
+  }>
   writeQuestion?(
     intent: QuestionLiveIntent,
     input: QuestionWriteBody,
@@ -85,21 +91,47 @@ async function writeQuestion(
 }
 
 export const recordQuestionClient = (request: Request): RecordQuestionClient => {
+  const readResponse = (body: unknown) =>
+    body as {
+      items: Record<string, unknown>[]
+      cursor?: string
+      more?: boolean
+      reset?: boolean
+    }
+  const searchParams = (input: QuestionReadInput) => {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(input))
+      if (value !== undefined) query.set(key, String(value))
+    return query
+  }
   const routes = {
     readQuestions: (input: QuestionReadInput, destination?: RecordRequestDestination) => {
-      const query = new URLSearchParams()
-      for (const [key, value] of Object.entries(input))
-        if (value !== undefined) query.set(key, String(value))
+      const query = searchParams(input)
       return request(`/v1/questions?${query}`, {
         ...destination,
-        schema: (body) =>
-          body as {
-            items: Record<string, unknown>[]
-            cursor?: string
-            more?: boolean
-            reset?: boolean
-          },
+        schema: readResponse,
       })
+    },
+    readMembershipQuestions: async (input: QuestionReadInput) => {
+      try {
+        return await request(`/v1/questions/memberships?${searchParams(input)}`, {
+          schema: readResponse,
+        })
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'status' in error &&
+          (error.status === 404 || error.status === 405)
+        ) {
+          const detail = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `${detail}; deploy the hosted API with \`scripts/deploy/hosted api\`, then retry`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
     },
     writeQuestion: (
       intent: QuestionLiveIntent,
