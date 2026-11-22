@@ -11,9 +11,12 @@ export const SYNTHETIC_LIFECYCLE_JOBS = [
   CANON_MIRROR_JOB,
   ISSUE_BEFORE_TREE_JOB,
 ] as const
+/**
+ * Jobs that open pull requests or hold branches on their own schedule as the system, rather than
+ * under a session's task cursor. Tree lifecycle jobs only manage trees for a session and stay out.
+ */
 export const SYSTEM_LIFECYCLE_JOBS = [CANON_MIRROR_JOB] as const
 
-/** Which jobs act as the system rather than under a session's task cursor. */
 export function isSystemLifecycleJob(job: string | null): boolean {
   return job !== null && (SYSTEM_LIFECYCLE_JOBS as readonly string[]).includes(job)
 }

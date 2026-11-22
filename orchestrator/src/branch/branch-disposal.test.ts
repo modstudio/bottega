@@ -11,7 +11,41 @@ import {
 } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { composeBranchDisposalRefusal, disposeBranch } from './branch-disposal.ts'
+import {
+  composeBranchDisposalRefusal,
+  composeContentLandedProofRefusal,
+  disposeBranch,
+  observeDisposalContentLanded,
+} from './branch-disposal.ts'
+import type { taskBranchContentLanded } from './task-branch.ts'
+
+test('content-landed disposal proof uses the fetched landing branch, never local trunk', () => {
+  const observed: Parameters<typeof taskBranchContentLanded>[0][] = []
+  const landed = observeDisposalContentLanded(
+    { cwd: '/projects/example', trunk: 'main', branchTip: 'branch-tip' },
+    (input) => {
+      observed.push(input)
+      return true
+    },
+  )
+
+  expect(landed).toBe(true)
+  expect(observed).toEqual([
+    { cwd: '/projects/example', trunkTip: 'origin/main', branchTip: 'branch-tip' },
+  ])
+})
+
+test('content-landed proof refusal names the failed command and fetch remedy', () => {
+  expect(
+    composeContentLandedProofRefusal({
+      projectPath: '/projects/example',
+      trunk: 'main',
+      detail: 'git rev-parse --verify origin/main^{tree} failed: missing ref',
+    }),
+  ).toBe(
+    'refusing branch disposal: content-landed proof could not run: git rev-parse --verify origin/main^{tree} failed: missing ref; cleared by: git -C /projects/example fetch origin main, then retry',
+  )
+})
 
 test('open-task refusal identifies the mirrored status and refresh remedy', () => {
   const refusal = composeBranchDisposalRefusal({

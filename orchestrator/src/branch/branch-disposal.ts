@@ -5,14 +5,13 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
-import { isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import {
   BRANCH_DISPOSAL_REASONS,
   type BranchDisposalReason,
@@ -21,8 +20,6 @@ import {
 } from './branch-disposal-decision.ts'
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
-import { isProbeOnlyMint } from './branch-state.ts'
-import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { taskKeyToken } from './other-branch-state.ts'
 import { taskBranchContentLanded } from './task-branch.ts'
@@ -128,21 +125,26 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
-function observeDisposalContentLanded(
-  project: NonNullable<ReturnType<typeof projectByName>>,
-  branchTip: string | null,
+export function observeDisposalContentLanded(
+  input: { cwd: string; trunk: string; branchTip: string },
+  observe: typeof taskBranchContentLanded = taskBranchContentLanded,
 ): boolean {
-  const trunk = project.settings.trunk?.trim() ?? ''
-  if (!branchTip || !trunk) return false
-  try {
-    return taskBranchContentLanded({
-      cwd: project.path,
-      trunkTip: resolveLandingTrunkTip(trunk, (args) => git(project.path, args)),
-      branchTip,
-    })
-  } catch {
-    return false
-  }
+  return observe({
+    cwd: input.cwd,
+    trunkTip: `origin/${input.trunk}`,
+    branchTip: input.branchTip,
+  })
+}
+
+export function composeContentLandedProofRefusal(input: {
+  projectPath: string
+  trunk: string
+  detail: string
+}): string {
+  return (
+    `refusing branch disposal: content-landed proof could not run: ${input.detail}; ` +
+    `cleared by: git -C ${input.projectPath} fetch origin ${input.trunk}, then retry`
+  )
 }
 
 export function composeBranchDisposalRefusal(input: {
@@ -208,13 +210,28 @@ async function planBranchDisposal(input: {
   )
   const taskKey = keyGroup?.key === UNKEYED_BRANCH_GROUP ? null : (keyGroup?.key ?? null)
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
-  const mintingRuns = db()
-    .query('SELECT probe,job FROM run WHERE project_record_id=? AND minted_branch=?')
-    .all(project.recordId, branch) as { probe: number; job: string }[]
-  const runMinted = mintingRuns.length > 0
-  const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const systemJobMinted = runMinted && mintingRuns.every((run) => isSystemLifecycleJob(run.job))
-  const contentLanded = observeDisposalContentLanded(project, row?.tip ?? null)
+  const runMinted = row !== undefined
+  const probeOnly = row?.probeOnly ?? false
+  const systemJobMinted = row?.systemJobMinted ?? false
+  let contentLanded = false
+  const trunk = project.settings.trunk?.trim() ?? ''
+  if (systemJobMinted && row && trunk) {
+    try {
+      contentLanded = observeDisposalContentLanded({
+        cwd: project.path,
+        trunk,
+        branchTip: row.tip,
+      })
+    } catch (cause) {
+      throw new Error(
+        composeContentLandedProofRefusal({
+          projectPath: project.path,
+          trunk,
+          detail: cause instanceof Error ? cause.message : String(cause),
+        }),
+      )
+    }
+  }
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,

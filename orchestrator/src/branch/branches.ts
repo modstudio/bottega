@@ -142,7 +142,7 @@ function recordedBranchLandings(): BranchLandingRecord[] {
 function projectRuns(project: Project): RunRow[] {
   return db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status,probe
+      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status,probe,job
          FROM run
         WHERE project_record_id=?
         ORDER BY number`,

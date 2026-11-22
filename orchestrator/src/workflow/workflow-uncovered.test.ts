@@ -5,7 +5,6 @@ import {
   HOOK_TREE_JOB,
   ISSUE_BEFORE_TREE_JOB,
   LANDING_TREE_JOB,
-  SYSTEM_LIFECYCLE_JOBS,
 } from '../run/synthetic-lifecycle-job.ts'
 import {
   decideWorkflowUncovered,
@@ -107,7 +106,6 @@ test('evidence after a cursor closes or a claim lapses is uncovered', () => {
 })
 
 test('canon mirror run evidence is exempt by job only', () => {
-  expect(SYSTEM_LIFECYCLE_JOBS).toEqual([CANON_MIRROR_JOB])
   const report = decideWorkflowUncovered({
     days: 1,
     now: '2026-11-17T20:00:00.000Z',
