@@ -10,11 +10,11 @@ import {
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from '../settings/settings.ts'
-import { refuseUnknownStoredSettingsEdit } from '../settings/settings-edit-refusal.ts'
 import {
   editSettingsAutoMode,
   type SettingsAutoModeOperation,
 } from '../settings/settings-auto-mode.ts'
+import { refuseUnknownStoredSettingsEdit } from '../settings/settings-edit-refusal.ts'
 import {
   editSettingsPermission,
   type SettingsPermissionOperation,

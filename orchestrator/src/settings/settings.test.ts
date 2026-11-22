@@ -76,7 +76,7 @@ describe('validateOwnedSettingsBody', () => {
     for (const options of [{ subagentHooks: 'off' }, { futureOption: true }]) {
       expect(() =>
         validateOwnedSettingsBody(JSON.stringify({ permissions: {}, hooks: {}, options })),
-      ).toThrow(/options\.subagentHooks.*accepted value "on"/s)
+      ).toThrow(/accepted options\.subagentHooks="on"/)
     }
   })
 

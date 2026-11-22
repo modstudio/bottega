@@ -87,8 +87,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
   if (!result.success) {
     if (result.error.issues.some((issue) => issue.path[0] === 'options')) {
       throw new Error(
-        'refusing settings body: invalid options\n' +
-          'cleared by: use only options.subagentHooks with accepted value "on"',
+        'refusing settings body: invalid options; accepted options.subagentHooks="on"',
       )
     }
     throw new Error(
