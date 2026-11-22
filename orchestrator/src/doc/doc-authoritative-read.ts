@@ -2,7 +2,7 @@
 /** Routes operator document reads to their authoritative store. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { effectiveDocSummary, type DocAudience } from '../../../shared/docs.ts'
+import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
@@ -96,6 +96,8 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
 function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[] {
   const match = filters.match?.toLocaleLowerCase()
   const body = filters.bodyMatch?.toLocaleLowerCase()
+  const compareText = (left: string, right: string) =>
+    Buffer.compare(Buffer.from(left), Buffer.from(right))
   const hasArticleSubject = (subject: Doc['articleSubject']) =>
     subject?.id === filters.articleSubject || subject?.name === filters.articleSubject
   return rows
@@ -115,19 +117,19 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
     .filter((doc) => !body || doc.body.toLocaleLowerCase().includes(body))
     .sort((a, b) =>
       filters.updatedAtOrder
-        ? (filters.updatedAtOrder === 'asc' ? 1 : -1) * a.updated_at.localeCompare(b.updated_at) ||
-          a.scope.localeCompare(b.scope) ||
-          (a.subject ?? '').localeCompare(b.subject ?? '') ||
+        ? (filters.updatedAtOrder === 'asc' ? 1 : -1) * compareText(a.updated_at, b.updated_at) ||
+          compareText(a.scope, b.scope) ||
+          compareText(a.subject ?? '', b.subject ?? '') ||
           a.position - b.position ||
-          a.title.localeCompare(b.title)
+          compareText(a.title, b.title)
         : (filters.articleSubject
             ? Number(!hasArticleSubject(a.articleSubject)) -
               Number(!hasArticleSubject(b.articleSubject))
             : 0) ||
-          a.scope.localeCompare(b.scope) ||
-          (a.subject ?? '').localeCompare(b.subject ?? '') ||
+          compareText(a.scope, b.scope) ||
+          compareText(a.subject ?? '', b.subject ?? '') ||
           a.position - b.position ||
-          a.title.localeCompare(b.title),
+          compareText(a.title, b.title),
     )
 }
 
@@ -252,7 +254,10 @@ export function readDocRevisions(
 ) {
   return applyRecordReadAuthority({
     local: () => listStoredDocRevisions(scope, subject, slug, owner),
-    hosted: () => withReadRemedy(async () => (await hostedRevisionRead(scope, subject, slug, owner))?.revisions ?? []),
+    hosted: () =>
+      withReadRemedy(
+        async () => (await hostedRevisionRead(scope, subject, slug, owner))?.revisions ?? [],
+      ),
   })
 }
 

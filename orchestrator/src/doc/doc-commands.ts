@@ -29,10 +29,10 @@ import {
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
   readDocs as authoritativeDocs,
-  docForAudience,
   type DocListFilters,
   type DocRevision,
   type DocRevisionMetadata,
+  docForAudience,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'

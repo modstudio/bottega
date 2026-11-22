@@ -10,9 +10,7 @@ export type ParsedDocRevisionIdentifier =
   | { kind: 'number'; number: number }
   | { kind: 'record-id'; recordId: string }
 
-export function parseDocRevisionIdentifier(
-  input: string | number,
-): ParsedDocRevisionIdentifier {
+export function parseDocRevisionIdentifier(input: string | number): ParsedDocRevisionIdentifier {
   const given = String(input)
   const number = /^[0-9]+$/.test(given) ? Number(given) : null
   if (number !== null && Number.isSafeInteger(number) && number > 0) {
