@@ -147,7 +147,39 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
   },
 ]
 
+export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-mirror-failure-boundary',
+    file: `${source}canon-mirror-failure.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep canon mirror failure composition a pure decision over supplied messages.',
+  },
+  {
+    name: 'canon-mirror-leftover-boundary',
+    file: `${source}canon-mirror-leftover.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep leftover reclamation policy independent of Git, stores, and lifecycle adapters.',
+  },
+  {
+    name: 'canon-mirror-revert-guard-boundary',
+    file: `${source}canon-mirror-revert-guard.ts`,
+    allowed: ['shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the silent-revert guard a pure decision over commit and revision facts.',
+  },
+  {
+    name: 'canon-mirror-revisions-boundary',
+    file: `${source}canon-mirror-revisions.ts`,
+    allowed: ['orchestrator/src/database/db.ts', `${source}canon-mirror-revert-guard.ts`],
+    typeOnlyAllowed: ['bun:sqlite', `${source}canon-hydrate.ts`],
+    reason: 'Keep revision-history reads separate from the mirror publication lifecycle.',
+  },
+]
+
 const canonMirrorBoundarySpecs: ImportBoundary[] = [
+  ...canonMirrorDecisionBoundarySpecs,
   {
     name: 'canon-apply-boundary',
     file: `${source}canon-apply.ts`,
@@ -174,6 +206,9 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       `${source}canon-hydrate.ts`,
       `${source}canon-lint.ts`,
       `${source}canon-stored-rows.ts`,
+      `${source}canon-mirror-failure.ts`,
+      `${source}canon-mirror-leftover.ts`,
+      `${source}canon-mirror-revisions.ts`,
       'orchestrator/src/close/close-out.ts',
       'orchestrator/src/close/close-out-preparation.ts',
       'orchestrator/src/close/close-out-questions.ts',

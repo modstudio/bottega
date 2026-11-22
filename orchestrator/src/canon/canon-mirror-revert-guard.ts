@@ -17,7 +17,7 @@ export function canonMirrorRevertRefusal(input: CanonMirrorGuardInput): string |
   const storeAt =
     input.operation === 'write'
       ? input.rowRevisionAt
-      : input.removalAt ?? (input.rowRevisionAt === null ? input.newestCanonAt : null)
+      : (input.removalAt ?? (input.rowRevisionAt === null ? input.newestCanonAt : null))
   if (!storeAt || Date.parse(input.commit.at) <= Date.parse(storeAt)) return null
   const short = input.commit.sha.slice(0, 10)
   return (

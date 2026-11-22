@@ -5,6 +5,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries, sqliteAdapterImportRule } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { canonModules } from './architecture-canon-modules.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import {
   cliCompositionRule,
@@ -234,6 +235,7 @@ const declaredModules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...canonModules,
   ...[...cleanupBoundarySpecs, ...sessionStartBoundarySpecs].map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
@@ -248,20 +250,6 @@ const declaredModules: ArchitectureModule[] = [
   ...contextHealthModules,
   ...sessionLossesModules,
   ...sessionReportModules,
-  module('orchestrator/src/canon/pack-content.ts', [
-    '../../../shared/canon-frontmatter.ts',
-    './canon-hydrate.ts',
-    './canon-lint.ts',
-  ]),
-  module('orchestrator/src/doc/canon-removal.ts', [
-    '../canon/canon-files.ts',
-    '../canon/canon-hydrate.ts',
-    '../canon/canon-write-gate.ts',
-    '../project/projects.ts',
-    '../workflow/workflow-tree-store.ts',
-    './doc-read-store.ts',
-    './doc-write-allowed.ts',
-  ]),
   module('orchestrator/src/code/code-search.ts', [
     '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',

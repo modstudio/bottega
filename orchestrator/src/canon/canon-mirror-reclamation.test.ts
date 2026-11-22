@@ -45,11 +45,13 @@ test('a no-drift pass reclaims a dirty owned leftover', async () => {
     commitHydratedCanon(root)
     const base = mirrorFixturePort(root)
     const result = await mirrorRepositoryCanon({
-      project: 'cm-leftover-reclaim', dryRun: false,
+      project: 'cm-leftover-reclaim',
+      dryRun: false,
       port: mirrorFixturePort(root, {
-        releaseRun: (id, preparation) => existsSync(tree) && base.treeDirty(tree)
-          ? { outcome: 'held', detail: 'refused; dirty fixture tree' }
-          : base.releaseRun(id, preparation),
+        releaseRun: (id, preparation) =>
+          existsSync(tree) && base.treeDirty(tree)
+            ? { outcome: 'held', detail: 'refused; dirty fixture tree' }
+            : base.releaseRun(id, preparation),
       }),
       noteFailure: async () => {},
     })
@@ -67,12 +69,16 @@ test('dry-run reports a dirty owned leftover without touching it', async () => {
     commitHydratedCanon(root)
     const before = spawnFixtureGitSync(['status', '--porcelain'], { cwd: tree }).stdout.toString()
     const result = await mirrorRepositoryCanon({
-      project: 'cm-leftover-dry', dryRun: true, port: mirrorFixturePort(root),
+      project: 'cm-leftover-dry',
+      dryRun: true,
+      port: mirrorFixturePort(root),
       noteFailure: async () => {},
     })
     expect(result[0]?.text).toContain('owned leftover would be reset and released')
     expect(existsSync(tree)).toBe(true)
-    expect(spawnFixtureGitSync(['status', '--porcelain'], { cwd: tree }).stdout.toString()).toBe(before)
+    expect(spawnFixtureGitSync(['status', '--porcelain'], { cwd: tree }).stdout.toString()).toBe(
+      before,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -85,7 +91,8 @@ test('an owned leftover with an unpushed commit remains refused', async () => {
     spawnFixtureGitSync(['commit', '-m', 'fixture unpushed canon'], { cwd: tree })
     commitHydratedCanon(root)
     const result = await mirrorRepositoryCanon({
-      project: 'cm-leftover-commit', dryRun: false,
+      project: 'cm-leftover-commit',
+      dryRun: false,
       port: mirrorFixturePort(root, {
         releaseRun: () => ({ outcome: 'held', detail: 'refused; unpushed commit' }),
       }),
@@ -104,7 +111,8 @@ test('a failure after staging is reset and released without masking its cause', 
     await registerManagedMirror(root, 'cm-stage-cleanup')
     const base = mirrorFixturePort(root)
     const result = await mirrorRepositoryCanon({
-      project: 'cm-stage-cleanup', dryRun: false,
+      project: 'cm-stage-cleanup',
+      dryRun: false,
       port: mirrorFixturePort(root, {
         stage: (path) => {
           base.stage(path)
@@ -126,7 +134,8 @@ test('a cleanup failure is appended to the publication failure', async () => {
     await registerManagedMirror(root, 'cm-cause-cleanup')
     const base = mirrorFixturePort(root)
     const result = await mirrorRepositoryCanon({
-      project: 'cm-cause-cleanup', dryRun: false,
+      project: 'cm-cause-cleanup',
+      dryRun: false,
       port: mirrorFixturePort(root, {
         stage: (path) => {
           base.stage(path)
@@ -148,11 +157,13 @@ test('a generated file newer than its contributors is still generated', async ()
   try {
     await registerManagedMirror(root, 'cm-generated-write')
     const result = await mirrorRepositoryCanon({
-      project: 'cm-generated-write', dryRun: false,
+      project: 'cm-generated-write',
+      dryRun: false,
       port: mirrorFixturePort(root, {
-        lastPathCommit: (_root, _base, path) => path === 'AGENTS.override.md'
-          ? { sha: 'abcdef0123456789', at: '2099-01-01T00:00:00Z' }
-          : null,
+        lastPathCommit: (_root, _base, path) =>
+          path === 'AGENTS.override.md'
+            ? { sha: 'abcdef0123456789', at: '2099-01-01T00:00:00Z' }
+            : null,
       }),
       noteFailure: async () => {},
     })

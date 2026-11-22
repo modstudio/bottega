@@ -5,13 +5,13 @@ import { db } from '../database/db.ts'
 import type { HydrationPlan } from './canon-hydrate.ts'
 import { canonMirrorRevertRefusal } from './canon-mirror-revert-guard.ts'
 
-export type CanonRevisionHistory = {
+type CanonRevisionHistory = {
   latestAt: string | null
   removalAt: string | null
   newestCanonAt: string | null
 }
 
-export function canonRevisionHistory(
+function canonRevisionHistory(
   project: string,
   path: string,
   subject: string | null | undefined,
@@ -42,7 +42,7 @@ export function canonRevisionHistory(
     )
     .get(project)
   return {
-    latestAt: row?.at ?? (subject === undefined ? latest?.at ?? null : null),
+    latestAt: row?.at ?? (subject === undefined ? (latest?.at ?? null) : null),
     removalAt: latest && (latest.op === 'delete' || latest.status !== 'current') ? latest.at : null,
     newestCanonAt: newest?.at ?? null,
   }
