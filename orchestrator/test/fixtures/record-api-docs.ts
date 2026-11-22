@@ -1,5 +1,6 @@
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
+import type { RecordDocRevision } from '../../src/record/record-doc-mapping.ts'
 
 export type StoredDoc = {
   id: string
@@ -19,20 +20,21 @@ export type StoredDoc = {
   latestRevisionId: string | null
 }
 
-export type StoredRevision = {
-  id: string
-  docId: string
-  scope: string
-  subject: string | null
-  slug: string
-  op: string
-  title: string
-  body: string
-  delivery: string
-  author: string
-  reason: string
-  at: string
-}
+export type StoredRevision = Pick<
+  RecordDocRevision,
+  | 'id'
+  | 'docId'
+  | 'scope'
+  | 'subject'
+  | 'slug'
+  | 'op'
+  | 'title'
+  | 'body'
+  | 'delivery'
+  | 'author'
+  | 'reason'
+  | 'at'
+>
 
 type DocQuery = Parameters<RecordApiClient['listDocs']>[0]
 

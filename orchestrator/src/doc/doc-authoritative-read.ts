@@ -16,6 +16,7 @@ import {
   type Doc,
   type DocListFilters,
   type DocMetadata,
+  type DocRevision,
   docForAudience,
   getDocForAudienceStore,
   getDocStore,

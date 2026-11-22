@@ -9,6 +9,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
+import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { consumeDoc, importDocs, removeDoc, restoreDoc, setDoc, setDocStatus } from './docs.ts'
 
@@ -179,7 +180,7 @@ test('consume reaches the hosted resume when the local mirror is empty', async (
 
 test('restore finds its revision in the hosted record when the local mirror is empty', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  const revision = {
+  const revision: RecordDocRevision = {
     id: restoredRevisionId,
     docId,
     scope: 'global',

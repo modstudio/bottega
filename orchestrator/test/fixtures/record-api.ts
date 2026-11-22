@@ -22,6 +22,7 @@ import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import type { RecordDocRevision } from '../../src/record/record-doc-mapping.ts'
 import { memoryContextItemClient } from './record-api-context-items.ts'
 import { matchesStoredDoc, type StoredDoc, type StoredRevision } from './record-api-docs.ts'
 import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
@@ -371,6 +372,30 @@ export function createMemoryRecordApiClient(
         doc.deletedAt === null,
     )
 
+  const hostedRevision = (revision: StoredRevision): RecordDocRevision => {
+    const doc = docs.get(revision.docId)
+    return {
+      ...revision,
+      owner: doc?.owner ?? null,
+      withheldForAudience: false,
+      audiences: ['technical'],
+      parentId: null,
+      position: 0,
+      featured: false,
+      status: doc?.status ?? 'current',
+      kind: doc?.kind ?? 'working',
+      form: null,
+      articleSubject: null,
+      relatedSubjects: [],
+      sourceFiles: [],
+      checkedAgainstCommit: null,
+      summary: null,
+      replacementSlug: null,
+      authorName: null,
+      sessionId: null,
+    }
+  }
+
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
@@ -581,7 +606,7 @@ export function createMemoryRecordApiClient(
     async getDocRevision(id) {
       for (const rows of revisions.values()) {
         const revision = rows.find((row) => row.id === id)
-        if (revision) return revision
+        if (revision) return hostedRevision(revision)
       }
       throw new Error('doc revision not found')
     },

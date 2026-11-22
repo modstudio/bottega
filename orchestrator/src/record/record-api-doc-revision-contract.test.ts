@@ -10,11 +10,36 @@ import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { hostedDocClient } from '../doc/doc-hosted-client.ts'
 import { recordApiClientOver } from './record-api-client.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
+import type { RecordDocRevision } from './record-doc-mapping.ts'
 import { identity } from './record-api-identity.fixture.ts'
 
 const contractRoutes = ['GET /v1/doc-revisions/:revisionId'] as const
 
 const revisionId = '01990000-0000-7000-8000-000000000501'
+
+function revisionWithBody(body: string): RecordDocRevision {
+  return {
+    id: revisionId,
+    docId: '01990000-0000-7000-8000-000000000502',
+    scope: 'global',
+    subject: null,
+    owner: null,
+    slug: 'revision-contract',
+    op: 'set',
+    title: 'Revision contract',
+    body,
+    withheldForAudience: false,
+    delivery: 'demand',
+    audiences: ['technical'],
+    parentId: null,
+    position: 0,
+    author: 'fixture',
+    authorName: null,
+    reason: 'fixture revision',
+    sessionId: null,
+    at: '2026-11-22T00:00:00.000Z',
+  }
+}
 
 afterEach(() => installRecordApiClient(createMemoryRecordApiClient()))
 
@@ -25,7 +50,7 @@ test('a revision outside the caller readable spaces is not found', async () => {
     {
       readDocRevision: async (input: { spaceIds: string[] }) =>
         input.spaceIds.includes('space-b')
-          ? { id: revisionId, docId: '01990000-0000-7000-8000-000000000502', body: 'secret' }
+          ? revisionWithBody('secret')
           : null,
     },
   )
@@ -37,11 +62,7 @@ test('a revision outside the caller readable spaces is not found', async () => {
 })
 
 test('a revision in a readable space is returned with its body', async () => {
-  const revision = {
-    id: revisionId,
-    docId: '01990000-0000-7000-8000-000000000502',
-    body: 'readable revision body',
-  }
+  const revision = revisionWithBody('readable revision body')
   const app = recordApiTestApp(
     identity,
     { ...idleSubjectDeps(), ...idleRecordApiDeps() },
@@ -57,22 +78,27 @@ test('a revision in a readable space is returned with its body', async () => {
 })
 
 test('the hosted document client reads a revision across readable spaces without a destination', async () => {
-  const revision = {
-    id: revisionId,
-    docId: '01990000-0000-7000-8000-000000000502',
-    body: 'readable revision body',
-  }
+  const revision = revisionWithBody('readable revision body')
   const app = recordApiTestApp(
     identity,
     { ...idleSubjectDeps(), ...idleRecordApiDeps() },
     { readDocRevision: async () => revision },
   )
-  const request: RecordClientRequest = async <T>(path, init = {}) => {
+  const request: RecordClientRequest = async <T>(
+    path: string,
+    init: Parameters<RecordClientRequest>[1] = {},
+  ): Promise<T> => {
+    const {
+      destinationSpaceId,
+      schema: _schema,
+      acceptedError: _acceptedError,
+      ...requestInit
+    } = init
     const headers = recordRequestHeaders({
-      destinationSpaceId: init.destinationSpaceId,
+      destinationSpaceId,
       headers: init.headers,
     })
-    const response = await app.request(path, { ...init, headers })
+    const response = await app.request(path, { ...requestInit, headers })
     const body = await response.json()
     if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(body)}`)
     return body as T
