@@ -83,13 +83,7 @@ test('reviewContext drives the brief and its own lookup within the task-call bud
     `INSERT INTO context_item
      (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
      VALUES (?,'task',?,'slice-reference','fact',?,'test',?,?)`,
-  ).run(
-    newRecordId(),
-    'task-1',
-    'DEV-1844/2 is complete and this note is stale.',
-    itemAt,
-    itemAt,
-  )
+  ).run(newRecordId(), 'task-1', 'DEV-1844/2 is complete and this note is stale.', itemAt, itemAt)
   d.query(
     `INSERT INTO hook_emission
      (record_id,session_id,at,event,hook,kind,chars,lines,text_hash)
