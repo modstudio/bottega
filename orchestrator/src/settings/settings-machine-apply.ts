@@ -203,7 +203,7 @@ function applyUserSettings(
   try {
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
-      row ? parseStoredOwnedSettings(row.body) : { permissions: {}, hooks: {}, envKeys: [] },
+      row ? parseStoredOwnedSettings(row.body) : parsed.owned,
       readMachinePermissions(deps.environment),
     )
     const settingsSourceDetail = row ? undefined : 'product hooks only; no user settings row'
@@ -214,21 +214,24 @@ function applyUserSettings(
       resolveMachineHookRuntime(),
     )
     const owned = productHooks.settings
-    const secretsPath = userSettingsEnvPath(home)
-    const secrets = readSettingsEnv(secretsPath)
-    const names = new Set(ownedEnvironmentNames(owned))
-    const removed = parsed.envKeys.filter((name) => !names.has(name))
-    const unprotected = removed.filter((name) => !secrets.has(name))
-    if (unprotected.length) {
-      throw new Error(
-        `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
-          `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
+    let environment: Record<string, string> | undefined
+    if (row) {
+      const secretsPath = userSettingsEnvPath(home)
+      const secrets = readSettingsEnv(secretsPath)
+      const names = new Set(ownedEnvironmentNames(owned))
+      const removed = parsed.envKeys.filter((name) => !names.has(name))
+      const unprotected = removed.filter((name) => !secrets.has(name))
+      if (unprotected.length) {
+        throw new Error(
+          `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
+            `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
+        )
+      }
+      environment = renderedSettingsEnvironment(
+        owned,
+        selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
       )
     }
-    const environment = renderedSettingsEnvironment(
-      owned,
-      selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
-    )
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
     const plan = planSettingsWrite(path, rendered)
     if (plan.currentText === plan.renderedText) {

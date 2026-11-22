@@ -375,6 +375,41 @@ describe('settings apply', () => {
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
   })
 
+  test('without a settings row preserves file-owned settings while adding product hooks', async () => {
+    db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const personalHook = {
+      matcher: 'Bash',
+      hooks: [{ type: 'command', command: '/usr/local/bin/personal-hook' }],
+    }
+    writeFileSync(
+      settingsPath,
+      `${JSON.stringify(
+        {
+          permissions: { allow: ['Bash(git status)'] },
+          hooks: { PreToolUse: [personalHook] },
+          env: { PERSONAL_TOKEN: 'fixture-value' },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({
+      outcome: 'applied',
+      detail: expect.stringContaining('product hooks only; no user settings row'),
+    })
+    const rendered = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    expect(rendered.permissions).toEqual({ allow: ['Bash(git status)'] })
+    expect(rendered.hooks.PreToolUse).toContainEqual(personalHook)
+    expect(rendered.env).toEqual({ PERSONAL_TOKEN: 'fixture-value' })
+    for (const hook of PRODUCT_HOOKS) {
+      expect(readFileSync(settingsPath, 'utf8')).toContain(hook.script)
+    }
+  })
+
   test('pre-sign-in missing user rows still wait for sign-in after product hooks apply', async () => {
     db().query("DELETE FROM doc WHERE scope IN ('settings', 'canon') AND owner=?").run(OWNER)
     writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
