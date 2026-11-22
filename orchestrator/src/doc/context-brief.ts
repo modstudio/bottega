@@ -389,13 +389,13 @@ function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext
   ].join(' · ')
 }
 
-export async function contextBrief(
+export async function contextBriefWithCursors(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
   hubTaskReader: ProjectTaskListReader = readProjectTaskList,
   hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
-): Promise<ContextBrief> {
+): Promise<{ brief: ContextBrief; cursors: WorkflowCursorListRow[] }> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
@@ -432,7 +432,7 @@ export async function contextBrief(
   const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims, handoffLinks)
-  return {
+  const brief: ContextBrief = {
     session,
     fullCommand: fullHolder
       ? `${PLATFORM_SLUG} agent context show --task ${fullHolder.key}`
@@ -468,4 +468,17 @@ export async function contextBrief(
     },
     autonomy: autonomyLine(autonomy),
   }
+  return { brief, cursors }
+}
+
+export async function contextBrief(
+  session: string,
+  cwd = process.cwd(),
+  database: Database = db(),
+  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
+  hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
+): Promise<ContextBrief> {
+  return (
+    await contextBriefWithCursors(session, cwd, database, hubTaskReader, hubTaskLookup)
+  ).brief
 }

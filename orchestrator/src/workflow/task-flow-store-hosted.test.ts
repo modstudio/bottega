@@ -54,11 +54,11 @@ const secondProjectId = '00000000-0000-4000-8001-000000000002'
 const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
 const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
-const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
+const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 3
 // shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
 const BRIEF_RECORD_API_CALL_BUDGET = 10
 // shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
-const REVIEW_RECORD_API_CALL_BUDGET = 14
+const REVIEW_RECORD_API_CALL_BUDGET = 10
 const BRIEF_RECORD_API_BREAKDOWN = {
   'record-whoami': 3,
   'record-task-flow': 3,
@@ -66,15 +66,15 @@ const BRIEF_RECORD_API_BREAKDOWN = {
   'record-context-items': 1,
 }
 const REVIEW_RECORD_API_BREAKDOWN = {
-  'record-whoami': 4,
-  'record-task-flow': 5,
-  'record-questions': 4,
+  'record-whoami': 3,
+  'record-task-flow': 3,
+  'record-questions': 3,
   'record-context-items': 1,
 }
 // Membership inbox + membership open-for-tasks + task-flow's space-keyed open-for-cursors.
 const BRIEF_RECORD_QUESTION_CALL_LIMIT = 3
-// Membership inbox + membership open-for-tasks + open-for-cursors twice: review relists cursors.
-const REVIEW_RECORD_QUESTION_CALL_LIMIT = 4
+// Membership inbox + membership open-for-tasks + task-flow's space-keyed open-for-cursors.
+const REVIEW_RECORD_QUESTION_CALL_LIMIT = 3
 const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 262_144
 
 type TaskFlowReadCounts = NonNullable<
@@ -577,7 +577,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         ],
       ]),
     ),
-  ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [5, 5] })
+  ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [3, 3] })
 
   memoryInput.taskFlowStages.push({
     flow: {
