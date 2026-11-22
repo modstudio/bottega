@@ -24,6 +24,7 @@ import type { RecordContextItem } from '../../src/record/record-context-items.ts
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { memoryContextItemClient } from './record-api-context-items.ts'
 import {
+  hostedStoredDoc,
   hostedStoredRevision,
   matchesStoredDoc,
   type StoredDoc,
@@ -575,13 +576,15 @@ export function createMemoryRecordApiClient(
       return { items: [] }
     },
     async listDocs(query) {
-      const items = [...docs.values()].filter((doc) => matchesStoredDoc(query, doc))
+      const items = [...docs.values()]
+        .filter((doc) => matchesStoredDoc(query, doc))
+        .map(hostedStoredDoc)
       return { items, nextCursor: null }
     },
     async getDoc(id) {
       const doc = docs.get(id)
       if (!doc) throw new Error('doc not found')
-      return doc
+      return hostedStoredDoc(doc)
     },
     async getDocRevision(id) {
       for (const rows of revisions.values()) {
