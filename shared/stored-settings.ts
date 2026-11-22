@@ -18,7 +18,7 @@ export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
 type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
 
 export const OWNED_SETTINGS_OPTION_KEYS = Object.keys(OWNED_SETTINGS_OPTIONS_SCHEMA.shape)
-export const OWNED_SETTINGS_SUBAGENT_HOOK_VALUES =
+const OWNED_SETTINGS_SUBAGENT_HOOK_VALUES =
   OWNED_SETTINGS_OPTIONS_SCHEMA.shape.subagentHooks.unwrap().options
 export const OWNED_SETTINGS_OPTIONS_ACCEPTED = `accepted options.subagentHooks=${OWNED_SETTINGS_SUBAGENT_HOOK_VALUES.map((value) => JSON.stringify(value)).join('|')}`
 
