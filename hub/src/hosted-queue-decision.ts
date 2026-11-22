@@ -32,9 +32,12 @@ export const HOSTED_QUEUE_ALLOWLIST = [
     table: HOSTED_TASK_TABLE,
     removedBy: `note ${note}#2924`,
   },
-  ...[HOSTED_TASK_TABLE, HOSTED_COMMENT_TABLE, HOSTED_DOCUMENT_TABLE, HOSTED_STATUS_EVENT_TABLE].map(
-    (table) => ({ site: 'task-push.queueRepairs', table, removedBy: `note ${note}#2925` }),
-  ),
+  ...[
+    HOSTED_TASK_TABLE,
+    HOSTED_COMMENT_TABLE,
+    HOSTED_DOCUMENT_TABLE,
+    HOSTED_STATUS_EVENT_TABLE,
+  ].map((table) => ({ site: 'task-push.queueRepairs', table, removedBy: `note ${note}#2925` })),
 ] as const
 
 export function hostedQueueRefusal({

@@ -4,8 +4,8 @@ import type { Attribution } from './task-attribution.ts'
 import { pushedComment } from './task-hosted-record.ts'
 import type { TaskRow } from './task-row.ts'
 import {
-  hostedTaskChangeSendOptions,
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
 } from './task-write-destination.ts'
 
 export async function sendDuplicateReasonComment(

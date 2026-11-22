@@ -75,9 +75,9 @@ beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
   test('the hosted queue decision refuses unlabeled hosted tables only in hosted mode', () => {
-    expect(
-      hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'hosted-configured' }),
-    ).toContain('sendHostedChanges')
+    expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'hosted-configured' })).toContain(
+      'sendHostedChanges',
+    )
     expect(
       hostedQueueRefusal({
         table: HOSTED_TASK_TABLE,
@@ -85,9 +85,7 @@ describe('hosted outbox', () => {
         site: 'trackers.retireOutOfScopeTrackerTasks',
       }),
     ).toBeNull()
-    expect(
-      hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' }),
-    ).toBeNull()
+    expect(hostedQueueRefusal({ table: HOSTED_TASK_TABLE, mode: 'local-authoritative' })).toBeNull()
   })
 
   test('every hosted queue exception still labels a queueHostedChange call', () => {
@@ -104,10 +102,7 @@ describe('hosted outbox', () => {
         'trackers.backfillTrackerTasks',
         readFileSync(new URL('./ingest/trackers.ts', import.meta.url), 'utf8'),
       ],
-      [
-        'task-push.queueRepairs',
-        readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8'),
-      ],
+      ['task-push.queueRepairs', readFileSync(new URL('./task-push.ts', import.meta.url), 'utf8')],
     ])
     for (const entry of HOSTED_QUEUE_ALLOWLIST) {
       const source = sources.get(entry.site)

@@ -25,8 +25,8 @@ import { reconcileParentRecordId, resolveParentRecordId } from '../task-cache.ts
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import {
-  hostedTaskChangeSendOptions,
   type HostedTaskWriteOptions,
+  hostedTaskChangeSendOptions,
 } from '../task-write-destination.ts'
 import {
   TRACKER_SINCE_OVERLAP_MS,
@@ -596,7 +596,7 @@ export async function sendObservedTrackerTask(
       : []),
   ]
   const loaded = pointers.map((pointer) => loadOutboxChange(db(), pointer))
-  const missing = loaded.findIndex((change) => change === null)
+  const missing = loaded.indexOf(null)
   if (missing !== -1)
     throw new Error(
       `could not load ${pointers[missing]!.table_name} ${pointers[missing]!.row_id} for direct tracker observation`,
@@ -616,6 +616,13 @@ export async function sendObservedTrackerTask(
         }
       : hostedTaskChangeSendOptions(observation.taskKey, project, hostedOptions),
   )
+}
+
+async function sendDirectTrackerObservations(
+  observations: Iterable<TrackerTaskObservation>,
+): Promise<void> {
+  if (hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured') return
+  for (const observation of observations) await sendObservedTrackerTask(observation)
 }
 
 export async function observeTrackerTask(
@@ -922,6 +929,13 @@ export function finishTrackerResults(
   return out
 }
 
+function trackerIngestInputs(only: ReadonlySet<Project> | null) {
+  const trackers = trackerRegistrations(projects()).filter(
+    (tracker) => !only || only.has(tracker.project),
+  )
+  return { trackers, missing: recentIntervalsNeedingTracker(db()) }
+}
+
 /**
  * Snapshot every reachable tracker into the task table, recording transitions.
  *
@@ -934,11 +948,7 @@ export async function ingestTrackers(
   only: ReadonlySet<Project> | null = null,
 ): Promise<TrackerResult[]> {
   const at = nowIso()
-  const registrations = trackerRegistrations(projects())
-  const trackers = registrations.filter((tracker) => !only || only.has(tracker.project))
-
-  const missing = recentIntervalsNeedingTracker(db())
-
+  const { trackers, missing } = trackerIngestInputs(only)
   const results = await Promise.all(
     trackers.map(
       async (
@@ -998,14 +1008,10 @@ export async function ingestTrackers(
             // transition that did not happen. Last wins: the lookup is the fresher read.
             const unique = scopedTrackerTasks(fetched.tasks, prefixes)
             const observations = writeTrackerCache(unique.values(), at, prefixes)
-            if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
-              for (const { observation } of observations)
-                await sendObservedTrackerTask(observation)
+            await sendDirectTrackerObservations(observations.map(({ observation }) => observation))
             const retired = retireOutOfScopeTrackerTasks(s.project, prefixes, at)
             const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
-            if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
-              for (const observation of deletions.observations)
-                await sendObservedTrackerTask(observation)
+            await sendDirectTrackerObservations(deletions.observations)
             let activity =
               deletions.activity || observations.some(({ observation }) => observation.changed)
             const changed =
@@ -1051,9 +1057,8 @@ export async function ingestTrackers(
     ),
   )
 
-  // Backfill the closed tasks the window actually touched.
-  //
-  // The sync deliberately mirrors only open work, so a task worked on this week
+  // The sync mirrors open work; backfill closed tasks the window actually touched,
+  // so a task worked on this week
   // but closed last month has a key and nothing else. Rather than page a decade
   // of finished tasks on the chance one is needed, ask for exactly the handful
   // that recent spans name - typically tens of lookups, against the 99 pages

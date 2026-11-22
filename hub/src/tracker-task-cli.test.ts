@@ -67,7 +67,7 @@ describe('fresh tracker task read', () => {
     const observed: TrackerTask[] = []
     const result = await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
-      observe: (value) => {
+      observe: async (value) => {
         observed.push(value)
         return {
           at: '2026-10-05T00:00:00.000Z',
@@ -120,14 +120,15 @@ describe('fresh tracker task read', () => {
     const result = await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
       registeredProjects: () => [hostedProject],
-      observe: (...args) => observeTrackerTask(...args, { ...hosted, recordSpace: 'fixture-space' }),
+      observe: (task, at, prefixes) =>
+        observeTrackerTask(task, at, prefixes, { ...hosted, recordSpace: 'fixture-space' }),
       readBack: async () => {
         if (!hostedRow) throw new Error('the first read-back ran before the hosted write')
         return { task: hostedTaskRow(hostedRow as never), comments: [], documents: [] }
       },
     })
 
-    expect(result.shown.task).toMatchObject({ key: 'FIX-1', title: 'Fresh task' })
+    expect(result.shown?.task).toMatchObject({ key: 'FIX-1', title: 'Fresh task' })
     expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
   })
 
@@ -290,7 +291,7 @@ describe('fresh tracker task read', () => {
         return task
       }),
       lease: withLease,
-      observe: (value) => ({
+      observe: async (value) => ({
         at: '2026-10-05T00:00:00.000Z',
         taskRecordId: null,
         taskKey: value.key,
