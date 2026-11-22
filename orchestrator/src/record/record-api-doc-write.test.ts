@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   createMemoryRecordApiClient,
   idleRecordApiDeps,
@@ -150,7 +149,7 @@ test('an explicit create against an existing document returns the typed 409 reme
 
 const id = '01990000-0000-7000-8000-000000000001'
 
-test('server doc write stores a fixture credential masked when the client scan is skipped', async () => {
+test('server doc route forwards a fixture credential to the masked writer', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedBody = ''
@@ -175,15 +174,12 @@ test('server doc write stores a fixture credential masked when the client scan i
     }),
   })
   expect(response.status).toBe(200)
-  expect(response.headers.get('warning')).toContain('provider-prefix')
-  expect(storedBody).toBe(
-    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
-  )
+  expect(response.headers.get('warning')).toBeNull()
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
 })
 
-test('document and canon imports mask free text at the route adapter', async () => {
+test('document and canon imports forward free text to their masked writers', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
-  const masked = redactSecretShaped(secret, { precision: 'high' }).text
   let docBody = ''
   let canonBody = ''
   const app = appWith(identity, {
@@ -229,7 +225,7 @@ test('document and canon imports mask free text at the route adapter', async () 
     }),
   })
   expect([imported.status, canon.status]).toEqual([200, 200])
-  expect([docBody, canonBody]).toEqual([masked, masked])
+  expect([docBody, canonBody]).toEqual([secret, secret])
 })
 const personalIdentity: RecordIdentity = {
   ...identity,

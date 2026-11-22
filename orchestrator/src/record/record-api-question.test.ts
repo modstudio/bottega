@@ -4,7 +4,6 @@ import {
   encodeRecordChangeCursor,
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
-import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   createRecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
@@ -389,7 +388,7 @@ function mutationBody(
   }
 }
 
-test('question writes mask high-precision leaves and preserve generic-rule prose', async () => {
+test('question routes forward validated free text to the masked writer', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const body = mutationBody('answer', contractId(29001), contractId(29002), 1)
@@ -406,9 +405,7 @@ test('question writes mask high-precision leaves and preserve generic-rule prose
     body: JSON.stringify(body),
   })
   expect(response.status).toBe(200)
-  expect(stored).toBe(
-    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
-  )
+  expect(stored).toBe(`${generic} quoted ${secret}`)
 })
 
 test('existing question mutations keep the stored project while asks still resolve payload projects', async () => {

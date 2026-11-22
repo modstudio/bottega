@@ -1,6 +1,5 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
-import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { identity } from './record-api-identity.fixture.ts'
@@ -62,7 +61,7 @@ function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   return app
 }
 
-test('task-flow attached text masks high-precision leaves and preserves generic prose', async () => {
+test('task-flow routes forward validated text to the masked writer', async () => {
   let stored = ''
   const api = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
@@ -102,12 +101,10 @@ test('task-flow attached text masks high-precision leaves and preserves generic 
     }),
   })
   expect(response.status).toBe(200)
-  expect(stored).toBe(
-    `${GENERIC} ${redactSecretShaped(`quoted ${SECRET}`, { precision: 'high' }).text}`,
-  )
+  expect(stored).toBe(`${GENERIC} quoted ${SECRET}`)
 })
 
-test('workflow draft masks high-precision definition, author, and reason leaves', async () => {
+test('workflow draft forwards validated fields to the masked writer', async () => {
   let stored: Record<string, unknown> | null = null
   const api = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
@@ -142,13 +139,13 @@ test('workflow draft masks high-precision definition, author, and reason leaves'
   })
   expect(response.status).toBe(200)
   expect(stored).toMatchObject({
-    definition: `${GENERIC} ${redactSecretShaped(`quoted ${SECRET}`, { precision: 'high' }).text}`,
-    author: redactSecretShaped(`author ${SECRET}`, { precision: 'high' }).text,
-    reason: redactSecretShaped(`reason ${SECRET}`, { precision: 'high' }).text,
+    definition: `${GENERIC} quoted ${SECRET}`,
+    author: `author ${SECRET}`,
+    reason: `reason ${SECRET}`,
   })
 })
 
-test('workflow promote masks its validated transition reason', async () => {
+test('workflow promote forwards its validated transition reason to the masked writer', async () => {
   let reason = ''
   const app = recordApiAppWith({
     promoteWorkflow: async (input: { reason: string }) => {
@@ -169,7 +166,7 @@ test('workflow promote masks its validated transition reason', async () => {
     }),
   })
   expect(response.status).toBe(200)
-  expect(reason).toBe(redactSecretShaped(SECRET, { precision: 'high' }).text)
+  expect(reason).toBe(SECRET)
 })
 
 test('task-flow stage list validates combined filters and applies its default limit', async () => {

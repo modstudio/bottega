@@ -13,7 +13,7 @@ import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
 const id = '01990000-0000-7000-8000-000000000001'
 const SECRET = 'ghp_123456789012345678901234567890123456'
 
-test('sync text-body route receives high-precision free text masked by the API seam', async () => {
+test('sync text-body route forwards validated payloads without an API mask seam', async () => {
   let received: Record<string, unknown> | undefined
   const app = recordApiTestApp(identity, {
     syncRecord: async ({ request }: { request: Record<string, unknown> }) => {
@@ -33,14 +33,14 @@ test('sync text-body route receives high-precision free text masked by the API s
   expect(received).toEqual({
     machine: {
       id,
-      name: '[withheld: provider-prefix]',
+      name: SECRET,
       seenAt: '2026-10-13T12:00:00.000Z',
     },
     rows: [
       {
         id: 1,
         kind: 'run',
-        payload: JSON.stringify({ body: '[withheld: provider-prefix]' }),
+        payload: JSON.stringify({ body: SECRET }),
         spaceHint: null,
       },
     ],

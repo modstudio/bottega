@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import {
@@ -22,7 +21,7 @@ const readDeps = {
   readContextHolders: async () => [],
 }
 
-test('context-item write stores fixture credentials masked', async () => {
+test('context-item route forwards validated free text to its masked writer', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedBody = ''
@@ -49,9 +48,7 @@ test('context-item write stores fixture credentials masked', async () => {
     }),
   })
   expect(response.status).toBe(200)
-  expect(storedBody).toBe(
-    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
-  )
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
 })
 
 test('hosted context-item delete returns removed false when the row is absent', async () => {
