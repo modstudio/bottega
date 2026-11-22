@@ -23,7 +23,7 @@ const fields = (reason: string, ...paths: string[]): Exclusion[] =>
   paths.map((path) => ({ path, reason }))
 
 /** The single exclusion declaration used by write masking and the hosted audit. */
-const HOSTED_SECRET_EXCLUSIONS = {
+export const HOSTED_SECRET_EXCLUSIONS = {
   defaults: [
     { suffix: 'id', reason: 'identifier' },
     { suffix: 'key', reason: 'identifier or lookup key' },

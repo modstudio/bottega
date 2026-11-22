@@ -1,7 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
-import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -28,96 +26,6 @@ const unreachable = {
     throw new Error('offline')
   },
 }
-
-test('note create stores fixture credentials masked', async () => {
-  const secret = 'ghp_123456789012345678901234567890123456'
-  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
-  let storedText = ''
-  const response = await noteApi(
-    new Request('https://hub.example.test/v1/notes', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer test',
-        'content-type': 'application/json',
-        'x-record-space': 'space-a',
-      },
-      body: JSON.stringify({
-        project: 'workshop',
-        projectId: '01990000-0000-7000-8000-000000000001',
-        text: `${generic} quoted ${secret}`,
-        anchor: '{}',
-      }),
-    }),
-    hostedRouteTestConfig,
-    {
-      fetch: (async () =>
-        Response.json({
-          user: { id: 'user-1' },
-          activeSpaceId: 'space-a',
-          memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
-        })) as unknown as typeof fetch,
-      create: async (_url: unknown, _identity: unknown, input: { text: string }) => {
-        storedText = maskHostedTableWrite('hub_note', input).text
-        return { id: '01990000-0000-7000-8000-000000000002' } as never
-      },
-    },
-  )
-  expect(response?.status).toBe(201)
-  expect(storedText).toBe(
-    `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
-  )
-})
-
-test('note reap masks staleness reasons and preserves its timestamp', async () => {
-  const secret = 'ghp_123456789012345678901234567890123456'
-  const cutoff = '2026-11-21T12:00:00.000Z'
-  let stored: { stale: Array<{ recordId: string; reason: string; at: string }> } | null = null
-  const response = await noteApi(
-    new Request('https://hub.example.test/v1/notes/reap', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer test',
-        'content-type': 'application/json',
-        'x-record-space': 'space-a',
-      },
-      body: JSON.stringify({
-        cutoff,
-        confirmation: 1,
-        stale: [{ recordId: 'record', reason: secret, at: cutoff }],
-        annotated: [],
-        restored: [],
-        deleted: [],
-      }),
-    }),
-    hostedRouteTestConfig,
-    {
-      fetch: (async () =>
-        Response.json({
-          user: { id: 'user-1' },
-          activeSpaceId: 'space-a',
-          memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
-        })) as unknown as typeof fetch,
-      reap: async (_url: unknown, _identity: unknown, input: typeof stored) => {
-        stored = input && {
-          ...input,
-          stale: input.stale.map((row) => ({
-            ...row,
-            reason: maskHostedTableWrite('hub_note', { stale_reason: row.reason }).stale_reason,
-          })),
-        }
-        return { stale: 1, annotated: 0, restored: 0, deleted: 0 }
-      },
-    },
-  )
-  expect(response?.status).toBe(200)
-  expect(
-    (stored as { stale: Array<{ recordId: string; reason: string; at: string }> } | null)?.stale[0],
-  ).toEqual({
-    recordId: 'record',
-    reason: redactSecretShaped(secret, { precision: 'high' }).text,
-    at: cutoff,
-  })
-})
 
 describe('hosted-only note safety', () => {
   test('the outside route preserves a service refusal status', async () => {

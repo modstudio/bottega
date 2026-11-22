@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import { getTableName } from 'drizzle-orm'
+import { getTableColumns, getTableName } from 'drizzle-orm'
 import {
+  HOSTED_SECRET_EXCLUSIONS,
   HOSTED_SECRET_TABLES,
   maskHostedTableWrite,
   withHostedMaskWarnings,
@@ -64,4 +65,34 @@ test('board tables remain refusal-only', () => {
   expect(board).toHaveLength(2)
   for (const entry of board)
     expect(() => maskHostedTableWrite(getTableName(entry.table), {})).toThrow('uses refusal')
+})
+
+function exclusionSchemaFindings(exclusions: Record<string, readonly { path: string }[]>): string[] {
+  const inventory = new Map(
+    HOSTED_SECRET_TABLES.map((entry) => [
+      getTableName(entry.table),
+      new Set(Object.values(getTableColumns(entry.table)).map((column) => column.name)),
+    ]),
+  )
+  return Object.entries(exclusions).flatMap(([table, entries]) => {
+    const columns = inventory.get(table)
+    if (!columns) return [`unknown table ${table}`]
+    return entries.flatMap(({ path }) =>
+      columns.has(path.split('.')[0]!) ? [] : [`unknown column ${table}.${path}`],
+    )
+  })
+}
+
+test('hosted exclusion table keys and leading paths resolve to the Drizzle inventory', () => {
+  expect(exclusionSchemaFindings(HOSTED_SECRET_EXCLUSIONS.tables)).toEqual([])
+})
+
+test('hosted exclusion schema validation rejects a misspelled table and path', () => {
+  expect(
+    exclusionSchemaFindings({
+      ...HOSTED_SECRET_EXCLUSIONS.tables,
+      hub_taks: [{ path: 'title', reason: 'mutation' }],
+      hub_task: [{ path: 'titel', reason: 'mutation' }],
+    }),
+  ).toEqual(['unknown column hub_task.titel', 'unknown table hub_taks'])
 })

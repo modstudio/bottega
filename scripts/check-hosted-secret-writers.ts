@@ -1,25 +1,142 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
-import { getTableName } from 'drizzle-orm'
+import { getTableColumns, getTableName } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import ts from 'typescript'
 import { HOSTED_SECRET_TABLES, hostedSecretColumns } from '../shared/hosted-secret-mask.ts'
 
-type TablePolicy = { freeText: ReadonlySet<string> }
+type TablePolicy = { freeText: ReadonlySet<string>; columns: ReadonlySet<string> }
 
 /** Derived from the same Drizzle/exclusion inventory used by the writer and audit. */
 function tablePolicies(): ReadonlyMap<string, TablePolicy> {
   return new Map(
     HOSTED_SECRET_TABLES.filter((entry) => entry.mask).map((entry) => [
       getTableName(entry.table),
-      { freeText: new Set(hostedSecretColumns(entry).map((column) => column.name)) },
+      {
+        freeText: new Set(
+          Object.entries(getTableColumns(entry.table)).flatMap(([property, column]) =>
+            hostedSecretColumns(entry).includes(column as AnyPgColumn)
+              ? [property, (column as AnyPgColumn).name]
+              : [],
+          ),
+        ),
+        columns: new Set(
+          Object.entries(getTableColumns(entry.table)).flatMap(([property, column]) => [
+            property,
+            (column as AnyPgColumn).name,
+          ]),
+        ),
+      },
     ]),
   )
 }
 
 type HostedWriterFinding = { file: string; table: string; line: number; reason: string }
 type HostedWriterVerdicts = { masked: number; structured: number }
+type BuilderVerdict = 'masked' | 'structured-only' | 'outside-inventory'
+type BuilderSite = {
+  file: string
+  line: number
+  table: string
+  operation: 'insert' | 'update'
+  verdict: BuilderVerdict
+}
 type SqlWrite = { table: string; columns: Map<string, readonly ts.Expression[]> }
+
+function schemaTableName(source: string, exported: string): string | null {
+  const file = ts.createSourceFile('schema.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  let found: string | null = null
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === exported &&
+      node.initializer
+    ) {
+      const findTableCall = (child: ts.Node): void => {
+        if (
+          ts.isCallExpression(child) &&
+          child.arguments[0] &&
+          ts.isStringLiteral(child.arguments[0]) &&
+          child.expression.getText(file).includes('pgTable')
+        )
+          found = child.arguments[0].text
+        if (!found) ts.forEachChild(child, findTableCall)
+      }
+      findTableCall(node.initializer)
+    }
+    if (!found) ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return found
+}
+
+function importedTableBindings(
+  file: string,
+  sourceFile: ts.SourceFile,
+  root: string,
+): ReadonlyMap<string, string> {
+  const bindings = new Map<string, string>()
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.includes('/record/schema') ||
+      !statement.importClause?.namedBindings ||
+      !ts.isNamedImports(statement.importClause.namedBindings)
+    )
+      continue
+    const module = resolve(resolve(root, file), '..', statement.moduleSpecifier.text)
+    const schemaPath = module.endsWith('.ts') ? module : `${module}.ts`
+    let schema: string
+    try {
+      schema = readFileSync(schemaPath, 'utf8')
+    } catch {
+      continue
+    }
+    for (const element of statement.importClause.namedBindings.elements) {
+      const table = schemaTableName(schema, (element.propertyName ?? element.name).text)
+      if (table) bindings.set(element.name.text, table)
+    }
+  }
+  return bindings
+}
+
+function builderWrite(
+  node: ts.CallExpression,
+  tableBindings: ReadonlyMap<string, string>,
+): { table: string; operation: 'insert' | 'update'; value: ts.Expression } | null {
+  if (!ts.isPropertyAccessExpression(node.expression)) return null
+  const terminal = node.expression.name.text
+  if (terminal !== 'values' && terminal !== 'set') return null
+  const value = node.arguments[0]
+  const receiver = node.expression.expression
+  if (!value || !ts.isCallExpression(receiver) || !ts.isPropertyAccessExpression(receiver.expression))
+    return null
+  const operation = receiver.expression.name.text
+  if (operation !== 'insert' && operation !== 'update') return null
+  const table = receiver.arguments[0]
+  if (!table || !ts.isIdentifier(table)) return null
+  const tableName = tableBindings.get(table.text)
+  return tableName ? { table: tableName, operation, value } : null
+}
+
+function objectShape(
+  value: ts.Expression,
+): { properties: Map<string, ts.Expression>; spreads: ts.Expression[] } | null {
+  if (!ts.isObjectLiteralExpression(value)) return null
+  const properties = new Map<string, ts.Expression>()
+  const spreads: ts.Expression[] = []
+  for (const property of value.properties) {
+    if (ts.isSpreadAssignment(property)) spreads.push(property.expression)
+    else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)))
+      properties.set(property.name.text, property.initializer)
+    else if (ts.isShorthandPropertyAssignment(property))
+      properties.set(property.name.text, property.name)
+  }
+  return { properties, spreads }
+}
 
 function splitSqlList(value: string): string[] {
   const parts: string[] = []
@@ -129,7 +246,46 @@ function containsIdentifier(node: ts.Node, names: ReadonlySet<string>): boolean 
   return found
 }
 
-function precedingMaskBindings(scope: ts.FunctionLikeDeclaration, table: string, before: number) {
+function maskHelperNames(sourceFile: ts.SourceFile, table: string): ReadonlySet<string> {
+  const helpers = new Set<string>()
+  const containsDirectMask = (node: ts.Node) => {
+    let found = false
+    const visit = (child: ts.Node) => {
+      if (
+        ts.isCallExpression(child) &&
+        ts.isIdentifier(child.expression) &&
+        child.expression.text === 'maskHostedTableWrite' &&
+        child.arguments[0]?.getText(sourceFile).includes(`'${table}'`)
+      )
+        found = true
+      if (!found) ts.forEachChild(child, visit)
+    }
+    visit(node)
+    return found
+  }
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
+      containsDirectMask(node.initializer)
+    )
+      helpers.add(node.name.text)
+    if (ts.isFunctionDeclaration(node) && node.name && containsDirectMask(node))
+      helpers.add(node.name.text)
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return helpers
+}
+
+function precedingMaskBindings(
+  scope: ts.FunctionLikeDeclaration,
+  table: string,
+  before: number,
+  helpers: ReadonlySet<string> = new Set(),
+) {
   const bindings = new Set<string>()
   const masksTable = (node: ts.Node) => {
     let found = false
@@ -137,8 +293,9 @@ function precedingMaskBindings(scope: ts.FunctionLikeDeclaration, table: string,
       if (
         ts.isCallExpression(child) &&
         ts.isIdentifier(child.expression) &&
-        child.expression.text === 'maskHostedTableWrite' &&
-        child.arguments[0]?.getText().includes(`'${table}'`)
+        ((child.expression.text === 'maskHostedTableWrite' &&
+          child.arguments[0]?.getText().includes(`'${table}'`)) ||
+          helpers.has(child.expression.text))
       )
         found = true
       if (!found) ts.forEachChild(child, visitCall)
@@ -186,9 +343,11 @@ function expressionUsesBinding(expression: ts.Expression, bindings: ReadonlySet<
 function inspectHostedWriters(
   file: string,
   source: string,
+  root = resolve(import.meta.dir, '..'),
 ): {
   findings: HostedWriterFinding[]
   verdicts: HostedWriterVerdicts
+  builderSites: BuilderSite[]
 } {
   const policies = tablePolicies()
   const sourceFile = ts.createSourceFile(
@@ -200,7 +359,80 @@ function inspectHostedWriters(
   )
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
+  const builderSites: BuilderSite[] = []
+  const tableBindings = importedTableBindings(file, sourceFile, root)
   const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      const write = builderWrite(node, tableBindings)
+      if (write) {
+        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1
+        const policy = policies.get(write.table)
+        if (!policy) {
+          builderSites.push({
+            file,
+            line,
+            table: write.table,
+            operation: write.operation,
+            verdict: 'outside-inventory',
+          })
+        } else {
+          const scope = namedFunction(node)
+          const bindings = scope
+            ? precedingMaskBindings(
+                scope,
+                write.table,
+                node.getStart(),
+                maskHelperNames(sourceFile, write.table),
+              )
+            : new Set<string>()
+          const shape = objectShape(write.value)
+          const directMasked = shape === null && expressionUsesBinding(write.value, bindings)
+          const spreadMasked = shape?.spreads.some((spread) => expressionUsesBinding(spread, bindings))
+          const propertyMasked = [...(shape?.properties.values() ?? [])].some((property) =>
+            expressionUsesBinding(property, bindings),
+          )
+          const unknownSpread = shape?.spreads.some(
+            (spread) => !expressionUsesBinding(spread, bindings),
+          )
+          const freeText = [...(shape?.properties ?? [])].filter(([key]) => policy.freeText.has(key))
+          const unmaskedFreeText = freeText.filter(
+            ([, expression]) => !expressionUsesBinding(expression, bindings),
+          )
+          const unknownKeys = [...(shape?.properties.keys() ?? [])].filter(
+            (key) => !policy.columns.has(key),
+          )
+          const hasMaskedValue = directMasked || spreadMasked || propertyMasked
+          const structured =
+            !hasMaskedValue &&
+            shape !== null &&
+            freeText.length === 0 &&
+            unknownKeys.length === 0 &&
+            !unknownSpread
+          const verdict: BuilderVerdict = structured ? 'structured-only' : 'masked'
+          builderSites.push({ file, line, table: write.table, operation: write.operation, verdict })
+          if (structured) verdicts.structured += 1
+          else {
+            verdicts.masked += 1
+            if (!hasMaskedValue)
+              findings.push({
+                file,
+                table: write.table,
+                line,
+                reason: 'builder values have no preceding masked binding',
+              })
+            else if (unknownSpread || unmaskedFreeText.length)
+              findings.push({
+                file,
+                table: write.table,
+                line,
+                reason: unknownSpread
+                  ? 'builder values include an unmasked spread'
+                  : `builder values include unmasked free-text keys: ${unmaskedFreeText.map(([key]) => key).join(', ')}`,
+              })
+          }
+        }
+      }
+    }
     if (!ts.isTaggedTemplateExpression(node)) {
       ts.forEachChild(node, visit)
       return
@@ -221,7 +453,12 @@ function inspectHostedWriters(
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1
     const scope = namedFunction(node)
     const bindings = scope
-      ? precedingMaskBindings(scope, write.table, node.getStart())
+      ? precedingMaskBindings(
+          scope,
+          write.table,
+          node.getStart(),
+          maskHelperNames(sourceFile, write.table),
+        )
       : new Set<string>()
     if (!bindings.size) {
       findings.push({ file, table: write.table, line, reason: 'no preceding masked binding' })
@@ -243,7 +480,7 @@ function inspectHostedWriters(
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
-  return { findings, verdicts }
+  return { findings, verdicts, builderSites }
 }
 
 function hostedWriterFindings(file: string, source: string): HostedWriterFinding[] {
@@ -253,18 +490,19 @@ function hostedWriterFindings(file: string, source: string): HostedWriterFinding
 async function currentHostedWriterInspection(root = resolve(import.meta.dir, '..')) {
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
+  const builderSites: BuilderSite[] = []
   for (const pattern of ['hub/src/**/*.ts', 'orchestrator/src/record/**/*.ts']) {
     for await (const file of new Glob(pattern).scan({ cwd: root })) {
       if (file.endsWith('.test.ts') || file.includes('/migrations')) continue
       const source = readFileSync(resolve(root, file), 'utf8')
-      if (!source.includes('tx`')) continue
-      const inspected = inspectHostedWriters(file, source)
+      const inspected = inspectHostedWriters(file, source, root)
       findings.push(...inspected.findings)
       verdicts.masked += inspected.verdicts.masked
       verdicts.structured += inspected.verdicts.structured
+      builderSites.push(...inspected.builderSites)
     }
   }
-  return { findings, verdicts }
+  return { findings, verdicts, builderSites }
 }
 
 async function currentHostedWriterFindings(root = resolve(import.meta.dir, '..')) {

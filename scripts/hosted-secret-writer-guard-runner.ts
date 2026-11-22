@@ -2,7 +2,11 @@ import { hostedWriterGuard } from './check-hosted-secret-writers.ts'
 
 async function runHostedSecretWriterGuard(): Promise<void> {
   const started = performance.now()
-  const { findings, verdicts } = await hostedWriterGuard.currentInspection()
+  const { findings, verdicts, builderSites } = await hostedWriterGuard.currentInspection()
+  for (const site of builderSites)
+    console.log(
+      `${site.file}:${site.line}: drizzle ${site.operation} ${site.table}: ${site.verdict}`,
+    )
   for (const finding of findings)
     console.error(
       `${finding.file}:${finding.line}: hosted ${finding.table} write bypasses maskHostedTableWrite (${finding.reason})`,

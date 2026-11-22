@@ -50,3 +50,36 @@ await tx\`UPDATE hub_task SET next_document_number=\${next} WHERE id=\${id}\`
     structured: 1,
   })
 })
+
+test('an unmasked Drizzle builder insert into a hosted table fails', () => {
+  const source = `import { question as questionRecord } from '../shared/record/schema-question.ts'
+async function probe() {
+  await drizzle({ client: tx }).insert(questionRecord).values(input)
+}`
+  expect(hostedWriterGuard.findings('scripts/probe.ts', source)).toEqual([
+    {
+      file: 'scripts/probe.ts',
+      table: 'question',
+      line: 3,
+      reason: 'builder values have no preceding masked binding',
+    },
+  ])
+})
+
+test('a Drizzle builder insert into an outbox-synced table passes and is reported', () => {
+  const source = `import { run as runRecord } from '../shared/record/schema-run.ts'
+async function probe() {
+  await drizzle({ client: tx }).insert(runRecord).values(input)
+}`
+  const inspection = hostedWriterGuard.inspect('scripts/probe.ts', source)
+  expect(inspection.findings).toEqual([])
+  expect(inspection.builderSites).toEqual([
+    {
+      file: 'scripts/probe.ts',
+      line: 3,
+      table: 'run',
+      operation: 'insert',
+      verdict: 'outside-inventory',
+    },
+  ])
+})
