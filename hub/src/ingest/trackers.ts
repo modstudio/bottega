@@ -27,6 +27,7 @@ import {
   hostedTaskChangeSendOptions,
 } from '../task-write-destination.ts'
 import { applyHostedCollectorPass, sendTrackerPlans } from './tracker-hosted-collector.ts'
+import { dropLocalTrackerRows, retireLocalTrackerRows } from './tracker-local-collector.ts'
 import {
   type ExistingTrackerTask,
   type TrackerObservationTimes,
@@ -38,13 +39,7 @@ import {
   type TrackerReadMode,
   trackerReadMode,
 } from './tracker-read-mode.ts'
-import {
-  retireTrackerRowPlan,
-  trackerOutOfScopeReason,
-  trackerTaskFromRow,
-  type TrackerTaskRowPlan,
-  trackerTaskRowPlan,
-} from './tracker-row-plan.ts'
+import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -787,37 +782,7 @@ export function retireOutOfScopeTrackerTasks(
   prefixes: readonly string[],
   at: string,
 ): number {
-  if (!prefixes.length) return 0
-  return writeTransaction((conn) => {
-    const rows = conn
-      .query<TaskRow, [string]>(
-        `SELECT * FROM task
-         WHERE project=? AND source='mcp' AND retired_reason IS NULL`,
-      )
-      .all(project)
-    let retired = 0
-    for (const row of rows) {
-      if (trackerKeyInScope(row.key, prefixes)) continue
-      const retiredRow = retireTrackerRowPlan(
-        row,
-        at,
-        trackerOutOfScopeReason(project, row.key, prefixes, trackerKeyPrefix),
-      )
-      const plan: TrackerTaskRowPlan = {
-        task: trackerTaskFromRow(retiredRow.row),
-        stored: row,
-        row: retiredRow.row,
-        changed: retiredRow.changed,
-        event: null,
-        ambiguousParentKeys: [],
-      }
-      if (!plan.changed) continue
-      applyTrackerPlanOn(conn, plan)
-      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, null, undefined)
-      retired++
-    }
-    return retired
-  })
+  return retireLocalTrackerRows(project, prefixes, at, trackerKeyPrefix, applyTrackerPlanOn)
 }
 
 /** Reconcile tracker-reported deletions without deleting the local cache row. */
@@ -827,56 +792,15 @@ export function dropDeletedTrackerTasks(
   at: string,
   prefixes: readonly string[],
 ): { dropped: number; activity: boolean; changed: number } {
-  let dropped = 0
-  let changed = 0
-  writeTransaction((conn) => {
-    const read = conn.query<TrackerIdentityRow, [string, string]>(
-      `SELECT ${TRACKER_IDENTITY_COLUMNS} FROM task
-       WHERE project=? AND key=? AND source='mcp'`,
-    )
-    for (const key of new Set(keys)) {
-      if (!trackerKeyInScope(key, prefixes)) continue
-      const row = read.get(project, key)
-      // A tombstone repeats while it stays inside the since overlap; one drop is the event.
-      if (!row || row.status_category === 'dropped') continue
-      const plan = planTrackerTaskOn(
-        conn,
-        {
-          ...trackerTaskFromRow(row),
-          status: 'deleted',
-          category: 'dropped',
-          updatedAt: at,
-        },
-        at,
-      )
-      plan.row.opened_at = row.opened_at
-      plan.row.closed_at = row.closed_at ?? at
-      applyTrackerPlanOn(conn, plan)
-      if (collectorTaskShouldQueue('mcp', plan.row, plan.changed))
-        queueHostedChange(
-          conn,
-          HOSTED_TASK_TABLE,
-          plan.row.record_id,
-          'upsert',
-          at,
-          null,
-          undefined,
-        )
-      if (plan.event)
-        queueHostedChange(
-          conn,
-          HOSTED_STATUS_EVENT_TABLE,
-          plan.event.record_id,
-          'upsert',
-          at,
-          null,
-          undefined,
-        )
-      dropped++
-      if (plan.event) changed++
-    }
-  })
-  return { dropped, activity: dropped > 0, changed }
+  return dropLocalTrackerRows(
+    project,
+    keys,
+    at,
+    prefixes,
+    trackerKeyPrefix,
+    planTrackerTaskOn,
+    applyTrackerPlanOn,
+  )
 }
 
 async function backfillTrackerTasks(

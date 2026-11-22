@@ -13,7 +13,6 @@ import {
   ingestTrackers,
   recordTrackerReadState,
   retireOutOfScopeTrackerTasks,
-  trackerReadPassComplete,
   storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
@@ -21,6 +20,7 @@ import {
   trackerKeyPrefix,
   trackerLegError,
   trackerProjectsReadSince,
+  trackerReadPassComplete,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'

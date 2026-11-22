@@ -10,9 +10,9 @@ import {
 } from '../task-write-destination.ts'
 import {
   retireTrackerRowPlan,
+  type TrackerTaskRowPlan,
   trackerOutOfScopeReason,
   trackerTaskFromRow,
-  type TrackerTaskRowPlan,
 } from './tracker-row-plan.ts'
 
 type HostedPlanResult = { accepted: TrackerTaskRowPlan[]; rejected: string[] }
