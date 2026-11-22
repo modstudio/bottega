@@ -279,6 +279,5 @@ export const hostedWriterGuard = {
 }
 
 if (import.meta.main) {
-  const { runHostedSecretWriterGuard } = await import('./hosted-secret-writer-guard-runner.ts')
-  await runHostedSecretWriterGuard()
+  await import('./hosted-secret-writer-guard-runner.ts')
 }

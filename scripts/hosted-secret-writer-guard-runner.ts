@@ -1,6 +1,6 @@
 import { hostedWriterGuard } from './check-hosted-secret-writers.ts'
 
-export async function runHostedSecretWriterGuard(): Promise<void> {
+async function runHostedSecretWriterGuard(): Promise<void> {
   const started = performance.now()
   const { findings, verdicts } = await hostedWriterGuard.currentInspection()
   for (const finding of findings)
@@ -13,3 +13,5 @@ export async function runHostedSecretWriterGuard(): Promise<void> {
   )
   console.log(`hosted secret writer call sites: ${(performance.now() - started).toFixed(1)} ms`)
 }
+
+await runHostedSecretWriterGuard()

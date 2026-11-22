@@ -82,6 +82,7 @@ export {
 
 type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
+type MaskedStoredDocRow = StoredDocRow & { title: string; body: string; summary: string | null }
 
 function assertRestoredRecordDoc(
   scope: string,
@@ -108,19 +109,6 @@ function assertRecordDocUpsert(input: RecordDocWriteInput): void {
 function preparedRecordDocWrite(input: RecordDocWriteInput): RecordDocWriteInput {
   assertRecordDocUpsert(input)
   return input
-}
-
-function maskConsumedDocBody<T extends { body: string }>(consumed: T): T {
-  consumed.body = maskHostedTableWrite('doc', { body: consumed.body }).body
-  return consumed
-}
-
-function maskRestoredDoc(revision: StoredDocRow, summary: unknown) {
-  return maskHostedTableWrite('doc', {
-    title: String(revision.title),
-    body: String(revision.body),
-    summary,
-  })
 }
 
 function assertImportedRecordDoc(
@@ -457,7 +445,8 @@ export async function consumeRecordDoc(
     ).map((row: Record<string, unknown>) => String(row.subject_id))
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
-    assertDocSections(maskConsumedDocBody(consumed).body, recordDocAudiences(doc.audiences))
+    consumed.body = maskHostedTableWrite('doc', consumed).body
+    assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
     await tx`
       UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -545,7 +534,7 @@ export async function restoreRecordDoc(
     } catch (error) {
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
-    const restored = maskRestoredDoc(revision, restoredArticleFields(revision).summary)
+    const restored = maskHostedTableWrite('doc', revision) as MaskedStoredDocRow
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
