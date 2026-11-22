@@ -47,15 +47,14 @@ import {
 } from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
 import {
   type Doc,
   type DocRevision,
-  type DocRevisionMetadata,
   docForAudience,
   getDocStore,
+  listDocsStore,
 } from './doc-read-store.ts'
 import {
   assertLocalReferenceWrite,
@@ -89,7 +88,7 @@ import {
   executeLocalDocSet,
 } from './local-doc-write.ts'
 
-export type { Doc, DocRevision, DocRevisionMetadata }
+export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
@@ -118,6 +117,9 @@ import {
 import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
+
+const getDoc = getDocStore
+const listDocs = listDocsStore
 
 async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
@@ -278,8 +280,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 }
 
 export { readHostedUserSettingsDocuments } from './doc-hosted-client.ts'
-export { docSubjects, listDocMetadata, listDocs }
-export const getDoc = getDocStore
+export { docSubjects }
 
 export { signedInDocOwner } from './doc-owner.ts'
 
@@ -783,16 +784,7 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
   return { count, writeWarnings }
 }
 
-export function listDocRevisions(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  owner: string | null = null,
-): DocRevisionMetadata[] {
-  return listStoredDocRevisions(scope, subject, slug, owner)
-}
-
-export const getDocRevision = getStoredDocRevision
+const getDocRevision = getStoredDocRevision
 
 export function readDocRevision(
   scope: string,

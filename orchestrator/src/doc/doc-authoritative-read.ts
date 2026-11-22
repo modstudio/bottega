@@ -6,20 +6,39 @@ import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
 import { projectAt } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { type HostedDocRevision, hostedDocRevisionRead } from './doc-hosted-history.ts'
-import { listDocMetadata as listLocalDocMetadata, listDocs as listLocalDocs } from './doc-list.ts'
 import {
   type Doc,
   type DocListFilters,
   type DocMetadata,
   getDocForAudienceStore,
   getDocStore,
+  listDocMetadataStore,
+  listDocsStore,
 } from './doc-read-store.ts'
 import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
-import { listStoredDocRevisions } from './doc-revision-store.ts'
+import {
+  diffStoredDocRevisions,
+  getStoredDocRevision,
+  listStoredDocRevisions,
+} from './doc-revision-store.ts'
+
+export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
+export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+
+function resolvedFilters(filters: DocListFilters): DocListFilters {
+  if (filters.articleSubject === undefined) return filters
+  if (filters.scope !== 'project' || !filters.subject)
+    throw new Error('article subject filter requires project scope and subject')
+  return {
+    ...filters,
+    articleSubject: resolveSubject(filters.subject, filters.articleSubject).id,
+  }
+}
 
 function docFromHosted(row: HostedRow): Doc {
   const body = String(row.body ?? '')
@@ -63,6 +82,8 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     const page = await client.listDocs({
       scope: filters.scope,
       subject: filters.subject,
+      slug: filters.slug,
+      owner: filters.owner,
       audience: filters.audience as DocAudience | undefined,
       status: filters.status as Doc['status'] | undefined,
       kind: filters.kind as Doc['kind'] | undefined,
@@ -106,6 +127,21 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     )
 }
 
+async function hostedSingleDoc(filters: DocListFilters & { slug: string }): Promise<Doc | null> {
+  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
+  const page = await client.listDocs({
+    scope: filters.scope,
+    subject: filters.subject,
+    slug: filters.slug,
+    owner: filters.owner,
+    audience: filters.audience as DocAudience | undefined,
+    limit: 1,
+  })
+  if (page.unreadable?.length)
+    throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
+  return page.items[0] ? docFromHosted(page.items[0]) : null
+}
+
 function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
   return read().catch((error) => {
     const cause = error instanceof Error ? error.message : String(error)
@@ -117,14 +153,14 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
 
 export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
   return applyRecordReadAuthority({
-    local: () => listLocalDocs(filters),
+    local: () => listDocsStore(resolvedFilters(filters)),
     hosted: () => withReadRemedy(() => hostedRows(filters)),
   })
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
   return applyRecordReadAuthority({
-    local: () => listLocalDocMetadata(filters),
+    local: () => listDocMetadataStore(resolvedFilters(filters)),
     hosted: async () =>
       (await hostedRows(filters)).map(
         ({
@@ -153,11 +189,8 @@ export function readDoc(
   return applyRecordReadAuthority({
     local: () => getDocStore(scope, subject, slug, owner),
     hosted: () =>
-      withReadRemedy(
-        async () =>
-          (await hostedRows({ scope, ...(subject !== undefined ? { subject } : {}), owner })).find(
-            (doc) => doc.slug === slug,
-          ) ?? null,
+      withReadRemedy(() =>
+        hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner }),
       ),
   })
 }
@@ -173,14 +206,13 @@ export function readDocForAudience(
     local: () => getDocForAudienceStore(scope, subject, slug, audience, owner),
     hosted: () =>
       withReadRemedy(async () => {
-        const doc = (
-          await hostedRows({
-            scope,
-            ...(subject !== undefined ? { subject } : {}),
-            owner,
-            audience,
-          })
-        ).find((row) => row.slug === slug)
+        const doc = await hostedSingleDoc({
+          scope,
+          ...(subject !== undefined ? { subject } : {}),
+          slug,
+          owner,
+          audience,
+        })
         return doc ? { ...doc, body: docBodyForAudience(doc.body, audience) } : null
       }),
   })
@@ -225,6 +257,54 @@ export function readDocRevisions(
           await hostedDocClient(scope, subject)
         ).listRevisions(doc.record_id)) as HostedDocRevision[]
         return hostedDocRevisionRead(revisions).revisions
+      }),
+  })
+}
+
+export function readDocHistory(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null = null,
+): Promise<AuthoritativeDocHistory | null> {
+  return applyRecordReadAuthority({
+    local: () => {
+      const revisions = listStoredDocRevisions(scope, subject, slug, owner)
+      if (!revisions.length) return null
+      const resolve = (identifier: string) => {
+        const numeric = /^[0-9]+$/.test(identifier) ? Number(identifier) : null
+        return (
+          numeric === null
+            ? revisions.find(({ record_id }) => record_id === identifier)
+            : revisions.find(({ number }) => number === numeric)
+        )?.record_id ?? identifier
+      }
+      return {
+        revisions,
+        resolve,
+        revision(identifier: string) {
+          const revision = getStoredDocRevision(resolve(identifier), owner)
+          if (!revision) throw new Error(`no document revision ${JSON.stringify(identifier)}`)
+          return { ...revision, authorName: null }
+        },
+        diff(a: string | undefined, b: string | undefined) {
+          const ordered = revisions.map(({ record_id }) => record_id)
+          const left = a ? resolve(a) : ordered[1]
+          const right = b ? resolve(b) : ordered[0]
+          if (!left || !right)
+            throw new Error('doc diff needs two revisions; this address has fewer than two')
+          return diffStoredDocRevisions(left, right, owner)
+        },
+      }
+    },
+    hosted: () =>
+      withReadRemedy(async () => {
+        const doc = await hostedSingleDoc({ scope, subject, slug, owner })
+        if (!doc) return null
+        const revisions = (await (
+          await hostedDocClient(scope, subject)
+        ).listRevisions(doc.record_id)) as HostedDocRevision[]
+        return hostedDocRevisionRead(revisions)
       }),
   })
 }

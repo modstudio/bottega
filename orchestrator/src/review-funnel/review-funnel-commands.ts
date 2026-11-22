@@ -73,7 +73,7 @@ function policyFile(path: string) {
   }
 }
 
-function policyFromFlags(flags: Flags) {
+async function policyFromFlags(flags: Flags) {
   const version = flags.flag('policy')
   const file = flags.flag('policy-file')
   if (Boolean(version) === Boolean(file))
@@ -86,8 +86,11 @@ function policyFromFlags(flags: Flags) {
   return reviewFunnelPolicyAt(version!)
 }
 
-export function replayReviewFunnelCommand(flags: Flags, { log }: Presentation): void {
-  const candidate = policyFromFlags(flags)
+export async function replayReviewFunnelCommand(
+  flags: Flags,
+  { log }: Presentation,
+): Promise<void> {
+  const candidate = await policyFromFlags(flags)
   const rows = db()
     .query<{ record_id: string; facts: string; verdict: string }, []>(
       'SELECT record_id,facts,verdict FROM review_funnel_decision ORDER BY recorded_at,record_id',
@@ -126,7 +129,7 @@ export async function policyReviewFunnelCommand(
 ): Promise<void> {
   const file = flags.flag('set')
   if (!file) {
-    const active = activeReviewFunnelPolicy()
+    const active = await activeReviewFunnelPolicy()
     return log(JSON.stringify({ revision: active.policyVersion, policy: active.policy }, null, 2))
   }
   const policy = policyFile(file)

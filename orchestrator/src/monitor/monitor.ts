@@ -138,7 +138,7 @@ async function initialMonitorObservations(
       ...hostedHealth.conditions,
       ...hostedPressure.conditions,
       ...hostPressure.conditions,
-      ...staleCustomerGuideCommandConditions(),
+      ...(await staleCustomerGuideCommandConditions()),
       ...diskPressure.conditions,
       ...collectLease.conditions,
       ...collectorLegs.conditions,

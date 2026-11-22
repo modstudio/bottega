@@ -23,30 +23,44 @@ test('a hosted read returns the hosted row and never the local mirror', async ()
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const client = createMemoryRecordApiClient()
+  const calls: Array<Parameters<typeof client.listDocs>[0]> = []
   installRecordApiClient({
     ...client,
-    listDocs: async () => ({
-      items: [
-        {
-          id: '01990000-0000-7000-8000-000000000001',
-          scope: 'global',
-          subject: null,
-          owner: null,
-          slug: 'authority',
-          title: 'Hosted',
-          body: 'hosted body',
-          delivery: 'demand',
-          audiences: ['technical'],
-          status: 'current',
-          kind: 'working',
-          createdAt: '2026-11-22T00:00:00.000Z',
-          updatedAt: '2026-11-22T00:00:00.000Z',
-        },
-      ],
-      nextCursor: null,
-    }),
+    listDocs: async (query) => {
+      calls.push(query)
+      return {
+        items: [
+          {
+            id: '01990000-0000-7000-8000-000000000001',
+            scope: 'global',
+            subject: null,
+            owner: null,
+            slug: 'authority',
+            title: 'Hosted',
+            body: 'hosted body',
+            delivery: 'demand',
+            audiences: ['technical'],
+            status: 'current',
+            kind: 'working',
+            createdAt: '2026-11-22T00:00:00.000Z',
+            updatedAt: '2026-11-22T00:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      }
+    },
   })
   expect((await readDoc('global', null, 'authority'))?.body).toBe('hosted body')
+  expect(calls).toEqual([
+    {
+      scope: 'global',
+      subject: null,
+      slug: 'authority',
+      owner: null,
+      audience: undefined,
+      limit: 1,
+    },
+  ])
 })
 
 test('an unreachable hosted read refuses with the sign-in and retry remedy', async () => {

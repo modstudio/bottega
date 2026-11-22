@@ -8,7 +8,8 @@ import { renderRefusal } from '../../../shared/refusal.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
-import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
   AUTO_MODE_LISTS,

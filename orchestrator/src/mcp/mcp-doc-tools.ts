@@ -30,13 +30,13 @@ import {
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
-  getDocRevision,
   removeDoc,
   setDoc,
   setDocStatus,
   signedInDocOwner,
   storedDocWarnings,
 } from '../doc/docs.ts'
+import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'

@@ -23,7 +23,8 @@ import {
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
-import { getDoc, listDocs, readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
+import { getDocStore as getDoc, listDocsStore as listDocs } from '../doc/doc-read-store.ts'
+import { readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'

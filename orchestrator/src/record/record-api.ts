@@ -725,6 +725,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .object({
         scope: filterSchema,
         subject: z.string().optional(),
+        slug: z.string().optional(),
+        owner: z.string().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
         status: z.enum(DOC_STATUSES).optional(),
         kind: z.enum(DOC_KINDS).optional(),
@@ -743,6 +745,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
     const subject = query.data.subject === undefined ? undefined : query.data.subject || null
+    const owner = query.data.owner === undefined ? undefined : query.data.owner || null
     const listTarget = personalListTarget(
       query.data.scope,
       subject,
@@ -760,6 +763,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       ...tenant,
       scope: query.data.scope,
       subject,
+      slug: query.data.slug,
+      owner,
       audience: query.data.audience,
       status: query.data.status,
       kind: query.data.kind,

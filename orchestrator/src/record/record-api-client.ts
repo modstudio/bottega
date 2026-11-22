@@ -301,6 +301,8 @@ export type RecordApiClient = ProjectIdentityClient &
       query: {
         scope?: string
         subject?: string | null
+        slug?: string
+        owner?: string | null
         audience?: DocAudience
         status?: DocStatus
         updatedSince?: string
@@ -797,6 +799,8 @@ const recordDocReadClient = (
     const search = new URLSearchParams()
     if (query.scope) search.set('scope', query.scope)
     if (query.subject !== undefined) search.set('subject', query.subject ?? '')
+    if (query.slug !== undefined) search.set('slug', query.slug)
+    if (query.owner !== undefined) search.set('owner', query.owner ?? '')
     if (query.audience) search.set('audience', query.audience)
     if (query.status) search.set('status', query.status)
     if (query.kind) search.set('kind', query.kind)

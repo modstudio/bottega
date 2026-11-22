@@ -564,7 +564,13 @@ describe('record API', () => {
   })
 
   test('doc lists opt into readable spaces while the default stays active-space scoped', async () => {
-    const seen: Array<{ spaceId: string; spaceIds: string[]; acrossReadableSpaces: boolean }> = []
+    const seen: Array<{
+      spaceId: string
+      spaceIds: string[]
+      acrossReadableSpaces: boolean
+      slug?: string
+      owner?: string | null
+    }> = []
     const personal = {
       ...identity,
       memberships: [
@@ -583,13 +589,15 @@ describe('record API', () => {
       },
     })
 
-    expect((await app.request('/v1/docs')).status).toBe(200)
+    expect((await app.request('/v1/docs?slug=guide&owner=')).status).toBe(200)
     expect((await app.request('/v1/docs?acrossReadableSpaces=true')).status).toBe(200)
     expect(seen).toEqual([
       expect.objectContaining({
         spaceId: 'space-a',
         spaceIds: ['space-a', 'space-b'],
         acrossReadableSpaces: false,
+        slug: 'guide',
+        owner: null,
       }),
       expect.objectContaining({
         spaceId: 'space-a',

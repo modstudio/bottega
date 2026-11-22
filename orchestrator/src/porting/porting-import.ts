@@ -1,5 +1,6 @@
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { importDoc, listDocs, removeDoc } from '../doc/docs.ts'
+import { readDocs } from '../doc/doc-authoritative-read.ts'
+import { importDoc, removeDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
 import * as porting from './porting.ts'
@@ -1003,7 +1004,7 @@ export async function applyImport(
     reason: `port import from ${options.sourceLabel ?? 'source corpus'}`,
   }
   const owned = options.replace
-    ? listDocs().filter(
+    ? (await readDocs()).filter(
         (doc) =>
           (doc.scope === 'global' && GLOBAL_PORT_DOC_SLUGS.includes(doc.slug)) ||
           (doc.scope === 'project' && PROJECT_PORT_DOC_SLUGS.includes(doc.slug)),

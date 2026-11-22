@@ -6,7 +6,8 @@ import {
   docSourceFileUpdateMode,
   mergeDocSourceFiles,
 } from './doc-source-files.ts'
-import { getDoc, setDoc } from './docs.ts'
+import { getDocStore as getDoc } from './doc-read-store.ts'
+import { setDoc } from './docs.ts'
 
 export async function setDocFromCommand(
   input: Parameters<typeof setDoc>[0],

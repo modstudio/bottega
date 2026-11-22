@@ -25,27 +25,24 @@ import { db } from '../database/db.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import {
+  type AuthoritativeDocHistory,
+  type DocListFilters,
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
+  readDocHistory,
   readDocs as authoritativeDocs,
   readOpenResumes,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
-import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
-  diffDocRevisions,
   docSubjects,
   exportDocs,
   importDocs,
   lintStoredDoc,
-  type listDocMetadata,
-  listDocRevisions,
-  listDocs,
-  readDocRevision,
   removeDoc,
   reorderDocs,
   restoreDoc,
@@ -75,10 +72,7 @@ type DocPresentation = {
   cwd(): string
   exitCode?(code: number): void
 }
-type DocHistory = DocHistoryPresentation<
-  ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null },
-  ReturnType<typeof readDocRevision> & { authorName?: string | null }
->
+type DocHistory = AuthoritativeDocHistory
 type DocCommandPorts = {
   selectDocWriteTree(input: {
     scope: string
@@ -312,7 +306,7 @@ async function handledEarlyDocCommand(
 }
 
 async function keywordListDocs(
-  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
+  filters: DocListFilters,
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
@@ -351,7 +345,7 @@ async function keywordListDocs(
 }
 
 async function listedDocs(
-  filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
+  filters: DocListFilters,
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
@@ -619,7 +613,7 @@ async function handleReorderDocCommand(
     throw new Error(
       `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent SLUG|UUID] --slug SLUG|UUID...`,
     )
-  const docs = listDocs({ scope: address.scope, subject: address.subject })
+  const docs = await authoritativeDocs({ scope: address.scope, subject: address.subject })
   const resolve = (value: string): string => {
     const row = docs.find((doc) => doc.slug === value || doc.record_id === value.toLowerCase())
     if (!row) throw new Error(`no ${address.scope}/${address.subject ?? '_'}/${value} document`)
@@ -695,16 +689,8 @@ async function handledRevisionDocCommand(
     throw new Error('--user history address must be canon -')
   }
   const hosted = await selectedDocHistory({ scope, subject, slug }, owner, ports)
-  const revision: ReturnType<DocHistory['revision']> = hosted
-    ? hosted.revision(revisionIdentifier)
-    : readDocRevision(
-        scope,
-        subject,
-        slug,
-        resolveDocRevisionIdentifier(db(), revisionIdentifier),
-        owner,
-        docReadAudience(flags.flag('audience')),
-      )
+  if (!hosted) throw new Error(`no document ${scope}/${subject ?? '_'}/${slug}`)
+  const revision = hosted.revision(revisionIdentifier)
   if (flags.has('json')) {
     const user = cachedSignedInRecordUser()
     presentation.log(
@@ -857,8 +843,8 @@ async function selectedDocHistory(
   owner: string | null,
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<DocHistory | null> {
-  const doc = await authoritativeDoc(address.scope, address.subject, address.slug, owner)
-  return doc ? ports.revisionHistory({ ...address, recordId: doc.record_id }) : null
+  void ports
+  return readDocHistory(address.scope, address.subject, address.slug, owner)
 }
 
 async function restoreDocCommand(
@@ -903,24 +889,6 @@ async function restoreDocCommand(
   printRestoreResult(restored, flags, presentation, scope, subject, slug)
 }
 
-function localDocDiff(
-  argv: string[],
-  revisions: ReturnType<typeof listDocRevisions>,
-  owner: string | null,
-  { scope, subject, slug }: DocAddress,
-): string {
-  const ordered = revisions.map(({ record_id }) => record_id)
-  const [a, b] = docDiffPair(
-    ordered,
-    argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : undefined,
-    argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : undefined,
-  )
-  const ids = new Set(ordered)
-  if (!ids.has(a) || !ids.has(b))
-    throw new Error(`doc diff revisions must belong to ${scope}/${subject ?? '_'}/${slug}`)
-  return diffDocRevisions(a, b, owner)
-}
-
 async function handleHistoryDocCommand(
   sub: string,
   argv: string[],
@@ -942,19 +910,19 @@ async function handleHistoryDocCommand(
     throw new Error('--user history address must be canon -')
   const address = { scope, subject, slug }
   const selectedHistory = await selectedDocHistory(address, owner, ports)
-  const revisions = selectedHistory ? [] : listDocRevisions(scope, subject, slug, owner)
+  const revisions = selectedHistory?.revisions ?? []
   if (sub === 'restore') {
     await restoreDocCommand(argv, flags, presentation, owner, address, selectedHistory)
     return true
   }
-  const selected = selectedHistory?.revisions ?? revisions
-  if (handleHistoryOutput(sub, selected, flags, presentation)) return true
+  if (handleHistoryOutput(sub, revisions, flags, presentation)) return true
   if (sub === 'diff') {
     if (selectedHistory) {
       presentation.write(selectedHistory.diff(argv[5], argv[6]))
       return true
     }
-    presentation.write(localDocDiff(argv, revisions, owner, { scope, subject, slug }))
+    if (!selectedHistory) throw new Error(`no document ${scope}/${subject ?? '_'}/${slug}`)
+    presentation.write(selectedHistory.diff(argv[5], argv[6]))
     return true
   }
   return false

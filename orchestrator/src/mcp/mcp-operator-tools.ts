@@ -17,7 +17,8 @@ import {
   recordKeyedTurnOverride,
 } from '../dispatch/keyed-run-cursor-admission-adapter.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
-import { getDocRevision, setDoc } from '../doc/docs.ts'
+import { setDoc } from '../doc/docs.ts'
+import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
 import { resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'

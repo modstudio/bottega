@@ -429,6 +429,8 @@ const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 type RecordDocListInput = {
   scope?: string
   subject?: string
+  slug?: string
+  owner?: string | null
   audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
@@ -861,6 +863,8 @@ function recordDocReadClient(options: RecordClientOptions) {
         query('/v1/docs', {
           scope: input.scope,
           subject: input.subject,
+          slug: input.slug,
+          owner: input.owner === null ? '' : input.owner,
           audience: input.audience,
           status: input.status,
           kind: input.kind,
