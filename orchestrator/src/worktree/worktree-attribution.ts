@@ -19,7 +19,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { borrowedCheckoutOf, gitOk, gitResult } from '../git/git-environment.ts'
+import { borrowedCheckoutOf, git, gitOk, gitResult } from '../git/git-environment.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export type OrphanSafety = {
@@ -30,6 +30,11 @@ export type OrphanSafety = {
 }
 
 export const ORCH_RUN_MARKER = '.orch-run'
+
+/** Remove generated and ignored tree residue without deleting its ownership identity. */
+export function cleanRunTree(path: string): void {
+  git(['clean', '-fdx', '-e', ORCH_RUN_MARKER], path)
+}
 
 export type TreeOwnership = 'owned' | 'attached' | 'unknown'
 

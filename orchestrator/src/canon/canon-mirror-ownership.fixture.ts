@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -7,7 +7,6 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { type CanonMirrorPort, systemCanonMirrorPort } from './canon-mirror.ts'
@@ -68,15 +67,7 @@ export function mirrorFixturePort(
       headSha: 'different-head',
       checks: 'passed',
     }),
-    releaseRun: (runId) => {
-      const tree = join(root, '.claude', 'worktrees', 'canon-mirror')
-      const recordedTree = db()
-        .query<{ worktree: string | null }, [string]>('SELECT worktree FROM run WHERE record_id=?')
-        .get(runId)?.worktree
-      if (existsSync(join(tree, '.git')) && recordedTree === tree)
-        spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
-      return { outcome: 'released', detail: 'fixture release' }
-    },
+    releaseRun: systemCanonMirrorPort.releaseRun,
     releaseBranch: (_project, branch, expected) => {
       if (
         spawnFixtureGitSync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {

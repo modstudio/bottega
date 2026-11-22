@@ -234,6 +234,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-gitleaks.ts', run),
   script('scripts/check-write-transaction-site.ts', run),
   script('scripts/check-branch-ref-mutation-site.ts', run),
+  script('scripts/check-git-clean-site.ts', run),
   script('scripts/check-command-descriptions.ts', run),
   script('scripts/reference.ts', run),
   script('scripts/check-file-ceiling.ts', run, {

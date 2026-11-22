@@ -40,7 +40,11 @@ import { nextRunNumber } from '../run/run-number.ts'
 import { CANON_MIRROR_JOB, canonMirrorBranchName } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
-import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'
+import {
+  cleanRunTree,
+  inspectTreeOwnership,
+  readWorktreeMarker,
+} from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
@@ -214,7 +218,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     Number(command(path, ['git', 'rev-list', '--count', 'HEAD', '--not', ...refs])),
   resetTree: (path, base) => {
     command(path, ['git', 'reset', '--hard', base])
-    command(path, ['git', 'clean', '-fdx'])
+    cleanRunTree(path)
   },
   lastPathCommit: (path, base, file) => {
     const out = command(path, ['git', 'log', '-1', '--format=%H%x00%cI', base, '--', file])
