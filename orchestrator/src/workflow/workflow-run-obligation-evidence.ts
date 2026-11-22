@@ -39,10 +39,13 @@ export function gatherWorkflowRunChains(
          FROM run root JOIN run bound
            ON bound.record_id=root.record_id OR bound.parent_run_record_id=root.record_id
         WHERE root.parent_run_record_id IS NULL
-          AND root.job IN (${jobPlaceholders})
-          AND bound.cursor_record_id=?`,
+          AND bound.cursor_record_id=?
+          AND (
+            bound.parent_run_record_id=root.record_id
+            OR (bound.record_id=root.record_id AND root.job IN (${jobPlaceholders}))
+          )`,
     )
-    .all(...jobs, cursorRecordId)
+    .all(cursorRecordId, ...jobs)
   const creditedRoots = new Set(
     bindingRows
       .filter(
