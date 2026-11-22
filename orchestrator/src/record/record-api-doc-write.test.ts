@@ -353,6 +353,7 @@ describe('record API doc write refusals', () => {
                 parentId: null,
                 position: 0,
                 projectName: null,
+                latestRevisionId: revision,
                 createdAt: '2026-09-28T12:00:00.000Z',
                 updatedAt: '2026-09-28T12:00:00.000Z',
                 deletedAt: null,

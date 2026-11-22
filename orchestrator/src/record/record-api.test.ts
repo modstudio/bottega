@@ -23,7 +23,7 @@ const appWith = (session: RecordIdentity | null, overrides: Record<string, unkno
   recordApiTestApp(session, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, overrides)
 
 const id = '01990000-0000-7000-8000-000000000001'
-const settingsDoc = (body: string): RecordDoc => ({
+const settingsDoc = (body: string, latestRevisionId: string | null = null): RecordDoc => ({
   id,
   spaceId: 'space-a',
   spaceName: 'Space A',
@@ -38,6 +38,7 @@ const settingsDoc = (body: string): RecordDoc => ({
   parentId: null,
   position: 0,
   projectName: null,
+  latestRevisionId,
   createdAt: '2026-09-28T12:00:00.000Z',
   updatedAt: '2026-09-28T12:00:00.000Z',
   deletedAt: null,
@@ -332,7 +333,10 @@ describe('record API', () => {
       applySettingsPermission: (input: RecordSettingsPermissionInput) =>
         applyRecordSettingsPermission(input, {
           listDocs: async () => [
-            settingsDoc(JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })),
+            settingsDoc(
+              JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+              expectedRevision,
+            ),
           ],
           listRevisions: async () => {
             const readRevision = currentRevision

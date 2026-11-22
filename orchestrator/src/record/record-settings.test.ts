@@ -32,6 +32,7 @@ test('hosted settings edits refuse future options without rewriting the row', as
           parentId: null,
           position: 0,
           projectName: null,
+          latestRevisionId: null,
           createdAt: '2026-09-28T12:00:00.000Z',
           updatedAt: '2026-09-28T12:00:00.000Z',
           deletedAt: null,
