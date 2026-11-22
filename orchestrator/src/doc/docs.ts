@@ -42,6 +42,7 @@ import { readDoc, readDocRevision, readDocs } from './doc-authoritative-read.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
+import { hostedUnmirroredDoc } from './doc-hosted-unmirrored.ts'
 import {
   assertDocWriteRevisionForAuthority,
   hostedDocWriteOperation,
@@ -71,11 +72,7 @@ import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
-import {
-  type localDocTreeFields,
-  localParentRecordId,
-  localRestoredParentSlug,
-} from './local-doc-tree-service.ts'
+import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
   commitDocRestore,
@@ -387,64 +384,6 @@ async function docWriteState(
 const hostedDocWriteClient = (input: DocWriteInput) =>
   hostedDocClient(input.scope, input.subject, contextTaskOwner(input.contextTask))
 
-type HostedUnmirroredSet = {
-  prior: Doc
-  write: DocWriteInput
-  recordId: string
-  revisionId: string
-  delivery: Doc['delivery']
-  kind: Doc['kind']
-  tree: ReturnType<typeof localDocTreeFields>
-  lifecycle: ReturnType<typeof localDocumentLifecycle>
-  article: ReturnType<typeof resolveLocalDocArticleFields>
-}
-
-type HostedUnmirroredConsume = {
-  prior: Doc
-  body: string
-  revisionId: string
-  alreadyConsumed: boolean
-}
-
-function hostedUnmirroredDoc(input: HostedUnmirroredSet): Doc
-function hostedUnmirroredDoc(input: HostedUnmirroredConsume): Doc & { already_consumed: boolean }
-function hostedUnmirroredDoc(
-  input: HostedUnmirroredSet | HostedUnmirroredConsume,
-): Doc & { already_consumed?: boolean } {
-  if (!('write' in input)) {
-    return {
-      ...input.prior,
-      body: input.body,
-      revision: input.revisionId,
-      already_consumed: input.alreadyConsumed,
-    }
-  }
-  return {
-    ...input.prior,
-    record_id: input.recordId,
-    title: input.write.title,
-    body: input.write.body,
-    delivery: input.delivery,
-    audiences: input.tree.audiences,
-    parent_record_id: input.tree.parentId,
-    parent_slug: input.tree.parentSlug,
-    position: input.tree.position,
-    featured: input.tree.featured,
-    status: input.lifecycle.status,
-    kind: input.kind,
-    form: input.article.form,
-    article_subject_id: input.article.articleSubject?.id ?? null,
-    articleSubject: input.article.articleSubject,
-    relatedSubjects: input.article.relatedSubjects,
-    sourceFiles: input.article.sourceFiles,
-    checkedAgainstCommit: input.article.checkedAgainstCommit,
-    summary: input.article.summary,
-    replacement_slug: input.lifecycle.replacementSlug,
-    updated_at: nowIso(),
-    revision: input.revisionId,
-  }
-}
-
 function assertDocAddressWriteAllowed(input: DocWriteInput): void {
   writableDb()
   const refusal =
@@ -456,6 +395,14 @@ function assertDocAddressWriteAllowed(input: DocWriteInput): void {
 
 function docWritePrelude(input: DocWriteInput) {
   return [scanDocBody(input, defaultDocSecretScanner), resolvedDocWriteIdentity(input)] as const
+}
+
+function assertHostedDocCompatible(
+  input: Parameters<Awaited<ReturnType<typeof hostedDocWriteClient>>['upsertDoc']>[0],
+  result: Awaited<ReturnType<Awaited<ReturnType<typeof hostedDocWriteClient>>['upsertDoc']>>,
+): void {
+  const refusal = recordDocArticleCompatibilityRefusal([input], result)
+  if (refusal) throw new Error(refusal)
 }
 
 async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
@@ -513,8 +460,7 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
         expectedRevision: input.expectedRevision ?? prior?.revision ?? undefined,
       }
       const hosted = await client.upsertDoc(hostedInput)
-      const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
-      if (compatibilityRefusal) throw new Error(compatibilityRefusal)
+      assertHostedDocCompatible(hostedInput, hosted)
       const mirrored = getDoc(input.scope, input.subject, input.slug, owner)
       if (prior && !mirrored) {
         return hostedUnmirroredDoc({
@@ -522,6 +468,7 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
           write: input,
           recordId: hosted.id,
           revisionId: hosted.revisionId,
+          updatedAt: nowIso(),
           delivery,
           kind,
           tree,

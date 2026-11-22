@@ -13,8 +13,7 @@ export const identityModules = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
-    '../../../shared/record-api-url.ts',
-    '../database/entity-number.ts',
+    '../record/record-read-authority.ts',
   ]),
   module('hub/src/identity/identity.ts', [
     'bun:sqlite',

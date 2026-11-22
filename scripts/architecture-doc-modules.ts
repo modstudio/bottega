@@ -282,6 +282,10 @@ export const docModules: DocModule[] = [
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',
   ]),
+  module('orchestrator/src/doc/doc-hosted-unmirrored.ts', [
+    './doc-authoritative-read.ts',
+    './doc-tree-rules.ts',
+  ]),
   module('orchestrator/src/doc/doc-authoritative-read.ts', [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',

@@ -117,7 +117,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../doc/doc-generator.ts',
     ],
     'Enforce the record API client concern boundary.',
-    ['../canon/canon-lint.ts', './record-public-docs.ts'],
+    ['../canon/canon-lint.ts', './record-public-docs.ts', './record-doc-mapping.ts'],
   ),
   boundary(
     'record-port-catalogue-boundary',
