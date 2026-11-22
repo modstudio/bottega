@@ -428,6 +428,24 @@ describe('settings apply', () => {
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
   })
 
+  test('options and future top-level keys do not change applied Claude settings', async () => {
+    const row = getDoc('settings', null, 'settings', OWNER)!
+    const body = JSON.stringify({
+      ...JSON.parse(row.body),
+      options: { subagentHooks: 'on' },
+      futureKey: true,
+    })
+    db().query('UPDATE doc SET body=? WHERE record_id=?').run(body, row.record_id)
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
+    expect(rendered).not.toContain('subagentHooks')
+    expect(rendered).not.toContain('futureKey')
+    expect(rendered).toContain('block-agent.py')
+  })
+
   test('without a settings row preserves file-owned settings while adding product hooks', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
     const settingsPath = join(root, '.claude', 'settings.json')

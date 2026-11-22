@@ -11,6 +11,8 @@ import {
   type AutoModeList,
   ENV_NAME,
   OWNED_AUTO_MODE_SCHEMA,
+  OWNED_SETTINGS_KEYS,
+  OWNED_SETTINGS_OPTIONS_SCHEMA,
   OWNED_SETTINGS_SCHEMA,
   type OwnedAutoMode,
   type OwnedSettings,
@@ -47,10 +49,12 @@ export function extractOwnedSettings(value: unknown): OwnedSettings {
     throw new Error(SETTINGS_PARSE_REFUSAL)
   }
   const autoMode = Object.hasOwn(value, 'autoMode') ? parseAutoMode(value.autoMode) : undefined
+  const options = Object.hasOwn(value, 'options') ? parseOptions(value.options) : undefined
   return {
     permissions: Object.hasOwn(value, 'permissions') ? value.permissions : {},
     hooks: Object.hasOwn(value, 'hooks') ? value.hooks : {},
     ...(autoMode === undefined ? {} : { autoMode }),
+    ...(options === undefined ? {} : { options }),
     envKeys: [],
   }
 }
@@ -61,6 +65,7 @@ export function serializeOwnedSettings(owned: OwnedSettings): string {
       permissions: owned.permissions,
       hooks: owned.hooks,
       ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
+      ...(owned.options === undefined ? {} : { options: owned.options }),
       env: owned.env ?? {},
       envKeys: owned.envKeys ?? [],
     },
@@ -75,14 +80,20 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
     parsed = JSON.parse(body) as unknown
   } catch {
     throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, env, and envKeys',
+      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, options, env, and envKeys',
     )
   }
   const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
   if (!result.success) {
+    if (result.error.issues.some((issue) => issue.path[0] === 'options')) {
+      throw new Error(
+        'refusing settings body: invalid options\n' +
+          'cleared by: use only options.subagentHooks with accepted value "on"',
+      )
+    }
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names',
+        'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names',
     )
   }
   assertValidEnvironment(result.data, 'settings body')
@@ -103,6 +114,21 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
     }
     throw error
   }
+}
+
+export function refuseUnknownStoredSettingsEdit(body: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
+  if (!isPlainObject(parsed)) return null
+  const known = new Set<string>(OWNED_SETTINGS_KEYS)
+  const unknown = Object.keys(parsed).find((key) => !known.has(key))
+  return unknown === undefined
+    ? null
+    : `refusing settings edit: stored settings row has unknown top-level key ${JSON.stringify(unknown)}\ncleared by: upgrade Bottega before editing this settings row`
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -146,6 +172,10 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
       (left.autoMode !== undefined &&
         right.autoMode !== undefined &&
         deepEqual(left.autoMode, right.autoMode))) &&
+    ((left.options === undefined && right.options === undefined) ||
+      (left.options !== undefined &&
+        right.options !== undefined &&
+        deepEqual(left.options, right.options))) &&
     deepEqual(left.env ?? {}, right.env ?? {}) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
@@ -232,6 +262,16 @@ function parseAutoMode(value: unknown): OwnedAutoMode {
   if (!result.success) {
     throw new Error(
       'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',
+    )
+  }
+  return result.data
+}
+
+function parseOptions(value: unknown): OwnedSettings['options'] {
+  const result = OWNED_SETTINGS_OPTIONS_SCHEMA.safeParse(value)
+  if (!result.success) {
+    throw new Error(
+      'refusing settings file: invalid options\ncleared by: use only subagentHooks with accepted value on',
     )
   }
   return result.data

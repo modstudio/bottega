@@ -24,6 +24,7 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
+  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
@@ -154,6 +155,8 @@ async function applySettingsListEdit<Counts>(input: {
 }): Promise<{ revision: string; counts: Counts; changed: boolean; message?: string }> {
   const row = settingsRow(input.target, input.owner)
   if (!row) throw new Error(input.missingRowMessage)
+  const unknownKeyRefusal = refuseUnknownStoredSettingsEdit(row.body)
+  if (unknownKeyRefusal) throw new Error(unknownKeyRefusal)
   const revision = decideDocRevisionWrite({
     expected: input.expectedRevision,
     current: row.revision ?? null,

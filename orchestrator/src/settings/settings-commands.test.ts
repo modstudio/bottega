@@ -564,6 +564,69 @@ test('adoption output containing a sentinel prints no sentinel', async () => {
 })
 
 describe('settings permission', () => {
+  test('refuses a future top-level key without changing the row', async () => {
+    fixtureProject('permission-future')
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-future',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: {}, hooks: {} }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+    const futureBody = JSON.stringify({
+      permissions: {},
+      hooks: {},
+      env: {},
+      envKeys: [],
+      futureKey: true,
+    })
+    db()
+      .query("UPDATE doc SET body=? WHERE scope='settings' AND subject=? AND slug='settings'")
+      .run(futureBody, 'permission-future')
+
+    await expect(
+      settingsPermissionCommand(
+        presentation().flags({
+          project: 'permission-future',
+          list: 'allow',
+          rule: 'Bash(git *)',
+          expect: seeded.revision!,
+        }),
+        'add',
+      ),
+    ).rejects.toThrow(/futureKey.*upgrade Bottega/s)
+    expect(getDoc('settings', 'permission-future', 'settings')?.body).toBe(futureBody)
+  })
+
+  test('preserves options through an edit', async () => {
+    fixtureProject('permission-options')
+    const options = { subagentHooks: 'on' as const }
+    const seeded = await setDoc({
+      scope: 'settings',
+      subject: 'permission-options',
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({ permissions: {}, hooks: {}, options }),
+      delivery: 'demand',
+      reason: 'seed settings',
+    })
+
+    await settingsPermissionCommand(
+      presentation().flags({
+        project: 'permission-options',
+        list: 'allow',
+        rule: 'Bash(git *)',
+        expect: seeded.revision!,
+      }),
+      'add',
+    )
+
+    const body = getDoc('settings', 'permission-options', 'settings')!.body
+    expect(JSON.stringify(JSON.parse(body).options)).toBe(JSON.stringify(options))
+  })
+
   test('refuses unknown and unmanaged projects', async () => {
     const shown = presentation()
     await expect(

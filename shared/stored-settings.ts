@@ -8,6 +8,13 @@ export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
 export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
 
+export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
+  .object({
+    subagentHooks: z.enum(['on']).optional(),
+  })
+  .strict()
+export type OwnedSettingsOptions = z.infer<typeof OWNED_SETTINGS_OPTIONS_SCHEMA>
+
 export const OWNED_AUTO_MODE_SCHEMA = z
   .object(
     Object.fromEntries(AUTO_MODE_LISTS.map((name) => [name, z.array(z.string()).optional()])) as {
@@ -22,9 +29,19 @@ export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
   autoMode?: OwnedAutoMode
+  options?: OwnedSettingsOptions
   env?: Record<string, string>
   envKeys?: string[]
 }
+
+export const OWNED_SETTINGS_KEYS = [
+  'permissions',
+  'hooks',
+  'autoMode',
+  'options',
+  'env',
+  'envKeys',
+] as const
 
 const ENV_KEYS_SCHEMA = z
   .array(z.string().regex(ENV_NAME))
@@ -35,6 +52,7 @@ export const OWNED_SETTINGS_SCHEMA = z
     permissions: z.unknown(),
     hooks: z.unknown(),
     autoMode: OWNED_AUTO_MODE_SCHEMA.optional(),
+    options: OWNED_SETTINGS_OPTIONS_SCHEMA.optional(),
     env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
     envKeys: ENV_KEYS_SCHEMA,
   })
@@ -42,10 +60,10 @@ export const OWNED_SETTINGS_SCHEMA = z
 
 const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
   envKeys: ENV_KEYS_SCHEMA.default([]),
-})
+}).strip()
 
 export const STORED_SETTINGS_REMEDY =
-  'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names'
+  'cleared by: write a JSON object with permissions, hooks, optional autoMode and options, env string values, and sorted envKeys names'
 
 function firstIssuePath(issue: z.core.$ZodIssue): string {
   const path = issue.path.map(String)

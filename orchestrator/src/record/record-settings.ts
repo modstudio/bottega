@@ -6,6 +6,7 @@ import {
   type AutoModeList,
   type PermissionList,
   parseStoredOwnedSettings,
+  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
@@ -137,6 +138,8 @@ async function applyRecordSettingsEdit<
       candidate.subject === subject,
   )
   if (!row) throw new RecordDocError('settings doc not found', 404)
+  const unknownKeyRefusal = refuseUnknownStoredSettingsEdit(row.body)
+  if (unknownKeyRefusal) throw new RecordDocError(unknownKeyRefusal, 409)
   const revisions = await dependencies.listRevisions({ ...tenant, id: row.id })
   const current = revisions?.[0]?.id ?? null
   assertRevisionWrite({

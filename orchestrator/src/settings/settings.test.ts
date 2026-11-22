@@ -8,6 +8,7 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
+  refuseUnknownStoredSettingsEdit,
   SETTINGS_PARSE_REFUSAL,
   serializeOwnedSettings,
   validateOwnedSettingsBody,
@@ -65,6 +66,18 @@ describe('validateOwnedSettingsBody', () => {
       ...withoutAutoMode,
       env: {},
     })
+  })
+
+  test('accepts subagent hooks on and lists the only accepted option value', () => {
+    const accepted = { permissions: {}, hooks: {}, options: { subagentHooks: 'on' as const } }
+    expect(validateOwnedSettingsBody(serializeOwnedSettings(accepted)).options).toEqual(
+      accepted.options,
+    )
+    for (const options of [{ subagentHooks: 'off' }, { futureOption: true }]) {
+      expect(() =>
+        validateOwnedSettingsBody(JSON.stringify({ permissions: {}, hooks: {}, options })),
+      ).toThrow(/options\.subagentHooks.*accepted value "on"/s)
+    }
   })
 
   test('refuses unknown auto-mode members and non-string lists', () => {
@@ -175,6 +188,14 @@ test('ownedSettingsEqual requires auto-mode ownership on both sides', () => {
   expect(ownedSettingsEqual(owned, unowned)).toBe(false)
 })
 
+test('options round trip and participate in owned settings equality', () => {
+  const owned = { permissions: {}, hooks: {}, options: { subagentHooks: 'on' as const } }
+  const parsed = parseStoredOwnedSettings(serializeOwnedSettings(owned))
+  expect(parsed.options).toEqual(owned.options)
+  expect(ownedSettingsEqual(parsed, owned)).toBe(true)
+  expect(ownedSettingsEqual(parsed, { permissions: {}, hooks: {} })).toBe(false)
+})
+
 test('a stored row without auto-mode round trips without gaining ownership', () => {
   const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
   const parsed = parseStoredOwnedSettings(body)
@@ -186,11 +207,16 @@ test('stored-row adapters preserve their orchestrator refusal messages', () => {
   expect(() => parseStoredOwnedSettings('{')).toThrow(
     'refusing stored settings row: cannot parse JSON',
   )
-  expect(() =>
+  expect(
     parseStoredOwnedSettings(
-      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], undeclared: true }),
+      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
     ),
-  ).toThrow('refusing stored settings row: invalid owned settings shape')
+  ).toMatchObject({ permissions: {}, hooks: {}, envKeys: [] })
+  expect(
+    refuseUnknownStoredSettingsEdit(
+      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], futureKey: true }),
+    ),
+  ).toMatch(/futureKey.*upgrade Bottega/s)
 })
 
 describe('editSettingsEnv', () => {

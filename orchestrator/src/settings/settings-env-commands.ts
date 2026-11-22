@@ -5,6 +5,7 @@ import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import {
   editSettingsEnv,
   parseStoredOwnedSettings,
+  refuseUnknownStoredSettingsEdit,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   type SettingsEnvOperation,
@@ -21,6 +22,8 @@ export async function settingsEnvCommand(
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error(`refusing settings env ${operation}: no user settings row`)
+  const unknownKeyRefusal = refuseUnknownStoredSettingsEdit(row.body)
+  if (unknownKeyRefusal) throw new Error(unknownKeyRefusal)
   const edit = editSettingsEnv(parseStoredOwnedSettings(row.body), { operation, name, value })
   if (!edit.changed) {
     return { changed: false, revision: row.revision!, message: edit.message }

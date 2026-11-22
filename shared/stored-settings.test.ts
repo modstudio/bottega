@@ -6,7 +6,7 @@ import {
   StoredSettingsRowError,
 } from './stored-settings.ts'
 
-test('stored settings rows default legacy environment fields and name invalid keys', () => {
+test('stored settings rows default legacy fields and tolerate newer top-level keys', () => {
   expect(OWNED_SETTINGS_SCHEMA.safeParse({ permissions: {}, hooks: {} }).success).toBeFalse()
 
   expect(parseStoredSettingsRow(JSON.stringify({ permissions: {}, hooks: {} }))).toEqual({
@@ -16,18 +16,23 @@ test('stored settings rows default legacy environment fields and name invalid ke
     envKeys: [],
   })
 
-  try {
+  expect(
     parseStoredSettingsRow(
-      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], undeclared: true }),
-    )
-    throw new Error('expected the stored settings row to be refused')
-  } catch (error) {
-    expect(error).toBeInstanceOf(StoredSettingsRowError)
-    expect(error).toMatchObject({ reason: 'shape', path: 'undeclared' })
-    expect((error as Error).message).toBe(
-      `stored settings row has an invalid shape at "undeclared"\n${STORED_SETTINGS_REMEDY}`,
-    )
-  }
+      JSON.stringify({
+        permissions: {},
+        hooks: {},
+        options: { subagentHooks: 'on' },
+        envKeys: [],
+        futureKey: true,
+      }),
+    ),
+  ).toEqual({
+    permissions: {},
+    hooks: {},
+    options: { subagentHooks: 'on' },
+    env: {},
+    envKeys: [],
+  })
 
   try {
     parseStoredSettingsRow('{')

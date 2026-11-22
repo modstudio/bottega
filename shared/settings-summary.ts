@@ -46,6 +46,7 @@ export function summarizeSettings(settings: OwnedSettings) {
       ]),
     ) as Record<SettingsPermissionList, string[]>,
     hooks: hookSummaries(settings.hooks),
+    ...(settings.options === undefined ? {} : { options: settings.options }),
     envKeys: [...(settings.envKeys ?? [])],
   }
 }

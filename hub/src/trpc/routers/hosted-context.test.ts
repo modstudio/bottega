@@ -529,11 +529,12 @@ describe('hosted context router', () => {
     },
   )
 
-  test('settings.get accepts the owned settings shape but refuses undeclared keys', async () => {
+  test('settings.get accepts options and ignores undeclared top-level keys', async () => {
     const ownedSettings = {
       permissions: { allow: ['Bash(git status)'] },
       hooks: {},
       autoMode: { allow: ['Bash(git status)'], environment: ['development'] },
+      options: { subagentHooks: 'on' as const },
       env: { PUBLIC_SETTING: 'visible only to the server' },
       envKeys: ['API_TOKEN'],
     }
@@ -548,6 +549,7 @@ describe('hosted context router', () => {
     expect(result.settings).toMatchObject({
       permissions: { allow: ['Bash(git status)'] },
       hooks: [],
+      options: { subagentHooks: 'on' },
       envKeys: ['API_TOKEN'],
     })
     expect(JSON.stringify(result)).not.toContain('PUBLIC_SETTING')
@@ -559,9 +561,8 @@ describe('hosted context router', () => {
         nextCursor: null,
       })) as never,
     })
-    await expect(caller(extraKeyClient).settings.get({ user: true })).rejects.toMatchObject({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: expect.stringContaining('stored settings row has an invalid shape at "undeclared"'),
+    await expect(caller(extraKeyClient).settings.get({ user: true })).resolves.toMatchObject({
+      settings: { options: { subagentHooks: 'on' } },
     })
   })
 
