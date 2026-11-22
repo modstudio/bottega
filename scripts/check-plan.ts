@@ -39,6 +39,31 @@ export const CHECK_LEGS = [
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
   {
+    name: 'orchestrator/future-clock',
+    directory: 'orchestrator',
+    ciJob: 'orchestrator-future-clock',
+    testDirectories: [],
+    testPatterns: [],
+    excludedTestDirectories: [],
+    excludedTestPatterns: [],
+    typecheck: null,
+    typecheckConfigs: [],
+    worker: { run: true },
+    suite: [
+      {
+        argv: [
+          'bun',
+          'test',
+          '--preload',
+          './test/future-clock-preload.ts',
+          './src/session/context-review.test.ts',
+          './src/judgment.test.ts',
+        ],
+        unitTests: true,
+      },
+    ],
+  },
+  {
     name: 'orchestrator/hooks',
     directory: '.',
     ciJob: 'orchestrator-hooks',
