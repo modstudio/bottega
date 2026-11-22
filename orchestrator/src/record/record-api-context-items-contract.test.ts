@@ -24,8 +24,7 @@ const readDeps = {
 
 test('context-item write stores fixture credentials masked', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
-  const generic =
-    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   let storedBody = ''
   const app = recordApiTestApp(identity, {
     ...idleSubjectDeps(),

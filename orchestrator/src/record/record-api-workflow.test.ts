@@ -23,8 +23,7 @@ const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
 const SECRET = 'ghp_123456789012345678901234567890123456'
-const GENERIC =
-  'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+const GENERIC = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
 
 const recordApiAppWith = (overrides: Record<string, unknown>) =>
   recordApiTestApp(

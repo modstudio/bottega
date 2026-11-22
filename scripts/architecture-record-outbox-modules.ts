@@ -12,7 +12,18 @@ export const recordOutboxModules: ArchitectureModule[] = [
   },
   {
     file: 'orchestrator/src/record/hosted-secret-audit.ts',
-    allowed: ['bun', 'shared/record/tenant.ts', 'shared/secret-shaped.ts'],
+    allowed: [
+      'bun',
+      'shared/record/schema-board.ts',
+      'shared/record/schema-context-items.ts',
+      'shared/record/schema-docs.ts',
+      'shared/record/schema-hub.ts',
+      'shared/record/schema-question.ts',
+      'shared/record/schema-task-flow.ts',
+      'shared/record/schema-workflow-catalogue.ts',
+      'shared/record/tenant.ts',
+      'shared/secret-shaped.ts',
+    ],
   },
   {
     file: 'orchestrator/src/record/outbox-enqueue.ts',

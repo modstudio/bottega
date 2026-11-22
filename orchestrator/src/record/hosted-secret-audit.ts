@@ -3,13 +3,18 @@
 import type { SQL } from 'bun'
 import { getTableName, type Table } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { contextItem } from '../../../shared/record/schema-context-items.ts'
 import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
-import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from '../../../shared/record/schema-hub.ts'
+import {
+  hubNote,
+  hubTask,
+  hubTaskComment,
+  hubTaskDocument,
+} from '../../../shared/record/schema-hub.ts'
 import { question } from '../../../shared/record/schema-question.ts'
 import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
 import { workflowVersion } from '../../../shared/record/schema-workflow-catalogue.ts'
-import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import {
   redactSecretShaped,
@@ -205,17 +210,25 @@ async function hostedAuditCells(postgres: SQL): Promise<HostedSecretAuditCell[]>
         `SELECT ${declaration.id.name}::text AS id, ${timestamp} AS created_at, ${column.name}::text AS value FROM ${table} WHERE ${column.name} IS NOT NULL`,
       )
       for (const row of rows as Array<Record<string, unknown>>) {
-        cells.push({
-          table,
-          column: column.name,
-          id: String(row.id),
-          createdAt: typeof row.created_at === 'string' ? row.created_at : '-',
-          value: typeof row.value === 'string' ? row.value : null,
-        })
+        cells.push(hostedAuditCell(table, column.name, row))
       }
     }
   }
   return cells
+}
+
+function hostedAuditCell(
+  table: string,
+  column: string,
+  row: Record<string, unknown>,
+): HostedSecretAuditCell {
+  return {
+    table,
+    column,
+    id: String(row.id),
+    createdAt: typeof row.created_at === 'string' ? row.created_at : '-',
+    value: typeof row.value === 'string' ? row.value : null,
+  }
 }
 
 export async function auditHostedSecrets(

@@ -13,8 +13,7 @@ test.each([
 ] as const)('$name stores fixture credentials masked', async ({ path, dependency }) => {
   const secret = 'ghp_123456789012345678901234567890123456'
   let stored = ''
-  const generic =
-    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const input =
     dependency === 'create'
       ? { project: 'workshop', title: generic, body: `${generic} quoted ${secret}` }

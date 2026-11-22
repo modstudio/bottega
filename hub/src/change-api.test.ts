@@ -38,8 +38,7 @@ const pushRequest = (body: unknown, space = 'space-b') =>
 
 test('task-comment push stores fixture credentials masked', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
-  const generic =
-    'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const id = '01990000-0000-7000-8000-000000000101'
   let storedBody = ''
   const response = await changeApi(

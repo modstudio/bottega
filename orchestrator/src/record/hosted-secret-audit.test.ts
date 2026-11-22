@@ -2,7 +2,12 @@ import { expect, test } from 'bun:test'
 import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { contextItem } from '../../../shared/record/schema-context-items.ts'
 import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
-import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from '../../../shared/record/schema-hub.ts'
+import {
+  hubNote,
+  hubTask,
+  hubTaskComment,
+  hubTaskDocument,
+} from '../../../shared/record/schema-hub.ts'
 import { question } from '../../../shared/record/schema-question.ts'
 import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
 import { workflowVersion } from '../../../shared/record/schema-workflow-catalogue.ts'
