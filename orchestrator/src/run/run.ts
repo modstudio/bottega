@@ -115,6 +115,7 @@ import {
   reportProbeOverrides,
 } from './run-probe-launch.ts'
 import { completeRunStartup } from './run-process.ts'
+import { runProjectAttribution } from './run-project-attribution.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import {
@@ -274,7 +275,7 @@ export async function run(
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
+  const attribution = runProjectAttribution(runProjectName, opts.projectRecordId)
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
     try {
@@ -287,18 +288,19 @@ export async function run(
       else {
         const links = await admitNewRunReference({
           projectName: runProjectName,
-          projectRecordId: runProjectId,
+          projectRecordId: attribution.namedProjectRecordId,
           key: opts.key ?? null,
           cwd: callerCwd,
           launchCwd: callerCwd,
           probe: Boolean(opts.probe),
         })
+        const rowProjectId = attribution.rowProjectId(links.projectRecordId)
         recordNeverStartedRunFailure({
           recordId: failedId,
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: links.projectRecordId,
+          projectRecordId: rowProjectId,
           taskRecordId: links.taskRecordId,
           probe: Boolean(opts.probe),
           cwd: callerCwd,
@@ -324,7 +326,7 @@ export async function run(
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
-    projectRecordId: runProjectId,
+    projectRecordId: attribution.namedProjectRecordId,
     key: rt.attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd }),
     repoJob,
     callerCwd,
@@ -514,7 +516,8 @@ export async function run(
     writesJob,
     repoJob,
     runProjectName,
-    runProjectId,
+    namedProjectRecordId: attribution.namedProjectRecordId,
+    rowProjectId: attribution.rowProjectId,
     reason,
     vendorSession,
     pack,
@@ -570,9 +573,10 @@ export async function run(
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
+    runProjectRecordId: projectId,
   } = claimedRun
   const localMachineId = machineId()
-  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)

@@ -31,6 +31,7 @@ import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
+import type { RunOptions } from '../run/run-options.ts'
 import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { checkDoc, compilePack } from './canon.ts'
 import {
@@ -169,7 +170,11 @@ function checkAsksInsteadOfDeciding(reply: WorkerReply | ReviewReply | string): 
       why: `status is ${worker.status} with no real question naming the unresolved choice`,
     }
   }
-  const named = realQuestions(worker).some((item) => ASKING_CHOICE.test(item.question))
+  const named = realQuestions(worker).some(
+    (item) =>
+      ASKING_CHOICE.test(item.question) ||
+      (item.kind === 'choice' && item.options.some(({ name }) => ASKING_CHOICE.test(name))),
+  )
   if (!named) {
     return { pass: false, why: 'asked, but no real question named the JSON-file vs SQLite choice' }
   }
@@ -362,6 +367,27 @@ function evalPack(
   const pack = compilePack({ job: ev.job, cwd: project.path })
   const decision = decideCanonEvalPack({ project, pack })
   return { pack, canonSha: decision.canonSha }
+}
+
+/** Build a scratch probe whose run row, but not its preflight or lens, carries the eval project. */
+export function canonEvalProbeRunOptions(input: {
+  ev: Pick<CanonEval, 'job' | 'prompt' | 'slug'>
+  project: CanonEvalProject
+  agent: string
+  repo: string
+  pack: RunOptions['canonPack']
+}): RunOptions {
+  return {
+    job: input.ev.job,
+    prompt: input.ev.prompt,
+    agent: input.agent,
+    probe: true,
+    cwd: input.repo,
+    projectRecordId: input.project.recordId,
+    canonPack: input.pack,
+    lens: JOBS[input.ev.job]?.findings ? CANON_EVAL_LENS : undefined,
+    label: `canon-eval:${input.ev.slug}`,
+  }
 }
 
 /** Compile the pack an eval would receive without creating or running its scratch repository. */
@@ -598,16 +624,7 @@ export async function runCanonEvals(opts: {
           continue
         }
         const result = await runCanonEvalAttempt(
-          {
-            job: ev.job,
-            prompt: ev.prompt,
-            agent,
-            probe: true,
-            cwd: repo,
-            canonPack: pack,
-            lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
-            label: `canon-eval:${ev.slug}`,
-          },
+          canonEvalProbeRunOptions({ ev, project, agent, repo, pack }),
           (id) => {
             runId = id
           },

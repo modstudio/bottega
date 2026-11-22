@@ -23,6 +23,7 @@ import {
 import { upsertProject } from '../project/projects.ts'
 import { claimRun, prepareReadOnlyRunTemp } from './run-claim.ts'
 import { harnessAgent } from './run-harness-launch.ts'
+import { runProjectAttribution } from './run-project-attribution.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('read-only run temp is private and refuses paths that are not real directories', () => {
@@ -107,7 +108,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       writesJob: false,
       repoJob: false,
       runProjectName: null,
-      runProjectId: null,
+      ...runProjectAttribution(null),
       reason: 'test',
       vendorSession: null,
       pack: null,
@@ -145,7 +146,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     const projectRecordId = newRecordId()
     upsertProject({ recordId: projectRecordId, name: 'claim-fixture', path: runsDir })
     claimInput.runProjectName = 'claim-fixture'
-    claimInput.runProjectId = projectRecordId
+    Object.assign(claimInput, runProjectAttribution('claim-fixture'))
     const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)
@@ -182,6 +183,39 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
         )
         .get(claimed.claim.id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+    const inheritedProjectRoot = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'asking',
+      projectRecordId,
+    })
+    const derivedProjectTurn = await claimRun({
+      ...claimInput,
+      opts: {
+        job: 'review-lens',
+        resume: {
+          kind: 'continue',
+          parent: inheritedProjectRoot,
+          agent: 'codex',
+          turn: 2,
+          sessionId: null,
+          worktree: null,
+        },
+      },
+      stamp: 'derived-project-turn',
+      runProjectName: null,
+      ...runProjectAttribution(null),
+      precomputedLinks: null,
+      carriedContext: { questionIds: [], attachmentWarnings: [] },
+      implicitReview: { branch: null, findings: false },
+    })
+    expect(derivedProjectTurn.runProjectRecordId).toBe(projectRecordId)
+    expect(
+      db()
+        .query('SELECT project_record_id FROM run WHERE record_id=?')
+        .get(derivedProjectTurn.claim.id),
+    ).toEqual({ project_record_id: projectRecordId })
 
     const implicit = await claimRun({
       ...claimInput,
