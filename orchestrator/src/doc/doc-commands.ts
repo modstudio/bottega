@@ -24,6 +24,13 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import {
+  readDoc as authoritativeDoc,
+  readDocForAudience as authoritativeDocForAudience,
+  readDocMetadata as authoritativeDocMetadata,
+  readDocs as authoritativeDocs,
+  readOpenResumes,
+} from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import { searchDocs } from './doc-search-service.ts'
@@ -33,14 +40,11 @@ import {
   diffDocRevisions,
   docSubjects,
   exportDocs,
-  getDoc,
-  getDocForAudience,
   importDocs,
   lintStoredDoc,
-  listDocMetadata,
+  type listDocMetadata,
   listDocRevisions,
   listDocs,
-  listOpenResumes,
   readDocRevision,
   removeDoc,
   reorderDocs,
@@ -104,8 +108,8 @@ export function userAddressScope(user: boolean, explicitScope: string | undefine
   return user ? (explicitScope ?? 'canon') : explicitScope
 }
 
-function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
-  const linted = listedLintedDocs(flags, lintStoredDoc)
+async function lintDocs(flags: DocFlags, presentation: DocPresentation): Promise<void> {
+  const linted = await listedLintedDocs(flags, lintStoredDoc)
   const findings = linted.flatMap(projectListedDocFindings)
   const summary = summarizeDocLint(
     linted.map(({ doc, findings: docFindings }) => ({
@@ -132,26 +136,31 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   if (findings.some(({ level }) => level === 'error')) presentation.exitCode?.(1)
 }
 
-function listedLintedDocs(
+async function listedLintedDocs(
   flags: DocFlags,
   lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
   const scope = flags.flag('scope')
   const subject = flags.flag('subject') ?? null
-  return listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) }).map((doc) => ({
-    doc,
-    findings: lint(doc),
-  }))
+  return (await authoritativeDocs({ scope, ...(flags.has('subject') ? { subject } : {}) })).map(
+    (doc) => ({
+      doc,
+      findings: lint(doc),
+    }),
+  )
 }
 
-function listedDocFindings(
+async function listedDocFindings(
   flags: DocFlags,
   lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
-  return listedLintedDocs(flags, lint).flatMap(projectListedDocFindings)
+  return (await listedLintedDocs(flags, lint)).flatMap(projectListedDocFindings)
 }
 
-function projectListedDocFindings({ doc, findings }: ReturnType<typeof listedLintedDocs>[number]) {
+function projectListedDocFindings({
+  doc,
+  findings,
+}: Awaited<ReturnType<typeof listedLintedDocs>>[number]) {
   return findings.map((finding) => ({
     scope: doc.scope,
     subject: doc.subject,
@@ -164,10 +173,10 @@ function docWarningAddress(doc: { scope: string; subject: string | null; slug: s
   return `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
 }
 
-function listDocWarnings(flags: DocFlags, presentation: DocPresentation): void {
+async function listDocWarnings(flags: DocFlags, presentation: DocPresentation): Promise<void> {
   const scope = flags.flag('scope')
   if (!scope) throw new Error(`${PLATFORM_SLUG} doc warnings --scope S [--subject X] [--json]`)
-  const warnings = listedDocFindings(flags, storedDocWarnings).map(
+  const warnings = (await listedDocFindings(flags, storedDocWarnings)).map(
     ({ scope: warningScope, subject, slug, line, message, remedy }) => ({
       address: docWarningAddress({ scope: warningScope, subject, slug }),
       line,
@@ -295,14 +304,14 @@ async function handledEarlyDocCommand(
   flags: DocFlags,
   presentation: DocPresentation,
 ): Promise<boolean> {
-  if (sub === 'lint') lintDocs(flags, presentation)
-  else if (sub === 'warnings') listDocWarnings(flags, presentation)
+  if (sub === 'lint') await lintDocs(flags, presentation)
+  else if (sub === 'warnings') await listDocWarnings(flags, presentation)
   else if (sub === 'search') await semanticSearch(argv, flags, presentation)
   else return false
   return true
 }
 
-function keywordListDocs(
+async function keywordListDocs(
   filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
   match: string | undefined,
   bodyMatch: string | undefined,
@@ -310,15 +319,15 @@ function keywordListDocs(
   const normalizedMatch = match?.toLocaleLowerCase()
   const metadata = [
     ...(match !== undefined
-      ? listDocMetadata({ ...filters, match }).filter((doc) =>
+      ? (await authoritativeDocMetadata({ ...filters, match })).filter((doc) =>
           [doc.title, doc.slug].some((value) =>
             value.toLocaleLowerCase().includes(normalizedMatch!),
           ),
         )
       : []),
-    ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
+    ...(bodyMatch !== undefined ? await authoritativeDocMetadata({ ...filters, bodyMatch }) : []),
   ]
-  return [...new Map(metadata.map((doc) => [doc.record_id, doc])).values()]
+  const selected = [...new Map(metadata.map((doc) => [doc.record_id, doc])).values()]
     .sort(
       (left, right) =>
         compareStoreText(left.scope, right.scope) ||
@@ -329,24 +338,24 @@ function keywordListDocs(
     .slice(0, DOC_KEYWORD_LIST_LIMIT)
     .map((doc) =>
       filters.audience
-        ? getDocForAudience(
+        ? authoritativeDocForAudience(
             doc.scope,
             doc.subject,
             doc.slug,
             filters.audience as (typeof DOC_AUDIENCES)[number],
             filters.owner ?? null,
           )
-        : getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null),
+        : authoritativeDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null),
     )
-    .filter((doc) => doc !== null)
+  return (await Promise.all(selected)).filter((doc) => doc !== null)
 }
 
-function listedDocs(
+async function listedDocs(
   filters: NonNullable<Parameters<typeof listDocMetadata>[0]>,
   match: string | undefined,
   bodyMatch: string | undefined,
 ) {
-  if (match === undefined && bodyMatch === undefined) return listDocs(filters)
+  if (match === undefined && bodyMatch === undefined) return authoritativeDocs(filters)
   return keywordListDocs(filters, match, bodyMatch)
 }
 
@@ -356,8 +365,8 @@ function readDoc(
   audience: DocAudience | undefined,
 ) {
   return audience
-    ? getDocForAudience(address.scope, address.subject, slug, audience, address.owner)
-    : getDoc(address.scope, address.subject, slug, address.owner)
+    ? authoritativeDocForAudience(address.scope, address.subject, slug, audience, address.owner)
+    : authoritativeDoc(address.scope, address.subject, slug, address.owner)
 }
 
 function readDocFilters(
@@ -383,19 +392,19 @@ function readDocSubject(
   return address.subject
 }
 
-function handledReadDocCommand(
+async function handledReadDocCommand(
   sub: string,
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
-): boolean {
+): Promise<boolean> {
   const { has } = flags
   if (sub === 'list') {
     const filters = readDocFilters(flags, address)
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
-    const rows = listedDocs(filters, match, bodyMatch)
+    const rows = await listedDocs(filters, match, bodyMatch)
     if (has('json'))
       presentation.log(
         JSON.stringify(
@@ -419,7 +428,7 @@ function handledReadDocCommand(
   const slug = argv[2]
   if (!slug || !address.scope)
     throw new Error(`${PLATFORM_SLUG} doc ${sub} <slug> --scope S [--subject X]`)
-  const doc = readDoc(
+  const doc = await readDoc(
     {
       scope: address.scope,
       subject: readDocSubject(flags, address),
@@ -717,7 +726,7 @@ async function handledReadOrRevisionDocCommand(
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<boolean> {
   return (
-    handledReadDocCommand(sub, argv, flags, presentation, address) ||
+    (await handledReadDocCommand(sub, argv, flags, presentation, address)) ||
     (await handledRevisionDocCommand(sub, argv, flags, presentation, address.owner, ports))
   )
 }
@@ -848,7 +857,7 @@ async function selectedDocHistory(
   owner: string | null,
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<DocHistory | null> {
-  const doc = getDoc(address.scope, address.subject, address.slug, owner)
+  const doc = await authoritativeDoc(address.scope, address.subject, address.slug, owner)
   return doc ? ports.revisionHistory({ ...address, recordId: doc.record_id }) : null
 }
 
@@ -931,8 +940,8 @@ async function handleHistoryDocCommand(
   if (flags.has('user') && (scope !== 'canon' || subject !== null))
     throw new Error('--user history address must be canon -')
   const address = { scope, subject, slug }
-  const revisions = listDocRevisions(scope, subject, slug, owner)
   const selectedHistory = await selectedDocHistory(address, owner, ports)
+  const revisions = selectedHistory ? [] : listDocRevisions(scope, subject, slug, owner)
   if (sub === 'restore') {
     await restoreDocCommand(argv, flags, presentation, owner, address, selectedHistory, revisions)
     return true
@@ -966,13 +975,13 @@ function printRestoreResult(
   printDocWriteWarnings(restored.writeWarnings, presentation)
 }
 
-function handleResumesDocCommand(
+async function handleResumesDocCommand(
   sub: string,
   flags: DocFlags,
   presentation: DocPresentation,
-): boolean {
+): Promise<boolean> {
   if (sub !== 'resumes') return false
-  const result = listOpenResumes(flags.flag('cwd') ?? presentation.cwd())
+  const result = await readOpenResumes(flags.flag('cwd') ?? presentation.cwd())
   if (flags.has('json')) presentation.log(JSON.stringify(result))
   else {
     for (const row of result.open)
@@ -1014,7 +1023,7 @@ export async function docCommand(
   if (await handleRemoveDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (await handleSubjectsOrTransferDocCommand(sub, argv, flags, presentation)) return
   if (await handleHistoryDocCommand(sub, argv, flags, presentation, owner, ports)) return
-  if (handleResumesDocCommand(sub, flags, presentation)) return
+  if (await handleResumesDocCommand(sub, flags, presentation)) return
   throw new Error(
     `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )

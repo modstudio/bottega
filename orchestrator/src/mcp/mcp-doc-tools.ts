@@ -21,13 +21,15 @@ import {
   getContext,
   setContextItem,
 } from '../doc/context-service.ts'
+import {
+  readDoc as authoritativeDoc,
+  readDocForAudience as authoritativeDocForAudience,
+  readDocMetadata as authoritativeDocMetadata,
+} from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
-  getDoc,
-  getDocForAudience,
   getDocRevision,
-  listDocMetadata,
   listDocRevisions,
   removeDoc,
   setDoc,
@@ -201,7 +203,7 @@ function registerReadDocTools(server: McpServer): void {
     }) => {
       const owner = await docToolOwner(user, subject)
       return text(
-        listDocMetadata({
+        await authoritativeDocMetadata({
           scope: user ? 'canon' : scope,
           subject: user ? null : subject,
           scopes,
@@ -234,8 +236,14 @@ function registerReadDocTools(server: McpServer): void {
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
       const doc = audience
-        ? getDocForAudience(resolvedScope, user ? null : subject, slug, audience, owner)
-        : getDoc(resolvedScope, user ? null : subject, slug, owner)
+        ? await authoritativeDocForAudience(
+            resolvedScope,
+            user ? null : subject,
+            slug,
+            audience,
+            owner,
+          )
+        : await authoritativeDoc(resolvedScope, user ? null : subject, slug, owner)
       if (!doc) throw new Error(`no ${resolvedScope} doc "${slug}"`)
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },

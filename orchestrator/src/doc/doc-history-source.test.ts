@@ -16,7 +16,7 @@ describe('document history source', () => {
 
   test.each([
     ['revisions', 'print-hosted'],
-    ['not-found', 'read-local'],
+    ['not-found', 'not-found'],
     ['failed', 'refuse'],
   ] as const)('maps hosted %s to %s', (outcome, decision) => {
     expect(decideHostedRevisionRead(outcome)).toBe(decision)

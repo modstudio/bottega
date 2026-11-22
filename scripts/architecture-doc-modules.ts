@@ -191,7 +191,11 @@ export const docModules: DocModule[] = [
     './docs.ts',
     './doc-revision-store.ts',
   ]),
-  module('orchestrator/src/doc/doc-consume-command.ts', ['../../../shared/brand.ts', './docs.ts']),
+  module('orchestrator/src/doc/doc-consume-command.ts', [
+    '../../../shared/brand.ts',
+    './doc-authoritative-read.ts',
+    './docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-reference-read.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -269,6 +273,16 @@ export const docModules: DocModule[] = [
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',
+  ]),
+  module('orchestrator/src/doc/doc-authoritative-read.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/doc-sections.ts',
+    '../../../shared/docs.ts',
+    '../record/record-read-authority.ts',
+    '../project/projects.ts',
+    './doc-hosted-client.ts',
+    './doc-read-store.ts',
+    './doc-resume-frontmatter.ts',
   ]),
   module('orchestrator/src/doc/doc-history-source.ts', []),
   module('orchestrator/src/doc/doc-hosted-history.ts', [

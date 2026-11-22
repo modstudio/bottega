@@ -140,8 +140,7 @@ export async function readHostedDocRevisions(input: {
   } catch (error) {
     const outcome =
       error instanceof RecordApiRequestError && error.status === 404 ? 'not-found' : 'failed'
-    const decision = decideHostedRevisionRead(outcome)
-    if (decision === 'read-local') return null
+    decideHostedRevisionRead(outcome)
     const cause = error instanceof Error ? error.message : String(error)
     throw new Error(
       `could not read hosted revisions for ${input.address}: ${cause}; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry when the hosted record is reachable`,
