@@ -36,6 +36,32 @@ export type StoredRevision = Pick<
   | 'at'
 >
 
+export function hostedStoredRevision(
+  revision: StoredRevision,
+  doc: StoredDoc | undefined,
+): RecordDocRevision {
+  return {
+    ...revision,
+    owner: doc?.owner ?? null,
+    withheldForAudience: false,
+    audiences: ['technical'],
+    parentId: null,
+    position: 0,
+    featured: false,
+    status: doc?.status ?? 'current',
+    kind: doc?.kind ?? 'working',
+    form: null,
+    articleSubject: null,
+    relatedSubjects: [],
+    sourceFiles: [],
+    checkedAgainstCommit: null,
+    summary: null,
+    replacementSlug: null,
+    authorName: null,
+    sessionId: null,
+  }
+}
+
 type DocQuery = Parameters<RecordApiClient['listDocs']>[0]
 
 function matchesClassification(query: DocQuery, doc: StoredDoc): boolean {

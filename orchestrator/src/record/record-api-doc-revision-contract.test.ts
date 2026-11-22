@@ -10,8 +10,8 @@ import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { hostedDocClient } from '../doc/doc-hosted-client.ts'
 import { recordApiClientOver } from './record-api-client.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
-import type { RecordDocRevision } from './record-doc-mapping.ts'
 import { identity } from './record-api-identity.fixture.ts'
+import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 const contractRoutes = ['GET /v1/doc-revisions/:revisionId'] as const
 
@@ -49,9 +49,7 @@ test('a revision outside the caller readable spaces is not found', async () => {
     { ...idleSubjectDeps(), ...idleRecordApiDeps() },
     {
       readDocRevision: async (input: { spaceIds: string[] }) =>
-        input.spaceIds.includes('space-b')
-          ? revisionWithBody('secret')
-          : null,
+        input.spaceIds.includes('space-b') ? revisionWithBody('secret') : null,
     },
   )
 
