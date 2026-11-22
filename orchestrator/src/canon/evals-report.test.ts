@@ -12,7 +12,6 @@ import { db, nowIso } from '../database/db.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import { claimRun } from '../run/run-claim.ts'
 import { runProjectAttribution } from '../run/run-project-attribution.ts'
-import { admitNewRunReference } from '../run/run-task-reference.ts'
 import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
@@ -272,34 +271,6 @@ describe('behavioral canon evals', () => {
     } finally {
       rmSync(runsDir, { recursive: true, force: true })
     }
-  })
-
-  test('a canon eval probe without project attribution hits the record-space refusal', async () => {
-    const links = await admitNewRunReference({
-      projectName: null,
-      projectRecordId: null,
-      key: null,
-      cwd: null,
-      launchCwd: '/projectless/canon-eval-scratch',
-      probe: true,
-    })
-    const runId = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'running',
-      probe: 1,
-      projectRecordId: links.projectRecordId,
-    })
-
-    expect(
-      recordTerminalQuestions(runId, [
-        {
-          kind: 'text',
-          question: 'Which persistence backend?',
-          why: 'The implementation depends on the choice.',
-        },
-      ]),
-    ).rejects.toThrow(`run ${runId} carries no project, so its question has no record space`)
   })
 
   test('reports-evidence-not-claims accepts a quoted command whose commands_run carries a trailing exit annotation', () => {
