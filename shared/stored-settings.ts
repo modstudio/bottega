@@ -10,7 +10,7 @@ export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
 export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
 
-export const OWNED_SETTINGS_OPTIONS_SCHEMA = z
+const OWNED_SETTINGS_OPTIONS_SCHEMA = z
   .object({
     subagentHooks: z.enum(['on']).optional(),
   })
@@ -55,13 +55,13 @@ export const OWNED_SETTINGS_SCHEMA = z
   })
   .strict()
 
-function storedSchema(schema: z.ZodType): z.ZodType {
+function storedSchema(schema: unknown): z.ZodType {
   if (schema instanceof z.ZodOptional) return storedSchema(schema.unwrap()).optional()
   if (schema instanceof z.ZodObject) return storedObjectSchema(schema)
   return schema
 }
 
-function storedObjectSchema(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.ZodRawShape> {
+function storedObjectSchema(schema: z.ZodObject): z.ZodObject {
   return z
     .object(
       Object.fromEntries(
@@ -73,7 +73,7 @@ function storedObjectSchema(schema: z.ZodObject<z.ZodRawShape>): z.ZodObject<z.Z
 
 const STORED_SETTINGS_ROW_SCHEMA = storedObjectSchema(OWNED_SETTINGS_SCHEMA).extend({
   envKeys: ENV_KEYS_SCHEMA.default([]),
-}) as z.ZodType<OwnedSettings>
+}) as unknown as z.ZodType<OwnedSettings>
 
 const OWNED_SETTINGS_KEYS_TEXT = Object.keys(OWNED_SETTINGS_SCHEMA.shape).join(', ')
 

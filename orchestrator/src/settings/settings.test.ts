@@ -9,8 +9,8 @@ import {
   parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
-  secretShapedPaths,
   SETTINGS_PARSE_REFUSAL,
+  secretShapedPaths,
   serializeOwnedSettings,
   validateOwnedSettingsBody,
 } from './settings.ts'

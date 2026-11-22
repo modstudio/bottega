@@ -14,10 +14,10 @@ import {
   OWNED_AUTO_MODE_SCHEMA,
   OWNED_SETTINGS_OPTIONS_ACCEPTED,
   OWNED_SETTINGS_SCHEMA,
-  STORED_SETTINGS_REMEDY,
   type OwnedAutoMode,
   type OwnedSettings,
   parseStoredSettingsRow,
+  STORED_SETTINGS_REMEDY,
   StoredSettingsRowError,
 } from '../../../shared/stored-settings.ts'
 
@@ -247,7 +247,7 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
 
 function firstUnknownObjectKeyPath(
   value: Record<string, unknown>,
-  schema: z.ZodObject<z.ZodRawShape>,
+  schema: z.ZodObject,
   prefix = '',
 ): string | null {
   for (const key of Object.keys(value)) {
@@ -263,7 +263,7 @@ function firstUnknownObjectKeyPath(
   return null
 }
 
-function unwrapObjectSchema(schema: z.ZodType): z.ZodObject<z.ZodRawShape> | null {
+function unwrapObjectSchema(schema: unknown): z.ZodObject | null {
   let current = schema
   while (current instanceof z.ZodOptional) current = current.unwrap()
   return current instanceof z.ZodObject ? current : null

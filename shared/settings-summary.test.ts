@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { OwnedSettings } from './stored-settings.ts'
 import { summarizeSettings } from './settings-summary.ts'
+import type { OwnedSettings } from './stored-settings.ts'
 
 test('settings summaries keep text outside secret-shaped spans', () => {
   expect(
