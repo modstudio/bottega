@@ -67,6 +67,8 @@ test.each(['alephbeis', 'starship'])(
           liveAfter: 'candidate',
           liveMatchesCandidate: true,
           warning: null,
+          alreadyLive: false,
+          landingAhead: false,
         }
       },
       releaseCommand: () => {
