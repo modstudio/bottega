@@ -136,6 +136,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       if (!doc) throw new Error('doc not found')
       return doc
     },
+    getDocRevision: unused,
     listRevisions: async (id) =>
       imports
         .filter((row) => row.doc.id === id)

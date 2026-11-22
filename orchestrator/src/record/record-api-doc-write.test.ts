@@ -54,7 +54,6 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     searchPublicDocs: async () => [],
     searchDocs: async () => [],
     readDoc: async () => null,
-    readDocRevision: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
     reorderDocs: async ({ orderedIds }) => ({ orderedIds }),

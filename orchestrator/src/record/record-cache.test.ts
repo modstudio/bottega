@@ -34,6 +34,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     listDocs: async () => ({ items: [], nextCursor: null }),
     listChanges: async () => ({ reset: { cursor: 'test-change-cursor', tables: [] } }),
     getDoc: async () => ({}),
+    getDocRevision: async () => ({}),
     listRevisions: async () => [],
     upsertDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
     reorderDocs: async ({ orderedIds }) => ({ orderedIds }),

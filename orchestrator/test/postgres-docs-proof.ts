@@ -83,6 +83,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
       return read(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     getDoc: unused,
+    getDocRevision: unused,
     listRevisions: unused,
     upsertDoc: unused,
     reorderDocs: async (input, destination) => {
