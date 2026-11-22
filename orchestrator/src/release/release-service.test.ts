@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { verifiedReleaseCheckoutRestore } from './release-checkout.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
   newestSuccessfulReleasedCommit,
-  verifiedReleaseCheckoutRestore,
 } from './release-service.ts'
 
 const PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000002151'

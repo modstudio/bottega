@@ -101,7 +101,7 @@ export function verifiedReleaseCheckoutRestore(
   }
 }
 
-function fastForward(path: string, branch: string): void {
+function fastForwardReleaseBranch(path: string, branch: string): void {
   const head = git(['rev-parse', 'HEAD'], path)
   const remoteHead = git(['rev-parse', `origin/${branch}`], path)
   if (
@@ -131,7 +131,7 @@ export function withReleaseCheckout<T extends CheckoutResult>(
   let warning: string | null = null
   try {
     if (transition.switchToRung) git(['switch', rungBranch], path)
-    if (transition.fastForward) fastForward(path, rungBranch)
+    if (transition.fastForward) fastForwardReleaseBranch(path, rungBranch)
     outcome = release()
   } catch (cause) {
     failure = cause

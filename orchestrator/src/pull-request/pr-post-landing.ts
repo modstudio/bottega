@@ -462,8 +462,6 @@ export async function completePullRequestPostLanding(input: {
       prNumber: input.pullRequest.number,
       promotion: { output: '' },
       requiredRelease: provedRequiredRelease,
-      cleanupWasFenced: true,
-      cleanupRecovery: requiredMergeCommand(input.target, input.depth),
     })
   }
   const move = moveMainForPostLanding(

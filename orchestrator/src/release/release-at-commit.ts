@@ -2,8 +2,9 @@
 /** Provisions, deploys from, and releases one detached checkout at an exact commit. */
 
 import { randomUUID } from 'node:crypto'
-import { createHookTree, removeHookTree } from '../hook-tree/tree.ts'
-import type { Project } from '../project/projects.ts'
+import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
+import { createWithTool } from '../worktree/worktree-create.ts'
+import { removeFor } from '../worktree/worktree-remove.ts'
 import { type ReleaseResult, releaseProjectFromCheckout } from './release-service.ts'
 
 export type ReleaseAtCommitReport = {
@@ -19,25 +20,33 @@ export async function releaseAtCommit(input: {
   commit: string
 }): Promise<ReleaseAtCommitReport> {
   const provisionStarted = Date.now()
-  const path = createHookTree({
-    cwd: input.project.path,
-    name: `release-${input.rung}-${randomUUID()}`,
-    base: input.commit,
-    detached: true,
-  })
+  const treeId = `release-${input.rung}-${randomUUID()}`
+  const tool = resolvedWorktreeTool(input.project)
+  if (!tool) throw new Error(`project ${input.project.name} has no sanctioned worktree lifecycle`)
+  const worktree = createWithTool(
+    tool,
+    input.project.path,
+    treeId,
+    undefined,
+    undefined,
+    input.commit,
+    undefined,
+    true,
+  )
   const provisionMs = Date.now() - provisionStarted
   let result: ReleaseResult | undefined
   let failure: unknown
   const deployStarted = Date.now()
   try {
-    result = releaseProjectFromCheckout(input.project.name, input.rung, path, input.commit)
+    result = releaseProjectFromCheckout(input.project.name, input.rung, worktree.path, input.commit)
   } catch (cause) {
     failure = cause
   }
   const deployMs = Date.now() - deployStarted
   const releaseStarted = Date.now()
   try {
-    await removeHookTree(path)
+    const removed = removeFor(worktree, input.project.path, false, false, treeId)
+    if (!removed.removed) throw new Error(removed.detail)
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     if (failure) {

@@ -233,6 +233,41 @@ test('a required rung is proved before main moves and is not delegated again', a
   )
 })
 
+test('an unproved pre-move rung leaves main unmoved and exits 21', async () => {
+  const events: string[] = []
+  const outcome = await complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      releaseBeforeMove: async () => ({
+        required: ['hosted-api'],
+        releases: [
+          {
+            rung: 'hosted-api',
+            required: true,
+            deployExit: 1,
+            outputTail: 'health proof failed',
+            satisfied: false,
+            deployed: true,
+          },
+        ],
+        satisfied: false,
+      }),
+      moveMain: () => events.push('move-main'),
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: '', exitCode: 0 }
+      },
+    },
+  })
+  expect(events).toEqual([])
+  expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+  expect(outcome.output).toContain('health proof failed')
+  expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
+})
+
 test('another project uses the plain move and the current installation hand-off', async () => {
   const movesInstallation = projectMovesInstallation(project)
 

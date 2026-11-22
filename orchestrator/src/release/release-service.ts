@@ -51,8 +51,6 @@ import {
   trunkFreshnessDecision,
 } from './release-decision.ts'
 
-export { verifiedReleaseCheckoutRestore } from './release-checkout.ts'
-
 import {
   finishReleaseLedgerEntry,
   startReleaseLedgerEntry,

@@ -33,11 +33,11 @@ export const releaseModules = [
     file: 'orchestrator/src/release/release-at-commit.ts',
     allowed: [
       'node:crypto',
-      'orchestrator/src/hook-tree/tree.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/release/release-service.ts',
+      'orchestrator/src/worktree/worktree-create.ts',
+      'orchestrator/src/worktree/worktree-remove.ts',
     ],
-    typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
   },
   {
     file: 'orchestrator/src/release/release-checkout.ts',
