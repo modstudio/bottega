@@ -66,6 +66,7 @@ export const branchModuleSpecs = [
     file: 'orchestrator/src/branch/branch-key-report.ts',
     allowed: [
       '../project/projects.ts',
+      '../run/synthetic-lifecycle-job.ts',
       './branch-containment.ts',
       './branch-proof-observer.ts',
       './branch-state.ts',

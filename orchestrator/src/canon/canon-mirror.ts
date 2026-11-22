@@ -37,7 +37,7 @@ import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-curso
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
-import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
+import { CANON_MIRROR_JOB, canonMirrorBranchName } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'
@@ -270,7 +270,12 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
       ]),
     ),
   admitPullRequest: (project, branch) =>
-    assertPullRequestTaskCursorAdmission({ command: 'pr create', project, branch }),
+    assertPullRequestTaskCursorAdmission({
+      command: 'pr create',
+      project,
+      branch,
+      systemJob: CANON_MIRROR_JOB,
+    }),
   openPullRequest: (path, title, bodyFile) => {
     createPullRequestAdmitted(['--title', title, '--body-file', bodyFile], {}, path)
     const opened = systemCanonMirrorPort.pullRequest(
@@ -915,7 +920,7 @@ async function mirrorProject(
     }
   const started = Date.now()
   const runId = createLifecycleRun(project, key)
-  const branch = `${key}-canon-mirror`
+  const branch = canonMirrorBranchName(key)
   const path = join(project.path, '.claude', 'worktrees', 'canon-mirror')
   const execution = emptyMirrorExecution()
   let releasePreparation: CloseOutPreparation | null = null
