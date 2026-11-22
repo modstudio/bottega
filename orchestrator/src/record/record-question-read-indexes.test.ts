@@ -134,7 +134,11 @@ test('hosted question reads use tenant-table key indexes under RLS', async () =>
       const condition = scan['Index Cond'] ?? scan['Recheck Cond']
       const label = `${name}: ${scan['Node Type']} on ${scan['Relation Name']} ${scan.Alias ?? ''}`
       expect(condition, label).toBeDefined()
-      if (condition?.match(/\b(?:id|parent_run_id|run_id|workflow_cursor_record_id|workflow_task_id)\b/))
+      if (
+        condition?.match(
+          /\b(?:id|parent_run_id|run_id|workflow_cursor_record_id|workflow_task_id)\b/,
+        )
+      )
         continue
       expect(driver, `${label} has only a tenant-space condition`).toBeDefined()
       expect({ relation: scan['Relation Name'], alias: scan.Alias }, label).toEqual(driver!)
