@@ -384,6 +384,22 @@ describe('settings subagents', () => {
   test('unknown choice lists allow and block', async () => {
     await expect(settingsSubagentsCommand('maybe')).rejects.toThrow(/allow or block/)
   })
+
+  test('refuses to change a row whose read has no revision', async () => {
+    await expect(
+      settingsSubagentsCommand('block', {
+        read: async () => ({
+          owner: OWNER,
+          row: {
+            body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+            revision: null,
+          },
+        }),
+      }),
+    ).rejects.toThrow(
+      'refusing settings subagents: the settings row has no revision; upgrade the hosted record and retry',
+    )
+  })
 })
 
 describe('settings render write', () => {

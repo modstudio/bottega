@@ -65,6 +65,11 @@ export async function settingsSubagentsCommand(
   const owned = parseStoredOwnedSettings(row.body)
   const result = editSubagentChoice(owned, choice)
   if (!result.changed) return result
+  if (!row.revision) {
+    throw new Error(
+      'refusing settings subagents: the settings row has no revision; upgrade the hosted record and retry',
+    )
+  }
   await setDoc({
     scope: SETTINGS_SCOPE,
     subject: null,
@@ -74,7 +79,7 @@ export async function settingsSubagentsCommand(
     body: serializeOwnedSettings(owned),
     delivery: 'demand',
     reason: `${choice} Claude subagents`,
-    expectedRevision: row.revision!,
+    expectedRevision: row.revision,
   })
   return result
 }
