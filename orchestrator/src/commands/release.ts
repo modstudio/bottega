@@ -2,7 +2,9 @@
 /** Registers the release adapter. Must not own release policy or persistence. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
 import type { ReleaseAtCommitReport } from '../release/release-at-commit.ts'
+import { releaseProofDecision } from '../release/release-decision.ts'
 import {
   checkRelease,
   type ReleaseResult,
@@ -45,6 +47,33 @@ type ReleaseOptions = {
   json?: boolean
 }
 
+export type ReleaseAtCommitProof = {
+  satisfied: boolean
+  candidate: string
+  live: string | null
+  liveMatchesCandidate: boolean | null
+  exitCode: number
+  failure: string | null
+}
+
+export function releaseAtCommitProof(result: ReleaseResult): ReleaseAtCommitProof {
+  const satisfied = releaseProofDecision({
+    exitCode: result.exitCode,
+    liveMatchesCandidate: result.liveMatchesCandidate,
+    candidateContainsMerge: true,
+  })
+  const mismatch = `release health proof failed: live commit ${result.liveAfter ?? 'unknown'} does not contain candidate ${result.deployed}`
+  return {
+    satisfied,
+    candidate: result.deployed,
+    live: result.liveAfter,
+    liveMatchesCandidate: result.liveMatchesCandidate,
+    exitCode:
+      satisfied || result.exitCode !== 0 ? result.exitCode : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+    failure: satisfied ? null : mismatch,
+  }
+}
+
 async function runRelease(project: string | undefined, options: ReleaseOptions): Promise<void> {
   if (!project)
     throw new Error(
@@ -54,8 +83,10 @@ async function runRelease(project: string | undefined, options: ReleaseOptions):
   const result =
     releaseTree?.result ??
     releaseProject(project, options.rung, options.rollback, options.behindTrunk, options.redeploy)
-  writeReleaseOutput(result, releaseTree, Boolean(options.json))
-  if (result.exitCode !== 0) process.exitCode = result.exitCode
+  const proof = releaseTree ? releaseAtCommitProof(result) : undefined
+  writeReleaseOutput(result, releaseTree, proof, Boolean(options.json))
+  const exitCode = proof?.exitCode ?? result.exitCode
+  if (exitCode !== 0) process.exitCode = exitCode
 }
 
 async function runReleaseAtCommit(
@@ -72,6 +103,7 @@ async function runReleaseAtCommit(
 function writeReleaseOutput(
   result: ReleaseResult,
   releaseTree: ReleaseAtCommitReport | undefined,
+  proof: ReleaseAtCommitProof | undefined,
   json: boolean,
 ): void {
   if (json) {
@@ -86,6 +118,7 @@ function writeReleaseOutput(
                 releaseMs: releaseTree.releaseMs,
               },
               ...(releaseTree.residue ? { releaseTreeResidue: releaseTree.residue } : {}),
+              releaseProof: proof,
             }
           : result,
       ),
@@ -98,6 +131,7 @@ function writeReleaseOutput(
     )
   }
   writeReleaseResult(result)
+  if (proof?.failure) log(proof.failure)
 }
 
 export function register(program: Command): void {

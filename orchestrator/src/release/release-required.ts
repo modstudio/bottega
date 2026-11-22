@@ -666,7 +666,14 @@ export function releaseAfterProvedRequiredRelease(input: {
   const after = input.releaseAfter(remainingPlans)
   const provedByRung = new Map(input.proved.releases.map((release) => [release.rung, release]))
   const afterByRung = new Map(after.releases.map((release) => [release.rung, release]))
-  const releases = input.plans.map(({ rung }) => provedByRung.get(rung) ?? afterByRung.get(rung)!)
+  const releases = input.plans.map((plan) => {
+    const proved = provedByRung.get(plan.rung)
+    if (proved) return proved
+    if (plan.required && plan.canDeployFromTree) {
+      return failure(plan, `required rung ${plan.rung} is missing its pre-move release proof`)
+    }
+    return afterByRung.get(plan.rung) ?? failure(plan, `release rung ${plan.rung} was not run`)
+  })
   return {
     required: input.plans.filter(({ required }) => required).map(({ rung }) => rung),
     releases,
