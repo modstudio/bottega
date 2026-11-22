@@ -1,7 +1,7 @@
 // concern: hosted-secret-audit
 /** Reads declared hosted free-text columns and counts secret-shaped values without retaining evidence. */
 import type { SQL } from 'bun'
-import { getTableName, type Table } from 'drizzle-orm'
+import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { contextItem } from '../../../shared/record/schema-context-items.ts'
@@ -14,8 +14,15 @@ import {
 } from '../../../shared/record/schema-hub.ts'
 import { question } from '../../../shared/record/schema-question.ts'
 import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
-import { workflowVersion } from '../../../shared/record/schema-workflow-catalogue.ts'
+import { workflowTextCopy } from '../../../shared/record/schema-task-flow.ts'
+import {
+  stepCatalogueEvent,
+  stepCatalogueVersion,
+  workflowEvent,
+  workflowVersion,
+} from '../../../shared/record/schema-workflow-catalogue.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
+import { isHostedAuditColumnExcluded } from '../../../shared/hosted-secret-mask.ts'
 import {
   redactSecretShaped,
   type SecretRulePrecision,
@@ -59,87 +66,50 @@ type HostedSecretAuditSchemaEntry = {
   columns: readonly AnyPgColumn[]
 }
 
-/** Schema-bound declaration for every hosted table and free-text column scanned by the audit. */
-export const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] = [
-  {
-    table: hubNote,
-    id: hubNote.id,
-    timestamp: hubNote.createdAt,
-    columns: [hubNote.text, hubNote.area, hubNote.staleReason, hubNote.anchors],
-  },
-  {
-    table: hubTask,
-    id: hubTask.id,
-    timestamp: hubTask.createdAt,
-    columns: [hubTask.title, hubTask.body],
-  },
-  {
-    table: hubTaskComment,
-    id: hubTaskComment.id,
-    timestamp: hubTaskComment.createdAt,
-    columns: [hubTaskComment.body],
-  },
-  {
-    table: hubTaskDocument,
-    id: hubTaskDocument.id,
-    timestamp: hubTaskDocument.createdAt,
-    columns: [hubTaskDocument.title, hubTaskDocument.body],
-  },
-  {
-    table: contextItem,
-    id: contextItem.id,
-    timestamp: contextItem.createdAt,
-    columns: [contextItem.body, contextItem.source, contextItem.target],
-  },
-  {
-    table: question,
-    id: question.id,
-    timestamp: question.createdAt,
-    columns: [
-      question.question,
-      question.answer,
-      question.answerBasis,
-      question.replacement,
-      question.overturnReason,
-    ],
-  },
-  {
-    table: workflowStepText,
-    id: workflowStepText.id,
-    timestamp: workflowStepText.createdAt,
-    columns: [workflowStepText.body],
-  },
-  {
-    table: workflowVersion,
-    id: workflowVersion.id,
-    timestamp: workflowVersion.createdAt,
-    columns: [workflowVersion.definition, workflowVersion.author, workflowVersion.reason],
-  },
-  {
-    table: boardMessage,
-    id: boardMessage.id,
-    timestamp: boardMessage.createdAt,
-    columns: [boardMessage.body],
-  },
-  {
-    table: boardMessageTag,
-    id: boardMessageTag.id,
-    timestamp: null,
-    columns: [boardMessageTag.value],
-  },
-  {
-    table: doc,
-    id: doc.id,
-    timestamp: doc.createdAt,
-    columns: [doc.title, doc.body],
-  },
-  {
-    table: docRevision,
-    id: docRevision.id,
-    timestamp: docRevision.at,
-    columns: [docRevision.title, docRevision.body],
-  },
-]
+const auditTable = (table: Table, id: AnyPgColumn, timestamp: AnyPgColumn | null) => ({
+  table,
+  id,
+  timestamp,
+})
+
+/** One table inventory; scanned columns are derived from these Drizzle schema objects. */
+export const HOSTED_SECRET_AUDIT_TABLES = [
+  auditTable(hubNote, hubNote.id, hubNote.createdAt),
+  auditTable(hubTask, hubTask.id, hubTask.createdAt),
+  auditTable(hubTaskComment, hubTaskComment.id, hubTaskComment.createdAt),
+  auditTable(hubTaskDocument, hubTaskDocument.id, hubTaskDocument.createdAt),
+  auditTable(contextItem, contextItem.id, contextItem.createdAt),
+  auditTable(question, question.id, question.createdAt),
+  auditTable(workflowStepText, workflowStepText.id, workflowStepText.createdAt),
+  auditTable(workflowTextCopy, workflowTextCopy.id, null),
+  auditTable(workflowVersion, workflowVersion.id, workflowVersion.createdAt),
+  auditTable(workflowEvent, workflowEvent.id, workflowEvent.at),
+  auditTable(stepCatalogueVersion, stepCatalogueVersion.id, stepCatalogueVersion.createdAt),
+  auditTable(stepCatalogueEvent, stepCatalogueEvent.id, stepCatalogueEvent.at),
+  auditTable(boardMessage, boardMessage.id, boardMessage.createdAt),
+  auditTable(boardMessageTag, boardMessageTag.id, null),
+  auditTable(doc, doc.id, doc.createdAt),
+  auditTable(docRevision, docRevision.id, docRevision.at),
+] as const
+
+function auditableColumn(column: AnyPgColumn): boolean {
+  const sqlType = column.getSQLType().toLowerCase()
+  return sqlType === 'text' || sqlType.startsWith('varchar') || sqlType === 'jsonb'
+}
+
+/** Every textual schema column except structured fields in the shared exclusion declaration. */
+export const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] =
+  HOSTED_SECRET_AUDIT_TABLES.map((entry) => {
+    const table = getTableName(entry.table)
+    return {
+      ...entry,
+      columns: Object.values(getTableColumns(entry.table)).filter(
+        (column): column is AnyPgColumn =>
+          auditableColumn(column as AnyPgColumn) &&
+          !isHostedAuditColumnExcluded(table, (column as AnyPgColumn).name),
+      ),
+    }
+  })
 
 export const HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS = [
   { table: 'question', column: 'reason' },

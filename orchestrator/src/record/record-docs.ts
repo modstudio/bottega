@@ -4,7 +4,6 @@
 import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
-import { maskHostedWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -731,7 +730,6 @@ function insertImportedRevision(
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
-  input = maskHostedWrite('record.doc.import', input)
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   assertImportAddress(importedDoc)
   assertImportedRevisions(importedDoc, revisions)

@@ -58,6 +58,8 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
         throwHttpErrors: false,
       })
       const body = await response.arrayBuffer()
+      const warning = response.headers.get('warning')
+      if (warning?.includes('299 bottega "masked ')) console.warn(warning)
       const rebuilt = new Response(body, {
         status: response.status,
         statusText: response.statusText,

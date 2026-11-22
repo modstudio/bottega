@@ -1,30 +1,29 @@
 import { expect, test } from 'bun:test'
-import {
-  HOSTED_FREE_TEXT_WRITE_ROUTES,
-  HOSTED_WRITE_SECRET_LEAVES,
-  maskHostedWrite,
-} from './hosted-secret-mask.ts'
+import { maskHostedWrite, withHostedMaskWarnings } from './hosted-secret-mask.ts'
 import { redactSecretShaped } from './secret-shaped.ts'
 
-test('hosted mask redacts high-precision leaves and preserves generic prose byte-identically', () => {
-  const token = 'ghp_123456789012345678901234567890123456'
+const token = 'ghp_123456789012345678901234567890123456'
+
+test('deny-list masks a newly added free-text field and preserves structured strings', async () => {
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
-  const input = { title: `quoted ${token}`, body: generic, untouched: token }
-  const masked = maskHostedWrite('hub.task.create', input)
-  expect(masked).toEqual({
-    title: redactSecretShaped(`quoted ${token}`, { precision: 'high' }).text,
-    body: generic,
-    untouched: token,
+  const input = { title: token, addedLater: { prose: token }, projectId: token, status: token, body: generic }
+  const response = await withHostedMaskWarnings(async () => {
+    expect(maskHostedWrite('hub.task.create', input)).toEqual({
+      title: redactSecretShaped(token, { precision: 'high' }).text,
+      addedLater: { prose: redactSecretShaped(token, { precision: 'high' }).text },
+      projectId: token, status: token, body: generic,
+    })
+    return new Response('ok')
   })
-  expect(input.title).toBe(`quoted ${token}`)
+  expect(response.headers.get('warning')).toContain('title (provider-prefix)')
+  expect(response.headers.get('warning')).toContain('addedLater.prose (provider-prefix)')
+  expect(input.title).toBe(token)
 })
 
-test('every hosted free-text write route has a non-empty leaf declaration', () => {
-  const identities = new Set<string>()
-  for (const route of HOSTED_FREE_TEXT_WRITE_ROUTES) {
-    expect(HOSTED_WRITE_SECRET_LEAVES[route.declaration].length, route.path).toBeGreaterThan(0)
-    const identity = `${route.method} ${route.path}`
-    expect(identities.has(identity), identity).toBe(false)
-    identities.add(identity)
-  }
+test('reap reasons are masked while structured fields survive byte-identical', () => {
+  const input = { stale: [{ recordId: token, reason: token, at: token }], cutoff: token }
+  expect(maskHostedWrite('hub.note.reap', input)).toEqual({
+    stale: [{ recordId: token, reason: redactSecretShaped(token, { precision: 'high' }).text, at: token }],
+    cutoff: token,
+  })
 })

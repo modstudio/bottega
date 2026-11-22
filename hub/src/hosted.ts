@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
+import { withHostedMaskWarnings } from '../../shared/hosted-secret-mask.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
@@ -91,7 +92,7 @@ export function hostedRequestHandler(
   dependencies: HostedRouteDependencies = {},
 ) {
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
-  return async (req: Request): Promise<Response> => {
+  return async (req: Request): Promise<Response> => withHostedMaskWarnings(async () => {
     const url = new URL(req.url)
     if (isUnregisteredHostedWrite(req.method, url.pathname))
       return Response.json(
@@ -146,7 +147,7 @@ export function hostedRequestHandler(
         resolved.kind === 'index' ? { 'content-type': 'text/html; charset=utf-8' } : undefined,
     })
     return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
-  }
+  })
 }
 
 export async function hubTimedResponse(

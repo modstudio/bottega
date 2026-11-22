@@ -373,10 +373,9 @@ export function registerRecordWorkflowRoutes(
       if (!body.success) return context.json({ error: `invalid workflow catalogue ${action}` }, 400)
       try {
         return context.json(
-          await deps[action === 'promote' ? 'promoteWorkflow' : 'retireWorkflow']({
-            ...active,
-            ...body.data,
-          }),
+          await deps[action === 'promote' ? 'promoteWorkflow' : 'retireWorkflow'](
+            maskHostedWrite('record.workflow-version.write', { ...active, ...body.data }),
+          ),
         )
       } catch (error) {
         return failure(context, error)
