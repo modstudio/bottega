@@ -10,10 +10,10 @@ import type { RecordIdentity } from './record-auth.ts'
 import { parseRulingPageCursor } from './record-cursor.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
+  isMembershipQuestionRead,
   type QuestionIntent,
   type QuestionIntentBody,
   type QuestionReadInput,
-  isMembershipQuestionRead,
   questionChangedAfterRefusal,
   questionImportSchema,
   questionIntentSchema,

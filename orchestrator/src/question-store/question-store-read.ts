@@ -65,12 +65,10 @@ export async function openQuestionsForMemberTasks(
   for (let offset = 0; offset < taskRecordIds.length; offset += QUESTION_ID_LIST_LIMIT) {
     rows.push(
       ...((
-        await questionStore(database).read(
-          {
-            read: 'open-for-tasks',
-            taskRecordIds: taskRecordIds.slice(offset, offset + QUESTION_ID_LIST_LIMIT),
-          },
-        )
+        await questionStore(database).read({
+          read: 'open-for-tasks',
+          taskRecordIds: taskRecordIds.slice(offset, offset + QUESTION_ID_LIST_LIMIT),
+        })
       ).items as Record<string, unknown>[]),
     )
   }

@@ -213,8 +213,9 @@ export class RecordQuestionStore implements QuestionStore {
 
   private rememberSpacesAndSort(items: QuestionReadResult['items']): QuestionReadResult['items'] {
     for (const row of items) {
-      const id = questionRowRecordId(row)
-      const spaceId = row.space_id
+      const storedRow = row as Record<string, unknown>
+      const id = questionRowRecordId(storedRow)
+      const spaceId = storedRow.space_id
       if (id && typeof spaceId === 'string')
         this.questionSpaces.set(id, { destinationSpaceId: spaceId })
     }

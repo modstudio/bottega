@@ -17,9 +17,12 @@ test.each([
   [{ read: 'inbox', changedAfter: '0' }, false],
   [{ read: 'open-for-tasks', taskRecordIds: [newRecordId()] }, true],
   [{ read: 'waiting' }, false],
-] satisfies Array<[QuestionReadInput, boolean]>)('membership question read %j is %s', (input, expected) => {
-  expect(isMembershipQuestionRead(input)).toBe(expected)
-})
+] satisfies Array<[QuestionReadInput, boolean]>)(
+  'membership question read %j is %s',
+  (input, expected) => {
+    expect(isMembershipQuestionRead(input)).toBe(expected)
+  },
+)
 
 function questionWrite(): QuestionWriteBody {
   return {
