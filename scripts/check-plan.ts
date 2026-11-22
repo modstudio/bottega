@@ -290,6 +290,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-task-flow-stage-state-literals.test.ts',
   'scripts/check-active-space-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
+  'scripts/check-git-clean-site.test.ts',
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',
   'scripts/check-cognitive-ceiling.test.ts',
