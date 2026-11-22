@@ -4,9 +4,10 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { writeTransaction } from './db.ts'
+import { NON_INSTALLATION_STORE_DELIVERY_REASON, writeTransaction } from './db.ts'
 import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
@@ -14,9 +15,11 @@ import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_NOTE_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type ParsedHostedPushChange,
@@ -39,6 +42,8 @@ const noteId = '01990000-0000-7000-8000-000000008517'
 const acknowledgementId = '01990000-0000-7000-8000-000000008518'
 const commentId = '01990000-0000-7000-8000-000000008526'
 const intervalId = '01990000-0000-7000-8000-000000008527'
+const documentId = '01990000-0000-7000-8000-000000008528'
+const statusEventId = '01990000-0000-7000-8000-000000008529'
 const projectA = '01990000-0000-7000-8000-000000008519'
 const projectB = '01990000-0000-7000-8000-000000008520'
 const pageIds = [
@@ -124,6 +129,29 @@ function insertMachineComment(id: string, taskId: string, taskKey: string) {
          VALUES (?,?,?,?,?,?)`,
       )
       .run(id, taskKey, taskId, 'comment', at, at)
+  })
+}
+
+function insertMachineDocument(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(id, taskKey, taskId, 1, 'document', 'body', 'v1', at, at)
+  })
+}
+
+function insertMachineStatusEvent(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, taskKey, taskId, at, 'open')
   })
 }
 
@@ -424,20 +452,36 @@ test('a hosted delete is only-on-machine and --repair restores it directly', asy
   expect(after.ids).toContain(missingHosted)
 })
 
-test('repair posts a machine-only task before its comment and writes no outbox row', async () => {
+test('repair posts a machine-only task before its children and writes no outbox row', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   insertMachineComment(commentId, missingHosted, 'DEV-miss')
+  insertMachineDocument(documentId, missingHosted, 'DEV-miss')
+  insertMachineStatusEvent(statusEventId, missingHosted, 'DEV-miss')
   const posts: HostedPushChange[][] = []
 
   const repaired = await runPush(true, (changes) => posts.push(changes))
 
   expect(posts).toHaveLength(1)
-  expect(posts[0]?.map((change) => change.table)).toEqual([HOSTED_TASK_TABLE, HOSTED_COMMENT_TABLE])
-  expect(posts[0]?.map((change) => change.id)).toEqual([missingHosted, commentId])
+  expect(posts[0]?.map((change) => change.table)).toEqual([
+    HOSTED_TASK_TABLE,
+    HOSTED_COMMENT_TABLE,
+    HOSTED_DOCUMENT_TABLE,
+    HOSTED_STATUS_EVENT_TABLE,
+  ])
+  expect(posts[0]?.map((change) => change.id)).toEqual([
+    missingHosted,
+    commentId,
+    documentId,
+    statusEventId,
+  ])
   expect(listHostedOutbox()).toEqual([])
-  expect(repaired.drain?.sent).toBe(2)
+  expect(repaired.drain?.sent).toBe(4)
   expect((await listIds(HOSTED_TASK_TABLE, { recordSpace: spaceA })).ids).toContain(missingHosted)
   expect((await listIds(HOSTED_COMMENT_TABLE, { recordSpace: spaceA })).ids).toContain(commentId)
+  expect((await listIds(HOSTED_DOCUMENT_TABLE, { recordSpace: spaceA })).ids).toContain(documentId)
+  expect((await listIds(HOSTED_STATUS_EVENT_TABLE, { recordSpace: spaceA })).ids).toContain(
+    statusEventId,
+  )
 })
 
 test('a row only on the hosted record is reported and not touched', async () => {
@@ -718,29 +762,36 @@ test('repair fails when the drain rejects a queued row', async () => {
   expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
 })
 
-test('repair fails and names a delivery-off drain', async () => {
+test('repair refuses a direct task send from a non-installation store after queueing synced rows', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   insertMachineInterval(intervalId)
-  const report = await pushTasks({
-    personalSpace: async () => spaceA,
-    repair: true,
-    identity: async () => identity,
-    listIds,
-    registered: () => registered,
-    drain: async () => ({
-      queued: 1,
-      sent: 0,
-      rejected: 0,
-      quarantined: 0,
-      dropped: 0,
-      waitingOnRouting: {},
-      skippedCapability: false,
-      deliveryOffReason: 'hosted delivery is off for this store',
-    }),
-  })
-  expect(report.ok).toBeFalse()
-  expect(formatTaskPushReport(report)).toContain(
-    'repair drain refused: hosted delivery is off for this store',
-  )
+  const installationStateHome = process.env[STATE_HOME_ENV]
+  let posts = 0
+  process.env[STATE_HOME_ENV] = `/tmp/${PLATFORM_SLUG}-non-installation-task-push-test`
+  try {
+    await expect(
+      pushTasks({
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async () => {
+          posts += 1
+          return Response.json([])
+        },
+        personalSpace: async () => spaceA,
+        repair: true,
+        identity: async () => identity,
+        listIds,
+        registered: () => registered,
+      }),
+    ).rejects.toThrow(NON_INSTALLATION_STORE_DELIVERY_REASON)
+  } finally {
+    if (installationStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = installationStateHome
+  }
+  expect(posts).toBe(0)
+  expect(listHostedOutbox()).toEqual([
+    expect.objectContaining({ table_name: HOSTED_INTERVAL_TABLE, row_id: intervalId }),
+  ])
 })
 
 test('--repair with an unroutable project reports the refusal and queues nothing', async () => {

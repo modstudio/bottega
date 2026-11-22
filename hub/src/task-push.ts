@@ -1,6 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
+import { chunks } from './ingest/batches.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import {
   DIRECT_RECORD_TABLES,
@@ -273,14 +274,9 @@ async function sendDirectRepairs(
           operation: 'upsert',
           fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
         })
-        if (!loaded)
-          throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
+        if (!loaded) return []
         return [
-          loaded.change.op === 'upsert' &&
-          candidate.fields !== null &&
-          (loaded.change.table === HOSTED_TASK_TABLE ||
-            loaded.change.table === HOSTED_COMMENT_TABLE ||
-            loaded.change.table === HOSTED_DOCUMENT_TABLE)
+          loaded.change.op === 'upsert' && candidate.fields !== null
             ? { ...loaded.change, fields: candidate.fields }
             : loaded.change,
         ]
@@ -288,10 +284,7 @@ async function sendDirectRepairs(
     )
     if (!changes.length) continue
     const ordered = orderHostedPushChanges(changes)
-    const stages = []
-    for (let index = 0; index < ordered.length; index += HOSTED_OUTBOX_BATCH_SIZE)
-      stages.push(ordered.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE))
-    await sendHostedChanges('record repair', stages, {
+    await sendHostedChanges('record repair', [...chunks(ordered, HOSTED_OUTBOX_BATCH_SIZE)], {
       ...requestOptions,
       recordSpace: space.spaceId,
       conflictRemedy: `${PLATFORM_SLUG} task push`,
@@ -352,8 +345,10 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
-  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   queueRepairs(plan.repair)
+  const deliveryOffReason = hostedDeliveryRefusal()
+  if (deliveryOffReason) throw new Error(deliveryOffReason)
+  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,
