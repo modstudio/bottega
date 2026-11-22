@@ -1,12 +1,12 @@
 // concern: canon-mirror
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
-import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { inspectCheckout } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -53,9 +53,13 @@ import {
   refusingCanonFindings,
   warningCanonFindings,
 } from './canon-lint.ts'
-import { composeMirrorFailure } from './canon-mirror-failure.ts'
-import { decideLeftoverDisposition } from './canon-mirror-leftover.ts'
-import { assertHydrationDoesNotRevertBranchCanon } from './canon-mirror-revisions.ts'
+import { appendMirrorFailure, mirrorFailureText } from './canon-mirror-failure.ts'
+import { decideLeftoverDisposition, leftoverDispositionMessage } from './canon-mirror-leftover.ts'
+import {
+  assertHydrationDoesNotRevertBranchCanon,
+  canonMirrorCommitBody,
+  revisionRows,
+} from './canon-mirror-revisions.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
 export type ChecksState = 'passed' | 'failed' | 'pending'
@@ -77,14 +81,6 @@ export function decideCanonMirrorMerge(input: {
   return { merge: true }
 }
 
-export type MirrorRevision = { path: string; revision: string; op: string; reason: string }
-export function canonMirrorCommitBody(rows: MirrorRevision[]): string {
-  return rows
-    .sort((a, b) => a.path.localeCompare(b.path))
-    .map((r) => `${r.path}\nRevision: ${r.revision}\nOperation: ${r.op}\nReason: ${r.reason}`)
-    .join('\n\n')
-}
-
 type PullRequest = {
   number: number
   url: string
@@ -100,8 +96,8 @@ export type CanonMirrorPort = {
   remoteBranchTip(project: Project, branch: string): string | null
   remoteTrunkTip(project: Project, trunk: string): string | null
   refTip(project: Project, ref: string): string
-  treeDirty(path: string): boolean
-  hasCommitsBeyond(path: string, ref: string): boolean
+  treeDirty(path: string): boolean | 'indeterminate'
+  unpushedCommitCount(path: string, refs: string[]): number
   resetTree(path: string, base: string): void
   lastPathCommit(path: string, base: string, file: string): { sha: string; at: string } | null
   createTree(input: {
@@ -210,9 +206,12 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     return out ? (out.split(/\s+/)[0] ?? null) : null
   },
   refTip: (p, ref) => command(p.path, ['git', 'rev-parse', ref]),
-  treeDirty: (path) => command(path, ['git', 'status', '--porcelain']).length > 0,
-  hasCommitsBeyond: (path, ref) =>
-    Number(command(path, ['git', 'rev-list', '--count', `${ref}..HEAD`])) > 0,
+  treeDirty: (path) => {
+    const cleanliness = inspectCheckout(path).cleanliness
+    return cleanliness === 'indeterminate' ? cleanliness : cleanliness === 'dirty'
+  },
+  unpushedCommitCount: (path, refs) =>
+    Number(command(path, ['git', 'rev-list', '--count', 'HEAD', '--not', ...refs])),
   resetTree: (path, base) => {
     command(path, ['git', 'reset', '--hard', base])
     command(path, ['git', 'clean', '-fdx'])
@@ -393,27 +392,6 @@ function recordTree(
     })
   })
 }
-export function revisionRows(
-  project: string,
-  paths: string[],
-  database: Database = db(),
-): MirrorRevision[] {
-  return paths.map((path) => {
-    const row = database
-      .query(
-        `SELECT record_id revision,op,reason FROM doc_revision
-       WHERE scope='canon' AND slug=? AND owner IS NULL AND (subject=? OR subject IS NULL)
-       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,number DESC LIMIT 1`,
-      )
-      .get(path, project, project) as { revision: string | null; op: string; reason: string } | null
-    return {
-      path,
-      revision: row?.revision ?? 'unrecorded',
-      op: row?.op ?? 'link',
-      reason: row?.reason ?? 'generated canon link',
-    }
-  })
-}
 function setRunTerminal(runId: string, started: number, error?: string): void {
   const safe = error ? screenCanonMirrorError(error) : null
   db()
@@ -500,16 +478,22 @@ function releaseOwnedLeftover(
     throw new Error('refusing owned canon mirror worktree with no recorded branch or base')
   const remoteTip = port.remoteBranchTip(project, markerRun.branch)
   const dirty = port.treeDirty(path)
-  const hasUnpushedCommit = port.hasCommitsBeyond(path, remoteTip ?? markerRun.base_commit)
+  const unpushedCommitCount = port.unpushedCommitCount(
+    path,
+    remoteTip ? [markerRun.base_commit, remoteTip] : [markerRun.base_commit],
+  )
   const disposition = decideLeftoverDisposition({
-    exists: true,
-    owned: true,
     dirty,
-    hasUnpushedCommit,
+    unpushedCommitCount,
     dryRun,
   })
-  if (disposition.action === 'report')
-    return `owned leftover would ${disposition.would === 'reclaim' ? 'be reset and released' : disposition.would === 'release' ? 'be released' : 'be refused because it has an unpushed commit'}`
+  const message = leftoverDispositionMessage(disposition, {
+    path,
+    branch: markerRun.branch,
+    unpushedCommitCount,
+  })
+  if (disposition.action === 'report') return message
+  if (disposition.action === 'refuse') throw new Error(message!)
   if (disposition.action === 'reclaim') port.resetTree(path, markerRun.base_commit)
   const closed = port.releaseRun(markerRun.record_id, preparation)
   execution.questionRootIds.push(...(closed.questionRootIds ?? []))
@@ -599,7 +583,7 @@ async function finishMirrorCursorCleanups(
     const closed = await pending
     if (closed.cursorCleanupFailure) {
       outcome.failed = true
-      outcome.text = `failed, ${screenCanonMirrorError(closed.cursorCleanupFailure)}`
+      outcome.text = mirrorFailureText(screenCanonMirrorError(closed.cursorCleanupFailure))
       continue
     }
     for (const notice of closed.clearedCursorClaims ?? []) outcome.text += `; ${notice}`
@@ -810,7 +794,7 @@ function failedMirrorResult(
 ): MirrorResult {
   const reason = screenCanonMirrorError(cause, knownCommits)
   setRunTerminal(runId, started, reason)
-  return { project: project.name, failed: true, text: `failed, ${reason}` }
+  return { project: project.name, failed: true, text: mirrorFailureText(reason) }
 }
 
 async function closeMirrorQuestions(rootIds: readonly string[]): Promise<string | null> {
@@ -832,9 +816,7 @@ async function finishMirrorQuestionCleanup(
 ): Promise<MirrorResult> {
   const failure = await closeMirrorQuestions(rootIds)
   if (!failure) return outcome
-  setRunTerminal(runId, started, failure)
-  outcome.failed = true
-  outcome.text = `failed, ${failure}`
+  appendMirrorFailure({ outcome, reason: failure, runId, started, setTerminal: setRunTerminal })
   return outcome
 }
 
@@ -853,19 +835,17 @@ function cleanupMirrorExecution(
       )
     }
   }
-  const lifecycleFailure = input.dryRun
-    ? null
-    : releaseLifecycle(port, runId, releasePreparation, execution)
+  const lifecycleFailure = releaseLifecycle(port, runId, releasePreparation, execution)
   if (lifecycleFailure)
-    cleanupFailure = cleanupFailure
-      ? composeMirrorFailure(cleanupFailure, lifecycleFailure)
-      : lifecycleFailure
+    cleanupFailure = cleanupFailure ? `${cleanupFailure}; ${lifecycleFailure}` : lifecycleFailure
   if (!cleanupFailure) return null
-  const original = outcome.failed ? outcome.text.replace(/^failed, /, '') : null
-  const combined = composeMirrorFailure(original, cleanupFailure)
-  setRunTerminal(runId, input.started, combined)
-  outcome.failed = true
-  outcome.text = `failed, ${combined}`
+  appendMirrorFailure({
+    outcome,
+    reason: cleanupFailure,
+    runId,
+    started: input.started,
+    setTerminal: setRunTerminal,
+  })
   return cleanupFailure
 }
 
@@ -883,9 +863,13 @@ function finishMirrorLifecycle(input: MirrorPublicationInput, outcome: MirrorRes
       settleReleasedBranch(runId, branch)
     } catch (cause) {
       const reason = screenCanonMirrorError(cause, execution.knownCommits)
-      setRunTerminal(runId, input.started, reason)
-      outcome.failed = true
-      outcome.text = `failed, local branch ${branch} could not be released: ${reason}`
+      appendMirrorFailure({
+        outcome,
+        reason: `local branch ${branch} could not be released: ${reason}`,
+        runId,
+        started: input.started,
+        setTerminal: setRunTerminal,
+      })
     }
   } else if (execution.treeCreated && !execution.pushed) {
     outcome.text += `; local branch ${branch} retained because no remote copy was proven`
@@ -898,7 +882,7 @@ function runMirrorLocked(input: MirrorPublicationInput): MirrorResult {
   let outcome: MirrorResult = {
     project: project.name,
     failed: true,
-    text: 'failed, mirror did not finish',
+    text: mirrorFailureText('mirror did not finish'),
   }
   return withWorktreeCreateLock(project.path, () => {
     try {
@@ -927,7 +911,7 @@ async function mirrorProject(
     return {
       project: project.name,
       failed: true,
-      text: 'failed, registered project has no landing branch in settings.trunk',
+      text: mirrorFailureText('registered project has no landing branch in settings.trunk'),
     }
   const started = Date.now()
   const runId = createLifecycleRun(project, key)
@@ -979,9 +963,13 @@ async function mirrorProject(
       ? releaseLifecycle(port, runId, releasePreparation, execution)
       : null
     if (cleanupFailure) {
-      const combined = composeMirrorFailure(outcome.text.replace(/^failed, /, ''), cleanupFailure)
-      setRunTerminal(runId, started, combined)
-      outcome.text = `failed, ${combined}`
+      appendMirrorFailure({
+        outcome,
+        reason: cleanupFailure,
+        runId,
+        started,
+        setTerminal: setRunTerminal,
+      })
     }
     return await finishMirrorQuestionCleanup(
       runId,
@@ -996,7 +984,9 @@ function missingMirrorKey(project: Project): MirrorResult {
   return {
     project: project.name,
     failed: true,
-    text: `failed, missing canonMirrorKey; remedy: ${PLATFORM_SLUG} project set ${project.name} --settings '{"canonMirrorKey":"<KEY>"}'`,
+    text: mirrorFailureText(
+      `missing canonMirrorKey; remedy: ${PLATFORM_SLUG} project set ${project.name} --settings '{"canonMirrorKey":"<KEY>"}'`,
+    ),
   }
 }
 

@@ -172,8 +172,12 @@ export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
   {
     name: 'canon-mirror-revisions-boundary',
     file: `${source}canon-mirror-revisions.ts`,
-    allowed: ['orchestrator/src/database/db.ts', `${source}canon-mirror-revert-guard.ts`],
-    typeOnlyAllowed: ['bun:sqlite', `${source}canon-hydrate.ts`],
+    allowed: [
+      'orchestrator/src/database/db.ts',
+      `${source}canon-hydrate.ts`,
+      `${source}canon-mirror-revert-guard.ts`,
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
     reason: 'Keep revision-history reads separate from the mirror publication lifecycle.',
   },
 ]
@@ -192,6 +196,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
     file: `${source}canon-mirror.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/git.ts',
       'shared/git-path-list.ts',
       'node:crypto',
       'node:fs',
