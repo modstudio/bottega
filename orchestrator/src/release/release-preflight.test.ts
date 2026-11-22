@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RELEASE_LIVE_READING_TIMEOUT_MS } from './live-reading.ts'
-import { runProbe } from './release-preflight-adapter.ts'
 import {
   decidePreflight,
   missingLiveProbeResult,
@@ -9,6 +8,7 @@ import {
   type ReleasePreflightRung,
   type ReleaseProbeCapture,
 } from './release-preflight.ts'
+import { runProbe } from './release-preflight-adapter.ts'
 
 const rungs: ReleasePreflightRung[] = [
   {
@@ -58,9 +58,7 @@ describe('release preflight', () => {
     expect(decision.refusal).toContain('credentials probe')
     expect(decision.refusal).toContain(JSON.stringify(command))
     expect(decision.refusal).toContain('fly auth login')
-    expect(decision.refusal).toEndWith(
-      `then ${PLATFORM_SLUG} pr merge <target> --release-required`,
-    )
+    expect(decision.refusal).toEndWith(`then ${PLATFORM_SLUG} pr merge <target> --release-required`)
   })
 
   test('a rung without a credential preflight proceeds after its live probe with a notice', () => {
@@ -106,9 +104,7 @@ describe('release preflight', () => {
     ])
     expect(decision.ok).toBeFalse()
     if (decision.ok) return
-    expect(decision.refusal).toContain(
-      `timed out after ${RELEASE_LIVE_READING_TIMEOUT_MS}ms`,
-    )
+    expect(decision.refusal).toContain(`timed out after ${RELEASE_LIVE_READING_TIMEOUT_MS}ms`)
   })
 
   test('a required rung without a live declaration names the register edit', () => {

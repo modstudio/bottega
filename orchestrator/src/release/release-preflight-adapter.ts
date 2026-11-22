@@ -4,13 +4,13 @@
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
-import { releaseCapturedText } from './release-decision.ts'
-import { entryClosureAtCommit } from './release-entry-closure.ts'
 import {
+  type LiveReadingRunner,
   RELEASE_LIVE_READING_TIMEOUT_MS,
   runLiveCommand,
-  type LiveReadingRunner,
 } from './live-reading.ts'
+import { releaseCapturedText } from './release-decision.ts'
+import { entryClosureAtCommit } from './release-entry-closure.ts'
 import {
   decidePreflight,
   missingLiveProbeResult,
