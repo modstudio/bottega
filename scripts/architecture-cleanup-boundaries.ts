@@ -423,6 +423,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record-id.ts',
+      '../../../shared/refusal.ts',
       './branch-ref-guard.ts',
       '../database/db.ts',
       '../git/git-environment.ts',

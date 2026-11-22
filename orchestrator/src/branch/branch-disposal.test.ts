@@ -43,7 +43,7 @@ test('content-landed proof refusal names the failed command and fetch remedy', (
       detail: 'git rev-parse --verify origin/main^{tree} failed: missing ref',
     }),
   ).toBe(
-    'refusing branch disposal: content-landed proof could not run: git rev-parse --verify origin/main^{tree} failed: missing ref; cleared by: git -C /projects/example fetch origin main, then retry',
+    'refusing branch disposal: content-landed proof could not run: git rev-parse --verify origin/main^{tree} failed: missing ref\ncleared by: git -C /projects/example fetch origin main, then retry',
   )
 })
 

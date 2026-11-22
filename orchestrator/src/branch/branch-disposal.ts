@@ -5,7 +5,8 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
@@ -141,10 +142,31 @@ export function composeContentLandedProofRefusal(input: {
   trunk: string
   detail: string
 }): string {
-  return (
-    `refusing branch disposal: content-landed proof could not run: ${input.detail}; ` +
-    `cleared by: git -C ${input.projectPath} fetch origin ${input.trunk}, then retry`
-  )
+  return `${renderRefusal(
+    refusal(`refusing branch disposal: content-landed proof could not run: ${input.detail}`, {
+      kind: 'edit',
+      text: `git -C ${input.projectPath} fetch origin ${input.trunk}`,
+    }),
+  )}, then retry`
+}
+
+function observeSystemJobContentLanded(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  row: { systemJobMinted: boolean; tip: string } | undefined,
+): boolean {
+  const trunk = project.settings.trunk?.trim() ?? ''
+  if (!row?.systemJobMinted || !trunk) return false
+  try {
+    return observeDisposalContentLanded({ cwd: project.path, trunk, branchTip: row.tip })
+  } catch (cause) {
+    throw new Error(
+      composeContentLandedProofRefusal({
+        projectPath: project.path,
+        trunk,
+        detail: cause instanceof Error ? cause.message : String(cause),
+      }),
+    )
+  }
 }
 
 export function composeBranchDisposalRefusal(input: {
@@ -213,25 +235,7 @@ async function planBranchDisposal(input: {
   const runMinted = row !== undefined
   const probeOnly = row?.probeOnly ?? false
   const systemJobMinted = row?.systemJobMinted ?? false
-  let contentLanded = false
-  const trunk = project.settings.trunk?.trim() ?? ''
-  if (systemJobMinted && row && trunk) {
-    try {
-      contentLanded = observeDisposalContentLanded({
-        cwd: project.path,
-        trunk,
-        branchTip: row.tip,
-      })
-    } catch (cause) {
-      throw new Error(
-        composeContentLandedProofRefusal({
-          projectPath: project.path,
-          trunk,
-          detail: cause instanceof Error ? cause.message : String(cause),
-        }),
-      )
-    }
-  }
+  const contentLanded = observeSystemJobContentLanded(project, row)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,

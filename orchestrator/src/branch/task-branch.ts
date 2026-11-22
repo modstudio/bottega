@@ -462,11 +462,7 @@ export function taskBranchContentLanded(input: {
   trunkTip: string
   branchTip: string
 }): boolean {
-  const trunkTree = taskBranchGit(input.cwd, [
-    'rev-parse',
-    '--verify',
-    `${input.trunkTip}^{tree}`,
-  ])
+  const trunkTree = taskBranchGit(input.cwd, ['rev-parse', '--verify', `${input.trunkTip}^{tree}`])
   return (
     taskBranchGit(
       input.cwd,
