@@ -33,7 +33,10 @@ describe('git path-list check', () => {
 test('git clean is allowed only in the run-tree helper', () => {
   expect(
     gitCleanLiterals({
-      'orchestrator/src/example.ts': `git(['clean', '-fdx'])`,
+      'orchestrator/src/example.ts': [
+        `git(['clean', '-fdx'])`,
+        `command(path, ['git', 'clean', '-fdx'])`,
+      ].join('\n'),
       'orchestrator/src/worktree/worktree-attribution.ts': [
         `export function cleanRunTree(path: string) { git(['clean', '-fdx'], path) }`,
         `export function other(path: string) { git(['clean', '-fdx'], path) }`,
@@ -41,6 +44,7 @@ test('git clean is allowed only in the run-tree helper', () => {
     }),
   ).toEqual([
     { file: 'orchestrator/src/example.ts', line: 1 },
+    { file: 'orchestrator/src/example.ts', line: 2 },
     { file: 'orchestrator/src/worktree/worktree-attribution.ts', line: 2 },
   ])
 })

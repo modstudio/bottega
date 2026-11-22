@@ -104,9 +104,14 @@ export function gitCleanLiterals(files: Readonly<Record<string, string>>): GitCl
     const visit = (node: ts.Node): void => {
       if (
         ts.isArrayLiteralExpression(node) &&
-        node.elements[0] !== undefined &&
-        ts.isStringLiteral(node.elements[0]) &&
-        node.elements[0].text === 'clean' &&
+        node.elements.some(
+          (element, index) =>
+            ts.isStringLiteral(element) &&
+            element.text === 'clean' &&
+            (index === 0 ||
+              (ts.isStringLiteral(node.elements[index - 1]) &&
+                node.elements[index - 1].text === 'git')),
+        ) &&
         !insideCleanRunTree(node, path)
       ) {
         findings.push({
