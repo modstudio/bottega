@@ -3,9 +3,9 @@
 
 import { createHookTree, removeHookTreeResult } from '../hook-tree/tree.ts'
 import {
-  releaseAtCommit,
   type ReleaseAtCommitReport,
   type ReleaseTreeLifecycle,
+  releaseAtCommit,
 } from '../release/release-at-commit.ts'
 
 const hookTreeReleaseLifecycle: ReleaseTreeLifecycle = {

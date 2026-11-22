@@ -30,8 +30,8 @@ import {
   parsePullRequestPostLandingPayload,
   postLandingRecovery,
 } from '../pull-request/pr-post-landing-payload.ts'
-import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { releaseRequiredRungsBeforeMainMove } from '../release/release-required.ts'
+import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { releaseAtCommitFromHookTree } from './release-tree.ts'
 import { log } from './support.ts'
 

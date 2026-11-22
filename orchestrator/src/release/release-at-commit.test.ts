@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import type { Project } from '../project/projects.ts'
 import {
   type ReleaseAtCommitDependencies,
-  releaseAtCommit,
   type ReleaseTreeLifecycle,
+  releaseAtCommit,
 } from './release-at-commit.ts'
 import type { CheckoutReleaseTarget, ReleaseResult } from './release-service.ts'
 

@@ -9,8 +9,8 @@ import {
   releaseLog,
   releaseProject,
 } from '../release/release-service.ts'
-import { log } from './support.ts'
 import { releaseAtCommitFromHookTree } from './release-tree.ts'
+import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
   if (result.alreadyLive) {

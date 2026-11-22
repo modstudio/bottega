@@ -223,6 +223,10 @@ export function cliPostLandingAdapter(
   })
 }
 
+const uncomposedPostLandingAdapter = cliPostLandingAdapter(() => {
+  throw new Error('release-tree lifecycle was not composed')
+})
+
 /** Re-enter moved Bottega code, or retain the current installation for another project. */
 export function postLandingHandOffInvocation(
   projectPath: string,
@@ -451,8 +455,7 @@ function tracedPostLandingOutcome(
 export async function completePullRequestPostLanding(
   input: CompletePullRequestPostLandingInput,
 ): Promise<PullRequestMergeOutcome> {
-  const post = input.postLandingAdapter
-  if (!post) throw new Error('pull-request post-landing adapter was not composed')
+  const post = input.postLandingAdapter ?? uncomposedPostLandingAdapter
   const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
   const traceEnabled = deploysBeforeMain(input.releaseRequired, decision)
