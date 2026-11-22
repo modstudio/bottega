@@ -610,6 +610,8 @@ function incomingRequiredRungRefusal(project: UpdateProject, branch: string): st
     return `refusing machine update: required release rungs could not be decided for ${incoming}: ${decision.error}`
   const proved = new Map<string, string | null>()
   const contains = new Map<string, boolean>()
+  const isAncestor = new Map<string, boolean>()
+  const requiredSinceLive = new Map<string, boolean>()
   for (const rung of decision.required) {
     const commit = newestSuccessfulProvenReleaseCommit(project.name, rung)
     proved.set(rung, commit)
@@ -619,12 +621,32 @@ function incomingRequiredRungRefusal(project: UpdateProject, branch: string): st
         commit && gitResult(['merge-base', '--is-ancestor', incoming, commit], project.path).ok,
       ),
     )
+    const commitIsAncestor = Boolean(
+      commit && gitResult(['merge-base', '--is-ancestor', commit, incoming], project.path).ok,
+    )
+    isAncestor.set(rung, commitIsAncestor)
+    if (commit && commitIsAncestor) {
+      const sinceLive = requiredRungDecision(
+        project as Project,
+        () =>
+          splitNulPaths(
+            git(
+              nulPathListArgs(['diff', '--name-only', `${commit}..${incoming}`, '--']),
+              project.path,
+            ),
+          ),
+        (entries) => entryClosureAtCommit(project as Project, incoming, entries),
+      )
+      requiredSinceLive.set(rung, !sinceLive.decided || sinceLive.required.includes(rung))
+    }
   }
   return machineUpdateRungRefusal({
     incomingCommit: incoming,
     requiredRungs: decision.required,
     provedCommits: proved,
     liveContainsIncoming: contains,
+    liveIsAncestorOfIncoming: isAncestor,
+    requiredSinceLive,
     project: project.name,
   })
 }

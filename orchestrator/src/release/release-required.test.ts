@@ -55,6 +55,8 @@ test('machine update refuses an incoming commit until every required rung proves
     incomingCommit: 'incoming-tip',
     requiredRungs: ['hosted-api'],
     provedCommits: new Map([['hosted-api', 'live-tip']]),
+    liveIsAncestorOfIncoming: new Map([['hosted-api', false]]),
+    requiredSinceLive: new Map([['hosted-api', true]]),
     project: 'fixture',
   }
   expect(
@@ -62,6 +64,20 @@ test('machine update refuses an incoming commit until every required rung proves
   ).toContain(`${PLATFORM_SLUG} release run fixture --rung hosted-api --at incoming-tip`)
   expect(
     machineUpdateRungRefusal({ ...input, liveContainsIncoming: new Map([['hosted-api', true]]) }),
+  ).toBeNull()
+})
+
+test('machine update accepts unrelated commits after the newest proved release', () => {
+  expect(
+    machineUpdateRungRefusal({
+      incomingCommit: 'unrelated-y',
+      requiredRungs: ['hosted-api'],
+      provedCommits: new Map([['hosted-api', 'released-x']]),
+      liveContainsIncoming: new Map([['hosted-api', false]]),
+      liveIsAncestorOfIncoming: new Map([['hosted-api', true]]),
+      requiredSinceLive: new Map([['hosted-api', false]]),
+      project: 'fixture',
+    }),
   ).toBeNull()
 })
 

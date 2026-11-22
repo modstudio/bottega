@@ -122,7 +122,8 @@ const remaining = (calls: string[]) => ({
 })
 
 async function complete(input: {
-  post: PullRequestPostLandingAdapter
+  post: Omit<PullRequestPostLandingAdapter, 'releaseBeforeMove'> &
+    Partial<Pick<PullRequestPostLandingAdapter, 'releaseBeforeMove'>>
   project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
@@ -132,7 +133,10 @@ async function complete(input: {
 }) {
   return await completePullRequestPostLanding({
     adapter: remaining(input.calls ?? []),
-    postLandingAdapter: input.post,
+    postLandingAdapter: {
+      releaseBeforeMove: async () => satisfied,
+      ...input.post,
+    },
     database: db(),
     project: input.project ?? project,
     pullRequest,
@@ -172,7 +176,8 @@ test('a successful move fences this process and hands off the exact fixed identi
     },
   })
 
-  expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toEndWith('child output')
   expect(handOffProjects).toEqual([project.path])
   expect(moveDecisions).toEqual([true])
   expect(handOffDecisions).toEqual([true])
@@ -198,6 +203,7 @@ test('a successful move fences this process and hands off the exact fixed identi
     ],
     rungDecisionError: null,
     releaseRequired: true,
+    provedRequiredRelease: satisfied,
     depth: null,
     promoteWorkflowDrafts: true,
     recordingError: null,
@@ -639,7 +645,8 @@ test.each([0, MERGED_WITH_RESIDUE_EXIT_CODE, MERGED_WITH_UNRELEASED_RUNG_EXIT_CO
         handOff: () => ({ output: `child output ${exitCode}`, exitCode }),
       },
     })
-    expect(outcome).toEqual({ output: `child output ${exitCode}`, exitCode })
+    expect(outcome.exitCode).toBe(exitCode)
+    expect(outcome.output).toEndWith(`child output ${exitCode}`)
   },
 )
 
@@ -895,6 +902,7 @@ test('a failed required-rung decision is carried to the child without requiring 
       },
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
+      releaseBeforeMove: async () => satisfied,
       moveMain: () => {},
       fence: () => {},
       handOff: (payload) => {

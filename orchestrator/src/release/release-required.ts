@@ -96,11 +96,19 @@ export function machineUpdateRungRefusal(input: {
   requiredRungs: readonly string[]
   provedCommits: ReadonlyMap<string, string | null>
   liveContainsIncoming: ReadonlyMap<string, boolean>
+  liveIsAncestorOfIncoming: ReadonlyMap<string, boolean>
+  requiredSinceLive: ReadonlyMap<string, boolean>
   project: string
 }): string | null {
   for (const rung of input.requiredRungs) {
     const proved = input.provedCommits.get(rung) ?? null
     if (proved && input.liveContainsIncoming.get(rung)) continue
+    if (
+      proved &&
+      input.liveIsAncestorOfIncoming.get(rung) &&
+      input.requiredSinceLive.get(rung) === false
+    )
+      continue
     return (
       `refusing machine update: required rung ${rung} has not proved incoming commit ${input.incomingCommit} live; ` +
       `run ${PLATFORM_SLUG} release run ${input.project} --rung ${rung} --at ${input.incomingCommit}, then retry ${PLATFORM_SLUG} machine update`

@@ -70,7 +70,7 @@ export type PullRequestPostLandingAdapter = {
   entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string, movesInstallation: boolean): void
-  releaseBeforeMove?(input: {
+  releaseBeforeMove(input: {
     project: Project
     mergeCommit: string
     rungs: ReleaseRungPlan[]
@@ -165,7 +165,7 @@ function guardRealPostLandingAdapter(
     },
     releaseBeforeMove(input) {
       refuseRealPostLandingAdapterInTest()
-      return adapter.releaseBeforeMove!(input)
+      return adapter.releaseBeforeMove(input)
     },
     // Fencing only changes in-process store state; it performs no git or process side effect.
     fence: adapter.fence,
@@ -394,24 +394,7 @@ async function requiredReleaseBeforeMove(
   releaseRequired: boolean,
 ): Promise<RequiredReleaseReport | undefined> {
   if (requiredReleaseStepOrder(releaseRequired, decision.rungs)[0] !== 'deploy-rungs') return
-  if (post.releaseBeforeMove)
-    return post.releaseBeforeMove({ project, mergeCommit, rungs: decision.rungs })
-  if (process.env.NODE_ENV !== 'test')
-    throw new Error('post-landing adapter does not implement pre-move required-rung release')
-  return {
-    required: decision.required,
-    releases: decision.rungs.map((plan) => ({
-      rung: plan.rung,
-      required: plan.required,
-      deployExit: plan.required ? 0 : null,
-      outputTail: plan.required
-        ? 'proved by injected test adapter'
-        : (plan.reason ?? 'not required'),
-      satisfied: true,
-      deployed: false,
-    })),
-    satisfied: true,
-  }
+  return post.releaseBeforeMove({ project, mergeCommit, rungs: decision.rungs })
 }
 
 function postLandingTimingTrace(
@@ -446,7 +429,8 @@ export async function completePullRequestPostLanding(input: {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision = postLandingRungDecision(input, post)
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
-  const traceEnabled = Boolean(post.releaseBeforeMove)
+  const traceEnabled =
+    requiredReleaseStepOrder(input.releaseRequired, decision.rungs)[0] === 'deploy-rungs'
   const provedRequiredRelease = await requiredReleaseBeforeMove(
     post,
     input.project,
