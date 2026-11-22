@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
 import {
-  CURRENT_CONTRACT_PATH,
   CONTRACT_ORIGIN,
+  CURRENT_CONTRACT_PATH,
   createRecordingTransport,
   generateRecordClientContract,
   RELEASED_CONTRACT_DIRECTORY,
@@ -87,7 +87,9 @@ async function replay(version: string, entries: RecordClientContractEntry[]): Pr
 }
 
 test('the current record client contract is fresh', async () => {
-  const generated = serializeRecordClientContract(await generateRecordClientContract(CONTRACT_ORIGIN))
+  const generated = serializeRecordClientContract(
+    await generateRecordClientContract(CONTRACT_ORIGIN),
+  )
   expect(generated, 'run bun scripts/record-client-contract.ts --update').toBe(
     readFileSync(CURRENT_CONTRACT_PATH, 'utf8'),
   )

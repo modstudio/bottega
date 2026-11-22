@@ -822,11 +822,7 @@ const recordSnapshotAndPublicDocClient = (
   listPublicDocs: () => publicRequest('/public/v1/docs', transport, origin),
   getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`, transport, origin),
   searchPublicDocs: (query) =>
-    publicRequest(
-      `/public/v1/docs/search?${new URLSearchParams({ q: query })}`,
-      transport,
-      origin,
-    ),
+    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`, transport, origin),
 })
 
 const recordDocReadClient = (

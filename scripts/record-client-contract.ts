@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   type RecordApiClient,
-  recordApiRequest,
   recordApiClientOver,
+  recordApiRequest,
 } from '../orchestrator/src/record/record-api-client.ts'
 import { identity } from '../orchestrator/src/record/record-api-identity.fixture.ts'
 import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
@@ -374,20 +374,15 @@ export async function generateRecordClientContract(
     token: () => 'contract-token',
     tokenAsync: async () => 'contract-token',
   }
-  const request = <T>(
-    path: string,
-    init: RequestInit & { destinationSpaceId?: string } = {},
-  ) => recordApiRequest<T>(path, init, authentication, transport, () => undefined, origin)
-  const record = recordApiClientOver(
-    request,
-    {
-      transport,
-      origin: () => origin,
-      streamToken: () => 'contract-token',
-      streamTransport: transport,
-      preflight: () => undefined,
-    },
-  )
+  const request = <T>(path: string, init: RequestInit & { destinationSpaceId?: string } = {}) =>
+    recordApiRequest<T>(path, init, authentication, transport, () => undefined, origin)
+  const record = recordApiClientOver(request, {
+    transport,
+    origin: () => origin,
+    streamToken: () => 'contract-token',
+    streamTransport: transport,
+    preflight: () => undefined,
+  })
   const config = configClient({ BOTTEGA_RECORD_API_URL: origin }, transport, 'contract-token')
   const missing = missingClientSamples(record, config)
   if (missing.length) throw new Error(`record client contract lacks samples: ${missing.join(', ')}`)
