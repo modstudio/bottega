@@ -23,6 +23,7 @@ import {
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
+import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
@@ -240,14 +241,8 @@ type UpdateDependencies = {
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
-  project?: (
-    cwd: string,
-    database: import('bun:sqlite').Database,
-  ) => {
-    name: string
-    path: string
-    settings: { trunk?: string }
-  } | null
+  project?: (cwd: string, database: import('bun:sqlite').Database) => ReleaseGuardProject | null
+  requiredRungRefusal?: (project: ReleaseGuardProject, branch: string) => string | null
   verifyMainCheckout?: (
     path: string,
     trunk: string,
@@ -609,6 +604,15 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
     presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
   }
   runGit(target, ['fetch', 'origin', branch])
+  let rungRefusal: string | null
+  if (deps.requiredRungRefusal) rungRefusal = deps.requiredRungRefusal(project, branch)
+  else if (deps.git) rungRefusal = null
+  else {
+    const guard = incomingRequiredRungGuard(project, branch)
+    presentation.log(`required release guard: ${guard.elapsedMs.toFixed(1)}ms`)
+    rungRefusal = guard.refusal
+  }
+  if (rungRefusal) throw new Error(rungRefusal)
   const journal = incomingJournal(target, branch, runGit)
   const initial = withSynchronousDatabaseForMigrationStep((database) => {
     const local = migrationState(database)

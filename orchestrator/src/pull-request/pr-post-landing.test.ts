@@ -2,9 +2,7 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
-import { projectMovesInstallation } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
@@ -17,40 +15,14 @@ import {
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
-  decideMergedOutputExitCode,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
-  postLandingHandOffInvocation,
   runPullRequestPostLanding,
 } from './pr-post-landing.ts'
 import {
   type PullRequestPostLandingPayload,
   postLandingRecovery,
 } from './pr-post-landing-payload.ts'
-
-test.each([
-  [
-    'unsatisfied release and clean cleanup',
-    { satisfied: false },
-    0,
-    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-  ],
-  [
-    'unsatisfied release and residue cleanup',
-    { satisfied: false },
-    MERGED_WITH_RESIDUE_EXIT_CODE,
-    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-  ],
-  ['satisfied release and clean cleanup', { satisfied: true }, 0, 0],
-  [
-    'satisfied release and residue cleanup',
-    { satisfied: true },
-    MERGED_WITH_RESIDUE_EXIT_CODE,
-    MERGED_WITH_RESIDUE_EXIT_CODE,
-  ],
-] as const)('%s chooses the release-aware exit', (_name, release, cleanupExit, expected) => {
-  expect(decideMergedOutputExitCode(release, cleanupExit)).toBe(expected)
-})
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -67,6 +39,24 @@ const project = {
       mergeMethod: 'squash',
       requiredChecks: [],
       rungs: [{ name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] }],
+    },
+  },
+} as Project
+
+const deployProject = {
+  ...project,
+  path: cwd,
+  settings: {
+    ...project.settings,
+    release: {
+      ...project.settings.release,
+      rungs: [
+        {
+          ...project.settings.release!.rungs[0],
+          deploy: 'deploy hosted api',
+          live: 'read hosted api commit',
+        },
+      ],
     },
   },
 } as Project
@@ -122,7 +112,8 @@ const remaining = (calls: string[]) => ({
 })
 
 async function complete(input: {
-  post: PullRequestPostLandingAdapter
+  post: Omit<PullRequestPostLandingAdapter, 'releaseBeforeMove'> &
+    Partial<Pick<PullRequestPostLandingAdapter, 'releaseBeforeMove'>>
   project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
@@ -132,7 +123,10 @@ async function complete(input: {
 }) {
   return await completePullRequestPostLanding({
     adapter: remaining(input.calls ?? []),
-    postLandingAdapter: input.post,
+    postLandingAdapter: {
+      releaseBeforeMove: async () => satisfied,
+      ...input.post,
+    },
     database: db(),
     project: input.project ?? project,
     pullRequest,
@@ -172,10 +166,10 @@ test('a successful move fences this process and hands off the exact fixed identi
     },
   })
 
-  expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toEndWith('child output')
   expect(handOffProjects).toEqual([project.path])
-  expect(moveDecisions).toEqual([true])
-  expect(handOffDecisions).toEqual([true])
+  expect([moveDecisions, handOffDecisions]).toEqual([[true], [true]])
   expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
@@ -194,6 +188,7 @@ test('a successful move fences this process and hands off the exact fixed identi
         reason: null,
         declaresLive: false,
         declaresDeploy: false,
+        canDeployFromTree: false,
       },
     ],
     rungDecisionError: null,
@@ -207,21 +202,68 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
-
-test('another project uses the plain move and the current installation hand-off', async () => {
-  const movesInstallation = projectMovesInstallation(project)
-
-  expect(movesInstallation).toBeFalse()
-  expect(postLandingHandOffInvocation(project.path, movesInstallation)).toEqual({
-    argv: bottegaEntryArgv(PLATFORM_SLUG),
+test('a required rung is proved before main moves and is not delegated again', async () => {
+  const events: string[] = []
+  let handOffStarted = ''
+  const outcome = await complete({
+    project: deployProject,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      releaseBeforeMove: async () => {
+        events.push('deploy-rungs')
+        return satisfied
+      },
+      moveMain: () => events.push('move-main'),
+      fence: () => {},
+      handOff: async (payload) => {
+        handOffStarted = new Date().toISOString()
+        await Bun.sleep(10)
+        events.push(payload.provedRequiredRelease ? 'hand-off-proved' : 'hand-off-unproved')
+        return { output: 'child output', exitCode: 0 }
+      },
+    },
   })
+  expect(events).toEqual(['deploy-rungs', 'move-main', 'hand-off-proved'])
+  const movedAt = outcome.output.match(/main moved to merge-commit (\S+)/)?.[1]
+  expect(new Date(movedAt!).getTime()).toBeLessThanOrEqual(new Date(handOffStarted).getTime())
 })
 
-test('the post-landing child for a moved platform checkout runs through its binary', async () => {
-  expect(postLandingHandOffInvocation(project.path, true)).toEqual({
-    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
-    cwd: project.path,
+test('an unproved pre-move rung leaves main unmoved and exits 21', async () => {
+  const events: string[] = []
+  const outcome = await complete({
+    project: deployProject,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      releaseBeforeMove: async () => ({
+        required: ['hosted-api'],
+        releases: [
+          {
+            rung: 'hosted-api',
+            required: true,
+            deployExit: 1,
+            outputTail: 'health proof failed',
+            satisfied: false,
+            deployed: true,
+          },
+        ],
+        satisfied: false,
+      }),
+      moveMain: () => events.push('move-main'),
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: '', exitCode: 0 }
+      },
+    },
   })
+  expect(events).toEqual([])
+  expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+  expect(outcome.output).toContain('health proof failed')
+  expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
 })
 
 test('a change inside a rung entry closure requires that rung and hands it off', async () => {
@@ -579,7 +621,8 @@ test.each([0, MERGED_WITH_RESIDUE_EXIT_CODE, MERGED_WITH_UNRELEASED_RUNG_EXIT_CO
         handOff: () => ({ output: `child output ${exitCode}`, exitCode }),
       },
     })
-    expect(outcome).toEqual({ output: `child output ${exitCode}`, exitCode })
+    expect(outcome.exitCode).toBe(exitCode)
+    expect(outcome.output).toEndWith(`child output ${exitCode}`)
   },
 )
 
@@ -835,6 +878,7 @@ test('a failed required-rung decision is carried to the child without requiring 
       },
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
+      releaseBeforeMove: async () => satisfied,
       moveMain: () => {},
       fence: () => {},
       handOff: (payload) => {

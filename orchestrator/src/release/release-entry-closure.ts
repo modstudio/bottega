@@ -130,7 +130,7 @@ function spawnOrThrow(command: string[], cwd: string, detail: string): void {
 }
 
 export function entryClosureAtCommit(
-  project: Project,
+  project: Pick<Project, 'path'>,
   commit: string,
   entries: readonly string[],
 ): EntryClosure {

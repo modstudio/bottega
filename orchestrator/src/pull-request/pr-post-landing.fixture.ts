@@ -22,6 +22,7 @@ export function inProcessPostLandingAdapter(input: {
     changedPaths: () => [],
     entryClosure: () => new Map(),
     mainHead: () => 'main-head',
+    releaseBeforeMove: async () => input.release(true),
     moveMain: () => input.move?.(),
     fence: () => {},
     handOff: (payload) =>
