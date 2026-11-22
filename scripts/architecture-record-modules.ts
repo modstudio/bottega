@@ -306,6 +306,10 @@ export const recordModules: RecordModule[] = [
     './record-task-flow-write-contract.ts',
     './record-api-errors.ts',
   ]),
+  module('orchestrator/src/record/record-api-secret-mask.ts', [
+    'hono',
+    '../../../shared/hosted-secret-mask.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',
     './record-api-client-question.ts',

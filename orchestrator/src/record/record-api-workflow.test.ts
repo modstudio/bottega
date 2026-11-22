@@ -148,6 +148,30 @@ test('workflow draft masks high-precision definition, author, and reason leaves'
   })
 })
 
+test('workflow promote masks its validated transition reason', async () => {
+  let reason = ''
+  const app = recordApiAppWith({
+    promoteWorkflow: async (input: { reason: string }) => {
+      reason = input.reason
+      return input
+    },
+  })
+  const response = await app.request('/v1/workflow-catalogue/promote', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      n: 1,
+      expectedProductionVersion: null,
+      author: 'tester',
+      reason: SECRET,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(reason).toBe(redactSecretShaped(SECRET, { precision: 'high' }).text)
+})
+
 test('task-flow stage list validates combined filters and applies its default limit', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(

@@ -22,6 +22,7 @@ export const recordOutboxModules: ArchitectureModule[] = [
       'shared/record/schema-task-flow.ts',
       'shared/record/schema-workflow-catalogue.ts',
       'shared/record/tenant.ts',
+      'shared/hosted-secret-mask.ts',
       'shared/secret-shaped.ts',
     ],
   },

@@ -3,6 +3,7 @@
 import type { SQL } from 'bun'
 import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import { isHostedAuditColumnExcluded } from '../../../shared/hosted-secret-mask.ts'
 import { boardMessage, boardMessageTag } from '../../../shared/record/schema-board.ts'
 import { contextItem } from '../../../shared/record/schema-context-items.ts'
 import { doc, docRevision } from '../../../shared/record/schema-docs.ts'
@@ -13,8 +14,7 @@ import {
   hubTaskDocument,
 } from '../../../shared/record/schema-hub.ts'
 import { question } from '../../../shared/record/schema-question.ts'
-import { workflowStepText } from '../../../shared/record/schema-task-flow.ts'
-import { workflowTextCopy } from '../../../shared/record/schema-task-flow.ts'
+import { workflowStepText, workflowTextCopy } from '../../../shared/record/schema-task-flow.ts'
 import {
   stepCatalogueEvent,
   stepCatalogueVersion,
@@ -22,7 +22,6 @@ import {
   workflowVersion,
 } from '../../../shared/record/schema-workflow-catalogue.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
-import { isHostedAuditColumnExcluded } from '../../../shared/hosted-secret-mask.ts'
 import {
   redactSecretShaped,
   type SecretRulePrecision,
@@ -73,7 +72,7 @@ const auditTable = (table: Table, id: AnyPgColumn, timestamp: AnyPgColumn | null
 })
 
 /** One table inventory; scanned columns are derived from these Drizzle schema objects. */
-export const HOSTED_SECRET_AUDIT_TABLES = [
+const HOSTED_SECRET_AUDIT_TABLES = [
   auditTable(hubNote, hubNote.id, hubNote.createdAt),
   auditTable(hubTask, hubTask.id, hubTask.createdAt),
   auditTable(hubTaskComment, hubTaskComment.id, hubTaskComment.createdAt),
@@ -98,7 +97,7 @@ function auditableColumn(column: AnyPgColumn): boolean {
 }
 
 /** Every textual schema column except structured fields in the shared exclusion declaration. */
-export const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] =
+const HOSTED_SECRET_AUDIT_SCHEMA: readonly HostedSecretAuditSchemaEntry[] =
   HOSTED_SECRET_AUDIT_TABLES.map((entry) => {
     const table = getTableName(entry.table)
     return {

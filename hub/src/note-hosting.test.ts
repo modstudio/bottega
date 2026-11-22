@@ -67,6 +67,49 @@ test('note create stores fixture credentials masked', async () => {
   )
 })
 
+test('note reap masks staleness reasons and preserves its timestamp', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const cutoff = '2026-11-21T12:00:00.000Z'
+  let stored: { stale: Array<{ recordId: string; reason: string; at: string }> } | null = null
+  const response = await noteApi(
+    new Request('https://hub.example.test/v1/notes/reap', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+        'x-record-space': 'space-a',
+      },
+      body: JSON.stringify({
+        cutoff,
+        confirmation: 1,
+        stale: [{ recordId: 'record', reason: secret, at: cutoff }],
+        annotated: [],
+        restored: [],
+        deleted: [],
+      }),
+    }),
+    hostedRouteTestConfig,
+    {
+      fetch: (async () =>
+        Response.json({
+          user: { id: 'user-1' },
+          activeSpaceId: 'space-a',
+          memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+        })) as unknown as typeof fetch,
+      reap: async (_url: unknown, _identity: unknown, input: typeof stored) => {
+        stored = input
+        return { stale: 1, annotated: 0, restored: 0, deleted: 0 }
+      },
+    },
+  )
+  expect(response?.status).toBe(200)
+  expect(stored?.stale[0]).toEqual({
+    recordId: 'record',
+    reason: redactSecretShaped(secret, { precision: 'high' }).text,
+    at: cutoff,
+  })
+})
+
 describe('hosted-only note safety', () => {
   test('the outside route preserves a service refusal status', async () => {
     const status = 429

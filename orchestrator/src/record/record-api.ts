@@ -4,7 +4,6 @@
 import { type Context, Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
-import { maskHostedWrite, withHostedMaskWarnings } from '../../../shared/hosted-secret-mask.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
@@ -46,6 +45,7 @@ import {
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
+import { registerRecordSecretMask } from './record-api-secret-mask.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,
@@ -374,14 +374,14 @@ function registerRecordCoreRoutes(
   registerRecordQuestionRoutes(app, deps, ports)
 }
 
-export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+function maskedRecordApiApp(): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
-  app.use('*', async (context, next) => {
-    context.res = await withHostedMaskWarnings(async () => {
-      await next()
-      return context.res
-    })
-  })
+  registerRecordSecretMask(app)
+  return app
+}
+
+export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+  const app = maskedRecordApiApp()
   app.onError((error, context) => {
     const refusal = renderRecordApiRefusal(context, error)
     if (refusal) return refusal
@@ -815,14 +815,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     )
     if (!tenant) return noSpace(context)
     try {
-      return context.json(
-        await hostedDocUpsert(
-          tenant,
-          maskHostedWrite('record.doc.put', body.data),
-          context.get('identity'),
-          deps,
-        ),
-      )
+      return context.json(await hostedDocUpsert(tenant, body.data, context.get('identity'), deps))
     } catch (error) {
       return writeError(context, error)
     }
@@ -836,9 +829,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     )
     if (!tenant) return noSpace(context)
     try {
-      return context.json(
-        await deps.importDoc(maskHostedWrite('record.doc.import', { ...tenant, ...body.data })),
-      )
+      return context.json(await deps.importDoc({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }
@@ -856,11 +847,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     )
     if (!tenant) return noSpace(context)
     try {
-      return context.json(
-        await deps.importCanon(
-          maskHostedWrite('record.doc.canon-import', { ...tenant, ...body.data }),
-        ),
-      )
+      return context.json(await deps.importCanon({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

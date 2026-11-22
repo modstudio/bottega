@@ -1,8 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  auditHostedSecretRows,
-  renderHostedSecretAudit,
-} from './hosted-secret-audit.ts'
+import { auditHostedSecretRows, renderHostedSecretAudit } from './hosted-secret-audit.ts'
 
 const SECRET = 'ghp_123456789012345678901234567890123456'
 

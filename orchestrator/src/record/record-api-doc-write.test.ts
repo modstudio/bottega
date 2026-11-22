@@ -175,9 +175,61 @@ test('server doc write stores a fixture credential masked when the client scan i
     }),
   })
   expect(response.status).toBe(200)
+  expect(response.headers.get('warning')).toContain('provider-prefix')
   expect(storedBody).toBe(
     `${generic} ${redactSecretShaped(`quoted ${secret}`, { precision: 'high' }).text}`,
   )
+})
+
+test('document and canon imports mask free text at the route adapter', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const masked = redactSecretShaped(secret, { precision: 'high' }).text
+  let docBody = ''
+  let canonBody = ''
+  const app = appWith(identity, {
+    importDoc: async (input: { doc: { body: string } }) => {
+      docBody = input.doc.body
+      return { id, revisionIds: [] }
+    },
+    importCanon: async (input: { rows: Array<{ body: string }> }) => {
+      canonBody = input.rows[0]!.body
+      return { rows: [], deletions: [], findings: [], bootstrap: false }
+    },
+  })
+  const headers = { 'content-type': 'application/json', 'x-record-space': 'space-a' }
+  const stamp = '2026-11-21T12:00:00.000Z'
+  const imported = await app.request('/v1/docs/import', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      doc: {
+        scope: 'global',
+        subject: null,
+        slug: 'import-mask',
+        title: 'Import mask',
+        body: secret,
+        delivery: 'demand',
+        audiences: ['technical'],
+        createdAt: stamp,
+        updatedAt: stamp,
+        deletedAt: null,
+      },
+      revisions: [],
+    }),
+  })
+  const canon = await app.request('/v1/docs/canon/import', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      rows: [{ slug: 'import-mask', title: 'Import mask', body: secret }],
+      expectedRevisions: {},
+      reason: 'route fixture',
+      author: 'tester',
+      address: { kind: 'project', subject: PLATFORM_NAME, projectId: id },
+    }),
+  })
+  expect([imported.status, canon.status]).toEqual([200, 200])
+  expect([docBody, canonBody]).toEqual([masked, masked])
 })
 const personalIdentity: RecordIdentity = {
   ...identity,
