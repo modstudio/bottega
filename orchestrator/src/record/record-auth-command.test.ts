@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import {
@@ -22,6 +30,8 @@ beforeEach(() => {
 afterEach(() => {
   if (originalRecordPassword === undefined) delete process.env[RECORD_PASSWORD_ENV]
   else process.env[RECORD_PASSWORD_ENV] = originalRecordPassword
+  installRecordApiClient(null)
+  installRecordSessionRunner(null)
 })
 
 test.each([false, true])(
@@ -114,6 +124,48 @@ test('sign-up refuses before the API when the session-store probe fails', async 
     }),
   ).rejects.toThrow('session store unavailable')
   expect(apiCalls).toBe(0)
+})
+
+test('sign-up applies machine settings once and survives an apply error', async () => {
+  const output: string[] = []
+  let settingsApplies = 0
+  const session = memoryRecordSession()
+  installRecordSessionRunner(session.runner)
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' as const }],
+    }),
+  })
+
+  await signUpCommand(
+    'person@example.test',
+    'Person',
+    async () => 'secret',
+    { log: (line) => output.push(line) },
+    {
+      probeSessionStore: () => {},
+      signUp: async () => ({
+        token: 'fixture-token',
+        user: { id: 'user-a', name: 'Person', email: 'person@example.test' },
+      }),
+      signIn: async () => sessionResult,
+    },
+    {
+      applySettings: async () => {
+        settingsApplies += 1
+        throw new Error('hosted read unavailable')
+      },
+    },
+  )
+
+  expect(settingsApplies).toBe(1)
+  expect(output).toContain('signed up person@example.test')
+  expect(output).toContain('machine settings apply failed: hosted read unavailable')
+  expect(output).toContain(`run \`${PLATFORM_SLUG} machine settings apply\``)
 })
 
 test('sign-in refuses before the API when the session-store probe fails', async () => {

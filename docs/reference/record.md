@@ -454,7 +454,7 @@ sign in to the hosted record and apply machine settings
 
 **Synopsis:** `bottega record sign-up --email <email> --name <name>`
 
-create a hosted record account and sign in
+create a hosted record account, sign in, and apply machine settings
 
 ### Options
 

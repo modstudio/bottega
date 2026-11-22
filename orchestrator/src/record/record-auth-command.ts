@@ -92,6 +92,7 @@ export async function signUpCommand(
   readPassword: () => Promise<string>,
   presentation: Presentation,
   dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
+  machineDependencies: SignedInMachineSetupDependencies = signedInMachineSetupDependencies,
 ): Promise<void> {
   const password = await recordPassword(readPassword)
   dependencies.probeSessionStore()
@@ -102,6 +103,7 @@ export async function signUpCommand(
     existingAccountSignUpRefusal(error, email)
   }
   await completeRecordSessionCommand(result, presentation, 'signed up')
+  await applySignedInMachineSettings(presentation, machineDependencies.applySettings)
 }
 
 function existingAccountSignUpRefusal(error: unknown, email: string): never {

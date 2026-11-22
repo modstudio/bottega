@@ -5,7 +5,6 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
-import { renderRefusal } from '../../../shared/refusal.ts'
 import {
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
@@ -169,33 +168,6 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
   }
 }
 
-function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
-  return {
-    target,
-    outcome: 'refused',
-    condition: 'no-settings-row',
-    detail: renderRefusal({
-      condition: 'refusing settings render: no settings row for user',
-      remedies: [
-        {
-          kind: 'command',
-          argv: [
-            PLATFORM_SLUG,
-            'doc',
-            'set',
-            '--scope',
-            'settings',
-            '--user',
-            '--slug',
-            'settings',
-          ],
-        },
-      ],
-    }),
-    changed: false,
-  }
-}
-
 function localUserSettingsDocuments(owner: string): UserSettingsDocuments {
   return {
     source: 'local',
@@ -229,12 +201,12 @@ function applyUserSettings(
   const path = userSettingsPath(home)
   const target = `settings ${path}`
   try {
-    if (!row) return missingUserSettingsResult(target)
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
-      parseStoredOwnedSettings(row.body),
+      row ? parseStoredOwnedSettings(row.body) : { permissions: {}, hooks: {}, envKeys: [] },
       readMachinePermissions(deps.environment),
     )
+    const settingsSourceDetail = row ? undefined : 'product hooks only; no user settings row'
     const productHooks = withMachineProductHooks(
       merged.settings,
       resolveOrchestratorDatabase(deps.environment),
@@ -263,7 +235,9 @@ function applyUserSettings(
       return {
         target,
         outcome: 'current',
-        detail: unmatchedDropDetail(merged.unmatchedDrops),
+        detail: [settingsSourceDetail, unmatchedDropDetail(merged.unmatchedDrops)]
+          .filter(Boolean)
+          .join('; '),
         changed: false,
         ...(!check && productHooks.superseded.length
           ? { superseded: productHooks.superseded }
@@ -274,7 +248,7 @@ function applyUserSettings(
       return {
         target,
         outcome: 'applied',
-        detail: ['would apply', unmatchedDropDetail(merged.unmatchedDrops)]
+        detail: ['would apply', settingsSourceDetail, unmatchedDropDetail(merged.unmatchedDrops)]
           .filter(Boolean)
           .join('; '),
         changed: true,
@@ -285,6 +259,7 @@ function applyUserSettings(
       outcome: 'applied',
       detail: [
         result.backup ? `backup ${result.backup}` : 'created new file',
+        settingsSourceDetail,
         unmatchedDropDetail(merged.unmatchedDrops),
       ]
         .filter(Boolean)

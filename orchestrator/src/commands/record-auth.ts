@@ -124,7 +124,7 @@ function registerIdentityCommands(record: Command): void {
   const presentation = { log }
   record
     .command('sign-up')
-    .description('create a hosted record account and sign in')
+    .description('create a hosted record account, sign in, and apply machine settings')
     .requiredOption('--email <email>', 'email address for the new account')
     .requiredOption('--name <name>', 'display name for the new account')
     .action((options) =>

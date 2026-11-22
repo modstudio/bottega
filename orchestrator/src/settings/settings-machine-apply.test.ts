@@ -16,8 +16,12 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { recordApiClientOver } from '../record/record-api-client.ts'
 import type { RecordClientRequest } from '../record/record-api-client-paths.ts'
 import { serializeOwnedSettings } from './settings.ts'
-import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
-import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  applyMachineSettings,
+  printMachineSettingsApplyResults,
+  settingsApplyDecision,
+} from './settings-machine-apply.ts'
+import { PRODUCT_HOOKS, withMachineProductHooks } from './settings-machine-hooks.ts'
 import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
@@ -237,7 +241,7 @@ describe('settings apply', () => {
     )
   })
 
-  test('a hosted install refuses a missing personal settings doc with the named remedy', async () => {
+  test('a hosted install plans product hooks without a personal settings doc', async () => {
     const hosted = createMemoryRecordApiClient()
     installRecordApiClient({
       ...hosted,
@@ -249,15 +253,13 @@ describe('settings apply', () => {
       }),
     })
     process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+    writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
 
     expect((await applyMachineSettings({ check: true }, deps()))[0]).toEqual({
       target: `settings ${join(root, '.claude', 'settings.json')}`,
-      outcome: 'refused',
-      condition: 'no-settings-row',
-      detail:
-        'refusing settings render: no settings row for user\n' +
-        `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
-      changed: false,
+      outcome: 'applied',
+      detail: 'would apply; product hooks only; no user settings row',
+      changed: true,
     })
   })
 
@@ -353,17 +355,34 @@ describe('settings apply', () => {
     expect(refusals.every((result) => !result.detail?.includes('record push'))).toBe(true)
   })
 
-  test('marks a missing user settings row as a structured refusal', async () => {
+  test('signed in without settings applies product hooks and still refuses empty canon', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
-    expect((await applyMachineSettings({ check: false }, deps()))[0]).toEqual({
-      target: `settings ${join(root, '.claude', 'settings.json')}`,
-      outcome: 'refused',
-      condition: 'no-settings-row',
-      detail:
-        'refusing settings render: no settings row for user\n' +
-        `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
-      changed: false,
+    db().query("DELETE FROM doc WHERE scope='canon' AND owner=?").run(OWNER)
+    writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({
+      outcome: 'applied',
+      detail: expect.stringContaining('product hooks only; no user settings row'),
+      changed: true,
     })
+    expect(results.filter((result) => result.condition === 'empty-user-canon-store')).toHaveLength(
+      2,
+    )
+    expect(settingsApplyDecision(true, results).action).toBe('refuse')
+    const rendered = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
+    for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
+  })
+
+  test('pre-sign-in missing user rows still wait for sign-in after product hooks apply', async () => {
+    db().query("DELETE FROM doc WHERE scope IN ('settings', 'canon') AND owner=?").run(OWNER)
+    writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    expect(settingsApplyDecision(false, results).action).toBe('wait-for-sign-in')
   })
 
   test('--check reports current and changed targets without writing', async () => {
