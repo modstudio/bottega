@@ -1,7 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import {
+  CANON_MIRROR_JOB,
+  HOOK_TREE_JOB,
+  ISSUE_BEFORE_TREE_JOB,
+  LANDING_TREE_JOB,
+} from '../run/synthetic-lifecycle-job.ts'
+import {
   decideWorkflowUncovered,
+  LIFECYCLE_TREE_COVER_WINDOW_MS,
   workflowUncoveredCommand,
   workflowUncoveredReport,
 } from './workflow-uncovered.ts'
@@ -96,6 +103,100 @@ test('evidence after a cursor closes or a claim lapses is uncovered', () => {
     probeRuns: [],
     failedBeforeClaim: 0,
   })
+})
+
+test('canon mirror run evidence is exempt by job only', () => {
+  const report = decideWorkflowUncovered({
+    days: 1,
+    now: '2026-11-17T20:00:00.000Z',
+    evidence: [
+      { ...evidence[0]!, job: CANON_MIRROR_JOB },
+      { ...evidence[0]!, key: 'DEV-2', job: 'implement' },
+    ],
+    cursors: [],
+    claims: [],
+  })
+  expect(report.days[0]!.tasks).toEqual([{ project: 'alpha', key: 'DEV-2' }])
+})
+
+test('branch-matched lifecycle tree cursors opening inside the window cover earlier rows', () => {
+  const cursors = [
+    {
+      project: 'alpha',
+      key: 'DEV-1',
+      branch: 'DEV-1-change',
+      openedAt: '2026-11-17T10:00:09.000Z',
+      closedAt: null,
+    },
+    {
+      project: 'alpha',
+      key: 'DEV-2',
+      branch: 'DEV-2-change',
+      openedAt: '2026-11-17T10:00:25.000Z',
+      closedAt: null,
+    },
+  ]
+  const report = decideWorkflowUncovered({
+    days: 1,
+    now: '2026-11-17T20:00:00.000Z',
+    evidence: [
+      { ...evidence[0]!, job: LANDING_TREE_JOB, branch: ' DEV-1-change ' },
+      { ...evidence[0]!, key: 'DEV-2', job: HOOK_TREE_JOB, branch: 'DEV-2-change' },
+    ],
+    cursors,
+    claims: [],
+  })
+  expect(report.days[0]!.tasks).toEqual([])
+})
+
+test('lifecycle tree binding rejects other jobs, mismatched or absent branches, and late cursors', () => {
+  const at = '2026-11-17T10:00:00.000Z'
+  const cursor = (
+    key: string,
+    branch?: string,
+    openedAt = '2026-11-17T10:00:09.000Z',
+    closedAt: string | null = null,
+  ) => ({ project: 'alpha', key, ...(branch ? { branch } : {}), openedAt, closedAt })
+  const report = decideWorkflowUncovered({
+    days: 1,
+    now: '2026-11-17T20:00:00.000Z',
+    evidence: [
+      { project: 'alpha', key: 'DEV-1', at, source: 'run', job: 'implement', branch: 'one' },
+      {
+        project: 'alpha',
+        key: 'DEV-2',
+        at,
+        source: 'run',
+        job: ISSUE_BEFORE_TREE_JOB,
+        branch: 'two',
+      },
+      { project: 'alpha', key: 'DEV-3', at, source: 'run', job: LANDING_TREE_JOB, branch: 'three' },
+      { project: 'alpha', key: 'DEV-4', at, source: 'run', job: LANDING_TREE_JOB, branch: 'four' },
+      { project: 'alpha', key: 'DEV-5', at, source: 'run', job: LANDING_TREE_JOB, branch: 'five' },
+      { project: 'alpha', key: 'DEV-6', at, source: 'run', job: LANDING_TREE_JOB, branch: 'six' },
+    ],
+    cursors: [
+      cursor('DEV-1', 'one'),
+      cursor('DEV-2', 'two'),
+      cursor('DEV-3', 'different'),
+      cursor(
+        'DEV-4',
+        'four',
+        new Date(Date.parse(at) + LIFECYCLE_TREE_COVER_WINDOW_MS + 1).toISOString(),
+      ),
+      cursor('DEV-5'),
+      cursor('DEV-6', 'six', '2026-11-17T09:59:58.000Z', '2026-11-17T09:59:59.000Z'),
+    ],
+    claims: [],
+  })
+  expect(report.days[0]!.tasks.map((task) => task.key)).toEqual([
+    'DEV-1',
+    'DEV-2',
+    'DEV-3',
+    'DEV-4',
+    'DEV-5',
+    'DEV-6',
+  ])
 })
 
 test('handoff coverage requires one live claim spanning the old close and successor open', () => {

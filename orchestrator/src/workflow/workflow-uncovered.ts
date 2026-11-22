@@ -13,15 +13,25 @@ import {
   type FailedBeforeClaimRunEvidence,
   failedBeforeClaimRunEvidence,
 } from '../run/cursorless-run-evidence.ts'
+import {
+  CANON_MIRROR_JOB,
+  HOOK_TREE_JOB,
+  LANDING_TREE_JOB,
+} from '../run/synthetic-lifecycle-job.ts'
 import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
+import { workflowCursorBranchAndWorktree } from './workflow-cursor-worktrees.ts'
 
 const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
+// Plan-to-ship tree rows preceded their cursor by 8.9 to 25.8 s on 2026-11-21; this allows headroom without binding later work.
+export const LIFECYCLE_TREE_COVER_WINDOW_MS = 5 * 60_000
 
 export type KeyedWorkEvidence = {
   project: string
   key: string
   at: string
   source: 'run' | 'landing'
+  job?: string
+  branch?: string | null
 }
 
 export type TaskCoverage = {
@@ -29,6 +39,8 @@ export type TaskCoverage = {
   key: string
   openedAt: string
   closedAt: string | null
+  // Only cursor coverage carries a branch; claims never set it.
+  branch?: string
 }
 export type HandoffTransition = {
   project: string
@@ -57,6 +69,28 @@ const covers = (coverage: TaskCoverage, evidence: KeyedWorkEvidence): boolean =>
   coverage.openedAt <= evidence.at &&
   (coverage.closedAt === null || evidence.at < coverage.closedAt)
 
+const isLifecycleTreeJob = (job: string | undefined): boolean =>
+  job === HOOK_TREE_JOB || job === LANDING_TREE_JOB
+
+const lifecycleCursorCovers = (coverage: TaskCoverage, evidence: KeyedWorkEvidence): boolean => {
+  if (
+    !isLifecycleTreeJob(evidence.job) ||
+    !evidence.branch ||
+    coverage.project !== evidence.project ||
+    coverage.key !== evidence.key ||
+    coverage.branch !== evidence.branch.trim()
+  )
+    return false
+  const evidenceAt = Date.parse(evidence.at)
+  const openedAt = Date.parse(coverage.openedAt)
+  return (
+    Number.isFinite(evidenceAt) &&
+    Number.isFinite(openedAt) &&
+    evidenceAt <= openedAt &&
+    openedAt <= evidenceAt + LIFECYCLE_TREE_COVER_WINDOW_MS
+  )
+}
+
 export function decideWorkflowUncovered(input: {
   days: number
   now: string
@@ -81,7 +115,9 @@ export function decideWorkflowUncovered(input: {
   const uncovered = input.evidence.filter(
     (item) =>
       wanted.has(item.at.slice(0, 10)) &&
+      item.job !== CANON_MIRROR_JOB &&
       !input.cursors.some((coverage) => covers(coverage, item)) &&
+      !input.cursors.some((coverage) => lifecycleCursorCovers(coverage, item)) &&
       !input.claims.some((coverage) => covers(coverage, item)),
   )
   const handoffGaps = (input.handoffs ?? []).filter(
@@ -188,8 +224,11 @@ export async function workflowUncoveredReport(
   firstDay.setUTCDate(firstDay.getUTCDate() - days + 1)
   const from = firstDay.toISOString()
   const runs = database
-    .query<{ project: string; key: string; at: string }, [string]>(
-      `SELECT project.name project,run.launch_key key,run.started_at at
+    .query<
+      { project: string; key: string; at: string; job: string; branch: string | null },
+      [string]
+    >(
+      `SELECT project.name project,run.launch_key key,run.started_at at,run.job,run.branch
          FROM run JOIN project ON project.record_id=run.project_record_id
         WHERE run.launch_key IS NOT NULL AND run.started_at>=?`,
     )
@@ -215,6 +254,7 @@ export async function workflowUncoveredReport(
     key: row.workflow_key,
     openedAt: row.created_at,
     closedAt: isClosedStageState(row.state) ? row.updated_at : null,
+    branch: workflowCursorBranchAndWorktree(row.args).branch ?? undefined,
   }))
   const byRecordId = new Map(cursorRows.map((row) => [row.record_id, row]))
   const handoffs = cursorRows.flatMap((row): HandoffTransition[] => {
