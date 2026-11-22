@@ -31,9 +31,7 @@ test('only UUID-keyed hosted reads are classified as keyed', () => {
 
   expect(recordRequestReadKind('/v1/questions', query({ read: 'by-id' }))).toBe('by-id')
   expect(recordRequestReadKind('/v1/questions', query({ read: 'inbox' }))).toBe('inbox')
-  expect(recordRequestReadKind('/v1/questions/memberships', query({ read: 'inbox' }))).toBe(
-    'inbox',
-  )
+  expect(recordRequestReadKind('/v1/questions/memberships', query({ read: 'inbox' }))).toBe('inbox')
   expect(recordRequestReadKind('/v1/task-flow', query({ taskKey: 'DEV-2384' }))).toBeUndefined()
   expect(recordReadIsUuidKeyed('/v1/task-flow', undefined)).toBe(false)
   expect(

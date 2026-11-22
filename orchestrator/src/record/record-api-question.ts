@@ -112,7 +112,10 @@ export function registerRecordQuestionRoutes(
       query.data.read === 'open-for-tasks'
     if (!allowed)
       return context.json(
-        { error: 'question memberships reads allow only inbox without changedAfter and open-for-tasks' },
+        {
+          error:
+            'question memberships reads allow only inbox without changedAfter and open-for-tasks',
+        },
         400,
       )
     return context.json(await deps.readQuestions({ ...tenant, ...query.data }))

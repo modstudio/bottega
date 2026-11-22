@@ -6,6 +6,8 @@ import {
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 import { isRunQuestionOwnerNotLive } from '../question-store/run-question-write-guard.ts'
+import { recordApiError } from './record-api-client-error.ts'
+import { recordQuestionClient } from './record-api-client-question.ts'
 import type { QuestionWriteBody } from './record-question-contract.ts'
 
 const MACHINE = '01990000-0000-7000-8000-000000024580'
@@ -114,4 +116,17 @@ test('a hosted ask for a terminal run preserves the typed refusal through HTTP',
   expect(isRunQuestionOwnerNotLive(error)).toBe(true)
   expect(error).toMatchObject({ runId: RUN })
   expect(fixture.requestedRoutes).toContain('POST /v1/questions/ask')
+})
+
+test('an old hosted API refuses membership reads without falling back', async () => {
+  const routes: string[] = []
+  const client = recordQuestionClient(async (path) => {
+    routes.push(path)
+    throw recordApiError({ error: 'route not found' }, 404)
+  })
+
+  await expect(client.readMembershipQuestions?.({ read: 'inbox' })).rejects.toThrow(
+    'route not found; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+  )
+  expect(routes).toEqual(['/v1/questions/memberships?read=inbox'])
 })

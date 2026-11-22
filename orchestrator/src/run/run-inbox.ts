@@ -433,12 +433,15 @@ export async function runInboxCommand(
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
   const rows = rowsForInboxView(allRows, scopedFilter, project, mine, sid)
-  const workflowRows = await workflowInboxQuestions({
-    scope: 'cli-default',
-    all: has('all'),
-    activeOnly,
-    requestedCwd,
-  }, queriedWorkflowRows)
+  const workflowRows = await workflowInboxQuestions(
+    {
+      scope: 'cli-default',
+      all: has('all'),
+      activeOnly,
+      requestedCwd,
+    },
+    queriedWorkflowRows,
+  )
   const canAnswer = (owner: string | null) => inboxSessionCanAnswer(owner, sid)
   const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))

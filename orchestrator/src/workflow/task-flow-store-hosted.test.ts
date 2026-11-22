@@ -46,7 +46,7 @@ const taskFlowTables = [
 ] as const
 
 const destinationSpaceId = 'fixture-space'
-const questionSpaceIds = ['question-space-a', 'question-space-b', 'question-space-c'] as const
+const questionSpaceIds = [destinationSpaceId, 'question-space-b', 'question-space-c'] as const
 const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
@@ -56,11 +56,25 @@ const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
 // shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
-const BRIEF_RECORD_API_CALL_BUDGET = 8
+const BRIEF_RECORD_API_CALL_BUDGET = 10
 // shared/config-client.ts calls are excluded; shared/config-client.test.ts pins its S8 memo.
-const REVIEW_RECORD_API_CALL_BUDGET = 10
-const BRIEF_RECORD_QUESTION_CALL_LIMIT = 2
-const REVIEW_RECORD_QUESTION_CALL_LIMIT = 2
+const REVIEW_RECORD_API_CALL_BUDGET = 14
+const BRIEF_RECORD_API_BREAKDOWN = {
+  'record-whoami': 3,
+  'record-task-flow': 3,
+  'record-questions': 3,
+  'record-context-items': 1,
+}
+const REVIEW_RECORD_API_BREAKDOWN = {
+  'record-whoami': 4,
+  'record-task-flow': 5,
+  'record-questions': 4,
+  'record-context-items': 1,
+}
+// Membership inbox + membership open-for-tasks + task-flow's space-keyed open-for-cursors.
+const BRIEF_RECORD_QUESTION_CALL_LIMIT = 3
+// Membership inbox + membership open-for-tasks + open-for-cursors twice: review relists cursors.
+const REVIEW_RECORD_QUESTION_CALL_LIMIT = 4
 const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 262_144
 
 type TaskFlowReadCounts = NonNullable<
@@ -84,8 +98,7 @@ type RecordApiCallCounts = Record<string, number>
 function recordApiRouteClass(method: string): string {
   if (method === 'whoami') return 'record-whoami'
   if (method === 'listContextItems') return 'record-context-items'
-  if (method === 'readQuestions' || method === 'readMembershipQuestions')
-    return 'record-questions'
+  if (method === 'readQuestions' || method === 'readMembershipQuestions') return 'record-questions'
   if (/TaskFlow/.test(method)) return 'record-task-flow'
   throw new Error(`unclassified fixture record API call ${method}`)
 }
@@ -198,20 +211,20 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     })),
   }
   const memory = createMemoryRecordApiClient(memoryInput)
+  const allQuestionRows = [...memoryInput.questions]
+  memoryInput.questions.splice(1)
+  let memberQuestionSpaces: readonly string[] = questionSpaceIds.slice(0, 1)
   const taskFlowClient = {
     ...memory,
     whoami: async () => ({
       user: { id: 'fixture-user' },
       activeSpaceId: destinationSpaceId,
       personalSpaceId: destinationSpaceId,
-      memberships: [
-        { space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' as const },
-        ...questionSpaceIds.map((space_id) => ({
-          space_id,
-          slug: space_id,
-          permission: 'write' as const,
-        })),
-      ],
+      memberships: memberQuestionSpaces.map((space_id) => ({
+        space_id,
+        slug: space_id,
+        permission: 'write' as const,
+      })),
     }),
   }
   installRecordApiClient(taskFlowClient)
@@ -445,7 +458,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       recordApiCalls,
     }
   }
-  const measureEntryPoints = async () => {
+  const measureEntryPoints = async (expectedQuestionSpaces: readonly string[]) => {
     const cwd = process.cwd()
     process.chdir('/tmp')
     try {
@@ -507,11 +520,16 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
           totalCalls(result.recordApiCalls),
           `${name} record API calls ${JSON.stringify(result.recordApiCalls)}`,
         ).toBe(totalBudget)
+        expect(result.recordApiCalls).toEqual(
+          name === 'brief' ? BRIEF_RECORD_API_BREAKDOWN : REVIEW_RECORD_API_BREAKDOWN,
+        )
       }
       const visibleQuestions = brief.value.holders.flatMap(
         (holder) => holder.openQuestions?.map(({ question }) => question) ?? [],
       )
-      expect(visibleQuestions).toEqual(questionSpaceIds.map((space) => `Question from ${space}?`))
+      expect(visibleQuestions).toEqual(
+        expectedQuestionSpaces.map((space) => `Question from ${space}?`),
+      )
       return Object.fromEntries(
         Object.entries(entries).map(([name, entry]) => [name, entry.result]),
       ) as Record<keyof typeof entries, (typeof entries)[keyof typeof entries]['result']>
@@ -520,7 +538,10 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     }
   }
 
-  const one = await measureEntryPoints()
+  const one = await measureEntryPoints(questionSpaceIds.slice(0, 1))
+
+  memoryInput.questions.push(...allQuestionRows.slice(1))
+  memberQuestionSpaces = questionSpaceIds
 
   for (let index = 2; index <= 10; index++) {
     const stageId = `00000000-0000-4000-8002-${String(index).padStart(12, '0')}`
@@ -544,7 +565,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       },
     })
   }
-  const ten = await measureEntryPoints()
+  const ten = await measureEntryPoints(questionSpaceIds)
   expect(
     Object.fromEntries(
       Object.keys(one).map((name) => [

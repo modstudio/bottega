@@ -24,10 +24,7 @@ import type { RecordContextItem } from '../../src/record/record-context-items.ts
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { memoryContextItemClient } from './record-api-context-items.ts'
 import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
-import {
-  type MemoryQuestionInput,
-  memoryQuestionClient,
-} from './record-api-question.ts'
+import { type MemoryQuestionInput, memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
@@ -367,12 +364,13 @@ export function installRecordApiClient(client: RecordApiClient | null): void {
 }
 
 export function createMemoryRecordApiClient(
-  input: MemoryTaskFlowInput & MemoryQuestionInput & {
-    boardChanges?: HostedBoardChange[]
-    boardProjectIds?: Record<string, string>
-    questions?: Record<string, unknown>[]
-    contextItems?: RecordContextItem[]
-  } = {},
+  input: MemoryTaskFlowInput &
+    MemoryQuestionInput & {
+      boardChanges?: HostedBoardChange[]
+      boardProjectIds?: Record<string, string>
+      questions?: Record<string, unknown>[]
+      contextItems?: RecordContextItem[]
+    } = {},
 ): RecordApiClient {
   const hostsTaskFlow = Boolean(input.taskFlowStages)
   const docs = new Map<string, StoredDoc>()

@@ -33,10 +33,7 @@ function hostedQuestionRow(row: Record<string, unknown>) {
 
 export function memoryQuestionClient(
   input: MemoryQuestionInput,
-): Pick<
-  RecordApiClient,
-  'sync' | 'readQuestions' | 'readMembershipQuestions' | 'writeQuestion'
-> {
+): Pick<RecordApiClient, 'sync' | 'readQuestions' | 'readMembershipQuestions' | 'writeQuestion'> {
   const questions = input.questions ?? []
   const read = async (
     selector: QuestionReadInput,

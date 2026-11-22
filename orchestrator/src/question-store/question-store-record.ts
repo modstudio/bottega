@@ -305,9 +305,9 @@ export class RecordQuestionStore implements QuestionStore {
       ? await this.readAt(input, await this.destination(projectId))
       : membershipRead
         ? await this.membershipRead(input)
-      : (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
-        ? await this.spaceKeyedRead(input)
-        : await this.listRead(input)
+        : (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
+          ? await this.spaceKeyedRead(input)
+          : await this.listRead(input)
     const enrichMachineFields =
       input.read !== 'open-for-cursors' &&
       (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
