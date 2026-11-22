@@ -46,6 +46,12 @@ test('whole 40-hex and 64-hex tokens retain detection semantics', () => {
   expect(containsSecretShaped(uuid)).toBe(false)
 })
 
+test('assignment excludes exact uppercase task keys but still catches credentials', () => {
+  expect(secretShapedRule('--arg key=DEV-1007')).toBeNull()
+  expect(redactSecretShaped('--arg key=STO-1349').text).toBe('--arg key=STO-1349')
+  expect(secretShapedRule(`api_key=${githubPat}`)).toBe('assignment')
+})
+
 test('rules table validation refuses an unknown kind', () => {
   expect(() =>
     validateSecretShapedRuleTable({

@@ -196,6 +196,18 @@ test('a bare 64-hex evidence word stays readable', () => {
   expect(firstOutboxEvidenceRule('score', { note: evidence })).toBeNull()
 })
 
+test('task-key assignment evidence stays byte-identical while credential assignments mask', () => {
+  const task = '--arg key=DEV-1007'
+  expect(sanitizeOutboxPayload('run', { error: task })).toMatchObject({
+    error: task,
+    withheldFields: [],
+  })
+  expect(sanitizeOutboxPayload('run', { error: `api_key=${SECRET}` })).toMatchObject({
+    error: '[withheld: assignment]',
+    withheldFields: ['error'],
+  })
+})
+
 test('replaces unstorable code points in nested values and keys but preserves literal escape text', () => {
   const sanitized = sanitizeOutboxPayload('run', {
     nested: [{ value: 'nul\0surrogate\ud800', ['key\0\udfff']: 'literal \\u0000' }],

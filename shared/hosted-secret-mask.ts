@@ -63,6 +63,11 @@ const HOSTED_SECRET_EXCLUSIONS = {
       enumValue('kind'),
       { path: 'url', reason: 'service URL used as an identifier' },
     ],
+    'record.sync': [
+      timestamp('machine.seenAt'),
+      enumValue('rows.*.kind'),
+      slug('rows.*.spaceHint'),
+    ],
     'record.question.write': [
       enumValue('question.kind'),
       enumValue('question.askedVia'),
@@ -314,6 +319,7 @@ const route = (line: string, kind: RouteEntry['kind'], reason?: string): RouteEn
 const lines = (value: string) => value.trim().split('\n').filter(Boolean)
 
 const targetDeclarations: Record<string, HostedWriteRoute> = {
+  'POST /v1/sync': 'record.sync',
   'POST /v1/questions/:intent': 'record.question.write',
   'PUT /v1/context-items': 'record.context-item.put',
   'PUT /v1/docs': 'record.doc.put',
@@ -332,6 +338,18 @@ const recordEntries = lines(recordWriteRoutes).map((line) => {
     : targetDeclarations[line]
   return declaration ? { ...entry, declaration } : entry
 })
+
+const machineJoinMessageRoute = 'POST /v1/config/join/nameplates/:nameplate/messages'
+const classifiedRecordEntries = recordEntries.map((entry) =>
+  `${entry.method} ${entry.path}` === machineJoinMessageRoute
+    ? {
+        ...entry,
+        kind: 'no-free-text' as const,
+        declaration: undefined,
+        reason: 'validated PAKE shares or authenticated ciphertext encoded as base64url',
+      }
+    : entry,
+)
 
 const hubEntries: RouteEntry[] = [
   { kind: 'mask', method: 'POST', path: '/v1/notes', declaration: 'hub.note.create' },
@@ -385,7 +403,7 @@ const hubEntries: RouteEntry[] = [
 
 /** Fail-closed route inventory compared with both deployed apps by the gate. */
 export const HOSTED_WRITE_ROUTE_ENTRIES: readonly RouteEntry[] = [
-  ...recordEntries,
+  ...classifiedRecordEntries,
   ...lines(boardRefusalRoutes).map((line) =>
     route(line, 'refuse', 'board secret policy refuses the request'),
   ),
@@ -456,6 +474,22 @@ function walk(value: unknown, path: string[], exclusions: readonly Exclusion[]):
 /** Clones a validated write value and masks every non-excluded string leaf. */
 export function maskHostedWrite<T>(route: HostedWriteRoute, value: T): T {
   const masked = structuredClone(value)
+  if (route === 'record.sync' && masked && typeof masked === 'object') {
+    const rows = (masked as { rows?: unknown }).rows
+    if (Array.isArray(rows))
+      for (const [index, row] of rows.entries()) {
+        if (!row || typeof row !== 'object') continue
+        const payload = (row as { payload?: unknown }).payload
+        if (typeof payload !== 'string') continue
+        try {
+          const parsed = JSON.parse(payload) as unknown
+          walk(parsed, ['rows', String(index), 'payload'], HOSTED_SECRET_EXCLUSIONS.routes[route])
+          ;(row as { payload: string }).payload = JSON.stringify(parsed)
+        } catch {
+          // The sync contract reports malformed serialized payloads after masking the string itself.
+        }
+      }
+  }
   walk(masked, [], HOSTED_SECRET_EXCLUSIONS.routes[route])
   return masked
 }
@@ -469,11 +503,16 @@ function routePathMatches(template: string, actual: string): boolean {
   )
 }
 
-/** Applies the fail-closed route declaration to a parsed request payload. */
-export function maskHostedRoutePayload<T>(method: string, path: string, value: T): T {
-  const entry = HOSTED_WRITE_ROUTE_ENTRIES.find(
+/** Resolves the fail-closed policy row for one hosted route. */
+export function hostedWriteRouteEntry(method: string, path: string): RouteEntry | undefined {
+  return HOSTED_WRITE_ROUTE_ENTRIES.find(
     (candidate) => candidate.method === method && routePathMatches(candidate.path, path),
   )
+}
+
+/** Applies the fail-closed route declaration to a parsed request payload. */
+export function maskHostedRoutePayload<T>(method: string, path: string, value: T): T {
+  const entry = hostedWriteRouteEntry(method, path)
   if (!entry) throw new Error(`hosted write route ${method} ${path} has no secret policy entry`)
   if (entry.kind !== 'mask') return value
   if (entry.declaration) return maskHostedWrite(entry.declaration, value)
