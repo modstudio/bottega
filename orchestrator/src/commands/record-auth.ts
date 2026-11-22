@@ -134,7 +134,7 @@ function registerIdentityCommands(record: Command): void {
     )
   record
     .command('sign-in')
-    .description('sign in to the hosted record')
+    .description('sign in to the hosted record and apply machine settings')
     .requiredOption('--email <email>', 'email address of the account')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>

@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import {
+  applySignedInMachineSettings,
   decideRecordPassword,
   RECORD_PASSWORD_ENV,
   recordPassword,
@@ -46,6 +47,34 @@ test('an unset environment password with a TTY prompts', () => {
 
 test('record password accepts a provided password independent of process stdin', async () => {
   await expect(recordPassword(async () => 'provided')).resolves.toBe('provided')
+})
+
+test('post-sign-in settings refusal preserves completion and prints its remedy', async () => {
+  const output: string[] = []
+  await applySignedInMachineSettings({ log: (line) => output.push(line) }, async () => [
+    {
+      target: 'settings fixture',
+      outcome: 'refused',
+      condition: 'no-settings-row',
+      detail: 'no hosted settings row',
+      changed: false,
+    },
+  ])
+  expect(output).toEqual([
+    'settings fixture: refused; no hosted settings row',
+    `run \`${PLATFORM_SLUG} machine settings apply\``,
+  ])
+})
+
+test('post-sign-in settings error preserves completion and prints its remedy', async () => {
+  const output: string[] = []
+  await applySignedInMachineSettings({ log: (line) => output.push(line) }, async () => {
+    throw new Error('hosted read unavailable')
+  })
+  expect(output).toEqual([
+    'machine settings apply failed: hosted read unavailable',
+    `run \`${PLATFORM_SLUG} machine settings apply\``,
+  ])
 })
 
 const presentation = { log: () => {} }

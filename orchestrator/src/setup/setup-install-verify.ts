@@ -31,6 +31,13 @@ export type SetupInstallVerifyFacts = {
   canonEntries: Array<{ harness: string; path: string; exists: boolean }>
 }
 
+export type SetupProductHookFact = {
+  event: ProductHookDeclaration['event']
+  matcher: string | null
+  script: ProductHookDeclaration['script']
+  state: 'present' | 'missing' | 'drifted'
+}
+
 export type SetupInstallVerifyCheck = {
   name:
     | 'hooks-present'
@@ -69,6 +76,57 @@ function handlersFor(settings: unknown, declaration: ProductHookDeclaration): Ho
   })
 }
 
+export function classifySetupProductHooks(input: {
+  settings: unknown
+  readable: boolean
+  declarations: readonly ProductHookDeclaration[]
+  assetRoot(script: ProductHookDeclaration['script']): string | undefined
+}): SetupProductHookFact[] {
+  const pools = new Map<string, HookHandler[]>()
+  return input.declarations.map((declaration) => {
+    const key = `${declaration.event}\0${declaration.matcher ?? ''}`
+    let handlers = pools.get(key)
+    if (!handlers) {
+      handlers = input.readable ? handlersFor(input.settings, declaration) : []
+      pools.set(key, handlers)
+    }
+    const assetRoot = input.assetRoot(declaration.script)
+    const present = handlers.findIndex((handler) =>
+      commandNamesHookScript(handler.command, declaration.script, assetRoot),
+    )
+    let state: SetupProductHookFact['state'] = 'missing'
+    if (present >= 0) {
+      handlers.splice(present, 1)
+      state = 'present'
+    } else {
+      const drifted = handlers.findIndex((handler) =>
+        commandNamesHookScript(handler.command, declaration.script),
+      )
+      if (drifted >= 0) {
+        handlers.splice(drifted, 1)
+        state = 'drifted'
+      }
+    }
+    return {
+      event: declaration.event,
+      matcher: declaration.matcher ?? null,
+      script: declaration.script,
+      state,
+    }
+  })
+}
+
+function setupProductHookFacts(facts: SetupInstallVerifyFacts): SetupProductHookFact[] {
+  const file = userSettings(facts)
+  return classifySetupProductHooks({
+    settings: file?.settings,
+    readable: file?.state === 'readable',
+    declarations: facts.hooks,
+    assetRoot: (script) =>
+      facts.scripts.find((candidate) => candidate.file === script)?.assetRoot ?? facts.installRoot,
+  })
+}
+
 function missingHooks(
   facts: SetupInstallVerifyFacts,
   declarations: readonly ProductHookDeclaration[],
@@ -77,32 +135,10 @@ function missingHooks(
   if (file?.state !== 'readable') {
     return [`${file?.path ?? 'Claude user settings'} is ${file?.state ?? 'absent'}`]
   }
-  const available = new Map<string, number>()
-  for (const declaration of declarations) {
-    const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
-    if (available.has(key)) continue
-    const script = facts.scripts.find((candidate) => candidate.file === declaration.script)
-    const assetRoot = script?.assetRoot ?? facts.installRoot
-    available.set(
-      key,
-      handlersFor(file.settings, declaration).filter((handler) =>
-        commandNamesHookScript(handler.command, declaration.script, assetRoot),
-      ).length,
-    )
-  }
-  const missing: string[] = []
-  for (const declaration of declarations) {
-    const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
-    const count = available.get(key) ?? 0
-    if (count > 0) {
-      available.set(key, count - 1)
-      continue
-    }
-    missing.push(
-      `${declaration.event} ${declaration.matcher ?? '(no matcher)'} ${declaration.script}`,
-    )
-  }
-  return missing
+  const selected = new Set(declarations)
+  return setupProductHookFacts(facts)
+    .filter((hook, index) => selected.has(facts.hooks[index]!) && hook.state !== 'present')
+    .map((hook) => `${hook.event} ${hook.matcher ?? '(no matcher)'} ${hook.script}`)
 }
 
 function hookCheck(

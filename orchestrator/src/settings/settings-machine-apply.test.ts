@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordRouteClass } from '../../../shared/record-call-trace.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import {
   createMemoryRecordApiClient,
@@ -12,6 +13,8 @@ import { USER_CANON_MANAGED_MARKER } from '../canon/user-canon-home.ts'
 import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
+import { recordApiClientOver } from '../record/record-api-client.ts'
+import type { RecordClientRequest } from '../record/record-api-client-paths.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
@@ -125,6 +128,46 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('check mode bounds hosted reads to identity and document routes', async () => {
+    process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+    const routes: string[] = []
+    const transport: RecordClientRequest = async <T>(path: string, init = {}): Promise<T> => {
+      routes.push(recordRouteClass(path))
+      const body =
+        path === '/v1/whoami'
+          ? {
+              user: { id: OWNER, email: 'owner@example.test', emailVerified: true },
+              activeSpaceId: 'organization-space',
+              personalSpaceId: 'personal-space',
+              memberships: [],
+            }
+          : {
+              items: path.includes('scope=settings')
+                ? [
+                    {
+                      owner: OWNER,
+                      slug: 'settings',
+                      body: serializeOwnedSettings({
+                        permissions: { allow: ['Bash(hosted *)'] },
+                        hooks: {},
+                        envKeys: [],
+                      }),
+                    },
+                  ]
+                : [{ owner: OWNER, slug: 'AGENTS.md', body: CANON_BODY }],
+              unreadable: [],
+              nextCursor: null,
+            }
+      return (init.schema ? init.schema(body) : body) as T
+    }
+    installRecordApiClient(recordApiClientOver(transport))
+
+    await applyMachineSettings({ check: true }, deps())
+
+    expect(routes.sort()).toEqual(['record-docs', 'record-docs', 'record-whoami'])
+    expect(routes.every((route) => route === 'record-whoami' || route === 'record-docs')).toBe(true)
+  })
+
   test('a hosted install reads personal settings and canon without pulling the record cache', async () => {
     const hosted = createMemoryRecordApiClient()
     await hosted.upsertDoc(

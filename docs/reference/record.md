@@ -440,7 +440,7 @@ redact secret material from synchronized record payloads
 
 **Synopsis:** `bottega record sign-in --email <email>`
 
-sign in to the hosted record
+sign in to the hosted record and apply machine settings
 
 ### Options
 
