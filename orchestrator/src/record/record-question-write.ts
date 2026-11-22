@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
@@ -38,6 +39,7 @@ import { projectRecordId } from './record-sync-project-identity.ts'
 import { recordColumnName, sameRecordValue } from './record-task-flow-write-decision.ts'
 
 type Tenant = { url: string } & TenantPrincipal
+const maskQuestionValues = <T>(value: T): T => maskHostedTableWrite('question', value)
 type ExistingQuestion = {
   number: number | string | null
   revision: number | string
@@ -201,13 +203,15 @@ export async function writeRecordQuestionTransaction(
     key: writeInput.question.workflowKey,
   })
   const projectId = await projectIdForQuestionWrite(intent, writeInput, existing[0], tx)
-  const values = await questionValuesForWrite(
-    tx,
-    payload,
-    projectId,
-    workflowTaskId,
-    writeInput.question.workflowCursorRecordId,
-    intent === 'ask',
+  const values = maskQuestionValues(
+    await questionValuesForWrite(
+      tx,
+      payload,
+      projectId,
+      workflowTaskId,
+      writeInput.question.workflowCursorRecordId,
+      intent === 'ask',
+    ),
   )
   const {
     id: _id,
@@ -306,7 +310,7 @@ async function importRecordQuestionTransaction(
     key: input.question.workflowKey,
   })
   const projectId = await projectRecordId(tx, input.question, input)
-  const values = {
+  const values = maskQuestionValues({
     ...questionValues(
       { ...input.question, number, spaceId: input.spaceId },
       projectId,
@@ -315,7 +319,7 @@ async function importRecordQuestionTransaction(
     workflowStepOrdinal: input.question.workflowStepOrdinal ?? null,
     workflowStepSlug: input.question.workflowStepSlug ?? null,
     lastRequestId: input.requestId,
-  }
+  })
   if (existing[0]) assertSameQuestionRow('question', input.question.id, existing[0], values)
   else await drizzle({ client: tx }).insert(questionRecord).values(values)
   for (const audit of input.audits)

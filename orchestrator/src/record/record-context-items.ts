@@ -9,6 +9,7 @@ import {
   contextItemHolderGroup,
   type StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
@@ -140,6 +141,7 @@ export async function upsertRecordContextItem(input: Tenant & RecordContextItemI
       target: input.target,
     }),
   )
+  input = maskHostedTableWrite('context_item', input)
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT id,created_at,updated_at FROM context_item

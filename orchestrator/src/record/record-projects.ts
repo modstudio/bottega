@@ -2,6 +2,7 @@
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
@@ -58,13 +59,15 @@ async function renameHostedDocSubjects(
   from: string,
   to: string,
 ): Promise<void> {
+  const docRename = maskHostedTableWrite('doc', { subject: to })
+  const revisionRename = maskHostedTableWrite('doc_revision', { subject: to })
   await tx`
-    UPDATE doc SET subject=${to}, updated_at=now()
+    UPDATE doc SET subject=${docRename.subject}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}
       AND project_id=${projectId}::uuid
   `
   await tx`
-    UPDATE doc_revision SET subject=${to}
+    UPDATE doc_revision SET subject=${revisionRename.subject}
     WHERE space_id=${spaceId}::uuid AND subject=${from}
       AND project_id=${projectId}::uuid
   `
@@ -86,16 +89,18 @@ async function renameHostedHubProjectNames(
   tx: SQL,
   input: { spaceId: string; projectId: string; from: string; to: string },
 ): Promise<void> {
+  const taskRename = maskHostedTableWrite('hub_task', { project: input.to })
+  const noteRename = maskHostedTableWrite('hub_note', { project: input.to })
   for (const table of HUB_PROJECT_NAME_TABLES) {
     await tx`UPDATE ${tx.unsafe(table)} SET project_name=${input.to}
       WHERE project_id=${input.projectId}::uuid`
   }
   await tx`
-    UPDATE hub_task SET project=${input.to}
+    UPDATE hub_task SET project=${taskRename.project}
     WHERE project_id=${input.projectId}::uuid
   `
   await tx`
-    UPDATE hub_note SET project=${input.to}
+    UPDATE hub_note SET project=${noteRename.project}
     WHERE project_id=${input.projectId}::uuid
   `
 }

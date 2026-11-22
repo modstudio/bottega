@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
+import { withHostedMaskWarnings } from '../../shared/hosted-secret-mask.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
@@ -86,67 +87,74 @@ async function hostedDiagnosticResponse(
   return hostedNoDestinationWriteApi(request, config, dependencies.noDestinationWrites)
 }
 
+async function hostedResponse(
+  req: Request,
+  config: HostedRouteConfig,
+  dependencies: HostedRouteDependencies,
+  dist: string,
+): Promise<Response> {
+  const url = new URL(req.url)
+  if (isUnregisteredHostedWrite(req.method, url.pathname))
+    return Response.json(
+      {
+        error: 'write route is not in the hosted write registry',
+        remedy: 'add it to HOSTED_WRITE_ROUTES in hub/src/hosted-write-routes.ts',
+      },
+      { status: 404 },
+    )
+  const diagnostic = await hostedDiagnosticResponse(req, config, dependencies)
+  if (diagnostic) return diagnostic
+  const changes = await changeApi(req, config, dependencies.changes)
+  if (changes) return changes
+  const tasks = await taskApi(req, config, dependencies.tasks)
+  if (tasks) return tasks
+  const notes = await noteApi(req, config, dependencies.notes)
+  if (notes) return notes
+  const waitingEmail = await operatorWaitingEmailApi(req, config, dependencies.waitingEmail)
+  if (waitingEmail) return waitingEmail
+  const reports = await reportApi(req, config, dependencies.reports)
+  if (reports) return reports
+  const publicDocsText = await publicDocsTextApi(req, dependencies.publicDocsText)
+  if (publicDocsText) return publicDocsText
+  if (url.pathname.startsWith('/trpc')) {
+    return fetchRequestHandler({
+      endpoint: '/trpc',
+      req,
+      router: hostedRouter,
+      createContext: (options) => createContext(options, config.recordDatabaseUrl),
+    })
+  }
+  const resolved = resolveAppStatic(url.pathname, existsSync(dist))
+  if (resolved.kind === '503') {
+    return new Response('hub/web is not built: cd hub/web && bun run build', {
+      status: 503,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
+  }
+  const file = Bun.file(appStaticPath(dist, resolved))
+  if (!(await file.exists())) {
+    // The index is checked too: streaming a missing file sends 200 headers
+    // first and fails mid-body, which reads as a broken page, not an error.
+    return resolved.kind === 'file'
+      ? new Response('not found', { status: 404 })
+      : new Response('hub/web is not built: cd hub/web && bun run build', {
+          status: 503,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        })
+  }
+  const response = new Response(file, {
+    headers: resolved.kind === 'index' ? { 'content-type': 'text/html; charset=utf-8' } : undefined,
+  })
+  return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
+}
+
 export function hostedRequestHandler(
   config: HostedRouteConfig,
   dependencies: HostedRouteDependencies = {},
 ) {
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
-  return async (req: Request): Promise<Response> => {
-    const url = new URL(req.url)
-    if (isUnregisteredHostedWrite(req.method, url.pathname))
-      return Response.json(
-        {
-          error: 'write route is not in the hosted write registry',
-          remedy: 'add it to HOSTED_WRITE_ROUTES in hub/src/hosted-write-routes.ts',
-        },
-        { status: 404 },
-      )
-    const diagnostic = await hostedDiagnosticResponse(req, config, dependencies)
-    if (diagnostic) return diagnostic
-    const changes = await changeApi(req, config, dependencies.changes)
-    if (changes) return changes
-    const tasks = await taskApi(req, config, dependencies.tasks)
-    if (tasks) return tasks
-    const notes = await noteApi(req, config, dependencies.notes)
-    if (notes) return notes
-    const waitingEmail = await operatorWaitingEmailApi(req, config, dependencies.waitingEmail)
-    if (waitingEmail) return waitingEmail
-    const reports = await reportApi(req, config, dependencies.reports)
-    if (reports) return reports
-    const publicDocsText = await publicDocsTextApi(req, dependencies.publicDocsText)
-    if (publicDocsText) return publicDocsText
-    if (url.pathname.startsWith('/trpc')) {
-      return fetchRequestHandler({
-        endpoint: '/trpc',
-        req,
-        router: hostedRouter,
-        createContext: (options) => createContext(options, config.recordDatabaseUrl),
-      })
-    }
-    const resolved = resolveAppStatic(url.pathname, existsSync(dist))
-    if (resolved.kind === '503') {
-      return new Response('hub/web is not built: cd hub/web && bun run build', {
-        status: 503,
-        headers: { 'content-type': 'text/plain; charset=utf-8' },
-      })
-    }
-    const file = Bun.file(appStaticPath(dist, resolved))
-    if (!(await file.exists())) {
-      // The index is checked too: streaming a missing file sends 200 headers
-      // first and fails mid-body, which reads as a broken page, not an error.
-      return resolved.kind === 'file'
-        ? new Response('not found', { status: 404 })
-        : new Response('hub/web is not built: cd hub/web && bun run build', {
-            status: 503,
-            headers: { 'content-type': 'text/plain; charset=utf-8' },
-          })
-    }
-    const response = new Response(file, {
-      headers:
-        resolved.kind === 'index' ? { 'content-type': 'text/html; charset=utf-8' } : undefined,
-    })
-    return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
-  }
+  return async (request: Request): Promise<Response> =>
+    withHostedMaskWarnings(async () => hostedResponse(request, config, dependencies, dist))
 }
 
 export async function hubTimedResponse(

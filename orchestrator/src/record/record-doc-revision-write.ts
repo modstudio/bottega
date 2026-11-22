@@ -3,6 +3,7 @@
 
 import type { SQL } from 'bun'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
@@ -85,6 +86,7 @@ export async function insertRecordDocRevision(
     at: string
   },
 ): Promise<string> {
+  input = maskHostedTableWrite('doc_revision', input)
   const id = input.id ?? newRecordId()
   const existing = input.id
     ? await tx`SELECT id,space_id,doc_id,scope,subject,owner_user_id,slug,project_id,op,title,body,delivery,audiences,parent_id,position,featured,status,kind,form,article_subject_id,related_subject_ids,source_files,checked_against_commit,summary,replacement_slug,author,reason,session_id,at FROM doc_revision WHERE id=${id}::uuid`
@@ -114,6 +116,7 @@ export async function insertRecordDocRevision(
       )
     `
   }
+  maskHostedTableWrite('doc', { latest_revision_id: storedId })
   await tx`
     UPDATE doc SET latest_revision_id=${storedId}::uuid
     WHERE space_id=${input.spaceId}::uuid AND id=${input.docId}::uuid

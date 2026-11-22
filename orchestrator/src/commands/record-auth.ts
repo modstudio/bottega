@@ -591,12 +591,19 @@ export function register(program: Command): void {
   registerSpaceCommands(record)
   record
     .command('audit-secrets')
-    .description('scan local outbox payloads for secret material')
+    .description('scan local outbox or hosted free text for secret material')
     .option('--json', 'write the audit findings as JSON')
     .option('--ids', 'include row identifiers in text output')
+    .option('--hosted', 'scan hosted record free-text columns instead of the local outbox')
+    .option('--rule <name>', 'include only matches from one named rule')
     .action((options) =>
       recordAuditSecretsCommand(
-        { json: Boolean(options.json), ids: Boolean(options.ids) },
+        {
+          json: Boolean(options.json),
+          ids: Boolean(options.ids),
+          hosted: Boolean(options.hosted),
+          ...(options.rule === undefined ? {} : { rule: String(options.rule) }),
+        },
         presentation,
       ),
     )

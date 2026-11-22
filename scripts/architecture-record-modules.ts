@@ -7,6 +7,7 @@ import { recordCacheModules } from './architecture-record-cache-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
 import { recordQuestionModules } from './architecture-record-question-modules.ts'
+import { recordSecretMaskModules } from './architecture-record-secret-mask-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
@@ -28,6 +29,7 @@ export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...recordInvariantModules,
   ...recordQuestionModules,
+  ...recordSecretMaskModules,
   ...recordSyncModules,
   ...recordTaskFlowModules,
   ...storageRecordModules,
@@ -102,6 +104,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-catalogue-import.ts', [
     'bun',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/tenant.ts',
     '../lens/lens-profile-version.ts',
@@ -116,6 +119,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-catalogue-reconciliation.ts', []),
   module('orchestrator/src/record/record-space-built-ins.ts', [
     'bun',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record/tenant.ts',
     '../lens/lens-built-ins.ts',
@@ -279,14 +283,6 @@ export const recordModules: RecordModule[] = [
     './record-cache-port.ts',
     './record-cache-workflow.ts',
   ]),
-  module('orchestrator/src/record/record-workflow-catalogue.ts', [
-    'bun',
-    '../../../shared/record/schema.ts',
-    '../../../shared/record/tenant.ts',
-    './record-cursor.ts',
-    './record-workflow-contract.ts',
-    './record-pool.ts',
-  ]),
   module('orchestrator/src/record/record-workflow-contract.ts', [
     'zod',
     '../doc/doc-revision-conflict.ts',
@@ -295,6 +291,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-workflow.ts', [
     'hono',
     'zod',
+    '../../../shared/hosted-secret-mask.ts',
     '../doc/doc-revision-conflict.ts',
     './record-auth.ts',
     './record-cursor.ts',
@@ -513,12 +510,14 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-doc-import-write.ts', [
     'bun',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record/jsonb-sql.ts',
     '../../../shared/record/schema.ts',
     './record-doc-audience-sql.ts',
     './record-doc-mapping.ts',
   ]),
   module('orchestrator/src/record/record-doc-revision-write.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/docs.ts',
@@ -550,12 +549,6 @@ export const recordModules: RecordModule[] = [
     './outbox-serialize.ts',
     'bun:sqlite',
   ]),
-  module('orchestrator/src/record/outbox-secret-audit.ts', [
-    '../../../shared/brand.ts',
-    'bun:sqlite',
-    './outbox-prune-payload.ts',
-    './outbox-sanitize.ts',
-  ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -577,6 +570,9 @@ export const recordModules: RecordModule[] = [
     '../project/projects.ts',
     './outbox-secret-audit.ts',
     './outbox-redaction.ts',
+    './hosted-secret-audit.ts',
+    './record-pool.ts',
+    './record-session.ts',
     './record-doctor.ts',
     './record-public-doc-designation.ts',
     './record-space-move.ts',
@@ -722,6 +718,7 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-write-allowed.ts',
   ]),
   module('orchestrator/src/record/record-doc-order.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     'bun',
     '../../../shared/record/tenant.ts',
     '../doc/doc-order.ts',

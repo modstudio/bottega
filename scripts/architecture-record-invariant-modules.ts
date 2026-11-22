@@ -42,6 +42,7 @@ export const recordInvariantModules = [
   module('orchestrator/src/record/record-task-flow-write-decision.ts', []),
   module('orchestrator/src/record/record-sequence.ts', ['bun', '../../../shared/record-id.ts']),
   module('orchestrator/src/record/record-task-flow-write.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/jsonb-sql.ts',

@@ -1,5 +1,6 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
@@ -117,6 +118,7 @@ export async function createHostedTaskInTransaction(
   identity: TaskIdentity,
   input: Parameters<typeof createHostedTask>[2],
 ) {
+  input = maskHostedTableWrite('hub_task', input)
   if (!input.projectId)
     throw new Error(
       `project-scoped hosted task write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
@@ -175,6 +177,7 @@ export async function createHostedDocument(
   key: string,
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
+  input = maskHostedTableWrite('hub_task_document', input)
   return withHostedTenant(client, identity, async (tx) => {
     const project = rows<{
       id: string
@@ -348,6 +351,7 @@ export async function mirrorTaskRow(
   identity: TaskIdentity,
   row: HostedTask,
 ): Promise<MirrorAdoption | null> {
+  row = maskHostedTableWrite('hub_task', row)
   const existing = rows<{
     id: string
     space_id: string
@@ -457,6 +461,7 @@ export async function mirrorCommentRow(
   identity: TaskIdentity,
   row: HostedComment,
 ): Promise<void> {
+  row = maskHostedTableWrite('hub_task_comment', row)
   const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string }>(
     await tx`SELECT id,space_id FROM hub_task_comment WHERE id=${row.id}::uuid`,
@@ -491,6 +496,7 @@ export async function mirrorDocumentRow(
   identity: TaskIdentity,
   row: HostedDocument,
 ): Promise<void> {
+  row = maskHostedTableWrite('hub_task_document', row)
   const number = row.number
   if (!row.deleted_at && number === null)
     throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)

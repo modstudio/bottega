@@ -1,4 +1,5 @@
 import ky, { isResponseSizeError, isTimeoutError } from 'ky'
+import { PLATFORM_SLUG } from './brand.ts'
 import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
 
 function requestUrl(input: RequestInfo | URL): string {
@@ -58,6 +59,8 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
         throwHttpErrors: false,
       })
       const body = await response.arrayBuffer()
+      const warning = response.headers.get('warning')
+      if (warning?.includes(`299 ${PLATFORM_SLUG} "masked `)) console.warn(warning)
       const rebuilt = new Response(body, {
         status: response.status,
         statusText: response.statusText,

@@ -430,6 +430,26 @@ function mutationBody(
   }
 }
 
+test('question routes forward validated free text to the masked writer', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const body = mutationBody('answer', contractId(29001), contractId(29002), 1)
+  body.question.answer = `${generic} quoted ${secret}`
+  let stored = ''
+  const response = await app({
+    writeQuestion: async (_intent, input) => {
+      stored = input.question.answer ?? ''
+      return { id: input.question.id, number: 1, revision: 1, applied: true, replayed: false }
+    },
+  }).request('/v1/questions/answer', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(`${generic} quoted ${secret}`)
+})
+
 test('existing question mutations keep the stored project while asks still resolve payload projects', async () => {
   const fixture = await createRecordContractFixture()
   const seeded = MUTATING_INTENTS.flatMap((intent, intentIndex) =>

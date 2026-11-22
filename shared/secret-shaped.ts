@@ -3,7 +3,14 @@
 import table from './secret-shaped-rules.json' with { type: 'json' }
 
 type RuleKind = 'span' | 'pem' | 'jwt' | 'base64'
-type RuleDefinition = { name: string; kind: RuleKind; pattern: string; ignoreCase: boolean }
+export type SecretRulePrecision = 'high' | 'generic'
+type RuleDefinition = {
+  name: string
+  kind: RuleKind
+  precision: SecretRulePrecision
+  pattern: string
+  ignoreCase: boolean
+}
 type RuleTable = {
   rules: RuleDefinition[]
   exemptEvidenceToken: { pattern: string; ignoreCase: boolean }
@@ -11,6 +18,7 @@ type RuleTable = {
 }
 
 const RULE_KINDS = new Set<RuleKind>(['span', 'pem', 'jwt', 'base64'])
+const RULE_PRECISIONS = new Set<SecretRulePrecision>(['high', 'generic'])
 
 function compiledPattern(pattern: unknown, field: string): string {
   if (typeof pattern !== 'string') throw new Error(`${field} must be a string`)
@@ -35,10 +43,21 @@ export function validateSecretShapedRuleTable(parsed: unknown): RuleTable {
     if (typeof rule.name !== 'string') throw new Error(`rule ${index} name must be a string`)
     if (typeof rule.kind !== 'string' || !RULE_KINDS.has(rule.kind as RuleKind))
       throw new Error(`rule ${index} kind must be one of span, pem, jwt, base64`)
+    if (
+      typeof rule.precision !== 'string' ||
+      !RULE_PRECISIONS.has(rule.precision as SecretRulePrecision)
+    )
+      throw new Error(`rule ${index} precision must be one of high, generic`)
     const pattern = compiledPattern(rule.pattern, `rule ${index} pattern`)
     if (typeof rule.ignoreCase !== 'boolean')
       throw new Error(`rule ${index} ignoreCase must be a boolean`)
-    return { name: rule.name, kind: rule.kind as RuleKind, pattern, ignoreCase: rule.ignoreCase }
+    return {
+      name: rule.name,
+      kind: rule.kind as RuleKind,
+      precision: rule.precision as SecretRulePrecision,
+      pattern,
+      ignoreCase: rule.ignoreCase,
+    }
   })
   if (typeof candidate.exemptEvidenceToken !== 'object' || candidate.exemptEvidenceToken === null)
     throw new Error('exemptEvidenceToken must be an object')
@@ -69,7 +88,11 @@ function withheldMarker(rule: string): string {
 export const WITHHELD_SECRET_SHAPED = withheldMarker('secret-shaped content')
 
 type SecretSpan = { start: number; end: number }
-type SecretRule = { name: string; spans: (text: string) => SecretSpan[] }
+type SecretRule = {
+  name: string
+  precision: SecretRulePrecision
+  spans: (text: string) => SecretSpan[]
+}
 
 const regexSpans = (pattern: RegExp, text: string): SecretSpan[] =>
   [...text.matchAll(pattern)].map((match) => ({
@@ -99,19 +122,29 @@ const pemSpans = (pattern: RegExp, text: string): SecretSpan[] =>
 const RULES: readonly SecretRule[] = definitions.map((definition) => {
   const pattern = new RegExp(definition.pattern, `g${definition.ignoreCase ? 'i' : ''}`)
   if (definition.kind === 'pem')
-    return { name: definition.name, spans: (text) => pemSpans(pattern, text) }
+    return {
+      name: definition.name,
+      precision: definition.precision,
+      spans: (text) => pemSpans(pattern, text),
+    }
   if (definition.kind === 'jwt')
     return {
       name: definition.name,
+      precision: definition.precision,
       spans: (text) => filteredSpans(pattern, text, jwtHeaderIsObject),
     }
   if (definition.kind === 'base64')
     return {
       name: definition.name,
+      precision: definition.precision,
       spans: (text) => filteredSpans(pattern, text, base64RunIsSecret),
     }
   if (definition.kind === 'span')
-    return { name: definition.name, spans: (text) => regexSpans(pattern, text) }
+    return {
+      name: definition.name,
+      precision: definition.precision,
+      spans: (text) => regexSpans(pattern, text),
+    }
   throw new Error(`unsupported secret-shaped rule kind: ${definition.kind}`)
 })
 
@@ -148,11 +181,18 @@ function sameSpan(left: SecretSpan, right: SecretSpan): boolean {
 /** Abbreviates caller-known commits, then masks only credential-shaped spans. */
 export function redactSecretShaped(
   text: string,
-  options: { knownCommits?: readonly string[]; exemptEvidenceTokens?: boolean } = {},
+  options: {
+    knownCommits?: readonly string[]
+    exemptEvidenceTokens?: boolean
+    precision?: SecretRulePrecision
+  } = {},
 ): { text: string; rules: string[] } {
   const prepared = abbreviateKnownCommits(text, options.knownCommits ?? [])
   const exemptions = options.exemptEvidenceTokens ? exemptEvidenceSpans(prepared) : []
-  const ruleSpans = RULES.map((rule) => ({
+  const selectedRules = options.precision
+    ? RULES.filter((rule) => rule.precision === options.precision)
+    : RULES
+  const ruleSpans = selectedRules.map((rule) => ({
     rule,
     spans: rule
       .spans(prepared)
@@ -177,6 +217,10 @@ export function redactSecretShaped(
     cursor = span.end
   }
   return { text: redacted + prepared.slice(cursor), rules }
+}
+
+export function secretShapedRulePrecision(name: string): SecretRulePrecision | null {
+  return RULES.find((rule) => rule.name === name)?.precision ?? null
 }
 
 /** Keeps child-process detail out of prompts and logs when it resembles credentials. */

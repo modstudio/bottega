@@ -260,7 +260,7 @@ describe('record space move-project command', () => {
 })
 
 describe('record audit-secrets command', () => {
-  test('default open does not enter writable-open hooks', () => {
+  test('default open does not enter writable-open hooks', async () => {
     closeDatabaseForFixture()
     const keeper = new Database(DB_PATH)
     keeper.exec('PRAGMA journal_mode = WAL; BEGIN IMMEDIATE; COMMIT;')
@@ -279,7 +279,10 @@ describe('record audit-secrets command', () => {
     })
     try {
       const output: string[] = []
-      recordAuditSecretsCommand({ json: true, ids: false }, { log: (value) => output.push(value) })
+      await recordAuditSecretsCommand(
+        { json: true, ids: false },
+        { log: (value) => output.push(value) },
+      )
       expect(entered).toBe(0)
       expect(JSON.parse(output.join(''))).toEqual({ counts: [], releasedSkipped: 0 })
     } finally {
