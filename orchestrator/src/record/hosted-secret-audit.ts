@@ -91,7 +91,8 @@ function auditHostedSecretMatches(
   options: { rule?: string } = {},
 ): HostedSecretAuditMatch[] {
   return cells.flatMap((cell) => {
-    if (cell.value === null || cell.id === undefined || cell.createdAt === undefined) return []
+    const { id, createdAt } = cell
+    if (cell.value === null || id === undefined || createdAt === undefined) return []
     return redactSecretShaped(cell.value, { exemptEvidenceTokens: true }).rules.flatMap((rule) => {
       if (options.rule !== undefined && rule !== options.rule) return []
       const precision = secretShapedRulePrecision(rule)
@@ -100,8 +101,8 @@ function auditHostedSecretMatches(
             {
               table: cell.table,
               column: cell.column,
-              id: cell.id,
-              createdAt: cell.createdAt,
+              id,
+              createdAt,
               rule,
               precision,
             },
