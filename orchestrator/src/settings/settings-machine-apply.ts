@@ -2,7 +2,7 @@
 /** Applies hosted user settings and canon to this machine. Must not know CLI grammar or scheduling. */
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import {
@@ -292,9 +292,14 @@ function applyRenderedUserSettings(input: {
       changed: true,
     }
   }
-  const result = plan
-    ? input.deps.applySettings(plan, input.deps.environment)
-    : (writeNewSettingsFileAtomically(input.path, input.rendered), { backup: null })
+  let result: { backup: string | null }
+  if (plan) {
+    result = input.deps.applySettings(plan, input.deps.environment)
+  } else {
+    mkdirSync(dirname(input.path), { recursive: true, mode: 0o700 })
+    writeNewSettingsFileAtomically(input.path, input.rendered)
+    result = { backup: null }
+  }
   return {
     target: input.target,
     outcome: 'applied',

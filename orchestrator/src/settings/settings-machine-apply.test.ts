@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -375,15 +383,18 @@ describe('settings apply', () => {
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
   })
 
-  test('without a settings row creates an absent settings file with product hooks', async () => {
+  test('without a settings row creates an absent Claude home and settings file', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
-    const settingsPath = join(root, '.claude', 'settings.json')
+    const claudeHome = join(root, '.claude')
+    const settingsPath = join(claudeHome, 'settings.json')
+    rmSync(claudeHome, { recursive: true })
 
     expect((await applyMachineSettings({ check: true }, deps()))[0]).toMatchObject({
       outcome: 'applied',
       detail: 'would apply; product hooks only; no user settings row',
       changed: true,
     })
+    expect(existsSync(claudeHome)).toBe(false)
     expect(existsSync(settingsPath)).toBe(false)
 
     const results = await applyMachineSettings({ check: false }, deps())
@@ -393,6 +404,8 @@ describe('settings apply', () => {
       detail: 'created new file; product hooks only; no user settings row',
       changed: true,
     })
+    expect(existsSync(claudeHome)).toBe(true)
+    expect(statSync(claudeHome).mode & 0o777).toBe(0o700)
     expect(existsSync(settingsPath)).toBe(true)
     const rendered = readFileSync(settingsPath, 'utf8')
     for (const hook of PRODUCT_HOOKS) expect(rendered).toContain(hook.script)
