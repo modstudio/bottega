@@ -10,8 +10,12 @@ const BASELINE_PATH = resolve(ROOT, 'scripts/quality/git-path-list.json')
 const PATH_LIST_ARGUMENTS = new Set('--name-only,--name-status,ls-files,diff-tree'.split(','))
 const REMEDY =
   'build the arguments with nulPathListArgs and parse with splitNulPaths or splitNulNameStatus from shared/git-path-list.ts'
+const RUN_TREE_CLEAN_HELPER = 'orchestrator/src/worktree/worktree-attribution.ts'
+const RUN_TREE_CLEAN_REMEDY =
+  'run git clean only through cleanRunTree so the run ownership marker is preserved'
 
 export type GitPathListLiteral = { file: string; line: number }
+export type GitCleanLiteral = { file: string; line: number }
 type GitPathListBaseline = { files: Record<string, number> }
 
 function productionTypeScript(path: string): boolean {
@@ -80,6 +84,43 @@ export function gitPathListLiterals(files: Readonly<Record<string, string>>): Gi
   return findings
 }
 
+function insideCleanRunTree(node: ts.Node, path: string): boolean {
+  if (path !== RUN_TREE_CLEAN_HELPER) return false
+  for (let current: ts.Node | undefined = node.parent; current; current = current.parent) {
+    if (ts.isFunctionDeclaration(current)) return current.name?.text === 'cleanRunTree'
+  }
+  return false
+}
+
+/** Find git-clean argument arrays outside the marker-preserving worktree helper. */
+export function gitCleanLiterals(files: Readonly<Record<string, string>>): GitCleanLiteral[] {
+  const findings: GitCleanLiteral[] = []
+  for (const [path, source] of Object.entries(files).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (!productionTypeScript(path) || (!source.includes("'clean'") && !source.includes('"clean"')))
+      continue
+    const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isArrayLiteralExpression(node) &&
+        node.elements[0] !== undefined &&
+        ts.isStringLiteral(node.elements[0]) &&
+        node.elements[0].text === 'clean' &&
+        !insideCleanRunTree(node, path)
+      ) {
+        findings.push({
+          file: path,
+          line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+        })
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(file)
+  }
+  return findings
+}
+
 export function gitPathListViolations(
   findings: readonly GitPathListLiteral[],
   baseline: GitPathListBaseline,
@@ -114,7 +155,12 @@ function checkGitPathLists(
   reporter: Pick<Console, 'error' | 'log'> = console,
 ): boolean {
   const findings = gitPathListLiterals(files)
-  const violations = gitPathListViolations(findings, baseline)
+  const violations = [
+    ...gitPathListViolations(findings, baseline),
+    ...gitCleanLiterals(files).map(
+      (finding) => `${finding.file}:${finding.line}: raw git clean; ${RUN_TREE_CLEAN_REMEDY}`,
+    ),
+  ]
   for (const violation of violations) reporter.error(violation)
   if (violations.length) return false
   reporter.log(`check-git-path-list: ok (${findings.length} frozen raw path lists)`)

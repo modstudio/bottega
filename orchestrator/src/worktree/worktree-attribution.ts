@@ -31,6 +31,16 @@ export type OrphanSafety = {
 
 export const ORCH_RUN_MARKER = '.orch-run'
 
+/** Remove generated and ignored tree residue without deleting its ownership identity. */
+export function cleanRunTree(path: string): void {
+  const result = gitResult(['clean', '-fdx', '-e', ORCH_RUN_MARKER], path)
+  if (!result.ok)
+    throw new Error(
+      `git clean -fdx -e ${ORCH_RUN_MARKER} failed: ${result.stderr || 'unknown error'}; ` +
+        `cleared by: resolve the reported git clean error in ${path}, then retry the operation`,
+    )
+}
+
 export type TreeOwnership = 'owned' | 'attached' | 'unknown'
 
 export type TreeOwnershipInput = {

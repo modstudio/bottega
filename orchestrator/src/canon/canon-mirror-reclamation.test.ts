@@ -45,19 +45,26 @@ test('a no-drift pass reclaims a dirty owned leftover', async () => {
   try {
     const tree = await leaveDirtyOwnedTree(root, 'cm-leftover-reclaim')
     commitHydratedCanon(root)
+    const leftoverRunId = readWorktreeMarker(tree).runRecordId
+    expect(leftoverRunId).not.toBeNull()
     const base = mirrorFixturePort(root)
+    let closeOutOutcome: string | null = null
     const result = await mirrorRepositoryCanon({
       project: 'cm-leftover-reclaim',
       dryRun: false,
       port: mirrorFixturePort(root, {
-        releaseRun: (id, preparation) =>
-          existsSync(tree) && base.treeDirty(tree) === true
-            ? { outcome: 'held', detail: 'refused; dirty fixture tree' }
-            : base.releaseRun(id, preparation),
+        releaseRun: (id, preparation) => {
+          if (existsSync(tree) && base.treeDirty(tree) === true)
+            return { outcome: 'held', detail: 'refused; dirty fixture tree' }
+          const closed = base.releaseRun(id, preparation)
+          if (id === leftoverRunId) closeOutOutcome = closed.outcome
+          return closed
+        },
       }),
       noteFailure: async () => {},
     })
     expect(result[0]).toMatchObject({ failed: false, text: 'nothing to do' })
+    expect(closeOutOutcome).toBe('released')
     expect(existsSync(tree)).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })
