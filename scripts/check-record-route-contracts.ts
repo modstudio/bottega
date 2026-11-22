@@ -86,9 +86,9 @@ function hostedSecretRouteFindings(): Finding[] {
 export function currentHostedSecretRouteDrift() {
   const writes = new Set(['POST', 'PUT', 'PATCH'])
   const record = appRoutes().filter((route) => writes.has(route.split(' ')[0]!))
-  const hub = HOSTED_WRITE_ROUTES
-    .filter((route) => writes.has(route.method))
-    .map((route) => `${route.method} ${route.path}`)
+  const hub = HOSTED_WRITE_ROUTES.filter((route) => writes.has(route.method)).map(
+    (route) => `${route.method} ${route.path}`,
+  )
   return hostedSecretRouteDrift(
     [...record, ...hub],
     HOSTED_WRITE_ROUTE_ENTRIES.map((route) => `${route.method} ${route.path}`),
