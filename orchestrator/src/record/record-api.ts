@@ -36,6 +36,7 @@ import {
 import { recordDocumentScopes } from './record-api-doc-tenant.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { registerRecordMaskWarnings } from './record-api-mask-warnings.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import {
@@ -45,7 +46,6 @@ import {
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
-import { registerRecordMaskWarnings } from './record-api-mask-warnings.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,

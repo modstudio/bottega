@@ -500,6 +500,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-projects.ts',
     [
       '../../../shared/record-timestamp.ts',
+      '../../../shared/hosted-secret-mask.ts',
       'bun',
       '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',

@@ -1,6 +1,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -188,7 +189,7 @@ export async function createHostedNote(
       await tx`INSERT INTO hub_note
       (id,space_id,project_name,project_id,author_user_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${identity.userId}::uuid,${number},${input.project},
-      ${masked.text},${masked.area ?? null},${JSON.stringify(masked.anchors)},1,now(),now(),now()) RETURNING *,number::int number,revision::int revision`,
+      ${masked.text},${masked.area ?? null},${bindJsonb(tx, masked.anchors)},1,now(),now(),now()) RETURNING *,number::int number,revision::int revision`,
     )[0]!
   })
 }

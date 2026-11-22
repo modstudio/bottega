@@ -89,6 +89,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-values.ts',
   ]),
   module('orchestrator/src/record/record-question-write.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/brand.ts',

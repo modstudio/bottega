@@ -54,15 +54,6 @@ function appRoutes(): string[] {
   return [...new Set(app.routes.map((route) => `${route.method} ${route.path}`))].sort()
 }
 
-export function hostedSecretRouteDrift(actual: readonly string[], declared: readonly string[]) {
-  const actualSet = new Set(actual)
-  const declaredSet = new Set(declared)
-  return {
-    missing: [...actualSet].filter((route) => !declaredSet.has(route)).sort(),
-    stale: [...declaredSet].filter((route) => !actualSet.has(route)).sort(),
-  }
-}
-
 export function contractRoutesFromSource(path: string, source: string): string[] | null {
   if (!/\bcontractRoutes\b/.test(source)) return null
   const literal = source.match(/const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)

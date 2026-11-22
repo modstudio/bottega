@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { taskApi } from './task-api.ts'
@@ -20,7 +21,9 @@ test.each([
       : { title: generic, body: `${generic} quoted ${secret}`, version: '1' }
   const writer = async (...args: unknown[]) => {
     const value = args.at(-1) as { body?: string; title?: string }
-    stored = value.body ?? value.title ?? ''
+    const table = dependency === 'create' ? 'hub_task' : 'hub_task_document'
+    const masked = maskHostedTableWrite(table, value)
+    stored = masked.body ?? masked.title ?? ''
     return { id: '01990000-0000-7000-8000-000000000201' } as never
   }
   const response = await taskApi(

@@ -2,9 +2,9 @@
 /** Owns tenant-bound hosted canon imports. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
-import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'

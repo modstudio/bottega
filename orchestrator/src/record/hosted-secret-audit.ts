@@ -3,10 +3,7 @@
 import type { SQL } from 'bun'
 import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
-import {
-  HOSTED_SECRET_TABLES,
-  hostedSecretColumns,
-} from '../../../shared/hosted-secret-mask.ts'
+import { HOSTED_SECRET_TABLES, hostedSecretColumns } from '../../../shared/hosted-secret-mask.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import {
   redactSecretShaped,

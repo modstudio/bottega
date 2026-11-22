@@ -26,14 +26,22 @@ const cases = [
   ['doc_revision', 'author', 'scope'],
 ] as const
 
-test.each(cases)('%s masks a free-text column and preserves an excluded column', (table, free, excluded) => {
-  const result = maskHostedTableWrite(table, { [free]: token, [excluded]: token }) as Record<string, unknown>
-  expect(result[free]).toBe(masked)
-  expect(result[excluded]).toBe(token)
-})
+test.each(cases)(
+  '%s masks a free-text column and preserves an excluded column',
+  (table, free, excluded) => {
+    const result = maskHostedTableWrite(table, { [free]: token, [excluded]: token }) as Record<
+      string,
+      unknown
+    >
+    expect(result[free]).toBe(masked)
+    expect(result[excluded]).toBe(token)
+  },
+)
 
 test('jsonb masks undeclared free-text leaves while preserving structured names', () => {
-  expect(maskHostedTableWrite('hub_note', { anchors: [{ addedLater: token, projectId: token }] })).toEqual({
+  expect(
+    maskHostedTableWrite('hub_note', { anchors: [{ addedLater: token, projectId: token }] }),
+  ).toEqual({
     anchors: [{ addedLater: masked, projectId: token }],
   })
 })
@@ -41,7 +49,10 @@ test('jsonb masks undeclared free-text leaves while preserving structured names'
 test('generic matches remain byte-identical and warnings name only rule and column path', async () => {
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const response = await withHostedMaskWarnings(async () => {
-    expect(maskHostedTableWrite('hub_task', { title: token, body: generic })).toEqual({ title: masked, body: generic })
+    expect(maskHostedTableWrite('hub_task', { title: token, body: generic })).toEqual({
+      title: masked,
+      body: generic,
+    })
     return new Response('ok')
   })
   expect(response.headers.get('warning')).toContain('hub_task.title (provider-prefix)')

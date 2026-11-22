@@ -145,11 +145,6 @@ export function registerRecordQuestionRoutes(
         },
         400,
       )
-    return context.json(
-      await deps.writeQuestion(
-        intent.data,
-        { ...tenant, ...body.data },
-      ),
-    )
+    return context.json(await deps.writeQuestion(intent.data, { ...tenant, ...body.data }))
   })
 }

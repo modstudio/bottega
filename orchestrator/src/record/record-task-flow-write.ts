@@ -4,8 +4,8 @@
  * the seq row lock after the task_flow row lock, inside insertStage.
  */
 import type { SQL } from 'bun'
-import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'

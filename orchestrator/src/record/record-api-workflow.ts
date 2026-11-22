@@ -96,12 +96,7 @@ function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
     const body = validate(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
     try {
-      return context.json(
-        await deps.writeTaskFlow(
-          intent,
-          { ...active, ...body.data },
-        ),
-      )
+      return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data }))
     } catch (error) {
       if (error instanceof DocRevisionConflictError) return renderRecordApiRefusal(context, error)!
       throw error
@@ -340,11 +335,7 @@ export function registerRecordWorkflowRoutes(
     const body = recordWorkflowDraftSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid workflow catalogue draft' }, 400)
     try {
-      return context.json(
-        await deps.draftWorkflow(
-          { ...active, ...body.data },
-        ),
-      )
+      return context.json(await deps.draftWorkflow({ ...active, ...body.data }))
     } catch (error) {
       return failure(context, error)
     }
@@ -356,11 +347,7 @@ export function registerRecordWorkflowRoutes(
     if (!body.success) return context.json({ error: 'invalid workflow catalogue import' }, 400)
     if (!deps.importWorkflowCatalogue)
       return context.json({ error: 'workflow catalogue import is unavailable' }, 503)
-    return context.json(
-      await deps.importWorkflowCatalogue(
-        { ...active, ...body.data },
-      ),
-    )
+    return context.json(await deps.importWorkflowCatalogue({ ...active, ...body.data }))
   })
   for (const action of ['promote', 'retire'] as const)
     app.post(`/v1/workflow-catalogue/${action}`, async (context) => {
@@ -372,9 +359,10 @@ export function registerRecordWorkflowRoutes(
       if (!body.success) return context.json({ error: `invalid workflow catalogue ${action}` }, 400)
       try {
         return context.json(
-          await deps[action === 'promote' ? 'promoteWorkflow' : 'retireWorkflow'](
-            { ...active, ...body.data },
-          ),
+          await deps[action === 'promote' ? 'promoteWorkflow' : 'retireWorkflow']({
+            ...active,
+            ...body.data,
+          }),
         )
       } catch (error) {
         return failure(context, error)

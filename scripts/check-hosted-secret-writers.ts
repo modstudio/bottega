@@ -25,7 +25,7 @@ export function hostedWriterFindings(file: string, source: string): HostedWriter
   return MASKED_TABLES.flatMap((table) => {
     const writes = new RegExp(`\\b(?:INSERT\\s+INTO|UPDATE)\\s+${table}\\b`, 'i').test(source)
     if (!writes) return []
-    const masked = new RegExp(`maskHostedTableWrite\\([\\s\\S]{0,160}['\"]${table}['\"]`).test(source)
+    const masked = new RegExp(`maskHostedTableWrite\\([\\s\\S]{0,160}['"]${table}['"]`).test(source)
     return masked ? [] : [{ file, table }]
   })
 }

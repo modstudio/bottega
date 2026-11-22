@@ -172,9 +172,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
       config.recordDatabaseUrl,
       who,
       decodeURIComponent(documentsMatch[1]!),
-      body as Parameters<
-        typeof createHostedDocument
-      >[3],
+      body as Parameters<typeof createHostedDocument>[3],
     )
     return value ? json(value, 201) : json({ error: 'task not found' }, 404)
   }

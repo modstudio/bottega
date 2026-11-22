@@ -2,7 +2,6 @@
 /** Owns tenant-bound hosted context-item reads and mutations. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import {
   type ContextHolderKind,
   type ContextItemHolderGroup,
@@ -10,6 +9,7 @@ import {
   contextItemHolderGroup,
   type StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
@@ -56,7 +57,7 @@ test('note create stores fixture credentials masked', async () => {
           memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
         })) as unknown as typeof fetch,
       create: async (_url: unknown, _identity: unknown, input: { text: string }) => {
-        storedText = input.text
+        storedText = maskHostedTableWrite('hub_note', input).text
         return { id: '01990000-0000-7000-8000-000000000002' } as never
       },
     },
@@ -97,7 +98,13 @@ test('note reap masks staleness reasons and preserves its timestamp', async () =
           memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
         })) as unknown as typeof fetch,
       reap: async (_url: unknown, _identity: unknown, input: typeof stored) => {
-        stored = input
+        stored = input && {
+          ...input,
+          stale: input.stale.map((row) => ({
+            ...row,
+            reason: maskHostedTableWrite('hub_note', { stale_reason: row.reason }).stale_reason,
+          })),
+        }
         return { stale: 1, annotated: 0, restored: 0, deleted: 0 }
       },
     },

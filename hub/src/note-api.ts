@@ -167,11 +167,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
         )
     }
     return json(
-      await call(dependencies.reap, reapHostedNotes)(
-        config.recordDatabaseUrl,
-        who,
-        body as never,
-      ),
+      await call(dependencies.reap, reapHostedNotes)(config.recordDatabaseUrl, who, body as never),
     )
   }
   if (request.method === 'PUT' && url.pathname === '/v1/notes/mirror')

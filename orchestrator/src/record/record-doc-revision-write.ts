@@ -2,8 +2,8 @@
 /** Owns complete hosted document revision snapshots and the live revision pointer. */
 
 import type { SQL } from 'bun'
-import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'

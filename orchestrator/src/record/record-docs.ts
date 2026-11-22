@@ -2,9 +2,9 @@
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
-import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -204,11 +204,15 @@ function assertRecordDocUpsertRevision(
   })
 }
 
+function preparedRecordDocWrite(input: RecordDocWriteInput): RecordDocWriteInput {
+  assertRecordDocUpsert(input)
+  return maskHostedTableWrite('doc', input)
+}
+
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
-  assertRecordDocUpsert(input)
-  input = maskHostedTableWrite('doc', input)
+  input = preparedRecordDocWrite(input)
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc

@@ -154,9 +154,7 @@ export function hostedRequestHandler(
 ) {
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (request: Request): Promise<Response> =>
-    withHostedMaskWarnings(async () =>
-      hostedResponse(request, config, dependencies, dist),
-    )
+    withHostedMaskWarnings(async () => hostedResponse(request, config, dependencies, dist))
 }
 
 export async function hubTimedResponse(

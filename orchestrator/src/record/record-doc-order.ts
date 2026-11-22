@@ -1,8 +1,8 @@
 // concern: record-doc-order
 /** Applies one validated hosted sibling order in its own tenant transaction. */
 
-import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { docOrderRefusal } from '../doc/doc-order.ts'
 import { referenceOrderRefusal } from '../doc/doc-write-allowed.ts'
 import { RecordDocError } from './record-doc-errors.ts'
