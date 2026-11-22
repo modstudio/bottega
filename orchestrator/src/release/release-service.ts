@@ -331,8 +331,9 @@ function releaseTarget(
   projectName: string,
   requestedRung: string | undefined,
   checkout?: ReleaseCheckoutContext,
+  findProject: typeof projectByName = projectByName,
 ) {
-  const project = projectByName(projectName)
+  const project = findProject(projectName)
   if (!project) throw new Error(unregisteredReleaseProjectRemedy(projectName))
   const release = project.settings.release
   if (!release)
@@ -867,13 +868,13 @@ function releaseProjectUnderLock(
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
   redeployReason: string | undefined,
+  execute: Pick<ReleaseProjectDependencies, 'releaseCi' | 'releaseCommand'>,
 ): ReleaseResult {
   const deploy = target.deploy
-  if (releaseRunPath(deploy) === 'ci-live-wait') {
-    return releaseCiDeployedTarget(target, projectName, redeployReason)
+  if (!deploy) {
+    return execute.releaseCi(target, projectName, redeployReason)
   }
-  if (!deploy) throw new Error('release path selected a deploy command without one')
-  return releaseCommandTarget(
+  return execute.releaseCommand(
     target,
     deploy,
     projectName,
@@ -883,8 +884,20 @@ function releaseProjectUnderLock(
   )
 }
 
-export function releaseRunPath(deploy: string | undefined): 'deploy-command' | 'ci-live-wait' {
-  return deploy ? 'deploy-command' : 'ci-live-wait'
+type ReleaseProjectDependencies = {
+  project: typeof projectByName
+  lockHolder: (path: string) => ReturnType<typeof projectLockState>['holder']
+  withLock: typeof withReleaseLock
+  releaseCi: typeof releaseCiDeployedTarget
+  releaseCommand: typeof releaseCommandTarget
+}
+
+const releaseProjectDependencies: ReleaseProjectDependencies = {
+  project: projectByName,
+  lockHolder: (path) => projectLockState(path, 'release').holder,
+  withLock: withReleaseLock,
+  releaseCi: releaseCiDeployedTarget,
+  releaseCommand: releaseCommandTarget,
 }
 
 export function releaseProject(
@@ -893,22 +906,23 @@ export function releaseProject(
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
   redeployReason?: string,
+  dependencies: ReleaseProjectDependencies = releaseProjectDependencies,
 ): ReleaseResult {
   validateReleaseReasons([
     ['rollback', rollbackReason],
     ['behind-trunk', behindTrunkReason],
     ['redeploy', redeployReason],
   ])
-  const target = releaseTarget(projectName, requestedRung)
+  const target = releaseTarget(projectName, requestedRung, undefined, dependencies.project)
   const { project, selected } = target
   if (!target.deploy && (rollbackReason !== undefined || behindTrunkReason !== undefined)) {
     throw new Error(
       `release rung ${selected.name} deploys through CI on push; a rollback or behind-trunk override does not apply to it; revert or promote on branch ${selected.branch}, then retry`,
     )
   }
-  const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
+  const lock = releaseLockDecision(dependencies.lockHolder(project.path))
   if (!lock.ok) throw new Error(lock.message)
-  return withReleaseLock(
+  return dependencies.withLock(
     project.path,
     { session: sessionId(), what: `release ${projectName}/${selected.name}` },
     () =>
@@ -918,6 +932,7 @@ export function releaseProject(
         rollbackReason,
         behindTrunkReason,
         redeployReason,
+        dependencies,
       ),
   )
 }

@@ -1,13 +1,88 @@
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import type { Project } from '../project/projects.ts'
 import { verifiedReleaseCheckoutRestore } from './release-checkout.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
   newestSuccessfulReleasedCommit,
+  releaseProject,
 } from './release-service.ts'
 
 const PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000002151'
+
+test.each(['alephbeis', 'starship'])(
+  '%s production release waits for CI and returns its live proof',
+  (name) => {
+    const project = {
+      recordId: PROJECT_RECORD_ID,
+      name,
+      path: `/projects/${name}`,
+      stack: 'bun',
+      canon: false,
+      retiredAt: null,
+      settings: {
+        trunk: 'master',
+        release: {
+          rungs: [
+            {
+              name: 'production',
+              branch: 'master',
+              live: 'read production commit',
+              onDemand: false,
+            },
+          ],
+          mergeMethod: 'squash',
+          requiredChecks: [],
+        },
+      },
+    } as Project
+    const calls: string[] = []
+
+    const result = releaseProject(name, 'production', undefined, undefined, undefined, {
+      project: (requested) => (requested === name ? project : null),
+      lockHolder: () => null,
+      withLock: (_path, _identity, action) => {
+        calls.push('lock')
+        return action()
+      },
+      releaseCi: (target) => {
+        calls.push(`ci:${target.selected.name}`)
+        return {
+          kind: 'deployed',
+          id: 1,
+          project: name,
+          rung: 'production',
+          branch: 'master',
+          deployed: 'candidate',
+          trunk: 'master',
+          commitsBehindTrunk: 0,
+          behindTrunkReason: null,
+          liveBefore: 'previous',
+          baseline: false,
+          rollback: false,
+          rollbackReason: null,
+          exitCode: 0,
+          outputTail: 'observed',
+          liveAfter: 'candidate',
+          liveMatchesCandidate: true,
+          warning: null,
+        }
+      },
+      releaseCommand: () => {
+        throw new Error('CI-deployed production must not run a deploy command')
+      },
+    })
+
+    expect(calls).toEqual(['lock', 'ci:production'])
+    expect(result).toMatchObject({
+      kind: 'deployed',
+      rung: 'production',
+      liveAfter: 'candidate',
+      liveMatchesCandidate: true,
+    })
+  },
+)
 
 test('release baselines use only a live-proved successful row', () => {
   using database = migratedTestDatabase()

@@ -16,7 +16,7 @@ import {
   requiredRungDecision,
   undecidedRequiredRelease,
 } from './release-required.ts'
-import { type ReleaseResult, releaseRunPath } from './release-service.ts'
+import type { ReleaseResult } from './release-service.ts'
 
 const project = {
   recordId: '01990000-0000-7000-8000-000000001933',
@@ -72,7 +72,6 @@ test.each(['alephbeis', 'starship'])(
     }
     let childReleased = false
 
-    expect(releaseRunPath(production.deploy)).toBe('ci-live-wait')
     expect(requiredReleaseStepOrder(true, [plan])).toEqual(['move-main', 'hand-off'])
     expect(
       releaseRequiredRungsAfterMainMove({
