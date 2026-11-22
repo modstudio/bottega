@@ -301,6 +301,26 @@ const configAddress = z.object({
   projectId: idSchema.optional(),
 })
 const configList = z.object({ environment: z.string().min(1).optional() })
+const docListQuery = z.object({
+  scope: filterSchema,
+  subject: z.string().optional(),
+  slug: z.string().optional(),
+  owner: z.string().optional(),
+  audience: z.enum(DOC_AUDIENCES).optional(),
+  status: z.enum(DOC_STATUSES).optional(),
+  kind: z.enum(DOC_KINDS).optional(),
+  updatedSince: z.string().datetime({ offset: true }).optional(),
+  limit: limitSchema,
+  cursor: z.string().optional(),
+  includeDeleted: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+  acrossReadableSpaces: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+})
 const docTarget = (scope: string, subject: string | null, ownerUserId: string | null) =>
   ({ kind: 'document', scope, subject, ownerUserId }) as const
 const personalListTarget = (
@@ -721,28 +741,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return context.json({ deleted: true })
   })
   app.get('/v1/docs', async (context) => {
-    const query = z
-      .object({
-        scope: filterSchema,
-        subject: z.string().optional(),
-        slug: z.string().optional(),
-        owner: z.string().optional(),
-        audience: z.enum(DOC_AUDIENCES).optional(),
-        status: z.enum(DOC_STATUSES).optional(),
-        kind: z.enum(DOC_KINDS).optional(),
-        updatedSince: z.string().datetime({ offset: true }).optional(),
-        limit: limitSchema,
-        cursor: z.string().optional(),
-        includeDeleted: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-        acrossReadableSpaces: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-      })
-      .safeParse(context.req.query())
+    const query = docListQuery.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
     const subject = query.data.subject === undefined ? undefined : query.data.subject || null
     const owner = query.data.owner === undefined ? undefined : query.data.owner || null

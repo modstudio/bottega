@@ -10,7 +10,6 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  type DocAudience,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -49,13 +48,7 @@ import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
-import {
-  type Doc,
-  type DocRevision,
-  docForAudience,
-  getDocStore,
-  listDocsStore,
-} from './doc-read-store.ts'
+import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
   assertLocalReferenceWrite,
   assertLocalStoredReferenceWrite,
@@ -92,11 +85,7 @@ export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
-import {
-  assertLocalRevisionWrite,
-  diffStoredDocRevisions,
-  getStoredDocRevision,
-} from './doc-revision-store.ts'
+import { assertLocalRevisionWrite, getStoredDocRevision } from './doc-revision-store.ts'
 import {
   addCanonWriteWarnings,
   canonFindingsRefusal,
@@ -784,33 +773,6 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
 
 const getDocRevision = getStoredDocRevision
 
-export function readDocRevision(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  recordId: string,
-  owner: string | null = null,
-  audience?: DocAudience,
-): DocRevision {
-  const revision = getDocRevision(recordId, owner)
-  if (
-    !revision ||
-    revision.scope !== scope ||
-    revision.subject !== subject ||
-    revision.slug !== slug
-  )
-    throw new Error(
-      `revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
-    )
-  return audience
-    ? docForAudience(
-        revision,
-        audience,
-        `${scope}/${subject ?? '_'}/${slug} revision ${revision.number}`,
-      )
-    : revision
-}
-
 function isAddressRevision(
   revision: DocRevision,
   scope: string,
@@ -1001,8 +963,4 @@ export async function restoreDoc(
       })
     },
   }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))
-}
-
-export function diffDocRevisions(a: string, b: string, owner: string | null = null): string {
-  return diffStoredDocRevisions(a, b, owner)
 }

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
+  diffDocRevisions,
   getDoc,
   getDocRevision,
   listDocMetadata,
@@ -25,7 +26,6 @@ import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
-  diffDocRevisions,
   docsForRun,
   exportDocs,
   importDocs as readDocs,

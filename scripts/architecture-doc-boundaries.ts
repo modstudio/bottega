@@ -81,7 +81,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/resume-brief-author.ts',
         // Write path: derives the identity attached to a local revision mutation.
         'orchestrator/src/doc/doc-write-identity.ts',
-        // DEV-2584 PR 2: gate facts compile the local canon/injection pack synchronously.
+        // PR 2: gate facts compile the local canon/injection pack synchronously.
         'orchestrator/src/gate/gate-facts.ts',
         // Write path: ruling filing reads the revision written in the same operation.
         'orchestrator/src/commands/rulings.ts',
@@ -97,15 +97,15 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/settings/settings-env-commands.ts',
         // Write path: machine apply reads the local rows it materializes.
         'orchestrator/src/settings/settings-machine-apply.ts',
-        // DEV-2584 PR 2: canon commands remain synchronous and local.
+        // PR 2: canon commands remain synchronous and local.
         'orchestrator/src/canon/canon-commands.ts',
-        // DEV-2584 PR 2: canon pack compilation remains synchronous and local.
+        // PR 2: canon pack compilation remains synchronous and local.
         'orchestrator/src/canon/canon-stored-rows.ts',
-        // DEV-2584 PR 2: canon pack compile/hydrate/list/check/diff/evals remain local.
+        // PR 2: canon pack compile/hydrate/list/check/diff/evals remain local.
         'orchestrator/src/canon/canon.ts',
-        // DEV-2584 PR 2: user canon hydrate/list/check/diff remains local.
+        // PR 2: user canon hydrate/list/check/diff remains local.
         'orchestrator/src/canon/user-canon-commands.ts',
-        // DEV-2584 PR 2: get_doc_revision remains local until revision-id lookup exists.
+        // PR 2: get_doc_revision remains local until revision-id lookup exists.
         'orchestrator/src/mcp/mcp-doc-tools.ts',
       ].map(exact),
     },

@@ -256,7 +256,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/doc/doc-injection.ts',
   'orchestrator/src/doc/doc-lint-adapter.ts',
   'orchestrator/src/doc/doc-lint.ts',
-  'orchestrator/src/doc/doc-list.ts',
   'orchestrator/src/doc/doc-revision-store.ts',
   'orchestrator/src/doc/doc-write-allowed.ts',
   'orchestrator/src/doc/doc-write-identity.ts',

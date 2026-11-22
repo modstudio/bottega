@@ -1,11 +1,47 @@
 import {
-  getDocStore as getDoc,
-  listDocMetadataStore as listDocMetadata,
-  listDocsStore as listDocs,
+  docForAudience,
+  getDocStore,
+  listDocMetadataStore,
+  listDocsStore,
 } from '../../src/doc/doc-read-store.ts'
 import {
-  getStoredDocRevision as getDocRevision,
-  listStoredDocRevisions as listDocRevisions,
+  diffStoredDocRevisions,
+  getStoredDocRevision,
+  listStoredDocRevisions,
 } from '../../src/doc/doc-revision-store.ts'
 
-export { getDoc, getDocRevision, listDocMetadata, listDocRevisions, listDocs }
+export const getDoc: typeof getDocStore = (...args) => getDocStore(...args)
+export const getDocRevision: typeof getStoredDocRevision = (...args) =>
+  getStoredDocRevision(...args)
+export const listDocMetadata: typeof listDocMetadataStore = (...args) =>
+  listDocMetadataStore(...args)
+export const listDocRevisions: typeof listStoredDocRevisions = (...args) =>
+  listStoredDocRevisions(...args)
+export const listDocs: typeof listDocsStore = (...args) => listDocsStore(...args)
+export const diffDocRevisions: typeof diffStoredDocRevisions = (...args) =>
+  diffStoredDocRevisions(...args)
+
+export function readDocRevision(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  recordId: string,
+  owner: string | null = null,
+  audience?: Parameters<typeof docForAudience>[1],
+) {
+  const revision = getStoredDocRevision(recordId, owner)
+  if (
+    !revision ||
+    revision.scope !== scope ||
+    revision.subject !== subject ||
+    revision.slug !== slug
+  )
+    throw new Error(`revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}`)
+  return audience
+    ? docForAudience(
+        revision,
+        audience,
+        `${scope}/${subject ?? '_'}/${slug} revision ${revision.number}`,
+      )
+    : revision
+}

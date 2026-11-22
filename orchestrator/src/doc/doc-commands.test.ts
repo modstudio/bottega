@@ -3,7 +3,12 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import {
+  diffDocRevisions,
+  getDoc,
+  listDocRevisions,
+  readDocRevision,
+} from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -31,14 +36,7 @@ import {
 } from './doc-commands.ts'
 import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
-import {
-  removeDoc as deleteDoc,
-  diffDocRevisions,
-  docSubjects,
-  readDocRevision,
-  restoreDoc,
-  setDoc as writeDoc,
-} from './docs.ts'
+import { removeDoc as deleteDoc, docSubjects, restoreDoc, setDoc as writeDoc } from './docs.ts'
 
 const listPairs = () =>
   db()
