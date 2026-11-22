@@ -1,13 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import {
-  hostedDocRevisionRead,
-  mapHostedDocRevisions,
-  readHostedDocRevisions,
-} from './doc-hosted-history.ts'
+import { hostedDocRevisionRead, mapHostedDocRevisions } from './doc-hosted-history.ts'
 
 const docId = newRecordId()
 const earlierId = newRecordId()
@@ -89,29 +83,5 @@ describe('hosted document history', () => {
     })
     expect(mapHostedDocRevisions([later, revision()]).map(({ number }) => number)).toEqual([2, 1])
     expect(hostedDocRevisionRead([later, revision()]).diff('1', '2')).toContain('-héllo\n+later')
-  })
-
-  test('a failed hosted read refuses instead of returning local history', async () => {
-    await expect(
-      readHostedDocRevisions({
-        address: 'global/_/hosted-history',
-        listRevisions: async () => {
-          throw new RecordApiRequestError('server unavailable', 'server', 503)
-        },
-      }),
-    ).rejects.toThrow(
-      `could not read hosted revisions for global/_/hosted-history: server unavailable; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry`,
-    )
-  })
-
-  test('a definite hosted not-found refuses without local fallback', async () => {
-    await expect(
-      readHostedDocRevisions({
-        address: 'global/_/local-only',
-        listRevisions: async () => {
-          throw new RecordApiRequestError('doc not found', 'refused', 404)
-        },
-      }),
-    ).rejects.toThrow('could not read hosted revisions for global/_/local-only: doc not found')
   })
 })

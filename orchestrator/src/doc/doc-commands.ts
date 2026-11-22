@@ -33,7 +33,6 @@ import {
   type DocRevision,
   type DocRevisionMetadata,
   projectDocForAudience,
-  readDocHistory,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'

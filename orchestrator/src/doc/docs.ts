@@ -37,8 +37,8 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
-import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { readDoc, readDocs } from './doc-authoritative-read.ts'
+import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import {
@@ -51,8 +51,8 @@ import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './do
 import { assertDocProse } from './doc-prose.ts'
 import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
-  assertLocalReferenceWrite,
   assertLocalReferenceRestore,
+  assertLocalReferenceWrite,
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
@@ -515,7 +515,7 @@ export async function setDocStatus(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
-  const current = await readDoc(scope, subject, slug, owner)
+  const current = getDoc(scope, subject, slug, owner)
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
@@ -549,7 +549,7 @@ export async function setDocCheckedAgainst(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
-  const current = getDoc(scope, subject, slug, owner)
+  const current = await readDoc(scope, subject, slug, owner)
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({

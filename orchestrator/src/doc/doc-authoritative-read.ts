@@ -84,16 +84,16 @@ function docFromHosted(row: HostedRow): Doc {
 async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
   const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
   const page = await listAllHostedDocs(client.listDocs, {
-      scope: filters.scope,
-      subject: filters.subject,
-      slug: filters.slug,
-      owner: filters.owner,
-      audience: filters.audience as DocAudience | undefined,
-      status: filters.status as Doc['status'] | undefined,
-      kind: filters.kind as Doc['kind'] | undefined,
-      acrossReadableSpaces:
-        filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
-    })
+    scope: filters.scope,
+    subject: filters.subject,
+    slug: filters.slug,
+    owner: filters.owner,
+    audience: filters.audience as DocAudience | undefined,
+    status: filters.status as Doc['status'] | undefined,
+    kind: filters.kind as Doc['kind'] | undefined,
+    acrossReadableSpaces:
+      filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
+  })
   if (page.unreadable.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
   const match = filters.match?.toLocaleLowerCase()

@@ -49,9 +49,7 @@ test('a hosted read returns the hosted row and never the local mirror', async ()
     listDocs: async (query) => {
       calls.push(query)
       return {
-        items: [
-          hostedRow(),
-        ],
+        items: [hostedRow()],
         nextCursor: null,
       }
     },
@@ -204,7 +202,16 @@ test('checked-against updates preserve the authoritative hosted body instead of 
     }),
     upsertDoc: async (input) => {
       writtenBody = input.body
-      return { id: String(hostedRow().id), revisionId: '01990000-0000-7000-8000-000000000003' }
+      return {
+        id: String(hostedRow().id),
+        revisionId: '01990000-0000-7000-8000-000000000003',
+        form: 'feature',
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
+        summary: null,
+      }
     },
   })
   await setDocCheckedAgainst(

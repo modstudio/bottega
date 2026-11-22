@@ -163,7 +163,11 @@ test('setDocCheckedAgainst refuses an absent document with the listing remedy', 
 })
 
 test('restore with a supplied authoritative read still refuses a generated reference document', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'reference-project', path: '/tmp/reference-project' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'reference-project',
+    path: '/tmp/reference-project',
+  })
   const current = await setDoc({
     scope: 'project',
     subject: 'reference-project',
@@ -179,12 +183,7 @@ test('restore with a supplied authoritative read still refuses a generated refer
   })
   const revisionId = listDocRevisions('project', 'reference-project', 'reference-restore')[0]!
     .record_id
-  const revision = readDocRevision(
-    'project',
-    'reference-project',
-    'reference-restore',
-    revisionId,
-  )
+  const revision = readDocRevision('project', 'reference-project', 'reference-restore', revisionId)
   await expect(
     restoreDoc('project', 'reference-project', 'reference-restore', revisionId, {
       reason: 'attempt a hand restore',

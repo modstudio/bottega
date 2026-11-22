@@ -28,13 +28,13 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
+import { readDocHistory } from './doc-authoritative-read.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
-import { readDocHistory } from './doc-authoritative-read.ts'
 import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 import { removeDoc as deleteDoc, docSubjects, restoreDoc, setDoc as writeDoc } from './docs.ts'
