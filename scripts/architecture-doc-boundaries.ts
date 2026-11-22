@@ -89,7 +89,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/mcp/mcp-operator-tools.ts',
         // Write path: settings import reads the prior row it updates.
         'orchestrator/src/settings/settings-apply-commands.ts',
-        // Review admission remains synchronous while its policy snapshot is evaluated.
+        // DEV-2584 PR 2: review admission reads the policy snapshot synchronously
         'orchestrator/src/review-funnel/review-funnel-policy.ts',
         // Write path: settings commands read the prior row they update.
         'orchestrator/src/settings/settings-commands.ts',

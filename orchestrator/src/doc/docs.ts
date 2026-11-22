@@ -38,6 +38,7 @@ import {
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
+import { readDoc, readDocs } from './doc-authoritative-read.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import {
@@ -51,6 +52,7 @@ import { assertDocProse } from './doc-prose.ts'
 import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
   assertLocalReferenceWrite,
+  assertLocalReferenceRestore,
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
@@ -513,7 +515,7 @@ export async function setDocStatus(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
-  const current = getDoc(scope, subject, slug, owner)
+  const current = await readDoc(scope, subject, slug, owner)
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
@@ -719,6 +721,26 @@ type UnreadableResume = {
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
+export async function readOpenResumes(cwd: string, now = Date.now()): Promise<OpenResumeList> {
+  const project = projectAt(cwd)
+  if (!project) return { open: [], unreadable: [] }
+  const open: OpenResume[] = []
+  const unreadable: UnreadableResume[] = []
+  for (const doc of await readDocs({ scope: 'resume', subject: project.name })) {
+    const fm = parseResumeFrontmatter(doc.body)
+    if (!fm) unreadable.push({ slug: doc.slug, reason: 'no-frontmatter' })
+    else if (!fm.status) unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
+    else if (fm.status !== 'open' && fm.status !== 'consumed')
+      unreadable.push({ slug: doc.slug, reason: 'unrecognized-status' })
+    else if (fm.status === 'open') {
+      const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
+      open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
+    }
+  }
+  open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
+  return { open, unreadable }
+}
+
 export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
   const project = projectAt(cwd)
   if (!project) return { open: [], unreadable: [] }
@@ -807,6 +829,7 @@ export async function restoreDoc(
   const [expectedCurrent, current] = context.suppliedRead
     ? [context.suppliedRead.current?.revision ?? null, context.suppliedRead.current]
     : referenceRestoreState(scope, subject, slug, owner, revision)
+  assertLocalReferenceRestore(current, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },
     expectedCurrent,

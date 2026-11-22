@@ -305,7 +305,7 @@ const docListQuery = z.object({
   scope: filterSchema,
   subject: z.string().optional(),
   slug: z.string().optional(),
-  owner: z.string().optional(),
+  owner: z.union([z.literal(''), idSchema]).optional(),
   audience: z.enum(DOC_AUDIENCES).optional(),
   status: z.enum(DOC_STATUSES).optional(),
   kind: z.enum(DOC_KINDS).optional(),

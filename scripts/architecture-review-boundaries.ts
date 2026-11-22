@@ -42,8 +42,6 @@ export const reviewModuleSpecs = [
       '../doc/docs.ts',
       '../doc/doc-read-store.ts',
       '../doc/doc-revision-store.ts',
-      '../doc/doc-read-store.ts',
-      '../doc/doc-revision-store.ts',
       '../review/review-evidence-sql.ts',
       '../review/review-tier-classifier.ts',
       '../review/review-triage.ts',

@@ -1,9 +1,6 @@
 // concern: document-history-source
 /** Decides whether revision history is authoritative locally or in the hosted record. */
 
-export type HostedRevisionReadOutcome = 'revisions' | 'not-found' | 'failed'
-export type HostedRevisionReadDecision = 'print-hosted' | 'not-found' | 'refuse'
-
 export type DocHistoryPresentation<RevisionRow, Revision> = {
   revisions: RevisionRow[]
   resolve(identifier: string): string
@@ -21,12 +18,4 @@ export function docDiffPair<T>(
   if (left === undefined || right === undefined)
     throw new Error('doc diff needs two revisions; this address has fewer than two')
   return [left, right]
-}
-
-export function decideHostedRevisionRead(
-  outcome: HostedRevisionReadOutcome,
-): HostedRevisionReadDecision {
-  if (outcome === 'revisions') return 'print-hosted'
-  if (outcome === 'not-found') return 'not-found'
-  return 'refuse'
 }

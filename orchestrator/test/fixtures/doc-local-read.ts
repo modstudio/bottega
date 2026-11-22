@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   docForAudience,
   getDocStore,
@@ -36,7 +37,9 @@ export function readDocRevision(
     revision.subject !== subject ||
     revision.slug !== slug
   )
-    throw new Error(`revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}`)
+    throw new Error(
+      `revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
+    )
   return audience
     ? docForAudience(
         revision,

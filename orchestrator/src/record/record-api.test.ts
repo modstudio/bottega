@@ -590,6 +590,10 @@ describe('record API', () => {
     })
 
     expect((await app.request('/v1/docs?slug=guide&owner=')).status).toBe(200)
+    const invalidOwner = await app.request('/v1/docs?owner=not-a-uuid')
+    expect(invalidOwner.status).toBe(400)
+    expect(await invalidOwner.json()).toEqual({ error: 'invalid doc list query' })
+    expect((await app.request('/v1/docs?owner=not-a-uuid')).status).toBe(400)
     expect((await app.request('/v1/docs?acrossReadableSpaces=true')).status).toBe(200)
     expect(seen).toEqual([
       expect.objectContaining({

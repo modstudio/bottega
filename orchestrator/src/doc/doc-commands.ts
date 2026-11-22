@@ -32,8 +32,8 @@ import {
   type DocListFilters,
   type DocRevision,
   type DocRevisionMetadata,
+  projectDocForAudience,
   readDocHistory,
-  readOpenResumes,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
@@ -45,6 +45,7 @@ import {
   exportDocs,
   importDocs,
   lintStoredDoc,
+  readOpenResumes,
   removeDoc,
   reorderDocs,
   restoreDoc,
@@ -91,7 +92,7 @@ type DocCommandPorts = {
     scope: string
     subject: string | null
     slug: string
-    recordId: string
+    owner: string | null
   }): Promise<DocHistory | null>
 }
 
@@ -700,15 +701,23 @@ async function handledRevisionDocCommand(
   const hosted = await selectedDocHistory({ scope, subject, slug }, owner, ports)
   if (!hosted) throw new Error(`no document ${scope}/${subject ?? '_'}/${slug}`)
   const revision = hosted.revision(revisionIdentifier)
+  const audience = docReadAudience(flags.flag('audience'))
+  const projected = audience
+    ? projectDocForAudience(
+        revision,
+        audience,
+        `${scope}/${subject ?? '_'}/${slug} revision ${revisionIdentifier}`,
+      )
+    : revision
   if (flags.has('json')) {
     const user = cachedSignedInRecordUser()
     presentation.log(
       JSON.stringify({
-        ...revision,
-        authorName: revision.authorName ?? revisionAuthorName(revision.author, user),
+        ...projected,
+        authorName: projected.authorName ?? revisionAuthorName(projected.author, user),
       }),
     )
-  } else presentation.log(revision.body)
+  } else presentation.log(projected.body)
   return true
 }
 
@@ -852,12 +861,7 @@ async function selectedDocHistory(
   owner: string | null,
   ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<DocHistory | null> {
-  const doc = await authoritativeDoc(address.scope, address.subject, address.slug, owner)
-  if (!doc) return null
-  return (
-    (await ports.revisionHistory({ ...address, recordId: doc.record_id })) ??
-    readDocHistory(address.scope, address.subject, address.slug, owner)
-  )
+  return ports.revisionHistory({ ...address, owner })
 }
 
 async function restoreDocCommand(

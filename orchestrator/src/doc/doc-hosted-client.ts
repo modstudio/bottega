@@ -65,7 +65,7 @@ export async function hostedDocClient(
   }
 }
 
-async function listAllHostedDocs(
+export async function listAllHostedDocs(
   list: HostedDocClient['listDocs'],
   query: HostedPersonalDocQuery,
 ): Promise<HostedDocListResult> {
