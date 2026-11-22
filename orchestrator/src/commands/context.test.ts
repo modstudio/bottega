@@ -1,8 +1,80 @@
 import { expect, spyOn, test } from 'bun:test'
+import { resolve } from 'node:path'
+import { parse } from 'shell-quote'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
+import { registerLocalProject } from '../project/project-registration.ts'
+
+const globals = globalThis as typeof globalThis & {
+  [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
+}
+
+const compactFirstAct = async () => {
+  const source = await Bun.file(resolve(import.meta.dir, '../../hooks/session-brief.py')).text()
+  const assignment = source.match(/COMPACT_FIRST_ACT\s*=\s*\(([\s\S]*?)\n\)/)?.[1]
+  if (!assignment) throw new Error('session-brief.py does not define COMPACT_FIRST_ACT')
+  return [...assignment.matchAll(/"(?:\\.|[^"\\])*"/g)]
+    .map(([literal]) => JSON.parse(literal) as string)
+    .join('')
+}
+
+test('post-compaction first act prints an accepted context set command', async () => {
+  registerLocalProject(
+    {
+      recordId: newRecordId(),
+      name: 'compaction-fixture',
+      path: '/fixture/compaction',
+      stack: null,
+      canon: false,
+      retiredAt: null,
+      settings: { keyPrefixes: ['CTX'] },
+    },
+    null,
+    db(),
+  )
+  const task = {
+    key: 'CTX-2574',
+    record_id: newRecordId(),
+    project: 'compaction-fixture',
+    title: 'Compaction context command fixture',
+    parent_key: null,
+    status: 'open',
+    status_category: 'active',
+    last_seen: null,
+    has_children: false,
+  }
+  globals[CONTEXT_FACTS_PORTS_KEY] = {
+    task: async () => task,
+    lookup: async () => task,
+    record: async () => task,
+    children: async () => [],
+    pointer: async () => null,
+  }
+  try {
+    const firstAct = (await compactFirstAct()).replace('{session}', 'session-a')
+    const command = [...firstAct.matchAll(/`([^`]+)`/g)]
+      .map((match) => match[1]!)
+      .find((candidate) => candidate.startsWith(`${PLATFORM_SLUG} agent context set `))
+    expect(command).toBeDefined()
+    const expanded = command!
+      .replace('<KEY>', task.key)
+      .replace('<slug>', 'compaction-fact')
+      .replace('<line>', 'A fact retained across compaction')
+    const argv = parse(expanded).filter((part): part is string => typeof part === 'string')
+
+    expect(argv.slice(0, 2)).toEqual([PLATFORM_SLUG, 'agent'])
+    expect(await run(argv.slice(2))).toBe(0)
+    expect((await getContextItem(`task:${task.record_id}`, 'compaction-fact'))?.body).toBe(
+      'A fact retained across compaction',
+    )
+  } finally {
+    delete globals[CONTEXT_FACTS_PORTS_KEY]
+  }
+})
 
 test('agent context set refuses matching record shapes without writing', async () => {
   const errors: string[] = []
