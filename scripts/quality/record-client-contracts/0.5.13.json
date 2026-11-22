@@ -1007,33 +1007,11 @@
     "path": "/v1/outside-blocks",
     "query": [],
     "body": {
-      "destinationSpaceId": "space-a",
-      "projectId": "01990000-0000-7000-8000-000000000001",
-      "id": "01990000-0000-7000-8000-000000000001",
-      "key": "DEV-1",
-      "name": "sample",
-      "slug": "sample",
-      "project": "sample",
-      "definition": "sample",
-      "scope": "user",
-      "subject": null,
-      "environment": "default",
-      "expectedRowVersion": 1,
-      "expectedRevision": "01990000-0000-7000-8000-000000000001",
-      "reason": "contract sample",
-      "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      "wraps": [],
-      "payload": {},
-      "machineId": "01990000-0000-7000-8000-000000000001",
-      "count": 1,
-      "cursor": "0",
-      "limit": 1
+      "message": "01990000-0000-7000-8000-000000000001",
+      "hours": 1
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.cacheCounts",
@@ -1578,35 +1556,10 @@
     "path": "/v1/config-access/grant",
     "query": [],
     "body": {
-      "email": {
-        "destinationSpaceId": "space-a",
-        "projectId": "01990000-0000-7000-8000-000000000001",
-        "id": "01990000-0000-7000-8000-000000000001",
-        "key": "DEV-1",
-        "name": "sample",
-        "slug": "sample",
-        "project": "sample",
-        "definition": "sample",
-        "scope": "user",
-        "subject": null,
-        "environment": "default",
-        "expectedRowVersion": 1,
-        "expectedRevision": "01990000-0000-7000-8000-000000000001",
-        "reason": "contract sample",
-        "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
-        "wraps": [],
-        "payload": {},
-        "machineId": "01990000-0000-7000-8000-000000000001",
-        "count": 1,
-        "cursor": "0",
-        "limit": 1
-      }
+      "email": "a@example.test"
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.handoffTaskFlow",
@@ -1648,33 +1601,11 @@
     "path": "/v1/moderation/hide",
     "query": [],
     "body": {
-      "destinationSpaceId": "space-a",
-      "projectId": "01990000-0000-7000-8000-000000000001",
-      "id": "01990000-0000-7000-8000-000000000001",
-      "key": "DEV-1",
-      "name": "sample",
-      "slug": "sample",
-      "project": "sample",
-      "definition": "sample",
-      "scope": "user",
-      "subject": null,
-      "environment": "default",
-      "expectedRowVersion": 1,
-      "expectedRevision": "01990000-0000-7000-8000-000000000001",
-      "reason": "contract sample",
-      "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      "wraps": [],
-      "payload": {},
-      "machineId": "01990000-0000-7000-8000-000000000001",
-      "count": 1,
-      "cursor": "0",
-      "limit": 1
+      "message": "01990000-0000-7000-8000-000000000001",
+      "reason": "spam"
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.importCanon",
@@ -2010,7 +1941,7 @@
     "query": [],
     "body": null,
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.listContextHolders",
@@ -2299,35 +2230,10 @@
     "path": "/v1/outside-intake/pause",
     "query": [],
     "body": {
-      "hours": {
-        "destinationSpaceId": "space-a",
-        "projectId": "01990000-0000-7000-8000-000000000001",
-        "id": "01990000-0000-7000-8000-000000000001",
-        "key": "DEV-1",
-        "name": "sample",
-        "slug": "sample",
-        "project": "sample",
-        "definition": "sample",
-        "scope": "user",
-        "subject": null,
-        "environment": "default",
-        "expectedRowVersion": 1,
-        "expectedRevision": "01990000-0000-7000-8000-000000000001",
-        "reason": "contract sample",
-        "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
-        "wraps": [],
-        "payload": {},
-        "machineId": "01990000-0000-7000-8000-000000000001",
-        "count": 1,
-        "cursor": "0",
-        "limit": 1
-      }
+      "hours": 1
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.postBoardMessage",
@@ -3184,7 +3090,7 @@
     "query": [],
     "body": {},
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.retireMachine",
@@ -3387,35 +3293,10 @@
     "path": "/v1/outside-intake",
     "query": [],
     "body": {
-      "project": {
-        "destinationSpaceId": "space-a",
-        "projectId": "01990000-0000-7000-8000-000000000001",
-        "id": "01990000-0000-7000-8000-000000000001",
-        "key": "DEV-1",
-        "name": "sample",
-        "slug": "sample",
-        "project": "sample",
-        "definition": "sample",
-        "scope": "user",
-        "subject": null,
-        "environment": "default",
-        "expectedRowVersion": 1,
-        "expectedRevision": "01990000-0000-7000-8000-000000000001",
-        "reason": "contract sample",
-        "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
-        "wraps": [],
-        "payload": {},
-        "machineId": "01990000-0000-7000-8000-000000000001",
-        "count": 1,
-        "cursor": "0",
-        "limit": 1
-      }
+      "project": "sample"
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.showOutsideIntake",
@@ -3574,11 +3455,11 @@
   {
     "sample": "record.unblockOutsideAuthor",
     "method": "DELETE",
-    "path": "/v1/outside-blocks/%5Bobject%20Object%5D",
+    "path": "/v1/outside-blocks/01990000-0000-7000-8000-000000000001",
     "query": [],
     "body": null,
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.unhideRow",
@@ -3586,33 +3467,10 @@
     "path": "/v1/moderation/unhide",
     "query": [],
     "body": {
-      "destinationSpaceId": "space-a",
-      "projectId": "01990000-0000-7000-8000-000000000001",
-      "id": "01990000-0000-7000-8000-000000000001",
-      "key": "DEV-1",
-      "name": "sample",
-      "slug": "sample",
-      "project": "sample",
-      "definition": "sample",
-      "scope": "user",
-      "subject": null,
-      "environment": "default",
-      "expectedRowVersion": 1,
-      "expectedRevision": "01990000-0000-7000-8000-000000000001",
-      "reason": "contract sample",
-      "author": "contract",
-      "ids": [
-        "01990000-0000-7000-8000-000000000001"
-      ],
-      "wraps": [],
-      "payload": {},
-      "machineId": "01990000-0000-7000-8000-000000000001",
-      "count": 1,
-      "cursor": "0",
-      "limit": 1
+      "message": "01990000-0000-7000-8000-000000000001"
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.updateTaskFlowStage",
@@ -3867,35 +3725,10 @@
     "path": "/v1/config-access/withdraw",
     "query": [],
     "body": {
-      "email": {
-        "destinationSpaceId": "space-a",
-        "projectId": "01990000-0000-7000-8000-000000000001",
-        "id": "01990000-0000-7000-8000-000000000001",
-        "key": "DEV-1",
-        "name": "sample",
-        "slug": "sample",
-        "project": "sample",
-        "definition": "sample",
-        "scope": "user",
-        "subject": null,
-        "environment": "default",
-        "expectedRowVersion": 1,
-        "expectedRevision": "01990000-0000-7000-8000-000000000001",
-        "reason": "contract sample",
-        "author": "contract",
-        "ids": [
-          "01990000-0000-7000-8000-000000000001"
-        ],
-        "wraps": [],
-        "payload": {},
-        "machineId": "01990000-0000-7000-8000-000000000001",
-        "count": 1,
-        "cursor": "0",
-        "limit": 1
-      }
+      "email": "a@example.test"
     },
     "recordSpace": true,
-    "status": 403
+    "status": 200
   },
   {
     "sample": "record.writePort",

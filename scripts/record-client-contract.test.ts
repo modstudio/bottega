@@ -11,7 +11,10 @@ import {
   type RecordClientContractEntry,
 } from './record-client-contract.ts'
 
-function routeRegistered(app: ReturnType<typeof recordClientContractApp>, entry: RecordClientContractEntry) {
+function routeRegistered(
+  app: ReturnType<typeof recordClientContractApp>,
+  entry: RecordClientContractEntry,
+) {
   const matches = app.router.match(entry.method, entry.path) as unknown as [
     Array<[[unknown, { method: string; path: string }], unknown]>,
   ]

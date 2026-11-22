@@ -10,9 +10,6 @@ import { identity } from '../orchestrator/src/record/record-api-identity.fixture
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
 import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
-import {
-  installRecordToken,
-} from '../orchestrator/test/fixtures/record-session.ts'
 import { recordRequestHeaders } from '../shared/record-request-headers.ts'
 
 export type RecordClientContractEntry = {
@@ -27,10 +24,7 @@ export type RecordClientContractEntry = {
 
 const ROOT = resolve(import.meta.dir, '..')
 export const CURRENT_CONTRACT_PATH = resolve(ROOT, 'scripts/quality/record-client-contract.json')
-export const RELEASED_CONTRACT_DIRECTORY = resolve(
-  ROOT,
-  'scripts/quality/record-client-contracts',
-)
+export const RELEASED_CONTRACT_DIRECTORY = resolve(ROOT, 'scripts/quality/record-client-contracts')
 
 const SAMPLE_ID = '01990000-0000-7000-8000-000000000001'
 const SAMPLE_DESTINATION = { destinationSpaceId: 'space-a', projectId: SAMPLE_ID }
@@ -60,44 +54,161 @@ const SAMPLE_INPUT = {
 }
 
 const RECORD_SAMPLE_NAMES = [
-  'abandonTaskFlow', 'acceptBoardAnswer', 'acceptInvitation', 'addProjectSubject',
-  'adoptTaskFlow', 'advanceTaskFlow', 'applySettingsAutoMode', 'applySettingsPermission',
-  'attachTaskFlowText', 'awaitTaskFlowRuling', 'blockOutsideAuthor', 'cacheCounts',
-  'completeBoardFilingLease', 'composeTaskFlow', 'consumeDoc', 'copyTaskFlowText', 'counts',
-  'createOrganization', 'defineProjectSubject', 'deleteContextItem', 'deleteDoc', 'deleteSpace',
-  'deleteTaskFlowText', 'deleteTrialSpace', 'draftWorkflow', 'ensureSpaceBuiltIns',
-  'failBoardFilingLease', 'getBoardStatus', 'getBoardThread', 'getContextItem', 'getDoc',
-  'getPublicDoc', 'grantConfigAccess', 'handoffTaskFlow', 'hideRow', 'importCanon', 'importDoc',
-  'importLensCatalogue', 'importPortCatalogue', 'importQuestion', 'importTaskFlow',
-  'importWorkflowCatalogue', 'inviteMember', 'listBoardChanges', 'listBoardClaims',
-  'listBoardMessages', 'listChanges', 'listConfigAccess', 'listContextHolders',
-  'listContextItems', 'listDocs', 'listHidden', 'listInvitations', 'listLensCatalogue',
-  'listOutsideBlocks', 'listPortCatalogue', 'listProjectSubjects', 'listProjects',
-  'listPublicDocs', 'listRevisions', 'listRoutingEvidence', 'listScores', 'listSnapshots',
-  'listTaskFlowStages', 'listWorkflowCatalogue', 'noDestinationWrites', 'openBoardStream',
-  'pauseOutsideIntake', 'postBoardMessage', 'promoteWorkflow', 'purgeProject',
-  'putBoardReceipt', 'putSnapshot', 'readMembershipQuestions', 'readQuestions', 'readTaskFlow',
-  'readTaskFlowObligation', 'readTaskFlowPresence', 'readTaskFlowProjectReferenceCounts',
-  'readTaskFlowStage', 'readTaskFlowStageSummaries', 'readTaskFlowText', 'releaseBoardClaim',
-  'releaseBoardTaskClaims', 'removeMember', 'renameMachine', 'renameProjectSubject',
-  'renameSubject', 'renewBoardClaim', 'reorderDocs', 'reorderProjectSubjects', 'repinTaskFlow',
-  'replyBoardMessage', 'restoreDoc', 'resumeOutsideIntake', 'retireMachine', 'retireProject',
-  'retireProjectSubject', 'retireWorkflow', 'searchDocs', 'searchPublicDocs',
-  'selectProjectLensProfile', 'setActiveOrganization', 'setOutsideIntake', 'showOutsideIntake',
-  'storage', 'sync', 'takeBoardClaim', 'takeBoardFilingLease', 'takeBoardSuccessor',
-  'unblockOutsideAuthor', 'unhideRow', 'updateTaskFlowStage', 'upsertContextItem', 'upsertDoc',
-  'upsertLens', 'upsertLensProfile', 'upsertProject', 'whoami', 'withdrawBoardMessage',
-  'withdrawConfigAccess', 'writePort', 'writeQuestion',
+  'abandonTaskFlow',
+  'acceptBoardAnswer',
+  'acceptInvitation',
+  'addProjectSubject',
+  'adoptTaskFlow',
+  'advanceTaskFlow',
+  'applySettingsAutoMode',
+  'applySettingsPermission',
+  'attachTaskFlowText',
+  'awaitTaskFlowRuling',
+  'blockOutsideAuthor',
+  'cacheCounts',
+  'completeBoardFilingLease',
+  'composeTaskFlow',
+  'consumeDoc',
+  'copyTaskFlowText',
+  'counts',
+  'createOrganization',
+  'defineProjectSubject',
+  'deleteContextItem',
+  'deleteDoc',
+  'deleteSpace',
+  'deleteTaskFlowText',
+  'deleteTrialSpace',
+  'draftWorkflow',
+  'ensureSpaceBuiltIns',
+  'failBoardFilingLease',
+  'getBoardStatus',
+  'getBoardThread',
+  'getContextItem',
+  'getDoc',
+  'getPublicDoc',
+  'grantConfigAccess',
+  'handoffTaskFlow',
+  'hideRow',
+  'importCanon',
+  'importDoc',
+  'importLensCatalogue',
+  'importPortCatalogue',
+  'importQuestion',
+  'importTaskFlow',
+  'importWorkflowCatalogue',
+  'inviteMember',
+  'listBoardChanges',
+  'listBoardClaims',
+  'listBoardMessages',
+  'listChanges',
+  'listConfigAccess',
+  'listContextHolders',
+  'listContextItems',
+  'listDocs',
+  'listHidden',
+  'listInvitations',
+  'listLensCatalogue',
+  'listOutsideBlocks',
+  'listPortCatalogue',
+  'listProjectSubjects',
+  'listProjects',
+  'listPublicDocs',
+  'listRevisions',
+  'listRoutingEvidence',
+  'listScores',
+  'listSnapshots',
+  'listTaskFlowStages',
+  'listWorkflowCatalogue',
+  'noDestinationWrites',
+  'openBoardStream',
+  'pauseOutsideIntake',
+  'postBoardMessage',
+  'promoteWorkflow',
+  'purgeProject',
+  'putBoardReceipt',
+  'putSnapshot',
+  'readMembershipQuestions',
+  'readQuestions',
+  'readTaskFlow',
+  'readTaskFlowObligation',
+  'readTaskFlowPresence',
+  'readTaskFlowProjectReferenceCounts',
+  'readTaskFlowStage',
+  'readTaskFlowStageSummaries',
+  'readTaskFlowText',
+  'releaseBoardClaim',
+  'releaseBoardTaskClaims',
+  'removeMember',
+  'renameMachine',
+  'renameProjectSubject',
+  'renameSubject',
+  'renewBoardClaim',
+  'reorderDocs',
+  'reorderProjectSubjects',
+  'repinTaskFlow',
+  'replyBoardMessage',
+  'restoreDoc',
+  'resumeOutsideIntake',
+  'retireMachine',
+  'retireProject',
+  'retireProjectSubject',
+  'retireWorkflow',
+  'searchDocs',
+  'searchPublicDocs',
+  'selectProjectLensProfile',
+  'setActiveOrganization',
+  'setOutsideIntake',
+  'showOutsideIntake',
+  'storage',
+  'sync',
+  'takeBoardClaim',
+  'takeBoardFilingLease',
+  'takeBoardSuccessor',
+  'unblockOutsideAuthor',
+  'unhideRow',
+  'updateTaskFlowStage',
+  'upsertContextItem',
+  'upsertDoc',
+  'upsertLens',
+  'upsertLensProfile',
+  'upsertProject',
+  'whoami',
+  'withdrawBoardMessage',
+  'withdrawConfigAccess',
+  'writePort',
+  'writeQuestion',
 ] as const
 
 const CONFIG_SAMPLE_NAMES = [
-  'addWraps', 'allocateMachineJoinNameplate', 'appendTrustLogEntry', 'claimMachineKey',
-  'createDataKey', 'createMachineKeyClaimChallenge', 'currentDataKey',
-  'deleteCredentialPreference', 'deleteEntry', 'deleteSecret', 'failMachineJoinNameplate',
-  'getDataKey', 'getEntry', 'getSecret', 'listCredentialPreferences', 'listDataKeys',
-  'listEntries', 'listMachineKeys', 'listSecrets', 'postMachineJoinMessage',
-  'putCredentialPreference', 'putEntry', 'putSecret', 'readMachineJoinMessages', 'readTrustLog',
-  'registerMachineKey', 'retireDataKey', 'revokeMachineKey', 'whoami',
+  'addWraps',
+  'allocateMachineJoinNameplate',
+  'appendTrustLogEntry',
+  'claimMachineKey',
+  'createDataKey',
+  'createMachineKeyClaimChallenge',
+  'currentDataKey',
+  'deleteCredentialPreference',
+  'deleteEntry',
+  'deleteSecret',
+  'failMachineJoinNameplate',
+  'getDataKey',
+  'getEntry',
+  'getSecret',
+  'listCredentialPreferences',
+  'listDataKeys',
+  'listEntries',
+  'listMachineKeys',
+  'listSecrets',
+  'postMachineJoinMessage',
+  'putCredentialPreference',
+  'putEntry',
+  'putSecret',
+  'readMachineJoinMessages',
+  'readTrustLog',
+  'registerMachineKey',
+  'retireDataKey',
+  'revokeMachineKey',
+  'whoami',
 ] as const
 
 export const recordClientSamples = Object.fromEntries(
@@ -109,29 +220,33 @@ export const configClientSamples = Object.fromEntries(
 
 export function recordClientContractApp() {
   const unusedWrite = async () => ({})
-  const app = recordApiTestApp(identity, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, {
-    listBoardChanges: async () => ({ changes: [], cursor: '0' }),
-    createMachineKeyClaimChallenge: unusedWrite,
-    claimMachineKey: unusedWrite,
-    allocateMachineJoinNameplate: unusedWrite,
-    postMachineJoinMessage: unusedWrite,
-    failMachineJoinNameplate: unusedWrite,
-    appendMachineTrustLogEntry: async () => new Uint8Array([1]),
-    grantSpaceConfigAccess: unusedWrite,
-    setSpaceMemberPermission: unusedWrite,
-    withdrawSpaceConfigAccess: unusedWrite,
-    setOutsideIntake: unusedWrite,
-    pauseOutsideIntake: unusedWrite,
-    resumeOutsideIntake: unusedWrite,
-    listOutsideBlocks: async () => [],
-    blockOutsideAuthor: unusedWrite,
-    unblockOutsideAuthor: unusedWrite,
-    hideRow: unusedWrite,
-    unhideRow: unusedWrite,
-    listHidden: async () => [],
-    deleteTrialSpace: unusedWrite,
-    deleteSpace: unusedWrite,
-  })
+  const app = recordApiTestApp(
+    identity,
+    { ...idleSubjectDeps(), ...idleRecordApiDeps() },
+    {
+      listBoardChanges: async () => ({ changes: [], cursor: '0' }),
+      createMachineKeyClaimChallenge: unusedWrite,
+      claimMachineKey: unusedWrite,
+      allocateMachineJoinNameplate: unusedWrite,
+      postMachineJoinMessage: unusedWrite,
+      failMachineJoinNameplate: unusedWrite,
+      appendMachineTrustLogEntry: async () => new Uint8Array([1]),
+      grantSpaceConfigAccess: unusedWrite,
+      setSpaceMemberPermission: unusedWrite,
+      withdrawSpaceConfigAccess: unusedWrite,
+      setOutsideIntake: unusedWrite,
+      pauseOutsideIntake: unusedWrite,
+      resumeOutsideIntake: unusedWrite,
+      listOutsideBlocks: async () => [],
+      blockOutsideAuthor: unusedWrite,
+      unblockOutsideAuthor: unusedWrite,
+      hideRow: unusedWrite,
+      unhideRow: unusedWrite,
+      listHidden: async () => [],
+      deleteTrialSpace: unusedWrite,
+      deleteSpace: unusedWrite,
+    },
+  )
   registerRecordStorageRoute(app, {
     platformOwnerUserIds: () => [identity.user.id],
     readStorage: async () => [],
@@ -160,9 +275,14 @@ export function createRecordingTransport(
     const request = new Request(input, init)
     const recordedRequest = request.clone()
     const url = new URL(request.url)
-    const response = await app.request(request).catch((error) =>
-      Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 }),
-    )
+    const response = await app
+      .request(request)
+      .catch((error) =>
+        Response.json(
+          { error: error instanceof Error ? error.message : String(error) },
+          { status: 500 },
+        ),
+      )
     entries.push({
       sample: sampleName(),
       method: request.method,
@@ -186,7 +306,10 @@ function clientMembers(client: object, prefix: string): string[] {
 }
 
 export function missingClientSamples(record: RecordApiClient, config: ConfigClient): string[] {
-  const sampled = new Set([...Object.keys(recordClientSamples), ...Object.keys(configClientSamples)])
+  const sampled = new Set([
+    ...Object.keys(recordClientSamples),
+    ...Object.keys(configClientSamples),
+  ])
   return [...clientMembers(record, 'record'), ...clientMembers(config, 'config')].filter(
     (name) => !sampled.has(name),
   )
@@ -205,6 +328,18 @@ async function invokeSample(client: object, member: string): Promise<void> {
   if (!method) return
   const args: unknown[] = [...genericArguments]
   if (member === 'listBoardChanges') args.splice(0, args.length, { after: '0' }, SAMPLE_DESTINATION)
+  if (member === 'listConfigAccess') args.splice(0, args.length, 'space-a')
+  if (member === 'grantConfigAccess' || member === 'withdrawConfigAccess')
+    args.splice(0, args.length, 'a@example.test', 'space-a')
+  if (member === 'hideRow')
+    args.splice(0, args.length, { message: SAMPLE_ID, reason: 'spam' }, 'space-a')
+  if (member === 'unhideRow') args.splice(0, args.length, { message: SAMPLE_ID }, 'space-a')
+  if (member === 'blockOutsideAuthor')
+    args.splice(0, args.length, { message: SAMPLE_ID, hours: 1 }, 'space-a')
+  if (member === 'unblockOutsideAuthor') args.splice(0, args.length, SAMPLE_ID, 'space-a')
+  if (member === 'setOutsideIntake') args.splice(0, args.length, 'sample', 'space-a')
+  if (member === 'pauseOutsideIntake') args.splice(0, args.length, 1, 'space-a')
+  if (member === 'resumeOutsideIntake') args.splice(0, args.length, 'space-a')
   if (member === 'listBoardMessages') args.splice(0, args.length, SAMPLE_INPUT)
   if (member === 'listContextItems') args.splice(0, args.length, ['sample'], SAMPLE_DESTINATION)
   if (member === 'openBoardStream') args.splice(0, args.length)
@@ -230,7 +365,10 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
   const entries: RecordClientContractEntry[] = []
   let activeSample = ''
   const transport = createRecordingTransport(entries, () => activeSample)
-  const request = async (path: string, init: RequestInit & { destinationSpaceId?: string } = {}) => {
+  const request = async (
+    path: string,
+    init: RequestInit & { destinationSpaceId?: string } = {},
+  ) => {
     const headers = recordRequestHeaders({
       bearerToken: 'contract-token',
       destinationSpaceId: init.destinationSpaceId,
@@ -249,17 +387,28 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
     if (!response.ok) throw new Error(`record contract response ${response.status}`)
     return body
   }
-  const record = recordApiClientOver(request, transport)
-  const config = configClient({ BOTTEGA_RECORD_API_URL: 'https://record.example.test' }, transport, 'contract-token')
+  const record = recordApiClientOver(
+    request,
+    transport,
+    () => 'contract-token',
+    transport,
+    () => undefined,
+  )
+  const config = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.example.test' },
+    transport,
+    'contract-token',
+  )
   const missing = missingClientSamples(record, config)
   if (missing.length) throw new Error(`record client contract lacks samples: ${missing.join(', ')}`)
   const previousUrl = process.env.BOTTEGA_RECORD_API_URL
   const previousNodeEnv = process.env.NODE_ENV
   const previousKeystore = process.env.BOTTEGA_KEYSTORE
+  const previousTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   process.env.NODE_ENV = 'development'
   process.env.BOTTEGA_KEYSTORE = 'keychain'
-  installRecordToken('contract-token')
+  process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'contract'
   try {
     for (const [sample, member] of Object.entries(recordClientSamples)) {
       activeSample = sample
@@ -270,19 +419,22 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
       await invokeSample(config, member)
     }
   } finally {
-    installRecordToken(null)
     if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousUrl
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = previousNodeEnv
     if (previousKeystore === undefined) delete process.env.BOTTEGA_KEYSTORE
     else process.env.BOTTEGA_KEYSTORE = previousKeystore
+    if (previousTestContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+    else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousTestContainer
   }
   const recorded = new Set(entries.map((entry) => entry.sample))
-  const unrecorded = [...Object.keys(recordClientSamples), ...Object.keys(configClientSamples)].filter(
-    (sample) => !recorded.has(sample),
-  )
-  if (unrecorded.length) throw new Error(`record client samples sent no request: ${unrecorded.join(', ')}`)
+  const unrecorded = [
+    ...Object.keys(recordClientSamples),
+    ...Object.keys(configClientSamples),
+  ].filter((sample) => !recorded.has(sample))
+  if (unrecorded.length)
+    throw new Error(`record client samples sent no request: ${unrecorded.join(', ')}`)
   return entries.sort((a, b) => a.sample.localeCompare(b.sample))
 }
 
@@ -296,10 +448,14 @@ async function main() {
     return
   }
   if (process.argv.includes('--snapshot')) {
-    const version = (JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string })
-      .version
+    const version = (
+      JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }
+    ).version
     mkdirSync(RELEASED_CONTRACT_DIRECTORY, { recursive: true })
-    writeFileSync(resolve(RELEASED_CONTRACT_DIRECTORY, `${version}.json`), serializeRecordClientContract(entries))
+    writeFileSync(
+      resolve(RELEASED_CONTRACT_DIRECTORY, `${version}.json`),
+      serializeRecordClientContract(entries),
+    )
     return
   }
   process.stdout.write(serializeRecordClientContract(entries))

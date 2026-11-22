@@ -624,11 +624,16 @@ function throwIfRecordApiRequestRefused(): void {
 async function publicRequest<T>(path: string, transport: typeof fetch = apiFetch): Promise<T> {
   let response: Response
   try {
-    response = await recordTransport(recordApiBaseUrl(), path, {
-      method: 'GET',
-      credentials: 'omit',
-      headers: new Headers(),
-    }, transport)
+    response = await recordTransport(
+      recordApiBaseUrl(),
+      path,
+      {
+        method: 'GET',
+        credentials: 'omit',
+        headers: new Headers(),
+      },
+      transport,
+    )
   } catch (error) {
     throw recordApiUnreachable(error, 'probe')
   }
@@ -728,21 +733,29 @@ async function listDocRevisionsRequest(
 
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
-  transport: typeof fetch = apiFetch,
+  transport?: typeof fetch,
 ): RecordApiClient {
+  const selectedTransport = transport ?? apiFetch
   return recordApiClientOver(
-    (path, init) => recordApiRequest(path, init, authentication, transport),
+    (path, init) => recordApiRequest(path, init, authentication, selectedTransport),
+    selectedTransport,
+    storedRecordToken,
     transport,
   )
 }
 
-export function recordApiClient(request = recordApiRequest, transport = apiFetch): RecordApiClient {
+export function recordApiClient(
+  request = recordApiRequest,
+  transport?: typeof fetch,
+): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
-    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport),
+    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch),
+    transport ?? apiFetch,
+    storedRecordToken,
     transport,
   )
 }
@@ -750,6 +763,9 @@ export function recordApiClient(request = recordApiRequest, transport = apiFetch
 export function recordApiClientOver(
   request: RecordClientRequest,
   transport: typeof fetch = apiFetch,
+  readStreamToken: () => string | null = storedRecordToken,
+  streamTransport?: typeof fetch,
+  streamPreflight: () => void = throwIfRecordApiRequestRefused,
 ): RecordApiClient {
   const client: RecordApiClient = {
     storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
@@ -780,7 +796,7 @@ export function recordApiClientOver(
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     ...recordBoardClient(request),
-    ...recordApiBoardWatchClient(request, transport),
+    ...recordApiBoardWatchClient(request, streamTransport, readStreamToken, streamPreflight),
   }
   return client
 }
@@ -983,7 +999,9 @@ function recordIdentityAndSpaceClient(
 
 function recordApiBoardWatchClient(
   request: RecordClientRequest = recordApiRequest,
-  transport: typeof fetch = apiFetch,
+  transport?: typeof fetch,
+  readToken: () => string | null = storedRecordToken,
+  preflight: () => void = throwIfRecordApiRequestRefused,
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
     releaseBoardTaskClaims: (input, destination) =>
@@ -992,16 +1010,18 @@ function recordApiBoardWatchClient(
         body: JSON.stringify(input),
         ...destination,
       }),
-    openBoardStream: (signal) => fetchBoardStream(signal, transport),
+    openBoardStream: (signal) => fetchBoardStream(signal, transport, readToken, preflight),
   }
 }
 
 async function fetchBoardStream(
   signal?: AbortSignal,
-  transport: typeof fetch = apiFetch,
+  transport: typeof fetch = ((url, init) => fetch(url, init)) as typeof fetch,
+  readToken: () => string | null = storedRecordToken,
+  preflight: () => void = throwIfRecordApiRequestRefused,
 ): Promise<RecordBoardStreamOpen> {
   if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-  const token = storedRecordToken()
+  const token = readToken()
   if (!token) return { kind: 'unauthorized' }
   const connection = new AbortController()
   const stop = () => connection.abort()
@@ -1013,7 +1033,7 @@ async function fetchBoardStream(
   }
   let origin: string | null = null
   try {
-    throwIfRecordApiRequestRefused()
+    preflight()
     origin = recordApiBaseUrl()
     // The stream is unbounded until a streaming budget exists.
     const response = await recordTransport(
