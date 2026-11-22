@@ -75,6 +75,7 @@ export type DocMetadata = Pick<
 export type DocListFilters = {
   scope?: string
   subject?: string | null
+  slug?: string
   scopes?: string[]
   match?: string
   bodyMatch?: string

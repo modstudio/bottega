@@ -7,7 +7,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
+import { getDocStore as getDoc, listDocsStore as listDocs } from './doc-read-store.ts'
+import { removeDoc, setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {
   slug: string

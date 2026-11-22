@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -13,7 +14,7 @@ import {
 } from '../record/record-docs.ts'
 import { resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { openResumeViolations, resumeWriteRefusal } from './doc-resume-write.ts'
-import { getDoc, listDocRevisions, restoreDoc } from './docs.ts'
+import { restoreDoc } from './docs.ts'
 
 const written = '2026-10-20T12:34:56.000Z'
 const actorUrl = process.env.BOTTEGA_RECORD_URL

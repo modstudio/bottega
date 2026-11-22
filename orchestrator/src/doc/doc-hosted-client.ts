@@ -49,7 +49,8 @@ export async function hostedDocClient(
   const owner = suppliedOwner ?? docOwner(projectName)
   const destination = await recordWriteDestination(client, owner)
   return {
-    listDocs: (query) => client.listDocs(query, destination),
+    listDocs: (query) =>
+      client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),
     getDoc: (id) => client.getDoc(id, destination),
     listRevisions: (id) => client.listRevisions(id, destination),
     upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
@@ -65,7 +66,7 @@ export async function hostedDocClient(
   }
 }
 
-async function listAllHostedDocs(
+export async function listAllHostedDocs(
   list: HostedDocClient['listDocs'],
   query: HostedPersonalDocQuery,
 ): Promise<HostedDocListResult> {

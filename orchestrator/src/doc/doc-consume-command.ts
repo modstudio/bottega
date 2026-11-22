@@ -2,7 +2,8 @@
 /** Applies and presents one document consume, delegating resume handoff through a port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConsumedDoc, consumeDoc, type Doc, getDoc } from './docs.ts'
+import { readDoc } from './doc-authoritative-read.ts'
+import { type ConsumedDoc, consumeDoc, type Doc } from './docs.ts'
 
 type PreparedConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
 export type ConsumeDocHandoff = {
@@ -30,12 +31,19 @@ export async function handleDocConsumeCommand(input: {
     throw new Error(
       `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
     )
-  const finishHandoff = await input.handoff.prepare(getDoc(input.scope, input.subject, slug))
-  const result = await consumeDoc(input.scope, input.subject, slug, {
-    reason: input.flags.flag('reason') ?? 'consumed by session',
-    author: input.flags.flag('author'),
-    expectedRevision: input.flags.flag('expect'),
-  })
+  const selected = await readDoc(input.scope, input.subject, slug)
+  const finishHandoff = await input.handoff.prepare(selected)
+  const result = await consumeDoc(
+    input.scope,
+    input.subject,
+    slug,
+    {
+      reason: input.flags.flag('reason') ?? 'consumed by session',
+      author: input.flags.flag('author'),
+      expectedRevision: input.flags.flag('expect'),
+    },
+    selected,
+  )
   const handoff = await finishHandoff(result)
   if (input.flags.has('json')) input.log(JSON.stringify({ ...result, handoff }))
   else {

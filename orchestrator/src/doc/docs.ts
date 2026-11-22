@@ -10,7 +10,6 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  type DocAudience,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -38,6 +37,7 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
+import { readDoc, readDocs } from './doc-authoritative-read.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
@@ -47,18 +47,11 @@ import {
 } from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { listDocMetadata, listDocs } from './doc-list.ts'
-import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
+import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
+import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
-  type Doc,
-  type DocRevision,
-  type DocRevisionMetadata,
-  docForAudience,
-  getDocForAudienceStore,
-  getDocStore,
-} from './doc-read-store.ts'
-import {
+  assertLocalReferenceRestore,
   assertLocalReferenceWrite,
   assertLocalStoredReferenceWrite,
   skipsProseLint,
@@ -90,16 +83,11 @@ import {
   executeLocalDocSet,
 } from './local-doc-write.ts'
 
-export type { Doc, DocRevision, DocRevisionMetadata }
+export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
-import {
-  assertLocalRevisionWrite,
-  diffStoredDocRevisions,
-  getStoredDocRevision,
-  listStoredDocRevisions,
-} from './doc-revision-store.ts'
+import { assertLocalRevisionWrite, getStoredDocRevision } from './doc-revision-store.ts'
 import {
   addCanonWriteWarnings,
   canonFindingsRefusal,
@@ -119,6 +107,9 @@ import {
 import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
+
+const getDoc = getDocStore
+const listDocs = listDocsStore
 
 async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
@@ -279,11 +270,8 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 }
 
 export { readHostedUserSettingsDocuments } from './doc-hosted-client.ts'
-export { docSubjects, listDocMetadata, listDocs }
-export const getDoc = getDocStore
-export const getDocForAudience = getDocForAudienceStore
-
 export { signedInDocOwner } from './doc-owner.ts'
+export { docSubjects }
 
 const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
@@ -499,21 +487,16 @@ export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: s
   return applyRecordWriteAuthority({
     local: () => executeLocalDocOrder(input),
     hosted: async () => {
-      const siblings = db()
-        .query<LocalDocOrderRow, [string, string, string | null]>(
-          `SELECT record_id, slug FROM doc
-           WHERE scope=? AND COALESCE(subject, '')=? AND parent_record_id IS ?
-           ORDER BY position, title, record_id`,
-        )
-        .all(input.scope, input.subject ?? '', input.parentId)
+      const siblings = (await readDocs({ scope: input.scope, subject: input.subject })).filter(
+        (doc) => doc.parent_record_id === input.parentId,
+      )
       const refusal = docOrderRefusal(
         siblings.map((row) => row.record_id),
         input.orderedIds,
       )
       if (refusal) throw new Error(refusal)
       const client = await hostedDocClient(input.scope, input.subject)
-      await client.reorderDocs(input)
-      return executeLocalDocOrder(input)
+      return client.reorderDocs(input)
     },
   })
 }
@@ -561,7 +544,7 @@ export async function setDocCheckedAgainst(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<Doc> {
-  const current = getDoc(scope, subject, slug, owner)
+  const current = await readDoc(scope, subject, slug, owner)
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
@@ -622,12 +605,13 @@ export async function consumeDoc(
   requestedSubject: string | null | undefined,
   slug: string,
   context: DocWriteContext,
+  suppliedDoc?: Doc | null,
 ): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = getDoc(scope, requestedSubject, slug)
+  const doc = suppliedDoc === undefined ? getDoc(scope, requestedSubject, slug) : suppliedDoc
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
@@ -732,6 +716,26 @@ type UnreadableResume = {
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
+export async function readOpenResumes(cwd: string, now = Date.now()): Promise<OpenResumeList> {
+  const project = projectAt(cwd)
+  if (!project) return { open: [], unreadable: [] }
+  const open: OpenResume[] = []
+  const unreadable: UnreadableResume[] = []
+  for (const doc of await readDocs({ scope: 'resume', subject: project.name })) {
+    const fm = parseResumeFrontmatter(doc.body)
+    if (!fm) unreadable.push({ slug: doc.slug, reason: 'no-frontmatter' })
+    else if (!fm.status) unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
+    else if (fm.status !== 'open' && fm.status !== 'consumed')
+      unreadable.push({ slug: doc.slug, reason: 'unrecognized-status' })
+    else if (fm.status === 'open') {
+      const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
+      open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
+    }
+  }
+  open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
+  return { open, unreadable }
+}
+
 export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
   const project = projectAt(cwd)
   if (!project) return { open: [], unreadable: [] }
@@ -784,42 +788,21 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
   return { count, writeWarnings }
 }
 
-export function listDocRevisions(
+const getDocRevision = getStoredDocRevision
+
+function isAddressRevision(
+  revision: DocRevision,
   scope: string,
   subject: string | null,
+  owner: string | null,
   slug: string,
-  owner: string | null = null,
-): DocRevisionMetadata[] {
-  return listStoredDocRevisions(scope, subject, slug, owner)
-}
-
-export const getDocRevision = getStoredDocRevision
-
-export function readDocRevision(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  recordId: string,
-  owner: string | null = null,
-  audience?: DocAudience,
-): DocRevision {
-  const revision = getDocRevision(recordId, owner)
-  if (
-    !revision ||
-    revision.scope !== scope ||
-    revision.subject !== subject ||
-    revision.slug !== slug
+) {
+  return (
+    revision.scope === scope &&
+    revision.subject === subject &&
+    revision.owner === owner &&
+    revision.slug === slug
   )
-    throw new Error(
-      `revision ${recordId} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
-    )
-  return audience
-    ? docForAudience(
-        revision,
-        audience,
-        `${scope}/${subject ?? '_'}/${slug} revision ${revision.number}`,
-      )
-    : revision
 }
 
 export async function restoreDoc(
@@ -827,24 +810,21 @@ export async function restoreDoc(
   subject: string | null,
   slug: string,
   revisionId: string,
-  context: DocWriteContext,
+  context: DocWriteContext & { suppliedRead?: { revision: DocRevision; current: Doc | null } },
   owner: string | null = null,
 ): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const revision = getDocRevision(revisionId, owner)
-  if (
-    !revision ||
-    revision.scope !== scope ||
-    revision.subject !== subject ||
-    revision.owner !== owner ||
-    revision.slug !== slug
-  ) {
+  const revision = context.suppliedRead?.revision ?? getDocRevision(revisionId, owner)
+  if (!revision || !isAddressRevision(revision, scope, subject, owner, slug)) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
+  const [expectedCurrent, current] = context.suppliedRead
+    ? [context.suppliedRead.current?.revision ?? null, context.suppliedRead.current]
+    : referenceRestoreState(scope, subject, slug, owner, revision)
+  assertLocalReferenceRestore(current, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },
     expectedCurrent,
@@ -1001,8 +981,4 @@ export async function restoreDoc(
       })
     },
   }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))
-}
-
-export function diffDocRevisions(a: string, b: string, owner: string | null = null): string {
-  return diffStoredDocRevisions(a, b, owner)
 }

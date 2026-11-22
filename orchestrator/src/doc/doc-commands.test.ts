@@ -3,6 +3,12 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  diffDocRevisions,
+  getDoc,
+  listDocRevisions,
+  readDocRevision,
+} from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -22,6 +28,7 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
+import { readDocHistory } from './doc-authoritative-read.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
@@ -30,16 +37,7 @@ import {
 } from './doc-commands.ts'
 import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
-import {
-  removeDoc as deleteDoc,
-  diffDocRevisions,
-  docSubjects,
-  getDoc,
-  listDocRevisions,
-  readDocRevision,
-  restoreDoc,
-  setDoc as writeDoc,
-} from './docs.ts'
+import { removeDoc as deleteDoc, docSubjects, restoreDoc, setDoc as writeDoc } from './docs.ts'
 
 const listPairs = () =>
   db()
@@ -76,7 +74,8 @@ type RevisionHistoryPort = Parameters<typeof docCommand>[4]['revisionHistory']
 async function command(
   args: string[],
   stdin = '',
-  revisionHistory: RevisionHistoryPort = async () => null,
+  revisionHistory: RevisionHistoryPort = ({ scope, subject, slug, owner }) =>
+    readDocHistory(scope, subject, slug, owner),
 ) {
   const values = new Map<string, string>()
   const present = new Set<string>()
@@ -700,7 +699,7 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test(`${PLATFORM_SLUG} doc history and diff print the injected revision history`, async () => {
-    const doc = await writeDoc({
+    await writeDoc({
       scope: 'global',
       subject: null,
       slug: 'injected-history',
@@ -716,7 +715,7 @@ describe('scoped operator docs', () => {
         scope: 'global',
         subject: null,
         slug: 'injected-history',
-        recordId: doc.record_id,
+        owner: null,
       })
       return {
         revisions: [{ ...local, number: 7, reason: 'hosted revision', authorName: 'Hosted User' }],
@@ -747,6 +746,43 @@ describe('scoped operator docs', () => {
         )
       ).out,
     ).toBe('hosted diff 2 7\n')
+  })
+
+  test(`${PLATFORM_SLUG} doc revision projects the selected audience and refuses an absent audience`, async () => {
+    await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'revision-audience-command',
+      title: 'Audience revision',
+      body: 'Shared.\n\n:::section{audience="technical"}\nTechnical.\n:::\n',
+      delivery: 'demand',
+      audiences: ['technical'],
+      reason: 'create audience revision',
+    })
+    const revision = listDocRevisions('global', null, 'revision-audience-command')[0]!
+    const shown = await command([
+      'doc',
+      'revision',
+      'global',
+      '-',
+      'revision-audience-command',
+      revision.record_id,
+      '--audience',
+      'technical',
+    ])
+    expect(shown.out).toBe('Shared.\n\nTechnical.\n')
+    const refused = await command([
+      'doc',
+      'revision',
+      'global',
+      '-',
+      'revision-audience-command',
+      revision.record_id,
+      '--audience',
+      'internal',
+    ])
+    expect(refused.code).toBe(1)
+    expect(refused.err).toContain('does not list audience "internal"')
   })
 
   test(`${PLATFORM_SLUG} doc history and diff use local revisions when hosted history is unavailable`, async () => {
@@ -812,7 +848,7 @@ describe('scoped operator docs', () => {
     expect(result.out).toBe('hosted body\n')
   })
 
-  test(`${PLATFORM_SLUG} doc restore refuses a hosted-only revision`, async () => {
+  test(`${PLATFORM_SLUG} doc restore accepts a hosted-only revision without local fallback`, async () => {
     const doc = await writeDoc({
       scope: 'global',
       subject: null,
@@ -830,13 +866,12 @@ describe('scoped operator docs', () => {
       async () => ({
         revisions: [],
         resolve: (identifier) => (identifier === '7' ? hostedId : identifier),
-        revision: () => ({ ...local, record_id: hostedId, number: 7 }),
+        revision: () => ({ ...local, record_id: hostedId, number: 7, body: 'hosted body\n' }),
         diff: () => '',
       }),
     )
-    expect(result.code).toBe(1)
-    expect(result.err).toContain('revision 7 exists only in the hosted record')
-    expect(result.err).toContain(`${PLATFORM_SLUG} record sync`)
+    expect(result.code).toBe(0)
+    expect(getDoc('global', null, 'hosted-only-restore')?.body).toBe('hosted body\n')
   })
 
   test(`${PLATFORM_SLUG} doc restore resolves hosted target and expectation numbers to local record ids`, async () => {

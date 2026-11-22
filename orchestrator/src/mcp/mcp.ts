@@ -11,8 +11,9 @@ registerStandardRuntime()
 
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
+import { readDocs as authoritativeDocs } from '../doc/doc-authoritative-read.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
-import { docsMarkdown, listDocs } from '../doc/docs.ts'
+import { docsMarkdown } from '../doc/docs.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -747,7 +748,7 @@ function registerProjectReviewTools(server: McpServer): void {
       const project = projectByName(name)
       if (!project) throw new Error(`unknown project "${name}"`)
       const markdown = docsMarkdown(
-        listDocs({ scope: 'project', subject: name, status: 'current' }),
+        await authoritativeDocs({ scope: 'project', subject: name, status: 'current' }),
       )
       return text(`${JSON.stringify(project)}${markdown ? `\n\n${markdown}` : ''}`)
     },

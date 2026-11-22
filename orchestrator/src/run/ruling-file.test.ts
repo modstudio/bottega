@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc, getDocRevision } from '../../test/fixtures/doc-local-read.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
-import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
+import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { type FileRulingInput, fileRuling, type RulingFileStores } from './ruling-file.ts'
 

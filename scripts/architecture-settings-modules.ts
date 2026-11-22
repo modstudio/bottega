@@ -326,7 +326,11 @@ export const settingsModules: SettingsModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/settings/settings-auto-mode.ts', ['./settings.ts']),
-  module('orchestrator/src/settings/settings-env-commands.ts', ['../doc/docs.ts', './settings.ts']),
+  module('orchestrator/src/settings/settings-env-commands.ts', [
+    '../doc/docs.ts',
+    '../doc/doc-read-store.ts',
+    './settings.ts',
+  ]),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
     '../../../shared/machine-config.ts',
@@ -350,6 +354,7 @@ export const settingsModules: SettingsModule[] = [
     '../canon/user-canon-home-files.ts',
     '../database/db.ts',
     '../doc/docs.ts',
+    '../doc/doc-read-store.ts',
     '../project/project-lock.ts',
     '../record/record-write-authority.ts',
     '../run/run-process.ts',

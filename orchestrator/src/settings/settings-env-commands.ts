@@ -1,6 +1,7 @@
 // concern: settings-env-commands
 /** Owns edits to plain canonical user settings environment values. */
-import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import {
   editSettingsEnv,
   parseStoredOwnedSettings,

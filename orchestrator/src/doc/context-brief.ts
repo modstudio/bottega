@@ -464,6 +464,7 @@ export async function contextBriefWithCursors(
       boardRequests,
       questions: questionCounts,
       filedIssues: filedIssues.waiting.length,
+      // PR 2: resume count reads the local mirror
       resumeBriefs: listOpenResumes(cwd).open.length,
     },
     autonomy: autonomyLine(autonomy),

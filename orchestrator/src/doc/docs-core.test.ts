@@ -4,6 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import {
+  diffDocRevisions,
+  getDoc,
+  getDocRevision,
+  listDocMetadata,
+  listDocRevisions,
+  listDocs,
+} from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
@@ -18,14 +26,8 @@ import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
-  diffDocRevisions,
   docsForRun,
   exportDocs,
-  getDoc,
-  getDocRevision,
-  listDocMetadata,
-  listDocRevisions,
-  listDocs,
   importDocs as readDocs,
   restoreDoc,
   signedInDocOwner,

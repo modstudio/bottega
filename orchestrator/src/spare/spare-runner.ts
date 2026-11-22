@@ -12,7 +12,7 @@ import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentRows } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { listDocMetadata } from '../doc/doc-list.ts'
+import { readDocMetadata } from '../doc/doc-authoritative-read.ts'
 import { setDocCheckedAgainst } from '../doc/docs.ts'
 import { fileNote, type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { currentProjectRepository, projectByName } from '../project/projects.ts'
@@ -102,8 +102,8 @@ function commitTimeMs(path: string, commit: string): number | null {
  * them qualifies and in what order is selectDocsDriftQueue's decision, not this
  * adapter's.
  */
-function docsDriftQueue(): DriftDocFacts[] {
-  const docs = listDocMetadata({ scope: 'project' })
+async function docsDriftQueue(): Promise<DriftDocFacts[]> {
+  const docs = await readDocMetadata({ scope: 'project' })
   const facts: DriftDocFacts[] = []
   for (const doc of docs) {
     const project = doc.subject ? projectByName(doc.subject) : null
@@ -547,7 +547,7 @@ export async function spareRunCommand(
   }
   const { job, day, ctx } = setup
 
-  const queue = docsDriftQueue()
+  const queue = await docsDriftQueue()
   let pending = queue.length
   let lastFailureKind: string | null = null
   let writeFailures = 0

@@ -211,7 +211,7 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-customer-guides.ts', [
     '../../../shared/brand.ts',
     '../doc/doc-command-check.ts',
-    '../doc/doc-list.ts',
+    '../doc/doc-authoritative-read.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-canon-summary.ts', ['../canon/canon.ts']),

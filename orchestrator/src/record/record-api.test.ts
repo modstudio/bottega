@@ -564,7 +564,13 @@ describe('record API', () => {
   })
 
   test('doc lists opt into readable spaces while the default stays active-space scoped', async () => {
-    const seen: Array<{ spaceId: string; spaceIds: string[]; acrossReadableSpaces: boolean }> = []
+    const seen: Array<{
+      spaceId: string
+      spaceIds: string[]
+      acrossReadableSpaces: boolean
+      slug?: string
+      owner?: string | null
+    }> = []
     const personal = {
       ...identity,
       memberships: [
@@ -583,13 +589,27 @@ describe('record API', () => {
       },
     })
 
-    expect((await app.request('/v1/docs')).status).toBe(200)
+    expect((await app.request('/v1/docs?slug=guide&owner=')).status).toBe(200)
+    const invalidOwner = await app.request('/v1/docs?owner=not-a-uuid')
+    expect(invalidOwner.status).toBe(400)
+    expect(await invalidOwner.json()).toEqual({ error: 'invalid doc list query' })
+    expect((await app.request('/v1/docs?owner=not-a-uuid')).status).toBe(400)
     expect((await app.request('/v1/docs?acrossReadableSpaces=true')).status).toBe(200)
+    const destinationCrossSpace = await app.request('/v1/docs?acrossReadableSpaces=true', {
+      headers: { 'x-record-space': 'space-a' },
+    })
+    expect(destinationCrossSpace.status).toBe(400)
+    expect(await destinationCrossSpace.json()).toEqual({
+      error: 'cross-space read includes a destination',
+      remedy: 'send the cross-space read without a destination',
+    })
     expect(seen).toEqual([
       expect.objectContaining({
         spaceId: 'space-a',
         spaceIds: ['space-a', 'space-b'],
         acrossReadableSpaces: false,
+        slug: 'guide',
+        owner: null,
       }),
       expect.objectContaining({
         spaceId: 'space-a',

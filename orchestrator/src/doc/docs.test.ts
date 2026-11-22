@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { getDoc, listDocRevisions, readDocRevision } from '../../test/fixtures/doc-local-read.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
-import { getDoc, listDocRevisions, readDocRevision, setDoc, setDocCheckedAgainst } from './docs.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
+import { restoreDoc, setDoc, setDocCheckedAgainst } from './docs.ts'
 
 test('an addressed revision read refuses an id from another document with the history remedy', async () => {
   await setDoc({
@@ -158,4 +160,34 @@ test('setDocCheckedAgainst refuses an absent document with the listing remedy', 
       reason: 'record the checked commit',
     }),
   ).rejects.toThrow(`no project doc "missing"; use ${PLATFORM_SLUG} doc list --scope project`)
+})
+
+test('restore with a supplied authoritative read still refuses a generated reference document', async () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'reference-project',
+    path: '/tmp/reference-project',
+  })
+  const current = await setDoc({
+    scope: 'project',
+    subject: 'reference-project',
+    slug: 'reference-restore',
+    title: 'Generated reference',
+    body: 'Generated.\n',
+    delivery: 'demand',
+    kind: 'article',
+    form: 'reference',
+    audiences: ['technical'],
+    generator: REFERENCE_GENERATOR,
+    reason: 'publish reference fixture',
+  })
+  const revisionId = listDocRevisions('project', 'reference-project', 'reference-restore')[0]!
+    .record_id
+  const revision = readDocRevision('project', 'reference-project', 'reference-restore', revisionId)
+  await expect(
+    restoreDoc('project', 'reference-project', 'reference-restore', revisionId, {
+      reason: 'attempt a hand restore',
+      suppliedRead: { current, revision },
+    }),
+  ).rejects.toThrow('refusing hand write of a generated reference document')
 })

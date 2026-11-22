@@ -18,6 +18,7 @@ import { confinementModules } from './architecture-confinement-modules.ts'
 import { contextHealthModules } from './architecture-context-health-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { databaseModules } from './architecture-database-modules.ts'
+import { docLocalReadStoreAuthorityRule } from './architecture-doc-boundaries.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
@@ -780,6 +781,7 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
 /** Modules that must not reach a runtime they would otherwise import freely. */
 function runtimeBoundaryRules() {
   return [
+    docLocalReadStoreAuthorityRule(exactArchitecturePath),
     {
       name: 'import-hosted-hub-server-transitive-boundary',
       severity: 'error' as const,

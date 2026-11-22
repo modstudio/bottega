@@ -746,7 +746,7 @@ export async function doctorCommand(
   const [configuredUrl, installed] = retrievalFacts(modelHostUrl())
   await reportRetrieval(configuredUrl, installed, process.env, presentation, retrievalCheck)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
-  const { listDocs } = await import('../doc/docs.ts')
+  const { readDocs } = await import('../doc/doc-authoritative-read.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')
   let doctorPack: ReturnType<typeof compilePack>
   try {
@@ -763,7 +763,7 @@ export async function doctorCommand(
   log(
     `canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`,
   )
-  const oversized = listDocs()
+  const oversized = (await readDocs())
     .filter(
       (doc) => doc.delivery === 'inject' && Buffer.byteLength(doc.body) > MAX_INJECT_DOC_BYTES,
     )

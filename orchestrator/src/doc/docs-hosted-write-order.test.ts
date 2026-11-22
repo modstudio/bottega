@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import type { RecordDocUpsertInput } from '../record/record-api-client.ts'
-import { getDoc, importDoc, setDoc as writeDoc } from './docs.ts'
+import { importDoc, setDoc as writeDoc } from './docs.ts'
 
 test('a hosted document write failure leaves the local document unchanged', async () => {
   const local = await setDoc({

@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { getDoc, removeDoc, setDoc } from '../doc/docs.ts'
+import { removeDoc, setDoc } from '../doc/docs.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
 import {

@@ -60,6 +60,40 @@ test('request tenant reads otherwise use only the active space', () => {
   })
 })
 
+test('cross-space reads use every membership from a non-personal active space', () => {
+  expect(
+    requestTenant(
+      identity('space-project'),
+      undefined,
+      'read',
+      'postgres://record',
+      '/v1/docs',
+      undefined,
+      true,
+    ),
+  ).toEqual({
+    url: 'postgres://record',
+    userId: 'user-a',
+    personalSpaceId: 'space-personal',
+    spaceId: 'space-project',
+    spaceIds: ['space-personal', 'space-project'],
+  })
+})
+
+test('cross-space reads refuse a named destination', () => {
+  expect(
+    requestTenant(
+      identity('space-project'),
+      'space-project',
+      'read',
+      'postgres://record',
+      '/v1/docs',
+      undefined,
+      true,
+    ),
+  ).toEqual({ refused: 'cross-space-destination' })
+})
+
 test.each([
   ['/v1/questions', 'by-id'],
   ['/v1/questions', 'for-run'],

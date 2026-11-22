@@ -3,8 +3,9 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { readDoc } from '../doc/doc-authoritative-read.ts'
 import type { ConsumeDocHandoff } from '../doc/doc-consume-command.ts'
-import { consumeDoc, getDoc } from '../doc/docs.ts'
+import { consumeDoc } from '../doc/docs.ts'
 import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
@@ -30,10 +31,17 @@ export function registerMcpDocConsumeTool(
     async ({ scope, subject, slug }) => {
       const refusal = decideMcpDocWrite('consume_doc', scope)
       if (refusal) throw new Error(refusal)
-      const finishHandoff = await handoff.prepare(getDoc(scope, subject, slug))
-      const result = await consumeDoc(scope, subject, slug, {
-        reason: 'consumed by session',
-      })
+      const selected = await readDoc(scope, subject, slug)
+      const finishHandoff = await handoff.prepare(selected)
+      const result = await consumeDoc(
+        scope,
+        subject,
+        slug,
+        {
+          reason: 'consumed by session',
+        },
+        selected,
+      )
       const handoffResult = await finishHandoff(result)
       return text({ ...result, handoff: handoffResult })
     },

@@ -11,7 +11,7 @@ import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { listContextItems } from '../doc/context-item-store.ts'
-import { getDoc } from '../doc/docs.ts'
+import { readDoc } from '../doc/doc-authoritative-read.ts'
 import {
   readTranscriptRows,
   readTranscriptSessionId,
@@ -329,8 +329,8 @@ const rubricSetCommand =
   '--title "Compaction loss rubric" --reason "establish DEV-1854 judge rubric" ' +
   '--delivery demand --file <rubric.md>'
 
-function judgeRubric(): JudgeRubric {
-  const doc = getDoc('job', 'understand', 'compaction-loss-rubric')
+async function judgeRubric(): Promise<JudgeRubric> {
+  const doc = await readDoc('job', 'understand', 'compaction-loss-rubric')
   if (doc?.status !== 'current' || doc.delivery !== 'demand' || !doc.revision)
     throw new Error(
       `compaction-loss judge rubric job/understand/compaction-loss-rubric is absent, not current, or not demand-delivered; set it with: ${rubricSetCommand}`,
@@ -528,7 +528,7 @@ export async function sessionLosses(input: LossInput): Promise<SessionLossResult
   const selected = input.all
     ? [...bySession.entries()]
     : input.sessions.map((id) => [id, bySession.get(id)!] as const)
-  const rubric = input.judge ? judgeRubric() : null
+  const rubric = input.judge ? await judgeRubric() : null
   const directory = stateDirectory()
   const schemaPath = join(directory, 'judge-schema.json')
   writeFileSync(schemaPath, `${JSON.stringify(judgeSchema, null, 2)}\n`, { mode: 0o600 })

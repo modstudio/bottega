@@ -70,6 +70,8 @@ export function recordDocListEntries(
 export type RecordDocListInput = {
   scope?: string
   subject?: string | null
+  slug?: string
+  owner?: string | null
   audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
@@ -112,10 +114,12 @@ export async function recordDocRows(
        AND ($4::text IS NULL OR d.status=$4)
        AND ($5::text IS NULL OR d.kind=$5)
        AND ($6::boolean OR ($7::boolean AND d.subject IS NULL) OR d.subject=$8)
-       AND ($9::boolean OR d.deleted_at IS NULL)
-       AND ($10::timestamptz IS NULL OR d.updated_at>$10::timestamptz)
-       AND ($11::timestamptz IS NULL OR (d.updated_at,d.id)>($11::timestamptz,$12::uuid))
-     ORDER BY d.updated_at,d.id LIMIT $13`,
+       AND ($9::boolean OR d.slug=$10)
+       AND ($11::boolean OR ($12::boolean AND d.owner_user_id IS NULL) OR d.owner_user_id=$13::uuid)
+       AND ($14::boolean OR d.deleted_at IS NULL)
+       AND ($15::timestamptz IS NULL OR d.updated_at>$15::timestamptz)
+       AND ($16::timestamptz IS NULL OR (d.updated_at,d.id)>($16::timestamptz,$17::uuid))
+     ORDER BY d.updated_at,d.id LIMIT $18`,
     [
       (spaces ?? []).join(','),
       selection.scope ?? null,
@@ -125,6 +129,11 @@ export async function recordDocRows(
       selection.subject === undefined,
       selection.subject === null,
       selection.subject ?? null,
+      selection.slug === undefined,
+      selection.slug ?? null,
+      selection.owner === undefined,
+      selection.owner === null,
+      selection.owner ?? null,
       selection.includeDeleted,
       selection.updatedSince ?? null,
       selection.cursor?.at ?? null,

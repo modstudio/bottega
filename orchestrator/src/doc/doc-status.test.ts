@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { docsForRun, listDocRevisions, restoreDoc, setDoc, setDocStatus } from './docs.ts'
+import { listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
+import { docsForRun, restoreDoc, setDoc, setDocStatus } from './docs.ts'
 
 describe('document status', () => {
   test('validates replacements, excludes drafts from delivery, and restores snapshots', async () => {

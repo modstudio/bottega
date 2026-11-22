@@ -19,6 +19,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/resources/docker-resources.ts',
       'orchestrator/src/evidence/evidence-query.ts',
       'orchestrator/src/jobs/jobs.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
       'orchestrator/src/mcp/mcp-credential-literal.ts',
       'orchestrator/src/mcp/mcp-probe.ts',
       'orchestrator/src/worktree/keep-tree-hold.ts',

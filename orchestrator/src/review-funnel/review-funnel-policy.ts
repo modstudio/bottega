@@ -3,7 +3,9 @@
 
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
+import { getDocStore as getDoc } from '../doc/doc-read-store.ts'
+import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
+import { setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {
   REVIEW_FILE_COUNT_BUMP,

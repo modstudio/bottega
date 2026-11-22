@@ -27,7 +27,7 @@ export const spareModules: SpareModule[] = [
     '../../../shared/self-spawn.ts',
     '../agent/agent-registry.ts',
     '../database/db.ts',
-    '../doc/doc-list.ts',
+    '../doc/doc-authoritative-read.ts',
     '../doc/docs.ts',
     '../mcp/hub-notes.ts',
     '../project/projects.ts',

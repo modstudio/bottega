@@ -178,6 +178,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/refusal.ts',
     '../../../shared/state-directory.ts',
   ]),
+  module('orchestrator/src/record/record-read-decision.ts', ['./record-write-decision.ts']),
   module('orchestrator/src/record/record-local-command.ts', [
     'bun:sqlite',
     '../../../shared/refusal.ts',
@@ -201,5 +202,16 @@ export const recordBindingModules: RecordModule[] = [
     './record-local-mark.ts',
     './record-session.ts',
     './record-write-decision.ts',
+  ]),
+  module('orchestrator/src/record/record-read-authority.ts', [
+    'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-session.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+    './install-binding.ts',
+    './record-local-mark.ts',
+    './record-read-decision.ts',
+    './record-write-authority.ts',
   ]),
 ]
