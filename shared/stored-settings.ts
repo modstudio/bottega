@@ -58,7 +58,7 @@ export const OWNED_SETTINGS_SCHEMA = z
 function storedSchema(schema: unknown): z.ZodType {
   if (schema instanceof z.ZodOptional) return storedSchema(schema.unwrap()).optional()
   if (schema instanceof z.ZodObject) return storedObjectSchema(schema)
-  return schema
+  return schema as z.ZodType
 }
 
 function storedObjectSchema(schema: z.ZodObject): z.ZodObject {
