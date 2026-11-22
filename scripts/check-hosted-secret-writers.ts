@@ -44,7 +44,9 @@ type BuilderSite = {
 }
 type SqlWrite = { table: string; columns: Map<string, readonly ts.Expression[]> }
 
-function schemaTableName(source: string, exported: string): string | null {
+type SchemaTableMapCache = Map<string, ReadonlyMap<string, string>>
+
+function schemaTableNames(source: string): ReadonlyMap<string, string> {
   const file = ts.createSourceFile(
     'schema.ts',
     source,
@@ -52,14 +54,14 @@ function schemaTableName(source: string, exported: string): string | null {
     true,
     ts.ScriptKind.TS,
   )
-  let found: string | null = null
+  const tables = new Map<string, string>()
   const visit = (node: ts.Node) => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
-      node.name.text === exported &&
       node.initializer
     ) {
+      let found: string | null = null
       const findTableCall = (child: ts.Node): void => {
         if (
           ts.isCallExpression(child) &&
@@ -71,17 +73,23 @@ function schemaTableName(source: string, exported: string): string | null {
         if (!found) ts.forEachChild(child, findTableCall)
       }
       findTableCall(node.initializer)
+      if (found) tables.set(node.name.text, found)
     }
-    if (!found) ts.forEachChild(node, visit)
+    ts.forEachChild(node, visit)
   }
   visit(file)
-  return found
+  return tables
 }
 
+/**
+ * importedTableBindings resolves only imports whose specifier contains /record/schema, so a
+ * table reached through a re-export or alias is invisible to the builder check (fail-open).
+ */
 function importedTableBindings(
   file: string,
   sourceFile: ts.SourceFile,
   root: string,
+  schemaTables: SchemaTableMapCache,
 ): ReadonlyMap<string, string> {
   const bindings = new Map<string, string>()
   for (const statement of sourceFile.statements) {
@@ -95,14 +103,17 @@ function importedTableBindings(
       continue
     const module = resolve(resolve(root, file), '..', statement.moduleSpecifier.text)
     const schemaPath = module.endsWith('.ts') ? module : `${module}.ts`
-    let schema: string
-    try {
-      schema = readFileSync(schemaPath, 'utf8')
-    } catch {
-      continue
+    let tables = schemaTables.get(schemaPath)
+    if (!tables) {
+      try {
+        tables = schemaTableNames(readFileSync(schemaPath, 'utf8'))
+        schemaTables.set(schemaPath, tables)
+      } catch {
+        continue
+      }
     }
     for (const element of statement.importClause.namedBindings.elements) {
-      const table = schemaTableName(schema, (element.propertyName ?? element.name).text)
+      const table = tables.get((element.propertyName ?? element.name).text)
       if (table) bindings.set(element.name.text, table)
     }
   }
@@ -477,6 +488,7 @@ function inspectHostedWriters(
   file: string,
   source: string,
   root = resolve(import.meta.dir, '..'),
+  schemaTables: SchemaTableMapCache = new Map(),
 ): {
   findings: HostedWriterFinding[]
   verdicts: HostedWriterVerdicts
@@ -493,7 +505,7 @@ function inspectHostedWriters(
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   const builderSites: BuilderSite[] = []
-  const tableBindings = importedTableBindings(file, sourceFile, root)
+  const tableBindings = importedTableBindings(file, sourceFile, root, schemaTables)
   const record = (inspected: WriteInspection | null) => {
     if (!inspected) return
     if (inspected.finding) findings.push(inspected.finding)
@@ -519,11 +531,20 @@ async function currentHostedWriterInspection(root = resolve(import.meta.dir, '..
   const findings: HostedWriterFinding[] = []
   const verdicts: HostedWriterVerdicts = { masked: 0, structured: 0 }
   const builderSites: BuilderSite[] = []
+  const schemaTables: SchemaTableMapCache = new Map()
   for (const pattern of ['hub/src/**/*.ts', 'orchestrator/src/record/**/*.ts']) {
     for await (const file of new Glob(pattern).scan({ cwd: root })) {
       if (file.endsWith('.test.ts') || file.includes('/migrations')) continue
       const source = readFileSync(resolve(root, file), 'utf8')
-      const inspected = inspectHostedWriters(file, source, root)
+      if (
+        !source.includes('tx`') &&
+        !source.includes('.insert(') &&
+        !source.includes('.update(') &&
+        !source.includes('.values(') &&
+        !source.includes('.set(')
+      )
+        continue
+      const inspected = inspectHostedWriters(file, source, root, schemaTables)
       findings.push(...inspected.findings)
       verdicts.masked += inspected.verdicts.masked
       verdicts.structured += inspected.verdicts.structured
