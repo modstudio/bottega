@@ -3,8 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { numberedEntityRecordExists, numberedEntityRecordId } from '../database/entity-number.ts'
 
 const ACCEPTED = 'a positive decimal document-revision number or a full document-revision UUID'
 
@@ -36,13 +37,10 @@ export function resolveDocRevisionIdentifier(database: Database, input: string |
     return parsed.recordId
   }
   if (parsed.kind === 'number') {
-    const row = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM doc_revision WHERE number=?')
-      .get(parsed.number)
-    if (row) return row.record_id
+    const recordId = numberedEntityRecordId(database, 'doc_revision', parsed.number)
+    if (recordId) return recordId
     throw new Error(`no document revision has number ${parsed.number}; pass ${ACCEPTED}`)
   }
-  if (database.query('SELECT 1 FROM doc_revision WHERE record_id=?').get(parsed.recordId))
-    return parsed.recordId
+  if (numberedEntityRecordExists(database, 'doc_revision', parsed.recordId)) return parsed.recordId
   throw new Error(`no document revision has UUID ${JSON.stringify(input)}; pass ${ACCEPTED}`)
 }

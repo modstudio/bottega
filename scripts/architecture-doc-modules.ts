@@ -334,6 +334,14 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
   ]),
+  module('orchestrator/src/doc/doc-tree-write.ts', [
+    '../../../shared/docs.ts',
+    '../record/record-read-authority.ts',
+    './doc-authoritative-read.ts',
+    './doc-read-store.ts',
+    './doc-tree-rules.ts',
+    './local-doc-tree-service.ts',
+  ]),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',
     '../agent/agent-registry.ts',

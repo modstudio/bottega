@@ -6,10 +6,7 @@ import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { readDocs } from './doc-authoritative-read.ts'
 import type { Doc } from './doc-read-store.ts'
 import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
-import {
-  type LocalDocTreeFields,
-  localDocTreeFields,
-} from './local-doc-tree-service.ts'
+import { type LocalDocTreeFields, localDocTreeFields } from './local-doc-tree-service.ts'
 
 type TreeWriteInput = {
   scope: string

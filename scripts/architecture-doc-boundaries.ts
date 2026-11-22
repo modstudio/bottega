@@ -45,7 +45,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/canon-import.ts',
         // Write path: canon removal evaluates the local set it mutates.
         'orchestrator/src/doc/canon-removal.ts',
-        // Write path: context/resume persistence checks the local row it mutates.
+        // Local-install branch of sessionResumeBriefState.
         'orchestrator/src/doc/context-service.ts',
         // Write path: article validation operates on the candidate local row types.
         'orchestrator/src/doc/doc-article-fields.ts',
@@ -65,9 +65,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/doc-revision-store.ts',
         // search out of scope (note 01a20248)
         'orchestrator/src/doc/doc-search-service.ts',
-        // Write path: command source-file edits read the prior row they replace.
-        'orchestrator/src/doc/doc-set-source-files.ts',
-        // Write path: document service mutations read their prior local rows.
+        // Local-install document branches and synchronous pack compilation.
         'orchestrator/src/doc/docs.ts',
         // Write path: local lifecycle validation checks replacement rows.
         'orchestrator/src/doc/local-doc-status.ts',
@@ -75,8 +73,6 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/local-doc-tree-service.ts',
         // Write path: local mutation implementation reads the rows it changes.
         'orchestrator/src/doc/local-doc-write.ts',
-        // Write path: generated reference publishing compares rows before replacing them.
-        'orchestrator/src/doc/reference-publish.ts',
         // Write path: resume authorship follows revisions created by resume mutations.
         'orchestrator/src/doc/resume-brief-author.ts',
         // Write path: derives the identity attached to a local revision mutation.
@@ -87,14 +83,8 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/commands/rulings.ts',
         // Write path: ruling filing reads the revision written in the same operation.
         'orchestrator/src/mcp/mcp-operator-tools.ts',
-        // Write path: settings import reads the prior row it updates.
-        'orchestrator/src/settings/settings-apply-commands.ts',
         // PR 2: review admission reads the policy snapshot synchronously
         'orchestrator/src/review-funnel/review-funnel-policy.ts',
-        // Write path: settings commands read the prior row they update.
-        'orchestrator/src/settings/settings-commands.ts',
-        // Write path: settings env edits read the prior row they update.
-        'orchestrator/src/settings/settings-env-commands.ts',
         // Write path: machine apply reads the local rows it materializes.
         'orchestrator/src/settings/settings-machine-apply.ts',
         // PR 2: canon commands remain synchronous and local.

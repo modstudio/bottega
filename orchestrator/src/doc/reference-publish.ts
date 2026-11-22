@@ -6,8 +6,8 @@ import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { readDoc, readDocs } from './doc-authoritative-read.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { removeDoc, setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {

@@ -29,3 +29,27 @@ export function nextEntityNumber(database: Database, entity: NumberedEntity): nu
   if (!row) throw new Error(`${entity} number counter is missing`)
   return row.last_number
 }
+
+const NUMBER_COLUMN = 'number'
+
+export function numberedEntityRecordId(
+  database: Database,
+  entity: NumberedEntity,
+  number: number,
+): string | null {
+  return (
+    database
+      .query<{ record_id: string }, [number]>(
+        `SELECT record_id FROM ${entity} WHERE ${NUMBER_COLUMN}=?`,
+      )
+      .get(number)?.record_id ?? null
+  )
+}
+
+export function numberedEntityRecordExists(
+  database: Database,
+  entity: NumberedEntity,
+  recordId: string,
+): boolean {
+  return database.query(`SELECT 1 FROM ${entity} WHERE record_id=?`).get(recordId) !== null
+}

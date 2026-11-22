@@ -31,6 +31,7 @@ import {
 } from './record-api-credential-routes.ts'
 import { recordDocListPage } from './record-api-doc-list.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
+import { registerRecordDocReadRoutes } from './record-api-doc-read-routes.ts'
 import {
   docWriteContextSchema,
   recordCanonImportSchema,
@@ -546,6 +547,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (refusal) return refusal
     throw error
   }
+  registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
 
@@ -801,58 +803,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
     return context.json(recordDocListPage(entries, query.data.limit))
-  })
-  app.get('/v1/docs/:id', async (context) => {
-    const id = idSchema.safeParse(context.req.param('id'))
-    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const tenant = await docIdScope(context, id.data)
-    if (!tenant) return noSpace(context)
-    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
-    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
-    const doc = await deps.readDoc({ ...tenant, id: id.data, audience: audience.data })
-    return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
-  })
-  app.get('/v1/docs/:id/revisions', async (context) => {
-    const id = idSchema.safeParse(context.req.param('id'))
-    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const tenant = await docIdScope(context, id.data)
-    if (!tenant) return noSpace(context)
-    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
-    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
-    try {
-      const items = await deps.listDocRevisions({
-        ...tenant,
-        id: id.data,
-        audience: audience.data,
-      })
-      return items ? context.json({ items }) : context.json({ error: 'doc not found' }, 404)
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.get('/v1/doc-revisions/:revisionId', async (context) => {
-    const id = idSchema.safeParse(context.req.param('revisionId'))
-    if (!id.success) return context.json({ error: 'doc revision id must be a uuid' }, 400)
-    const readable = scope(context, true)
-    if (!readable) return noSpace(context)
-    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
-    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
-    const found = await deps.readDocRevision({
-      ...readable,
-      id: id.data,
-      audience: audience.data,
-    })
-    if (!found) return context.json({ error: 'doc revision not found' }, 404)
-    const tenant = await docIdScope(context, found.docId)
-    if (!tenant) return noSpace(context)
-    const revision = await deps.readDocRevision({
-      ...tenant,
-      id: id.data,
-      audience: audience.data,
-    })
-    return revision
-      ? context.json(revision)
-      : context.json({ error: 'doc revision not found' }, 404)
   })
   app.put('/v1/docs', async (context) => {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
