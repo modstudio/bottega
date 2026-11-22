@@ -12,8 +12,8 @@ import {
   userSettingsPath,
 } from '../settings/settings-files.ts'
 import {
-  productHookDeclarations,
   type ProductHookDeclaration,
+  productHookDeclarations,
 } from '../settings/settings-machine-hooks.ts'
 import { classifySetupProductHooks, type SetupProductHookFact } from './setup-install-verify.ts'
 

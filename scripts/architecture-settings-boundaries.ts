@@ -61,6 +61,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-subagents.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/refusal.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/doc/doc-read-store.ts',
       `${source}settings.ts`,

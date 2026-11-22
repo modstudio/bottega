@@ -32,7 +32,6 @@ import {
 } from './settings-machine-apply.ts'
 import {
   productHookDeclarations,
-  PRODUCT_HOOKS,
   withMachineProductHooks,
 } from './settings-machine-hooks.ts'
 import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'

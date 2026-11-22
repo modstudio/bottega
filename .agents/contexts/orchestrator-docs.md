@@ -83,17 +83,17 @@ The test is whether the fact varies **by project**; if it does not, it does not 
 
 # The subagent gate
 
-Claude-subagent blocking is opt-in per user and off by default. Set the choice with `bottega machine settings subagents`. While blocking is on, a `PreToolUse` hook (`hooks/block-agent.py`) denies Claude-subagent spawns for work an external agent could do and every spawn is logged. While it is off, spawns are neither gated nor logged.
+Claude-subagent blocking is opt-in per user and off by default. Set it with `bottega machine settings subagents`. While on, `hooks/block-agent.py` gates and logs spawns; while off, it does neither.
 
-**Web work is allowed while blocking is on, but it declares itself** — `NEEDS-WEB` in the opening of the prompt or description. Only that opening is checked so a quoted repository excerpt deep in a prompt does not become a declaration.
+**Web work is allowed while blocking is on, but it declares itself** — `NEEDS-WEB` in the prompt or description opening. A quoted excerpt later in the prompt does not count.
 
-**A URL is not a declaration.** A prompt can quote a docs link or stack trace without anyone deciding it needs the network. A URL is noted in the log and nothing more.
+**A URL is not a declaration.** It is noted in the log and nothing more.
 
 **Denial happens on `PreToolUse` only.** `SubagentStart` carries no prompt to judge and its schema rejects a permission decision outright. It is audit-only. Everything the gate does not deny is recorded too, including `Workflow`.
 
-The declaration is not a lock. Anyone can write `NEEDS-WEB`, and preventing that is not the point: writing it is deliberate and recorded, so a habit of declaring web work that is not web work shows up in `bottega run spawns`. There is no rewording path — one deliberate act is auditable, three rewordings are not.
+The declaration is deliberate and recorded, so misuse shows up in `bottega run spawns`.
 
-**A denial has to name a route that exists.** The refusal names the path, rather than forbidding the only available one.
+**A denial names an available route.**
 
 **While the gate is on, every spawn is logged, allowed and denied alike.** A gate that cannot report what it let through cannot be tuned.
 

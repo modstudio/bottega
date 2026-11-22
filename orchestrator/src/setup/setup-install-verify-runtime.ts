@@ -9,6 +9,7 @@ import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { runtimeAssetPath, runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
+import { isPlainObject } from '../settings/settings.ts'
 import {
   claudeHomeFromEnvironment,
   managedSettingsPaths,
@@ -16,7 +17,6 @@ import {
   userLocalSettingsPath,
   userSettingsPath,
 } from '../settings/settings-files.ts'
-import { isPlainObject } from '../settings/settings.ts'
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,

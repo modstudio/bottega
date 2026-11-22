@@ -16,7 +16,6 @@ import {
   settingsRenderCheckCommand,
 } from '../settings/settings-commands.ts'
 import { settingsEnvCommand } from '../settings/settings-env-commands.ts'
-import { settingsSubagentsCommand } from '../settings/settings-subagents.ts'
 import {
   applyMachineSettings,
   printMachineSettingsApplyResults,
@@ -25,6 +24,7 @@ import {
   editMachineSettingsPermission,
   listMachineSettingsPermissions,
 } from '../settings/settings-machine-permissions.ts'
+import { settingsSubagentsCommand } from '../settings/settings-subagents.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>

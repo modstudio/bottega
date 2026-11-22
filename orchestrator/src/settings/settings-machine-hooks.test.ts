@@ -13,8 +13,12 @@ import {
   CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS,
   CONTEXT_REVIEW_MIN_MS,
 } from '../session/context-review-decision.ts'
-import { commandNamesHookScript, withMachineProductHooks } from './settings-machine-hooks.ts'
-import { productHookDeclarations, PRODUCT_HOOKS } from './settings-machine-hooks.ts'
+import {
+  commandNamesHookScript,
+  PRODUCT_HOOKS,
+  productHookDeclarations,
+  withMachineProductHooks,
+} from './settings-machine-hooks.ts'
 
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orchestrator.db'
