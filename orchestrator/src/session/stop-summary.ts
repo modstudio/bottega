@@ -31,8 +31,6 @@ import {
   type StopSummaryReviewLensRow,
 } from './stop-summary-reviews.ts'
 
-export const docAuthorityMutation = () => db().query('SELECT * FROM doc')
-
 type CountRow = { count: number }
 type OwedRunRow = {
   record_id: string

@@ -64,35 +64,49 @@ const SQL_WITH_DOC_TABLE =
 const LOCAL_SQL_IMPORT =
   /(?:from\s*['"]bun:sqlite['"]|import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"](?:\.\.?\/)+(?:database\/)?db\.ts['"])/s
 
+function commentEnd(source: string, index: number): number | null {
+  if (source[index] !== '/') return null
+  if (source[index + 1] === '/') {
+    const newline = source.indexOf('\n', index + 2)
+    return newline < 0 ? source.length : newline
+  }
+  if (source[index + 1] === '*') {
+    const close = source.indexOf('*/', index + 2)
+    return close < 0 ? source.length : close + 1
+  }
+  return null
+}
+
+function stringLiteralAt(source: string, index: number): { end: number; value: string } | null {
+  const quote = source[index]
+  if (quote !== "'" && quote !== '"' && quote !== '`') return null
+  let value = ''
+  for (index += 1; index < source.length; index += 1) {
+    const character = source[index]!
+    if (character === '\\') {
+      value += character + (source[index + 1] ?? '')
+      index += 1
+    } else if (character === quote) {
+      return { end: index, value }
+    } else {
+      value += character
+    }
+  }
+  return { end: source.length, value }
+}
+
 function hasDocTableSql(source: string): boolean {
   if (!LOCAL_SQL_IMPORT.test(source)) return false
   for (let index = 0; index < source.length; index += 1) {
-    if (source[index] === '/' && source[index + 1] === '/') {
-      index = source.indexOf('\n', index + 2)
-      if (index < 0) return false
+    const afterComment = commentEnd(source, index)
+    if (afterComment !== null) {
+      index = afterComment
       continue
     }
-    if (source[index] === '/' && source[index + 1] === '*') {
-      index = source.indexOf('*/', index + 2)
-      if (index < 0) return false
-      index += 1
-      continue
-    }
-    const quote = source[index]
-    if (quote !== "'" && quote !== '"' && quote !== '`') continue
-    let literal = ''
-    for (index += 1; index < source.length; index += 1) {
-      const character = source[index]!
-      if (character === '\\') {
-        literal += character + (source[index + 1] ?? '')
-        index += 1
-      } else if (character === quote) {
-        break
-      } else {
-        literal += character
-      }
-    }
-    if (SQL_WITH_DOC_TABLE.test(literal)) return true
+    const literal = stringLiteralAt(source, index)
+    if (!literal) continue
+    index = literal.end
+    if (SQL_WITH_DOC_TABLE.test(literal.value)) return true
   }
   return false
 }

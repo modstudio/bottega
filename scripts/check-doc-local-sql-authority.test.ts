@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { DOC_LOCAL_SQL_ALLOWANCES, docLocalSqlViolation } from './check-doc-local-sql-authority.ts'
 
 const sources = [
-  "import { db } from '../database/db.ts'; db().query('SELECT * FROM doc WHERE slug=?')",
+  "import { db } from '../database/db.ts'; // receiver's name is irrelevant\ndb().query('SELECT * FROM doc WHERE slug=?')",
   "import { db } from '../database/db.ts'; const d = db(); d.query('SELECT * FROM doc WHERE slug=?')",
   "import { db } from '../database/db.ts'; db().prepare('SELECT * FROM doc WHERE slug=?')",
   "import type { Database } from 'bun:sqlite'; function f(store: Database) { return store.query('SELECT body FROM doc_revision').all() }",
