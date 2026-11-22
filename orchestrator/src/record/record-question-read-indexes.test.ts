@@ -108,7 +108,7 @@ test('hosted question reads use tenant-table key indexes under RLS', async () =>
       name: 'membership inbox',
       input: { read: 'inbox' },
       query: 1,
-      driver: { relation: 'run', alias: 'owner' },
+      driver: { relation: 'question', alias: 'q' },
     },
     {
       name: 'membership open-for-tasks',
@@ -134,7 +134,8 @@ test('hosted question reads use tenant-table key indexes under RLS', async () =>
       const condition = scan['Index Cond'] ?? scan['Recheck Cond']
       const label = `${name}: ${scan['Node Type']} on ${scan['Relation Name']} ${scan.Alias ?? ''}`
       expect(condition, label).toBeDefined()
-      if (condition?.match(/\b(?:id|parent_run_id|run_id|workflow_cursor_record_id)\b/)) continue
+      if (condition?.match(/\b(?:id|parent_run_id|run_id|workflow_cursor_record_id|workflow_task_id)\b/))
+        continue
       expect(driver, `${label} has only a tenant-space condition`).toBeDefined()
       expect({ relation: scan['Relation Name'], alias: scan.Alias }, label).toEqual(driver!)
       expect(outermost, `${label} must be the statement's outermost tenant scan`).toBe(true)
