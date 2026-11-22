@@ -563,8 +563,10 @@ export async function recordApiRequest<T>(
   } = {},
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = apiFetch,
+  preflight: () => void = throwIfRecordApiRequestRefused,
+  origin: string = recordApiBaseUrl(),
 ): Promise<T> {
-  throwIfRecordApiRequestRefused()
+  preflight()
   const readToken = async () =>
     init.signal
       ? await (authentication
@@ -573,7 +575,6 @@ export async function recordApiRequest<T>(
       : authentication
         ? authentication.token()
         : storedRecordToken()
-  const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
     const { destinationSpaceId: s, headers: h } = init
     const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
@@ -614,11 +615,15 @@ function throwIfRecordApiRequestRefused(): void {
   }
 }
 
-async function publicRequest<T>(path: string, transport: typeof fetch = apiFetch): Promise<T> {
+async function publicRequest<T>(
+  path: string,
+  transport: typeof fetch = apiFetch,
+  origin: () => string = recordApiBaseUrl,
+): Promise<T> {
   let response: Response
   try {
     response = await recordTransport(
-      recordApiBaseUrl(),
+      origin(),
       path,
       {
         method: 'GET',
@@ -728,11 +733,8 @@ export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
   transport?: typeof fetch,
 ): RecordApiClient {
-  const selectedTransport = transport ?? apiFetch
-  return recordApiClientOver(
-    (path, init) => recordApiRequest(path, init, authentication, selectedTransport),
-    selectedTransport,
-    storedRecordToken,
+  return recordApiClient(
+    (path, init) => recordApiRequest(path, init, authentication, transport ?? apiFetch),
     transport,
   )
 }
@@ -747,19 +749,24 @@ export function recordApiClient(
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
     selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch),
-    transport ?? apiFetch,
-    storedRecordToken,
-    transport,
+    { transport: transport ?? apiFetch, streamTransport: transport },
   )
+}
+
+type RecordApiClientSeams = {
+  transport?: typeof fetch
+  origin?: () => string
+  streamToken?: () => string | null
+  streamTransport?: typeof fetch
+  preflight?: () => void
 }
 
 export function recordApiClientOver(
   request: RecordClientRequest,
-  transport: typeof fetch = apiFetch,
-  readStreamToken: () => string | null = storedRecordToken,
-  streamTransport?: typeof fetch,
-  streamPreflight: () => void = throwIfRecordApiRequestRefused,
+  seams: RecordApiClientSeams = {},
 ): RecordApiClient {
+  const transport = seams.transport ?? apiFetch
+  const origin = seams.origin ?? recordApiBaseUrl
   const client: RecordApiClient = {
     storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
     ...recordChangesClient(request),
@@ -769,7 +776,7 @@ export function recordApiClientOver(
     ...recordOutsideClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
-    ...recordSnapshotAndPublicDocClient(request, transport),
+    ...recordSnapshotAndPublicDocClient(request, transport, origin),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordContextItemClient(request),
@@ -789,7 +796,13 @@ export function recordApiClientOver(
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     ...recordBoardClient(request),
-    ...recordApiBoardWatchClient(request, streamTransport, readStreamToken, streamPreflight),
+    ...recordApiBoardWatchClient(
+      request,
+      seams.streamTransport,
+      seams.streamToken ?? storedRecordToken,
+      seams.preflight ?? throwIfRecordApiRequestRefused,
+      origin,
+    ),
   }
   return client
 }
@@ -797,6 +810,7 @@ export function recordApiClientOver(
 const recordSnapshotAndPublicDocClient = (
   request = recordApiRequest,
   transport: typeof fetch = apiFetch,
+  origin: () => string = recordApiBaseUrl,
 ): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
   putSnapshot: (kind, input, destination) =>
     request(`/v1/snapshots/${kind}`, {
@@ -805,10 +819,14 @@ const recordSnapshotAndPublicDocClient = (
       ...destination,
     }),
   listSnapshots: () => request('/v1/snapshots'),
-  listPublicDocs: () => publicRequest('/public/v1/docs', transport),
-  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`, transport),
+  listPublicDocs: () => publicRequest('/public/v1/docs', transport, origin),
+  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`, transport, origin),
   searchPublicDocs: (query) =>
-    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`, transport),
+    publicRequest(
+      `/public/v1/docs/search?${new URLSearchParams({ q: query })}`,
+      transport,
+      origin,
+    ),
 })
 
 const recordDocReadClient = (
@@ -995,6 +1013,7 @@ function recordApiBoardWatchClient(
   transport?: typeof fetch,
   readToken: () => string | null = storedRecordToken,
   preflight: () => void = throwIfRecordApiRequestRefused,
+  origin: () => string = recordApiBaseUrl,
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
   const selectedTransport = transport ?? (((url, init) => fetch(url, init)) as typeof fetch)
   return {
@@ -1010,7 +1029,7 @@ function recordApiBoardWatchClient(
         transport: selectedTransport,
         readToken,
         preflight,
-        origin: recordApiBaseUrl,
+        origin,
       }),
   }
 }

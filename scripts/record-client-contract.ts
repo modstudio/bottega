@@ -2,16 +2,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   type RecordApiClient,
+  recordApiRequest,
   recordApiClientOver,
 } from '../orchestrator/src/record/record-api-client.ts'
-import { recordTransport } from '../orchestrator/src/record/record-api-client-transport.ts'
 import { identity } from '../orchestrator/src/record/record-api-identity.fixture.ts'
 import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { type ConfigClient, configClient } from '../shared/config-client.ts'
-import { recordRequestHeaders } from '../shared/record-request-headers.ts'
 import { formatRecordClientContractJson } from './record-client-contract-json.ts'
 
 export type RecordClientContractEntry = {
@@ -29,10 +27,7 @@ export const CURRENT_CONTRACT_PATH = resolve(ROOT, 'scripts/quality/record-clien
 export const RELEASED_CONTRACT_DIRECTORY = resolve(ROOT, 'scripts/quality/record-client-contracts')
 
 const SAMPLE_ID = '01990000-0000-7000-8000-000000000001'
-const CONTRACT_ORIGIN = 'https://record.example.test'
-const CONTRACT_ENVIRONMENT = Object.fromEntries([
-  ['BOTTEGA_RECORD_API_URL', CONTRACT_ORIGIN],
-]) as Record<string, string>
+export const CONTRACT_ORIGIN = 'https://record.example.test'
 const SAMPLE_DESTINATION = { destinationSpaceId: 'space-a', projectId: SAMPLE_ID }
 const SAMPLE_INPUT = {
   ...SAMPLE_DESTINATION,
@@ -369,62 +364,40 @@ async function invokeSample(client: object, member: string): Promise<void> {
   }
 }
 
-export async function generateRecordClientContract(): Promise<RecordClientContractEntry[]> {
+export async function generateRecordClientContract(
+  origin: string,
+): Promise<RecordClientContractEntry[]> {
   const entries: RecordClientContractEntry[] = []
   let activeSample = ''
   const transport = createRecordingTransport(entries, () => activeSample)
-  const request = async (
+  const authentication = {
+    token: () => 'contract-token',
+    tokenAsync: async () => 'contract-token',
+  }
+  const request = <T>(
     path: string,
     init: RequestInit & { destinationSpaceId?: string } = {},
-  ) => {
-    const headers = recordRequestHeaders({
-      bearerToken: 'contract-token',
-      destinationSpaceId: init.destinationSpaceId,
-      headers: init.headers,
-    })
-    if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-    const response = await recordTransport(
-      CONTRACT_ORIGIN,
-      path,
-      { ...init, headers },
-      transport,
-      () => undefined,
-      () => `${PLATFORM_SLUG}/contract`,
-    )
-    const body = await response.json().catch(() => null)
-    if (!response.ok) throw new Error(`record contract response ${response.status}`)
-    return body
-  }
+  ) => recordApiRequest<T>(path, init, authentication, transport, () => undefined, origin)
   const record = recordApiClientOver(
     request,
-    transport,
-    () => 'contract-token',
-    transport,
-    () => undefined,
+    {
+      transport,
+      origin: () => origin,
+      streamToken: () => 'contract-token',
+      streamTransport: transport,
+      preflight: () => undefined,
+    },
   )
-  const config = configClient(CONTRACT_ENVIRONMENT, transport, 'contract-token')
+  const config = configClient({ BOTTEGA_RECORD_API_URL: origin }, transport, 'contract-token')
   const missing = missingClientSamples(record, config)
   if (missing.length) throw new Error(`record client contract lacks samples: ${missing.join(', ')}`)
-  const urlKey = 'BOTTEGA_RECORD_API_URL'
-  const containerKey = 'BOTTEGA_TEST_POSTGRES_CONTAINER'
-  const previousUrl = Reflect.get(process.env, urlKey) as string | undefined
-  const previousTestContainer = Reflect.get(process.env, containerKey) as string | undefined
-  Reflect.set(process.env, urlKey, CONTRACT_ORIGIN)
-  Reflect.set(process.env, containerKey, 'contract')
-  try {
-    for (const [sample, member] of Object.entries(recordClientSamples)) {
-      activeSample = sample
-      await invokeSample(record, member)
-    }
-    for (const [sample, member] of Object.entries(configClientSamples)) {
-      activeSample = sample
-      await invokeSample(config, member)
-    }
-  } finally {
-    if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
-    else Reflect.set(process.env, urlKey, previousUrl)
-    if (previousTestContainer === undefined) Reflect.deleteProperty(process.env, containerKey)
-    else Reflect.set(process.env, containerKey, previousTestContainer)
+  for (const [sample, member] of Object.entries(recordClientSamples)) {
+    activeSample = sample
+    await invokeSample(record, member)
+  }
+  for (const [sample, member] of Object.entries(configClientSamples)) {
+    activeSample = sample
+    await invokeSample(config, member)
   }
   const recorded = new Set(entries.map((entry) => entry.sample))
   const unrecorded = [
@@ -439,7 +412,16 @@ export async function generateRecordClientContract(): Promise<RecordClientContra
 export const serializeRecordClientContract = formatRecordClientContractJson
 
 async function main() {
-  const entries = await generateRecordClientContract()
+  const urlKey = 'BOTTEGA_RECORD_API_URL'
+  const previousUrl = Reflect.get(process.env, urlKey) as string | undefined
+  Reflect.set(process.env, urlKey, CONTRACT_ORIGIN)
+  let entries: RecordClientContractEntry[]
+  try {
+    entries = await generateRecordClientContract(CONTRACT_ORIGIN)
+  } finally {
+    if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
+    else Reflect.set(process.env, urlKey, previousUrl)
+  }
   if (process.argv.includes('--update')) {
     writeFileSync(CURRENT_CONTRACT_PATH, serializeRecordClientContract(entries))
     return

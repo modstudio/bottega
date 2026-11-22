@@ -1,9 +1,10 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
 import {
   CURRENT_CONTRACT_PATH,
+  CONTRACT_ORIGIN,
   createRecordingTransport,
   generateRecordClientContract,
   RELEASED_CONTRACT_DIRECTORY,
@@ -11,6 +12,19 @@ import {
   recordClientContractApp,
   serializeRecordClientContract,
 } from './record-client-contract.ts'
+
+const urlKey = 'BOTTEGA_RECORD_API_URL'
+let previousUrl: string | undefined
+
+beforeAll(() => {
+  previousUrl = Reflect.get(process.env, urlKey) as string | undefined
+  Reflect.set(process.env, urlKey, CONTRACT_ORIGIN)
+})
+
+afterAll(() => {
+  if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
+  else Reflect.set(process.env, urlKey, previousUrl)
+})
 
 test('the recording transport captures a normalized in-process request', async () => {
   const entries: RecordClientContractEntry[] = []
@@ -73,7 +87,7 @@ async function replay(version: string, entries: RecordClientContractEntry[]): Pr
 }
 
 test('the current record client contract is fresh', async () => {
-  const generated = serializeRecordClientContract(await generateRecordClientContract())
+  const generated = serializeRecordClientContract(await generateRecordClientContract(CONTRACT_ORIGIN))
   expect(generated, 'run bun scripts/record-client-contract.ts --update').toBe(
     readFileSync(CURRENT_CONTRACT_PATH, 'utf8'),
   )
