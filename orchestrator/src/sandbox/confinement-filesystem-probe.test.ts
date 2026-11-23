@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  decideOutboundRefusal,
-  probeVerdict,
-  sandboxGitSpawnVerdict,
-} from './confinement-filesystem-probe.ts'
+import { decideOutboundRefusal, sandboxGitSpawnVerdict } from './confinement-filesystem-probe.ts'
+import { probeVerdict } from './confinement-probe-verdict.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
 
