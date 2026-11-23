@@ -86,7 +86,12 @@ function feed(changes: unknown[], cursors = ['after']) {
     const url = new URL(input)
     if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
     if (url.pathname === '/v1/changes')
-      return Response.json({ changes, cursor: cursors[call++] ?? cursors.at(-1)!, lag: 0, more: false })
+      return Response.json({
+        changes,
+        cursor: cursors[call++] ?? cursors.at(-1)!,
+        lag: 0,
+        more: false,
+      })
     throw new Error(`unexpected route ${url.pathname}`)
   }
 }
@@ -137,16 +142,19 @@ test('seeing the same bad row again increments its quarantine sighting', async (
     const url = new URL(input)
     if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
     if (url.pathname === '/v1/changes')
-      return Response.json({ changes: [badChange()], cursor: pass++ ? 'after' : 'middle', lag: 0, more: false })
+      return Response.json({
+        changes: [badChange()],
+        cursor: pass++ ? 'after' : 'middle',
+        lag: 0,
+        more: false,
+      })
     throw new Error(`unexpected route ${url.pathname}`)
   }
 
   await pullHostedChanges({ ...options, fetch })
   await pullHostedChanges({ ...options, fetch })
 
-  expect(hostedChangeQuarantineRows(db())).toEqual([
-    expect.objectContaining({ sightings: 2 }),
-  ])
+  expect(hostedChangeQuarantineRows(db())).toEqual([expect.objectContaining({ sightings: 2 })])
 })
 
 test('a later successful change clears the quarantine for that row', async () => {

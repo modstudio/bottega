@@ -334,7 +334,12 @@ export const hubModuleSpecs = [
   { file: 'hub/src/collect-cadence.ts', allowed: [] },
   {
     file: 'hub/src/collector-leg-state.ts',
-    allowed: ['@bottega/hub-views/work-summary', './collect-slow-health.ts', './db.ts'],
+    allowed: [
+      '@bottega/hub-views/work-summary',
+      './collect-slow-health.ts',
+      './db.ts',
+      './hosted-change-quarantine.ts',
+    ],
   },
   {
     file: 'hub/src/collect-tracker-counts.ts',
@@ -534,6 +539,10 @@ export const hubModuleSpecs = [
       './task-client.ts',
       './task-write-destination.ts',
     ],
+  },
+  {
+    file: 'hub/src/hosted-change-quarantine.ts',
+    allowed: ['bun:sqlite', '../../shared/record/schema.ts', './hosted-change-family.ts'],
   },
   {
     file: 'hub/src/task-hosted-record.ts',
@@ -740,6 +749,7 @@ export const hubModuleSpecs = [
       './db.ts',
       './doctor.ts',
       './fixture-question-reclaim.ts',
+      './hosted-change-quarantine.ts',
       './local-auth.ts',
       './orch.ts',
       './projects.ts',

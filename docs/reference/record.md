@@ -119,13 +119,14 @@ scan local outbox or hosted free text for secret material
 
 ## bottega record collector-legs
 
-**Synopsis:** `bottega record collector-legs [--json]`
+**Synopsis:** `bottega record collector-legs [--json] [--quarantined]`
 
 show persisted collector-leg state
 
 ### Options
 
 - `--json`: write the collector-leg state as JSON
+- `--quarantined`: list hosted changes quarantined during local apply
 
 ### Related
 

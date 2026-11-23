@@ -25,10 +25,6 @@ import {
 } from './collect.ts'
 import { collectorLegStates, collectorLegView } from './collector-leg-state.ts'
 import {
-  hostedChangeQuarantineRows,
-  hostedChangeQuarantineSummary,
-} from './hosted-change-quarantine.ts'
-import {
   db,
   formatMigrationRepairSummary,
   migrateDatabaseWithQuestionIdentityMap,
@@ -37,6 +33,10 @@ import {
 } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
+import {
+  hostedChangeQuarantineRows,
+  hostedChangeQuarantineSummary,
+} from './hosted-change-quarantine.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import {
   readQuestionIdentityMap,

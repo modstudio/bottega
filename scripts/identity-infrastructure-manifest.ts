@@ -86,6 +86,11 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   },
   {
     store: 'hub',
+    table: 'hosted_change_quarantine',
+    reason: 'machine-local hosted change apply state; never pushed',
+  },
+  {
+    store: 'hub',
     table: 'commit_key',
     reason:
       'machine-local Git ingestion in hub/src/ingest/git.ts and hub/src/task-import.ts, keyed by content-addressed commit sha',

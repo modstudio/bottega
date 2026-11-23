@@ -34,6 +34,45 @@ function observationError(detail: string): string {
   return `collector leg observation unreadable: ${detail}`
 }
 
+function hostedRowQuarantineDecision(
+  leg: CollectorLegObservation,
+  now: number,
+): { condition: MonitorCondition | null; error: string | null } {
+  const count = leg.quarantinedRows ?? 0
+  const oldest = leg.oldestQuarantinedRow
+  if (
+    !Number.isInteger(count) ||
+    count < 0 ||
+    (count > 0 &&
+      (!oldest ||
+        typeof oldest.table !== 'string' ||
+        typeof oldest.constraintError !== 'string' ||
+        typeof oldest.firstQuarantinedAt !== 'string'))
+  )
+    return {
+      condition: null,
+      error: observationError(`${leg.source} had invalid quarantine fields`),
+    }
+  if (count === 0) return { condition: null, error: null }
+  const since = Date.parse(oldest!.firstQuarantinedAt)
+  if (!Number.isFinite(since))
+    return {
+      condition: null,
+      error: observationError(`${leg.source} had an invalid quarantine timestamp`),
+    }
+  return {
+    condition: {
+      kind: 'hosted-row-quarantined',
+      subject: leg.source,
+      since: oldest!.firstQuarantinedAt,
+      ageMs: Math.max(0, now - since),
+      detail: `${count} hosted ${count === 1 ? 'row is' : 'rows are'} quarantined; oldest is ${oldest!.table}: ${oldest!.constraintError}`,
+      action: `list quarantined rows with ${PLATFORM_SLUG} record collector-legs --quarantined --json, fix the local constraint, and collect again`,
+    },
+    error: null,
+  }
+}
+
 function parsedObservations(value: unknown): {
   observations: CollectorLegObservation[]
   errors: string[]
@@ -85,34 +124,9 @@ export function collectorLegFailureDecision(
   const conditions: MonitorCondition[] = []
   const failures: CollectorLegFailure[] = []
   for (const leg of observations) {
-    const quarantinedRows = leg.quarantinedRows ?? 0
-    if (
-      !Number.isInteger(quarantinedRows) ||
-      quarantinedRows < 0 ||
-      (quarantinedRows > 0 &&
-        (!leg.oldestQuarantinedRow ||
-          typeof leg.oldestQuarantinedRow.table !== 'string' ||
-          typeof leg.oldestQuarantinedRow.constraintError !== 'string' ||
-          typeof leg.oldestQuarantinedRow.firstQuarantinedAt !== 'string'))
-    ) {
-      errors.push(observationError(`${leg.source} had invalid quarantine fields`))
-    } else if (quarantinedRows > 0) {
-      const oldest = leg.oldestQuarantinedRow!
-      const since = Date.parse(oldest.firstQuarantinedAt)
-      if (!Number.isFinite(since)) {
-        errors.push(observationError(`${leg.source} had an invalid quarantine timestamp`))
-      } else {
-        const ageMs = Math.max(0, now - since)
-        conditions.push({
-          kind: 'hosted-row-quarantined',
-          subject: leg.source,
-          since: oldest.firstQuarantinedAt,
-          ageMs,
-          detail: `${quarantinedRows} hosted ${quarantinedRows === 1 ? 'row is' : 'rows are'} quarantined; oldest is ${oldest.table}: ${oldest.constraintError}`,
-          action: `list quarantined rows with ${PLATFORM_SLUG} record collector-legs --quarantined --json, fix the local constraint, and collect again`,
-        })
-      }
-    }
+    const quarantine = hostedRowQuarantineDecision(leg, now)
+    if (quarantine.condition) conditions.push(quarantine.condition)
+    if (quarantine.error) errors.push(quarantine.error)
     if (leg.failingSince === null) continue
     const since = Date.parse(leg.failingSince)
     if (!Number.isFinite(since)) {

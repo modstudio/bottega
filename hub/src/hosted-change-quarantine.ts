@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { HostedPreparedChange } from './hosted-change-family.ts'
 
-export const HOSTED_CHANGE_QUARANTINE_ERROR_MAX_LENGTH = 500
+const HOSTED_CHANGE_QUARANTINE_ERROR_MAX_LENGTH = 500
 
 export type HostedChangeQuarantineRow = {
   id: string
