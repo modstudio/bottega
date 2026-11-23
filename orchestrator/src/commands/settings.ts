@@ -209,10 +209,7 @@ function registerRender(settings: Command): void {
     })
 }
 
-export function register(program: Command): void {
-  const settings = program.command('settings').description('manage canonical Claude settings')
-  registerSettingsSources(settings)
-  const permission = settings.command('permission').description('manage canonical permission rules')
+function registerPermissionList(permission: Command): void {
   permission
     .command('list')
     .description('list machine permission overlays')
@@ -229,6 +226,13 @@ export function register(program: Command): void {
       ).listMachineSettingsPermissions(Boolean(options.json)))
         log(line)
     })
+}
+
+export function register(program: Command): void {
+  const settings = program.command('settings').description('manage canonical Claude settings')
+  registerSettingsSources(settings)
+  const permission = settings.command('permission').description('manage canonical permission rules')
+  registerPermissionList(permission)
   for (const operation of ['add', 'remove'] as const) {
     permission
       .command(operation)

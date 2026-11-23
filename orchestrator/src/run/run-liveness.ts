@@ -273,7 +273,7 @@ function terminalizeHarnessFailures(
   }
 }
 
-function repairAskingTurns(
+export function repairAskingTurns(
   database: Database,
   finishedAt: string,
 ): { supersededCount: number; repairedAbandoned: string[] } {
