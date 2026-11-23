@@ -72,7 +72,10 @@ export function createWorkerRecordClient(
   dependencies: WorkerRecordClientDependencies = {},
 ): WorkerRecordClient {
   const hubBaseUrl = requiredHubBaseUrl(dependencies.hubBaseUrl)
-  const recordApiBaseUrl = (dependencies.recordApiBaseUrl ?? resolveRecordApiUrl()).replace(/\/$/, '')
+  const recordApiBaseUrl = (dependencies.recordApiBaseUrl ?? resolveRecordApiUrl()).replace(
+    /\/$/,
+    '',
+  )
   const readCredential = dependencies.credential ?? workerRecordCredential
   const request = async <T>(
     path: string,
