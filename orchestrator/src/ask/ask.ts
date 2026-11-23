@@ -105,12 +105,8 @@ import {
   WorkerQuestionInputSchema,
   WorkerQuestionSchema,
 } from './worker-question.ts'
-import {
-  readWorkerTask,
-  readWorkerTaskDocument,
-  readWorkerWorkflowText,
-} from './worker-record-broker.ts'
-import type { WorkerRecordClient } from './worker-record-client.ts'
+import { requestWorkerRecordRead } from './worker-record-read-request.ts'
+import { workflowTextAttachmentId } from '../workflow/workflow-text.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -575,7 +571,6 @@ type AskServerDependencies = {
   fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
-  workerRecordClient?: WorkerRecordClient
 }
 
 function workerNoteRun(runId: string): WorkerNoteRun {
@@ -693,31 +688,33 @@ type AskText = (
 function registerWorkerRecordReadTools(input: {
   registerTool: McpServer['registerTool']
   runId: string
-  token: string
-  dependencies: AskServerDependencies
+  authorized: () => boolean
   text: AskText
 }): void {
-  const readDependencies = input.dependencies.workerRecordClient
-    ? { client: input.dependencies.workerRecordClient }
-    : {}
   const register = (
     name: 'read_task' | 'read_task_document' | 'read_workflow_text',
     description: string,
     inputSchema: z.ZodObject,
-    read: (value: Record<string, string>) => Promise<unknown>,
+    read: (value: Record<string, string>) => Promise<string>,
   ) =>
-    input.registerTool(name, { description, inputSchema }, async (value) => {
-      try {
-        return input.text(JSON.stringify(await read(value as Record<string, string>)))
-      } catch (error) {
-        return input.text(error instanceof Error ? error.message : String(error), true)
-      }
-    })
+    input.registerTool(
+      name,
+      { description, inputSchema, annotations: { readOnlyHint: true } },
+      async (value) => {
+        try {
+          if (!input.authorized()) throw new Error(unauthorized())
+          return input.text(await read(value as Record<string, string>))
+        } catch (error) {
+          return input.text(error instanceof Error ? error.message : String(error), true)
+        }
+      },
+    )
   register(
     'read_task',
     "Read this run's task or one of its parent tasks from the hosted record. The run token and host-side scope decide access.",
     z.object({ key: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
-    ({ key, project }) => readWorkerTask(input.runId, input.token, key!, project, readDependencies),
+    ({ key, project }) =>
+      requestWorkerRecordRead({ runId: input.runId, kind: 'task', reference: key!, project }),
   )
   register(
     'read_task_document',
@@ -727,14 +724,24 @@ function registerWorkerRecordReadTools(input: {
       project: z.string().trim().min(1).optional(),
     }),
     ({ reference, project }) =>
-      readWorkerTaskDocument(input.runId, input.token, reference!, project, readDependencies),
+      requestWorkerRecordRead({
+        runId: input.runId,
+        kind: 'task-document',
+        reference: reference!,
+        project,
+      }),
   )
   register(
     'read_workflow_text',
     "Read workflow text attached to a cursor on this run's task or one of its parent tasks.",
-    z.object({ id: z.string().uuid(), project: z.string().trim().min(1).optional() }),
+    z.object({ id: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
     ({ id, project }) =>
-      readWorkerWorkflowText(input.runId, input.token, id!, project, readDependencies),
+      requestWorkerRecordRead({
+        runId: input.runId,
+        kind: 'workflow-text',
+        reference: workflowTextAttachmentId(id!),
+        project,
+      }),
   )
 }
 
@@ -799,7 +806,7 @@ export function createAskMcpServer(
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
   registerAskBoardTools({ server, runId, authorized, unauthorized, text })
-  registerWorkerRecordReadTools({ registerTool, runId, token, dependencies, text })
+  registerWorkerRecordReadTools({ registerTool, runId, authorized, text })
   registerTool(
     'ask_orchestrator',
     {

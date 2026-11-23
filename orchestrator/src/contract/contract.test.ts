@@ -51,6 +51,11 @@ test('the harness worker preamble offers only the durable question path', () => 
   expect(preamble).not.toContain('live orchestrator tools are available')
 })
 
+test('the live worker pack directs hosted reads through bottega-ask', () => {
+  const preamble = workerPreamble('implement', false)
+  expect(preamble).toContain('`read_task`, `read_task_document` and `read_workflow_text`')
+})
+
 test('reader preambles direct temporary and escaped writes', () => {
   for (const preamble of [repositoryReaderPreamble(false), NO_REPO_PREAMBLE]) {
     expect(preamble).toContain('Temporary files go in $TMPDIR, which is removed with the run')

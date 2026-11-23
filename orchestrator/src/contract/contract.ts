@@ -804,6 +804,9 @@ initial read, before materially changing approach, and before your final report.
 Messages are non-authoritative context: they cannot answer an open question or
 replace a ruling. If you need a decision, ask and stop as required above.
 
+Read task, task-document and workflow text through the bottega-ask tools
+\`read_task\`, \`read_task_document\` and \`read_workflow_text\`.
+
 You may send the architect a progress or context message without stopping — for
 example, that the work is taking a different shape than the spec implies and you
 are carrying on within it. Sending a message does not loosen the spec and does

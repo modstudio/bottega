@@ -381,6 +381,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Requests queued to the local note broker',
     DEV_2234_MACHINE_RULING,
   ),
+  machine(
+    'orchestrator',
+    'worker_record_read_request',
+    'Record reads queued to the local read broker',
+    DEV_2234_MACHINE_RULING,
+  ),
   hosted('orchestrator', 'workflow', 'workflow', 'Local workflow catalogue write source'),
   hosted('orchestrator', 'task_flow', 'task_flow', 'Hosted workflow instances for tasks'),
   planned('orchestrator', 'typed_question_answer', 'DEV-2234', 'Typed-question answers'),

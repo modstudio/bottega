@@ -34,15 +34,39 @@ function workerReadRoute(argv: readonly string[]): 'task' | 'document' | 'workfl
   return null
 }
 
+const WORKER_READ_TOOLS = {
+  task: 'read_task',
+  document: 'read_task_document',
+  workflow: 'read_workflow_text',
+} as const
+
+export function workerRecordReadCliRefusal(input: {
+  route: keyof typeof WORKER_READ_TOOLS | null
+  worker: boolean
+  codexSandbox: boolean
+  askUrl: boolean
+}): string | null {
+  if (!input.route || !input.worker || input.askUrl || !input.codexSandbox) return null
+  const tool = WORKER_READ_TOOLS[input.route]
+  return `a codex worker reads this record with the bottega-ask tool ${tool}; the CLI can't reach the record session from codex's sandbox`
+}
+
 /** Return null when the normal CLI owner should handle this invocation. */
 export async function dispatchWorkerRecordRead(argv: string[]): Promise<number | null> {
   const route = workerReadRoute(argv)
-  if (
-    !route ||
-    classifyCaller(process.env).kind !== 'worker' ||
-    !process.env.BOTTEGA_ASK_URL?.trim()
-  )
-    return null
+  const worker = classifyCaller(process.env).kind === 'worker'
+  const askUrl = Boolean(process.env.BOTTEGA_ASK_URL?.trim())
+  const refusal = workerRecordReadCliRefusal({
+    route,
+    worker,
+    askUrl,
+    codexSandbox: Boolean(process.env.CODEX_SANDBOX?.trim()),
+  })
+  if (refusal) {
+    console.error(refusal)
+    return 1
+  }
+  if (!route || !worker || !askUrl) return null
   try {
     const json = argv.includes('--json')
     const value = positionalReference(argv, route === 'task' ? 2 : 3)
