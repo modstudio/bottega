@@ -31,5 +31,12 @@ export function observeProjectReleaseLive(project: Project) {
     }
   }
   const decision = releaseLiveConditions(observations)
-  return { conditions: decision.conditions, errors: [...errors, ...decision.errors] }
+  const allErrors = [...errors, ...decision.errors]
+  return {
+    conditions: decision.conditions,
+    errors: allErrors,
+    unobservedKinds: new Set<'release-live-differs'>(
+      allErrors.length ? ['release-live-differs'] : [],
+    ),
+  }
 }

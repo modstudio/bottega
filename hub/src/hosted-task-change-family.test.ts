@@ -96,6 +96,7 @@ const taskId = '01990000-0000-7000-8000-000000001240'
 const commentId = '01990000-0000-7000-8000-000000001241'
 const documentId = '01990000-0000-7000-8000-000000001242'
 const eventId = '01990000-0000-7000-8000-000000001243'
+const independentTaskId = '01990000-0000-7000-8000-000000001244'
 
 const hostedTask = (overrides: Partial<HostedTask> = {}): HostedTask => ({
   id: taskId,
@@ -430,6 +431,46 @@ test('a child whose parent is on a later page fetches and applies the parent fir
     task_record_id: taskId,
   })
   expect(familyReport(report, 'task')).toMatchObject({ upsertsChanged: 1, upsertsNoop: 1 })
+})
+
+test('a constraint-violating fetched parent is quarantined while an independent row applies', async () => {
+  seedFeed()
+  await pullHostedChanges({
+    ...options,
+    fetch: route({
+      feed: () =>
+        page('after', [
+          {
+            table: 'hub_task_comment',
+            id: commentId,
+            space: 'space-one',
+            op: 'upsert',
+            row: taskComment(),
+          },
+          {
+            table: 'hub_task',
+            id: independentTaskId,
+            space: 'space-one',
+            op: 'upsert',
+            row: hostedTask({ id: independentTaskId, key: 'DEV-1244' }),
+          },
+        ]),
+      getTask: () =>
+        Response.json({
+          task: hostedTask({ status_category: 'not-a-category' as HostedTask['status_category'] }),
+          comments: [],
+          documents: [],
+        }),
+    }),
+    registeredProjects: registered,
+  })
+
+  expect(db().query('SELECT 1 FROM task WHERE record_id=?').get(independentTaskId)).not.toBeNull()
+  expect(hostedChangeQuarantineRows(db())).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ feed: 'task', table: 'hub_task', rowId: taskId }),
+    ]),
+  )
 })
 
 test('a child without a live hosted parent is skipped while the record cursor advances', async () => {

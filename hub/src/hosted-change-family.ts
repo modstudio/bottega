@@ -37,9 +37,10 @@ export type HostedPreparedChange = {
 
 export type HostedPreparedChangePage = { changes: HostedPreparedChange[] }
 
-export type HostedRowApply = {
+type HostedRowApply = {
   change: HostedPreparedChange
   apply: (conn: Database) => boolean
+  skipOnQuarantine?: readonly string[]
 }
 
 export type HostedChangeFamily = {

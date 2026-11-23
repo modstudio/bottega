@@ -19,6 +19,7 @@ import {
 import type { MonitorCondition } from './monitor-types.ts'
 
 type FinishedKindObservation = { started_at: string; present: number }
+export type StandingConditionUnobservedKind = AnnouncedStandingConditionKind
 
 /** Resolve the first retained pass in the current uninterrupted episode. */
 export function standingConditionHistoryOnset(

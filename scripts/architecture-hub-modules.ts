@@ -8,6 +8,7 @@ export const hubModuleSpecs = [
       './collect.ts',
       './collector-leg-state.ts',
       './db.ts',
+      './hosted-change-quarantine.ts',
       './excerpt.ts',
       './ingest/runs.ts',
       './orch.ts',

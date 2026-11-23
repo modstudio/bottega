@@ -233,6 +233,52 @@ function applyOneChange(
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'
 const isNoteTable = (table: string) => table === 'hub_note' || table === 'hub_note_acknowledgement'
 const machineTable = (table: string) => (table === 'hub_note' ? 'note' : 'note_acknowledgement')
+
+function noteSnapshotActions(snapshot: Awaited<ReturnType<typeof hostedNotePullRows>>) {
+  return [
+    ...snapshot.notes.map((row) => ({
+      change: {
+        table: 'hub_note',
+        id: row.id,
+        op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
+        row,
+      },
+      apply: (conn: Database) => {
+        applyHostedNote(conn, row)
+        return true
+      },
+    })),
+    ...snapshot.acknowledgements.map((row) => ({
+      change: {
+        table: 'hub_note_acknowledgement',
+        id: row.id,
+        op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
+        row,
+      },
+      apply: (conn: Database) => {
+        applyHostedAcknowledgement(conn, row)
+        return true
+      },
+    })),
+    ...snapshot.projectCounters.map((counter) => ({
+      change: {
+        table: 'hub_note_counter',
+        id: counter.project,
+        op: 'upsert' as const,
+        row: counter,
+      },
+      apply: (conn: Database) => {
+        applyHostedNoteRows(conn, {
+          notes: [],
+          acknowledgements: [],
+          projectCounters: [counter],
+        })
+        return true
+      },
+    })),
+  ]
+}
+
 function noteFamily(
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
@@ -250,48 +296,7 @@ function noteFamily(
       return {
         cursor: snapshot.cursor,
         more: snapshot.more ?? false,
-        apply: [
-          ...snapshot.notes.map((row) => ({
-            change: {
-              table: 'hub_note',
-              id: row.id,
-              op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
-              row,
-            },
-            apply: (conn: Database) => {
-              applyHostedNote(conn, row)
-              return true
-            },
-          })),
-          ...snapshot.acknowledgements.map((row) => ({
-            change: {
-              table: 'hub_note_acknowledgement',
-              id: row.id,
-              op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
-              row,
-            },
-            apply: (conn: Database) => {
-              applyHostedAcknowledgement(conn, row)
-              return true
-            },
-          })),
-          ...snapshot.projectCounters.map((counter) => ({
-            change: {
-              table: 'hub_note_counter',
-              id: counter.project,
-              op: 'upsert' as const,
-              row: counter,
-            },
-            apply: (conn: Database) => {
-              applyHostedNoteRows(conn, {
-                notes: [],
-                acknowledgements: [],
-                projectCounters: [counter],
-              })
-              return true
-            },
-          })),
-        ],
+        apply: noteSnapshotActions(snapshot),
       }
     },
     preparePage: async (page, options) => {
@@ -404,12 +409,13 @@ function applyQuarantinableRow(
   space: string,
   change: HostedPreparedChange,
   apply: (conn: Database) => boolean,
-): void {
+): boolean {
   conn.exec('SAVEPOINT hosted_change_row')
   try {
     const wrote = apply(conn)
     if (wrote) clearHostedChangeQuarantine(conn, feed, space, change)
     conn.exec('RELEASE SAVEPOINT hosted_change_row')
+    return false
   } catch (cause) {
     const constraint = sqliteConstraintError(cause)
     conn.exec('ROLLBACK TO SAVEPOINT hosted_change_row')
@@ -419,6 +425,7 @@ function applyQuarantinableRow(
     }
     recordHostedChangeQuarantine(conn, feed, space, change, constraint.message)
     conn.exec('RELEASE SAVEPOINT hosted_change_row')
+    return true
   }
 }
 
@@ -514,9 +521,13 @@ async function applyFeedPage(
         'hosted change cursor changed while applying a page; another collector is writing this store',
       )
     for (const feed of families) {
+      const quarantinedParentDependents = new Set<string>()
       for (const space of feed.spaces)
         for (const action of prepared.get(pair(feed.name, space))!.apply)
-          applyQuarantinableRow(conn, feed.name, space, action.change, action.apply)
+          if (applyQuarantinableRow(conn, feed.name, space, action.change, action.apply))
+            action.skipOnQuarantine?.forEach((dependent) => {
+              quarantinedParentDependents.add(dependent)
+            })
       const ordered = subsets
         .get(feed.name)!
         .map((change, index) => ({ change, index }))
@@ -528,7 +539,10 @@ async function applyFeedPage(
       for (const { change } of ordered) {
         const familyCounts = countFor(counts, feed.name, change.space)
         const prep = prepared.get(pair(feed.name, change.space))!
-        if (prep.skippedForAbsentParent.has(`${change.table}:${change.id}`)) {
+        if (
+          prep.skippedForAbsentParent.has(`${change.table}:${change.id}`) ||
+          quarantinedParentDependents.has(`${change.table}:${change.id}`)
+        ) {
           familyCounts.absentParentSkipped += 1
           pending.add(pair(feed.name, change.space))
         } else applyFeedChange(conn, feed, change, familyCounts)

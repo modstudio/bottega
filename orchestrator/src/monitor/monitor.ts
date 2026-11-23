@@ -47,7 +47,10 @@ import { branchInventoryDecision, branchMonitorConditions } from './monitor-bran
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
-import { announceStandingConditions } from './monitor-standing-condition-announcement.ts'
+import {
+  announceStandingConditions,
+  type StandingConditionUnobservedKind,
+} from './monitor-standing-condition-announcement.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -104,7 +107,6 @@ import { observeReaderTreeConditions } from './reader-tree-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
 import { workerNoteSilenceConditions } from './worker-note-silence-conditions.ts'
-import type { AnnouncedStandingConditionKind } from './standing-condition-announcement.ts'
 
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
@@ -128,7 +130,7 @@ async function initialMonitorObservations(
   conditions: MonitorCondition[]
   errors: string[]
   hostPressure: MonitorResult['hostPressure']
-  unobservedStandingKinds: Set<AnnouncedStandingConditionKind>
+  unobservedStandingKinds: Set<StandingConditionUnobservedKind>
 }> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
@@ -669,7 +671,7 @@ async function appendErrors(
   clock: number,
   startedAt: string,
   invocationNumber: number,
-  unobservedKinds: ReadonlySet<AnnouncedStandingConditionKind>,
+  unobservedKinds: ReadonlySet<StandingConditionUnobservedKind>,
 ): Promise<void> {
   const standing = await announceStandingConditions(
     database,
@@ -750,7 +752,7 @@ export async function monitor(
   const recordTunnel = await observeRecordTunnel()
   conditions.push(...recordTunnel.conditions)
   errors.push(...recordTunnel.errors)
-  for (const kind of recordTunnel.unobservedKinds) unobservedStandingKinds.add(kind)
+  recordTunnel.unobservedKinds.forEach((kind) => unobservedStandingKinds.add(kind))
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
@@ -842,7 +844,7 @@ export async function monitor(
     const releaseLive = observeProjectReleaseLive(project)
     conditions.push(...releaseLive.conditions)
     errors.push(...releaseLive.errors)
-    if (releaseLive.errors.length) unobservedStandingKinds.add('release-live-differs')
+    releaseLive.unobservedKinds.forEach((kind) => unobservedStandingKinds.add(kind))
     const recipeDatabases = recipeDatabaseObservations(project, database)
     conditions.push(...recipeDatabases.conditions)
     errors.push(...recipeDatabases.errors)

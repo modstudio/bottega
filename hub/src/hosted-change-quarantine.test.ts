@@ -3,6 +3,7 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedChanges } from './hosted-change-cache.ts'
 import { hostedChangeQuarantineRows } from './hosted-change-quarantine.ts'
+import type { HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 
@@ -11,6 +12,8 @@ beforeEach(resetFixtureStore)
 const at = '2026-10-09T12:00:00.000Z'
 const taskId = '01990000-0000-7000-8000-000000001270'
 const sendId = '01990000-0000-7000-8000-000000001271'
+const goodSendId = '01990000-0000-7000-8000-000000001272'
+const noteId = '01990000-0000-7000-8000-000000001273'
 const options = {
   baseUrl: 'https://hub.example.test',
   token: 'session',
@@ -65,6 +68,64 @@ const send = (): HostedSend => ({
   machine: 'machine-one',
   recipient_details: [{ user_id: null, name: 'One', email: 'one@example.test' }],
 })
+
+const note = (overrides: Partial<HostedNote> = {}): HostedNote => ({
+  id: noteId,
+  number: 1,
+  project: 'one',
+  project_name: 'one',
+  text: 'snapshot note',
+  area: null,
+  anchors: '[]',
+  sightings: 1,
+  created_at: at,
+  last_seen_at: at,
+  stale_at: null,
+  stale_reason: null,
+  promoted_task: null,
+  updated_at: at,
+  deleted_at: null,
+  ...overrides,
+})
+
+function snapshotFetch(input: {
+  tasks?: unknown[]
+  notes?: unknown[]
+  projectCounters?: unknown[]
+  sends?: unknown[]
+}) {
+  let feedCalls = 0
+  return async (urlInput: string) => {
+    const url = new URL(urlInput)
+    if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
+    if (url.pathname === '/v1/changes') {
+      feedCalls += 1
+      return feedCalls === 1
+        ? Response.json({ reset: true, cursor: 'horizon', tables: [] }, { status: 410 })
+        : Response.json({ changes: [], cursor: 'horizon', lag: 0, more: false })
+    }
+    if (url.pathname === '/v1/tasks')
+      return Response.json({
+        tasks: input.tasks ?? [],
+        comments: [],
+        documents: [],
+        statusEvents: [],
+        cursor: '',
+        more: false,
+      })
+    if (url.pathname === '/v1/notes')
+      return Response.json({
+        notes: input.notes ?? [],
+        acknowledgements: [],
+        projectCounters: input.projectCounters ?? [],
+        cursor: '',
+        more: false,
+      })
+    if (url.pathname === '/v1/sends')
+      return Response.json({ sends: input.sends ?? [], cursor: null, more: false })
+    throw new Error(`unexpected route ${url.pathname}`)
+  }
+}
 
 function seedFeed(cursor = 'before') {
   writeTransaction((conn) => {
@@ -220,4 +281,42 @@ test('a pending-edit skip leaves the quarantine row in place', async () => {
   await pullHostedChanges({ ...options, fetch })
 
   expect(hostedChangeQuarantineRows(db())).toEqual([expect.objectContaining({ rowId: taskId })])
+})
+
+test('a constraint-violating task snapshot row is quarantined and later families apply', async () => {
+  await pullHostedChanges({
+    ...options,
+    fetch: snapshotFetch({ tasks: [task('not-a-category')], sends: [{ ...send(), id: goodSendId }] }),
+  })
+
+  expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(goodSendId)).not.toBeNull()
+  expect(hostedChangeQuarantineRows(db())).toEqual([
+    expect.objectContaining({ feed: 'task', table: 'hub_task', rowId: taskId }),
+  ])
+})
+
+test('a constraint-violating note snapshot row is quarantined and its page continues', async () => {
+  await pullHostedChanges({
+    ...options,
+    fetch: snapshotFetch({ notes: [note({ sightings: 0 })], projectCounters: [{ project: 'one', next: 8 }] }),
+  })
+
+  expect(db().query('SELECT next FROM note_counter WHERE project=?').get('one')).toEqual({ next: 8 })
+  expect(hostedChangeQuarantineRows(db())).toEqual([
+    expect.objectContaining({ feed: 'note', table: 'hub_note', rowId: noteId }),
+  ])
+})
+
+test('a constraint-violating send snapshot row is quarantined and the next send applies', async () => {
+  await pullHostedChanges({
+    ...options,
+    fetch: snapshotFetch({
+      sends: [{ ...send(), status: 'invalid' }, { ...send(), id: goodSendId }],
+    }),
+  })
+
+  expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(goodSendId)).not.toBeNull()
+  expect(hostedChangeQuarantineRows(db())).toEqual([
+    expect.objectContaining({ feed: 'send', table: 'hub_send', rowId: sendId }),
+  ])
 })
