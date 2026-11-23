@@ -2,7 +2,6 @@ import type { PublicCommandInvocation } from '../shared/commander-public-path.ts
 import { installationVersionText } from '../shared/install-root.ts'
 import { dispatchBinary } from './dispatch.ts'
 import { installCliProjectRegisterReader, installCliTaskReader } from './task-read-adapter.ts'
-import { dispatchWorkerRecordRead } from './worker-record-read.ts'
 
 // Each entry loads its owner only when called, so a call to one program never pays for another.
 const entries = {
@@ -39,7 +38,6 @@ const entries = {
   },
 }
 
-const argv = process.argv.slice(2)
-process.exitCode =
-  (await dispatchWorkerRecordRead(argv)) ??
-  (await dispatchBinary(argv, entries, () => installationVersionText(import.meta.dir, process.env)))
+process.exitCode = await dispatchBinary(process.argv.slice(2), entries, () =>
+  installationVersionText(import.meta.dir, process.env),
+)
