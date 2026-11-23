@@ -96,32 +96,34 @@ test.each([
   {
     name: 'an attachment predicate',
     source: 'storeHasAttachedToHostedRecord(database)',
-    expected: [
-      expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead'),
-    ],
+    expectedFailure: 'select local SQL with hostedRecordOwnsHostedTables instead',
   },
   {
     name: 'no ownership predicate',
     source: 'selectLocalWorkflowStore(database)',
-    expected: [expect.stringContaining('the file does not call it')],
+    expectedFailure: 'the file does not call it',
   },
   {
     name: 'the ownership predicate',
     source: 'hostedRecordOwnsHostedTables(database)',
-    expected: [],
+    expectedFailure: null,
   },
-])('an answer-A exemption with $name is checked against its source', ({ source, expected }) => {
-  const file = 'orchestrator/src/run/selector.ts'
-  const root = temporaryProductionFile(file, source)
-  expect(
-    hostedLocalSqlSelectorFailures(root, [
+])(
+  'an answer-A exemption with $name is checked against its source',
+  ({ source, expectedFailure }) => {
+    const file = 'orchestrator/src/run/selector.ts'
+    const root = temporaryProductionFile(file, source)
+    const failures = hostedLocalSqlSelectorFailures(root, [
       {
         pattern: /^orchestrator\/src\/run\/selector\.ts$/,
         reason: 'Local SQL runs when hostedRecordOwnsHostedTables(database) is false',
       },
-    ]),
-  ).toEqual(expected)
-})
+    ])
+    expect(failures).toEqual(
+      expectedFailure === null ? [] : [expect.stringContaining(expectedFailure)],
+    )
+  },
+)
 
 test('a guarded table not declared hosted fails', () => {
   expect(
