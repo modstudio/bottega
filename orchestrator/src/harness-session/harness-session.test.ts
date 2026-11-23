@@ -14,8 +14,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
+import { HARNESS_SESSION_TEMP_GRACE_MS } from './harness-session-decision.ts'
 import {
-  HARNESS_SESSION_TEMP_GRACE_MS,
   publishHarnessSession,
   reapHarnessSessions,
 } from './harness-session.ts'
@@ -102,6 +102,35 @@ test('reaper removes expired temporary publications and preserves in-flight ones
   expect(result.publications).toHaveLength(1)
   expect(existsSync(oldTemporary)).toBe(false)
   expect(existsSync(youngTemporary)).toBe(true)
+})
+
+test('reaper skips a temporary publication that disappears before stat', () => {
+  const env = state()
+  publishHarnessSession({
+    pid: 42,
+    session: 'live-session',
+    source: 'startup',
+    env,
+    observeStartTime: () => 'live-start',
+  })
+  const directory = harnessSessionDirectory(env)
+  const temporary = join(directory, '.42-race.json.00000000-0000-4000-8000-000000000003.tmp')
+  writeFileSync(temporary, 'racing')
+
+  const result = reapHarnessSessions({
+    env,
+    identity: () => 'live',
+    stat: (path) => {
+      if (path === temporary) {
+        rmSync(path)
+        throw Object.assign(new Error('temporary publication disappeared'), { code: 'ENOENT' })
+      }
+      return statSync(path)
+    },
+  })
+
+  expect(result.reaped).toBe(0)
+  expect(result.publications).toHaveLength(1)
 })
 
 test('reaper retains a publication when process identity is unknown', () => {

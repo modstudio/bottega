@@ -24,10 +24,14 @@ export function sweepHarnessSessionPublications(
       presentation.error(`harness process inventory failed: ${inventory.error}`)
       return true
     }
-    const harnesses = inventory.facts.map(({ pid, command }) => ({ pid, command }))
+    const harnesses = inventory.facts.map(({ pid, startTime, command }) => ({
+      pid,
+      startTime,
+      command,
+    }))
     const unpublished = unpublishedHarnessProcesses(harnesses, reaped.publications)
     presentation.log(`harness processes without a published session: ${unpublished.length}`)
-    for (const process of unpublished) presentation.log(`  ${process.pid} ${process.command}`)
+    for (const process of unpublished) presentation.log(`  ${process.pid} ${process.startTime}`)
     return false
   } catch (error) {
     presentation.error(

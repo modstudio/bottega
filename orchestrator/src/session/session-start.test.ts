@@ -85,7 +85,7 @@ test('a failed harness publication preserves the cursor and names the remedy', a
   expect(result.cursor).toBeNumber()
   expect(result.line).toContain(`cursor ${result.cursor} explore`)
   expect(result.line).toContain('could not establish harness pid 42 process start time')
-  expect(result.line).toContain(`run ${PLATFORM_SLUG} session start again`)
+  expect(result.line).toContain('start a new Claude session or run /clear')
 })
 
 test('names the open task-bound cursor when composing no explore cursor', async () => {

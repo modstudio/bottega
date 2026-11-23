@@ -1,15 +1,16 @@
 import { expect, test } from 'bun:test'
-import type { HarnessSessionPublication } from '../harness-session/harness-session-decision.ts'
+import type { ObservedHarnessSessionPublication } from '../harness-session/harness-session-decision.ts'
 import type { ProcessFact } from '../resources/process-inventory.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepHarnessSessionPublications } from './cleanup-sweep-harness-session.ts'
 
-const publication: HarnessSessionPublication = {
-  identity: { pid: 10, startTime: 'published-start' },
+const publication: ObservedHarnessSessionPublication = {
+  identity: { pid: 10, startTime: 'start-10' },
   session: 'published-session',
   harness: 'claude-code',
   source: 'startup',
   published_at: new Date(0).toISOString(),
+  observedIdentity: 'live',
 }
 
 const processFact = (pid: number, command: string): ProcessFact => ({
@@ -60,7 +61,7 @@ test('reports reaping and the unpublished Claude harness count from one publicat
   expect(observed.logs).toEqual([
     'harness session publications reaped: 2',
     'harness processes without a published session: 1',
-    '  11 claude --continue',
+    '  11 start-11',
   ])
   expect(observed.errors).toEqual([])
 })

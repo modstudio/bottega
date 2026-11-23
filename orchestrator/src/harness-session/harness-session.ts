@@ -25,15 +25,15 @@ import {
 import type {
   HarnessProcessIdentity,
   HarnessSessionPublication,
+  ObservedHarnessSessionPublication,
 } from './harness-session-decision.ts'
-import { harnessSessionDisposition } from './harness-session-decision.ts'
+import {
+  harnessSessionDisposition,
+  temporaryPublicationDisposition,
+} from './harness-session-decision.ts'
 
 type StoredPublication = Omit<HarnessSessionPublication, 'identity'>
 type Identity = (pid: number, startTime: string) => PidRecordIdentity
-
-export const HARNESS_SESSION_TEMP_GRACE_MS = 60_000
-const TEMPORARY_PUBLICATION =
-  /^\.\d+-.+\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i
 
 function publicationPath(directory: string, identity: HarnessProcessIdentity): string {
   return join(directory, `${identity.pid}-${identity.startTime}.json`)
@@ -110,8 +110,14 @@ export function publishHarnessSession(input: {
 }
 
 export function reapHarnessSessions(
-  options: { env?: StateEnvironment; dryRun?: boolean; identity?: Identity; now?: Date } = {},
-): { reaped: number; publications: HarnessSessionPublication[] } {
+  options: {
+    env?: StateEnvironment
+    dryRun?: boolean
+    identity?: Identity
+    now?: Date
+    stat?: (path: string) => { mtimeMs: number }
+  } = {},
+): { reaped: number; publications: ObservedHarnessSessionPublication[] } {
   const env = options.env ?? process.env
   const candidateDirectory = harnessSessionDirectory(env)
   if (!existsSync(candidateDirectory)) return { reaped: 0, publications: [] }
@@ -119,21 +125,27 @@ export function reapHarnessSessions(
   const identity = options.identity ?? pidRecordIdentity
   const publications = storedPublications(env)
   let reaped = 0
-  const kept: HarnessSessionPublication[] = []
+  const kept: ObservedHarnessSessionPublication[] = []
   for (const publication of publications) {
-    const disposition = harnessSessionDisposition(
-      identity(publication.identity.pid, publication.identity.startTime),
-    )
+    const observedIdentity = identity(publication.identity.pid, publication.identity.startTime)
+    const disposition = harnessSessionDisposition(observedIdentity)
     if (disposition === 'reap') {
       reaped++
       if (!options.dryRun) rmSync(publicationPath(directory, publication.identity), { force: true })
-    } else kept.push(publication)
+    } else kept.push({ ...publication, observedIdentity })
   }
-  const expiredBefore = (options.now ?? new Date()).getTime() - HARNESS_SESSION_TEMP_GRACE_MS
+  const nowMs = (options.now ?? new Date()).getTime()
+  const stat = options.stat ?? statSync
   for (const name of readdirSync(directory)) {
-    if (!TEMPORARY_PUBLICATION.test(name)) continue
     const temporary = join(directory, name)
-    if (statSync(temporary).mtimeMs >= expiredBefore) continue
+    let mtimeMs: number
+    try {
+      mtimeMs = stat(temporary).mtimeMs
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') continue
+      throw error
+    }
+    if (temporaryPublicationDisposition(name, mtimeMs, nowMs) !== 'reap') continue
     reaped++
     if (!options.dryRun) rmSync(temporary, { force: true })
   }

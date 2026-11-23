@@ -62,7 +62,7 @@ export async function startSession(
           ...result,
           line: `${result.line}; ${remediedLine(
             `harness session publication failed: ${publicationFailure}`,
-            `run ${PLATFORM_SLUG} session start again`,
+            'start a new Claude session or run /clear',
           )}`,
         }
       : result
