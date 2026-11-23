@@ -8,8 +8,8 @@ import type {
 import { hostedTaskReference } from './hosted-task-reference.ts'
 import {
   applyHostedChangeUpsert,
-  applyHostedTaskSnapshotRow,
   applyHostedTaskRows,
+  applyHostedTaskSnapshotRow,
   childTaskRecordId,
   deleteHostedChangeRow,
   HOSTED_TASK_CHANGE_TABLE_QUERY,
@@ -119,20 +119,18 @@ async function prepareTaskParents(
     }
   }
   return {
-    apply: [...fetched.values()].map(
-      (task) => ({
-        change: { table: 'hub_task', id: task.id, op: 'upsert' as const, row: task },
-        apply: (conn: Database) => {
-          applyHostedTaskRows(
-            conn,
-            { tasks: [task], comments: [], documents: [], statusEvents: [], cursor: '' },
-            TASK_CHANGE_FAILURE_LABEL,
-          )
-          return true
-        },
-        skipOnQuarantine: fetchedDependents.get(task.id) ?? [],
-      }),
-    ),
+    apply: [...fetched.values()].map((task) => ({
+      change: { table: 'hub_task', id: task.id, op: 'upsert' as const, row: task },
+      apply: (conn: Database) => {
+        applyHostedTaskRows(
+          conn,
+          { tasks: [task], comments: [], documents: [], statusEvents: [], cursor: '' },
+          TASK_CHANGE_FAILURE_LABEL,
+        )
+        return true
+      },
+      skipOnQuarantine: fetchedDependents.get(task.id) ?? [],
+    })),
     skippedForAbsentParent: absent,
   }
 }
@@ -157,13 +155,11 @@ export function createHostedTaskChangeFamily(
           })),
           ...snapshot.comments.map((row) => ({
             change: { table: 'hub_task_comment', id: row.id, op: 'upsert' as const, row },
-            apply: (conn: Database) =>
-              applyHostedTaskSnapshotRow(conn, 'hub_task_comment', row),
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task_comment', row),
           })),
           ...snapshot.documents.map((row) => ({
             change: { table: 'hub_task_document', id: row.id, op: 'upsert' as const, row },
-            apply: (conn: Database) =>
-              applyHostedTaskSnapshotRow(conn, 'hub_task_document', row),
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task_document', row),
           })),
           ...snapshot.statusEvents.map((row) => ({
             change: { table: 'hub_task_status_event', id: row.id, op: 'upsert' as const, row },

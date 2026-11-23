@@ -5,17 +5,17 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import {
-  DISK_PRESSURE_NOTICE_THRESHOLD_MS,
-  RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS,
-  STANDING_CONDITION_NOTICE_PREFIX,
-  STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
-} from './standing-condition-announcement.ts'
-import {
   announceStandingConditions,
   announceStoreWriteLockCondition,
   standingConditionHistoryOnset,
 } from './monitor-standing-condition-announcement.ts'
 import type { MonitorCondition } from './monitor-types.ts'
+import {
+  DISK_PRESSURE_NOTICE_THRESHOLD_MS,
+  RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS,
+  STANDING_CONDITION_NOTICE_PREFIX,
+  STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
+} from './standing-condition-announcement.ts'
 
 const env = {
   BOTTEGA_RECORD_API_URL: 'https://record.example.test',
@@ -177,15 +177,16 @@ test('an unobserved collector leg keeps its open notice', async () => {
         env,
         destinationResolver,
         boardClient: fakeBoard({
-          listBoardMessages: async () => ({
-            messages: [
-              {
-                id: 'collector',
-                title: `${STANDING_CONDITION_NOTICE_PREFIX} collector leg hosted changes`,
-              },
-            ],
-            truncated: false,
-          }) as Awaited<ReturnType<RecordApiClient['listBoardMessages']>>,
+          listBoardMessages: async () =>
+            ({
+              messages: [
+                {
+                  id: 'collector',
+                  title: `${STANDING_CONDITION_NOTICE_PREFIX} collector leg hosted changes`,
+                },
+              ],
+              truncated: false,
+            }) as Awaited<ReturnType<RecordApiClient['listBoardMessages']>>,
           withdrawBoardMessage: async (id) => {
             withdrawals.push(id)
             return { id } as Awaited<ReturnType<RecordApiClient['withdrawBoardMessage']>>

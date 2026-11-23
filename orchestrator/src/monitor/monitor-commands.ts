@@ -31,11 +31,11 @@ import {
   monitorHistoryReleasedBefore,
   monitorWorktreeReleases,
 } from './monitor.ts'
-import { announceStoreWriteLockCondition } from './monitor-standing-condition-announcement.ts'
 import {
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
+import { announceStoreWriteLockCondition } from './monitor-standing-condition-announcement.ts'
 import {
   formatStoreWriteLockReport,
   type StoreWriteLockReport,

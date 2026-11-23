@@ -265,7 +265,7 @@ function noteSnapshotActions(snapshot: Awaited<ReturnType<typeof hostedNotePullR
         table: 'hub_note_counter',
         id: counter.project,
         op: 'upsert' as const,
-        row: counter,
+        row: counter as never,
       },
       apply: (conn: Database) => {
         applyHostedNoteRows(conn, {
@@ -484,6 +484,21 @@ function pageFor(changes: HostedRecordChange[]): HostedPreparedChangePage {
   return { changes }
 }
 
+function applyPreparedRows(
+  conn: Database,
+  feed: FeedFamily,
+  prepared: ReadonlyMap<string, HostedPreparedPage>,
+): Set<string> {
+  const quarantinedDependents = new Set<string>()
+  for (const space of feed.spaces) {
+    for (const action of prepared.get(pair(feed.name, space))!.apply) {
+      if (!applyQuarantinableRow(conn, feed.name, space, action.change, action.apply)) continue
+      for (const dependent of action.skipOnQuarantine ?? []) quarantinedDependents.add(dependent)
+    }
+  }
+  return quarantinedDependents
+}
+
 async function applyFeedPage(
   response: HostedRecordChangePage,
   after: string,
@@ -521,13 +536,7 @@ async function applyFeedPage(
         'hosted change cursor changed while applying a page; another collector is writing this store',
       )
     for (const feed of families) {
-      const quarantinedParentDependents = new Set<string>()
-      for (const space of feed.spaces)
-        for (const action of prepared.get(pair(feed.name, space))!.apply)
-          if (applyQuarantinableRow(conn, feed.name, space, action.change, action.apply))
-            action.skipOnQuarantine?.forEach((dependent) => {
-              quarantinedParentDependents.add(dependent)
-            })
+      const quarantinedParentDependents = applyPreparedRows(conn, feed, prepared)
       const ordered = subsets
         .get(feed.name)!
         .map((change, index) => ({ change, index }))

@@ -286,7 +286,10 @@ test('a pending-edit skip leaves the quarantine row in place', async () => {
 test('a constraint-violating task snapshot row is quarantined and later families apply', async () => {
   await pullHostedChanges({
     ...options,
-    fetch: snapshotFetch({ tasks: [task('not-a-category')], sends: [{ ...send(), id: goodSendId }] }),
+    fetch: snapshotFetch({
+      tasks: [task('not-a-category')],
+      sends: [{ ...send(), id: goodSendId }],
+    }),
   })
 
   expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(goodSendId)).not.toBeNull()
@@ -298,10 +301,15 @@ test('a constraint-violating task snapshot row is quarantined and later families
 test('a constraint-violating note snapshot row is quarantined and its page continues', async () => {
   await pullHostedChanges({
     ...options,
-    fetch: snapshotFetch({ notes: [note({ sightings: 0 })], projectCounters: [{ project: 'one', next: 8 }] }),
+    fetch: snapshotFetch({
+      notes: [note({ sightings: 0 })],
+      projectCounters: [{ project: 'one', next: 8 }],
+    }),
   })
 
-  expect(db().query('SELECT next FROM note_counter WHERE project=?').get('one')).toEqual({ next: 8 })
+  expect(db().query('SELECT next FROM note_counter WHERE project=?').get('one')).toEqual({
+    next: 8,
+  })
   expect(hostedChangeQuarantineRows(db())).toEqual([
     expect.objectContaining({ feed: 'note', table: 'hub_note', rowId: noteId }),
   ])
@@ -311,7 +319,10 @@ test('a constraint-violating send snapshot row is quarantined and the next send 
   await pullHostedChanges({
     ...options,
     fetch: snapshotFetch({
-      sends: [{ ...send(), status: 'invalid' }, { ...send(), id: goodSendId }],
+      sends: [
+        { ...send(), status: 'invalid' },
+        { ...send(), id: goodSendId },
+      ],
     }),
   })
 

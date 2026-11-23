@@ -48,10 +48,6 @@ import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
 import {
-  announceStandingConditions,
-  type StandingConditionUnobservedKind,
-} from './monitor-standing-condition-announcement.ts'
-import {
   abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
@@ -84,6 +80,10 @@ import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { age, idleRunConditions, stalledRunConditions } from './monitor-run-idle-conditions.ts'
 import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
+import {
+  appendStandingConditionAnnouncementErrors,
+  type StandingConditionUnobservedKind,
+} from './monitor-standing-condition-announcement.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import {
   type AddressedMonitorCondition,
@@ -664,34 +664,19 @@ function appendRunConditions(
   errors.push(...readerTrees.errors)
 }
 
-async function appendErrors(
-  database: Database,
+function appendObserved(
   conditions: MonitorCondition[],
   errors: string[],
-  clock: number,
-  startedAt: string,
-  invocationNumber: number,
-  unobservedKinds: ReadonlySet<StandingConditionUnobservedKind>,
-): Promise<void> {
-  const standing = await announceStandingConditions(
-    database,
-    conditions,
-    clock,
-    startedAt,
-    {},
-    unobservedKinds,
-  )
-  errors.push(...standing.errors)
-  errors.forEach((detail, index) => {
-    conditions.push({
-      kind: 'observation-error',
-      subject: `invocation:${invocationNumber}:${index + 1}`,
-      since: startedAt,
-      ageMs: age(startedAt, clock),
-      detail,
-      action: 'reported; no state was inferred from the unavailable observation',
-    })
-  })
+  unobserved: Set<StandingConditionUnobservedKind>,
+  observation: {
+    conditions: MonitorCondition[]
+    errors: string[]
+    unobservedKinds: ReadonlySet<StandingConditionUnobservedKind>
+  },
+): void {
+  conditions.push(...observation.conditions)
+  errors.push(...observation.errors)
+  for (const kind of observation.unobservedKinds) unobserved.add(kind)
 }
 
 export async function monitor(
@@ -750,9 +735,7 @@ export async function monitor(
   conditions.push(...stalledRunConditions(clock))
   conditions.push(...completedRunConditions(database, clock))
   const recordTunnel = await observeRecordTunnel()
-  conditions.push(...recordTunnel.conditions)
-  errors.push(...recordTunnel.errors)
-  recordTunnel.unobservedKinds.forEach((kind) => unobservedStandingKinds.add(kind))
+  appendObserved(conditions, errors, unobservedStandingKinds, recordTunnel)
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
@@ -842,9 +825,7 @@ export async function monitor(
     conditions.push(...(await observeProjectCanonDrift(project)))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     const releaseLive = observeProjectReleaseLive(project)
-    conditions.push(...releaseLive.conditions)
-    errors.push(...releaseLive.errors)
-    releaseLive.unobservedKinds.forEach((kind) => unobservedStandingKinds.add(kind))
+    appendObserved(conditions, errors, unobservedStandingKinds, releaseLive)
     const recipeDatabases = recipeDatabaseObservations(project, database)
     conditions.push(...recipeDatabases.conditions)
     errors.push(...recipeDatabases.errors)
@@ -1006,15 +987,15 @@ export async function monitor(
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process
   // log has rotated away.
-  await appendErrors(
+  await appendStandingConditionAnnouncementErrors({
     database,
     conditions,
     errors,
     clock,
     startedAt,
     invocationNumber,
-    unobservedStandingKinds,
-  )
+    unobservedKinds: unobservedStandingKinds,
+  })
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
   // otherwise both observe no prior delivery and create duplicate pending rows.

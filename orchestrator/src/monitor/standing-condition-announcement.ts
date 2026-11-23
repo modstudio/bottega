@@ -78,7 +78,8 @@ function noticeKind(title: string): AnnouncedStandingConditionKind | null {
   if (title.startsWith(collectorPrefix)) return 'collector-leg-failure'
   return (
     ANNOUNCED_STANDING_CONDITION_KINDS.find(
-      (kind) => kind !== 'collector-leg-failure' && title === standingConditionNoticeTitle(kind, ''),
+      (kind) =>
+        kind !== 'collector-leg-failure' && title === standingConditionNoticeTitle(kind, ''),
     ) ?? null
   )
 }

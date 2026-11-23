@@ -4,19 +4,19 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  decideStandingConditionAnnouncement,
-  isAnnouncedStandingConditionKind,
-  POINT_IN_TIME_STANDING_CONDITION_KINDS,
-  STANDING_CONDITION_NOTICE_PREFIX,
-  standingConditionNoticeTitle,
-  type AnnouncedStandingConditionKind,
-  type StandingConditionCandidate,
-} from './standing-condition-announcement.ts'
-import {
   announceHostedPressureActions,
   type HostedPressureAnnouncementDependencies,
 } from './monitor-hosted-pressure.ts'
 import type { MonitorCondition } from './monitor-types.ts'
+import {
+  type AnnouncedStandingConditionKind,
+  decideStandingConditionAnnouncement,
+  isAnnouncedStandingConditionKind,
+  POINT_IN_TIME_STANDING_CONDITION_KINDS,
+  STANDING_CONDITION_NOTICE_PREFIX,
+  type StandingConditionCandidate,
+  standingConditionNoticeTitle,
+} from './standing-condition-announcement.ts'
 
 type FinishedKindObservation = { started_at: string; present: number }
 export type StandingConditionUnobservedKind = AnnouncedStandingConditionKind
@@ -55,11 +55,12 @@ function candidateFor(
   const pointInTime = (POINT_IN_TIME_STANDING_CONDITION_KINDS as readonly string[]).includes(
     condition.kind,
   )
-  const onset = !pointInTime && Number.isFinite(parsedSince)
-    ? condition.since!
-    : !pointInTime && condition.ageMs !== null
-      ? new Date(clock - condition.ageMs).toISOString()
-      : standingConditionHistoryOnset(database, condition.kind, currentStartedAt)
+  const onset =
+    !pointInTime && Number.isFinite(parsedSince)
+      ? condition.since!
+      : !pointInTime && condition.ageMs !== null
+        ? new Date(clock - condition.ageMs).toISOString()
+        : standingConditionHistoryOnset(database, condition.kind, currentStartedAt)
   const persistedMs = pointInTime
     ? Math.max(0, clock - Date.parse(onset))
     : (condition.ageMs ?? Math.max(0, clock - Date.parse(onset)))
@@ -106,6 +107,36 @@ export async function announceStandingConditions(
   } catch (error) {
     return announcementError(error)
   }
+}
+
+export async function appendStandingConditionAnnouncementErrors(input: {
+  database: Database
+  conditions: MonitorCondition[]
+  errors: string[]
+  clock: number
+  startedAt: string
+  invocationNumber: number
+  unobservedKinds: ReadonlySet<StandingConditionUnobservedKind>
+}): Promise<void> {
+  const standing = await announceStandingConditions(
+    input.database,
+    input.conditions,
+    input.clock,
+    input.startedAt,
+    {},
+    input.unobservedKinds,
+  )
+  input.errors.push(...standing.errors)
+  input.errors.forEach((detail, index) => {
+    input.conditions.push({
+      kind: 'observation-error',
+      subject: `invocation:${input.invocationNumber}:${index + 1}`,
+      since: input.startedAt,
+      ageMs: Math.max(0, input.clock - Date.parse(input.startedAt)),
+      detail,
+      action: 'reported; no state was inferred from the unavailable observation',
+    })
+  })
 }
 
 /** Reconcile only the store-lock notice while the normal pass cannot write its invocation. */
