@@ -24,10 +24,6 @@ export const DOC_LOCAL_SQL_ALLOWANCES: readonly DocLocalSqlAllowance[] = [
     reason: 'hosted canon mirror write-back',
   },
   {
-    pattern: /orchestrator\/src\/canon\/canon\.ts$/,
-    reason: 'DEV-2584 PR 2 moves canon reads to the hosted record',
-  },
-  {
     pattern: /orchestrator\/src\/record\/record-cache[^/]*\.ts$/,
     reason: 'document mirror engine',
   },
@@ -44,14 +40,6 @@ export const DOC_LOCAL_SQL_ALLOWANCES: readonly DocLocalSqlAllowance[] = [
   {
     pattern: /orchestrator\/src\/doc\/local-doc-order\.ts$/,
     reason: 'local-install branch of reorder',
-  },
-  {
-    pattern: /orchestrator\/src\/doc\/doc-reference-read\.ts$/,
-    reason: 'DEV-2584 PR 2 moves workflow-floor reads to the hosted record',
-  },
-  {
-    pattern: /orchestrator\/src\/canon\/canon-mirror-revisions\.ts$/,
-    reason: 'DEV-2584 PR 2 moves canon reads to the hosted record',
   },
   {
     pattern: /orchestrator\/src\/identity\/doc-revision-identity\.ts$/,

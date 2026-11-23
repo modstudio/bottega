@@ -254,7 +254,7 @@ async function settingsRow(
 }
 
 async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof target>) {
-  const { row, destination } = await settingsRow(client, input)
+  const { row } = await settingsRow(client, input)
   return {
     mode: 'hosted' as const,
     target:
@@ -262,7 +262,7 @@ async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof tar
         ? { kind: 'user' as const }
         : { kind: 'project' as const, name: input.project },
     file: { path: null, exists: null },
-    revision: await currentRevision(client, row.id, destination),
+    revision: row.latestRevisionId,
     settings: summarizeSettings(parseStoredSettings(row.body)),
     drift: null,
     findings: null,

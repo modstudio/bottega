@@ -298,7 +298,7 @@ export class CanonBudgetError extends Error {
 async function packedCanonMarkdown(projectName: string | null) {
   const [globalRows, projectRows] = await Promise.all([
     readDocs({ scope: 'canon', subject: null, status: 'current' }),
-    readDocs({ scope: 'canon', subject: projectName ?? '__no_project__', status: 'current' }),
+    readDocs({ scope: 'canon', subject: projectName, status: 'current' }),
   ])
   return packedCanonMarkdownFromRows(
     projectName,

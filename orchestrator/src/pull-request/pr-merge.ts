@@ -800,7 +800,7 @@ function refuseUnlessAdmitted(decision: MergeDecision): void {
   if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
 }
 
-function admitViewedPullRequest(
+async function admitViewedPullRequest(
   pullRequest: PullRequestMergeFacts,
   input: {
     cwd: string
@@ -810,7 +810,7 @@ function admitViewedPullRequest(
     requiredChecks: readonly string[]
     mergeQueue: boolean
   },
-): PullRequestChange {
+): Promise<PullRequestChange> {
   const mergeabilityFacts: MergeabilityFacts = {
     mergeStateStatus: pullRequest.mergeStateStatus,
     url: pullRequest.url,
@@ -895,7 +895,7 @@ async function completeMerge(input: {
         input.database,
       )
     } else {
-      admittedChange = admitViewedPullRequest(pullRequest, input)
+      admittedChange = await admitViewedPullRequest(pullRequest, input)
       if (input.releaseRequired)
         await input.adapter.releasePreflight?.({
           project: input.project,

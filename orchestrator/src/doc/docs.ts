@@ -147,7 +147,7 @@ async function authoritativeInjectedDocsForPack(
     readDocs({ scope: 'job', subject: job, status: 'current', delivery: 'inject' }),
     readDocs({
       scope: 'project',
-      subject: projectName ?? '__no_project__',
+      subject: projectName,
       status: 'current',
       delivery: 'inject',
     }),
