@@ -19,6 +19,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/orch-contract.ts',
   '../../../shared/process-identity.ts',
   '../../../shared/question-vocabulary.ts',
+  '../../../shared/question-text-refusal.ts',
   '../../../shared/record-id.ts',
   '../../../shared/reference-refusal.ts',
   '../../../shared/reference.ts',
