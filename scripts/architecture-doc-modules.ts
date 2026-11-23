@@ -209,7 +209,6 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
-    '../../../shared/record-id.ts',
     './doc-command-mentions.ts',
   ]),
   module('orchestrator/src/doc/doc-search-service.ts', [
