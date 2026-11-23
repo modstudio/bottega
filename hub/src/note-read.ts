@@ -14,6 +14,7 @@ import {
 } from './note-client.ts'
 import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
+import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
 
 export type NoteFilters = {
@@ -94,11 +95,38 @@ function hostedReadFailure(cause: unknown): Error {
   return new Error(message.endsWith(readRemedy) ? message : `${message}. ${readRemedy}`)
 }
 
-async function readHostedNote(recordId: string, options?: NoteClientOptions): Promise<NoteRow> {
+class NoteNotFoundError extends Error {
+  constructor(recordId: string) {
+    super(`no note ${recordId}`)
+  }
+}
+
+function spaceReadFailure(recordSpace: string, project: string | undefined, cause: unknown): Error {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  const owner = project ? `project ${project}` : `record space ${recordSpace}`
+  return new Error(`${owner}: ${message}`, { cause })
+}
+
+async function readHostedNote(
+  recordId: string,
+  options: NoteClientOptions = {},
+  project?: string,
+): Promise<NoteRow> {
+  const spaces = await noteReadSpaces(project, options)
   try {
-    return noteRowFromHosted(await hostedGetNote(recordId, options))
+    for (const recordSpace of spaces) {
+      let hostedNote: Awaited<ReturnType<typeof hostedGetNote>>
+      try {
+        hostedNote = await hostedGetNote(recordId, { ...options, recordSpace })
+      } catch (cause) {
+        if (isMissingHostedNote(cause)) continue
+        throw spaceReadFailure(recordSpace, project, cause)
+      }
+      return noteRowFromHosted(hostedNote)
+    }
+    throw new NoteNotFoundError(recordId)
   } catch (cause) {
-    if (isMissingHostedNote(cause)) throw new Error(`no note ${recordId}`)
+    if (cause instanceof NoteNotFoundError) throw cause
     throw hostedReadFailure(cause)
   }
 }
@@ -118,20 +146,45 @@ function acknowledgementMatches(
 
 async function listHostedNoteRows(
   filters: NormalizedNoteFilters,
-  options?: NoteClientOptions,
+  options: NoteClientOptions = {},
 ): Promise<NoteRow[]> {
+  const spaces = await noteReadSpaces(filters.project, options)
   try {
-    const result = await hostedListNotes(
-      {
-        project: filters.project,
-        stale: filters.stale,
-        actionable: filters.actionable,
-      },
-      options,
+    const notesById = new Map<
+      string,
+      { note: ReturnType<typeof noteRowFromHosted>; space: string }
+    >()
+    const acknowledgements: HostedAcknowledgement[] = []
+    const results = await Promise.all(
+      spaces.map(async (recordSpace) => ({
+        recordSpace,
+        result: await hostedListNotes(
+          {
+            project: filters.project,
+            stale: filters.stale,
+            actionable: filters.actionable,
+          },
+          { ...options, recordSpace },
+        ).catch((cause) => {
+          throw spaceReadFailure(recordSpace, filters.project, cause)
+        }),
+      })),
     )
+    for (const { recordSpace, result } of results) {
+      acknowledgements.push(...result.acknowledgements)
+      for (const hostedNote of result.notes) {
+        const note = noteRowFromHosted(hostedNote)
+        const existing = notesById.get(note.record_id)
+        if (existing)
+          throw new Error(
+            `note ${note.record_id} appears in record spaces ${existing.space} and ${recordSpace}`,
+          )
+        notesById.set(note.record_id, { note, space: recordSpace })
+      }
+    }
     const search = filters.text?.toLowerCase()
-    return result.notes
-      .map(noteRowFromHosted)
+    return [...notesById.values()]
+      .map(({ note }) => note)
       .filter((note) =>
         filters.sessions.length
           ? note.anchors.some((anchor) =>
@@ -140,7 +193,7 @@ async function listHostedNoteRows(
               ),
             ) &&
             filters.kept ===
-              result.acknowledgements.some((acknowledgement) =>
+              acknowledgements.some((acknowledgement) =>
                 acknowledgementMatches(acknowledgement, note, filters.sessions),
               )
           : true,
@@ -198,14 +251,18 @@ export async function listProjectNotes(
   )
 }
 
-export async function getNote(recordId: string, hosted?: NoteClientOptions): Promise<NoteRow> {
+export async function getNote(
+  recordId: string,
+  hosted?: NoteClientOptions,
+  project?: string,
+): Promise<NoteRow> {
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
-    return readHostedNote(recordId, hosted)
+    return readHostedNote(recordId, hosted, project)
   const row = db()
     .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, [string]>(
       'SELECT * FROM note WHERE record_id = ?',
     )
     .get(recordId)
-  if (!row) throw new Error(`no note ${recordId}`)
+  if (!row) throw new NoteNotFoundError(recordId)
   return decodeNoteRow(row)
 }

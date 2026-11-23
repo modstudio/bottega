@@ -3,7 +3,7 @@ import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { createNote, promoteNote, relinkNote } from './note.ts'
+import { createNote, promoteNote, relinkNote, resolveNoteReference } from './note.ts'
 import { getNote } from './note-read.ts'
 import type { HostedPushChange } from './push-contract.ts'
 import { createLocalTaskInTransaction } from './task.ts'
@@ -98,7 +98,7 @@ test('hosted relink queues the attachment fields and both history comments', asy
   ])
   await promoteNote(note.record_id, { existingTaskKey: previous.key })
   workshop().settings.space = 'workshop'
-  writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
+  writeTransaction((conn) => persistInstallBinding(conn, 'space-active'))
   const pushed: HostedPushChange[] = []
   const hosted = {
     baseUrl: 'https://hub.example.test',
@@ -108,14 +108,20 @@ test('hosted relink queues the attachment fields and both history comments', asy
       if (url.pathname === '/v1/tasks/identity')
         return Response.json({
           userId: 'user-1',
-          activeSpaceId: 'space-a',
-          memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
+          activeSpaceId: 'space-active',
+          memberships: [
+            { spaceId: 'space-active', slug: 'active', permission: 'write' },
+            { spaceId: 'space-workshop', slug: 'workshop', permission: 'write' },
+          ],
           capabilities: {
             spacePush: true,
             spacePushTables: ['hub_note', 'hub_task_comment'],
+            targetSpaceNotes: true,
           },
         })
       if (url.pathname === `/v1/notes/${note.record_id}`) {
+        if (new Headers(init?.headers).get('x-record-space') !== 'space-workshop')
+          return Response.json({ error: 'note not found' }, { status: 404 })
         const row = db()
           .query<Record<string, unknown>, [string]>(
             `SELECT record_id id,number,project,project project_name,project_record_id projectId,
@@ -135,7 +141,8 @@ test('hosted relink queues the attachment fields and both history comments', asy
     },
   }
 
-  await relinkNote(note.record_id, target.key, 'hosted trail', { hosted })
+  const numberedReference = resolveNoteReference(note.label, 'workshop')
+  await relinkNote(numberedReference, target.key, 'hosted trail', { hosted })
 
   expect(pushed).toHaveLength(3)
   expect(pushed.find((change) => change.table === 'hub_note')).toMatchObject({

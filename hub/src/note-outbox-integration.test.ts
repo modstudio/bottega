@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { db, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
@@ -23,6 +24,7 @@ const projectId = '01990000-0000-7000-8000-000000001252'
 const userId = '01990000-0000-7000-8000-000000001249'
 const identity = { userId, spaceId }
 let database: PGlite
+declareFixtureProjectSpace('workshop', 'workshop')
 
 const noteRow = (id: string, number: number, overrides: Partial<PushedNote> = {}): PushedNote => ({
   id,

@@ -19,22 +19,29 @@ test('a hosted read reports an invalid revision with one remedy', async () => {
   const options = {
     baseUrl: 'https://hub.example.test',
     token: 'test',
-    fetch: async () =>
-      Response.json({
-        id,
-        number: 4,
-        project: 'workshop',
-        text: 'Hosted note',
-        area: null,
-        anchors: '[]',
-        sightings: 1,
-        created_at: '2026-11-21T12:00:00.000Z',
-        last_seen_at: '2026-11-21T12:00:00.000Z',
-        stale_at: null,
-        stale_reason: null,
-        promoted_task: null,
-        revision: 'x',
-      }),
+    fetch: async (input: string) =>
+      new URL(input).pathname === '/v1/tasks/identity'
+        ? Response.json({
+            userId: 'user-1',
+            activeSpaceId: 'space-a',
+            memberships: [],
+            capabilities: { targetSpaceNotes: true },
+          })
+        : Response.json({
+            id,
+            number: 4,
+            project: 'workshop',
+            text: 'Hosted note',
+            area: null,
+            anchors: '[]',
+            sightings: 1,
+            created_at: '2026-11-21T12:00:00.000Z',
+            last_seen_at: '2026-11-21T12:00:00.000Z',
+            stale_at: null,
+            stale_reason: null,
+            promoted_task: null,
+            revision: 'x',
+          }),
   }
 
   let failure: unknown

@@ -1,3 +1,4 @@
+import { RECORD_SPACE_HEADER_NAME } from '../../shared/record-request-headers.ts'
 import { db } from '../src/db.ts'
 import { resolveNoteReference } from '../src/note.ts'
 import { getNote, listNotes } from '../src/note-read.ts'
@@ -61,11 +62,19 @@ const shape = (note: Awaited<ReturnType<typeof getNote>>, at: string) => ({
   revision: '1',
 })
 
-async function getRoute(url: URL, at: string) {
+function noteBelongsToRequestedSpace(project: string, init?: RequestInit) {
+  const space = new Headers(init?.headers).get(RECORD_SPACE_HEADER_NAME)
+  return space === 'space-gamma' ? project === 'gamma' : project !== 'gamma'
+}
+
+async function getRoute(url: URL, at: string, init?: RequestInit) {
   const noteMatch = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (noteMatch) {
     try {
-      return Response.json(shape(await getNote(noteMatch[1]!, { baseUrl: '' }), at))
+      const note = await getNote(noteMatch[1]!, { baseUrl: '' })
+      if (!noteBelongsToRequestedSpace(note.project, init))
+        return Response.json({ error: 'note not found' }, { status: 404 })
+      return Response.json(shape(note, at))
     } catch {
       return Response.json({ error: 'note not found' }, { status: 404 })
     }
@@ -78,6 +87,8 @@ async function getRoute(url: URL, at: string) {
     },
     { baseUrl: '' },
   )
+  const selectedNotes = notes.filter((note) => noteBelongsToRequestedSpace(note.project, init))
+  const selectedIds = new Set(selectedNotes.map((note) => note.record_id))
   const acknowledgements = db()
     .query<
       {
@@ -95,6 +106,7 @@ async function getRoute(url: URL, at: string) {
        JOIN note n ON n.record_id=a.note_record_id`,
     )
     .all()
+    .filter((row) => selectedIds.has(row.note_id))
     .map((row) => ({
       ...row,
       created_at: row.acknowledged_at,
@@ -102,7 +114,7 @@ async function getRoute(url: URL, at: string) {
       deleted_at: null,
     }))
   return Response.json({
-    notes: notes.map((note) => shape(note, at)),
+    notes: selectedNotes.map((note) => shape(note, at)),
     acknowledgements,
     cursor: 'done',
     more: false,
@@ -153,7 +165,7 @@ export const noteHostedFetch = async (input: string, init?: RequestInit) => {
     noteHostedChanges.push(...changes)
     return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
   }
-  if (url.pathname.startsWith('/v1/notes') && init?.method === 'GET') return getRoute(url, at)
+  if (url.pathname.startsWith('/v1/notes') && init?.method === 'GET') return getRoute(url, at, init)
   if (url.pathname === '/v1/notes' && init?.method === 'POST') return postNote(body, at)
   if (url.pathname === '/v1/notes/reap')
     return Response.json({

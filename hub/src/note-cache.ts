@@ -9,7 +9,7 @@ import {
   hostedGetNote,
   hostedNoteChanges,
   isMissingHostedNote,
-  type NoteClientOptions,
+  type NoteReadOptions,
 } from './note-client.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -128,7 +128,7 @@ type NoteParentBatchState = 'live' | 'deleted'
 export async function completeAcknowledgementNotes(
   noteChanges: readonly NoteParentChange[],
   acknowledgements: readonly HostedAcknowledgement[],
-  options: NoteClientOptions,
+  options: NoteReadOptions,
   skipMissingParents = false,
 ) {
   const finalNoteChanges = new Map<string, NoteParentBatchState>(
@@ -153,7 +153,7 @@ export async function completeAcknowledgementNotes(
   return fetched
 }
 
-export async function hostedNotePullRows(cursor: string | null, options: NoteClientOptions) {
+export async function hostedNotePullRows(cursor: string | null, options: NoteReadOptions) {
   const changes = await hostedNoteChanges(cursor, options)
   changes.notes.unshift(
     ...(await completeAcknowledgementNotes(

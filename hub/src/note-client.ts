@@ -26,12 +26,13 @@ const REMEDY = MISSING_HOSTED_URL_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
 export type NoteWriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
+export type NoteReadOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
 type NoteIdentity = Awaited<ReturnType<typeof hostedTaskIdentity>>
 type NoteIdentityMemo = ReturnType<typeof processMemo<NoteIdentity>>
 const defaultIdentityMemos = new Map<string, NoteIdentityMemo>()
 const transportIdentityMemos = new WeakMap<NoteFetch, Map<string, NoteIdentityMemo>>()
 
-function noteIdentity(options: Options = {}): Promise<NoteIdentity> {
+export function hostedNoteIdentity(options: Options = {}): Promise<NoteIdentity> {
   const memos = options.fetch
     ? (transportIdentityMemos.get(options.fetch) ??
       (() => {
@@ -82,7 +83,7 @@ async function requestValue<T>(url: string, response: Response, safety: HostedRe
 
 function requestSetup(options: Options) {
   if (options.recordSpace) {
-    return noteIdentity(options).then((identity) => {
+    return hostedNoteIdentity(options).then((identity) => {
       if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
     })
   }
@@ -137,7 +138,7 @@ async function writeRequest<T>(
   return requestValue<T>(url, response, safety)
 }
 async function assertNoteCapabilities(options?: Options) {
-  const identity = await noteIdentity(options)
+  const identity = await hostedNoteIdentity(options)
   assertProjectNoteCounters(identity)
 }
 export const hostedCreateNote = async (body: unknown, options: NoteWriteOptions) => {
@@ -157,7 +158,7 @@ export const hostedPromoteNote = (
     'non-idempotent',
   )
 export const hostedReapNotes = async (body: unknown, options: NoteWriteOptions) => {
-  const identity = await noteIdentity(options)
+  const identity = await hostedNoteIdentity(options)
   assertNoteTriageStaleness(identity)
   return writeRequest<{
     marked: number
@@ -196,15 +197,15 @@ const normalizeHostedNote = (row: HostedNote & { project_id?: string | null }): 
   ...row,
   projectId: row.projectId ?? row.project_id ?? null,
 })
-export const hostedGetNote = (recordId: string, options?: Options) =>
+export const hostedGetNote = (recordId: string, options: NoteReadOptions) =>
   request<HostedNote & { project_id?: string | null }>(`/v1/notes/${recordId}`, options).then(
     normalizeHostedNote,
   )
 export async function hostedListNotes(
   filters: { project?: string; stale?: boolean; actionable?: boolean },
-  options?: Options,
+  options: NoteReadOptions,
 ) {
-  await noteIdentity(options)
+  await hostedNoteIdentity(options)
   const query = new URLSearchParams()
   if (filters.project) query.set('project', filters.project)
   if (filters.stale !== undefined) query.set('stale', String(filters.stale))
