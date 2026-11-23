@@ -23,7 +23,6 @@ import {
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
 import {
-  CHECKOUT_CLI_BINARY_ENV,
   type CheckoutCliFreshnessDecision,
   checkoutCliBinaryEnvironment,
 } from '../sandbox/checkout-cli-freshness.ts'
@@ -111,8 +110,7 @@ export function probeEnv(
     ...workerSandboxEnvironment(),
     ...workerStateEnvironment(process.env),
   }
-  delete environment[CHECKOUT_CLI_BINARY_ENV]
-  Object.assign(environment, checkoutCliBinaryEnvironment(environment, cliFreshnessDecision))
+  Object.assign(environment, checkoutCliBinaryEnvironment(process.env, cliFreshnessDecision))
   return environment
 }
 

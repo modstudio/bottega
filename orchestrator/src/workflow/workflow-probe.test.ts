@@ -3,10 +3,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
+import {
+  CHECKOUT_CLI_BINARY_ENV,
+  runningInstallationIdentity,
+} from '../../../shared/install-root.ts'
+import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { checkoutCliBinaryEnvironment } from '../sandbox/checkout-cli-freshness.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
 import {
   appendWorkflowOutput,
@@ -17,13 +21,17 @@ import {
 
 const probeRepository = mkdtempSync(join(tmpdir(), 'workflow-probe-project-'))
 afterAll(() => rmSync(probeRepository, { recursive: true, force: true }))
-let inheritedCheckoutCliBinary: string | undefined
+let previousStateHome: string | undefined
+let stateHome: string
 beforeEach(() => {
-  inheritedCheckoutCliBinary = process.env[CHECKOUT_CLI_BINARY_ENV]
+  previousStateHome = process.env[STATE_HOME_ENV]
+  stateHome = mkdtempSync(join(tmpdir(), 'workflow-probe-state-'))
+  process.env[STATE_HOME_ENV] = stateHome
 })
 afterEach(() => {
-  if (inheritedCheckoutCliBinary === undefined) delete process.env[CHECKOUT_CLI_BINARY_ENV]
-  else process.env[CHECKOUT_CLI_BINARY_ENV] = inheritedCheckoutCliBinary
+  if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+  else process.env[STATE_HOME_ENV] = previousStateHome
+  rmSync(stateHome, { recursive: true, force: true })
 })
 let probeRepositoryInitialized = false
 
@@ -44,15 +52,18 @@ const database = testDatabaseFixture((d) => {
   ).run(probeRepository)
 })
 
-test('a probe replaces an inherited checkout CLI binary when the host selects one', () => {
-  process.env[CHECKOUT_CLI_BINARY_ENV] = '/foreign/checkout-cli'
-
-  const environment = probeEnv('/probe-scratch', () => true)
-
-  expect(environment[CHECKOUT_CLI_BINARY_ENV]).toBe(
-    checkoutCliBinaryEnvironment(environment, () => true)[CHECKOUT_CLI_BINARY_ENV],
+test('a probe uses the checkout CLI selected from the host state environment', () => {
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
+  if (identity.kind !== 'checkout') throw new Error('expected a checkout install')
+  const expectedBinary = join(
+    stateHome,
+    'runtime',
+    identity.version,
+    WORKER_RUNTIME_ASSETS.checkoutCli,
   )
-  expect(environment[CHECKOUT_CLI_BINARY_ENV]).not.toBe('/foreign/checkout-cli')
+
+  expect(probeEnv('/probe-scratch', () => true)[CHECKOUT_CLI_BINARY_ENV]).toBe(expectedBinary)
+  expect(probeEnv('/probe-scratch', () => false)).not.toHaveProperty(CHECKOUT_CLI_BINARY_ENV)
 })
 
 test('records command, cwd, commit, exit and a bounded tail', async () => {
