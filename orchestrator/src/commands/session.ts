@@ -136,11 +136,8 @@ export function register(program: Command): void {
     .option('--json', 'write the close-out report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
-      const {
-        closeOutSession,
-        formatSessionCloseOut,
-        SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
-      } = await import('../session/session-close-out.ts')
+      const { closeOutSession, formatSessionCloseOut, SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE } =
+        await import('../session/session-close-out.ts')
       const report = await closeOutSession({
         session: options.session,
         dryRun: options.dryRun,
@@ -157,7 +154,9 @@ export function register(program: Command): void {
     .option('--json', 'write the adoption report as JSON')
     .allowExcessArguments(false)
     .action(async (target, options) => {
-      const { adoptSessionRuns, formatSessionAdoption } = await import('../session/session-adopt.ts')
+      const { adoptSessionRuns, formatSessionAdoption } = await import(
+        '../session/session-adopt.ts'
+      )
       const report = adoptSessionRuns(target, options.reason, {
         consent: options.cutOff ? 'cut-off' : 'standard',
       })

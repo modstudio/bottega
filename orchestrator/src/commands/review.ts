@@ -83,7 +83,8 @@ type ReviewCommandName = {
     ? Name
     : never
 }[keyof ReviewCommands]
-const lazyReviewCommand = <Name extends ReviewCommandName>(name: Name) =>
+const lazyReviewCommand =
+  <Name extends ReviewCommandName>(name: Name) =>
   async (
     ...args: Parameters<ReviewCommands[Name]>
   ): Promise<Awaited<ReturnType<ReviewCommands[Name]>>> => {
@@ -110,9 +111,7 @@ async function tierReviewCliCommand(
   flags: CliFlags,
   { log }: ReviewPresentation,
 ): Promise<void> {
-  const { printReviewTier, reviewTierCommandOutput } = await import(
-    '../review/review-commands.ts'
-  )
+  const { printReviewTier, reviewTierCommandOutput } = await import('../review/review-commands.ts')
   const value = argv[2]
   if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
   const result = await reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
@@ -443,8 +442,7 @@ function registerConfinement(program: Command): void {
         import('../run/run-identifier.ts'),
       ])
       const flags = optionFlags(options)
-      const id =
-        runId === undefined ? null : identifier.resolveRunIdentifier(database.db(), runId)
+      const id = runId === undefined ? null : identifier.resolveRunIdentifier(database.db(), runId)
       const writer = flags.flag('writer')?.trim()
       const note = flags.flag('note')?.trim()
       if (!id || !writer || !note) throw new Error(CLEAR_USAGE)

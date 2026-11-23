@@ -6,17 +6,7 @@ import { type Command, InvalidArgumentError, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
-import { withDatabaseForMigrationStep } from '../database/db.ts'
-import { signInCommand } from '../record/record-auth-command.ts'
-import { cachedSignedInRecordUser } from '../record/record-session.ts'
-import { isOrchWorkerProcess } from '../run/run-process.ts'
-import { setupResultsRequireAttention } from '../setup/setup-apply.ts'
-import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
-import { MACHINE_LEVEL_QUESTION_ID } from '../setup/setup-engine.ts'
-import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
-import { gatherSetupFacts } from '../setup/setup-facts.ts'
-import { runInteractiveSetup, runSetupSignIn, SETUP_CANCEL } from '../setup/setup-interactive.ts'
-import { type SetupService, setupService } from '../setup/setup-service.ts'
+import type { SetupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>
@@ -36,7 +26,8 @@ function parseMachineLevel(value: string): MachineLevel {
   throw new InvalidArgumentError(`accepted values are ${MACHINE_LEVELS.join(', ')}`)
 }
 
-function levelAnswer(options: SetupOptions): Record<string, string> {
+async function levelAnswer(options: SetupOptions): Promise<Record<string, string>> {
+  const { MACHINE_LEVEL_QUESTION_ID } = await import('../setup/setup-engine.ts')
   return options.level ? { [MACHINE_LEVEL_QUESTION_ID]: options.level } : {}
 }
 
@@ -51,8 +42,8 @@ function inputs(options: SetupOptions): string[] {
 const includedFolders = (options: SetupOptions): string[] =>
   (options.include ?? []).map((folder) => resolve(folder))
 
-function refuseWorkerRestore(): void {
-  if (!isOrchWorkerProcess(process.env, process.pid)) return
+async function refuseWorkerRestore(): Promise<void> {
+  if (!(await import('../run/run-process.ts')).isOrchWorkerProcess(process.env, process.pid)) return
   throw new Error(
     `refusing setup restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine setup restore`,
   )
@@ -62,6 +53,7 @@ async function applyNonInteractiveSetup(
   options: SetupOptions,
   service: SetupService,
 ): Promise<void> {
+  const { setupResultsRequireAttention } = await import('../setup/setup-apply.ts')
   if (Boolean(options.yes) === Boolean(options.answers)) {
     throw new Error(
       `${PLATFORM_SLUG} machine setup apply requires exactly one of --yes or --answers <file>`,
@@ -77,8 +69,17 @@ async function applyNonInteractiveSetup(
     }
   }
   const outcome = options.yes
-    ? await service.applyRecommended(folders, levelAnswer(options), includedFolders(options))
-    : await service.apply(folders, answerValue, levelAnswer(options), includedFolders(options))
+    ? await service.applyRecommended(
+        folders,
+        await levelAnswer(options),
+        includedFolders(options),
+      )
+    : await service.apply(
+        folders,
+        answerValue,
+        await levelAnswer(options),
+        includedFolders(options),
+      )
   const { plan, actions, results } = outcome
   if (setupResultsRequireAttention(results)) process.exitCode = 1
   log(
@@ -91,7 +92,7 @@ async function applyNonInteractiveSetup(
 }
 
 async function reversePreparedSetup(
-  migration: Parameters<typeof setupService.cancel>[0],
+  migration: Parameters<SetupService['cancel']>[0],
   service: SetupService,
 ): Promise<void> {
   const reversed = await service.cancel(migration)
@@ -99,6 +100,14 @@ async function reversePreparedSetup(
 }
 
 async function applyInteractiveSetup(options: SetupOptions, service: SetupService): Promise<void> {
+  const [clack, interactive, auth, database, recordSession, setupApply] = await Promise.all([
+    import('../setup/setup-clack.ts'),
+    import('../setup/setup-interactive.ts'),
+    import('../record/record-auth-command.ts'),
+    import('../database/db.ts'),
+    import('../record/record-session.ts'),
+    import('../setup/setup-apply.ts'),
+  ])
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     console.error(
       `${PLATFORM_SLUG} machine setup requires both stdin and stdout to be TTYs; use ${PLATFORM_SLUG} machine setup apply --yes or ${PLATFORM_SLUG} machine setup apply --answers <file>`,
@@ -107,46 +116,46 @@ async function applyInteractiveSetup(options: SetupOptions, service: SetupServic
     return
   }
   const folders = inputs(options)
-  introduceSetup(folders)
-  const signIn = await runSetupSignIn(
-    cachedSignedInRecordUser()?.email ?? null,
-    clackSetupPrompter,
+  clack.introduceSetup(folders)
+  const signIn = await interactive.runSetupSignIn(
+    recordSession.cachedSignedInRecordUser()?.email ?? null,
+    clack.clackSetupPrompter,
     (email, password) =>
-      signInCommand(
+      auth.signInCommand(
         email,
         async () => password,
-        { log: clackSetupPrompter.line },
-        withDatabaseForMigrationStep,
+        { log: clack.clackSetupPrompter.line },
+        database.withDatabaseForMigrationStep,
       ),
   )
-  if (signIn === SETUP_CANCEL) {
+  if (signIn === interactive.SETUP_CANCEL) {
     process.exitCode = 130
     return
   }
   const prepared = await service.prepare(folders)
-  const plan = await gatherSetupPlan(
+  const plan = await clack.gatherSetupPlan(
     () => Promise.resolve(prepared.plan),
     () => {
       process.exitCode = 130
     },
     Boolean(prepared.migration),
   )
-  if (plan === SETUP_CANCEL) {
+  if (plan === interactive.SETUP_CANCEL) {
     await reversePreparedSetup(prepared.migration, service)
     return
   }
   let actionsStarted = false
-  let outcome: Awaited<ReturnType<typeof runInteractiveSetup>>
+  let outcome: Awaited<ReturnType<typeof interactive.runInteractiveSetup>>
   try {
-    outcome = await runInteractiveSetup(
+    outcome = await interactive.runInteractiveSetup(
       plan,
-      clackSetupPrompter,
+      clack.clackSetupPrompter,
       (actions) => {
         actionsStarted = true
         return service.applyPreparedActions(actions, prepared.migration)
       },
       Boolean(prepared.migration),
-      levelAnswer(options),
+      await levelAnswer(options),
     )
   } catch (error) {
     if (!actionsStarted) {
@@ -158,26 +167,33 @@ async function applyInteractiveSetup(options: SetupOptions, service: SetupServic
     await reversePreparedSetup(prepared.migration, service)
   }
   if (outcome.kind === 'cancelled') process.exitCode = 130
-  if (outcome.kind === 'applied' && setupResultsRequireAttention(outcome.results)) {
+  if (outcome.kind === 'applied' && setupApply.setupResultsRequireAttention(outcome.results)) {
     process.exitCode = 1
   }
 }
 
-export function register(program: Command, service: SetupService = setupService): void {
+export function register(program: Command, service?: SetupService): void {
   const setup = program
     .command('setup')
     .description('inspect and configure this machine interactively')
     .addOption(collectedOption('--in <folder>', 'folder to inspect'))
     .option('--level <record|full>', 'set the install level', parseMachineLevel)
     .allowExcessArguments(false)
-    .action((options: SetupOptions) => applyInteractiveSetup(options, service))
+    .action(async (options: SetupOptions) =>
+      applyInteractiveSetup(
+        options,
+        service ?? (await import('../setup/setup-service.ts')).setupService,
+      ),
+    )
   setup
     .command('restore <backup-dir>')
     .description('restore a reversible environment migration backup')
     .allowExcessArguments(false)
     .action(async (directory: string) => {
-      refuseWorkerRestore()
-      await restoreSetupEnvironment(directory)
+      await refuseWorkerRestore()
+      await (await import('../setup/setup-environment-runtime.ts')).restoreSetupEnvironment(
+        directory,
+      )
       log(`restored setup environment backup ${directory}`)
     })
   setup
@@ -185,7 +201,9 @@ export function register(program: Command, service: SetupService = setupService)
     .description('inspect machine setup facts')
     .option('--json', 'write the setup facts as JSON')
     .allowExcessArguments(false)
-    .action(async () => log(JSON.stringify(await gatherSetupFacts())))
+    .action(async () =>
+      log(JSON.stringify(await (await import('../setup/setup-facts.ts')).gatherSetupFacts())),
+    )
   setup
     .command('plan')
     .description('plan recommended machine setup actions')
@@ -196,9 +214,10 @@ export function register(program: Command, service: SetupService = setupService)
     .allowExcessArguments(false)
     .action(async (options: SetupOptions, command: Command) => {
       const resolved = inheritedSetupOptions(options, command)
-      const plan = await service.dryRun(
+      const activeService = service ?? (await import('../setup/setup-service.ts')).setupService
+      const plan = await activeService.dryRun(
         inputs(resolved),
-        levelAnswer(resolved),
+        await levelAnswer(resolved),
         includedFolders(resolved),
       )
       log(JSON.stringify(plan, null, resolved.json ? undefined : 2))
@@ -215,7 +234,10 @@ export function register(program: Command, service: SetupService = setupService)
     .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
     .addOption(collectedOption('--include <folder>', 'include an unregistered project folder'))
     .allowExcessArguments(false)
-    .action((options: SetupOptions, command: Command) =>
-      applyNonInteractiveSetup(inheritedSetupOptions(options, command), service),
+    .action(async (options: SetupOptions, command: Command) =>
+      applyNonInteractiveSetup(
+        inheritedSetupOptions(options, command),
+        service ?? (await import('../setup/setup-service.ts')).setupService,
+      ),
     )
 }

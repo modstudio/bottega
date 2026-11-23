@@ -178,10 +178,7 @@ export function register(program: Command): void {
     .option('--json', 'write the release entries as JSON')
     .allowExcessArguments(false)
     .action(async (project, options) => {
-      const rows = (await import('../release/release-service.ts')).releaseLog(
-        project,
-        options.rung,
-      )
+      const rows = (await import('../release/release-service.ts')).releaseLog(project, options.rung)
       if (options.json) {
         log(JSON.stringify(rows))
         return

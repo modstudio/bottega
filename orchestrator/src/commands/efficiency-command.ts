@@ -4,18 +4,11 @@
 import type { Database } from 'bun:sqlite'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db } from '../database/db.ts'
 import type { CycleCostMetricAggregate, CycleCostWindowReport } from '../evidence/cycle-cost.ts'
-import { loadCycleCostReport } from '../evidence/cycle-cost-service.ts'
-import { loadWastedTimeReport } from '../health/wasted-time-report.ts'
 import {
   DEFAULT_EFFICIENCY_WINDOW_MS,
   HOST_PRESSURE_SAMPLE_RETENTION_MS,
 } from '../host-pressure/host-pressure-decision.ts'
-import { loadHostPressureReport } from '../host-pressure/host-pressure-report.ts'
-import { loadProvisioningReport } from '../monitor/provisioning-report.ts'
-import { loadRunResourceReport } from '../monitor/run-resource-report.ts'
-import { loadReviewYieldEfficiencyReport } from '../review/review-yield-efficiency-report.ts'
 
 type Window = { start: string; end: string }
 type Windows = { currentWindow: Window; previousWindow: Window }
@@ -96,11 +89,24 @@ const pairLines = <T>(
   format: (label: string, value: T) => string[],
 ) => [...format('Current', section.current), ...format('Previous', section.previous)]
 
-type ProvisioningWindow = { window: Window; rows: ReturnType<typeof loadProvisioningReport> }
-type ResourceWindow = { window: Window } & ReturnType<typeof loadRunResourceReport>
-type HostPressureSection = ReturnType<typeof loadHostPressureReport>
-type WastedTimeSection = ReturnType<typeof loadWastedTimeReport>
-type UsefulSection = Awaited<ReturnType<typeof loadReviewYieldEfficiencyReport>>
+type ProvisioningWindow = {
+  window: Window
+  rows: ReturnType<typeof import('../monitor/provisioning-report.ts').loadProvisioningReport>
+}
+type ResourceWindow = { window: Window } & ReturnType<
+  typeof import('../monitor/run-resource-report.ts').loadRunResourceReport
+>
+type HostPressureSection = ReturnType<
+  typeof import('../host-pressure/host-pressure-report.ts').loadHostPressureReport
+>
+type WastedTimeSection = ReturnType<
+  typeof import('../health/wasted-time-report.ts').loadWastedTimeReport
+>
+type UsefulSection = Awaited<
+  ReturnType<
+    typeof import('../review/review-yield-efficiency-report.ts').loadReviewYieldEfficiencyReport
+  >
+>
 
 export const formatProvisioning = (label: string, value: ProvisioningWindow) =>
   windowLines(
@@ -213,7 +219,9 @@ const sectionDescriptors = [
   defineSection({
     name: 'provisioning',
     title: 'Provisioning',
-    load: ({ database, windows, project }) => ({
+    load: async ({ database, windows, project }) => {
+      const { loadProvisioningReport } = await import('../monitor/provisioning-report.ts')
+      return {
       current: withWindow(windows.currentWindow, {
         rows: loadProvisioningReport(database, {
           project,
@@ -228,13 +236,16 @@ const sectionDescriptors = [
           until: windows.previousWindow.end,
         }),
       }),
-    }),
+      }
+    },
     format: (report) => pairLines(report, formatProvisioning),
   }),
   defineSection({
     name: 'resources',
     title: 'Run resources',
-    load: ({ database, windows, project }) => ({
+    load: async ({ database, windows, project }) => {
+      const { loadRunResourceReport } = await import('../monitor/run-resource-report.ts')
+      return {
       current: withWindow(
         windows.currentWindow,
         loadRunResourceReport(database, {
@@ -251,13 +262,18 @@ const sectionDescriptors = [
           until: windows.previousWindow.end,
         }),
       ),
-    }),
+      }
+    },
     format: (report) => pairLines(report, formatResources),
   }),
   defineSection({
     name: 'host-pressure',
     title: 'Host pressure',
-    load: ({ database, windows }) => loadHostPressureReport(database, windows),
+    load: async ({ database, windows }) =>
+      (await import('../host-pressure/host-pressure-report.ts')).loadHostPressureReport(
+        database,
+        windows,
+      ),
     format: (report, context) => [
       ...(context.project ? ['Project filtering is unavailable for host-pressure evidence.'] : []),
       ...(report.contentionRawHorizon &&
@@ -272,21 +288,33 @@ const sectionDescriptors = [
   defineSection({
     name: 'wasted-time',
     title: 'Wasted time',
-    load: ({ database, windows, project }) => loadWastedTimeReport(database, windows, project),
+    load: async ({ database, windows, project }) =>
+      (await import('../health/wasted-time-report.ts')).loadWastedTimeReport(
+        database,
+        windows,
+        project,
+      ),
     format: (report) => pairLines(report, formatWastedTime),
   }),
   defineSection({
     name: 'cycle-cost',
     title: 'Cycle cost',
-    load: ({ database, windows, project }) =>
-      loadCycleCostReport(database, { ...windows, project }),
+    load: async ({ database, windows, project }) =>
+      (await import('../evidence/cycle-cost-service.ts')).loadCycleCostReport(database, {
+        ...windows,
+        project,
+      }),
     format: (report) => pairLines(report, formatCycleCost),
   }),
   defineSection({
     name: 'cost-per-result',
     title: 'Cost per useful result',
-    load: ({ database, windows, project }) =>
-      loadReviewYieldEfficiencyReport(database, windows, project),
+    load: async ({ database, windows, project }) =>
+      (await import('../review/review-yield-efficiency-report.ts')).loadReviewYieldEfficiencyReport(
+        database,
+        windows,
+        project,
+      ),
     format: (report) => pairLines(report, formatUseful),
   }),
 ] as const
@@ -308,6 +336,7 @@ export async function efficiencyCommand(
   presentation: { write(value: string): Promise<void> },
   now = Date.now(),
 ): Promise<void> {
+  const { db } = await import('../database/db.ts')
   const selected = selectedEfficiencySections(options.sections)
   const context = {
     database: db(),

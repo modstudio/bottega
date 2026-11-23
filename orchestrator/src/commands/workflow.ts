@@ -8,36 +8,9 @@ import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
-import {
-  abandonCommand,
-  attachCommand,
-  awaitCommand,
-  catalogueVersionsCommand,
-  composeCommand,
-  execCommand,
-  forkWorkflowCommand,
-  listWorkflowCommand,
-  nextCommand,
-  probeCommand,
-  promoteCatalogueCommand,
-  promoteWorkflowCommand,
-  queueChildCommand,
-  recordEvidenceCommand,
-  renderCheckCommand,
-  repinCommand,
-  retireCatalogueCommand,
-  retireWorkflowCommand,
-  ruleCommand,
-  setCatalogueCommand,
-  setWorkflowCommand,
-  showCatalogueCommand,
-  showWorkflowCommand,
-  startChildCommand,
-  stepCommand,
-  type WorkflowCommandOptions,
-  type WorkflowPresentation,
-  workflowPrint,
-  workflowVersionsCommand,
+import type {
+  WorkflowCommandOptions,
+  WorkflowPresentation,
 } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
@@ -68,6 +41,55 @@ const presentation: WorkflowPresentation = {
     process.exitCode = code
   },
 }
+
+type WorkflowCommands = typeof import('../workflow/workflow-commands.ts')
+type WorkflowCommandName = {
+  [Name in keyof WorkflowCommands]: WorkflowCommands[Name] extends (...args: never[]) => unknown
+    ? Name
+    : never
+}[keyof WorkflowCommands]
+const lazyWorkflowCommand = <Name extends WorkflowCommandName>(name: Name) =>
+  async (
+    ...args: Parameters<WorkflowCommands[Name]>
+  ): Promise<Awaited<ReturnType<WorkflowCommands[Name]>>> => {
+    const commands = await import('../workflow/workflow-commands.ts')
+    return await (
+      commands[name] as unknown as (
+        ...values: Parameters<WorkflowCommands[Name]>
+      ) => ReturnType<WorkflowCommands[Name]>
+    )(...args)
+  }
+
+const abandonCommand = lazyWorkflowCommand('abandonCommand')
+const attachCommand = lazyWorkflowCommand('attachCommand')
+const awaitCommand = lazyWorkflowCommand('awaitCommand')
+const catalogueVersionsCommand = lazyWorkflowCommand('catalogueVersionsCommand')
+const composeCommand = lazyWorkflowCommand('composeCommand')
+const execCommand = lazyWorkflowCommand('execCommand')
+const forkWorkflowCommand = lazyWorkflowCommand('forkWorkflowCommand')
+const listWorkflowCommand = lazyWorkflowCommand('listWorkflowCommand')
+const nextCommand = lazyWorkflowCommand('nextCommand')
+const probeCommand = lazyWorkflowCommand('probeCommand')
+const promoteCatalogueCommand = lazyWorkflowCommand('promoteCatalogueCommand')
+const promoteWorkflowCommand = lazyWorkflowCommand('promoteWorkflowCommand')
+const queueChildCommand = lazyWorkflowCommand('queueChildCommand')
+const recordEvidenceCommand = lazyWorkflowCommand('recordEvidenceCommand')
+const renderCheckCommand = lazyWorkflowCommand('renderCheckCommand')
+const repinCommand = lazyWorkflowCommand('repinCommand')
+const retireCatalogueCommand = lazyWorkflowCommand('retireCatalogueCommand')
+const retireWorkflowCommand = lazyWorkflowCommand('retireWorkflowCommand')
+const ruleCommand = lazyWorkflowCommand('ruleCommand')
+const setCatalogueCommand = lazyWorkflowCommand('setCatalogueCommand')
+const setWorkflowCommand = lazyWorkflowCommand('setWorkflowCommand')
+const showCatalogueCommand = lazyWorkflowCommand('showCatalogueCommand')
+const showWorkflowCommand = lazyWorkflowCommand('showWorkflowCommand')
+const startChildCommand = lazyWorkflowCommand('startChildCommand')
+const stepCommand = lazyWorkflowCommand('stepCommand')
+const workflowVersionsCommand = lazyWorkflowCommand('workflowVersionsCommand')
+
+const workflowPrint = (json: boolean, output: WorkflowPresentation) =>
+  (value: unknown, line?: string): void =>
+    output.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
 
 const jsonOption = (command: Command) => command.option('--json', 'print JSON output')
 const reasonOption = (command: Command) =>
