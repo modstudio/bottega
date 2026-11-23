@@ -12,7 +12,7 @@ import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { activeRecordSpace, workflowReadSpace } from '../project-space.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
-import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 
 const missingProjectRouteRefusal = (project: string) =>
   `project ${project} route unknown, run \`${PLATFORM_SLUG} record sync\``
@@ -28,7 +28,7 @@ export function workflowReadSpaceFor(local: Database, project: string | null): s
     project,
     projectSpace,
     activeSpace: activeRecordSpace(local),
-    localAuthoritative: !hostedRecordOwnsHostedTables(local),
+    localAuthoritative: !storeHasAttachedToHostedRecord(local),
     missingActiveSpaceRefusal: RECORD_ACTIVE_SPACE_REMEDY,
     missingProjectRouteRefusal: missingProjectRoute,
     rejectedProjectRouteRefusal: declaredSpace

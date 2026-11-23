@@ -64,6 +64,18 @@ describe('MCP workflow space', () => {
 })
 
 describe('workflow prompt definitions', () => {
+  test('a configured record URL without an install binding still builds local workflow prompts', () => {
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    expect(db().query('SELECT 1 FROM record_install_binding WHERE id=1').get()).toBeNull()
+    try {
+      expect(() => createDocsMcpServer()).not.toThrow()
+    } finally {
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+    }
+  })
+
   test('declared-argument and mode-list mutation: retains every argument and mode, naming the required ones', () => {
     const [prompt] = workflowPromptDefinitions([
       workflow('ship-task', [

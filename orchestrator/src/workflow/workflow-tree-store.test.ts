@@ -145,7 +145,6 @@ test('a bound production read refuses a project whose route has not been pulled'
   seedHostedProduction(d, activeSpace, catalogue, workflow, 'Active-space workflow')
   rememberActiveRecordSpace(d, activeSpace)
   d.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-24T00:00:00.000Z')")
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
 
   expect(() => productionWorkflowTree({ database: d, project })).toThrow(
     `project ${project} route unknown, run \`${PLATFORM_SLUG} record sync\``,
@@ -761,7 +760,6 @@ describe('importWorkflowTree', () => {
     const catalogueEventId = newRecordId()
     let writes = 0
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-    rememberActiveRecordSpace(d, HOSTED_SPACE)
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
       whoami: async () => ({

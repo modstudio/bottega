@@ -2,6 +2,7 @@
 /** Reads hosted workflow state and applies single-space or shared promotions. */
 import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
   applyWorkflowCatalogueRows,
@@ -12,7 +13,6 @@ import {
   RECORD_WORKFLOW_TABLES,
   type RecordWorkflowTable,
 } from '../record/record-workflow-contract.ts'
-import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
@@ -76,7 +76,7 @@ type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
 export const sharedPromotionTargetSpaces = (
   d: Database,
   spaceIds: readonly string[],
-): (string | null)[] => (hostedRecordOwnsHostedTables(d) ? [...spaceIds] : [null, ...spaceIds])
+): (string | null)[] => (storeHasAttachedToHostedRecord(d) ? [...spaceIds] : [null, ...spaceIds])
 
 async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>(
   input: SharedWorkflowPromotionInput<Row>,
