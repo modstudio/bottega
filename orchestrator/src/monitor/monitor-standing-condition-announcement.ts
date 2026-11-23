@@ -1,4 +1,4 @@
-// concern: monitor-collector-leg-announcement
+// concern: monitor-standing-condition-announcement
 /** Resolves persistence and applies standing condition notices without failing a monitor pass. */
 
 import type { Database } from 'bun:sqlite'
@@ -6,10 +6,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideStandingConditionAnnouncement,
   isAnnouncedStandingConditionKind,
+  POINT_IN_TIME_STANDING_CONDITION_KINDS,
   STANDING_CONDITION_NOTICE_PREFIX,
-  STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
+  standingConditionNoticeTitle,
+  type AnnouncedStandingConditionKind,
   type StandingConditionCandidate,
-} from './collector-leg-announcement.ts'
+} from './standing-condition-announcement.ts'
 import {
   announceHostedPressureActions,
   type HostedPressureAnnouncementDependencies,
@@ -49,12 +51,17 @@ function candidateFor(
 ): StandingConditionCandidate | null {
   if (!isAnnouncedStandingConditionKind(condition.kind)) return null
   const parsedSince = condition.since === null ? Number.NaN : Date.parse(condition.since)
-  const onset = Number.isFinite(parsedSince)
+  const pointInTime = (POINT_IN_TIME_STANDING_CONDITION_KINDS as readonly string[]).includes(
+    condition.kind,
+  )
+  const onset = !pointInTime && Number.isFinite(parsedSince)
     ? condition.since!
-    : condition.ageMs !== null
+    : !pointInTime && condition.ageMs !== null
       ? new Date(clock - condition.ageMs).toISOString()
       : standingConditionHistoryOnset(database, condition.kind, currentStartedAt)
-  const persistedMs = condition.ageMs ?? Math.max(0, clock - Date.parse(onset))
+  const persistedMs = pointInTime
+    ? Math.max(0, clock - Date.parse(onset))
+    : (condition.ageMs ?? Math.max(0, clock - Date.parse(onset)))
   return {
     condition: {
       kind: condition.kind,
@@ -78,6 +85,7 @@ export async function announceStandingConditions(
   clock: number,
   currentStartedAt: string,
   dependencies: HostedPressureAnnouncementDependencies = {},
+  unobservedKinds: ReadonlySet<AnnouncedStandingConditionKind> = new Set(),
 ): Promise<{ errors: string[] }> {
   try {
     const candidates = conditions.flatMap((condition) => {
@@ -85,7 +93,7 @@ export async function announceStandingConditions(
       return candidate ? [candidate] : []
     })
     await announceHostedPressureActions(
-      (messages) => decideStandingConditionAnnouncement(candidates, messages),
+      (messages) => decideStandingConditionAnnouncement(candidates, messages, unobservedKinds),
       dependencies,
       clock,
       {
@@ -120,7 +128,6 @@ export async function announceStoreWriteLockCondition(
     return { errors: [] }
   }
   const persistedMs = Math.max(0, clock - Date.parse(onset))
-  if (persistedMs < STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS) return { errors: [] }
   const candidate: StandingConditionCandidate = {
     condition: {
       kind: 'store-write-lock-held',
@@ -132,7 +139,7 @@ export async function announceStoreWriteLockCondition(
     persistedMs,
   }
   try {
-    const title = `${STANDING_CONDITION_NOTICE_PREFIX} store-write-lock-held`
+    const title = standingConditionNoticeTitle('store-write-lock-held', condition.subject)
     await announceHostedPressureActions(
       (messages) =>
         decideStandingConditionAnnouncement(

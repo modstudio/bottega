@@ -9,7 +9,7 @@ import {
   STANDING_CONDITION_NOTICE_PREFIX,
   STANDING_CONDITION_NOTICE_TTL_MS,
   type StandingConditionCandidate,
-} from './collector-leg-announcement.ts'
+} from './standing-condition-announcement.ts'
 
 const candidate = (
   kind: StandingConditionCandidate['condition']['kind'],
@@ -108,15 +108,6 @@ describe('standing condition announcement decision', () => {
     )
     const body = actions[0]?.kind === 'post' ? actions[0].notice.body : ''
     expect(body).toContain('2 live outbox-quarantined conditions; oldest outbox:1')
-  })
-
-  test('an expired notice for a still-failing condition is posted again', () => {
-    expect(
-      decideStandingConditionAnnouncement(
-        [candidate('record-tunnel-down', 'record', RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS)],
-        [],
-      ),
-    ).toHaveLength(1)
   })
 
   test('another prefix is ignored', () => {

@@ -73,6 +73,7 @@ describe('collector leg state', () => {
         state({ source: 'transcripts', lastSuccessAt: '2026-11-20T11:59:50.000Z' }),
       ],
       Date.parse('2026-11-20T12:00:00.000Z'),
+      { count: 0, oldest: null },
     )
     expect(view.collectedAt).toBe('2026-11-20T11:00:00.000Z')
     expect(view.collectorLegs).toEqual([
@@ -154,7 +155,12 @@ describe('collector leg state', () => {
 
     const observations = collectorLegStates()
     expect(observations).toEqual([{ unreadable: true, key: 'collect.leg.hosted%20outbox' }])
-    expect(collectorLegView(observations, Date.parse('2026-11-20T12:00:00.000Z'))).toEqual({
+    expect(
+      collectorLegView(observations, Date.parse('2026-11-20T12:00:00.000Z'), {
+        count: 0,
+        oldest: null,
+      }),
+    ).toEqual({
       collectedAt: null,
       collectorLegs: [
         {

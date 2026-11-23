@@ -157,7 +157,12 @@ export function collectorLegFailureDecision(
 export function observeCollectorLegFailures(
   now = Date.now(),
   spawn: typeof Bun.spawnSync = Bun.spawnSync,
-): { conditions: MonitorCondition[]; errors: string[]; failures: CollectorLegFailure[] } {
+): {
+  conditions: MonitorCondition[]
+  errors: string[]
+  failures: CollectorLegFailure[]
+  unobservedKinds: Set<'collector-leg-failure'>
+} {
   const command = [...bottegaEntryArgv(PLATFORM_SLUG), 'record', 'collector-legs', '--json']
   try {
     const child = spawn(command, { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } })
@@ -167,14 +172,16 @@ export function observeCollectorLegFailures(
         conditions: [],
         errors: [`collector leg observation unavailable: ${detail}`],
         failures: [],
+        unobservedKinds: new Set(['collector-leg-failure']),
       }
     }
     const value: unknown = JSON.parse(child.stdout.toString())
-    return collectorLegFailureDecision(value, now)
+    return { ...collectorLegFailureDecision(value, now), unobservedKinds: new Set() }
   } catch (cause) {
     return {
       conditions: [],
       failures: [],
+      unobservedKinds: new Set(['collector-leg-failure']),
       errors: [
         `collector leg observation unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
       ],

@@ -62,6 +62,7 @@ describe('record tunnel monitor condition', () => {
     expect(await observeUnconfigured(async () => false)).toEqual({
       conditions: [],
       errors: [],
+      unobservedKinds: new Set(),
     })
   })
 
@@ -70,7 +71,7 @@ describe('record tunnel monitor condition', () => {
       await observeUnconfigured(async () => {
         throw new ConfigClientError('not-configured', '/v1/config')
       }),
-    ).toEqual({ conditions: [], errors: [] })
+    ).toEqual({ conditions: [], errors: [], unobservedKinds: new Set() })
   })
 
   test('names the endpoint and kickstart remedy when configured but unreachable', () => {

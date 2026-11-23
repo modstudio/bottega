@@ -144,18 +144,22 @@ function applyDeleteChange(
   spaceId: string,
   family: HostedChangeFamily,
   counts: SpaceCounts,
-) {
+): boolean {
   const decision = classifyHostedChangeDelete(
     family.rowSpace(conn, change.table, change.id),
     spaceId,
   )
   if (decision === 'skip') {
     counts.deletesSkipped += 1
-    return
+    return false
   }
   const reconciled = applyDelete(conn, change, family)
-  if (reconciled.kind === 'skipped') counts.deletesSkipped += 1
-  else counts.deletesApplied += 1
+  if (reconciled.kind === 'skipped') {
+    counts.deletesSkipped += 1
+    return false
+  }
+  counts.deletesApplied += 1
+  return true
 }
 
 function applyOneChangeUnchecked(
@@ -164,28 +168,26 @@ function applyOneChangeUnchecked(
   spaceId: string,
   family: HostedChangeFamily,
   counts: SpaceCounts,
-) {
-  if (!family.accepts(change.table)) return
+): boolean {
+  if (!family.accepts(change.table)) return false
   if (
     change.op === 'upsert' &&
     Object.hasOwn(HOSTED_MACHINE_TABLES, change.table) &&
     (change.row as { deleted_at?: string | null } | undefined)?.deleted_at
   ) {
-    applyDeleteChange(conn, { ...change, op: 'delete' }, spaceId, family, counts)
-    return
+    return applyDeleteChange(conn, { ...change, op: 'delete' }, spaceId, family, counts)
   }
   const pending = pendingHostedEdit(conn, change.table, change.id)
   if (change.op !== 'delete' && pendingEditSkipsPull(pending)) {
     counts.upsertsNoop += 1
-    return
+    return false
   }
   if (change.op === 'delete') {
-    applyDeleteChange(conn, change, spaceId, family, counts)
-    return
+    return applyDeleteChange(conn, change, spaceId, family, counts)
   }
   if (change.row === undefined) {
     counts.upsertsNoop += 1
-    return
+    return false
   }
   const reconciled = Object.hasOwn(HOSTED_MACHINE_TABLES, change.table)
     ? reconcilePulledRow(conn, {
@@ -207,12 +209,13 @@ function applyOneChangeUnchecked(
       })()
   if (reconciled.kind === 'skipped') {
     counts.upsertsNoop += 1
-    return
+    return false
   }
   const { before, after } = reconciled
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else counts.upsertsChanged += 1
+  return true
 }
 
 function applyOneChange(
@@ -221,8 +224,8 @@ function applyOneChange(
   spaceId: string,
   family: HostedChangeFamily,
   counts: SpaceCounts,
-) {
-  applyHostedRow(family.failureLabel, change.table, change.id, () =>
+): boolean {
+  return applyHostedRow(family.failureLabel, change.table, change.id, () =>
     applyOneChangeUnchecked(conn, change, spaceId, family, counts),
   )
 }
@@ -247,7 +250,48 @@ function noteFamily(
       return {
         cursor: snapshot.cursor,
         more: snapshot.more ?? false,
-        apply: (conn) => applyHostedNoteRows(conn, snapshot),
+        apply: [
+          ...snapshot.notes.map((row) => ({
+            change: {
+              table: 'hub_note',
+              id: row.id,
+              op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
+              row,
+            },
+            apply: (conn: Database) => {
+              applyHostedNote(conn, row)
+              return true
+            },
+          })),
+          ...snapshot.acknowledgements.map((row) => ({
+            change: {
+              table: 'hub_note_acknowledgement',
+              id: row.id,
+              op: row.deleted_at ? ('delete' as const) : ('upsert' as const),
+              row,
+            },
+            apply: (conn: Database) => {
+              applyHostedAcknowledgement(conn, row)
+              return true
+            },
+          })),
+          ...snapshot.projectCounters.map((counter) => ({
+            change: {
+              table: 'hub_note_counter',
+              id: counter.project,
+              op: 'upsert' as const,
+              row: counter,
+            },
+            apply: (conn: Database) => {
+              applyHostedNoteRows(conn, {
+                notes: [],
+                acknowledgements: [],
+                projectCounters: [counter],
+              })
+              return true
+            },
+          })),
+        ],
       }
     },
     preparePage: async (page, options) => {
@@ -263,7 +307,13 @@ function noteFamily(
         .map((change) => change.row as HostedAcknowledgement)
       const fetched = await completeAcknowledgementNotes(noteChanges, acknowledgements, options)
       return {
-        apply: fetched.map((note) => (conn: Database) => applyHostedNote(conn, note)),
+        apply: fetched.map((note) => ({
+          change: { table: 'hub_note', id: note.id, op: 'upsert' as const, row: note },
+          apply: (conn: Database) => {
+            applyHostedNote(conn, note)
+            return true
+          },
+        })),
         skippedForAbsentParent: new Set<string>(),
       }
     },
@@ -343,10 +393,22 @@ function applyFeedChange(
   change: HostedRecordChange,
   counts: SpaceCounts,
 ): void {
+  applyQuarantinableRow(conn, feed.name, change.space, change, (rowConn) =>
+    applyOneChange(rowConn, change, change.space, feed.family, counts),
+  )
+}
+
+function applyQuarantinableRow(
+  conn: Database,
+  feed: FamilyName,
+  space: string,
+  change: HostedPreparedChange,
+  apply: (conn: Database) => boolean,
+): void {
   conn.exec('SAVEPOINT hosted_change_row')
   try {
-    applyOneChange(conn, change, change.space, feed.family, counts)
-    clearHostedChangeQuarantine(conn, feed.name, change.space, change)
+    const wrote = apply(conn)
+    if (wrote) clearHostedChangeQuarantine(conn, feed, space, change)
     conn.exec('RELEASE SAVEPOINT hosted_change_row')
   } catch (cause) {
     const constraint = sqliteConstraintError(cause)
@@ -355,7 +417,7 @@ function applyFeedChange(
       conn.exec('RELEASE SAVEPOINT hosted_change_row')
       throw cause
     }
-    recordHostedChangeQuarantine(conn, feed.name, change.space, change, constraint.message)
+    recordHostedChangeQuarantine(conn, feed, space, change, constraint.message)
     conn.exec('RELEASE SAVEPOINT hosted_change_row')
   }
 }
@@ -390,7 +452,8 @@ async function runFullPull(feed: FeedFamily, space: string, shared: PullOptions)
     if (page.more && page.cursor === cursor)
       throw new Error('hosted snapshot cursor did not advance')
     writeTransaction((conn) => {
-      page.apply(conn)
+      for (const action of page.apply)
+        applyQuarantinableRow(conn, feed.name, space, action.change, action.apply)
       if (page.more) putSetting(conn, key, page.cursor)
       else conn.query('DELETE FROM setting WHERE key=?').run(key)
     })
@@ -452,7 +515,8 @@ async function applyFeedPage(
       )
     for (const feed of families) {
       for (const space of feed.spaces)
-        for (const apply of prepared.get(pair(feed.name, space))!.apply) apply(conn)
+        for (const action of prepared.get(pair(feed.name, space))!.apply)
+          applyQuarantinableRow(conn, feed.name, space, action.change, action.apply)
       const ordered = subsets
         .get(feed.name)!
         .map((change, index) => ({ change, index }))

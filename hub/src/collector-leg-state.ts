@@ -122,7 +122,7 @@ export function collectorLegStates(): CollectorLegObservation[] {
 export function collectorLegView(
   states: readonly CollectorLegObservation[],
   now: number,
-  hostedChangeQuarantine?: HostedChangeQuarantineSummary,
+  hostedChangeQuarantine: HostedChangeQuarantineSummary,
 ): { collectedAt: string | null; collectorLegs: CollectorLegHealth[] } {
   const collectorLegs = states.map((state): CollectorLegHealth => {
     if ('unreadable' in state) {
@@ -138,7 +138,7 @@ export function collectorLegView(
     }
     const staleness = collectionStaleness(now, state.lastSuccessAt)
     const quarantine =
-      state.source === 'hosted changes' && hostedChangeQuarantine
+      state.source === 'hosted changes'
         ? {
             quarantinedRows: hostedChangeQuarantine.count,
             oldestQuarantinedRow: hostedChangeQuarantine.oldest

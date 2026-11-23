@@ -5,15 +5,16 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import {
+  DISK_PRESSURE_NOTICE_THRESHOLD_MS,
   RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS,
   STANDING_CONDITION_NOTICE_PREFIX,
   STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
-} from './collector-leg-announcement.ts'
+} from './standing-condition-announcement.ts'
 import {
   announceStandingConditions,
   announceStoreWriteLockCondition,
   standingConditionHistoryOnset,
-} from './monitor-collector-leg-announcement.ts'
+} from './monitor-standing-condition-announcement.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const env = {
@@ -129,6 +130,71 @@ test('one finished pass without the kind resets the history onset', () => {
     expect(
       standingConditionHistoryOnset(database, 'record-tunnel-down', '2026-11-22T12:08:00.000Z'),
     ).toBe('2026-11-22T12:08:00.000Z')
+  } finally {
+    database.close()
+  }
+})
+
+test('a point-in-time disk observation uses history onset to reach its threshold', async () => {
+  const database = migratedTestDatabase()
+  const onset = '2026-11-22T12:00:00.000Z'
+  const posts: Parameters<RecordApiClient['postBoardMessage']>[0][] = []
+  try {
+    finishedPass(database, onset, ['disk-pressure'])
+    await announceStandingConditions(
+      database,
+      [condition('disk-pressure', 'data volume', '2026-11-22T12:10:00.000Z', 0)],
+      Date.parse(onset) + DISK_PRESSURE_NOTICE_THRESHOLD_MS,
+      '2026-11-22T12:10:00.000Z',
+      {
+        env,
+        destinationResolver,
+        boardClient: fakeBoard({
+          postBoardMessage: async (input) => {
+            posts.push(input)
+            return { id: 'posted' } as Awaited<ReturnType<RecordApiClient['postBoardMessage']>>
+          },
+        }),
+      },
+    )
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.title).toBe(`${STANDING_CONDITION_NOTICE_PREFIX} disk-pressure`)
+  } finally {
+    database.close()
+  }
+})
+
+test('an unobserved collector leg keeps its open notice', async () => {
+  const database = migratedTestDatabase()
+  const withdrawals: string[] = []
+  try {
+    await announceStandingConditions(
+      database,
+      [],
+      Date.now(),
+      new Date().toISOString(),
+      {
+        env,
+        destinationResolver,
+        boardClient: fakeBoard({
+          listBoardMessages: async () => ({
+            messages: [
+              {
+                id: 'collector',
+                title: `${STANDING_CONDITION_NOTICE_PREFIX} collector leg hosted changes`,
+              },
+            ],
+            truncated: false,
+          }) as Awaited<ReturnType<RecordApiClient['listBoardMessages']>>,
+          withdrawBoardMessage: async (id) => {
+            withdrawals.push(id)
+            return { id } as Awaited<ReturnType<RecordApiClient['withdrawBoardMessage']>>
+          },
+        }),
+      },
+      new Set(['collector-leg-failure']),
+    )
+    expect(withdrawals).toEqual([])
   } finally {
     database.close()
   }

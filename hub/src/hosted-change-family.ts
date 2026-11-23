@@ -24,7 +24,7 @@ type HostedChangeRequestOptions = {
 }
 
 export type HostedPreparedPage = {
-  apply: Array<(conn: Database) => void>
+  apply: HostedRowApply[]
   skippedForAbsentParent: ReadonlySet<string>
 }
 
@@ -37,6 +37,11 @@ export type HostedPreparedChange = {
 
 export type HostedPreparedChangePage = { changes: HostedPreparedChange[] }
 
+export type HostedRowApply = {
+  change: HostedPreparedChange
+  apply: (conn: Database) => boolean
+}
+
 export type HostedChangeFamily = {
   cursorPrefix: string
   tables: string
@@ -47,7 +52,7 @@ export type HostedChangeFamily = {
   fullPull: (
     cursor: string | null,
     options: HostedChangeRequestOptions,
-  ) => Promise<{ cursor: string; more: boolean; apply: (conn: Database) => void }>
+  ) => Promise<{ cursor: string; more: boolean; apply: HostedRowApply[] }>
   preparePage?: (
     page: HostedPreparedChangePage,
     options: HostedChangeRequestOptions,

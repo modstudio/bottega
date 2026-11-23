@@ -3,6 +3,7 @@ import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { attributeRun } from './attribute.ts'
 import { leaseHolder } from './collect.ts'
 import { collectorLegStates, collectorLegView } from './collector-leg-state.ts'
+import { hostedChangeQuarantineSummary } from './hosted-change-quarantine.ts'
 import { nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
@@ -165,7 +166,11 @@ export function strip(hours: number) {
   const rows = window.tasks
   const active = new Set(rows.flatMap((r) => r.activeAgents))
   const r = ratioSummary(14, false)
-  const collection = collectorLegView(collectorLegStates(), Date.now())
+  const collection = collectorLegView(
+    collectorLegStates(),
+    Date.now(),
+    hostedChangeQuarantineSummary(db()),
+  )
   return {
     window: `${hours}h`,
     ...collection,

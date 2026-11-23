@@ -31,7 +31,7 @@ import {
   monitorHistoryReleasedBefore,
   monitorWorktreeReleases,
 } from './monitor.ts'
-import { announceStoreWriteLockCondition } from './monitor-collector-leg-announcement.ts'
+import { announceStoreWriteLockCondition } from './monitor-standing-condition-announcement.ts'
 import {
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,

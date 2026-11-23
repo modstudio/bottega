@@ -189,3 +189,35 @@ test('a later successful change clears the quarantine for that row', async () =>
     status_category: 'open',
   })
 })
+
+test('a pending-edit skip leaves the quarantine row in place', async () => {
+  seedFeed()
+  let pass = 0
+  const fetch = async (input: string) => {
+    const url = new URL(input)
+    if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
+    if (url.pathname === '/v1/changes') {
+      pass += 1
+      return Response.json({
+        changes: [{ ...badChange(), row: task(pass === 1 ? 'not-a-category' : 'open') }],
+        cursor: pass === 1 ? 'middle' : 'after',
+        lag: 0,
+        more: false,
+      })
+    }
+    throw new Error(`unexpected route ${url.pathname}`)
+  }
+
+  await pullHostedChanges({ ...options, fetch })
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at,fields)
+         VALUES (?,'hub_task',?,'upsert',?,NULL)`,
+      )
+      .run(Bun.randomUUIDv7(), taskId, at),
+  )
+  await pullHostedChanges({ ...options, fetch })
+
+  expect(hostedChangeQuarantineRows(db())).toEqual([expect.objectContaining({ rowId: taskId })])
+})

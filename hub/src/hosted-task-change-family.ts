@@ -8,7 +8,7 @@ import type {
 import { hostedTaskReference } from './hosted-task-reference.ts'
 import {
   applyHostedChangeUpsert,
-  applyHostedTaskRows,
+  applyHostedTaskSnapshotRow,
   childTaskRecordId,
   deleteHostedChangeRow,
   HOSTED_TASK_CHANGE_TABLE_QUERY,
@@ -105,18 +105,10 @@ async function prepareTaskParents(
   }
   return {
     apply: [...fetched.values()].map(
-      (task) => (conn: Database) =>
-        applyHostedTaskRows(
-          conn,
-          {
-            tasks: [task],
-            comments: [],
-            documents: [],
-            statusEvents: [],
-            cursor: '',
-          },
-          TASK_CHANGE_FAILURE_LABEL,
-        ),
+      (task) => ({
+        change: { table: 'hub_task', id: task.id, op: 'upsert' as const, row: task },
+        apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task', task),
+      }),
     ),
     skippedForAbsentParent: absent,
   }
@@ -135,7 +127,27 @@ export function createHostedTaskChangeFamily(
       return {
         cursor: snapshot.cursor,
         more: snapshot.more ?? false,
-        apply: (conn) => applyHostedTaskRows(conn, snapshot, TASK_CHANGE_FAILURE_LABEL),
+        apply: [
+          ...snapshot.tasks.map((row) => ({
+            change: { table: 'hub_task', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task', row),
+          })),
+          ...snapshot.comments.map((row) => ({
+            change: { table: 'hub_task_comment', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) =>
+              applyHostedTaskSnapshotRow(conn, 'hub_task_comment', row),
+          })),
+          ...snapshot.documents.map((row) => ({
+            change: { table: 'hub_task_document', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) =>
+              applyHostedTaskSnapshotRow(conn, 'hub_task_document', row),
+          })),
+          ...snapshot.statusEvents.map((row) => ({
+            change: { table: 'hub_task_status_event', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) =>
+              applyHostedTaskSnapshotRow(conn, 'hub_task_status_event', row),
+          })),
+        ],
       }
     },
     preparePage: prepareTaskParents,

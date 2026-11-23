@@ -47,7 +47,7 @@ import { branchInventoryDecision, branchMonitorConditions } from './monitor-bran
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
-import { announceStandingConditions } from './monitor-collector-leg-announcement.ts'
+import { announceStandingConditions } from './monitor-standing-condition-announcement.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -104,6 +104,7 @@ import { observeReaderTreeConditions } from './reader-tree-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
 import { workerNoteSilenceConditions } from './worker-note-silence-conditions.ts'
+import type { AnnouncedStandingConditionKind } from './standing-condition-announcement.ts'
 
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
@@ -127,6 +128,7 @@ async function initialMonitorObservations(
   conditions: MonitorCondition[]
   errors: string[]
   hostPressure: MonitorResult['hostPressure']
+  unobservedStandingKinds: Set<AnnouncedStandingConditionKind>
 }> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
@@ -146,6 +148,10 @@ async function initialMonitorObservations(
     ],
     errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
     hostPressure: hostPressure.report,
+    unobservedStandingKinds: new Set([
+      ...(diskPressure.errors.length ? (['disk-pressure'] as const) : []),
+      ...collectorLegs.unobservedKinds,
+    ]),
   }
 }
 
@@ -663,8 +669,16 @@ async function appendErrors(
   clock: number,
   startedAt: string,
   invocationNumber: number,
+  unobservedKinds: ReadonlySet<AnnouncedStandingConditionKind>,
 ): Promise<void> {
-  const standing = await announceStandingConditions(database, conditions, clock, startedAt)
+  const standing = await announceStandingConditions(
+    database,
+    conditions,
+    clock,
+    startedAt,
+    {},
+    unobservedKinds,
+  )
   errors.push(...standing.errors)
   errors.forEach((detail, index) => {
     conditions.push({
@@ -688,7 +702,8 @@ export async function monitor(
     startedAt,
   )
   const load = sampleMonitorHostLoad(database, invocationRecordId)
-  const { conditions, errors, hostPressure } = await initialMonitorObservations(database, clock)
+  const { conditions, errors, hostPressure, unobservedStandingKinds } =
+    await initialMonitorObservations(database, clock)
   const canon = await monitorCanonSummary()
   type ConditionInput =
     | (Omit<AddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
@@ -735,6 +750,7 @@ export async function monitor(
   const recordTunnel = await observeRecordTunnel()
   conditions.push(...recordTunnel.conditions)
   errors.push(...recordTunnel.errors)
+  for (const kind of recordTunnel.unobservedKinds) unobservedStandingKinds.add(kind)
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
@@ -826,6 +842,7 @@ export async function monitor(
     const releaseLive = observeProjectReleaseLive(project)
     conditions.push(...releaseLive.conditions)
     errors.push(...releaseLive.errors)
+    if (releaseLive.errors.length) unobservedStandingKinds.add('release-live-differs')
     const recipeDatabases = recipeDatabaseObservations(project, database)
     conditions.push(...recipeDatabases.conditions)
     errors.push(...recipeDatabases.errors)
@@ -987,7 +1004,15 @@ export async function monitor(
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process
   // log has rotated away.
-  await appendErrors(database, conditions, errors, clock, startedAt, invocationNumber)
+  await appendErrors(
+    database,
+    conditions,
+    errors,
+    clock,
+    startedAt,
+    invocationNumber,
+    unobservedStandingKinds,
+  )
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
   // otherwise both observe no prior delivery and create duplicate pending rows.

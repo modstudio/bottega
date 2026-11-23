@@ -29,9 +29,13 @@ export function createHostedSendChangeFamily(
       return {
         cursor: cursor ?? '',
         more: false,
-        apply: (conn) => {
-          for (const row of sends) cacheHostedSend(conn, row)
-        },
+        apply: sends.map((row) => ({
+          change: { table: 'hub_send', id: row.id, op: 'upsert' as const, row },
+          apply: (conn) => {
+            cacheHostedSend(conn, row)
+            return true
+          },
+        })),
       }
     },
     tableOrder: () => 0,

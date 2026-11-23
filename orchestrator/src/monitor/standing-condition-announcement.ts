@@ -1,4 +1,4 @@
-// concern: collector-leg-announcement
+// concern: standing-condition-announcement
 /** Pure standing-board-notice decisions for persistent unowned monitor conditions. */
 
 import type { HostedBoardOverviewEntry } from '../record/record-board-contract.ts'
@@ -12,9 +12,9 @@ export const STANDING_CONDITION_DETAIL_LINE_CHARS = 160
 export const COLLECTOR_LEG_FAILURE_NOTICE_THRESHOLD_MS = COLLECTOR_LEG_FAILURE_WARN_MS
 export const RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS = 5 * 60_000
 export const STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS = 10 * 60_000
-const DISK_PRESSURE_NOTICE_THRESHOLD_MS = 10 * 60_000
+export const DISK_PRESSURE_NOTICE_THRESHOLD_MS = 10 * 60_000
 export const OUTBOX_QUARANTINED_NOTICE_THRESHOLD_MS = 30 * 60_000
-const RELEASE_LIVE_DIFFERS_NOTICE_THRESHOLD_MS = 30 * 60_000
+export const RELEASE_LIVE_DIFFERS_NOTICE_THRESHOLD_MS = 30 * 60_000
 
 const ANNOUNCED_STANDING_CONDITION_KINDS = [
   'collector-leg-failure',
@@ -24,6 +24,8 @@ const ANNOUNCED_STANDING_CONDITION_KINDS = [
   'outbox-quarantined',
   'release-live-differs',
 ] as const
+
+export const POINT_IN_TIME_STANDING_CONDITION_KINDS = ['disk-pressure'] as const
 
 export type AnnouncedStandingConditionKind = (typeof ANNOUNCED_STANDING_CONDITION_KINDS)[number]
 
@@ -58,10 +60,27 @@ function cappedDetailLine(detail: string): string {
     : `${line.slice(0, STANDING_CONDITION_DETAIL_LINE_CHARS - 1)}…`
 }
 
+export function standingConditionNoticeTitle(
+  kind: AnnouncedStandingConditionKind,
+  subject: string,
+): string {
+  return kind === 'collector-leg-failure'
+    ? `${STANDING_CONDITION_NOTICE_PREFIX} collector leg ${subject}`
+    : `${STANDING_CONDITION_NOTICE_PREFIX} ${kind}`
+}
+
 function titleFor(candidate: StandingConditionCandidate): string {
-  return candidate.condition.kind === 'collector-leg-failure'
-    ? `${STANDING_CONDITION_NOTICE_PREFIX} collector leg ${candidate.condition.subject}`
-    : `${STANDING_CONDITION_NOTICE_PREFIX} ${candidate.condition.kind}`
+  return standingConditionNoticeTitle(candidate.condition.kind, candidate.condition.subject)
+}
+
+function noticeKind(title: string): AnnouncedStandingConditionKind | null {
+  const collectorPrefix = `${STANDING_CONDITION_NOTICE_PREFIX} collector leg `
+  if (title.startsWith(collectorPrefix)) return 'collector-leg-failure'
+  return (
+    ANNOUNCED_STANDING_CONDITION_KINDS.find(
+      (kind) => kind !== 'collector-leg-failure' && title === standingConditionNoticeTitle(kind, ''),
+    ) ?? null
+  )
 }
 
 function noticeFor(group: readonly StandingConditionCandidate[]): StandingNotice {
@@ -107,6 +126,7 @@ function groupedCandidates(
 export function decideStandingConditionAnnouncement(
   candidates: readonly StandingConditionCandidate[],
   openNotices: readonly OpenNotice[],
+  unobservedKinds: ReadonlySet<AnnouncedStandingConditionKind> = new Set(),
 ): StandingConditionAnnouncementAction[] {
   const ours = openNotices.filter((notice) =>
     notice.title?.startsWith(`${STANDING_CONDITION_NOTICE_PREFIX} `),
@@ -116,7 +136,11 @@ export function decideStandingConditionAnnouncement(
   const openTitles = new Set(ours.map((notice) => notice.title))
   return [
     ...ours
-      .filter((notice) => !liveTitles.has(notice.title!))
+      .filter(
+        (notice) =>
+          !liveTitles.has(notice.title!) &&
+          !unobservedKinds.has(noticeKind(notice.title!) as AnnouncedStandingConditionKind),
+      )
       .map((notice) => ({ kind: 'withdraw', id: notice.id }) as const),
     ...groups
       .filter((group) =>
