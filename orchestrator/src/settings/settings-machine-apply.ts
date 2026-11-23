@@ -41,8 +41,8 @@ import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
-  subagentBlockingOn,
   type SubagentHooksChoice,
+  subagentBlockingOn,
 } from './settings.ts'
 import {
   readSettingsEnv,
@@ -243,9 +243,10 @@ function applyUserSettings(
       runtime,
     ).superseded.some((hook) => hook.script === 'block-agent.py')
     const owned = productHooks.settings
-    const subagentHooks = row && subagentBlockingOn(merged.settings.options)
-      ? merged.settings.options?.subagentHooks
-      : undefined
+    const subagentHooks =
+      row && subagentBlockingOn(merged.settings.options)
+        ? merged.settings.options?.subagentHooks
+        : undefined
     let environment: Record<string, string> | undefined
     if (row) {
       const secretsPath = userSettingsEnvPath(home)

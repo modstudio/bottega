@@ -3,6 +3,7 @@
 
 import { runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
 import { recordSessionPresent } from '../record/record-session.ts'
+import { type OwnedSettings, subagentBlockingState } from '../settings/settings.ts'
 import {
   claudeHomeFromEnvironment,
   readSettingsJsonLenient,
@@ -12,7 +13,6 @@ import {
   type ProductHookDeclaration,
   productHookDeclarations,
 } from '../settings/settings-machine-hooks.ts'
-import { subagentBlockingState, type OwnedSettings } from '../settings/settings.ts'
 import { readSignedInSettingsOptions } from '../settings/settings-user-row.ts'
 import { classifySetupProductHooks, type SetupProductHookFact } from './setup-install-verify.ts'
 

@@ -23,11 +23,6 @@ import {
   seedDocJsonbArrayRepair,
 } from './record-doc-jsonb-repair-proof.ts'
 import {
-  proofSettingsSubagentHooksBackfill,
-  seedSettingsSubagentHooksBackfill,
-  settingsSubagentHooksBackfill,
-} from './record-settings-subagent-hooks-backfill-proof.ts'
-import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
@@ -68,6 +63,11 @@ import {
   runTaskReferenceBackfill,
   seedRunTaskReferenceBackfill,
 } from './record-run-task-backfill-proof.ts'
+import {
+  proofSettingsSubagentHooksBackfill,
+  seedSettingsSubagentHooksBackfill,
+  settingsSubagentHooksBackfill,
+} from './record-settings-subagent-hooks-backfill-proof.ts'
 import { proofStrandedRunsMigration, seedStrandedRunsProof } from './record-stranded-runs-proof.ts'
 import {
   proofTaskFlowStageBackfill,

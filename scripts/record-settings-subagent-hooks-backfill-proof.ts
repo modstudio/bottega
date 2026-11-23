@@ -173,9 +173,7 @@ export async function proofSettingsSubagentHooksBackfill(
     body: JSON.parse(row.body) as unknown,
   }))
   if (stableJson(revisionShape) !== stableJson(expectedRevisionShape)) {
-    throw new CheckFailure(
-      `DEV-2592 settings revisions produced ${JSON.stringify(revisionShape)}`,
-    )
+    throw new CheckFailure(`DEV-2592 settings revisions produced ${JSON.stringify(revisionShape)}`)
   }
   const forced = await transaction.query<{ relname: string }>(`
     SELECT relname FROM pg_class

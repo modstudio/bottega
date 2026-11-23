@@ -3,10 +3,10 @@
 import { readDoc } from '../doc/doc-authoritative-read.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
 import {
+  type OwnedSettings,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
-  type OwnedSettings,
 } from './settings.ts'
 
 type UserSettingsRow = { body: string; revision: string | null }
