@@ -182,6 +182,13 @@ function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) 
       listCalls++
       return { claims }
     },
+    takeBoardClaim: async (input) => {
+      const [kind, value] = input.subject.split(':', 2)
+      if (kind !== 'queued-task' || !value) throw new Error('unexpected hosted claim subject')
+      const claim = hostedClaim({ kind, value }, input.holderSession ?? null)
+      claims.push(claim)
+      return { ...claim, action: 'taken' as const }
+    },
     releaseBoardClaim: async (id, _destination, input) => {
       const claim = claims.find((candidate) => candidate.id === id)
       if (!claim || claim.holderSession !== input.holderSession)
@@ -285,6 +292,33 @@ test('a hosted queued descendant claim authorizes its holder session', async () 
   expect(queued.live).toBeFalse()
 })
 
+test('queue reads the hosted claim snapshot once before taking the child claim', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  const claims = [hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s')]
+  const reads = useHostedClaims(d, claims)
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'session-s',
+        callerSession: 'session-s',
+        off: false,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2' })
+  expect(reads.listCalls()).toBe(1)
+  expect(claims).toContainEqual(
+    expect.objectContaining({
+      subject: { kind: 'queued-task', value: 'DEV-2' },
+      holderSession: 'session-s',
+    }),
+  )
+})
+
 test('inherited start maps parent closures to child ordinals by slug', () => {
   const at = '2026-11-19T00:00:00.000Z'
   const inherited = inheritClosedSteps(
@@ -362,6 +396,9 @@ test('start-child does not take over a task claim that appears after selection',
       d,
       {
         takeTaskClaim: async (input, context) => {
+          expect(
+            d.query("SELECT state FROM workflow_cursor WHERE workflow_key='DEV-2'").get(),
+          ).toEqual({ state: 'running' })
           if (!inserted) {
             inserted = true
             await boardClaimTake(

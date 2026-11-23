@@ -38,6 +38,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
+import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { closedStepsFromTrail } from './workflow-cursor-trail.ts'
@@ -474,4 +475,13 @@ export async function insertWorkflowCursor(
       target,
     )
   }
+}
+
+export function abandonInsertedCursorAfterClaimFailure(
+  row: SelectableCursorRow,
+  context: WorkflowCursorContext,
+  database: Database,
+  error: unknown,
+): Promise<never> {
+  return abandonCursorAfterClaimFailure(row, context, database, error)
 }
