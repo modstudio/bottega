@@ -5,7 +5,6 @@ import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
-import { requireAgent } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
@@ -49,7 +48,6 @@ import {
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
-import { canonEvalsReport, runCanonEvals } from './evals.ts'
 import { userCanonHydrateCommand, userCanonImportCommand } from './user-canon-commands.ts'
 
 type CanonFlags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -423,6 +421,7 @@ async function canonCommand(
   const cwd = flag('cwd') ?? presentation.cwd()
   const jobName = flag('job') ?? 'understand'
   if (sub === 'eval') {
+    const { runCanonEvals } = await import('./evals.ts')
     const rows = await runCanonEvals({
       slug: flag('slug'),
       agent: flag('agent'),
@@ -441,6 +440,7 @@ async function canonCommand(
     return
   }
   if (sub === 'evals') {
+    const { canonEvalsReport } = await import('./evals.ts')
     const report = canonEvalsReport()
     if (has('json')) log(JSON.stringify(report))
     else {
@@ -543,7 +543,7 @@ function printLoadPlans(plans: LoadPlan[], log: (...values: unknown[]) => void):
   }
 }
 
-function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+async function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): Promise<void> {
   const requested = flags.flag('cwd')
   if (!requested) throw new Error('--cwd is required')
   const cwd = resolve(requested)
@@ -554,7 +554,9 @@ function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): v
   }
   const agent = flags.flag('agent')
   if (role === 'worker' && !agent) throw new Error('--agent is required with --role worker')
-  const harnessName = agent ? workerHarnessName(requireAgent(agent)) : null
+  const harnessName = agent
+    ? workerHarnessName((await import('../agent/agent-registry.ts')).requireAgent(agent))
+    : null
   const loadFacts =
     role === 'worker'
       ? gatherWorkerHarnessLoadFacts(cwd, harnessName!, {
@@ -612,7 +614,7 @@ export async function dispatchCanonCommand(
     return
   }
   if (argv[1] === 'load') {
-    canonLoadCommand(flags, presentation)
+    await canonLoadCommand(flags, presentation)
     return
   }
   if (await canonStoreCommand(argv[1], flags, presentation)) return

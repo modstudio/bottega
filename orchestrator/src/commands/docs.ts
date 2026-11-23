@@ -3,16 +3,7 @@
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
-import { collectCanonLintInput } from '../canon/canon-files.ts'
-import { readDocHistory } from '../doc/doc-authoritative-read.ts'
-import { docCommand } from '../doc/doc-commands.ts'
-import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
-import { portCommand } from '../porting/port-commands.ts'
-import { projectCommand, removeProjectCommand } from '../project/project-commands.ts'
-import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import { actionCommand, collect, log, optionFlags, values, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
@@ -134,6 +125,14 @@ export function assertUserCanonHydrateAllowed(
 }
 
 async function runDoc(verb: string, args: string[], command: Command): Promise<void> {
+  const [{ docCommand }, { selectDocWriteTree }, { collectCanonLintInput }, authoritative, handoff] =
+    await Promise.all([
+      import('../doc/doc-commands.ts'),
+      import('../doc/doc-write-tree.ts'),
+      import('../canon/canon-files.ts'),
+      import('../doc/doc-authoritative-read.ts'),
+      import('../session/resume-brief-handoff.ts'),
+    ])
   await docCommand(
     verb,
     ['doc', verb, ...args],
@@ -152,9 +151,9 @@ async function runDoc(verb: string, args: string[], command: Command): Promise<v
     {
       selectDocWriteTree,
       collectCanonLintInput,
-      consumeResumeHandoff: resumeBriefHandoff,
+      consumeResumeHandoff: handoff.resumeBriefHandoff,
       revisionHistory: ({ scope, subject, slug, owner }) =>
-        readDocHistory(scope, subject, slug, owner),
+        authoritative.readDocHistory(scope, subject, slug, owner),
     },
   )
 }
@@ -358,6 +357,7 @@ const canonSpecs: readonly Spec[] = [
 ]
 
 async function runCanon(verb: string, command: Command): Promise<void> {
+  const { canonLintCommand, dispatchCanonCommand } = await import('../canon/canon-commands.ts')
   const flags = optionFlags(command.opts())
   if (verb === 'hydrate' && flags.has('user')) assertUserCanonHydrateAllowed(flags)
   await import('../jobs/jobs.ts')
@@ -428,6 +428,7 @@ const portSpecs: readonly Spec[] = [
 ]
 
 async function runPort(path: string[], args: string[], command: Command): Promise<void> {
+  const { portCommand } = await import('../porting/port-commands.ts')
   await portCommand(path[0], path[1], ['port', ...path, ...args], optionFlags(command.opts()), {
     log,
     writeStdout,
@@ -535,6 +536,10 @@ const projectSpecs: readonly Spec[] = [
 ]
 
 async function runProject(verb: string, args: string[], command: Command): Promise<void> {
+  const [{ projectCommand }, { requireRecordSpaceMembership }] = await Promise.all([
+    import('../project/project-commands.ts'),
+    import('../record/record-space.ts'),
+  ])
   await projectCommand(
     verb,
     ['project', verb, ...args],
@@ -582,6 +587,7 @@ export function register(program: Command): void {
         throw new Error(
           `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
         )
+      const { removeProjectCommand } = await import('../project/project-commands.ts')
       await removeProjectCommand(name, { purged: true }, { log, cwd: process.cwd })
     })
 }
