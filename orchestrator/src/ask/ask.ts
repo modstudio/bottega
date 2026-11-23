@@ -70,10 +70,7 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
-import {
-  questionTextRefusal,
-  requiredHandlerText,
-} from '../question-store/question-text.ts'
+import { questionTextRefusal, requiredHandlerText } from '../question-store/question-text.ts'
 import {
   isRunQuestionOwnerNotLive,
   runQuestionOwnerNotLiveMessage,

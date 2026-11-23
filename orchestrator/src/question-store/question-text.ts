@@ -27,7 +27,10 @@ function refusalRemedy(field: string): string {
 export type RequiredTextRefusal = { kind: 'empty' | 'malformed'; message: string }
 
 /** Why required text cannot be accepted, or null when it is usable. */
-export function questionTextRefusal(value: unknown, field = 'question'): RequiredTextRefusal | null {
+export function questionTextRefusal(
+  value: unknown,
+  field = 'question',
+): RequiredTextRefusal | null {
   const normalized = requiredTextReachingHandler(value)
   const content = normalized.replace(/\p{Cf}/gu, '').trim()
   let reason: string | null = null
@@ -35,8 +38,7 @@ export function questionTextRefusal(value: unknown, field = 'question'): Require
   if (!content) {
     kind = 'empty'
     reason = `${field} was empty`
-  }
-  else if (normalized.startsWith(MALFORMED_REQUIRED_TEXT_PREFIX)) {
+  } else if (normalized.startsWith(MALFORMED_REQUIRED_TEXT_PREFIX)) {
     const shape = normalized.slice(MALFORMED_REQUIRED_TEXT_PREFIX.length)
     reason = `${field} was ${shape === 'object' || shape === 'array' ? 'an' : 'a'} ${shape}`
   } else if (/^\[object [A-Za-z]+\]$/.test(content)) reason = `${field} was the text ${content}`

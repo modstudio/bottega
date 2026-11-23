@@ -832,9 +832,9 @@ describe('the live ask channel always answers', () => {
       answered: false,
       reason: expect.stringContaining('question was the text [object Object]'),
     })
-    expect(
-      db().query('SELECT record_id FROM question WHERE run_record_id = ?').all(run),
-    ).toEqual([])
+    expect(db().query('SELECT record_id FROM question WHERE run_record_id = ?').all(run)).toEqual(
+      [],
+    )
   })
 
   test('missing required text instructs the worker without recording or returning an error', async () => {
