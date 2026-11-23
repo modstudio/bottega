@@ -40,6 +40,7 @@ describe('collector leg failure decision', () => {
     expect(collectorLegFailureDecision({ source: 'runs' }, now)).toEqual({
       conditions: [],
       errors: ['collector leg observation unreadable: response was not an array'],
+      failures: [],
     })
   })
 

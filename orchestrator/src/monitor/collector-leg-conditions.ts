@@ -71,7 +71,7 @@ function parsedObservations(value: unknown): {
 }
 
 /** Pure decision over the hub command's already-observed JSON value. */
-function collectorLegFailureAnalysis(
+export function collectorLegFailureDecision(
   value: unknown,
   now: number,
 ): { conditions: MonitorCondition[]; errors: string[]; failures: CollectorLegFailure[] } {
@@ -106,15 +106,6 @@ function collectorLegFailureAnalysis(
   return { conditions, errors, failures }
 }
 
-/** Pure decision over the hub command's already-observed JSON value. */
-export function collectorLegFailureDecision(
-  value: unknown,
-  now: number,
-): { conditions: MonitorCondition[]; errors: string[] } {
-  const { conditions, errors } = collectorLegFailureAnalysis(value, now)
-  return { conditions, errors }
-}
-
 export function observeCollectorLegFailures(
   now = Date.now(),
   spawn: typeof Bun.spawnSync = Bun.spawnSync,
@@ -131,7 +122,7 @@ export function observeCollectorLegFailures(
       }
     }
     const value: unknown = JSON.parse(child.stdout.toString())
-    return collectorLegFailureAnalysis(value, now)
+    return collectorLegFailureDecision(value, now)
   } catch (cause) {
     return {
       conditions: [],
