@@ -8,6 +8,7 @@ import {
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { SecurityRunner } from '../../../shared/record-session.ts'
 import { db } from '../database/db.ts'
+import { activeMembershipSpace } from './record-membership.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-token.ts'
 
@@ -63,11 +64,10 @@ export function recordUserSessionFromMemberships<
     token,
     user: current.user,
     session: current.session,
-    activeSpaceId:
-      current.session.activeOrganizationId &&
-      membershipSpaceIds.includes(current.session.activeOrganizationId)
-        ? current.session.activeOrganizationId
-        : null,
+    activeSpaceId: activeMembershipSpace(
+      current.session.activeOrganizationId ?? null,
+      membershipSpaceIds,
+    ),
   }
 }
 

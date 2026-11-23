@@ -381,6 +381,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-invitation.ts',
       './record-config-access-removal.ts',
       './record-member-permission.ts',
+      './record-membership.ts',
       './record-pool.ts',
       './record-token-key.ts',
     ],

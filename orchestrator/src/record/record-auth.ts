@@ -30,9 +30,11 @@ import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
+import { activeMembershipSpace } from './record-membership.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
-export const RECORD_SESSION_KEY = 'record_session'
+export { activeMembershipSpace } from './record-membership.ts'
+export { RECORD_SESSION_KEY } from './record-token-key.ts'
 
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
@@ -536,13 +538,6 @@ export type RecordIdentity = {
   activeSpaceId: string | null
   personalSpaceId: string | null
   memberships: Record<string, unknown>[]
-}
-
-export function activeMembershipSpace(
-  activeSpaceId: string | null,
-  membershipSpaceIds: readonly string[],
-): string | null {
-  return activeSpaceId && membershipSpaceIds.includes(activeSpaceId) ? activeSpaceId : null
 }
 
 export function recordIdentityFromRows(

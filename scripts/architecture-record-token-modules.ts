@@ -9,6 +9,7 @@ export const recordTokenModules: Array<{ file: string; allowed: string[] }> = [
       'shared/record-session.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/record-auth.ts',
+      'orchestrator/src/record/record-membership.ts',
       'orchestrator/src/record/record-pool.ts',
       'orchestrator/src/record/record-token.ts',
     ],
@@ -24,7 +25,11 @@ export const recordTokenModules: Array<{ file: string; allowed: string[] }> = [
   },
   {
     file: 'orchestrator/src/record/record-token-key.ts',
-    allowed: ['orchestrator/src/record/record-auth.ts'],
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/record/record-membership.ts',
+    allowed: [],
   },
   {
     file: 'orchestrator/src/record/record-password.ts',
