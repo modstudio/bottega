@@ -109,6 +109,23 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
 }
 
 const expiresAt = '2026-10-06T00:00:00.000Z'
+
+test('board claim list accepts only the true open-only query value', async () => {
+  const inputs: Array<{ openOnly?: boolean }> = []
+  const app = appWith(identity, {
+    listBoardClaims: async (input: { openOnly?: boolean }) => {
+      inputs.push(input)
+      return { claims: [] }
+    },
+  })
+  const query = `project=${PLATFORM_SLUG}&projectId=${newRecordId()}`
+  const open = await app.request(`/v1/board/claims?${query}&openOnly=true`)
+  const all = await app.request(`/v1/board/claims?${query}`)
+  const invalid = await app.request(`/v1/board/claims?${query}&openOnly=false`)
+  expect([open.status, all.status, invalid.status]).toEqual([200, 200, 400])
+  expect(inputs.map(({ openOnly }) => openOnly)).toEqual([true, false])
+})
+
 test('board post refuses an invalid body at the route edge', async () => {
   const app = appWith(identity)
   const response = await app.request('/v1/board/messages', {

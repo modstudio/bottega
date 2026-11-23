@@ -31,6 +31,7 @@ import { resolveVisibleProjectId } from './record-board-project-resolution.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
 import {
   type BoardTenant,
+  boardUuidArray,
   isBoardClaimSubjectUniqueViolation,
   withBoardTenant,
 } from './record-board-tx.ts'
@@ -49,19 +50,29 @@ function hostedLive(row: ClaimRow, clock: number): boolean {
   })
 }
 
-async function previousIds(tx: SQL, id: string): Promise<string[]> {
-  const rows = await tx`
-    SELECT id FROM board_claim WHERE superseded_by_claim_id=${id}::uuid ORDER BY taken_at, id
-  `
-  return (rows as { id: unknown }[]).map((row) => String(row.id))
+async function previousIdsByClaim(tx: SQL, ids: string[]): Promise<Map<string, string[]>> {
+  if (ids.length === 0) return new Map()
+  const rows = (await tx`
+    SELECT id, superseded_by_claim_id FROM board_claim
+    WHERE superseded_by_claim_id = ANY(${boardUuidArray(tx, ids)})
+    ORDER BY taken_at, id
+  `) as Array<{ id: unknown; superseded_by_claim_id: unknown }>
+  const grouped = new Map<string, string[]>()
+  for (const row of rows) {
+    const supersedingId = String(row.superseded_by_claim_id)
+    const previous = grouped.get(supersedingId) ?? []
+    previous.push(String(row.id))
+    grouped.set(supersedingId, previous)
+  }
+  return grouped
 }
 
-async function claimView(
-  tx: SQL,
+function claimView(
   row: ClaimRow,
   clock: number,
   projectName: string,
-): Promise<HostedBoardClaim> {
+  previousIds: ReadonlyMap<string, string[]>,
+): HostedBoardClaim {
   return {
     id: String(row.id),
     project: projectName,
@@ -78,10 +89,32 @@ async function claimView(
     live: hostedLive(row, clock),
     closedAt: nullableRecordIso(row.closed_at),
     closeReason: row.close_reason == null ? null : String(row.close_reason),
-    previousClaimIds: await previousIds(tx, String(row.id)),
+    previousClaimIds: previousIds.get(String(row.id)) ?? [],
     supersededByClaimId:
       row.superseded_by_claim_id == null ? null : String(row.superseded_by_claim_id),
   }
+}
+
+async function claimViews(
+  tx: SQL,
+  rows: ClaimRow[],
+  clock: number,
+  projectName: string,
+): Promise<HostedBoardClaim[]> {
+  const previousIds = await previousIdsByClaim(
+    tx,
+    rows.map((row) => String(row.id)),
+  )
+  return rows.map((row) => claimView(row, clock, projectName, previousIds))
+}
+
+async function singleClaimView(
+  tx: SQL,
+  row: ClaimRow,
+  clock: number,
+  projectName: string,
+): Promise<HostedBoardClaim> {
+  return (await claimViews(tx, [row], clock, projectName))[0]!
 }
 
 async function loadClaim(tx: SQL, id: string): Promise<ClaimRow | null> {
@@ -403,7 +436,7 @@ async function replayExistingTake(
     )
   }
   return {
-    ...(await claimView(tx, existing, clock, name)),
+    ...(await singleClaimView(tx, existing, clock, name)),
     action: hostedLive(existing, clock) ? 'renewed' : 'taken',
   }
 }
@@ -430,7 +463,7 @@ async function renewOpenClaim(
     WHERE id=${String(exactHeld.id)}::uuid
   `
   const row = await loadClaim(tx, String(exactHeld.id))
-  return { ...(await claimView(tx, row!, clock, input.project)), action: 'renewed' }
+  return { ...(await singleClaimView(tx, row!, clock, input.project)), action: 'renewed' }
 }
 
 async function insertTakenClaim(
@@ -464,7 +497,7 @@ async function insertTakenClaim(
   `
   const row = await loadClaim(tx, input.id)
   return {
-    ...(await claimView(tx, row!, clock, input.project)),
+    ...(await singleClaimView(tx, row!, clock, input.project)),
     action: conflicts.length ? 'taken-over' : 'taken',
   }
 }
@@ -583,7 +616,7 @@ export async function renewHostedBoardClaim(
       WHERE id=${input.id}::uuid
     `
     const name = await projectNameById(tx, String(row.project_id))
-    return claimView(tx, (await loadClaim(tx, input.id))!, clock, name)
+    return singleClaimView(tx, (await loadClaim(tx, input.id))!, clock, name)
   })
 }
 
@@ -614,22 +647,28 @@ export async function releaseHostedBoardClaim(
       WHERE id=${input.id}::uuid
     `
     const name = await projectNameById(tx, String(row.project_id))
-    return claimView(tx, (await loadClaim(tx, input.id))!, clock, name)
+    return singleClaimView(tx, (await loadClaim(tx, input.id))!, clock, name)
   })
 }
 
 export async function listHostedBoardClaims(
-  input: BoardTenant & { project: string; projectId?: string | null },
+  input: BoardTenant & { project: string; projectId?: string | null; openOnly?: boolean },
 ): Promise<{ claims: HostedBoardClaim[] }> {
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
     const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
-    const rows = (await tx`
-      SELECT * FROM board_claim WHERE project_id=${projectId}::uuid ORDER BY taken_at, id
-    `) as ClaimRow[]
-    const claims = []
-    for (const row of rows) claims.push(await claimView(tx, row, clock, input.project))
-    return { claims }
+    const rows = (
+      input.openOnly
+        ? await tx`
+          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+          ORDER BY taken_at, id
+        `
+        : await tx`
+          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid
+          ORDER BY taken_at, id
+        `
+    ) as ClaimRow[]
+    return { claims: await claimViews(tx, rows, clock, input.project) }
   })
 }
 

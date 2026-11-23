@@ -1,16 +1,14 @@
 // concern: record-api-client
 /** Builds hosted board root-message requests. */
 
-import {
-  boardClaimListPath,
-  type RecordClientRequest,
-  type RecordRequestDestination,
-  type RecordWriteDestination,
+import type {
+  RecordClientRequest,
+  RecordRequestDestination,
+  RecordWriteDestination,
 } from './record-api-client-paths.ts'
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
-  HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
   HostedBoardMessage,
@@ -25,7 +23,6 @@ import type {
   HostedBoardStatus,
   HostedBoardSuccessorInput,
   HostedBoardSuccessorResult,
-  HostedBoardTakeClaimInput,
   HostedBoardThread,
   HostedBoardWriteClientResponse,
 } from './record-board-contract.ts'
@@ -175,37 +172,6 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
         body: JSON.stringify(input),
         ...destination,
       }),
-    takeBoardClaim: (input: HostedBoardTakeClaimInput, destination: RecordWriteDestination) =>
-      request<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>(
-        '/v1/board/claims',
-        {
-          method: 'PUT',
-          body: JSON.stringify(input),
-          ...destination,
-        },
-      ),
-    renewBoardClaim: (
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ) =>
-      request<HostedBoardClaim>(`/v1/board/claims/${id}/renew`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-        ...destination,
-      }),
-    releaseBoardClaim: (
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ) =>
-      request<HostedBoardClaim>(`/v1/board/claims/${id}/release`, {
-        method: 'POST',
-        body: JSON.stringify(input ?? {}),
-        ...destination,
-      }),
-    listBoardClaims: (project: string, projectId?: string | null) =>
-      request<{ claims: HostedBoardClaim[] }>(boardClaimListPath(project, projectId)),
   }
 }
 

@@ -3,6 +3,7 @@
 import { dirname, normalize } from 'node:path'
 import { recordApiErrorModules } from './architecture-record-api-error-modules.ts'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
+import { recordBoardClientModules } from './architecture-record-board-client-modules.ts'
 import { recordCacheModules } from './architecture-record-cache-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
@@ -27,6 +28,7 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 
 export const recordModules: RecordModule[] = [
   ...recordApiErrorModules,
+  ...recordBoardClientModules,
   ...recordCacheModules,
   ...recordChangeModules,
   ...recordInvariantModules,

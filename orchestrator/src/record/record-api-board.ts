@@ -155,7 +155,14 @@ const releaseTaskSchema = z
     key: z.string().min(1),
   })
   .strict()
-const claimListSchema = z.object({ project: z.string().min(1), projectId: idSchema })
+const claimListSchema = z.object({
+  project: z.string().min(1),
+  projectId: idSchema,
+  openOnly: z
+    .literal('true')
+    .optional()
+    .transform((value) => value === 'true'),
+})
 const successorSchema = z
   .object({ messageId: idSchema, candidateSession: z.string().min(1) })
   .strict()
@@ -220,7 +227,7 @@ export type RecordBoardDeps = {
     input: BoardTenant & { id: string; holderSession?: string | null },
   ): Promise<HostedBoardClaim>
   listBoardClaims(
-    input: BoardTenant & { project: string; projectId?: string | null },
+    input: BoardTenant & { project: string; projectId?: string | null; openOnly?: boolean },
   ): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(
     input: BoardTenant & { project: string; projectId?: string | null; key: string },
