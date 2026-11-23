@@ -302,6 +302,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'secret_dek.version',
     'config_secret.row_version',
     'machine_trust_log.seq',
+    'space_agent.max_concurrent',
     'review.tier',
     'review.tier_risk',
     'review.tier_size',

@@ -15,6 +15,13 @@ type MigrationException = ForcedRlsDmlFinding & { migration: string; reasonText:
 
 const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
   {
+    migration: '20261123070218_dev_2487_space_agent_force',
+    table: '*',
+    operation: 'EXECUTE',
+    reason: 'dynamic-sql-force-enabled',
+    reasonText: `${executeKeyword}s a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows`,
+  },
+  {
     migration: '20261120033811_dev_2479_hub_applied_change_prune',
     table: '*',
     operation: 'EXECUTE',

@@ -89,10 +89,12 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-client-counts.ts',
       './record-api-client-config-access.ts',
       './record-api-client-context-items.ts',
+      './record-api-client-space-agents.ts',
       './record-api-client-error.ts',
       './record-api-client-paths.ts',
       './record-api-client-response.ts',
       './record-context-items.ts',
+      './record-space-agents.ts',
       './record-project-space-contract.ts',
       './record-api-client-settings.ts',
       './record-api-client-lens.ts',
@@ -163,6 +165,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-config-contract.ts',
       './record-api-config-schema.ts',
       './record-api-context-items.ts',
+      './record-api-space-agents.ts',
       './record-api-errors.ts',
       './record-api-wire.ts',
       './record-cursor.ts',
@@ -170,6 +173,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-canon-import.ts',
       './record-cache-counts-contract.ts',
       './record-context-items.ts',
+      './record-space-agents.ts',
       './record-docs.ts',
       './record-snapshots.ts',
       './record-verdicts.ts',
@@ -237,6 +241,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-config.ts',
       './record-machine-key-registration.ts',
       './record-context-items.ts',
+      './record-space-agents.ts',
       './record-machine-trust-log.ts',
       './record-machine-join.ts',
       './record-credential.ts',
@@ -780,6 +785,12 @@ export const recordSyncCommandBoundaries: ImportBoundary[] = [
 ]
 
 export const recordSchemaBoundaries: ImportBoundary[] = [
+  boundary(
+    'postgres-schema-space-agents-boundary',
+    'shared/record/schema-space-agents.ts',
+    ['drizzle-orm/pg-core', './schema.ts'],
+    'Keep hosted space-agent schema policy inside the record schema boundary.',
+  ),
   boundary(
     'record-project-columns-boundary',
     'orchestrator/src/record/record-project-columns.ts',

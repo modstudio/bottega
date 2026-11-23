@@ -29,11 +29,11 @@ import { registerMachineKey } from '../src/record/record-machine-key-registratio
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
+import { USER_B } from './postgres-rls-values.ts'
 import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
 import { proveMachineSigningKeyRegistration } from './support/machine-signing-registration-proof.ts'
 import { proveMachineTrustLog } from './support/machine-trust-log-proof.ts'
 
-const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
 const DEK_B = '01990000-0000-7000-8000-0000000000db'
 const PROJECT_A = '01990000-0000-7000-8000-0000000000ca'

@@ -1,6 +1,7 @@
 import { builtinModules } from 'node:module'
 import { dirname, normalize } from 'node:path'
 import { LOCAL_SQLITE_ADAPTER_PATH } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { agentCommandBoundarySpecs } from './architecture-agent-command-boundaries.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
@@ -175,21 +176,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../../shared/brand.ts', '../project/projects.ts', './code-search.ts'],
     'Keep code search commands independent of stores, transports, and retrieval internals.',
   ),
-  boundary(
-    'agent-commands-boundary',
-    'orchestrator/src/agent/agent-commands.ts',
-    [
-      '../../../shared/brand.ts',
-      './agent-probe.ts',
-      './agent-registry.ts',
-      '../cli/args.ts',
-      '../database/db.ts',
-      './model-host.ts',
-      './agent-set-capacity.ts',
-      './goose-provider.ts',
-    ],
-    'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
-  ),
+  ...boundaries(agentCommandBoundarySpecs),
   boundary(
     'canon-budget-boundary',
     'orchestrator/src/canon/canon-budget.ts',

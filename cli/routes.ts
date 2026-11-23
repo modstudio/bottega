@@ -262,6 +262,8 @@ export const ROUTES = (
     route('agent add', 'orch', 'agent add'),
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
+    route('agent share', 'orch', 'agent share'),
+    route('agent unshare', 'orch', 'agent unshare'),
     route('agent list', 'orch', 'agents'),
     route('agent typed-question backtest', 'orch', 'typed-question backtest'),
     route(

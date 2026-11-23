@@ -18,6 +18,7 @@ import * as rev from '../../../shared/record/schema-review.ts'
 import * as r from '../../../shared/record/schema-run.ts'
 import * as ss from '../../../shared/record/schema-session.ts'
 import * as sn from '../../../shared/record/schema-snapshots.ts'
+import * as sa from '../../../shared/record/schema-space-agents.ts'
 import * as su from '../../../shared/record/schema-subjects.ts'
 import * as tf from '../../../shared/record/schema-task-flow.ts'
 import * as w from '../../../shared/record/schema-workflow-catalogue.ts'
@@ -34,6 +35,7 @@ const schemaModules = [
   ['./shared/record/schema-session.ts', ss],
   ['./shared/record/schema-docs.ts', d],
   ['./shared/record/schema-context-items.ts', ci],
+  ['./shared/record/schema-space-agents.ts', sa],
   ['./shared/record/schema-subjects.ts', su],
   ['./shared/record/schema-hub.ts', h],
   ['./shared/record/schema-snapshots.ts', sn],

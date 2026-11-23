@@ -56,6 +56,7 @@ import {
   registerRecordSessionRoutes,
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
+import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 import type { RecordSubjectRouteDeps } from './record-api-subjects.ts'
 import { requestTenant } from './record-api-tenant.ts'
 import {
@@ -119,6 +120,7 @@ import type {
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
+import type { RecordSpaceAgent } from './record-space-agents.ts'
 import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
@@ -155,6 +157,9 @@ type RecordApiDeps = RecordSessionRouteDeps &
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },
     ): Promise<{ removed: boolean }>
+    readSpaceAgents(input: Tenant): Promise<RecordSpaceAgent[]>
+    upsertSpaceAgent(input: Tenant & RecordSpaceAgent): Promise<RecordSpaceAgent>
+    deleteSpaceAgent(input: Tenant & { name: string }): Promise<{ removed: boolean }>
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
@@ -409,6 +414,7 @@ function registerRecordCoreRoutes(
   },
 ): void {
   registerRecordContextItemRoutes(app, deps, ports)
+  registerRecordSpaceAgentRoutes(app, deps, ports)
   registerSignedDocSearchRoute(app, deps, ports)
   registerRecordReadRoutes(app, deps, ports)
   registerRecordQuestionRoutes(app, deps, ports)
@@ -551,7 +557,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
   registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
-
   app.get('/v1/config/entries', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
