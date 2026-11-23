@@ -146,6 +146,69 @@ function registerEnvironment(settings: Command): void {
     })
 }
 
+function registerRestore(settings: Command): void {
+  settings
+    .command('restore')
+    .description('restore user settings from a rendered backup')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'project target, which restore refuses')
+    .option('--force', 'restore despite later settings writes')
+    .argument('<backup>')
+    .action(async (backup: string, options) => {
+      ;(await import('../settings/settings-apply-commands.ts')).settingsRestoreCommand(
+        optionFlags(options),
+        backup,
+        {
+          log,
+          cwd: process.cwd,
+          exitCode: (code: number) => {
+            process.exitCode = code
+          },
+        },
+      )
+    })
+}
+
+function registerRender(settings: Command): void {
+  settings
+    .command('render')
+    .description('compare or write canonical settings to a settings file')
+    .option('--check', 'report drift without writing the settings file')
+    .option('--write', 'write canonical settings to the settings file')
+    .option('--yes', 'confirm writing the settings file')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'registered project whose settings are rendered')
+    .option('--json', 'write the settings drift report as JSON')
+    .addOption(
+      collectedOption('--drop-env <key>', 'environment key deliberately removed during rendering'),
+    )
+    .action(async (options) => {
+      const flags = optionFlags(options)
+      if (flags.has('check') === flags.has('write')) {
+        throw new Error(
+          'refusing settings render: pass --check or --write\ncleared by: choose one render operation',
+        )
+      }
+      const presentation = {
+        log,
+        cwd: process.cwd,
+        exitCode: (code: number) => {
+          process.exitCode = code
+        },
+      }
+      if (flags.has('write'))
+        await (await import('../settings/settings-apply-commands.ts')).settingsRenderWriteCommand(
+          flags,
+          presentation,
+        )
+      else
+        await (await import('../settings/settings-commands.ts')).settingsRenderCheckCommand(
+          flags,
+          presentation,
+        )
+    })
+}
+
 export function register(program: Command): void {
   const settings = program.command('settings').description('manage canonical Claude settings')
   registerSettingsSources(settings)
@@ -243,62 +306,7 @@ export function register(program: Command): void {
         }
       })
   }
-  settings
-    .command('restore')
-    .description('restore user settings from a rendered backup')
-    .option('--user', 'target the user settings file')
-    .option('--project <name>', 'project target, which restore refuses')
-    .option('--force', 'restore despite later settings writes')
-    .argument('<backup>')
-    .action(async (backup: string, options) => {
-      ;(await import('../settings/settings-apply-commands.ts')).settingsRestoreCommand(
-        optionFlags(options),
-        backup,
-        {
-          log,
-          cwd: process.cwd,
-          exitCode: (code: number) => {
-            process.exitCode = code
-          },
-        },
-      )
-    })
+  registerRestore(settings)
   registerEnvironment(settings)
-  settings
-    .command('render')
-    .description('compare or write canonical settings to a settings file')
-    .option('--check', 'report drift without writing the settings file')
-    .option('--write', 'write canonical settings to the settings file')
-    .option('--yes', 'confirm writing the settings file')
-    .option('--user', 'target the user settings file')
-    .option('--project <name>', 'registered project whose settings are rendered')
-    .option('--json', 'write the settings drift report as JSON')
-    .addOption(
-      collectedOption('--drop-env <key>', 'environment key deliberately removed during rendering'),
-    )
-    .action(async (options) => {
-      const flags = optionFlags(options)
-      if (flags.has('check') === flags.has('write')) {
-        throw new Error(
-          'refusing settings render: pass --check or --write\ncleared by: choose one render operation',
-        )
-      }
-      const presentation = {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
-        },
-      }
-      if (flags.has('write'))
-        await (await import('../settings/settings-apply-commands.ts')).settingsRenderWriteCommand(
-          flags,
-          presentation,
-        )
-      else
-        await (await import('../settings/settings-commands.ts')).settingsRenderCheckCommand(
-          flags,
-          presentation,
-        )
-    })
+  registerRender(settings)
 }

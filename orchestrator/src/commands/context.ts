@@ -55,6 +55,19 @@ function registerHealth(context: Command): void {
     })
 }
 
+function registerBrief(context: Command): void {
+  context
+    .command('brief')
+    .description('show the compact working context for an architect session')
+    .requiredOption('--session <id>', 'select architect session')
+    .option('--json', 'write JSON')
+    .action(async (options) => {
+      const { contextBrief, renderContextBrief } = await import('../doc/context-brief.ts')
+      const result = await contextBrief(options.session)
+      log(options.json ? JSON.stringify(result) : renderContextBrief(result))
+    })
+}
+
 function registerInjection(context: Command): void {
   context
     .command('record-injection')
@@ -165,16 +178,7 @@ export function register(program: Command): void {
         for (const item of cursor.items) log(`  ${item.id}  ${item.kind}  ${item.revision}`)
       }
     })
-  context
-    .command('brief')
-    .description('show the compact working context for an architect session')
-    .requiredOption('--session <id>', 'select architect session')
-    .option('--json', 'write JSON')
-    .action(async (options) => {
-      const { contextBrief, renderContextBrief } = await import('../doc/context-brief.ts')
-      const result = await contextBrief(options.session)
-      log(options.json ? JSON.stringify(result) : renderContextBrief(result))
-    })
+  registerBrief(context)
   context
     .command('review')
     .description('review stored context items when the measured interval is due')

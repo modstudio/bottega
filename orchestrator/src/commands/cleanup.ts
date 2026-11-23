@@ -50,7 +50,7 @@ function lifecycleCheckpoint(name: string): void {
   while (!existsSync(release)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
 }
 
-export function register(program: Command): void {
+function registerSweep(program: Command): void {
   program
     .command('sweep')
     .description('release terminal runs and reclaim safe stale resources')
@@ -67,6 +67,13 @@ export function register(program: Command): void {
       ])
       const database = (await import('../database/db.ts')).db()
       const flags = optionFlags(options)
+      if (!flags.has('dry-run')) {
+        const { repairAskingTurns } = await import('../run/run-liveness.ts')
+        const repaired = repairAskingTurns(database, new Date().toISOString())
+        log(
+          `asking-turn repair repaired ${repaired.supersededCount + repaired.repairedAbandoned.length} rows`,
+        )
+      }
       await sweepRuns(
         {
           dryRun: flags.has('dry-run'),
@@ -82,7 +89,9 @@ export function register(program: Command): void {
         },
       )
     })
+}
 
+function registerDiscard(program: Command): void {
   program
     .command('discard <id>')
     .description('remove a run worktree and discard its branch')
@@ -102,7 +111,9 @@ export function register(program: Command): void {
         presentation: cleanupPresentation(database),
       })
     })
+}
 
+function registerStop(program: Command): void {
   program
     .command('stop <id>')
     .description('stop a live run and its processes')
@@ -129,7 +140,9 @@ export function register(program: Command): void {
         },
       )
     })
+}
 
+function registerAbandon(program: Command): void {
   program
     .command('abandon <id>')
     .description('stop a run and abandon its worktree')
@@ -164,4 +177,11 @@ export function register(program: Command): void {
         },
       )
     })
+}
+
+export function register(program: Command): void {
+  registerSweep(program)
+  registerDiscard(program)
+  registerStop(program)
+  registerAbandon(program)
 }

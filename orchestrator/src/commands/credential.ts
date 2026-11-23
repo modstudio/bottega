@@ -256,6 +256,38 @@ function registerReachCommand(credential: Command): void {
     })
 }
 
+function registerPreferenceCommand(credential: Command): void {
+  addBindingOptions(credential.command('prefer <provider/type>'), false, false)
+    .description('set or clear a payer preference')
+    .option('--use <slot>', CREDENTIAL_SLOTS.join(' or '))
+    .option('--clear', 'clear the preference')
+    .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
+      const { configClient } = await import('../../../shared/config-client.ts')
+      if (Boolean(options.project) === Boolean(options.space))
+        throw new Error('prefer requires exactly one of --project or --space')
+      if (Boolean(options.use) === Boolean(options.clear))
+        throw new Error('choose exactly one of --use or --clear')
+      const target = await address(name, options)
+      const client = configClient()
+      const input = {
+        projectId: target.projectId,
+        provider: target.provider,
+        name: target.name,
+        type: target.type,
+        mode: target.mode,
+        environment: target.environment,
+      }
+      const destination = { destinationSpaceId: target.destinationSpaceId }
+      if (options.clear) {
+        await client.deleteCredentialPreference(input, destination)
+        return
+      }
+      const slot = parseCredentialSlot(options.use!)
+      if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
+      await client.putCredentialPreference({ ...input, ...slot }, destination)
+    })
+}
+
 export function registerCredentialCommands(program: Command): void {
   const credential = program.command('credential').description('manage typed provider credentials')
   addBindingOptions(credential.command('set <provider/type>'), true)
@@ -310,35 +342,7 @@ export function registerCredentialCommands(program: Command): void {
         )
       }
     })
-  addBindingOptions(credential.command('prefer <provider/type>'), false, false)
-    .description('set or clear a payer preference')
-    .option('--use <slot>', CREDENTIAL_SLOTS.join(' or '))
-    .option('--clear', 'clear the preference')
-    .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
-      const { configClient } = await import('../../../shared/config-client.ts')
-      if (Boolean(options.project) === Boolean(options.space))
-        throw new Error('prefer requires exactly one of --project or --space')
-      if (Boolean(options.use) === Boolean(options.clear))
-        throw new Error('choose exactly one of --use or --clear')
-      const target = await address(name, options)
-      const client = configClient()
-      const input = {
-        projectId: target.projectId,
-        provider: target.provider,
-        name: target.name,
-        type: target.type,
-        mode: target.mode,
-        environment: target.environment,
-      }
-      const destination = { destinationSpaceId: target.destinationSpaceId }
-      if (options.clear) {
-        await client.deleteCredentialPreference(input, destination)
-        return
-      }
-      const slot = parseCredentialSlot(options.use!)
-      if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
-      await client.putCredentialPreference({ ...input, ...slot }, destination)
-    })
+  registerPreferenceCommand(credential)
   registerReachCommand(credential)
   credential
     .command('resolve <provider/type> [argv...]')

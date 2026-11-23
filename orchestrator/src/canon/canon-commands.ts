@@ -410,6 +410,58 @@ async function canonDiffCommand(
   }
 }
 
+async function canonCheckCommand(
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+  input: { job: string; cwd: string },
+): Promise<void> {
+  const pack = await compilePack(input)
+  const rows = flags.has('all') ? await allInjectChecks() : await findingsForPack(pack)
+  const findings = rows.flatMap((row) =>
+    row.findings.map((finding) => ({ doc: row.doc, ...finding })),
+  )
+  const numericReport = allNumericLiterals(input.cwd)
+  const numericLiterals = numericReport.numericLiterals.filter(
+    (hit) => hit.classification === 'RESTATED',
+  )
+  const result = {
+    pack: {
+      job: pack.job,
+      project: pack.project,
+      bytes: pack.bytes,
+      canonBytes: pack.canonBytes,
+      docBytes: pack.docBytes,
+      budgetBytes: pack.budgetBytes,
+      sha256: pack.sha256,
+    },
+    docs: rows,
+    findings,
+    numericLiterals,
+    canonFiles: numericReport.canonFiles,
+  }
+  if (flags.has('json')) presentation.log(JSON.stringify(result))
+  else {
+    presentation.log(
+      `canon: ${pack.canonBytes} canon + ${pack.docBytes} docs = ${pack.bytes}/${pack.budgetBytes} bytes`,
+    )
+    for (const row of rows.filter((row) => row.findings.length)) {
+      presentation.log(
+        `${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`,
+      )
+      for (const finding of row.findings) presentation.log(`  ${finding.kind}: ${finding.message}`)
+    }
+    presentation.log(
+      `canon files: read ${numericReport.canonFiles.read.join(', ') || 'none'}` +
+        `; missing ${numericReport.canonFiles.missing.join(', ') || 'none'}`,
+    )
+    presentation.log('numeric literals')
+    for (const hit of numericLiterals) {
+      presentation.log(`  ${hit.source}  ${hit.numeral}  ${hit.sentence}`)
+    }
+  }
+  if (findings.length) presentation.exitCode(1)
+}
+
 async function canonCommand(
   argv: string[],
   flags: CanonFlags,
@@ -457,51 +509,7 @@ async function canonCommand(
     return
   }
   if (sub === 'check') {
-    const pack = await compilePack({ job: jobName, cwd })
-    const rows = has('all') ? await allInjectChecks() : await findingsForPack(pack)
-    const findings = rows.flatMap((row) =>
-      row.findings.map((finding) => ({ doc: row.doc, ...finding })),
-    )
-    const numericReport = allNumericLiterals(cwd)
-    const numericLiterals = numericReport.numericLiterals.filter(
-      (hit) => hit.classification === 'RESTATED',
-    )
-    const result = {
-      pack: {
-        job: pack.job,
-        project: pack.project,
-        bytes: pack.bytes,
-        canonBytes: pack.canonBytes,
-        docBytes: pack.docBytes,
-        budgetBytes: pack.budgetBytes,
-        sha256: pack.sha256,
-      },
-      docs: rows,
-      findings,
-      numericLiterals,
-      canonFiles: numericReport.canonFiles,
-    }
-    if (has('json')) log(JSON.stringify(result))
-    else {
-      log(
-        `canon: ${pack.canonBytes} canon + ${pack.docBytes} docs = ${pack.bytes}/${pack.budgetBytes} bytes`,
-      )
-      for (const row of rows.filter((row) => row.findings.length)) {
-        log(
-          `${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`,
-        )
-        for (const finding of row.findings) log(`  ${finding.kind}: ${finding.message}`)
-      }
-      log(
-        `canon files: read ${numericReport.canonFiles.read.join(', ') || 'none'}` +
-          `; missing ${numericReport.canonFiles.missing.join(', ') || 'none'}`,
-      )
-      log('numeric literals')
-      for (const hit of numericLiterals) {
-        log(`  ${hit.source}  ${hit.numeral}  ${hit.sentence}`)
-      }
-    }
-    if (findings.length) exitCode(1)
+    await canonCheckCommand(flags, presentation, { job: jobName, cwd })
     return
   }
   if (sub === 'diff') {

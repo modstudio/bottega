@@ -92,34 +92,7 @@ async function printRulings(options: {
   log(JSON.stringify(await listRulingChanges({ since: options.since, changedAfter, kind })))
 }
 
-export function register(program: Command): void {
-  registerQuestionIdentities(program)
-  const question = program.command('question').description('manage worker questions')
-  question
-    .command('close <id>')
-    .description('close a question without recording a ruling')
-    .requiredOption('--reason <text>', 'record why the question is closed')
-    .allowExcessArguments(false)
-    .action(async (id, options) => {
-      const [database, identity, { closeQuestionByOperator }] = await Promise.all([
-        import('../database/db.ts'),
-        import('../run/question-identifier.ts'),
-        import('../run/question-close.ts'),
-      ])
-      const questionId = await identity.resolveQuestionIdentifier(database.db(), id)
-      await closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
-      log(`closed question ${questionId}`)
-    })
-  const ruling = program.command('ruling').description('inspect and preserve recorded rulings')
-  ruling
-    .command('list')
-    .description('list recorded run and workflow rulings')
-    .option('--since <ISO>', 'include ruling activity since this instant')
-    .option('--changed-after <sequence>', 'include source rows changed after this cursor')
-    .option('--kind <kind>', 'workflow, run, or all', 'all')
-    .option('--json', 'write the rulings as JSON')
-    .allowExcessArguments(false)
-    .action(printRulings)
+function registerOverturn(ruling: Command): void {
   ruling
     .command('overturn <question-id>')
     .description('overturn a recorded ruling')
@@ -160,6 +133,9 @@ export function register(program: Command): void {
         log(line)
       }
     })
+}
+
+function registerFiling(ruling: Command): void {
   ruling
     .command('file <question-id>')
     .description('file a recorded ruling as a document or canon proposal')
@@ -172,12 +148,12 @@ export function register(program: Command): void {
     .option('--json', 'write the filing result as JSON')
     .allowExcessArguments(false)
     .action(async (questionId, options) => {
-      const [database, identity, ruling] = await Promise.all([
+      const [database, identity, rulingModule] = await Promise.all([
         import('../database/db.ts'),
         import('../run/question-identifier.ts'),
         import('../run/ruling-file.ts'),
       ])
-      const result = await ruling.fileRuling(
+      const result = await rulingModule.fileRuling(
         {
           questionId: await identity.resolveQuestionIdentifier(database.db(), questionId),
           as: rulingFileAs(options.as),
@@ -196,4 +172,36 @@ export function register(program: Command): void {
         log(`filed as ${result.filed_as} at ${shown}${identity}`)
       }
     })
+}
+
+export function register(program: Command): void {
+  registerQuestionIdentities(program)
+  const question = program.command('question').description('manage worker questions')
+  question
+    .command('close <id>')
+    .description('close a question without recording a ruling')
+    .requiredOption('--reason <text>', 'record why the question is closed')
+    .allowExcessArguments(false)
+    .action(async (id, options) => {
+      const [database, identity, { closeQuestionByOperator }] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-identifier.ts'),
+        import('../run/question-close.ts'),
+      ])
+      const questionId = await identity.resolveQuestionIdentifier(database.db(), id)
+      await closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
+      log(`closed question ${questionId}`)
+    })
+  const ruling = program.command('ruling').description('inspect and preserve recorded rulings')
+  ruling
+    .command('list')
+    .description('list recorded run and workflow rulings')
+    .option('--since <ISO>', 'include ruling activity since this instant')
+    .option('--changed-after <sequence>', 'include source rows changed after this cursor')
+    .option('--kind <kind>', 'workflow, run, or all', 'all')
+    .option('--json', 'write the rulings as JSON')
+    .allowExcessArguments(false)
+    .action(printRulings)
+  registerOverturn(ruling)
+  registerFiling(ruling)
 }

@@ -5,6 +5,13 @@ import { type Command, InvalidArgumentError, Option } from 'commander'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { collect, log } from './support.ts'
 
+async function repairAskingTurnsBeforeServiceRead(): Promise<void> {
+  const { db, storeWritesRefused } = await import('../database/db.ts')
+  if (storeWritesRefused()) return
+  const { repairAskingTurns } = await import('../run/run-liveness.ts')
+  repairAskingTurns(db(), new Date().toISOString())
+}
+
 function stopSummaryBlockKey(value: string): string {
   if (!/^[0-9a-f]+$/i.test(value)) throw new InvalidArgumentError('block key must be hexadecimal')
   return value
@@ -136,6 +143,7 @@ export function register(program: Command): void {
     .option('--json', 'write the close-out report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      await repairAskingTurnsBeforeServiceRead()
       const { closeOutSession, formatSessionCloseOut, SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE } =
         await import('../session/session-close-out.ts')
       const report = await closeOutSession({
