@@ -70,6 +70,7 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
+import { questionTextRefusal, requiredHandlerText } from '../question-store/question-text.ts'
 import {
   isRunQuestionOwnerNotLive,
   runQuestionOwnerNotLiveMessage,
@@ -465,12 +466,15 @@ export async function ask(
   ),
 ): Promise<AskResult> {
   writableDb()
+  const parsed = WorkerQuestionSchema.safeParse(o)
+  if (!parsed.success)
+    return { answered: false, reason: parsed.error.issues[0]?.message ?? 'question was refused' }
+  const typed = parsed.data
   const prose = await orchestratorProseGate([
-    { field: 'question text', text: o.question, prior: null },
+    { field: 'question text', text: typed.question, prior: null },
   ])
   const proseNotice = prose.refusal ?? (prose.notices.join('\n') || undefined)
   const askedAt = nowIso()
-  const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   let transitioned = false
   const live = writeTransaction(() => {
@@ -489,7 +493,7 @@ export async function ask(
     id = await recordQuestion({
       runId: o.runId,
       askedAt,
-      question: o.question,
+      question: typed.question,
       options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
       recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
       why: typed.why,
@@ -655,6 +659,20 @@ function askServerState(runId: string, dependencies: AskServerDependencies) {
   return [new Set<string>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
 }
 
+function missingRequiredText(field: 'question' | 'body'): string {
+  const call = field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'
+  return `No ${field} was supplied. Call ${call} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`
+}
+
+function requiredTextRetry(value: string, field: string, call: string): string | null {
+  const refusal = questionTextRefusal(value, field)
+  if (!refusal) return null
+  if (refusal.kind === 'empty')
+    return missingRequiredText(field === 'question' ? 'question' : 'body')
+  const instruction = field === 'question' ? ' Do not decide the matter yourself.' : ''
+  return `${refusal.message} Call ${call} again.${instruction}`
+}
+
 export function createAskMcpServer(
   runId: string,
   token: string,
@@ -686,10 +704,6 @@ export function createAskMcpServer(
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
   })
-  const missing = (field: 'question' | 'body') =>
-    text(
-      `No ${field} was supplied. Call ${field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`,
-    )
   const unauthorized = () =>
     'This process is not a recognized orchestrator worker. Return status "blocked" with your question in the final answer.'
 
@@ -697,7 +711,6 @@ export function createAskMcpServer(
   // required) while ensuring an omitted value reaches the handler. Otherwise
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
-  const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
   registerAskBoardTools({ server, runId, authorized, unauthorized, text })
 
   registerTool(
@@ -711,7 +724,8 @@ export function createAskMcpServer(
     },
     async (questionInput) => {
       const { question } = questionInput
-      if (!question.trim()) return missing('question')
+      const refusal = requiredTextRetry(question, 'question', 'ask_orchestrator')
+      if (refusal) return text(refusal)
       try {
         const typedQuestion = WorkerQuestionSchema.parse(questionInput)
         const result = authorized()
@@ -773,7 +787,7 @@ export function createAskMcpServer(
         'your own task in your final reply. The orchestrator derives the project and run anchors; ' +
         'you may optionally anchor the observation to a relative path and line.',
       inputSchema: z.object({
-        text: requiredTextReachingHandler.describe('One non-empty line describing the defect.'),
+        text: requiredHandlerText.describe('One non-empty line describing the defect.'),
         project: z
           .string()
           .trim()
@@ -794,6 +808,8 @@ export function createAskMcpServer(
       }),
     },
     async ({ text: noteText, project, file, same_as }) => {
+      const refusal = questionTextRefusal(noteText, 'text')
+      if (refusal?.kind === 'malformed') return text(`${refusal.message} Call note again.`)
       try {
         if (!authorized()) throw new Error(unauthorized())
         const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
@@ -825,11 +841,12 @@ export function createAskMcpServer(
         'Send the architect a non-blocking progress or context message and keep working. ' +
         'This is not a question and does not request or wait for a ruling.',
       inputSchema: z.object({
-        body: requiredTextReachingHandler.describe('The context to put on this run.'),
+        body: requiredHandlerText.describe('The context to put on this run.'),
       }),
     },
     async ({ body }) => {
-      if (!body.trim()) return missing('body')
+      const refusal = requiredTextRetry(body, 'body', 'message_orchestrator')
+      if (refusal) return text(refusal)
       try {
         if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)

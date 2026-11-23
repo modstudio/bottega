@@ -215,6 +215,24 @@ test("a run-bound ask resolves the run's project destination", async () => {
   database.close()
 })
 
+test.each(['[object Object]', ''])(
+  'refuses malformed question text %j before writing',
+  async (text) => {
+    const database = migratedTestDatabase()
+    seedProject(database)
+    const writtenSpaces: string[] = []
+    installRecordApiClient(recordClient(writtenSpaces))
+
+    await expect(
+      askQuestion(database, { projectId: PROJECT_ID, askedAt: STAMP, question: text }),
+    ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+
+    expect(writtenSpaces).toEqual([])
+    expect((database.query('SELECT COUNT(*) AS n FROM question').get() as { n: number }).n).toBe(0)
+    database.close()
+  },
+)
+
 test('a cursor-bound ask without a project is refused without writing', async () => {
   const database = migratedTestDatabase()
   const writtenSpaces: string[] = []
@@ -408,6 +426,48 @@ test("an open question still links when its project's space is undeclared", asyn
   expect(linked).toEqual({ recordId: ID, number: 1 })
   expect(intents).toEqual(['link'])
   expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID])
+  database.close()
+})
+
+test('a link mutation refuses object coercion text before writing', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(PROJECT_ID, 'question-mutation-fixture', '/fixture', 'bun', '{}')
+  const openQuestion = row({
+    record_id: ID,
+    question_record_id: ID,
+    workflow_cursor_record_id: CURSOR_ID,
+    workflow_key: 'DEV-2515',
+    project_record_id: PROJECT_ID,
+    awaiting_operator_at: STAMP,
+    closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  const writtenSpaces: string[] = []
+  const intents: QuestionIntent[] = []
+  installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+
+  await expect(
+    upsertWorkflowQuestion(
+      {
+        cursorId: CURSOR_ID,
+        projectId: PROJECT_ID,
+        workflowKey: 'DEV-2515',
+        workflowTaskRecordId: null,
+        cursorOrdinal: 0,
+        stepSlug: 'implement',
+        question: '[object Object]',
+        at: STAMP,
+      },
+      database,
+    ),
+  ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+
+  expect(intents).toEqual([])
+  expect(writtenSpaces).toEqual([])
   database.close()
 })
 

@@ -51,6 +51,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   'orch.ts',
   '../outcome.ts',
   '../record/machine-name.ts',
+  '../question-store/question-text.ts',
   '../run-owned-paths.ts',
   '../run/question-open.ts',
   '../run/run-chain.ts',

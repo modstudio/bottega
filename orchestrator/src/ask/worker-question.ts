@@ -3,10 +3,10 @@
 
 import { z } from 'zod'
 import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import { requiredHandlerText, requiredQuestionText } from '../question-store/question-text.ts'
 
 const nullableAbsent = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null ? undefined : value), schema.optional())
-const requiredQuestion = z.preprocess((value) => String(value ?? ''), z.string())
 
 export function normalizeWorkerQuestionChoice(value: string): string {
   return value
@@ -25,7 +25,7 @@ const choiceOption = z
 const choice = z
   .object({
     kind: z.literal('choice'),
-    question: requiredQuestion,
+    question: requiredQuestionText,
     why: nullableAbsent(z.string().trim()).default(''),
     options: z
       .array(
@@ -72,7 +72,7 @@ const choice = z
   })
 const yesno = z.object({
   kind: z.literal('yesno'),
-  question: requiredQuestion,
+  question: requiredQuestionText,
   why: nullableAbsent(z.string().trim()).default(''),
   criteria: nullableAbsent(
     z.object({ yes: nullableAbsent(z.string()), no: nullableAbsent(z.string()) }),
@@ -80,7 +80,7 @@ const yesno = z.object({
 })
 const score = z.object({
   kind: z.literal('score'),
-  question: requiredQuestion,
+  question: requiredQuestionText,
   why: nullableAbsent(z.string().trim()).default(''),
   levels: z
     .array(z.string().trim())
@@ -99,7 +99,7 @@ const score = z.object({
 })
 const text = z.object({
   kind: z.literal('text'),
-  question: requiredQuestion,
+  question: requiredQuestionText,
   why: nullableAbsent(z.string().trim()).default(''),
 })
 
@@ -111,7 +111,7 @@ export const WorkerQuestionInputSchema = z.object({
     .describe(
       'choice when there are named options, yesno for a yes/no ruling, score for an ordered scale, text otherwise',
     ),
-  question: requiredQuestion,
+  question: requiredHandlerText,
   why: z.string().nullable().optional(),
   options: z
     .array(

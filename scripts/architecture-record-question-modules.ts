@@ -158,7 +158,9 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/machine-identity.ts',
     '../record/record-question-contract.ts',
     './question-store.ts',
+    './question-text.ts',
   ]),
+  module('orchestrator/src/question-store/question-text.ts', ['zod']),
   module('orchestrator/src/question-store/question-store-read.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

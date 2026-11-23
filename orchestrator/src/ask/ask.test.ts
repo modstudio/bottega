@@ -824,6 +824,19 @@ describe('the live ask channel always answers', () => {
     ).toEqual({ question })
   })
 
+  test('ask returns a refusal for malformed question text before prose or storage', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const result = await ask({ runId: run, question: '[object Object]', timeoutMs: 1 })
+
+    expect(result).toEqual({
+      answered: false,
+      reason: expect.stringContaining('question was the text [object Object]'),
+    })
+    expect(db().query('SELECT record_id FROM question WHERE run_record_id = ?').all(run)).toEqual(
+      [],
+    )
+  })
+
   test('missing required text instructs the worker without recording or returning an error', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const { client, close } = await askClient(run)

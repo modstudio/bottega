@@ -8,6 +8,7 @@ import { machineId } from '../record/machine-identity.ts'
 import type { QuestionLiveIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
+import { questionTextRefusal } from './question-text.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)
@@ -32,6 +33,23 @@ const json = (value: unknown): unknown => {
   } catch {
     return value
   }
+}
+
+function refuseMalformedQuestionText(value: unknown): void {
+  const refusal = questionTextRefusal(value)
+  if (!refusal) return
+  throw new Error(
+    `${refusal.message} The question text must be a non-empty string; fix the caller that built it.`,
+  )
+}
+
+async function writeQuestion(
+  database: Database,
+  intent: QuestionLiveIntent,
+  input: QuestionWriteBody,
+) {
+  refuseMalformedQuestionText(input.question.question)
+  return questionStore(database).write(intent, input)
 }
 
 export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
@@ -116,7 +134,7 @@ export async function mutateQuestion(
   const current = questionSnapshotFromRow(row)
   if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
     throw new Error(`question ${input.id} changed before the mutation was stored`)
-  const result = await questionStore(database).write(input.intent, {
+  const result = await writeQuestion(database, input.intent, {
     requestId: newRecordId(),
     question: {
       ...current,
@@ -239,7 +257,7 @@ export async function askQuestion(
     createdAt: input.askedAt,
     updatedAt: input.askedAt,
   }
-  const result = await questionStore(database).write('ask', {
+  const result = await writeQuestion(database, 'ask', {
     requestId: newRecordId(),
     question,
     audit: { action: 'ask', actorSession: null, at: input.askedAt, reason: null },
