@@ -250,7 +250,10 @@ export async function acknowledgeNote(
       )
       .run(newRecordId(), row.record_id, sessionId, at, row.sightings)
   })
-  return { note: await getNote(note.record_id, options.hosted), alreadyAcknowledged: false }
+  return {
+    note: await getNote(note.record_id, options.hosted, note.project),
+    alreadyAcknowledged: false,
+  }
 }
 
 function noteCandidates(notes: NoteRow[], text: string): NoteCandidate[] {
@@ -318,7 +321,7 @@ export async function mergeNote(
         .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
       conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
-    const merged = await getNote(targetRecordId, options.hosted)
+    const merged = await getNote(targetRecordId, options.hosted, target.project)
     await recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
     return merged
   }
@@ -428,7 +431,7 @@ async function createLocalNoteRow(
       )
     return recordId
   })
-  return getNote(recordId, hosted)
+  return getNote(recordId, hosted, targetProject)
 }
 
 export async function createNote(
@@ -447,7 +450,7 @@ export async function createNote(
   )
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
-    const existing = await getNote(input.sameAs, options.hosted)
+    const existing = await getNote(input.sameAs, options.hosted, targetProject)
     if (existing.project !== targetProject)
       throw new Error('the matching note belongs to another project')
     if (mode === 'local-authoritative') {
@@ -463,7 +466,7 @@ export async function createNote(
           .run(JSON.stringify([...row.anchors, anchor]), at, row.record_id)
       })
       return completedNoteCreation(
-        await getNote(existing.record_id, options.hosted),
+        await getNote(existing.record_id, options.hosted, existing.project),
         candidates,
         input,
         targetProject,
@@ -548,7 +551,7 @@ export async function promoteNote(
           )
           .run(options.existingTaskKey!, nowIso(), row.record_id)
       })
-      return getNote(note.record_id, options.hosted)
+      return getNote(note.record_id, options.hosted, note.project)
     }
     if (options.existingTaskKey) {
       writeTransaction((conn) => {
@@ -569,7 +572,7 @@ export async function promoteNote(
           )
           .run(task.task_key, task.task_record_id, at, row.record_id)
       })
-      return getNote(note.record_id, options.hosted)
+      return getNote(note.record_id, options.hosted, note.project)
     }
     writeTransaction((conn) => {
       const row = decodeNoteRow(noteRow(conn, note.record_id))
@@ -590,7 +593,7 @@ export async function promoteNote(
         )
         .run(task.key, task.record_id, nowIso(), row.record_id)
     })
-    return getNote(note.record_id, options.hosted)
+    return getNote(note.record_id, options.hosted, note.project)
   }
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
   const promoteInput = creating ? { title } : { task: options.existingTaskKey! }
@@ -628,7 +631,7 @@ export async function dropNote(
         .query(`UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE record_id=?`)
         .run(at, `dropped: ${reason.trim()}`, at, recordId)
     })
-    return getNote(recordId, options.hosted)
+    return getNote(recordId, options.hosted, current.project)
   }
   const at = nowIso()
   const updated = await sendHostedNoteDrop(current, reason.trim(), at, options.hosted)
@@ -692,7 +695,7 @@ export async function relinkNote(
       )
       .run(target, history.targetTaskRecordId, at, row.record_id)
   })
-  return getNote(recordId, options.hosted)
+  return getNote(recordId, options.hosted, current.project)
 }
 
 export type StaleResult = StalenessResult

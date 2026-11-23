@@ -240,7 +240,7 @@ describe('suggestion notes', () => {
     }
     await acknowledgeNote(id, 'session-1', { hosted: dispositionHosted })
     await dropNote(id, 'done', { hosted: dispositionHosted })
-    expect(spaces).toEqual([null, 'space-gamma', null, 'space-gamma'])
+    expect(spaces).toEqual(['space-a', 'space-gamma', 'space-a', 'space-gamma'])
   })
 
   test('a hosted-first create reports its reference when the local cache is locked', async () => {
