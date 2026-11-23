@@ -162,7 +162,9 @@ export const recordModules: RecordModule[] = [
     './record-lens-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-board-stream.ts', [
+    '../../../shared/record-remedies.ts',
     './record-api-client-paths.ts',
+    './record-api-client-transport.ts',
   ]),
   module('orchestrator/src/hosted-call-outcome.ts', [
     'bun:sqlite',

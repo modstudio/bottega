@@ -50,6 +50,9 @@ jobs:
           BOTTEGA_RELEASE_REQUIRE_PINNED_BUN: '1'
         run: bun run orch -- release check "${GITHUB_REF_NAME}"
 
+      - name: Validate released client contract
+        run: bun scripts/check-release-client-contract.ts "${GITHUB_REF_NAME}"
+
       - name: Prove the release installs
         run: bun run release:install-proof -- "${GITHUB_REF_NAME}"
 
