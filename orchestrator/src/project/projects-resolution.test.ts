@@ -10,7 +10,9 @@ import { db, writableDb } from '../database/db.ts'
 import { removeProjectCommand } from './project-commands.ts'
 import { PROJECT_REFERENCE_REPORT } from './project-reference-counts.ts'
 import {
+  type Project,
   type ProjectReferenceCounts,
+  projectAmong,
   projectAt,
   projectByName,
   projectRemovalRefusal,
@@ -29,6 +31,46 @@ import {
   upsertProject,
   validateProjectSettings,
 } from './projects.ts'
+
+const resolutionCandidate = (name: string, path: string): Project => ({ name, path }) as Project
+
+test('project probes only containing candidates from longest path to shortest', () => {
+  const outer = resolutionCandidate('outer', '/work/project')
+  const inner = resolutionCandidate('inner', '/work/project/packages/inner')
+  const outside = resolutionCandidate('outside', '/work/elsewhere')
+  const calls: string[] = []
+  const repository = (project: Pick<Project, 'path'>) => {
+    calls.push(project.path)
+    return project.path !== inner.path
+  }
+
+  expect(projectAmong('/work/project/src', [outside, outer], repository)).toBe(outer)
+  expect(calls).toEqual([outer.path])
+
+  calls.length = 0
+  expect(
+    projectAmong('/work/project/packages/inner/src', [outside, outer, inner], repository),
+  ).toBe(outer)
+  expect(calls).toEqual([inner.path, outer.path])
+
+  calls.length = 0
+  expect(projectAmong('/unregistered', [outside, outer, inner], repository)).toBeNull()
+  expect(calls).toEqual([])
+})
+
+test('project resolution keeps candidate order when containing paths have equal lengths', () => {
+  const first = resolutionCandidate('first', '/work/project')
+  const second = resolutionCandidate('second', '/work/project')
+  const calls: string[] = []
+
+  expect(
+    projectAmong('/work/project/src', [first, second], (project) => {
+      calls.push(project.path)
+      return true
+    }),
+  ).toBe(first)
+  expect(calls).toEqual([first.path])
+})
 
 test('a review sha takes the most recent same-task run branch', () => {
   expect(
