@@ -59,7 +59,8 @@ function fakeBoard(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     listBoardMessages: async () => ({ messages: [], truncated: false }),
     postBoardMessage: async () =>
       ({ id: 'posted' }) as Awaited<ReturnType<RecordApiClient['postBoardMessage']>>,
-    withdrawBoardMessage: async () => undefined,
+    withdrawBoardMessage: async () =>
+      ({ id: 'withdrawn' }) as Awaited<ReturnType<RecordApiClient['withdrawBoardMessage']>>,
     ...overrides,
   } as RecordApiClient
 }
@@ -213,6 +214,7 @@ test('the next normal pass withdraws a fallback store-lock notice with one list 
         },
         withdrawBoardMessage: async (id) => {
           withdrawals.push(id)
+          return { id } as Awaited<ReturnType<RecordApiClient['withdrawBoardMessage']>>
         },
       }),
     })

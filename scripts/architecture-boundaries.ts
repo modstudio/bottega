@@ -623,6 +623,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../canon/evals.ts',
       './monitor.ts',
+      './monitor-collector-leg-announcement.ts',
       './monitor-notices.ts',
       './monitor-store-write-lock.ts',
       './monitor-types.ts',

@@ -184,9 +184,18 @@ async function showLockHolder(json: boolean, presentation: Presentation): Promis
   if (!report.supported) presentation.setExitCode(1)
 }
 
+type StoreWriteLockCondition = MonitorCondition & {
+  pid: number | null
+  command: string | null
+  runId: string | null
+  isRunSupervisor: boolean
+  classification: 'free' | 'contended' | 'held'
+  sampleCount: number
+}
+
 function lockCondition(
   report: Extract<StoreWriteLockReport, { supported: true }>,
-): MonitorCondition {
+): StoreWriteLockCondition {
   return {
     kind: 'store-write-lock-held',
     subject: report.store,

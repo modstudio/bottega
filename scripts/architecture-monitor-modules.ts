@@ -229,6 +229,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/brand.ts',
     '../record/record-board-contract.ts',
     './collector-leg-conditions.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-collector-leg-announcement.ts', [
     'bun:sqlite',
@@ -236,6 +237,7 @@ export const monitorModules: MonitorModule[] = [
     './collector-leg-announcement.ts',
     './collector-leg-conditions.ts',
     './monitor-hosted-pressure.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-gate-tooling.ts', [
     'bun:sqlite',

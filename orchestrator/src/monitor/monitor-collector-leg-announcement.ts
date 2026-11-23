@@ -55,7 +55,16 @@ function candidateFor(
       ? new Date(clock - condition.ageMs).toISOString()
       : standingConditionHistoryOnset(database, condition.kind, currentStartedAt)
   const persistedMs = condition.ageMs ?? Math.max(0, clock - Date.parse(onset))
-  return { condition, onset, persistedMs }
+  return {
+    condition: {
+      kind: condition.kind,
+      subject: condition.subject,
+      detail: condition.detail,
+      action: condition.action,
+    },
+    onset,
+    persistedMs,
+  }
 }
 
 function announcementError(error: unknown): { errors: string[] } {
