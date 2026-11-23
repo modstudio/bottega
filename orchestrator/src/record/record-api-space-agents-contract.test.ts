@@ -2,6 +2,12 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 
+const contractRoutes = [
+  'GET /v1/space-agents',
+  'PUT /v1/space-agents',
+  'DELETE /v1/space-agents',
+] as const
+
 const declaration = {
   name: 'codex',
   harness: 'codex',
@@ -48,4 +54,5 @@ test.each(['GET', 'PUT', 'DELETE'])('%s /v1/space-agents is served', async (meth
       : { body: JSON.stringify(method === 'PUT' ? declaration : { name: declaration.name }) }),
   })
   expect(response.status).toBe(200)
+  expect(contractRoutes).toContain(`${method} /v1/space-agents`)
 })

@@ -9,6 +9,14 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/agent-share.ts', [
+    '../../../shared/brand.ts',
+    '../record/record-api-client.ts',
+    '../record/record-write-destination.ts',
+    '../record/record-write-authority.ts',
+    '../record/record-space-agents.ts',
+    './agent-registry.ts',
+  ]),
   module('orchestrator/src/agent/goose-provider.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/agent/provider-credential-routing.ts', [
     '../config/credential-service.ts',

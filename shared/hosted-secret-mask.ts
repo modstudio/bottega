@@ -6,10 +6,10 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { PLATFORM_SLUG } from './brand.ts'
 import { boardMessage, boardMessageTag } from './record/schema-board.ts'
 import { contextItem } from './record/schema-context-items.ts'
-import { spaceAgent } from './record/schema-space-agents.ts'
 import { doc, docRevision } from './record/schema-docs.ts'
 import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from './record/schema-hub.ts'
 import { question } from './record/schema-question.ts'
+import { spaceAgent } from './record/schema-space-agents.ts'
 import { workflowStepText, workflowTextCopy } from './record/schema-task-flow.ts'
 import {
   stepCatalogueEvent,

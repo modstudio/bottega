@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { newRecordId, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../shared/record/schema.ts'
-import { asSpace, psql, succeeds } from './fixtures/postgres-rls.ts'
+import { asSpace, migration, psql, succeeds } from './fixtures/postgres-rls.ts'
+
+test('space agent migration forces row-level security', () => {
+  expect(migration).toContain('ALTER TABLE "space_agent" FORCE ROW LEVEL SECURITY')
+})
 
 export function registerSpaceAgentRlsProof(spaceA: string, spaceB: string): void {
   test('space agent rows are tenant-confined and FORCE confines the table owner', () => {

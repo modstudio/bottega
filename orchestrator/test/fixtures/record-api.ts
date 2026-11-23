@@ -32,6 +32,7 @@ import {
 } from './record-api-docs.ts'
 import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
 import { type MemoryQuestionInput, memoryQuestionClient } from './record-api-question.ts'
+import { idleSpaceAgentDeps, memorySpaceAgentClient } from './record-api-space-agents.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
@@ -126,9 +127,7 @@ export function idleRecordApiDeps() {
     readContextHolders: unusedContext,
     upsertContextItem: unusedContext,
     deleteContextItem: unusedContext,
-    readSpaceAgents: unusedContext,
-    upsertSpaceAgent: unusedContext,
-    deleteSpaceAgent: unusedContext,
+    ...idleSpaceAgentDeps(),
     readChanges: async () => ({
       resetRequired: false as const,
       cursor: { xid: 0n, seq: 0n },
@@ -385,15 +384,7 @@ export function createMemoryRecordApiClient(
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
     ...memoryContextItemClient(contextItems),
-    async listSpaceAgents() {
-      return []
-    },
-    async upsertSpaceAgent(input) {
-      return input
-    },
-    async deleteSpaceAgent() {
-      return { removed: false }
-    },
+    ...memorySpaceAgentClient(),
     ...memoryTaskFlowClient(input),
     ...memoryQuestionClient(input),
     cacheCounts: unusedIdentityAndSpace,

@@ -507,12 +507,6 @@ function recordSpaceAgentDependencies() {
   }
 }
 
-function recordSpaceAgentDependencies() {
-  return {
-    ...recordSpaceAgentDependencies(),
-  }
-}
-
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -524,7 +518,6 @@ async function serveRecordApiWithAuth(
   const recordRetention = startRecordRetention({
     prune: () => pruneRecordRetention(config.recordUrl),
   })
-  const migrations = recordMigrationCount()
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
@@ -532,7 +525,7 @@ async function serveRecordApiWithAuth(
     noDestinationWriteDatabase: () => recordPool(config.recordUrl),
     ...recordChangeDependencies(config, recordChangeWakeSource),
     allowedOrigins: config.allowedOrigins,
-    ...recordApiAccessDependencies(config, auth, migrations),
+    ...recordApiAccessDependencies(config, auth, recordMigrationCount()),
     ...recordRunDependencies(),
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,

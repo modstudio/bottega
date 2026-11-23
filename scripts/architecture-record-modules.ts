@@ -8,6 +8,7 @@ import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
 import { recordQuestionModules } from './architecture-record-question-modules.ts'
 import { recordSecretMaskModules } from './architecture-record-secret-mask-modules.ts'
+import { recordSpaceAgentModules } from './architecture-record-space-agent-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
@@ -33,24 +34,7 @@ export const recordModules: RecordModule[] = [
   ...recordSyncModules,
   ...recordTaskFlowModules,
   ...storageRecordModules,
-  module('orchestrator/src/record/record-space-agents.ts', [
-    'bun',
-    '../../../shared/hosted-secret-mask.ts',
-    '../../../shared/record/tenant.ts',
-    '../../../shared/record-id.ts',
-    './record-pool.ts',
-  ]),
-  module('orchestrator/src/record/record-api-client-space-agents.ts', [
-    './record-api-client-paths.ts',
-    './record-space-agents.ts',
-  ]),
-  module('orchestrator/src/record/record-api-space-agents.ts', [
-    'hono',
-    'zod',
-    './record-api-client-paths.ts',
-    './record-auth.ts',
-    './record-space-agents.ts',
-  ]),
+  ...recordSpaceAgentModules,
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',
@@ -69,8 +53,6 @@ export const recordModules: RecordModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/record/migration-session.ts',
   ]),
-  module('orchestrator/src/postgres/migration-failure.ts', []),
-  module('orchestrator/src/postgres/migration-notices.ts', []),
   module('orchestrator/src/lens/lens-built-ins.ts', []),
   module('orchestrator/src/lens/lens-profile-version.ts', []),
   module('orchestrator/src/lens/lens-profile-pin-version-sql.ts', []),

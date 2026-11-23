@@ -51,12 +51,12 @@ import {
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
-import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
+import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 import type { RecordSubjectRouteDeps } from './record-api-subjects.ts'
 import { requestTenant } from './record-api-tenant.ts'
 import {
@@ -120,8 +120,8 @@ import type {
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
-import type { RecordScore } from './record-verdicts.ts'
 import type { RecordSpaceAgent } from './record-space-agents.ts'
+import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 const RECORD_API_POST_READ_ROUTES = new Set([

@@ -26,10 +26,6 @@ import {
 } from './record-api-client-context-items.ts'
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
-  type RecordSpaceAgentClient,
-  recordSpaceAgentClient,
-} from './record-api-client-space-agents.ts'
-import {
   recordApiUnreachable as classifyRecordApiUnreachable,
   recordApiError,
   recordAuthRefusal,
@@ -59,6 +55,10 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
+import {
+  type RecordSpaceAgentClient,
+  recordSpaceAgentClient,
+} from './record-api-client-space-agents.ts'
 import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'

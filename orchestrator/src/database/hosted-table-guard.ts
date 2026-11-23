@@ -10,7 +10,6 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
   'context_item',
   'question',
   'question_mutation_audit',
-  'space_agent',
   'task_flow',
   'workflow_cursor',
   'workflow_obligation',
@@ -37,7 +36,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   },
   {
     pattern:
-      /^orchestrator\/src\/record\/(?:record-context-items|record-space-agents|record-question-(?:number|read|write)|record-task-flow(?:-write)?)\.ts$/,
+      /^orchestrator\/src\/record\/(?:record-context-items|record-question-(?:number|read|write)|record-task-flow(?:-write)?)\.ts$/,
     reason:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
   },

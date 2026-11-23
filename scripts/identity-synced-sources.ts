@@ -269,7 +269,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'recordApiClient',
     [],
     ['deleteSpaceAgent'],
-    'the declaration name and destination space come from the command',
+    'no local table; the declaration name and destination space come from the command',
   ),
   ...writeEntries(
     'orchestrator',

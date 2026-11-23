@@ -18,6 +18,9 @@ const manifest = (store: KeyStore, reason: string, columns: readonly string[]): 
   columns.map((column) => ({ store, column, reason }))
 const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'source question display number', ['context_item.question_number']),
+  ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
+    'space_agent.max_concurrent',
+  ]),
   ...manifest('orchestrator', 'source question display number', ['context_item.question_number']),
   ...TELEMETRY_IDENTITY.values,
   ...SESSION_EVENT_IDENTITY.values,
