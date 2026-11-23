@@ -37,7 +37,12 @@ test('space agent routes share, replace, list, and unshare declarations', async 
       deleteSpaceAgent: async ({ name }) => ({ removed: rows.delete(name) }),
     },
     {
-      scope: () => ({ url: 'postgres://record', userId: 'user', spaceId: 'space', spaceIds: ['space'] }),
+      scope: () => ({
+        url: 'postgres://record',
+        userId: 'user',
+        spaceId: 'space',
+        spaceIds: ['space'],
+      }),
       noSpace: () => new Response('missing space', { status: 409 }),
     },
   )
@@ -67,7 +72,12 @@ test('space agent route rejects machine-state fields', async () => {
       deleteSpaceAgent: async () => ({ removed: false }),
     },
     {
-      scope: () => ({ url: 'postgres://record', userId: 'user', spaceId: 'space', spaceIds: ['space'] }),
+      scope: () => ({
+        url: 'postgres://record',
+        userId: 'user',
+        spaceId: 'space',
+        spaceIds: ['space'],
+      }),
       noSpace: () => new Response('missing space', { status: 409 }),
     },
   )

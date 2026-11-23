@@ -186,9 +186,23 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       './model-host.ts',
       './agent-set-capacity.ts',
+      './agent-share.ts',
       './goose-provider.ts',
     ],
     'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
+  ),
+  boundary(
+    'agent-share-boundary',
+    'orchestrator/src/agent/agent-share.ts',
+    [
+      '../../../shared/brand.ts',
+      '../record/record-api-client.ts',
+      '../record/record-write-destination.ts',
+      '../record/record-write-authority.ts',
+      '../record/record-space-agents.ts',
+      './agent-registry.ts',
+    ],
+    'Keep shared-agent publication as a thin adapter over the local registry and hosted record client.',
   ),
   boundary(
     'canon-budget-boundary',

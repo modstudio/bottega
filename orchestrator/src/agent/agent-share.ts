@@ -1,12 +1,11 @@
 // concern: agent-share
 /** Publishes local agent declarations to one explicitly named hosted record space. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordApiClient, type RecordApiClient } from '../record/record-api-client.ts'
-import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
-import { recordWriteDestination } from '../record/record-write-destination.ts'
-import { requireHostedRecord } from '../record/record-write-authority.ts'
+import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
-import { agentRows, type AgentRow } from './agent-registry.ts'
+import { requireHostedRecord } from '../record/record-write-authority.ts'
+import { recordWriteDestination } from '../record/record-write-destination.ts'
+import { type AgentRow, agentRows } from './agent-registry.ts'
 
 export function sharedAgentDeclaration(row: AgentRow): RecordSpaceAgent {
   return {
@@ -59,22 +58,6 @@ export async function unshareAgent(
   localAgent(name)
   const client = suppliedClient ?? recordApiClient()
   const result = await client.deleteSpaceAgent(name, await destination(client, space))
-  if (!result.removed) throw new Error(`agent ${JSON.stringify(name)} is not declared in space ${space}`)
-}
-
-export function listSharedAgents(
-  space: string,
-  suppliedClient?: RecordApiClient,
-): Promise<RecordSpaceAgent[]> {
-  return applyRecordReadAuthority({
-    local: () => {
-      throw new Error(
-        `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before reading shared agents`,
-      )
-    },
-    hosted: async () => {
-      const client = suppliedClient ?? recordApiClient()
-      return client.listSpaceAgents(await destination(client, space))
-    },
-  })
+  if (!result.removed)
+    throw new Error(`agent ${JSON.stringify(name)} is not declared in space ${space}`)
 }

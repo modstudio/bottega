@@ -262,6 +262,15 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ['context_item'],
     ['deleteContextItem', 'upsertContextItem'],
   ),
+  ...readEntries('orchestrator', 'recordApiClient', ['listSpaceAgents']),
+  ...writeEntries('orchestrator', 'recordApiClient', ['agent'], ['upsertSpaceAgent']),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    [],
+    ['deleteSpaceAgent'],
+    'the declaration name and destination space come from the command',
+  ),
   ...writeEntries(
     'orchestrator',
     'recordApiClient',

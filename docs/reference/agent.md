@@ -27,10 +27,12 @@ agents, jobs, and routing
 - [bottega agent remove](#bottega-agent-remove)
 - [bottega agent routing-backtest](#bottega-agent-routing-backtest)
 - [bottega agent set](#bottega-agent-set)
+- [bottega agent share](#bottega-agent-share)
 - [bottega agent show](#bottega-agent-show)
 - [bottega agent stats](#bottega-agent-stats)
 - [bottega agent typed-question](#bottega-agent-typed-question)
 - [bottega agent typed-question backtest](#bottega-agent-typed-question-backtest)
+- [bottega agent unshare](#bottega-agent-unshare)
 
 ## bottega agent
 
@@ -53,9 +55,11 @@ agents, jobs, and routing
 - [bottega agent remove](./agent.md#bottega-agent-remove)
 - [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
 - [bottega agent set](./agent.md#bottega-agent-set)
+- [bottega agent share](./agent.md#bottega-agent-share)
 - [bottega agent show](./agent.md#bottega-agent-show)
 - [bottega agent stats](./agent.md#bottega-agent-stats)
 - [bottega agent typed-question](./agent.md#bottega-agent-typed-question)
+- [bottega agent unshare](./agent.md#bottega-agent-unshare)
 
 ## bottega agent add
 
@@ -410,6 +414,20 @@ Options are documented by `--help`.
 
 - [bottega agent](./agent.md#bottega-agent)
 
+## bottega agent share
+
+**Synopsis:** `bottega agent share [args...]`
+
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
+
 ## bottega agent show
 
 **Synopsis:** `bottega agent show [args...]`
@@ -474,3 +492,17 @@ ask a declared typed question about unanswered historical subjects
 ### Related
 
 - [bottega agent typed-question](./agent.md#bottega-agent-typed-question)
+
+## bottega agent unshare
+
+**Synopsis:** `bottega agent unshare [args...]`
+
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)

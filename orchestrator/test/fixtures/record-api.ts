@@ -126,6 +126,9 @@ export function idleRecordApiDeps() {
     readContextHolders: unusedContext,
     upsertContextItem: unusedContext,
     deleteContextItem: unusedContext,
+    readSpaceAgents: unusedContext,
+    upsertSpaceAgent: unusedContext,
+    deleteSpaceAgent: unusedContext,
     readChanges: async () => ({
       resetRequired: false as const,
       cursor: { xid: 0n, seq: 0n },
@@ -382,6 +385,15 @@ export function createMemoryRecordApiClient(
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
     ...memoryContextItemClient(contextItems),
+    async listSpaceAgents() {
+      return []
+    },
+    async upsertSpaceAgent(input) {
+      return input
+    },
+    async deleteSpaceAgent() {
+      return { removed: false }
+    },
     ...memoryTaskFlowClient(input),
     ...memoryQuestionClient(input),
     cacheCounts: unusedIdentityAndSpace,

@@ -82,11 +82,6 @@ import {
   upsertRecordContextItem,
 } from './record-context-items.ts'
 import {
-  deleteRecordSpaceAgent,
-  readRecordSpaceAgents,
-  upsertRecordSpaceAgent,
-} from './record-space-agents.ts'
-import {
   deleteCredentialPreference,
   listCredentialPreferences,
   putCredentialPreference,
@@ -155,6 +150,11 @@ import { listRecordRoutingEvidence } from './record-routing-evidence.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsAutoMode, applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import {
+  deleteRecordSpaceAgent,
+  readRecordSpaceAgents,
+  upsertRecordSpaceAgent,
+} from './record-space-agents.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import { readRecordStorage } from './record-storage.ts'
 import {
@@ -499,6 +499,20 @@ function recordBoardDependencies() {
   }
 }
 
+function recordSpaceAgentDependencies() {
+  return {
+    readSpaceAgents: readRecordSpaceAgents,
+    upsertSpaceAgent: upsertRecordSpaceAgent,
+    deleteSpaceAgent: deleteRecordSpaceAgent,
+  }
+}
+
+function recordSpaceAgentDependencies() {
+  return {
+    ...recordSpaceAgentDependencies(),
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -535,9 +549,7 @@ async function serveRecordApiWithAuth(
     readContextHolders: readRecordContextHolders,
     upsertContextItem: upsertRecordContextItem,
     deleteContextItem: deleteRecordContextItem,
-    readSpaceAgents: readRecordSpaceAgents,
-    upsertSpaceAgent: upsertRecordSpaceAgent,
-    deleteSpaceAgent: deleteRecordSpaceAgent,
+    ...recordSpaceAgentDependencies(),
     ...recordDocDependencies(),
     ...recordSettingsDependencies(),
     ...recordScoreDependencies(),

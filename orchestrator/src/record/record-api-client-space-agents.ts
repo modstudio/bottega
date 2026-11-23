@@ -14,10 +14,7 @@ export type RecordSpaceAgentClient = {
     input: RecordSpaceAgent,
     destination: RecordWriteDestination,
   ): Promise<RecordSpaceAgent>
-  deleteSpaceAgent(
-    name: string,
-    destination: RecordWriteDestination,
-  ): Promise<{ removed: boolean }>
+  deleteSpaceAgent(name: string, destination: RecordWriteDestination): Promise<{ removed: boolean }>
 }
 
 export function recordSpaceAgentClient(request: RecordClientRequest): RecordSpaceAgentClient {
