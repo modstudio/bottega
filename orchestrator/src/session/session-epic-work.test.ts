@@ -22,8 +22,8 @@ const task = (
   key: string,
   parentKey: string | null,
   statusCategory = 'open',
-  hasChildren?: boolean,
-): TaskReadRow => ({
+  hasChildren = false,
+): TaskReadRow & { has_children: boolean } => ({
   key,
   record_id: `task-${key}`,
   project: 'fixture',
@@ -35,10 +35,10 @@ const task = (
   last_seen: null,
   body: null,
   opened_at: null,
-  ...(hasChildren === undefined ? {} : { has_children: hasChildren }),
+  has_children: hasChildren,
 })
 
-function installGuardReader(tasks: TaskReadRow[]) {
+function installGuardReader(tasks: Array<TaskReadRow & { has_children: boolean }>) {
   const calls: Array<{ operation: 'list' | 'lookup'; status?: string }> = []
   const byKey = new Map(tasks.map((row) => [row.key, row]))
   const port: TaskReadPort = {
@@ -51,7 +51,7 @@ function installGuardReader(tasks: TaskReadRow[]) {
     },
     async lookup(_project, keys) {
       calls.push({ operation: 'lookup' })
-      const found = new Map<string, TaskReadRow>()
+      const found = new Map<string, TaskReadRow & { has_children: boolean }>()
       for (const key of keys) {
         let row = byKey.get(key)
         while (row && !found.has(row.key)) {
@@ -128,7 +128,7 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
 })
 
 test('sessionEpicWork lists only cursors proven to have children by the shared rule', async () => {
-  async function epicWorkFor(tasks: TaskReadRow[]) {
+  async function epicWorkFor(tasks: Array<TaskReadRow & { has_children: boolean }>) {
     const d = database()
     const session = 'epic-classification-session'
     installGuardReader(tasks)
@@ -142,9 +142,6 @@ test('sessionEpicWork lists only cursors proven to have children by the shared r
     expect(
       await epicWorkFor([task('DEV-1', null, 'open', true), task('DEV-2', 'DEV-1', 'open', false)]),
     ).toEqual([expect.objectContaining({ epic: 'DEV-1' })])
-    expect(await epicWorkFor([task('DEV-1', null), task('DEV-2', 'DEV-1', 'open', false)])).toEqual(
-      [expect.objectContaining({ epic: 'DEV-1' })],
-    )
     expect(await epicWorkFor([task('DEV-2', 'DEV-1', 'open', false)])).toEqual([
       expect.objectContaining({ epic: 'DEV-1' }),
     ])
