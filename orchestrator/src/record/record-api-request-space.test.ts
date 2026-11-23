@@ -404,6 +404,8 @@ const recordWriteExemptions = new Map([
 const recordTenantRoutes = new Set(
   `
 PUT /v1/subjects
+PUT /v1/space-agents
+DELETE /v1/space-agents
 POST /v1/subjects/:id/rename
 POST /v1/subjects/:id/define
 POST /v1/subjects/reorder

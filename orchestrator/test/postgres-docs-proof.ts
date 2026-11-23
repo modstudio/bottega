@@ -13,6 +13,7 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
+import { memorySpaceAgentClient } from './fixtures/record-api-space-agents.ts'
 import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveProjectIdentity } from './postgres-project-identity-proof.ts'
@@ -40,6 +41,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
+    ...memorySpaceAgentClient(),
     listChanges: async () => ({ reset: { cursor: 'postgres-docs-proof', tables: [] } }),
     whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,

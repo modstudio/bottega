@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
+import {
+  type RecordSpaceAgentEnvironment,
+  registerRecordSpaceAgentRoutes,
+} from './record-api-space-agents.ts'
 import type { RecordSpaceAgent } from './record-space-agents.ts'
 
 const declaration = (model = 'gpt-6.2-sol'): RecordSpaceAgent => ({
@@ -24,7 +27,7 @@ const declaration = (model = 'gpt-6.2-sol'): RecordSpaceAgent => ({
 
 test('space agent routes share, replace, list, and unshare declarations', async () => {
   const rows = new Map<string, RecordSpaceAgent>()
-  const app = new Hono()
+  const app = new Hono<RecordSpaceAgentEnvironment>()
   registerRecordSpaceAgentRoutes(
     app,
     {
@@ -63,7 +66,7 @@ test('space agent routes share, replace, list, and unshare declarations', async 
 })
 
 test('space agent route rejects machine-state fields', async () => {
-  const app = new Hono()
+  const app = new Hono<RecordSpaceAgentEnvironment>()
   registerRecordSpaceAgentRoutes(
     app,
     {

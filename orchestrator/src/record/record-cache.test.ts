@@ -6,6 +6,7 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
+import { memorySpaceAgentClient } from '../../test/fixtures/record-api-space-agents.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
@@ -43,6 +44,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
+    ...memorySpaceAgentClient(),
     whoami: async () => ({
       user: { id: newRecordId() },
       activeSpaceId: 'space-active',

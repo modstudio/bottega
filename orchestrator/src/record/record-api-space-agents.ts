@@ -6,7 +6,9 @@ import { RECORD_SPACE_AGENTS_ROUTE } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordSpaceAgent } from './record-space-agents.ts'
 
-type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
+export type RecordSpaceAgentEnvironment = {
+  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+}
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = {
   readSpaceAgents(input: Tenant): Promise<RecordSpaceAgent[]>
@@ -17,7 +19,7 @@ type Deps = {
 const body = z.strictObject({
   name: z.string().trim().min(1),
   harness: z.string().min(1),
-  backend: z.string().min(1),
+  backend: z.string().min(1).nullable(),
   model: z.string().min(1),
   baseUrl: z.string().nullable(),
   transport: z.string().min(1),
@@ -34,11 +36,11 @@ const body = z.strictObject({
 })
 
 export function registerRecordSpaceAgentRoutes(
-  app: Hono<Environment>,
+  app: Hono<RecordSpaceAgentEnvironment>,
   deps: Deps,
   ports: {
-    scope(context: Context<Environment>): Tenant | null
-    noSpace(context: Context<Environment>): Response
+    scope(context: Context<RecordSpaceAgentEnvironment>): Tenant | null
+    noSpace(context: Context<RecordSpaceAgentEnvironment>): Response
   },
 ) {
   app.get(RECORD_SPACE_AGENTS_ROUTE, async (context) => {

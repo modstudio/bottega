@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
+import {
+  type RecordSpaceAgentEnvironment,
+  registerRecordSpaceAgentRoutes,
+} from './record-api-space-agents.ts'
 
 const contractRoutes = [
   'GET /v1/space-agents',
@@ -28,7 +31,7 @@ const declaration = {
 }
 
 test.each(['GET', 'PUT', 'DELETE'])('%s /v1/space-agents is served', async (method) => {
-  const app = new Hono()
+  const app = new Hono<RecordSpaceAgentEnvironment>()
   registerRecordSpaceAgentRoutes(
     app,
     {

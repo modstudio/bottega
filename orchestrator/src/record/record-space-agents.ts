@@ -10,7 +10,7 @@ type Tenant = { url: string } & TenantPrincipal
 export type RecordSpaceAgent = {
   name: string
   harness: string
-  backend: string
+  backend: string | null
   model: string
   baseUrl: string | null
   transport: string
@@ -37,7 +37,7 @@ function output(row: Record<string, unknown>): RecordSpaceAgent {
   return {
     name: String(row.name),
     harness: String(row.harness),
-    backend: String(row.backend),
+    backend: row.backend === null ? null : String(row.backend),
     model: String(row.model),
     baseUrl: row.base_url === null ? null : String(row.base_url),
     transport: String(row.transport),

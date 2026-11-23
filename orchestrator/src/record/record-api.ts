@@ -557,7 +557,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
   registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
-
   app.get('/v1/config/entries', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)

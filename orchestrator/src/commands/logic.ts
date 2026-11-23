@@ -623,6 +623,17 @@ function registerWaitingCommand(program: Command): void {
     )
 }
 
+function registerAgentCatalogueCommands(
+  program: Command,
+  runAgentCommand: typeof agentCommand | undefined,
+): void {
+  registerAgentCommands(program, runAgentCommand)
+  describedCommand(program, 'agents', 'list agents and their readiness')
+    .option('--json', 'write agent capabilities as JSON')
+    .allowExcessArguments(false)
+    .action((options) => agentsCommand(Boolean(options.json), presentation))
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -826,9 +837,5 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  registerAgentCommands(program, dependencies.agentCommand)
-  describedCommand(program, 'agents', 'list agents and their readiness')
-    .option('--json', 'write agent capabilities as JSON')
-    .allowExcessArguments(false)
-    .action((options) => agentsCommand(Boolean(options.json), presentation))
+  registerAgentCatalogueCommands(program, dependencies.agentCommand)
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "space_agent" ALTER COLUMN "backend" DROP NOT NULL;

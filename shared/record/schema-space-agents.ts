@@ -10,7 +10,7 @@ export const spaceAgent = pgTable.withRLS(
     spaceId: spaceIdentity(),
     name: text().notNull(),
     harness: text().notNull(),
-    backend: text().notNull(),
+    backend: text(),
     model: text().notNull(),
     baseUrl: text('base_url'),
     transport: text().notNull(),
