@@ -11,7 +11,7 @@ import type {
 } from '../../../shared/docs.ts'
 import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -32,12 +32,11 @@ import {
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
   recordApiUnreachable as classifyRecordApiUnreachable,
-  hostedErrorBody,
-  hostedRequestSafety,
   recordApiError,
   recordAuthRefusal,
   recordAuthToken,
 } from './record-api-client-error.ts'
+import { hostedErrorBody, hostedRequestSafety } from './record-api-client-hosted-response.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import { recordModerationClient } from './record-api-client-moderation.ts'
@@ -483,12 +482,11 @@ function injectSlot(): InjectSlot {
   return created
 }
 
-const injectedClient = (): RecordApiClient | null => injectSlot().current
-export const recordApiClientInjected = (): boolean => injectedClient() !== null
+export const recordApiClientInjected = (): boolean => injectSlot().current !== null
 
 const recordApiUnreachable = (
   error: unknown,
-  outcome: Parameters<typeof classifyRecordApiUnreachable>[2],
+  outcome: HostedRequestSafety,
   origin = recordApiBaseUrl(),
 ) => classifyRecordApiUnreachable(error, origin, outcome)
 
@@ -544,7 +542,7 @@ export function recordApiBaseUrl(
   if (
     environment.NODE_ENV === 'test' &&
     !environment.BOTTEGA_TEST_POSTGRES_CONTAINER &&
-    !injectedClient()
+    !injectSlot().current
   )
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return url.replace(/\/$/, '')
@@ -639,11 +637,13 @@ async function publicRequest<T>(
     throw recordApiUnreachable(error, 'probe')
   }
   const resolvedOrigin = origin()
-  const url = `${resolvedOrigin}${path}`
-  const result = await jsonBody(response, url)
+  const result = await jsonBody(response, `${resolvedOrigin}${path}`)
   const body = result.ok ? result.value : null
   if (!response.ok)
-    throw recordApiError(hostedErrorBody(body, result, url, response.status), response.status)
+    throw recordApiError(
+      hostedErrorBody(body, result, `${resolvedOrigin}${path}`, response.status),
+      response.status,
+    )
   if (!result.ok)
     throw classifyRecordApiUnreachable(
       new Error(hostedJsonFailureMessage(result)),
@@ -756,7 +756,7 @@ export function recordApiClient(
   request = recordApiRequest,
   transport?: typeof fetch,
 ): RecordApiClient {
-  const injected = injectedClient()
+  const injected = injectSlot().current
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')

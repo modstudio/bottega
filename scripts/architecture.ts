@@ -523,6 +523,10 @@ const declaredModules: ArchitectureModule[] = [
   module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record/migration-session.ts', []),
   ...settingsModules,
+  module('orchestrator/src/record/record-api-client-hosted-response.ts', [
+    '../../../shared/http-json.ts',
+    '../../../shared/record-remedies.ts',
+  ]),
   ...recordModules,
   ...recordOutboxModules,
   ...databaseModules,

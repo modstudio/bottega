@@ -1,7 +1,5 @@
 // concern: record-api-client-error
 /** Classifies shared record HTTP and transport failures for the client. */
-
-import { hostedJsonFailureMessage, type jsonBody } from '../../../shared/http-json.ts'
 import {
   type HostedRequestSafety,
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -20,25 +18,6 @@ import {
 import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
 
 const recordApiStatus = (status: number) => `record API ${status}`
-
-type HostedBody = Awaited<ReturnType<typeof jsonBody>>
-
-export const hostedErrorBody = (
-  body: unknown,
-  result: HostedBody,
-  url: string,
-  status: number,
-): unknown =>
-  body ?? {
-    error: hostedJsonFailureMessage(
-      result.ok ? { ok: false, url, status, contentType: 'missing' } : result,
-    ),
-  }
-
-export const hostedRequestSafety = (method?: string): HostedRequestSafety => {
-  const normalized = method?.toUpperCase() ?? 'GET'
-  return normalized === 'GET' || normalized === 'HEAD' ? 'probe' : 'non-idempotent'
-}
 
 export function recordApiUnreachable(
   error: unknown,
