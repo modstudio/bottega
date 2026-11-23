@@ -17,6 +17,7 @@ import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   applySetupActions as applySetupActionsWithService,
+  type SetupAgentService,
   type SetupEnvironmentService,
   type SetupProjectService,
   setupResultsRequireAttention,
@@ -42,7 +43,8 @@ const applySetupActions = (
     recordSessionPresent: () => false,
     migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
   },
-) => applySetupActionsWithService(actions, service, environment, runner)
+  agents?: SetupAgentService,
+) => applySetupActionsWithService(actions, service, environment, runner, undefined, agents)
 
 const action = (name: string): SetupAction => ({
   kind: 'add',
@@ -112,6 +114,71 @@ test('refuses a global-use action when its environment writer is unavailable', a
 
   expect(results[0]?.status).toBe('refused')
   expect(results[0]?.message).toBe('global-use writer is unavailable')
+})
+
+test('reports agent registration results per row and preserves the add remedy', async () => {
+  const agents: SetupAgentService = {
+    add: (name) => {
+      if (name === 'broken')
+        throw new Error(`set a base URL with ${PLATFORM_SLUG} agent set broken`)
+    },
+    probe: async () => ({ ok: true }),
+  }
+  const projectService = { add: async () => {}, fillAbsent: async () => {} }
+  const success = await applySetupActions(
+    [
+      {
+        kind: 'register-agents',
+        agents: [{ name: 'ready', mutation: { harness: 'codex' } }],
+        spaceSlug: 'team',
+      },
+    ],
+    projectService,
+    undefined,
+    undefined,
+    agents,
+  )
+  const failure = await applySetupActions(
+    [
+      {
+        kind: 'register-agents',
+        agents: [{ name: 'broken', mutation: { harness: 'codex' } }],
+        spaceSlug: 'team',
+      },
+    ],
+    projectService,
+    undefined,
+    undefined,
+    agents,
+  )
+
+  expect(success[0]).toMatchObject({ status: 'applied', message: 'ready: registered' })
+  expect(failure[0]?.status).toBe('follow-up')
+  expect(failure[0]?.message).toBe(
+    `broken: failed; fix: set a base URL with ${PLATFORM_SLUG} agent set broken`,
+  )
+  expect(failure[0]?.message).not.toContain('agent share')
+})
+
+test('reports passing and failing probes without refusing setup', async () => {
+  const agents: SetupAgentService = {
+    add: () => {},
+    probe: async (name) =>
+      name === 'passing' ? { ok: true } : { ok: false, refusal: 'connection refused' },
+  }
+  const results = await applySetupActions(
+    [{ kind: 'probe-agents', names: ['passing', 'failing'], projectPath: '/project' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    undefined,
+    agents,
+  )
+
+  expect(results[0]?.status).toBe('applied')
+  expect(results[0]?.message).toContain('passing: passed')
+  expect(results[0]?.message).toContain(
+    `failing: failed (connection refused); fix: from /project, run ${PLATFORM_SLUG} agent probe failing`,
+  )
 })
 
 test('applies the file keystore choice and a repeated setup plans no change', async () => {

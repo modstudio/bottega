@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createRecordSpace,
   pendingRecordInvitations,
+  readActiveSpaceAgentDeclarations,
   recordMembershipsFromIdentity,
   recordSpaceCreateReport,
   recordSpaceRole,
@@ -10,6 +11,53 @@ import {
   removeRecordSpaceMember,
   switchRecordSpace,
 } from './record-space.ts'
+
+test('active space agent declarations do not construct or call a client for local-only installs', async () => {
+  expect(
+    await readActiveSpaceAgentDeclarations(undefined, {
+      localOnly: () => true,
+      signedIn: () => {
+        throw new Error('signed-in state must not be read')
+      },
+    }),
+  ).toEqual({ kind: 'local-only' })
+})
+
+test('active space agent declarations distinguish no active space from a read', async () => {
+  const noActive = await readActiveSpaceAgentDeclarations(
+    {
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: null,
+        personalSpaceId: 'space-a',
+        memberships: [],
+      }),
+      listSpaceAgents: async () => {
+        throw new Error('declarations must not be read')
+      },
+    },
+    { localOnly: () => false, signedIn: () => true },
+  )
+  expect(noActive).toEqual({ kind: 'unreadable', cause: 'no active space' })
+
+  const read = await readActiveSpaceAgentDeclarations(
+    {
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'team' }],
+      }),
+      listSpaceAgents: async () => [],
+    },
+    { localOnly: () => false, signedIn: () => true },
+  )
+  expect(read).toEqual({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [],
+  })
+})
 
 describe('record space decisions', () => {
   test('removes the email from the resolved destination space', async () => {

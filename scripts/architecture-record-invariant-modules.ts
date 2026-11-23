@@ -72,6 +72,8 @@ export const recordInvariantModules = [
     './record-cache-projects.ts',
     './record-moderation-hide.ts',
     './record-session.ts',
+    './record-space-agents.ts',
+    './record-write-authority.ts',
     './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/record-trial-space-contract.ts', [

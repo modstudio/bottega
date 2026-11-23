@@ -10,6 +10,7 @@ import {
   type SetupCredentialTrustFact,
 } from './provider-credential-trust-notice.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
+import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import {
@@ -103,6 +104,12 @@ export type SetupPlan = {
   folderSelection: { options: Array<{ path: string; name: string }>; defaults: string[] }
   mcpConfigMigrations?: McpConfigMigration[]
   legacyPathSymlinks?: LegacyPathSymlink[]
+  agentDeclarations?: {
+    registrations: DeclaredAgentRegistration[]
+    existingProbeNames: string[]
+    projectPath: string | null
+    spaceSlug: string
+  }
 }
 
 export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
@@ -114,6 +121,8 @@ export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
 
 export const MACHINE_LEVEL_QUESTION_ID = 'machine:level'
 export const MACHINE_GLOBAL_USE_QUESTION_ID = 'machine:global-use'
+export const REGISTER_AGENTS_QUESTION_ID = 'register-agents'
+export const PROBE_AGENTS_QUESTION_ID = 'probe-agents'
 
 function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
   return {

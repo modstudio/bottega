@@ -4,9 +4,13 @@
 import type { Keystore } from '../../../shared/key-store-constants.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
+import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
+import { probesWithProject } from './setup-agent-declarations.ts'
 import {
   MACHINE_GLOBAL_USE_QUESTION_ID,
   MACHINE_LEVEL_QUESTION_ID,
+  PROBE_AGENTS_QUESTION_ID,
+  REGISTER_AGENTS_QUESTION_ID,
   type SetupPlan,
   type SetupProposal,
   type SetupQuestion,
@@ -74,6 +78,12 @@ export type SetupAction =
     }
   | { kind: 'install-schedules' }
   | {
+      kind: 'register-agents'
+      agents: DeclaredAgentRegistration[]
+      spaceSlug: string
+    }
+  | { kind: 'probe-agents'; names: string[]; projectPath: string }
+  | {
       kind: 'install-harness' | 'skip-harness-install'
       harness: HarnessName
       route: HarnessInstallRoute
@@ -105,6 +115,8 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'set-machine-level':
     case 'set-global-use':
     case 'set-keystore':
+    case 'register-agents':
+    case 'probe-agents':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -138,6 +150,10 @@ export function setupActionLine(action: SetupAction): string {
       return `Set global use to ${action.to}`
     case 'set-keystore':
       return 'Set keystore to file'
+    case 'register-agents':
+      return `Register ${action.agents.length} declared agents`
+    case 'probe-agents':
+      return `Probe ${action.names.length} declared agents`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -266,22 +282,45 @@ function plannedHarnessInstalls(plan: SetupPlan, answers: SetupAnswers): SetupAc
   }))
 }
 
-export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
-  const selectedLevel = selectedMachineLevel(plan, answers)
-  const currentLevel = plan.facts?.machine?.machineLevel
-  const machineLevel: SetupAction | null =
-    currentLevel === undefined || currentLevel === selectedLevel
-      ? null
-      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
-  const selectedGlobalUse = answers[MACHINE_GLOBAL_USE_QUESTION_ID] as 'on' | 'off' | undefined
-  const currentGlobalUse = plan.facts.machine.globalUse
-  const globalUse: SetupAction | null =
-    selectedGlobalUse === undefined || currentGlobalUse === selectedGlobalUse
-      ? null
-      : { kind: 'set-global-use', from: currentGlobalUse, to: selectedGlobalUse }
-  const keystore = plannedKeystoreAction(plan.facts.machine)
-  const registrations = plannedRegistrations(plan, answers, selectedLevel)
-  const projects: SetupAction[] = plan.proposals.map((proposal) => {
+function plannedAgentActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  const declarationPlan = plan.agentDeclarations
+  const registrations =
+    declarationPlan && answers[REGISTER_AGENTS_QUESTION_ID] === 'register'
+      ? declarationPlan.registrations
+      : []
+  const probeNames = declarationPlan
+    ? probesWithProject({
+        existingProbeNames: declarationPlan.existingProbeNames,
+        registrations,
+        projectPath: declarationPlan.projectPath,
+      })
+    : []
+  return [
+    ...(registrations.length && declarationPlan
+      ? [
+          {
+            kind: 'register-agents' as const,
+            agents: registrations,
+            spaceSlug: declarationPlan.spaceSlug,
+          },
+        ]
+      : []),
+    ...(declarationPlan?.projectPath &&
+    answers[PROBE_AGENTS_QUESTION_ID] === 'probe' &&
+    probeNames.length
+      ? [
+          {
+            kind: 'probe-agents' as const,
+            names: probeNames,
+            projectPath: declarationPlan.projectPath,
+          },
+        ]
+      : []),
+  ]
+}
+
+function plannedProjects(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  return plan.proposals.map((proposal) => {
     const settings = resolvedSettings(proposal, answers, plan.questions)
     const settingsDiff = diffSettings(proposal.current?.settings ?? null, settings)
     const metadataDiffers = Boolean(
@@ -336,6 +375,23 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       settingsDiff,
     }
   })
+}
+
+export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  const selectedLevel = selectedMachineLevel(plan, answers)
+  const currentLevel = plan.facts?.machine?.machineLevel
+  const machineLevel: SetupAction | null =
+    currentLevel === undefined || currentLevel === selectedLevel
+      ? null
+      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
+  const selectedGlobalUse = answers[MACHINE_GLOBAL_USE_QUESTION_ID] as 'on' | 'off' | undefined
+  const currentGlobalUse = plan.facts.machine.globalUse
+  const globalUse: SetupAction | null =
+    selectedGlobalUse === undefined || currentGlobalUse === selectedGlobalUse
+      ? null
+      : { kind: 'set-global-use', from: currentGlobalUse, to: selectedGlobalUse }
+  const keystore = plannedKeystoreAction(plan.facts.machine)
+  const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const migrations: SetupAction[] = (plan.mcpConfigMigrations ?? []).map((migration) => ({
     kind: 'migrate-mcp-config',
     ...migration,
@@ -356,7 +412,8 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     ...registrations,
     ...migrations,
     ...legacySymlinks,
-    ...projects,
+    ...plannedProjects(plan, answers),
+    ...plannedAgentActions(plan, answers),
   ]
 }
 
