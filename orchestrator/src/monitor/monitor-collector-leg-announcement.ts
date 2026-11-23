@@ -1,60 +1,144 @@
 // concern: monitor-collector-leg-announcement
-/** Applies sustained collector-leg failure notices without failing the monitor pass. */
+/** Resolves persistence and applies standing condition notices without failing a monitor pass. */
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  COLLECTOR_LEG_FAILURE_NOTICE_PREFIX,
-  decideCollectorLegFailureAnnouncement,
+  decideStandingConditionAnnouncement,
+  isAnnouncedStandingConditionKind,
+  STANDING_CONDITION_NOTICE_PREFIX,
+  STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
+  type StandingConditionCandidate,
 } from './collector-leg-announcement.ts'
-import type { CollectorLegFailure } from './collector-leg-conditions.ts'
 import {
   announceHostedPressureActions,
   type HostedPressureAnnouncementDependencies,
 } from './monitor-hosted-pressure.ts'
+import type { MonitorCondition } from './monitor-types.ts'
 
-function previousPassNeedsCollectorLegNoticeReconciliation(database: Database): boolean {
-  return (
-    database
-      .query(
-        `SELECT 1 present
-           FROM monitor_condition condition
-           JOIN monitor_invocation invocation
-             ON invocation.record_id=condition.invocation_record_id
-          WHERE (condition.kind='collector-leg-failure'
-                 OR (condition.kind='observation-error'
-                     AND condition.detail LIKE 'collector leg announcement failed:%'))
-            AND invocation.finished_at IS NOT NULL
-            AND invocation.started_at=(
-              SELECT MAX(started_at) FROM monitor_invocation WHERE finished_at IS NOT NULL
-            )
-          LIMIT 1`,
-      )
-      .get() !== null
-  )
+type FinishedKindObservation = { started_at: string; present: number }
+
+/** Resolve the first retained pass in the current uninterrupted episode. */
+export function standingConditionHistoryOnset(
+  database: Database,
+  kind: string,
+  currentStartedAt: string,
+): string {
+  const rows = database
+    .query<FinishedKindObservation, [string]>(
+      `SELECT invocation.started_at,
+              EXISTS(SELECT 1 FROM monitor_condition condition
+                      WHERE condition.invocation_record_id=invocation.record_id
+                        AND condition.kind=?) present
+         FROM monitor_invocation invocation
+        WHERE invocation.finished_at IS NOT NULL
+        ORDER BY invocation.started_at`,
+    )
+    .all(kind)
+  let lastAbsent = -1
+  for (let index = 0; index < rows.length; index++) if (!rows[index]!.present) lastAbsent = index
+  if (lastAbsent === -1) return rows[0]?.started_at ?? currentStartedAt
+  return rows.slice(lastAbsent + 1).find((row) => row.present)?.started_at ?? currentStartedAt
 }
 
-/** Reconcile collector-leg notices and return an observation error on board failure. */
-export async function announceCollectorLegFailures(
+function candidateFor(
   database: Database,
-  failures: readonly CollectorLegFailure[],
+  condition: MonitorCondition,
   clock: number,
+  currentStartedAt: string,
+): StandingConditionCandidate | null {
+  if (!isAnnouncedStandingConditionKind(condition.kind)) return null
+  const parsedSince = condition.since === null ? Number.NaN : Date.parse(condition.since)
+  const onset = Number.isFinite(parsedSince)
+    ? condition.since!
+    : condition.ageMs !== null
+      ? new Date(clock - condition.ageMs).toISOString()
+      : standingConditionHistoryOnset(database, condition.kind, currentStartedAt)
+  const persistedMs = condition.ageMs ?? Math.max(0, clock - Date.parse(onset))
+  return { condition, onset, persistedMs }
+}
+
+function announcementError(error: unknown): { errors: string[] } {
+  return { errors: [`standing condition announcement failed: ${String(error)}`] }
+}
+
+/** Reconcile all announced kinds once for a normal monitor pass. */
+export async function announceStandingConditions(
+  database: Database,
+  conditions: readonly MonitorCondition[],
+  clock: number,
+  currentStartedAt: string,
   dependencies: HostedPressureAnnouncementDependencies = {},
 ): Promise<{ errors: string[] }> {
-  if (failures.length === 0 && !previousPassNeedsCollectorLegNoticeReconciliation(database))
-    return { errors: [] }
   try {
+    const candidates = conditions.flatMap((condition) => {
+      const candidate = candidateFor(database, condition, clock, currentStartedAt)
+      return candidate ? [candidate] : []
+    })
     await announceHostedPressureActions(
-      (messages) => decideCollectorLegFailureAnnouncement(failures, messages),
+      (messages) => decideStandingConditionAnnouncement(candidates, messages),
       dependencies,
       clock,
       {
-        prefix: COLLECTOR_LEG_FAILURE_NOTICE_PREFIX,
+        prefix: STANDING_CONDITION_NOTICE_PREFIX,
         audience: `architects:${PLATFORM_SLUG}`,
       },
     )
     return { errors: [] }
   } catch (error) {
-    return { errors: [`collector leg announcement failed: ${String(error)}`] }
+    return announcementError(error)
+  }
+}
+
+/** Reconcile only the store-lock notice while the normal pass cannot write its invocation. */
+export async function announceStoreWriteLockCondition(
+  database: Database,
+  condition: MonitorCondition,
+  clock: number,
+  dependencies: HostedPressureAnnouncementDependencies = {},
+): Promise<{ errors: string[] }> {
+  let onset: string
+  try {
+    const latest = database
+      .query<{ finished_at: string }, []>(
+        `SELECT finished_at FROM monitor_invocation
+          WHERE finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1`,
+      )
+      .get()
+    if (!latest) return { errors: [] }
+    onset = latest.finished_at
+  } catch {
+    return { errors: [] }
+  }
+  const persistedMs = Math.max(0, clock - Date.parse(onset))
+  if (persistedMs < STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS) return { errors: [] }
+  const candidate: StandingConditionCandidate = {
+    condition: {
+      kind: 'store-write-lock-held',
+      subject: condition.subject,
+      detail: condition.detail,
+      action: condition.action,
+    },
+    onset,
+    persistedMs,
+  }
+  try {
+    const title = `${STANDING_CONDITION_NOTICE_PREFIX} store-write-lock-held`
+    await announceHostedPressureActions(
+      (messages) =>
+        decideStandingConditionAnnouncement(
+          [candidate],
+          messages.filter((message) => message.title === title),
+        ),
+      dependencies,
+      clock,
+      {
+        prefix: STANDING_CONDITION_NOTICE_PREFIX,
+        audience: `architects:${PLATFORM_SLUG}`,
+      },
+    )
+    return { errors: [] }
+  } catch (error) {
+    return announcementError(error)
   }
 }

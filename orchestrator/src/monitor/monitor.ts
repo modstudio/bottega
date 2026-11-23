@@ -47,7 +47,7 @@ import { branchInventoryDecision, branchMonitorConditions } from './monitor-bran
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
-import { announceCollectorLegFailures } from './monitor-collector-leg-announcement.ts'
+import { announceStandingConditions } from './monitor-collector-leg-announcement.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -132,11 +132,6 @@ async function initialMonitorObservations(
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
   const collectorLegs = observeCollectorLegFailures(clock)
-  const collectorLegAnnouncements = await announceCollectorLegFailures(
-    database,
-    collectorLegs.failures,
-    clock,
-  )
   const hostedPressure = await checkHostedPressureCached({ database, clock })
   const hostedHealth = await checkHostedHealth(database, clock)
   return {
@@ -149,12 +144,7 @@ async function initialMonitorObservations(
       ...collectLease.conditions,
       ...collectorLegs.conditions,
     ],
-    errors: [
-      ...diskPressure.errors,
-      ...collectLease.errors,
-      ...collectorLegs.errors,
-      ...collectorLegAnnouncements.errors,
-    ],
+    errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
     hostPressure: hostPressure.report,
   }
 }
@@ -666,6 +656,28 @@ function appendRunConditions(
   errors.push(...readerTrees.errors)
 }
 
+async function appendErrors(
+  database: Database,
+  conditions: MonitorCondition[],
+  errors: string[],
+  clock: number,
+  startedAt: string,
+  invocationNumber: number,
+): Promise<void> {
+  const standing = await announceStandingConditions(database, conditions, clock, startedAt)
+  errors.push(...standing.errors)
+  errors.forEach((detail, index) => {
+    conditions.push({
+      kind: 'observation-error',
+      subject: `invocation:${invocationNumber}:${index + 1}`,
+      since: startedAt,
+      ageMs: age(startedAt, clock),
+      detail,
+      action: 'reported; no state was inferred from the unavailable observation',
+    })
+  })
+}
+
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -975,15 +987,7 @@ export async function monitor(
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process
   // log has rotated away.
-  errors.forEach((detail, index) => {
-    add({
-      kind: 'observation-error',
-      subject: `invocation:${invocationNumber}:${index + 1}`,
-      since: startedAt,
-      detail,
-      action: 'reported; no state was inferred from the unavailable observation',
-    })
-  })
+  await appendErrors(database, conditions, errors, clock, startedAt, invocationNumber)
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
   // otherwise both observe no prior delivery and create duplicate pending rows.

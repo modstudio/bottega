@@ -1,59 +1,134 @@
 // concern: collector-leg-announcement
-/** Decides board actions for sustained hub collector-leg failures. */
+/** Pure standing-board-notice decisions for persistent unowned monitor conditions. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { HostedBoardOverviewEntry } from '../record/record-board-contract.ts'
-import type { CollectorLegFailure } from './collector-leg-conditions.ts'
+import { COLLECTOR_LEG_FAILURE_WARN_MS } from './collector-leg-conditions.ts'
+import type { MonitorCondition } from './monitor-types.ts'
 
-export const COLLECTOR_LEG_FAILURE_NOTICE_PREFIX = 'Collector leg failure:'
-export const COLLECTOR_LEG_FAILURE_NOTICE_TTL_MS = 24 * 60 * 60_000
-export const COLLECTOR_LEG_ERROR_LINE_CHARS = 160
+export const STANDING_CONDITION_NOTICE_PREFIX = 'Monitor condition:'
+export const STANDING_CONDITION_NOTICE_TTL_MS = 24 * 60 * 60_000
+export const STANDING_CONDITION_DETAIL_LINE_CHARS = 160
 
-type OpenNotice = Pick<HostedBoardOverviewEntry, 'id' | 'title'>
-type CollectorLegFailureNotice = { title: string; body: string; expiresMs: number }
-export type CollectorLegFailureAnnouncementAction =
-  | { kind: 'withdraw'; id: string }
-  | { kind: 'post'; notice: CollectorLegFailureNotice }
+export const COLLECTOR_LEG_FAILURE_NOTICE_THRESHOLD_MS = COLLECTOR_LEG_FAILURE_WARN_MS
+export const RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS = 5 * 60_000
+export const STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS = 10 * 60_000
+const DISK_PRESSURE_NOTICE_THRESHOLD_MS = 10 * 60_000
+export const OUTBOX_QUARANTINED_NOTICE_THRESHOLD_MS = 30 * 60_000
+const RELEASE_LIVE_DIFFERS_NOTICE_THRESHOLD_MS = 30 * 60_000
 
-function cappedErrorLine(error: string | null): string {
-  const line = error?.split(/\r?\n/, 1)[0] || 'error unavailable'
-  return line.length <= COLLECTOR_LEG_ERROR_LINE_CHARS
-    ? line
-    : `${line.slice(0, COLLECTOR_LEG_ERROR_LINE_CHARS - 1)}…`
+const ANNOUNCED_STANDING_CONDITION_KINDS = [
+  'collector-leg-failure',
+  'record-tunnel-down',
+  'store-write-lock-held',
+  'disk-pressure',
+  'outbox-quarantined',
+  'release-live-differs',
+] as const
+
+export type AnnouncedStandingConditionKind = (typeof ANNOUNCED_STANDING_CONDITION_KINDS)[number]
+
+const THRESHOLDS: Record<AnnouncedStandingConditionKind, number> = {
+  'collector-leg-failure': COLLECTOR_LEG_FAILURE_NOTICE_THRESHOLD_MS,
+  'record-tunnel-down': RECORD_TUNNEL_DOWN_NOTICE_THRESHOLD_MS,
+  'store-write-lock-held': STORE_WRITE_LOCK_HELD_NOTICE_THRESHOLD_MS,
+  'disk-pressure': DISK_PRESSURE_NOTICE_THRESHOLD_MS,
+  'outbox-quarantined': OUTBOX_QUARANTINED_NOTICE_THRESHOLD_MS,
+  'release-live-differs': RELEASE_LIVE_DIFFERS_NOTICE_THRESHOLD_MS,
 }
 
-function noticeFor(failure: CollectorLegFailure): CollectorLegFailureNotice {
-  const ageMinutes = Math.floor(failure.ageMs / 60_000)
+type OpenNotice = Pick<HostedBoardOverviewEntry, 'id' | 'title'>
+type StandingNotice = { title: string; body: string; expiresMs: number }
+export type StandingConditionAnnouncementAction =
+  | { kind: 'withdraw'; id: string }
+  | { kind: 'post'; notice: StandingNotice }
+
+export type StandingConditionCandidate = {
+  condition: Pick<MonitorCondition, 'kind' | 'subject' | 'detail' | 'action'> & {
+    kind: AnnouncedStandingConditionKind
+  }
+  /** Adapter-resolved onset, retained as plain evidence for the decision. */
+  onset: string
+  persistedMs: number
+}
+
+function cappedDetailLine(detail: string): string {
+  const line = detail.split(/\r?\n/, 1)[0] || 'detail unavailable'
+  return line.length <= STANDING_CONDITION_DETAIL_LINE_CHARS
+    ? line
+    : `${line.slice(0, STANDING_CONDITION_DETAIL_LINE_CHARS - 1)}…`
+}
+
+function titleFor(candidate: StandingConditionCandidate): string {
+  return candidate.condition.kind === 'collector-leg-failure'
+    ? `${STANDING_CONDITION_NOTICE_PREFIX} collector leg ${candidate.condition.subject}`
+    : `${STANDING_CONDITION_NOTICE_PREFIX} ${candidate.condition.kind}`
+}
+
+function noticeFor(group: readonly StandingConditionCandidate[]): StandingNotice {
+  const oldest = [...group].sort(
+    (left, right) =>
+      right.persistedMs - left.persistedMs ||
+      left.condition.subject.localeCompare(right.condition.subject),
+  )[0]!
+  const minutes = Math.floor(oldest.persistedMs / 60_000)
+  const count = group.length
+  const countText =
+    oldest.condition.kind === 'collector-leg-failure'
+      ? `Collector leg ${oldest.condition.subject}`
+      : `${count} live ${oldest.condition.kind} condition${count === 1 ? '' : 's'}; oldest ${oldest.condition.subject}`
   return {
-    title: `${COLLECTOR_LEG_FAILURE_NOTICE_PREFIX} ${failure.source}`,
+    title: titleFor(oldest),
     body:
-      `${failure.source} collection has failed for ${ageMinutes} minutes since ${failure.failingSince}. ` +
-      `Last error: ${cappedErrorLine(failure.lastError)}. ` +
-      `Recovery: fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery.`,
-    expiresMs: COLLECTOR_LEG_FAILURE_NOTICE_TTL_MS,
+      `${countText} has persisted for ${minutes} minutes since ${oldest.onset}. ` +
+      `Detail: ${cappedDetailLine(oldest.condition.detail)}. ` +
+      `Remedy: ${oldest.condition.action}`,
+    expiresMs: STANDING_CONDITION_NOTICE_TTL_MS,
   }
 }
 
-/** Return posts and withdrawals for the complete currently failing set. */
-export function decideCollectorLegFailureAnnouncement(
-  failures: readonly CollectorLegFailure[],
+function groupedCandidates(
+  candidates: readonly StandingConditionCandidate[],
+): StandingConditionCandidate[][] {
+  const groups = new Map<string, StandingConditionCandidate[]>()
+  for (const candidate of candidates) {
+    if (!isAnnouncedStandingConditionKind(candidate.condition.kind)) continue
+    const key =
+      candidate.condition.kind === 'collector-leg-failure'
+        ? `${candidate.condition.kind}:${candidate.condition.subject}`
+        : candidate.condition.kind
+    const group = groups.get(key) ?? []
+    group.push(candidate)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
+/** Return posts and withdrawals for the complete currently-live announced set. */
+export function decideStandingConditionAnnouncement(
+  candidates: readonly StandingConditionCandidate[],
   openNotices: readonly OpenNotice[],
-): CollectorLegFailureAnnouncementAction[] {
+): StandingConditionAnnouncementAction[] {
   const ours = openNotices.filter((notice) =>
-    notice.title?.startsWith(`${COLLECTOR_LEG_FAILURE_NOTICE_PREFIX} `),
+    notice.title?.startsWith(`${STANDING_CONDITION_NOTICE_PREFIX} `),
   )
+  const groups = groupedCandidates(candidates)
+  const liveTitles = new Set(groups.map((group) => titleFor(group[0]!)))
   const openTitles = new Set(ours.map((notice) => notice.title))
-  const failingTitles = new Set(
-    failures.map((failure) => `${COLLECTOR_LEG_FAILURE_NOTICE_PREFIX} ${failure.source}`),
-  )
   return [
     ...ours
-      .filter((notice) => !failingTitles.has(notice.title!))
+      .filter((notice) => !liveTitles.has(notice.title!))
       .map((notice) => ({ kind: 'withdraw', id: notice.id }) as const),
-    ...failures
-      .filter(
-        (failure) => !openTitles.has(`${COLLECTOR_LEG_FAILURE_NOTICE_PREFIX} ${failure.source}`),
+    ...groups
+      .filter((group) =>
+        group.some((candidate) => candidate.persistedMs >= THRESHOLDS[candidate.condition.kind]),
       )
-      .map((failure) => ({ kind: 'post', notice: noticeFor(failure) }) as const),
+      .filter((group) => !openTitles.has(titleFor(group[0]!)))
+      .map((group) => ({ kind: 'post', notice: noticeFor(group) }) as const),
   ]
+}
+
+export function isAnnouncedStandingConditionKind(
+  kind: string,
+): kind is AnnouncedStandingConditionKind {
+  return (ANNOUNCED_STANDING_CONDITION_KINDS as readonly string[]).includes(kind)
 }
