@@ -6,10 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { formatReference } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
-import { serveAsk } from '../ask/ask.ts'
-import { setupAskCommand } from '../ask/ask-commands.ts'
-import { writeAskServerFailure } from '../ask/ask-failure.ts'
+import type { agentCommand } from '../agent/agent-commands.ts'
 import { checkCommand } from '../check/check-commands.ts'
 import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
@@ -33,10 +30,7 @@ import { jobsCommand } from '../jobs/job-commands.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
-import { mcpCommand } from '../mcp/mcp-commands.ts'
-import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
-import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
@@ -45,7 +39,6 @@ import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { treeReseedCommand } from '../recipe/tree-reseed.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
 import { renameMachine, retireMachine } from '../record/machine-name-command.ts'
-import { fixDefectCommand, searchCommand, stateCommand } from '../record/record-commands.ts'
 import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
 import {
   REVIEW_COVERAGE,
@@ -247,9 +240,9 @@ function registerMcpServers(program: Command): void {
     .allowExcessArguments(false)
     .action(async () => {
       try {
-        await serveAsk()
+        await (await import('../ask/ask.ts')).serveAsk()
       } catch (error) {
-        writeAskServerFailure(error)
+        ;(await import('../ask/ask-failure.ts')).writeAskServerFailure(error)
         throw error
       }
     })
@@ -260,8 +253,13 @@ function registerMcpServers(program: Command): void {
   program
     .command('mcp-reader-proxy <policy> <project> <server> <tree>', { hidden: true })
     .allowExcessArguments(false)
-    .action((policy: string, project: string, server: string, tree: string) =>
-      readerMcpProxyCommand(policy, project, server, tree),
+    .action(async (policy: string, project: string, server: string, tree: string) =>
+      (await import('../mcp/mcp-reader-proxy.ts')).readerMcpProxyCommand(
+        policy,
+        project,
+        server,
+        tree,
+      ),
     )
 }
 
@@ -368,7 +366,7 @@ function registerMachineAttentionCommands(program: Command): void {
     .description('install the live worker question channel')
     .allowExcessArguments(false)
     .action(async () => {
-      const code = await setupAskCommand(presentation)
+      const code = await (await import('../ask/ask-commands.ts')).setupAskCommand(presentation)
       if (code) process.exitCode = code
     })
   program
@@ -386,8 +384,8 @@ function registerMachineAttentionCommands(program: Command): void {
     )
     .option('--json', 'write the monitor result as JSON; --history emits {history, releases}')
     .allowExcessArguments(false)
-    .action((options) =>
-      monitorCommand(
+    .action(async (options) =>
+      (await import('../monitor/monitor-commands.ts')).monitorCommand(
         {
           ackNotices: options.ackNotices,
           notices: Boolean(options.notices),
@@ -475,10 +473,7 @@ function registerTreeCommands(program: Command): void {
     })
 }
 
-function registerAgentCommands(
-  program: Command,
-  runAgentCommand: typeof agentCommand = agentCommand,
-): void {
+function registerAgentCommands(program: Command, runAgentCommand?: typeof agentCommand): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
     .option('--space <slug>', 'record space for share or unshare')
     .option('--harness <value>', 'set the agent harness')
@@ -511,7 +506,12 @@ function registerAgentCommands(
       'apply an identity change that leaves a job with no eligible agent',
     )
     .option('--fresh', 'probe again even when a passed probe result is cached')
-    .action((args, options) => runAgentCommand(productArgv('agent', args, options), presentation))
+    .action(async (args, options) =>
+      (runAgentCommand ?? (await import('../agent/agent-commands.ts')).agentCommand)(
+        productArgv('agent', args, options),
+        presentation,
+      ),
+    )
 }
 
 function registerMetricCommands(program: Command): void {
@@ -631,7 +631,12 @@ function registerAgentCatalogueCommands(
   describedCommand(program, 'agents', 'list agents and their readiness')
     .option('--json', 'write agent capabilities as JSON')
     .allowExcessArguments(false)
-    .action((options) => agentsCommand(Boolean(options.json), presentation))
+    .action(async (options) =>
+      (await import('../agent/agent-commands.ts')).agentsCommand(
+        Boolean(options.json),
+        presentation,
+      ),
+    )
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
@@ -685,8 +690,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--config', 'print the server configuration instead of serving')
     .option('--project <value>', 'project exposed by the server')
     .allowExcessArguments(false)
-    .action((verb, options) =>
-      mcpCommand(
+    .action(async (verb, options) =>
+      (await import('../mcp/mcp-commands.ts')).mcpCommand(
         Boolean(options.config),
         verb,
         options.project,
@@ -702,8 +707,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--cwd <path>', 'resolve the waiting queue from this project checkout')
     .option('--json', 'write the waiting queue as JSON')
     .allowExcessArguments(false)
-    .action((key, options) =>
-      fixDefectCommand(
+    .action(async (key, options) =>
+      (await import('../record/record-commands.ts')).fixDefectCommand(
         key,
         { waiting: Boolean(options.waiting), json: Boolean(options.json), cwd: options.cwd },
         presentation,
@@ -712,14 +717,19 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   describedCommand(program, 'state', 'print the orchestrator state as JSON')
     .option('--days <value>', 'limit history to this many days')
     .allowExcessArguments(false)
-    .action((options) => stateCommand(options.days ? Number(options.days) : null, presentation))
+    .action(async (options) =>
+      (await import('../record/record-commands.ts')).stateCommand(
+        options.days ? Number(options.days) : null,
+        presentation,
+      ),
+    )
   describedCommand(program, 'search <query>', 'search saved run prompts, replies, and notes')
     .option('--limit <value>', 'limit the number of matches')
     .option('--full', 'print complete matching content')
     .option('--json', 'write the search results as JSON')
     .allowExcessArguments(false)
-    .action((query, options) =>
-      searchCommand(
+    .action(async (query, options) =>
+      (await import('../record/record-commands.ts')).searchCommand(
         query,
         {
           limit: Number(options.limit ?? 20),

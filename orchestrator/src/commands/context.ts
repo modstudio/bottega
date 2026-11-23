@@ -2,19 +2,10 @@
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
 import { CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
-import { contextHealthReport } from '../context-health/context-health-adapter.ts'
-import { renderContextHealth } from '../context-health/context-health-render.ts'
-import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import {
-  clearTaskContext,
-  dropContextItem,
-  getContext,
-  setContextItem,
-} from '../doc/context-service.ts'
-import { recordBriefInjection, SESSION_START_SOURCES } from '../session/brief-injection.ts'
-import { reviewContext } from '../session/context-review.ts'
-import { HOOK_EMISSION_KINDS, recordHookEmission } from '../session/hook-emission.ts'
-import { sessionContextCommand } from '../workflow/session-context.ts'
+  HOOK_EMISSION_KINDS,
+  SESSION_START_SOURCES,
+} from '../../../shared/record/schema-session.ts'
 import { log } from './support.ts'
 
 const required = (value: string, name: string) => {
@@ -32,6 +23,7 @@ function registerClear(context: Command): void {
     .description('remove every context item from one task holder')
     .requiredOption('--task <key>', 'select task holder')
     .action(async (options) => {
+      const { clearTaskContext } = await import('../doc/context-service.ts')
       const result = await clearTaskContext({ task: options.task })
       log(
         `context: cleared ${result.removed} items on ${result.task}, already absent ${result.alreadyAbsent}`,
@@ -49,6 +41,10 @@ function registerHealth(context: Command): void {
     .option('--json', 'write JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ contextHealthReport }, { renderContextHealth }] = await Promise.all([
+        import('../context-health/context-health-adapter.ts'),
+        import('../context-health/context-health-render.ts'),
+      ])
       const report = await contextHealthReport({
         since: options.since,
         project: options.project,
@@ -70,6 +66,7 @@ function registerInjection(context: Command): void {
     .requiredOption('--chars <count>', 'characters in the final additional context', Number)
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { recordBriefInjection } = await import('../session/brief-injection.ts')
       if (!SESSION_START_SOURCES.includes(options.source))
         throw new Error(`--source must be one of ${SESSION_START_SOURCES.join(', ')}`)
       log(
@@ -98,7 +95,7 @@ function registerEmission(context: Command): void {
     .requiredOption('--lines <count>', 'lines in the output', Number)
     .requiredOption('--hash <sha256>', 'normalized output sha256')
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
       required(options.session, 'session id')
       required(options.event, 'event')
       required(options.hook, 'hook')
@@ -109,7 +106,7 @@ function registerEmission(context: Command): void {
       if (!/^[0-9a-f]{64}$/.test(options.hash)) throw new Error('--hash must be a lowercase sha256')
       log(
         JSON.stringify(
-          recordHookEmission({
+          (await import('../session/hook-emission.ts')).recordHookEmission({
             sessionId: options.session,
             event: options.event,
             hook: options.hook,
@@ -148,14 +145,18 @@ export function register(program: Command): void {
     )
     .option('--cwd <path>', 'resolve context for this checkout path')
     .option('--json', 'write the resolved context as JSON')
-    .action((options) => {
+    .action(async (options) => {
       if (!options.cwd) throw new Error('pass --cwd or use context set|show|drop|clear')
-      return sessionContextCommand({ cwd: options.cwd, json: Boolean(options.json) }, { log })
+      return (await import('../workflow/session-context.ts')).sessionContextCommand(
+        { cwd: options.cwd, json: Boolean(options.json) },
+        { log },
+      )
     })
   holderOptions(context.command('show').description('show stored context items'))
     .option('--json', 'write JSON')
     .action(async (options) => {
       requireHolder(options)
+      const { getContext } = await import('../doc/context-service.ts')
       const result = await getContext(options)
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
@@ -170,6 +171,7 @@ export function register(program: Command): void {
     .requiredOption('--session <id>', 'select architect session')
     .option('--json', 'write JSON')
     .action(async (options) => {
+      const { contextBrief, renderContextBrief } = await import('../doc/context-brief.ts')
       const result = await contextBrief(options.session)
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
@@ -179,6 +181,7 @@ export function register(program: Command): void {
     .requiredOption('--session <id>', 'select architect session')
     .option('--json', 'write JSON')
     .action(async (options) => {
+      const { reviewContext } = await import('../session/context-review.ts')
       const result = await reviewContext(options.session)
       if (options.json) return log(JSON.stringify(result))
       if ('review' in result) log(result.review)
@@ -199,7 +202,7 @@ export function register(program: Command): void {
       requireHolder(options)
       if (!CONTEXT_ITEM_KINDS.includes(options.kind))
         throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
-      const result = await setContextItem({
+      const result = await (await import('../doc/context-service.ts')).setContextItem({
         ...options,
         expectedRevision: options.expectedRevision,
         body,
@@ -212,7 +215,7 @@ export function register(program: Command): void {
     .option('--expected-revision <revision>', 'compare-and-set revision')
     .action(async (options) => {
       requireHolder(options)
-      const result = await dropContextItem({
+      const result = await (await import('../doc/context-service.ts')).dropContextItem({
         ...options,
         expectedRevision: options.expectedRevision,
       })

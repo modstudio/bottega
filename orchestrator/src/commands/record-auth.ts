@@ -16,9 +16,9 @@ import {
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import {
+  decideRecordPassword,
   PASSWORD_PROMPT_EOF_REFUSAL,
   RECORD_PASSWORD_ENV,
-  decideRecordPassword,
 } from '../record/record-password.ts'
 import { promptHidden } from './hidden-prompt.ts'
 import { requestedMachineNames } from './machine-name-options.ts'

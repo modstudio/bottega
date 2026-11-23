@@ -6,9 +6,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
 } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
-import {
-  type SecurityRunner,
-} from '../../../shared/record-session.ts'
+import type { SecurityRunner } from '../../../shared/record-session.ts'
 import { db } from '../database/db.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-token.ts'

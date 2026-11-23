@@ -125,14 +125,19 @@ export function assertUserCanonHydrateAllowed(
 }
 
 async function runDoc(verb: string, args: string[], command: Command): Promise<void> {
-  const [{ docCommand }, { selectDocWriteTree }, { collectCanonLintInput }, authoritative, handoff] =
-    await Promise.all([
-      import('../doc/doc-commands.ts'),
-      import('../doc/doc-write-tree.ts'),
-      import('../canon/canon-files.ts'),
-      import('../doc/doc-authoritative-read.ts'),
-      import('../session/resume-brief-handoff.ts'),
-    ])
+  const [
+    { docCommand },
+    { selectDocWriteTree },
+    { collectCanonLintInput },
+    authoritative,
+    handoff,
+  ] = await Promise.all([
+    import('../doc/doc-commands.ts'),
+    import('../doc/doc-write-tree.ts'),
+    import('../canon/canon-files.ts'),
+    import('../doc/doc-authoritative-read.ts'),
+    import('../session/resume-brief-handoff.ts'),
+  ])
   await docCommand(
     verb,
     ['doc', verb, ...args],

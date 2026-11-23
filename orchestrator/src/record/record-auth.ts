@@ -31,7 +31,9 @@ import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
+
 export { RECORD_SESSION_KEY } from './record-token.ts'
+
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
 export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitation only; ask a record space owner to run \`${PLATFORM_SLUG} record space invite --email <email>\`.`
