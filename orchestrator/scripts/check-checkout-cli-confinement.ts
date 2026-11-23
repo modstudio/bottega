@@ -8,6 +8,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shar
 import { CHECKOUT_CLI_BINARY_ENV, CHECKOUT_ROOT_ENV } from '../../shared/install-root.ts'
 import { writeRecordSessionToken } from '../../shared/record-session.ts'
 import { ORCHESTRATOR_DATABASE_ENV, STATE_HOME_ENV } from '../../shared/state-directory.ts'
+import { WORKER_READ_TOOLS } from '../../shared/worker-read-tools.ts'
 import type { Agent } from '../src/agent/agents.ts'
 import type { Project } from '../src/project/projects.ts'
 import type { TransportStartOpts } from '../src/transport/transport.ts'
@@ -15,9 +16,7 @@ import type { TransportStartOpts } from '../src/transport/transport.ts'
 const REQUIRED_TOOLS = [
   'ask_orchestrator',
   'note',
-  'read_task',
-  'read_task_document',
-  'read_workflow_text',
+  ...Object.values(WORKER_READ_TOOLS),
 ] as const
 
 const FIXTURE_PROJECT_ID = '01990000-0000-7000-8000-000000002585'

@@ -4,7 +4,9 @@
 import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
 import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
 import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
+import { WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { type CallerClassification, classifyCaller } from '../shared/caller-classification.ts'
+import { WORKER_READ_TOOLS } from '../shared/worker-read-tools.ts'
 
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name)
@@ -34,22 +36,14 @@ function workerReadRoute(argv: readonly string[]): 'task' | 'document' | 'workfl
   return null
 }
 
-const WORKER_READ_TOOLS = {
-  task: 'read_task',
-  document: 'read_task_document',
-  workflow: 'read_workflow_text',
-} as const
-
 export function workerRecordReadCliRefusal(input: {
   route: keyof typeof WORKER_READ_TOOLS | null
   callerKind: CallerClassification['kind']
   codexSandbox: boolean
-  askUrl: boolean
 }): string | null {
-  if (!input.route || input.callerKind !== 'worker' || input.askUrl || !input.codexSandbox)
-    return null
+  if (!input.route || input.callerKind !== 'worker' || !input.codexSandbox) return null
   const tool = WORKER_READ_TOOLS[input.route]
-  return `a codex worker reads this record with the worker ask MCP tool ${tool}; the CLI can't reach the record session from codex's sandbox`
+  return `a codex worker reads this record with the ${WORKER_MCP_SERVER_NAME} MCP tool ${tool}; the CLI can't reach the record session from codex's sandbox`
 }
 
 /** Return null when the normal CLI owner should handle this invocation. */
@@ -61,7 +55,6 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
   const refusal = workerRecordReadCliRefusal({
     route,
     callerKind,
-    askUrl,
     codexSandbox: Boolean(process.env.CODEX_SANDBOX?.trim()),
   })
   if (refusal) {
@@ -91,7 +84,7 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
     ])
     const readOptions = project ? { project } : {}
     if (route === 'task') {
-      const detail = await callWorkerRecordRead<HostedTaskDetail>('read_task', {
+      const detail = await callWorkerRecordRead<HostedTaskDetail>(WORKER_READ_TOOLS.task, {
         key: value,
         ...readOptions,
       })
@@ -103,7 +96,7 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
       if (json) console.log(JSON.stringify(shown))
       else printShownTask(shown)
     } else if (route === 'document') {
-      const hosted = await callWorkerRecordRead<HostedDocument>('read_task_document', {
+      const hosted = await callWorkerRecordRead<HostedDocument>(WORKER_READ_TOOLS.document, {
         reference: value,
         ...readOptions,
       })
@@ -112,7 +105,7 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
       else printShownTaskDocument(document)
     } else {
       const id = workflowTextAttachmentId(value)
-      const shown = await callWorkerRecordRead<ShownWorkflowText>('read_workflow_text', {
+      const shown = await callWorkerRecordRead<ShownWorkflowText>(WORKER_READ_TOOLS.workflow, {
         id,
         ...readOptions,
       })
