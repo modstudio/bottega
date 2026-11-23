@@ -2,11 +2,7 @@
 /** Converts port reads into the validated snapshot writes shared by both adapters. */
 
 import type { Database } from 'bun:sqlite'
-import {
-  questionMutationTextRefusal,
-  questionTextRefusal,
-  type RequiredTextRefusal,
-} from '../../../shared/question-text-refusal.ts'
+import { questionTextWriteRefusal, type RequiredTextRefusal } from './question-text-refusal.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nullableRecordIso, recordIso } from '../../../shared/record-timestamp.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -41,9 +37,11 @@ const json = (value: unknown): unknown => {
 
 function refuseQuestionText(refusal: RequiredTextRefusal | null): void {
   if (refusal === null) return
-  throw new Error(
-    `${refusal.message} The question text must be a non-empty string; fix the caller that built it.`,
-  )
+  const malformedRemedy =
+    refusal.kind === 'changed'
+      ? ''
+      : ' The question text must be a non-empty string; fix the caller that built it.'
+  throw new Error(`${refusal.message}${malformedRemedy}`)
 }
 
 async function writeQuestion(
@@ -138,7 +136,7 @@ export async function mutateQuestion(
     throw new Error(`question ${input.id} changed before the mutation was stored`)
   if ('question' in input.changes)
     refuseQuestionText(
-      questionMutationTextRefusal(input.intent, current.question, input.changes.question),
+      questionTextWriteRefusal(input.intent, current.question, input.changes.question),
     )
   const result = await writeQuestion(database, input.intent, {
     requestId: newRecordId(),
@@ -188,7 +186,7 @@ export async function askQuestion(
     levels?: unknown
   },
 ) {
-  refuseQuestionText(questionTextRefusal(input.question))
+  refuseQuestionText(questionTextWriteRefusal('ask', null, input.question))
   const id = input.id ?? newRecordId()
   let projectId = input.projectId ?? null
   if (!projectId && input.runId) {

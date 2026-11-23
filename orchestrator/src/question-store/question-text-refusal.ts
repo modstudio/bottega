@@ -1,5 +1,5 @@
 // concern: question text refusal
-/** Pure refusals for required text and question wording changes. */
+/** Pure refusals for required text and question wording writes. */
 
 export const MALFORMED_REQUIRED_TEXT_PREFIX = '__bottega_malformed_required_text__:'
 
@@ -44,13 +44,14 @@ export function questionTextRefusal(
   return reason ? { kind, message: `${reason}. ${refusalRemedy(field)}` } : null
 }
 
-/** Why a mutation cannot carry its proposed question wording, or null when it may. */
-export function questionMutationTextRefusal(
+/** Why an intent cannot carry its proposed question wording, or null when it may. */
+export function questionTextWriteRefusal(
   intent: string,
-  stored: string,
+  stored: string | null,
   proposed: unknown,
 ): RequiredTextRefusal | null {
-  if (proposed === stored) return null
+  if (intent === 'ask') return questionTextRefusal(proposed)
+  if (intent === 'import' || intent === 'restore' || proposed === stored) return null
   if (intent === 'link') return questionTextRefusal(proposed)
   return {
     kind: 'changed',

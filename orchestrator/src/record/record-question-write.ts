@@ -6,7 +6,6 @@ import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
-import { questionMutationTextRefusal } from '../../../shared/question-text-refusal.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
@@ -22,6 +21,7 @@ import {
   runQuestionOwnerAbsentMessage,
   runQuestionOwnerLive,
 } from '../question-store/run-question-write-guard.ts'
+import { questionTextWriteRefusal } from '../question-store/question-text-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -134,12 +134,16 @@ async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void>
 
 function assertQuestionTextWriteAllowed(
   intent: QuestionIntent,
-  stored: string,
-  proposed: string,
+  stored: string | null,
+  proposed: unknown,
+  status: 409 | 422,
 ): void {
-  if (intent === 'ask' || intent === 'import' || intent === 'restore') return
-  const refusal = questionMutationTextRefusal(intent, stored, proposed)
-  if (refusal) throw new RecordQuestionError(refusal.message, 409)
+  const refusal = questionTextWriteRefusal(intent, stored, proposed)
+  if (refusal) throw new RecordQuestionError(refusal.message, status)
+}
+
+function maskedQuestionText(question: string): string {
+  return maskQuestionValues({ question }).question
 }
 
 async function existingQuestionForWrite(
@@ -206,6 +210,7 @@ export async function writeRecordQuestionTransaction(
   input: Tenant & QuestionIntentBody,
   tx: SQL,
 ): Promise<QuestionWriteResult> {
+  assertQuestionTextWriteAllowed(intent, input.question.question, input.question.question, 422)
   if (intent === 'import')
     return importRecordQuestionTransaction(input as Tenant & QuestionImportBody, tx)
   const writeInput = input as Tenant & QuestionWriteBody
@@ -216,7 +221,12 @@ export async function writeRecordQuestionTransaction(
   if (existing?.last_request_id === writeInput.requestId)
     return replayedQuestionWrite(writeInput.question.id, existing)
   if (existing)
-    assertQuestionTextWriteAllowed(intent, existing.question, writeInput.question.question)
+    assertQuestionTextWriteAllowed(
+      intent,
+      existing.question,
+      maskedQuestionText(writeInput.question.question),
+      409,
+    )
   const number = await questionNumberForWrite(intent, writeInput, existing, tx)
   const payload = {
     ...writeInput.question,

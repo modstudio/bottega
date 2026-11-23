@@ -2,7 +2,6 @@
 /** Exposes validated tenant-bound question reads and writes. */
 
 import type { Context, Hono } from 'hono'
-import { questionTextRefusal } from '../../../shared/question-text-refusal.ts'
 import {
   decodeRecordChangeCursor,
   type RecordChangeCursor,
@@ -164,18 +163,6 @@ export function registerRecordQuestionRoutes(
         },
         400,
       )
-    if (intent.data === 'ask') {
-      const refusal = questionTextRefusal(body.data.question.question)
-      if (refusal)
-        return context.json(
-          {
-            error: directWriteRefusal([
-              { path: ['question', 'question'], message: refusal.message },
-            ]),
-          },
-          400,
-        )
-    }
     return context.json(await deps.writeQuestion(intent.data, { ...tenant, ...body.data }))
   })
 }

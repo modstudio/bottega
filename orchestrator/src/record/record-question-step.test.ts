@@ -216,6 +216,21 @@ test('hosted mutations pass legacy wording unchanged, allow a valid link amendme
   ).toEqual([{ question: 'Amended wording?', revision }])
 })
 
+test('hosted mutation compares secret-shaped question text after applying storage masking', async () => {
+  const sql = pgliteSql(postgres)
+  const secretQuestion = 'Use ghp_123456789012345678901234567890123456?'
+  const ask = questionWrite()
+  ask.question.question = secretQuestion
+  await writeRecordQuestionTransaction('ask', { ...principal, ...ask }, sql)
+
+  const answer = questionWrite(REWRITE_REQUEST, 2)
+  answer.question.question = secretQuestion
+  answer.audit.action = 'answer'
+  await expect(
+    writeRecordQuestionTransaction('answer', { ...principal, ...answer }, sql),
+  ).resolves.toMatchObject({ applied: true, revision: 2 })
+})
+
 test.each(['', '[object Object]'])(
   'hosted link refuses malformed amended wording %j and leaves the row unchanged',
   async (question) => {

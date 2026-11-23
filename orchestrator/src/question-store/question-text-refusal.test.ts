@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import {
   MALFORMED_REQUIRED_TEXT_PREFIX,
-  questionMutationTextRefusal,
   questionTextRefusal,
+  questionTextWriteRefusal,
   requiredTextReachingHandler,
 } from './question-text-refusal.ts'
 
@@ -43,11 +43,14 @@ test('field remedies name the note and message without repeating text', () => {
   expect(questionTextRefusal({}, 'text')?.message).not.toContain('text text')
 })
 
-test('mutation wording permits unchanged legacy text and only valid link amendments', () => {
-  expect(questionMutationTextRefusal('answer', '[object Object]', '[object Object]')).toBeNull()
-  expect(questionMutationTextRefusal('link', '[object Object]', 'Clear question?')).toBeNull()
-  expect(questionMutationTextRefusal('link', 'Clear question?', '[object Object]')?.kind).toBe(
+test('one write policy covers fresh, historical, amended, changed, and unchanged wording', () => {
+  expect(questionTextWriteRefusal('ask', null, '[object Object]')?.kind).toBe('malformed')
+  expect(questionTextWriteRefusal('import', null, '[object Object]')).toBeNull()
+  expect(questionTextWriteRefusal('restore', 'Original?', 'Changed?')).toBeNull()
+  expect(questionTextWriteRefusal('answer', '[object Object]', '[object Object]')).toBeNull()
+  expect(questionTextWriteRefusal('link', '[object Object]', 'Clear question?')).toBeNull()
+  expect(questionTextWriteRefusal('link', 'Clear question?', '[object Object]')?.kind).toBe(
     'malformed',
   )
-  expect(questionMutationTextRefusal('answer', 'Clear question?', 'Changed?')?.kind).toBe('changed')
+  expect(questionTextWriteRefusal('answer', 'Clear question?', 'Changed?')?.kind).toBe('changed')
 })

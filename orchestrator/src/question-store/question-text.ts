@@ -2,10 +2,7 @@
 /** Pure validation and wire normalization for text that must reach a handler. */
 
 import { z } from 'zod'
-import {
-  questionTextRefusal,
-  requiredTextReachingHandler,
-} from '../../../shared/question-text-refusal.ts'
+import { questionTextRefusal, requiredTextReachingHandler } from './question-text-refusal.ts'
 
 export const requiredHandlerText = z.preprocess(requiredTextReachingHandler, z.string())
 

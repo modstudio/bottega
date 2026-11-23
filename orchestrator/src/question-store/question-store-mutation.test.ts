@@ -558,7 +558,10 @@ test('an answer mutation cannot change stored wording', async () => {
       reason: null,
       changes: { question: 'Changed?', answer: 'Yes' },
     }),
-  ).rejects.toThrow('question text changed during answer')
+  ).rejects.toMatchObject({
+    message:
+      'question text changed during answer. Keep `question` identical to the stored question text; use link to amend valid wording first.',
+  })
 
   expect(intents).toEqual([])
   expect(writtenSpaces).toEqual([])

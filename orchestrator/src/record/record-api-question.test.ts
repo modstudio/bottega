@@ -431,28 +431,32 @@ function mutationBody(
 }
 
 test.each(['', '[object Object]'])(
-  'hosted ask refuses malformed question text %j without calling the writer',
+  'hosted ask refuses malformed question text %j and writes no row',
   async (question) => {
-    const body = mutationBody('answer', contractId(29_100), contractId(29_101), 1)
-    body.question.question = question
-    body.audit.action = 'ask'
-    let writes = 0
-    const response = await app({
-      writeQuestion: async () => {
-        writes += 1
-        return { applied: true }
-      },
-    }).request('/v1/questions/ask', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    const fixture = await createRecordContractFixture()
+    try {
+      const body = mutationBody('answer', contractId(29_100), contractId(29_101), 1)
+      body.question.question = question
+      body.audit.action = 'ask'
+      const response = await fixture.app.request('/v1/questions/ask', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-record-space': RECORD_CONTRACT_SPACE_A,
+        },
+        body: JSON.stringify(body),
+      })
 
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: expect.stringContaining('question.question:'),
-    })
-    expect(writes).toBe(0)
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining(question ? 'question was the text' : 'question was empty'),
+      })
+      expect(
+        (await fixture.database.query('SELECT count(*)::int AS count FROM question')).rows,
+      ).toEqual([{ count: 0 }])
+    } finally {
+      await fixture.close()
+    }
   },
 )
 

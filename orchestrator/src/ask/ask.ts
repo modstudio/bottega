@@ -35,7 +35,6 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { questionTextRefusal } from '../../../shared/question-text-refusal.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -71,6 +70,7 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
+import { questionTextRefusal } from '../question-store/question-text-refusal.ts'
 import { requiredHandlerText } from '../question-store/question-text.ts'
 import {
   isRunQuestionOwnerNotLive,

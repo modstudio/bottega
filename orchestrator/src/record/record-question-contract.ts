@@ -62,6 +62,8 @@ export const questionAuditSchema = z.object({
   reason: nullableText,
 })
 
+// Question text stays permissive here because imports, restores, and mutations carry stored rows;
+// writeRecordQuestionTransaction applies the intent-aware refusal before a hosted write.
 const questionSnapshotSchema = z.object({
   id,
   number: z.number().int().positive().nullable().default(null),
