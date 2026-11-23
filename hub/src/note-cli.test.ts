@@ -15,7 +15,7 @@ import {
   noteSameLine,
   noteStaleLine,
 } from './note-cli.ts'
-import { listSlimNotes } from './note-read.ts'
+import { listProjectSlimNotes } from './note-read.ts'
 
 beforeEach(resetFixtureStore)
 
@@ -156,9 +156,24 @@ test('CLI slim list budgets calls and bytes for human and JSON output', async ()
   expect(json.calls).not.toContain('/v1/notes')
 
   const union = countingFetch()
-  await noteListRows(undefined, { json: true }, undefined, { ...hosted, fetch: union.fetch })
+  const unionResult = await noteListRows(undefined, { json: true }, undefined, {
+    ...hosted,
+    fetch: union.fetch,
+  })
   expect(union.calls.filter((path) => path === '/v1/notes/list')).toHaveLength(2)
   expect(union.calls).not.toContain('/v1/notes')
+  expect(unionResult.notes.map((note) => note.record_id)).toEqual([
+    fixtureRecordId(11_000),
+    ...Array.from({ length: 75 }, (_, index) => fixtureRecordId(10_075 - index)),
+  ])
+  expect(unionResult.total).toBe(76)
+  expect(union.bytes()).toBeLessThan(NOTE_LIST_RESPONSE_BYTE_BUDGET)
+})
+
+test('CLI slim list refuses an invalid limit with its remedy', async () => {
+  await expect(noteListRows(undefined, { limit: 'abc' }, undefined)).rejects.toThrow(
+    'limit must be a positive integer; omit it to list every matching note',
+  )
 })
 
 test('local and hosted slim lists have filter and order parity', async () => {
@@ -172,14 +187,50 @@ test('local and hosted slim lists have filter and order parity', async () => {
     text: 'budget NOTE 2',
     limit: 8,
   }
-  const local = await listSlimNotes(filters, { baseUrl: '' })
-  const hosted = await listSlimNotes(filters, {
-    baseUrl: 'https://hub.example.test',
-    token: 'test',
-    fetch: noteHostedFetch,
+  const local = await listProjectSlimNotes({ ...filters, hosted: { baseUrl: '' } })
+  const hosted = await listProjectSlimNotes({
+    ...filters,
+    hosted: {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: noteHostedFetch,
+    },
   })
   expect(hosted.notes.map((note) => note.record_id)).toEqual(
     local.notes.map((note) => note.record_id),
   )
   expect(hosted.total).toBe(local.total)
+
+  const unicodeId = fixtureRecordId(12_000)
+  writeTransaction((conn) =>
+    conn
+      .prepare(
+        `INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+         VALUES (?,?,?,?,?,1,?,?)`,
+      )
+      .run(
+        unicodeId,
+        80,
+        'gamma',
+        'ÄRGER in the triage list',
+        '[]',
+        '2026-11-21T00:00:00.000Z',
+        '2026-11-21T00:00:00.000Z',
+      ),
+  )
+  const unicodeFilters = { project: 'gamma', text: 'ärger' }
+  const localUnicode = await listProjectSlimNotes({
+    ...unicodeFilters,
+    hosted: { baseUrl: '' },
+  })
+  const hostedUnicode = await listProjectSlimNotes({
+    ...unicodeFilters,
+    hosted: {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: noteHostedFetch,
+    },
+  })
+  expect(localUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
+  expect(hostedUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
 })

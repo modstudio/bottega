@@ -4,7 +4,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { formatNoteLabel } from '../../shared/note-label.ts'
 import { db } from './db.ts'
-import { noteListLimit, type SlimNote } from './hosted-note-slim-list.ts'
 import type { HostedAcknowledgement } from './hosted-notes.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
@@ -19,6 +18,7 @@ import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
+import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type NoteFilters = {
   project?: string
@@ -68,7 +68,10 @@ function appendSessionClauses(
   values.push(...sessions)
 }
 
-function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
+function listLocalFilteredRows<Row extends { text: string }>(
+  filters: NormalizedNoteFilters,
+  projection: string,
+): Row[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
   if (filters.project) {
@@ -80,15 +83,20 @@ function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
   appendSessionClauses(filters, clauses, values)
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db()
-    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
-      `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+    .query<Row, (string | number)[]>(
+      `SELECT ${projection} FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY note.last_seen_at DESC, note.record_id DESC`,
     )
     .all(...values)
   const search = filters.text?.toLowerCase()
-  return (search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows).map(
-    decodeNoteRow,
-  )
+  return search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows
+}
+
+function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
+  return listLocalFilteredRows<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }>(
+    filters,
+    'note.*',
+  ).map(decodeNoteRow)
 }
 
 function slimNote(row: NoteRow): SlimNote {
@@ -124,34 +132,18 @@ function listLocalSlimNotes(
   filters: NormalizedNoteFilters,
   limit: number | undefined,
 ): { notes: SlimNote[]; total: number } {
-  const clauses: string[] = []
-  const values: (string | number)[] = []
-  if (filters.project) {
-    clauses.push('note.project = ?')
-    values.push(filters.project)
-  }
-  if (filters.stale !== undefined)
-    clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
-  appendSessionClauses(filters, clauses, values)
-  if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
-  if (filters.text !== undefined) {
-    clauses.push('instr(lower(note.text), lower(?)) > 0')
-    values.push(filters.text)
-  }
-  const selected = db()
-    .query<Omit<SlimNote, 'label'> & { total: number }, (string | number)[]>(
-      `SELECT note.record_id,note.number,note.project,note.text,note.sightings,note.created_at,
-        note.last_seen_at,note.stale_at,note.stale_reason,note.promoted_task,count(*) OVER () total
-       FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-       ORDER BY note.last_seen_at DESC,note.record_id DESC${limit === undefined ? '' : ' LIMIT ?'}`,
-    )
-    .all(...values, ...(limit === undefined ? [] : [limit]))
+  const matching = listLocalFilteredRows<Omit<SlimNote, 'label'>>(
+    filters,
+    `note.record_id,note.number,note.project,note.text,note.sightings,note.created_at,
+     note.last_seen_at,note.stale_at,note.stale_reason,note.promoted_task`,
+  )
+  const selected = limit === undefined ? matching : matching.slice(0, limit)
   return {
-    notes: selected.map(({ total: _total, ...row }) => ({
+    notes: selected.map((row) => ({
       ...row,
       label: formatNoteLabel(row.project, row.number),
     })),
-    total: selected[0]?.total ?? 0,
+    total: matching.length,
   }
 }
 
@@ -328,7 +320,7 @@ async function listHostedSlimNoteRows(
   }
 }
 
-export async function listSlimNotes(
+async function listSlimNotes(
   filters: NoteFilters & { limit?: number } = {},
   hosted?: NoteClientOptions,
 ): Promise<{ notes: SlimNote[]; total: number }> {

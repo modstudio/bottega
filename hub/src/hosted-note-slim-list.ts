@@ -4,22 +4,7 @@
 import type { SQL } from 'bun'
 import { formatNoteLabel } from '../../shared/note-label.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
-
-export const NOTE_LIST_DEFAULT_LIMIT = 50
-
-export type SlimNote = {
-  record_id: string
-  label: string
-  number: number
-  project: string
-  text: string
-  sightings: number
-  created_at: string
-  last_seen_at: string
-  stale_at: string | null
-  stale_reason: string | null
-  promoted_task: string | null
-}
+import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type HostedSlimNoteListFilters = {
   project?: string
@@ -34,13 +19,6 @@ export type HostedSlimNoteListFilters = {
 type SlimNoteRow = Omit<SlimNote, 'record_id' | 'label'> & {
   id: string
   total: number | string
-}
-
-export function noteListLimit(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value <= 0)
-    throw new Error('note list limit must be a positive integer')
-  return value
 }
 
 export async function listHostedSlimNotes(

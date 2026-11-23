@@ -84,14 +84,17 @@ async function outsideRoute(context: RouteContext): Promise<Response | null> {
 async function readRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who } = context
   if (request.method !== 'GET') return null
-  if (url.pathname === '/v1/notes/list')
+  if (url.pathname === '/v1/notes/list') {
+    const filters = slimListFilters(url)
+    if (filters instanceof Response) return filters
     return json(
       await call(dependencies.listSlim, listHostedSlimNotes)(
         config.recordDatabaseUrl,
         who,
-        slimListFilters(url),
+        filters,
       ),
     )
+  }
   if (url.pathname === '/v1/notes')
     return json(
       await call(dependencies.list, listHostedNotes)(config.recordDatabaseUrl, who, {
@@ -117,6 +120,15 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
 }
 
 function slimListFilters(url: URL) {
+  const limitValue = url.searchParams.get('limit')
+  const limit = limitValue === null ? undefined : Number(limitValue)
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit <= 0))
+    return json(
+      {
+        error: 'limit must be a positive integer; omit it to list every matching note',
+      },
+      400,
+    )
   return {
     project: url.searchParams.get('project') ?? undefined,
     stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
@@ -124,7 +136,7 @@ function slimListFilters(url: URL) {
     sessions: url.searchParams.getAll('session'),
     kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
     text: url.searchParams.get('text') ?? undefined,
-    limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
+    limit,
   }
 }
 

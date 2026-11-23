@@ -4,7 +4,6 @@ import { repeatable } from '../../shared/cli-repeat-guard.ts'
 import { TYPESAFE_CREDENTIAL_SET_COMMAND } from '../../shared/typed-question/client.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
-import { NOTE_LIST_DEFAULT_LIMIT } from './hosted-note-slim-list.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -49,6 +48,8 @@ type NoteOptions = {
   title?: string
   days?: string
 }
+
+const NOTE_LIST_DEFAULT_LIMIT = 50
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
 const open = () => requireDatabase()

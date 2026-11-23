@@ -2,7 +2,7 @@ import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { getNote, listNotes } from './note-read.ts'
+import { getNote, listNotes, listProjectSlimNotes } from './note-read.ts'
 
 beforeEach(resetFixtureStore)
 
@@ -212,6 +212,41 @@ test('an unfiltered hosted list refuses a note id duplicated across spaces', asy
               }),
       },
     ),
+  ).rejects.toThrow(`note ${id} appears in record spaces space-active and space-gamma`)
+})
+
+test('an unfiltered hosted slim list refuses a note id duplicated across spaces', async () => {
+  const id = crypto.randomUUID()
+  const note = hostedNote(id)
+
+  await expect(
+    listProjectSlimNotes({
+      hosted: {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async (input) =>
+          new URL(input).pathname === '/v1/tasks/identity'
+            ? Response.json(crossSpaceIdentity)
+            : Response.json({
+                notes: [
+                  {
+                    record_id: note.id,
+                    label: `${note.project}#${note.number}`,
+                    number: note.number,
+                    project: note.project,
+                    text: note.text,
+                    sightings: note.sightings,
+                    created_at: note.created_at,
+                    last_seen_at: note.last_seen_at,
+                    stale_at: note.stale_at,
+                    stale_reason: note.stale_reason,
+                    promoted_task: note.promoted_task,
+                  },
+                ],
+                total: 1,
+              }),
+      },
+    }),
   ).rejects.toThrow(`note ${id} appears in record spaces space-active and space-gamma`)
 })
 
