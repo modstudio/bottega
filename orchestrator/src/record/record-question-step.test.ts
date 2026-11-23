@@ -216,19 +216,34 @@ test('hosted mutations pass legacy wording unchanged, allow a valid link amendme
   ).toEqual([{ question: 'Amended wording?', revision }])
 })
 
-test('hosted mutation compares secret-shaped question text after applying storage masking', async () => {
+test('hosted mutations compare secret-shaped question text after applying storage masking', async () => {
   const sql = pgliteSql(postgres)
   const secretQuestion = 'Use ghp_123456789012345678901234567890123456?'
   const ask = questionWrite()
   ask.question.question = secretQuestion
   await writeRecordQuestionTransaction('ask', { ...principal, ...ask }, sql)
 
-  const answer = questionWrite(REWRITE_REQUEST, 2)
-  answer.question.question = secretQuestion
-  answer.audit.action = 'answer'
+  for (const [intent, revision] of [
+    ['answer', 2],
+    ['link', 3],
+  ] as const) {
+    const unchanged = questionWrite(crypto.randomUUID(), revision)
+    unchanged.question.question = secretQuestion
+    unchanged.audit.action = intent
+    await expect(
+      writeRecordQuestionTransaction(intent, { ...principal, ...unchanged }, sql),
+    ).resolves.toMatchObject({ applied: true, revision })
+  }
+
+  const changed = questionWrite(crypto.randomUUID(), 4)
+  changed.question.question = `${secretQuestion} Changed.`
+  changed.audit.action = 'answer'
   await expect(
-    writeRecordQuestionTransaction('answer', { ...principal, ...answer }, sql),
-  ).resolves.toMatchObject({ applied: true, revision: 2 })
+    writeRecordQuestionTransaction('answer', { ...principal, ...changed }, sql),
+  ).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining('changed during answer'),
+  })
 })
 
 test.each(['', '[object Object]'])(

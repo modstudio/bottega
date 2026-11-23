@@ -2,13 +2,13 @@
 /** Converts port reads into the validated snapshot writes shared by both adapters. */
 
 import type { Database } from 'bun:sqlite'
-import { questionTextWriteRefusal, type RequiredTextRefusal } from './question-text-refusal.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nullableRecordIso, recordIso } from '../../../shared/record-timestamp.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionLiveIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
+import { questionTextWriteRefusal, type RequiredTextRefusal } from './question-text-refusal.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)

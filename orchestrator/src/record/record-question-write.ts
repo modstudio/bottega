@@ -15,13 +15,13 @@ import {
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
+import { questionTextWriteRefusal } from '../question-store/question-text-refusal.ts'
 import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
   runQuestionOwnerAbsentMessage,
   runQuestionOwnerLive,
 } from '../question-store/run-question-write-guard.ts'
-import { questionTextWriteRefusal } from '../question-store/question-text-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -167,6 +167,15 @@ function replayedQuestionWrite(id: string, existing: ExistingQuestion): Question
   }
 }
 
+function questionWritePayload(writeInput: Tenant & QuestionWriteBody, number: number) {
+  return {
+    ...writeInput.question,
+    number,
+    spaceId: writeInput.spaceId,
+    audits: [{ ...writeInput.audit, id: writeInput.requestId }],
+  }
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -228,12 +237,7 @@ export async function writeRecordQuestionTransaction(
       409,
     )
   const number = await questionNumberForWrite(intent, writeInput, existing, tx)
-  const payload = {
-    ...writeInput.question,
-    number,
-    spaceId: writeInput.spaceId,
-    audits: [{ ...writeInput.audit, id: writeInput.requestId }],
-  }
+  const payload = questionWritePayload(writeInput, number)
   const workflowTaskId = await hostedTaskIdForReference(tx, writeInput.spaceId, {
     id: writeInput.question.workflowTaskId,
     key: writeInput.question.workflowKey,
