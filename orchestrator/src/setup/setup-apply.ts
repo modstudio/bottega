@@ -76,7 +76,7 @@ export type SetupEnvironmentService = {
 
 export type SetupAgentService = {
   add(name: string, mutation: AgentMutation): void
-  probe(name: string, projectPath: string): Promise<{ ok: boolean; refusal?: string | null }>
+  probe(name: string, projectPath: string): Promise<{ ok: boolean | null; refusal?: string | null }>
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -390,6 +390,15 @@ async function applySetupAction(
     return { status: applyMcpRegistration(action, runner), message: null }
   const agentAction = await applyAgentAction(action, agents)
   if (agentAction) return agentAction
+  const projectAction = await applyProjectAction(action, service)
+  if (projectAction) return projectAction
+  return { status: 'unchanged', message: null }
+}
+
+async function applyProjectAction(
+  action: SetupAction,
+  service: SetupProjectService,
+): Promise<{ status: SetupAppliedActionStatus; message: null } | null> {
   if (action.kind === 'add') {
     await applyAddAction(action, service)
     return { status: 'applied', message: null }
@@ -398,50 +407,60 @@ async function applySetupAction(
     await applySetAction(action, service)
     return { status: 'applied', message: null }
   }
-  return { status: 'unchanged', message: null }
+  return null
 }
 
 async function applyAgentAction(
   action: SetupAction,
   agents?: SetupAgentService,
 ): Promise<{ status: SetupAppliedActionStatus; message: string | null } | null> {
-  if (action.kind === 'register-agents') {
-    if (!agents) throw new Error('agent registration adapter is unavailable')
-    const lines: string[] = []
-    let failed = false
-    for (const declaration of action.agents) {
-      try {
-        agents.add(declaration.name, declaration.mutation)
-        lines.push(`${declaration.name}: registered`)
-      } catch (error) {
-        failed = true
-        lines.push(
-          `${declaration.name}: failed (${error instanceof Error ? error.message : String(error)}); fix: ${PLATFORM_SLUG} agent share ${declaration.name} --space ${action.spaceSlug}`,
-        )
-      }
-    }
-    return { status: failed ? 'follow-up' : 'applied', message: lines.join('; ') }
-  }
-  if (action.kind === 'probe-agents') {
-    if (!agents) throw new Error('agent probe adapter is unavailable')
-    const lines: string[] = []
-    for (const name of action.names) {
-      try {
-        const result = await agents.probe(name, action.projectPath)
-        lines.push(
-          result.ok
-            ? `${name}: passed`
-            : `${name}: failed${result.refusal ? ` (${result.refusal})` : ''}; fix: from ${action.projectPath}, run ${PLATFORM_SLUG} agent probe ${name}`,
-        )
-      } catch (error) {
-        lines.push(
-          `${name}: failed (${error instanceof Error ? error.message : String(error)}); fix: from ${action.projectPath}, run ${PLATFORM_SLUG} agent probe ${name}`,
-        )
-      }
-    }
-    return { status: 'applied', message: lines.join('; ') }
-  }
+  if (action.kind === 'register-agents') return applyAgentRegistrations(action, agents)
+  if (action.kind === 'probe-agents') return applyAgentProbes(action, agents)
   return null
+}
+
+function applyAgentRegistrations(
+  action: Extract<SetupAction, { kind: 'register-agents' }>,
+  agents?: SetupAgentService,
+): { status: SetupAppliedActionStatus; message: string } {
+  if (!agents) throw new Error('agent registration adapter is unavailable')
+  const lines: string[] = []
+  let failed = false
+  for (const declaration of action.agents) {
+    try {
+      agents.add(declaration.name, declaration.mutation)
+      lines.push(`${declaration.name}: registered`)
+    } catch (error) {
+      failed = true
+      lines.push(
+        `${declaration.name}: failed (${error instanceof Error ? error.message : String(error)}); fix: ${PLATFORM_SLUG} agent share ${declaration.name} --space ${action.spaceSlug}`,
+      )
+    }
+  }
+  return { status: failed ? 'follow-up' : 'applied', message: lines.join('; ') }
+}
+
+async function applyAgentProbes(
+  action: Extract<SetupAction, { kind: 'probe-agents' }>,
+  agents?: SetupAgentService,
+): Promise<{ status: SetupAppliedActionStatus; message: string }> {
+  if (!agents) throw new Error('agent probe adapter is unavailable')
+  const lines: string[] = []
+  for (const name of action.names) {
+    try {
+      const result = await agents.probe(name, action.projectPath)
+      lines.push(
+        result.ok
+          ? `${name}: passed`
+          : `${name}: failed${result.refusal ? ` (${result.refusal})` : ''}; fix: from ${action.projectPath}, run ${PLATFORM_SLUG} agent probe ${name}`,
+      )
+    } catch (error) {
+      lines.push(
+        `${name}: failed (${error instanceof Error ? error.message : String(error)}); fix: from ${action.projectPath}, run ${PLATFORM_SLUG} agent probe ${name}`,
+      )
+    }
+  }
+  return { status: 'applied', message: lines.join('; ') }
 }
 
 async function applyLegacyPathSymlinkRemoval(

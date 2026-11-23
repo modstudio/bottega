@@ -33,7 +33,6 @@ export const recordInvariantModules = [
     'bun:sqlite',
     '../project/project-read.ts',
     './record-api-client.ts',
-    './record-api-client-response.ts',
     './record-api-client-paths.ts',
     './record-api-client-task-flow.ts',
     './record-project-destination-client.ts',

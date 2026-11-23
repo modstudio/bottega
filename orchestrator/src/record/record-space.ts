@@ -9,7 +9,6 @@ import { activeSpaceInvariant } from './active-space-invariant.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
@@ -72,7 +71,7 @@ export async function readActiveSpaceAgentDeclarations(
       agents: await hostedClient.listSpaceAgents({ destinationSpaceId: identity.activeSpaceId }),
     }
   } catch (error) {
-    if (error instanceof RecordApiRequestError && error.status === 401) {
+    if (error !== null && typeof error === 'object' && 'status' in error && error.status === 401) {
       return { kind: 'unreadable', cause: 'signed out' }
     }
     return {
