@@ -212,6 +212,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-planner.ts',
     allowed: [
       '../../../shared/machine-config.ts',
+      './setup-agent-declarations.ts',
       './setup-engine.ts',
       './setup-schedule-policy.ts',
       './setup-toolchain.ts',
@@ -222,7 +223,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
-      './setup-agent-declarations.ts',
     ],
     reason: 'Keep setup action planning pure and independent of stores, adapters, and commands.',
   },

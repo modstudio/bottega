@@ -119,7 +119,8 @@ test('refuses a global-use action when its environment writer is unavailable', a
 test('reports agent registration results per row and preserves the add remedy', async () => {
   const agents: SetupAgentService = {
     add: (name) => {
-      if (name === 'broken') throw new Error('set a base URL with bottega agent set broken')
+      if (name === 'broken')
+        throw new Error(`set a base URL with ${PLATFORM_SLUG} agent set broken`)
     },
     probe: async () => ({ ok: true }),
   }
@@ -154,7 +155,7 @@ test('reports agent registration results per row and preserves the add remedy', 
   expect(success[0]).toMatchObject({ status: 'applied', message: 'ready: registered' })
   expect(failure[0]?.status).toBe('follow-up')
   expect(failure[0]?.message).toBe(
-    'broken: failed; fix: set a base URL with bottega agent set broken',
+    `broken: failed; fix: set a base URL with ${PLATFORM_SLUG} agent set broken`,
   )
   expect(failure[0]?.message).not.toContain('agent share')
 })
@@ -176,7 +177,7 @@ test('reports passing and failing probes without refusing setup', async () => {
   expect(results[0]?.status).toBe('applied')
   expect(results[0]?.message).toContain('passing: passed')
   expect(results[0]?.message).toContain(
-    'failing: failed (connection refused); fix: from /project, run bottega agent probe failing',
+    `failing: failed (connection refused); fix: from /project, run ${PLATFORM_SLUG} agent probe failing`,
   )
 })
 

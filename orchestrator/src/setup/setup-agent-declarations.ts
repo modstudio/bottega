@@ -1,10 +1,10 @@
 // concern: setup-agent-declarations
 /** Decides how hosted agent declarations appear in setup. Pure: no store, process, or network. */
 
-import { BACKENDS, HARNESSES, TRANSPORTS, type AgentMutation } from '../agent/agent-registry.ts'
+import { canonicalJson } from '../../../shared/canonical-json.ts'
+import { type AgentMutation, BACKENDS, HARNESSES, TRANSPORTS } from '../agent/agent-registry.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
-import { canonicalJson } from '../../../shared/canonical-json.ts'
 
 export type DeclaredAgentRegistration = {
   name: string
@@ -105,16 +105,15 @@ type ProbeCandidates = {
 }
 
 function probeNames(input: ProbeCandidates): string[] {
-  return [
-    ...input.existingProbeNames,
-    ...input.registrations.map((agent) => agent.name),
-  ].sort()
+  return [...input.existingProbeNames, ...input.registrations.map((agent) => agent.name)].sort()
 }
 
 /** Probe-with-project table: unprobed local rows and accepted registrations are offered together. */
-export function probesWithProject(input: ProbeCandidates & {
-  projectPath: string | null
-}): string[] {
+export function probesWithProject(
+  input: ProbeCandidates & {
+    projectPath: string | null
+  },
+): string[] {
   if (!input.projectPath) return []
   return probeNames(input)
 }

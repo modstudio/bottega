@@ -6,8 +6,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { probeAgent } from '../agent/agent-probe.ts'
-import { type AgentRow, addAgent } from '../agent/agent-registry.ts'
-import { sharedAgentDeclaration } from '../agent/agent-share.ts'
+import { type AgentRow, addAgent, agentRowDeclaration } from '../agent/agent-registry.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectAmong, projectByName, projects } from '../project/projects.ts'
@@ -201,7 +200,7 @@ function readSetupState(): {
         probePassed: row.probe_result ? Number(JSON.parse(row.probe_result).ok === true) : 0,
       })),
       declarationAgents: rows.map((row) => ({
-        ...sharedAgentDeclaration(row),
+        ...agentRowDeclaration(row),
         enabled: Boolean(row.enabled),
         probedAt: row.probed_at,
       })),

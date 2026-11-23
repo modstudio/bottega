@@ -5,16 +5,16 @@ import type { Keystore } from '../../../shared/key-store-constants.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
+import { probesWithProject } from './setup-agent-declarations.ts'
 import {
-  PROBE_AGENTS_QUESTION_ID,
-  REGISTER_AGENTS_QUESTION_ID,
   MACHINE_GLOBAL_USE_QUESTION_ID,
   MACHINE_LEVEL_QUESTION_ID,
+  PROBE_AGENTS_QUESTION_ID,
+  REGISTER_AGENTS_QUESTION_ID,
   type SetupPlan,
   type SetupProposal,
   type SetupQuestion,
 } from './setup-engine.ts'
-import { probesWithProject } from './setup-agent-declarations.ts'
 import type {
   HarnessInstallRoute,
   HarnessName,

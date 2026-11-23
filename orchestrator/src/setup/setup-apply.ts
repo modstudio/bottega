@@ -432,7 +432,9 @@ function applyAgentRegistrations(
       lines.push(`${declaration.name}: registered`)
     } catch (error) {
       failed = true
-      lines.push(`${declaration.name}: failed; fix: ${error instanceof Error ? error.message : String(error)}`)
+      lines.push(
+        `${declaration.name}: failed; fix: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
   return { status: failed ? 'follow-up' : 'applied', message: lines.join('; ') }

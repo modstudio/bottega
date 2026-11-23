@@ -417,6 +417,7 @@ const declaredModules: ArchitectureModule[] = [
     ...['./capabilities.ts', './goose-provider.ts', './openrouter-key-budget.ts'],
     '../database/db.ts',
     '../jobs/jobs.ts',
+    '../transport/vendor-usage.ts',
   ]),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),

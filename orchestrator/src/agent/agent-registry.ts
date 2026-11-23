@@ -7,11 +7,11 @@ import { CREDENTIAL_SLUG_PATTERN } from '../../../shared/credential.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
+import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
-import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
@@ -43,6 +43,27 @@ export type AgentRow = {
   max_concurrent: number | null
   route_metered: number
   trains_on_inputs: number
+}
+
+export function agentRowDeclaration(row: AgentRow) {
+  return {
+    name: row.name,
+    harness: row.harness,
+    backend: row.backend,
+    model: row.model,
+    baseUrl: row.base_url,
+    transport: row.transport,
+    provider: row.provider,
+    apiKeySecret: row.api_key_secret,
+    requestSettings: row.request_settings ? JSON.parse(row.request_settings) : null,
+    jobs: row.jobs ? JSON.parse(row.jobs) : null,
+    preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : null,
+    maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
+    trainsOnInputs: Boolean(row.trains_on_inputs),
+    operatedBy: row.operated_by,
+    billing: row.billing,
+  }
 }
 
 /** Goose's own default context limit and the measured working budget for Goose runs. */
@@ -373,10 +394,7 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
     throw new Error(`unknown backend "${input.backend}"`)
   if (input.transport && !TRANSPORTS.includes(input.transport))
     throw new Error(`unknown transport "${input.transport}"`)
-  if (
-    input.billing &&
-    !AGENT_BILLINGS.includes(input.billing)
-  ) {
+  if (input.billing && !AGENT_BILLINGS.includes(input.billing)) {
     throw new Error(`unknown billing "${input.billing}"`)
   }
   if (input.enabled === false && !input.reason?.trim()) {
