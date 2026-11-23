@@ -77,8 +77,8 @@ export function tagRungLiveDecision(input: TagRungLiveDecisionInput): Decision {
         `requiring paths: unknown; ${remedy}`,
     }
   }
-  if (input.liveContainsTag) return { ok: true, message: '' }
-  if (input.tagContainsLive && input.requiringPaths.length === 0) return { ok: true, message: '' }
+  if (input.liveContainsTag) return { ok: true }
+  if (input.tagContainsLive && input.requiringPaths.length === 0) return { ok: true }
   const paths = input.requiringPaths.length > 0 ? input.requiringPaths.join(', ') : '(none)'
   const relationship = input.tagContainsLive
     ? `does not contain tag commit ${input.tagCommit}`

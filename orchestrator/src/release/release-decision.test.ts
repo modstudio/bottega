@@ -36,19 +36,16 @@ describe('release tag rung liveness', () => {
   }
 
   test('passes when live contains the tag', () => {
-    expect(tagRungLiveDecision({ ...base, liveContainsTag: true })).toEqual({
-      ok: true,
-      message: '',
-    })
+    expect(tagRungLiveDecision({ ...base, liveContainsTag: true })).toEqual({ ok: true })
   })
 
   test('passes when live is an ancestor with no requiring path', () => {
-    expect(tagRungLiveDecision(base)).toEqual({ ok: true, message: '' })
+    expect(tagRungLiveDecision(base)).toEqual({ ok: true })
   })
 
   test('reproduces the v0.5.13 refusal when an ancestor has a requiring path', () => {
     const decision = tagRungLiveDecision({ ...base, requiringPaths: ['package.json'] })
-    expect(decision.ok).toBe(false)
+    if (decision.ok) throw new Error('expected a release-tag refusal')
     expect(decision.message).toContain('hosted-hub')
     expect(decision.message).toContain('19c5bce3d18c')
     expect(decision.message).toContain('package.json')
@@ -60,7 +57,7 @@ describe('release tag rung liveness', () => {
 
   test('refuses a diverged live commit', () => {
     const decision = tagRungLiveDecision({ ...base, tagContainsLive: false })
-    expect(decision.ok).toBe(false)
+    if (decision.ok) throw new Error('expected a diverged-live refusal')
     expect(decision.message).toContain('unrelated to or diverged')
   })
 
@@ -69,7 +66,7 @@ describe('release tag rung liveness', () => {
     ['non-commit output', 'live command did not print one full commit sha: "not-a-commit"'],
   ])('refuses %s', (_case, error) => {
     const decision = tagRungLiveDecision({ ...base, probe: { error } })
-    expect(decision.ok).toBe(false)
+    if (decision.ok) throw new Error('expected a live-probe refusal')
     expect(decision.message).toContain(error)
     expect(decision.message).toContain('live commit unknown')
   })

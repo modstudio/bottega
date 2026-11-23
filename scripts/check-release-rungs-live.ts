@@ -2,21 +2,35 @@
 
 import { fileURLToPath } from 'node:url'
 import { readLiveCommit } from '../orchestrator/src/release/live-reading.ts'
-import { tagRungLiveDecision } from '../orchestrator/src/release/release-decision.ts'
+import { type Decision, tagRungLiveDecision } from '../orchestrator/src/release/release-decision.ts'
 import { entryClosureAtCommit } from '../orchestrator/src/release/release-entry-closure.ts'
 import { decideRequiredRungs } from '../orchestrator/src/release/release-required.ts'
 import { readTrackedReleaseRungs } from '../orchestrator/src/release/release-rungs.ts'
 import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
+import { refusal, renderRefusal } from '../shared/refusal.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+
+function gitFailure(detail: string, output: string): string {
+  return renderRefusal(
+    refusal(`${detail}: ${output}`, {
+      kind: 'edit',
+      text: 'fetch missing commits or repair the checkout, then retry',
+    }),
+  )
+}
+
+function refusalMessage(decision: Decision): string {
+  if (decision.ok) throw new Error('release-tag refusal unexpectedly passed')
+  return decision.message
+}
 
 function gitOutput(args: string[]): string {
   const result = gitAt(root, args)
   if (result.code !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
-    )
+    const output = result.stderr.trim() || `exit ${result.code}`
+    throw new Error(gitFailure(`git ${args.join(' ')} failed`, output))
   }
   return result.stdout.trim()
 }
@@ -25,8 +39,9 @@ function isAncestor(ancestor: string, descendant: string): boolean {
   const result = gitAt(root, ['merge-base', '--is-ancestor', ancestor, descendant])
   if (result.code === 0) return true
   if (result.code === 1) return false
+  const output = result.stderr.trim() || `exit ${result.code}`
   throw new Error(
-    `git merge-base --is-ancestor ${ancestor} ${descendant} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
+    gitFailure(`git merge-base --is-ancestor ${ancestor} ${descendant} failed`, output),
   )
 }
 
@@ -34,9 +49,8 @@ function changedPaths(from: string, to: string): string[] {
   const args = nulPathListArgs(['diff', '--name-only', `${from}..${to}`, '--'])
   const result = gitAt(root, args)
   if (result.code !== 0) {
-    throw new Error(
-      `git diff --name-only ${from}..${to} failed: ${result.stderr.trim() || `exit ${result.code}`}; fetch missing commits or repair the checkout, then retry`,
-    )
+    const output = result.stderr.trim() || `exit ${result.code}`
+    throw new Error(gitFailure(`git diff --name-only ${from}..${to} failed`, output))
   }
   return splitNulPaths(result.stdout)
 }
@@ -65,14 +79,16 @@ function main(): void {
     const reading = readLiveCommit(rung.live, root)
     if (!reading.ok) {
       refusals.push(
-        tagRungLiveDecision({
-          rung: rung.name,
-          tagCommit,
-          probe: { error: reading.failure },
-          liveContainsTag: false,
-          tagContainsLive: false,
-          requiringPaths: [],
-        }).message,
+        refusalMessage(
+          tagRungLiveDecision({
+            rung: rung.name,
+            tagCommit,
+            probe: { error: reading.failure },
+            liveContainsTag: false,
+            tagContainsLive: false,
+            requiringPaths: [],
+          }),
+        ),
       )
       continue
     }
@@ -90,19 +106,21 @@ function main(): void {
         tagContainsLive,
         requiringPaths: paths,
       })
-      if (!decision.ok) refusals.push(decision.message)
+      if (decision.ok === false) refusals.push(decision.message)
     } catch (error) {
       refusals.push(
-        tagRungLiveDecision({
-          rung: rung.name,
-          tagCommit,
-          probe: {
-            error: `could not compare live commit ${reading.commit}: ${error instanceof Error ? error.message : String(error)}`,
-          },
-          liveContainsTag: false,
-          tagContainsLive: false,
-          requiringPaths: [],
-        }).message,
+        refusalMessage(
+          tagRungLiveDecision({
+            rung: rung.name,
+            tagCommit,
+            probe: {
+              error: `could not compare live commit ${reading.commit}: ${error instanceof Error ? error.message : String(error)}`,
+            },
+            liveContainsTag: false,
+            tagContainsLive: false,
+            requiringPaths: [],
+          }),
+        ),
       )
     }
   }
