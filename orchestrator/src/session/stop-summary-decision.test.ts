@@ -68,6 +68,23 @@ describe('Stop summary decision', () => {
     ])
   })
 
+  test('epic work omits empty list lines and entirely empty epics', () => {
+    expect(
+      decideStopSummary(
+        facts({ epicWork: [{ epic: 'DEV-1', queue: [], open: ['DEV-3'], cursor: 9 }] }),
+      ).lines.slice(2),
+    ).toEqual(['Epic: DEV-1', 'Open: DEV-3'])
+    expect(
+      decideStopSummary(
+        facts({ epicWork: [{ epic: 'DEV-1', queue: ['DEV-2'], open: [], cursor: 9 }] }),
+      ).lines.slice(2),
+    ).toEqual(['Epic: DEV-1', 'Queue: DEV-2'])
+    expect(
+      decideStopSummary(facts({ epicWork: [{ epic: 'DEV-1', queue: [], open: [], cursor: 9 }] }))
+        .lines,
+    ).toEqual([SAID, 'Nothing waiting on you'])
+  })
+
   test('questions lead and cursors stay short, including keyless explore', () => {
     const result = decideStopSummary(
       facts({

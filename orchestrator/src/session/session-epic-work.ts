@@ -9,7 +9,11 @@ import { readLiveProjectTasks, readProjectTaskList } from '../workflow/project-t
 import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-child-facts.ts'
-import { childQueueState, sessionWorksUnderEpic } from '../workflow/workflow-child-queue.ts'
+import {
+  childQueueState,
+  sessionWorksUnderEpic,
+  taskKeysWithChildren,
+} from '../workflow/workflow-child-queue.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
 
 export async function sessionEpicWork(
@@ -37,7 +41,9 @@ export async function sessionEpicWork(
     const epicCursors = stages.filter(
       (stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start',
     )
+    const hasChildren = taskKeysWithChildren(facts)
     for (const cursor of epicCursors) {
+      if (!hasChildren.has(cursor.workflow_key)) continue
       const descendants = descendantTaskKeys(cursor.workflow_key, facts)
       if (!sessionWorksUnderEpic(claims, session, cursor.workflow_key, descendants)) continue
       const state = childQueueState(cursor.workflow_key, session, facts)
