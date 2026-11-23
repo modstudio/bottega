@@ -15,10 +15,12 @@ import { runInboxCommand } from './run-inbox.ts'
 import {
   closeStaleChainQuestions,
   reapStale,
+  repairAskingTurns,
   STALE_QUESTION_SWEEP_INTERVAL_MS,
   staleQuestionSweepDue,
 } from './run-liveness.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
+import { rollUpChangedTurnRoots } from './run-root-rollup.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null
@@ -104,7 +106,10 @@ describe('reapStale', () => {
       return transaction(operation)
     }) as typeof database.transaction)
 
-    expect(reapStale(database, noSharedGitConfigCheck)).toBe(0)
+    expect(repairAskingTurns(database, nowIso())).toEqual({
+      supersededCount: 0,
+      repairedAbandoned: [],
+    })
     expect(transactionCalls).toBe(0)
   })
 
@@ -125,7 +130,10 @@ describe('reapStale', () => {
       )
       .run(newRecordId(), root, root, 'abandon', nowIso(), 'late worker still running')
 
-    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    const repairedAt = nowIso()
+    const repaired = repairAskingTurns(db(), repairedAt)
+    rollUpChangedTurnRoots([root], repairedAt)
+    expect(repaired).toEqual({ supersededCount: 0, repairedAbandoned: [id] })
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(id),
     ).toEqual({
@@ -165,7 +173,10 @@ describe('reapStale', () => {
     insert.run(newRecordId(), id, id, 'abandon', '2026-11-16T10:00:00.000Z')
     insert.run(newRecordId(), id, id, 'continue', '2026-11-16T10:01:00.000Z')
 
-    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
+    expect(repairAskingTurns(db(), nowIso())).toEqual({
+      supersededCount: 0,
+      repairedAbandoned: [],
+    })
     expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
       status: 'asking',
       failure_kind: null,
@@ -196,7 +207,10 @@ describe('reapStale', () => {
       )
       .run(questionId, asking, nowIso(), 'Which option?')
 
-    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    expect(repairAskingTurns(db(), nowIso())).toEqual({
+      supersededCount: 1,
+      repairedAbandoned: [],
+    })
     const latestNumber = runNumber(latest)
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
