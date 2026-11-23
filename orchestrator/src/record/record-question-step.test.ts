@@ -175,6 +175,64 @@ test('a stored cursor question remains closable when its cursor is in another sp
   ).resolves.toMatchObject({ applied: true, revision: 2 })
 })
 
+test('hosted mutations pass legacy wording unchanged, allow a valid link amendment, and refuse other changes', async () => {
+  const sql = pgliteSql(postgres)
+  await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql)
+  await postgres.exec(`
+    RESET ROLE;
+    UPDATE question SET question='[object Object]' WHERE id='${QUESTION}';
+    SET ROLE record_actor;
+  `)
+
+  let revision = 1
+  for (const intent of ['overturn', 'file', 'link'] as const) {
+    revision += 1
+    const unchanged = questionWrite(crypto.randomUUID(), revision)
+    unchanged.question.question = '[object Object]'
+    unchanged.audit.action = intent
+    await expect(
+      writeRecordQuestionTransaction(intent, { ...principal, ...unchanged }, sql),
+    ).resolves.toMatchObject({ applied: true, revision })
+  }
+
+  revision += 1
+  const amended = questionWrite(crypto.randomUUID(), revision)
+  amended.question.question = 'Amended wording?'
+  await expect(
+    writeRecordQuestionTransaction('link', { ...principal, ...amended }, sql),
+  ).resolves.toMatchObject({ applied: true, revision })
+
+  const changedByAnswer = questionWrite(crypto.randomUUID(), revision + 1)
+  changedByAnswer.question.question = 'Changed by answer?'
+  changedByAnswer.audit.action = 'answer'
+  await expect(
+    writeRecordQuestionTransaction('answer', { ...principal, ...changedByAnswer }, sql),
+  ).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining('changed during answer'),
+  })
+  expect(
+    (await postgres.query(`SELECT question,revision FROM question WHERE id='${QUESTION}'`)).rows,
+  ).toEqual([{ question: 'Amended wording?', revision }])
+})
+
+test.each(['', '[object Object]'])(
+  'hosted link refuses malformed amended wording %j and leaves the row unchanged',
+  async (question) => {
+    const sql = pgliteSql(postgres)
+    await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql)
+    const amended = questionWrite(REWRITE_REQUEST, 2)
+    amended.question.question = question
+
+    await expect(
+      writeRecordQuestionTransaction('link', { ...principal, ...amended }, sql),
+    ).rejects.toMatchObject({ status: 409 })
+    expect(
+      (await postgres.query(`SELECT question,revision FROM question WHERE id='${QUESTION}'`)).rows,
+    ).toEqual([{ question: 'Proceed?', revision: 1 }])
+  },
+)
+
 test('a close preserves a stored project that has moved out of the question space', async () => {
   const sql = pgliteSql(postgres)
   const ask = questionWrite()

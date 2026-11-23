@@ -338,6 +338,7 @@ function mutationBody(
   questionId: string,
   requestId: string,
   number: number,
+  questionText = 'Which way?',
 ): QuestionWriteBody {
   const question: QuestionWriteBody['question'] = {
     id: questionId,
@@ -350,7 +351,7 @@ function mutationBody(
     machineId: CONTRACT_MACHINE,
     revision: 2,
     askedAt: CONTRACT_STAMP,
-    question: 'Which way?',
+    question: questionText,
     options: null,
     recommendation: null,
     why: null,
@@ -413,7 +414,6 @@ function mutationBody(
     question.filedAt = CONTRACT_STAMP
   } else if (intent === 'link') {
     question.workflowKey = 'contract-flow'
-    question.question = 'Which linked way?'
   } else if (intent === 'overturn') {
     question.overturnedAt = CONTRACT_STAMP
     question.overturnedBy = 'contract-test'
@@ -429,6 +429,83 @@ function mutationBody(
     audit: { action: intent, actorSession: 'contract-test', at: CONTRACT_STAMP, reason: null },
   }
 }
+
+test.each(['', '[object Object]'])(
+  'hosted ask refuses malformed question text %j without calling the writer',
+  async (question) => {
+    const body = mutationBody('answer', contractId(29_100), contractId(29_101), 1)
+    body.question.question = question
+    body.audit.action = 'ask'
+    let writes = 0
+    const response = await app({
+      writeQuestion: async () => {
+        writes += 1
+        return { applied: true }
+      },
+    }).request('/v1/questions/ask', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('question.question:'),
+    })
+    expect(writes).toBe(0)
+  },
+)
+
+test('hosted import and restore preserve legacy coerced-object wording', async () => {
+  const fixture = await createRecordContractFixture()
+  try {
+    await fixture.database.exec(`
+      RESET ROLE;
+      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+      VALUES ('${CONTRACT_MACHINE}','${RECORD_CONTRACT_USER}','Legacy question machine',now(),now());
+      SET ROLE record_actor;
+    `)
+    const importWrite = mutationBody('answer', contractId(29_110), contractId(29_111), 1)
+    importWrite.question.projectId = null
+    importWrite.question.question = '[object Object]'
+    const importBody = {
+      requestId: importWrite.requestId,
+      question: importWrite.question,
+      audits: [{ ...importWrite.audit, id: contractId(29_112), action: 'ask' }],
+    }
+    const restoreBody = mutationBody('answer', contractId(29_113), contractId(29_114), 2)
+    restoreBody.question.projectId = null
+    restoreBody.question.question = '[object Object]'
+    restoreBody.audit.action = 'restore'
+
+    for (const [intent, body] of [
+      ['import', importBody],
+      ['restore', restoreBody],
+    ] as const) {
+      const response = await fixture.app.request(`/v1/questions/${intent}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-record-space': RECORD_CONTRACT_SPACE_A,
+        },
+        body: JSON.stringify(body),
+      })
+      expect(response.status).toBe(200)
+    }
+
+    expect(
+      (
+        await fixture.database.query<{ question: string }>(`
+          SELECT question FROM question
+          WHERE id IN ('${importWrite.question.id}','${restoreBody.question.id}')
+          ORDER BY number
+        `)
+      ).rows,
+    ).toEqual([{ question: '[object Object]' }, { question: '[object Object]' }])
+  } finally {
+    await fixture.close()
+  }
+})
 
 test('question routes forward validated free text to the masked writer', async () => {
   const secret = 'ghp_123456789012345678901234567890123456'
@@ -474,7 +551,7 @@ test('existing question mutations keep the stored project while asks still resol
           .map(
             (row) =>
               `('${row.id}','${RECORD_CONTRACT_SPACE_A}',${row.storedProject ? `'${row.storedProject}'` : 'NULL'},` +
-              `'${CONTRACT_MACHINE}',${row.number},1,'[]','${CONTRACT_STAMP}','Which way?',` +
+              `'${CONTRACT_MACHINE}',${row.number},1,'[]','${CONTRACT_STAMP}','[object Object]',` +
               `'${CONTRACT_STAMP}','${CONTRACT_STAMP}')`,
           )
           .join(',\n')};
@@ -501,6 +578,7 @@ test('existing question mutations keep the stored project while asks still resol
                 row.id,
                 contractId(25_200 + intentIndex * 2 + projectIndex),
                 row.number,
+                '[object Object]',
               ),
             ),
           }),

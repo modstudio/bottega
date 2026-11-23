@@ -15,7 +15,7 @@ import {
   registerQuestionRunPusher,
   resolveQuestionRunPusher,
 } from './question-run-pusher.ts'
-import { askQuestion, questionSnapshotFromRow } from './question-store-mutation.ts'
+import { askQuestion, mutateQuestion, questionSnapshotFromRow } from './question-store-mutation.ts'
 
 const ID = '00000000-0000-4000-8000-000000000001'
 const PROJECT_ID = '00000000-0000-4000-8000-000000000002'
@@ -429,42 +429,136 @@ test("an open question still links when its project's space is undeclared", asyn
   database.close()
 })
 
-test('a link mutation refuses object coercion text before writing', async () => {
+test.each(['[object Object]', ''])(
+  'a link mutation refuses malformed amended text %j before writing',
+  async (amendedQuestion) => {
+    const database = migratedTestDatabase()
+    database
+      .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+      .run(PROJECT_ID, 'question-mutation-fixture', '/fixture', 'bun', '{}')
+    const openQuestion = row({
+      record_id: ID,
+      question_record_id: ID,
+      workflow_cursor_record_id: CURSOR_ID,
+      workflow_key: 'DEV-2515',
+      project_record_id: PROJECT_ID,
+      awaiting_operator_at: STAMP,
+      closed_at: null,
+      answered_at: null,
+      workflow_step_ordinal: 1,
+      workflow_step_slug: 'implement',
+    })
+    const writtenSpaces: string[] = []
+    const intents: QuestionIntent[] = []
+    installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+
+    await expect(
+      upsertWorkflowQuestion(
+        {
+          cursorId: CURSOR_ID,
+          projectId: PROJECT_ID,
+          workflowKey: 'DEV-2515',
+          workflowTaskRecordId: null,
+          cursorOrdinal: 0,
+          stepSlug: 'implement',
+          question: amendedQuestion,
+          at: STAMP,
+        },
+        database,
+      ),
+    ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+
+    expect(intents).toEqual([])
+    expect(writtenSpaces).toEqual([])
+    database.close()
+  },
+)
+
+test('a link mutation applies a valid wording amendment', async () => {
   const database = migratedTestDatabase()
   database
     .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
     .run(PROJECT_ID, 'question-mutation-fixture', '/fixture', 'bun', '{}')
-  const openQuestion = row({
-    record_id: ID,
-    question_record_id: ID,
-    workflow_cursor_record_id: CURSOR_ID,
-    workflow_key: 'DEV-2515',
-    project_record_id: PROJECT_ID,
-    awaiting_operator_at: STAMP,
-    closed_at: null,
-    answered_at: null,
-    workflow_step_ordinal: 1,
-    workflow_step_slug: 'implement',
-  })
   const writtenSpaces: string[] = []
   const intents: QuestionIntent[] = []
-  installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+  installRecordApiClient(
+    recordClient(writtenSpaces, {
+      questions: [
+        row({
+          workflow_cursor_record_id: CURSOR_ID,
+          workflow_key: 'DEV-2515',
+          project_record_id: PROJECT_ID,
+          awaiting_operator_at: STAMP,
+          answered_at: null,
+          workflow_step_ordinal: 1,
+          workflow_step_slug: 'implement',
+        }),
+      ],
+      intents,
+    }),
+  )
+
+  await upsertWorkflowQuestion(
+    {
+      cursorId: CURSOR_ID,
+      projectId: PROJECT_ID,
+      workflowKey: 'DEV-2515',
+      workflowTaskRecordId: null,
+      cursorOrdinal: 0,
+      stepSlug: 'implement',
+      question: 'Amended wording?',
+      at: STAMP,
+    },
+    database,
+  )
+
+  expect(intents).toEqual(['link'])
+  expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID])
+  database.close()
+})
+
+test.each(['overturn', 'file', 'link'] as const)(
+  'a %s mutation passes legacy coerced-object wording through unchanged',
+  async (intent) => {
+    const database = migratedTestDatabase()
+    const writtenSpaces: string[] = []
+    const intents: QuestionIntent[] = []
+    installRecordApiClient(
+      recordClient(writtenSpaces, { questions: [row({ question: '[object Object]' })], intents }),
+    )
+
+    await expect(
+      mutateQuestion(database, {
+        id: ID,
+        intent,
+        at: STAMP,
+        actorSession: null,
+        reason: null,
+        changes: intent === 'file' ? { filedAs: 'issue' } : {},
+      }),
+    ).resolves.toMatchObject({ applied: true })
+
+    expect(intents).toEqual([intent])
+    database.close()
+  },
+)
+
+test('an answer mutation cannot change stored wording', async () => {
+  const database = migratedTestDatabase()
+  const writtenSpaces: string[] = []
+  const intents: QuestionIntent[] = []
+  installRecordApiClient(recordClient(writtenSpaces, { questions: [row()], intents }))
 
   await expect(
-    upsertWorkflowQuestion(
-      {
-        cursorId: CURSOR_ID,
-        projectId: PROJECT_ID,
-        workflowKey: 'DEV-2515',
-        workflowTaskRecordId: null,
-        cursorOrdinal: 0,
-        stepSlug: 'implement',
-        question: '[object Object]',
-        at: STAMP,
-      },
-      database,
-    ),
-  ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+    mutateQuestion(database, {
+      id: ID,
+      intent: 'answer',
+      at: STAMP,
+      actorSession: null,
+      reason: null,
+      changes: { question: 'Changed?', answer: 'Yes' },
+    }),
+  ).rejects.toThrow('question text changed during answer')
 
   expect(intents).toEqual([])
   expect(writtenSpaces).toEqual([])

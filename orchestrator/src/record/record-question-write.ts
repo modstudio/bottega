@@ -6,6 +6,7 @@ import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
+import { questionMutationTextRefusal } from '../../../shared/question-text-refusal.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
@@ -45,6 +46,7 @@ type ExistingQuestion = {
   revision: number | string
   last_request_id: string | null
   project_id: string | null
+  question: string
 }
 
 function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
@@ -130,6 +132,16 @@ async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void>
   }
 }
 
+function assertQuestionTextWriteAllowed(
+  intent: QuestionIntent,
+  stored: string,
+  proposed: string,
+): void {
+  if (intent === 'ask' || intent === 'import' || intent === 'restore') return
+  const refusal = questionMutationTextRefusal(intent, stored, proposed)
+  if (refusal) throw new RecordQuestionError(refusal.message, 409)
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -180,7 +192,7 @@ export async function writeRecordQuestionTransaction(
   if (intent === 'ask' && writeInput.question.runId)
     await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
   const existing = (await tx`
-      SELECT number,revision,last_request_id::text,project_id::text
+      SELECT number,revision,last_request_id::text,project_id::text,question
         FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE
     `) as ExistingQuestion[]
   if (existing[0]?.last_request_id === writeInput.requestId)
@@ -191,6 +203,8 @@ export async function writeRecordQuestionTransaction(
       applied: true,
       replayed: true,
     }
+  if (existing[0])
+    assertQuestionTextWriteAllowed(intent, existing[0].question, writeInput.question.question)
   const number = await questionNumberForWrite(intent, writeInput, existing[0], tx)
   const payload = {
     ...writeInput.question,

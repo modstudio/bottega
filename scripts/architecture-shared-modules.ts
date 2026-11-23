@@ -12,6 +12,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/bun-version.ts', ['node:fs']),
   module('shared/gate-test-timeout.ts', []),
   module('shared/process-memo.ts', []),
+  module('shared/question-text-refusal.ts', []),
   module('shared/tree-run-scripts.ts', []),
   module('shared/launch-agent-liveness.ts', ['node:fs', 'node:path', './bounded-process.ts']),
   module('shared/project-trunk.ts', []),
