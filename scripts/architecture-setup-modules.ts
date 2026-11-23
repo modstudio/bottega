@@ -34,10 +34,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../project/project-commands.ts',
       '../project/projects.ts',
       '../record/record-space.ts',
+      '../agent/agent-probe.ts',
+      '../agent/agent-registry.ts',
       '../worktree/worktree-lifecycle.ts',
       './provider-credential-trust.ts',
       './repository-facts.ts',
       './setup-apply.ts',
+      './setup-agent-declarations.ts',
       './setup-engine.ts',
       './setup-environment.ts',
       './setup-environment-runtime.ts',
@@ -150,6 +153,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './repository-facts-types.ts',
       './setup-facts.ts',
       './setup-legacy-path.ts',
+      './setup-agent-declarations.ts',
       './setup-mcp-config.ts',
     ],
     reason:
@@ -192,6 +196,14 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep bounded harness installation independent of setup policy, stores, and projects.',
   },
   {
+    name: 'setup-agent-declarations-boundary',
+    file: 'orchestrator/src/setup/setup-agent-declarations.ts',
+    allowed: [],
+    typeOnlyAllowed: ['../agent/agent-registry.ts', '../record/record-space-agents.ts'],
+    reason:
+      'Keep hosted agent declaration registration, drift, and probe decisions independent of stores and adapters.',
+  },
+  {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
     allowed: [
@@ -206,6 +218,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
+      './setup-agent-declarations.ts',
     ],
     reason: 'Keep setup action planning pure and independent of stores, adapters, and commands.',
   },
@@ -224,7 +237,11 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-planner.ts',
       './setup-schedule-runtime.ts',
     ],
-    typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
+    typeOnlyAllowed: [
+      '../../../shared/machine-config.ts',
+      '../agent/agent-registry.ts',
+      './setup-environment.ts',
+    ],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
   },

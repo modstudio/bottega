@@ -2,11 +2,17 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
+import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import type { SetupPlan } from './setup-engine.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
-import { addMcpConfigMigrations, createSetupService } from './setup-service.ts'
+import {
+  addDeclaredAgentsToPlan,
+  addMcpConfigMigrations,
+  createSetupService,
+} from './setup-service.ts'
 
 const temporary: string[] = []
 afterEach(() => {
@@ -44,6 +50,63 @@ const emptyPlan = (): SetupPlan => ({
   questions: [],
   notices: [],
   folderSelection: { options: [], defaults: [] },
+})
+
+const declaration = (): RecordSpaceAgent => ({
+  name: 'codex-team',
+  harness: 'codex',
+  backend: 'vendor',
+  model: 'gpt',
+  baseUrl: null,
+  transport: 'cli',
+  provider: null,
+  apiKeySecret: 'team-key',
+  requestSettings: null,
+  jobs: null,
+  preferredJobs: null,
+  maxConcurrent: null,
+  routeMetered: false,
+  trainsOnInputs: false,
+  operatedBy: 'vendor',
+  billing: 'subscription',
+})
+
+test('declared agents are offered for registration and get probe remedies without a project', async () => {
+  const plan = emptyPlan()
+  await addDeclaredAgentsToPlan(plan, [], [], async () => ({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [declaration()],
+  }))
+
+  expect(plan.questions).toContainEqual(
+    expect.objectContaining({
+      id: 'register-agents',
+      question: 'Register 1 agents the space declares?',
+      recommendation: 'register',
+    }),
+  )
+  expect(plan.notices).toContainEqual(
+    expect.objectContaining({
+      message: 'space agent codex-team cannot be probed because no project is registered',
+      fix: `${PLATFORM_SLUG} project add <path>, then ${PLATFORM_SLUG} agent probe codex-team`,
+    }),
+  )
+})
+
+test('an unreadable declaration read becomes a non-blocking sign-in notice', async () => {
+  const plan = emptyPlan()
+  await addDeclaredAgentsToPlan(plan, [], [], async () => ({
+    kind: 'unreadable',
+    cause: 'signed out',
+  }))
+  expect(plan.notices).toEqual([
+    {
+      message: 'space agent declarations could not be read: signed out',
+      fix: `${PLATFORM_SLUG} record sign-in`,
+      blocking: false,
+    },
+  ])
 })
 
 const preparedMigration = {

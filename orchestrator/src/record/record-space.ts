@@ -9,11 +9,14 @@ import { activeSpaceInvariant } from './active-space-invariant.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
 import { cachedSignedInRecordUser } from './record-session.ts'
+import type { RecordSpaceAgent } from './record-space-agents.ts'
 import { TRIAL_IDENTIFIER_PREFIX, TRIAL_SPACE_MARKER_KEY } from './record-trial-space.ts'
+import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -32,6 +35,53 @@ export type HostedActiveSpace = {
 }
 
 export type CreatedRecordSpace = { id: string; slug: string }
+
+export type ActiveSpaceAgentDeclarations =
+  | { kind: 'local-only' }
+  | { kind: 'read'; space: { id: string; slug: string }; agents: RecordSpaceAgent[] }
+  | {
+      kind: 'unreadable'
+      cause: 'signed out' | 'no active space' | 'unreachable'
+      detail?: string
+    }
+
+/** Read the active hosted space's declarations without making local-only setup contact the record. */
+export async function readActiveSpaceAgentDeclarations(
+  client?: Pick<RecordApiClient, 'whoami' | 'listSpaceAgents'>,
+  seams: {
+    localOnly?: () => boolean
+    signedIn?: () => boolean
+  } = {},
+): Promise<ActiveSpaceAgentDeclarations> {
+  const localOnly =
+    seams.localOnly ?? (() => currentRecordWriteDecision().verdict === 'local-authoritative')
+  try {
+    if (localOnly()) return { kind: 'local-only' }
+    const signedIn = seams.signedIn ?? (() => cachedSignedInRecordUser() !== null)
+    if (!signedIn()) return { kind: 'unreadable', cause: 'signed out' }
+    const hostedClient = client ?? recordApiClient()
+    const identity = await hostedClient.whoami()
+    if (!identity.activeSpaceId) return { kind: 'unreadable', cause: 'no active space' }
+    const membership = identity.memberships.find(
+      (candidate) => String(candidate.space_id) === identity.activeSpaceId,
+    )
+    if (!membership) return { kind: 'unreadable', cause: 'no active space' }
+    return {
+      kind: 'read',
+      space: { id: identity.activeSpaceId, slug: String(membership.slug) },
+      agents: await hostedClient.listSpaceAgents({ destinationSpaceId: identity.activeSpaceId }),
+    }
+  } catch (error) {
+    if (error instanceof RecordApiRequestError && error.status === 401) {
+      return { kind: 'unreadable', cause: 'signed out' }
+    }
+    return {
+      kind: 'unreadable',
+      cause: 'unreachable',
+      detail: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
 
 export function recordSpaceRole(value: string): RecordSpaceRole {
   if (value === 'member' || value === 'admin' || value === 'owner') return value

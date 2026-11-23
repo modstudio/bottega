@@ -5,10 +5,13 @@ import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { probeAgent } from '../agent/agent-probe.ts'
+import { type AgentRow, addAgent } from '../agent/agent-registry.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
-import { projectByName, projects } from '../project/projects.ts'
+import { projectAmong, projectByName, projects } from '../project/projects.ts'
 import {
+  readActiveSpaceAgentDeclarations,
   readSignedInHostedProjectNames,
   requireRecordSpaceMembership,
 } from '../record/record-space.ts'
@@ -16,8 +19,16 @@ import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { gatherProviderCredentialTrustFacts } from './provider-credential-trust.ts'
 import { gatherRepositoryFactsReport } from './repository-facts.ts'
 import {
+  declarationDrift,
+  type LocalAgentDeclaration,
+  missingDeclaration,
+  probesWithoutProject,
+  probesWithProject,
+} from './setup-agent-declarations.ts'
+import {
   applySetupActions,
   type SetupActionResult,
+  type SetupAgentService,
   type SetupProjectService,
 } from './setup-apply.ts'
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
@@ -134,6 +145,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     credentialTrustFacts,
   )
   if (hostedReadNotice) plan.notices.push(hostedReadNotice)
+  await addDeclaredAgentsToPlan(plan, state.declarationAgents, state.projects)
   addMcpConfigMigrations(
     plan,
     homedir(),
@@ -166,23 +178,156 @@ export function addMcpConfigMigrations(
 function readSetupState(): {
   projects: ReturnType<typeof projects>
   agents: SetupAgent[]
+  declarationAgents: LocalAgentDeclaration[]
 } {
-  if (!existsSync(DB_PATH)) return { projects: [], agents: [] }
+  if (!existsSync(DB_PATH)) return { projects: [], agents: [], declarationAgents: [] }
   const database = new Database(DB_PATH, { readonly: true })
   try {
+    const rows = database.query('SELECT * FROM agent ORDER BY name').all() as AgentRow[]
     return {
       projects: projects(undefined, database),
-      agents: database
-        .query(
-          `SELECT name,harness,enabled,provider,
-             CASE WHEN json_extract(probe_result,'$.ok')=1 THEN 1 ELSE 0 END AS probePassed
-             FROM agent ORDER BY name`,
-        )
-        .all() as SetupAgent[],
+      agents: rows.map((row) => ({
+        name: row.name,
+        harness: row.harness,
+        enabled: row.enabled,
+        provider: row.provider,
+        probePassed: row.probe_result ? Number(JSON.parse(row.probe_result).ok === true) : 0,
+      })),
+      declarationAgents: rows.map(localAgentDeclaration),
     }
   } finally {
     database.close()
   }
+}
+
+const parsed = (value: string | null): unknown | null => (value === null ? null : JSON.parse(value))
+
+function localAgentDeclaration(row: AgentRow): LocalAgentDeclaration {
+  return {
+    name: row.name,
+    harness: row.harness,
+    backend: row.backend,
+    model: row.model,
+    baseUrl: row.base_url,
+    transport: row.transport,
+    provider: row.provider,
+    apiKeySecret: row.api_key_secret,
+    requestSettings: parsed(row.request_settings),
+    jobs: parsed(row.jobs),
+    preferredJobs: parsed(row.preferred_jobs),
+    maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
+    trainsOnInputs: Boolean(row.trains_on_inputs),
+    operatedBy: row.operated_by,
+    billing: row.billing,
+    probedAt: row.probed_at,
+  }
+}
+
+export async function addDeclaredAgentsToPlan(
+  plan: SetupPlan,
+  localAgents: LocalAgentDeclaration[],
+  registeredProjects: ReturnType<typeof projects>,
+  readDeclarations = readActiveSpaceAgentDeclarations,
+): Promise<void> {
+  const read = await readDeclarations()
+  if (read.kind === 'local-only') return
+  if (read.kind === 'unreadable') {
+    addUnreadableDeclarationsNotice(plan, read)
+    return
+  }
+  const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
+  const registrations = declaredAgentRegistrations(plan, read, localByName)
+  const declaredNames = new Set(read.agents.map(({ name }) => name))
+  const declaredLocal = localAgents.filter(({ name }) => declaredNames.has(name))
+  const current = projectAmong(process.cwd(), registeredProjects)
+  const projectPath = (current ?? registeredProjects[0])?.path ?? null
+  const existingProbeNames = declaredLocal
+    .filter(({ probedAt }) => probedAt === null)
+    .map(({ name }) => name)
+  plan.agentDeclarations = {
+    registrations,
+    existingProbeNames,
+    projectPath,
+    spaceSlug: read.space.slug,
+  }
+  if (registrations.length) {
+    plan.questions.push({
+      id: 'register-agents',
+      question: `Register ${registrations.length} agents the space declares?`,
+      options: [
+        { id: 'register', label: 'Register', why: 'Add the declared agents to this machine.' },
+        { id: 'skip', label: 'Skip', why: 'Leave the agents absent on this machine.' },
+      ],
+      recommendation: 'register',
+      why: 'Setup never adds a space declaration without approval.',
+    })
+  }
+  const probeNames = projectPath
+    ? probesWithProject({ local: declaredLocal, registrations, projectPath })
+    : probesWithoutProject({ local: declaredLocal, registrations, projectPath })
+  if (projectPath && probeNames.length) {
+    plan.questions.push({
+      id: 'probe-agents',
+      question: `Probe ${probeNames.length} agents now?`,
+      options: [
+        { id: 'probe', label: 'Probe', why: 'Prove each agent before routing can use it.' },
+        { id: 'skip', label: 'Skip', why: 'Leave the agents unprobed.' },
+      ],
+      recommendation: 'probe',
+      why: 'Every agent probe requires explicit approval.',
+    })
+  } else if (!projectPath) {
+    for (const name of probeNames) {
+      plan.notices.push({
+        message: `space agent ${name} cannot be probed because no project is registered`,
+        fix: `${PLATFORM_SLUG} project add <path>, then ${PLATFORM_SLUG} agent probe ${name}`,
+        blocking: false,
+      })
+    }
+  }
+}
+
+function addUnreadableDeclarationsNotice(
+  plan: SetupPlan,
+  read: Extract<
+    Awaited<ReturnType<typeof readActiveSpaceAgentDeclarations>>,
+    { kind: 'unreadable' }
+  >,
+): void {
+  const detail = read.detail ? `${read.cause} (${read.detail})` : read.cause
+  plan.notices.push({
+    message: `space agent declarations could not be read: ${detail}`,
+    fix: `${PLATFORM_SLUG} record sign-in`,
+    blocking: false,
+  })
+}
+
+function declaredAgentRegistrations(
+  plan: SetupPlan,
+  read: Extract<Awaited<ReturnType<typeof readActiveSpaceAgentDeclarations>>, { kind: 'read' }>,
+  localByName: ReadonlyMap<string, LocalAgentDeclaration>,
+) {
+  const registrations = []
+  for (const declaration of read.agents) {
+    const local = localByName.get(declaration.name)
+    const missing = missingDeclaration(declaration, local)
+    if (missing.kind === 'register') registrations.push(missing.registration)
+    if (missing.kind === 'notice')
+      plan.notices.push({
+        message: `space agent ${declaration.name} declaration cannot be registered: ${missing.field} is not usable on this machine`,
+        fix: `${PLATFORM_SLUG} agent share ${declaration.name} --space ${read.space.slug}`,
+        blocking: false,
+      })
+    const fields = declarationDrift(declaration, local)
+    if (fields.length)
+      plan.notices.push({
+        message: `space agent ${declaration.name} differs from its local row: ${fields.join(', ')}`,
+        fix: `${PLATFORM_SLUG} agent share ${declaration.name} --space ${read.space.slug}`,
+        blocking: false,
+      })
+  }
+  return registrations
 }
 
 function setupProjectService(): SetupProjectService {
@@ -190,6 +335,18 @@ function setupProjectService(): SetupProjectService {
     add: (input) => addProject(input, requireRecordSpaceMembership),
     fillAbsent: fillAbsentProjectSettings,
     currentRecipePath: (name) => projectByName(name)?.settings.worktree?.recipePath ?? null,
+  }
+}
+
+function setupAgentService(): SetupAgentService {
+  return {
+    add: addAgent,
+    probe: (name, projectPath) =>
+      probeAgent(name, {
+        environment: process.env,
+        path: process.env.PATH,
+        cwd: projectPath,
+      }),
   }
 }
 
@@ -206,6 +363,7 @@ function applySetupPlan(
     setupEnvironmentService,
     undefined,
     migration,
+    setupAgentService(),
   )
 }
 
