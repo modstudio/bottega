@@ -1,7 +1,6 @@
 // concern: cli
 /** Registers project-subject commands. Must not own their behavior. */
 import type { Command } from 'commander'
-import { subjectCommand } from '../subject/subject-commands.ts'
 import { actionCommand, log, optionFlags, values } from './support.ts'
 
 type SubjectSpec = readonly [
@@ -22,7 +21,12 @@ const specs: readonly SubjectSpec[] = [
 ]
 
 async function runSubject(verb: string, args: string[], command: Command): Promise<void> {
-  await subjectCommand(verb, ['subject', verb, ...args], optionFlags(command.opts()), { log })
+  await (await import('../subject/subject-commands.ts')).subjectCommand(
+    verb,
+    ['subject', verb, ...args],
+    optionFlags(command.opts()),
+    { log },
+  )
 }
 
 export function register(program: Command): void {

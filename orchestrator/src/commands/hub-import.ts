@@ -2,7 +2,6 @@
 /** Owns only the `bottega gate hub-import` grammar and presentation. */
 
 import type { Command } from 'commander'
-import { hubImportJudgeCommand } from '../hub-import-commands.ts'
 import { write } from './support.ts'
 
 export function register(program: Command): void {
@@ -16,6 +15,7 @@ export function register(program: Command): void {
     .action(async (options: { deadlineMs: string }) => {
       const deadlineMs = Number(options.deadlineMs)
       if (!Number.isFinite(deadlineMs)) throw new Error('--deadline-ms must be a number')
+      const { hubImportJudgeCommand } = await import('../hub-import-commands.ts')
       const result = await hubImportJudgeCommand(await Bun.stdin.text(), deadlineMs)
       write(`${JSON.stringify(result)}\n`)
     })

@@ -1,14 +1,6 @@
 // concern: cli
 /** Registers routing report adapters. Must not own routing behavior. */
 import type { Command } from 'commander'
-import { ensureLocalHealth } from '../agent/model-host.ts'
-import {
-  costBacktestCommand,
-  guideCommand,
-  routingBacktestCommand,
-  statsCommand,
-} from '../route/routing-commands.ts'
-import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { duration, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -20,6 +12,8 @@ export function register(program: Command): void {
     .option('--lens <value>', 'show guidance for this review lens')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { ensureLocalHealth } = await import('../agent/model-host.ts')
+      const { guideCommand } = await import('../route/routing-commands.ts')
       await ensureLocalHealth()
       guideCommand(optionFlags(options), { log, dur: duration })
     })
@@ -30,13 +24,15 @@ export function register(program: Command): void {
     .option('--job <value>', 'show statistics for this job')
     .option('--lens <value>', 'show a findings job in this lens cell')
     .allowExcessArguments(false)
-    .action(async (options) =>
-      statsCommand(optionFlags(options), {
+    .action(async (options) => {
+      const { statsCommand } = await import('../route/routing-commands.ts')
+      const { loadSubscriptionCostContext } = await import('../run/run-subscription-prices.ts')
+      return statsCommand(optionFlags(options), {
         log,
         dur: duration,
         subscriptionCost: await loadSubscriptionCostContext(),
-      }),
-    )
+      })
+    })
 
   program
     .command('cost-backtest')
@@ -46,6 +42,8 @@ export function register(program: Command): void {
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { costBacktestCommand } = await import('../route/routing-commands.ts')
+      const { loadSubscriptionCostContext } = await import('../run/run-subscription-prices.ts')
       costBacktestCommand(optionFlags(options), {
         log,
         dur: duration,
@@ -60,7 +58,8 @@ export function register(program: Command): void {
     .option('--seed <value>', 'reproduce the replay with this random seed')
     .option('--json', 'write the replay as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
+      const { routingBacktestCommand } = await import('../route/routing-commands.ts')
       routingBacktestCommand(optionFlags(options), { log, dur: duration })
     })
 }

@@ -1,36 +1,8 @@
 // concern: cli
 /** Registers inbox and diff adapters. Must not own their behavior. */
-import { existsSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { cleanupRepoRoot } from '../cleanup/cleanup.ts'
-import { db, sessionId } from '../database/db.ts'
-import { JOBS } from '../jobs/jobs.ts'
-import { withWorktreeLease } from '../project/project-lock.ts'
-import { latestArchitectRead } from '../review/review-read.ts'
-import { pendingQuestionIds } from '../run/question-delivery-pending.ts'
-import { commitAt, commitsBetween, isAncestor, runDiffCommand } from '../run/run-diff.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { runInboxCommand } from '../run/run-inbox.ts'
-import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
-
-function chainHasPendingDelivery(rootId: string): boolean {
-  const runIds = db()
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
-    )
-    .all(rootId, rootId)
-    .map(({ record_id }) => record_id)
-  return pendingQuestionIds(db(), { runIds }).length > 0
-}
-
-const strandedRecovery = (id: string) => {
-  const number = (
-    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
-  ).number
-  return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
-}
 
 export function register(program: Command): void {
   program
@@ -42,6 +14,26 @@ export function register(program: Command): void {
     .option('--json', 'write the question inbox as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ db }, { pendingQuestionIds }, { runInboxCommand }] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-delivery-pending.ts'),
+        import('../run/run-inbox.ts'),
+      ])
+      const chainHasPendingDelivery = (rootId: string): boolean => {
+        const runIds = db()
+          .query<{ record_id: string }, [string, string]>(
+            'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+          )
+          .all(rootId, rootId)
+          .map(({ record_id }) => record_id)
+        return pendingQuestionIds(db(), { runIds }).length > 0
+      }
+      const strandedRecovery = (id: string) => {
+        const number = (
+          db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+        ).number
+        return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
+      }
       await runInboxCommand(
         optionFlags(options),
         {
@@ -62,28 +54,41 @@ export function register(program: Command): void {
     .option('--since-read', 'show changes since the latest architect read')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      const runId = resolveRunIdentifier(db(), id)
-      await runDiffCommand(runId, optionFlags(options), {
+      const [fs, cleanup, database, jobs, lock, review, diff, identifier, worktree] =
+        await Promise.all([
+          import('node:fs'),
+          import('../cleanup/cleanup.ts'),
+          import('../database/db.ts'),
+          import('../jobs/jobs.ts'),
+          import('../project/project-lock.ts'),
+          import('../review/review-read.ts'),
+          import('../run/run-diff.ts'),
+          import('../run/run-identifier.ts'),
+          import('../worktree/worktree-remove.ts'),
+        ])
+      const runId = identifier.resolveRunIdentifier(database.db(), id)
+      await diff.runDiffCommand(runId, optionFlags(options), {
         error: console.error,
         write,
         usage: (): never => {
           throw new Error(`${PLATFORM_SLUG} run diff <id> [--quiet] [--since-base | --since-read]`)
         },
-        cleanupRepoRoot,
-        observedChangesIn,
-        latestArchitectRead: (project, branch) => latestArchitectRead(db(), project, branch),
-        commitAt,
-        isAncestor,
-        commitsBetween,
-        exists: existsSync,
+        cleanupRepoRoot: cleanup.cleanupRepoRoot,
+        observedChangesIn: worktree.observedChangesIn,
+        latestArchitectRead: (project, branch) =>
+          review.latestArchitectRead(database.db(), project, branch),
+        commitAt: diff.commitAt,
+        isAncestor: diff.isAncestor,
+        commitsBetween: diff.commitsBetween,
+        exists: fs.existsSync,
         withWorktreeLease: (repoRoot, worktreePath, action) =>
-          withWorktreeLease(
+          lock.withWorktreeLease(
             repoRoot,
             worktreePath,
-            { session: sessionId(), what: `diff ${runId}` },
+            { session: database.sessionId(), what: `diff ${runId}` },
             action,
           ),
-        writesRepo: (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo),
+        writesRepo: (jobName) => Boolean(jobs.JOBS[jobName]?.needs.writesRepo),
       })
     })
 }

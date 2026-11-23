@@ -3,15 +3,6 @@
 
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  lensEmitter,
-  listLensesCommand,
-  listProfilesCommand,
-  setLensCommand,
-  setProfileCommand,
-  showLensCommand,
-  showProfileCommand,
-} from '../lens/lens-commands.ts'
 import { log, productArgv } from './support.ts'
 
 const jsonOption = (command: Command) => command.option('--json', 'print JSON output')
@@ -31,14 +22,18 @@ export function registerLensCommands(
     })
   jsonOption(lens.command('list').description('list review lenses'))
     .allowExcessArguments(false)
-    .action((options) =>
-      listLensesCommand(lensEmitter(productArgv('lens', ['list'], options), presentation)),
-    )
+    .action(async (options) => {
+      const commands = await import('../lens/lens-commands.ts')
+      return commands.listLensesCommand(
+        commands.lensEmitter(productArgv('lens', ['list'], options), presentation),
+      )
+    })
   jsonOption(lens.command('show <lens>').description('show a review lens'))
     .allowExcessArguments(false)
     .action(async (id, options) => {
+      const commands = await import('../lens/lens-commands.ts')
       const argv = productArgv('lens', ['show', id], options)
-      showLensCommand(argv, lensEmitter(argv, presentation))
+      commands.showLensCommand(argv, commands.lensEmitter(argv, presentation))
     })
   jsonOption(
     reasonOption(
@@ -57,8 +52,9 @@ export function registerLensCommands(
   )
     .allowExcessArguments(false)
     .action(async (id, options) => {
+      const commands = await import('../lens/lens-commands.ts')
       const argv = productArgv('lens', ['set', id], options)
-      await setLensCommand(argv, lensEmitter(argv, presentation))
+      await commands.setLensCommand(argv, commands.lensEmitter(argv, presentation))
     })
 
   registerProfileCommands(lens, presentation)
@@ -84,9 +80,10 @@ function registerProfileCommands(lens: Command, presentation: { log(value: strin
       .option('--project <value>', 'use the project space catalogue'),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
+      const commands = await import('../lens/lens-commands.ts')
       const argv = productArgv('lens', ['profile', 'list', ...(id ? [id] : [])], options)
-      listProfilesCommand(argv, lensEmitter(argv, presentation))
+      commands.listProfilesCommand(argv, commands.lensEmitter(argv, presentation))
     })
   jsonOption(
     profile
@@ -97,9 +94,10 @@ function registerProfileCommands(lens: Command, presentation: { log(value: strin
       .option('--project <value>', 'use the project space catalogue'),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
+      const commands = await import('../lens/lens-commands.ts')
       const argv = productArgv('lens', ['profile', 'show', id], options)
-      showProfileCommand(argv, lensEmitter(argv, presentation))
+      commands.showProfileCommand(argv, commands.lensEmitter(argv, presentation))
     })
   jsonOption(
     reasonOption(
@@ -117,7 +115,8 @@ function registerProfileCommands(lens: Command, presentation: { log(value: strin
   )
     .allowExcessArguments(false)
     .action(async (id, options) => {
+      const commands = await import('../lens/lens-commands.ts')
       const argv = productArgv('lens', ['profile', 'set', id], options)
-      await setProfileCommand(argv, lensEmitter(argv, presentation))
+      await commands.setProfileCommand(argv, commands.lensEmitter(argv, presentation))
     })
 }

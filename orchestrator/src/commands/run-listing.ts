@@ -1,38 +1,84 @@
 // concern: cli
 /** Registers run detail and listing adapters. Must not own run behavior. */
-import { type Command, Option } from 'commander'
+import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { processStartTime } from '../../../shared/process-identity.ts'
-import { thinOutputWarning } from '../collect/collect.ts'
-import { db } from '../database/db.ts'
-import { resolveRecordedRunJob } from '../jobs/jobs.ts'
-import { sampleProcesses } from '../process-resource-sampler.ts'
-import { pendingQuestionIds } from '../run/question-delivery-pending.ts'
-import {
-  classifyRunIdentifier,
-  resolveRunIdentifier,
-  resolveRunIdentifierOrNull,
-} from '../run/run-identifier.ts'
-import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
-import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { collect, duration, log, optionFlags, parseChangedAfter } from './support.ts'
 
-function chainHasPendingDelivery(rootId: string): boolean {
-  const runIds = db()
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
-    )
-    .all(rootId, rootId)
-    .map(({ record_id }) => record_id)
-  return pendingQuestionIds(db(), { runIds }).length > 0
-}
-
-const strandedRecovery = (id: string) => {
-  const number = (
-    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
-  ).number
-  return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
+async function listRuns(options: OptionValues): Promise<void> {
+  const [database, identifier, listing, delivery, jobs, collectModule, sampler, costs] =
+    await Promise.all([
+      import('../database/db.ts'),
+      import('../run/run-identifier.ts'),
+      import('../run/run-listing.ts'),
+      import('../run/question-delivery-pending.ts'),
+      import('../jobs/jobs.ts'),
+      import('../collect/collect.ts'),
+      import('../process-resource-sampler.ts'),
+      import('../run/run-subscription-prices.ts'),
+    ])
+  const local = database.db()
+  const chainHasPendingDelivery = (rootId: string): boolean => {
+    const runIds = local
+      .query<{ record_id: string }, [string, string]>(
+        'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+      )
+      .all(rootId, rootId)
+      .map(({ record_id }) => record_id)
+    return delivery.pendingQuestionIds(local, { runIds }).length > 0
+  }
+  const strandedRecovery = (id: string): string => {
+    const number = (
+      local.query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+    ).number
+    return `stranded — ${PLATFORM_SLUG} run retry ${number} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${number}`
+  }
+  const flags = optionFlags(options)
+  const requested = flags.values('id')
+  const resolvedFlags = requested.length
+    ? {
+        ...flags,
+        values: (name: string) =>
+          name === 'id'
+            ? requested.map((value) => {
+                const parsed = identifier.classifyRunIdentifier(value)
+                if (!parsed) return value
+                if (parsed.kind === 'record-id') return parsed.recordId
+                return identifier.resolveRunIdentifierOrNull(local, parsed.number) ?? value
+              })
+            : flags.values(name),
+      }
+    : flags
+  const json = resolvedFlags.has('json') || options.json === 'v1'
+  const jsonV1 = options.json === 'v1'
+  const changedAfter = parseChangedAfter({
+    value: resolvedFlags.flag('changed-after'),
+    since: resolvedFlags.flag('since'),
+    hasRequestedRuns: requested.length > 0,
+    json,
+    jsonV1,
+    limit: resolvedFlags.flag('limit'),
+    job: resolvedFlags.flag('job'),
+    agent: resolvedFlags.flag('agent'),
+    live: resolvedFlags.has('live'),
+    unscored: resolvedFlags.has('unscored'),
+  })
+  await listing.runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
+    log,
+    dur: duration,
+    chainIsStranded: chainHasPendingDelivery,
+    strandedRecovery,
+    thinOutputWarning: (row) => {
+      const recordedJob = jobs.resolveRecordedRunJob(row)
+      return !recordedJob.declared && !recordedJob.writesRepo
+        ? null
+        : collectModule.thinOutputWarning({ ...row, writesRepo: recordedJob.writesRepo })
+    },
+    processObservation: { sampleProcesses: sampler.sampleProcesses, processStartTime },
+    clock: Date.now,
+    subscriptionCost: json ? await costs.loadSubscriptionCostContext() : undefined,
+  })
 }
 
 export function register(program: Command): void {
@@ -40,7 +86,9 @@ export function register(program: Command): void {
     .command('run-identities')
     .description('print numeric run identities and their durable record ids as JSON')
     .allowExcessArguments(false)
-    .action(() => log(JSON.stringify(runIdentityMap())))
+    .action(async () =>
+      log(JSON.stringify((await import('../run/run-listing.ts')).runIdentityMap())),
+    )
 
   program
     .command('run <run-id>')
@@ -48,10 +96,15 @@ export function register(program: Command): void {
     .option('--receipt', 'include the run receipt')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      const { runDetail } = await import('../state/serve.ts')
-      const runId = resolveRunIdentifier(db(), id)
-      const detail = await runDetail(runId, Boolean(options.receipt), {
-        subscriptionCost: await loadSubscriptionCostContext(),
+      const [state, database, identifier, costs] = await Promise.all([
+        import('../state/serve.ts'),
+        import('../database/db.ts'),
+        import('../run/run-identifier.ts'),
+        import('../run/run-subscription-prices.ts'),
+      ])
+      const runId = identifier.resolveRunIdentifier(database.db(), id)
+      const detail = await state.runDetail(runId, Boolean(options.receipt), {
+        subscriptionCost: await costs.loadSubscriptionCostContext(),
       })
       if (!detail) throw new Error(`no run ${runId}`)
       log(JSON.stringify(detail))
@@ -74,54 +127,5 @@ export function register(program: Command): void {
     .option('--json [version]', 'write runs as JSON in the selected version')
     .option('--unscored', 'list only runs awaiting a verdict')
     .allowExcessArguments(false)
-    .action(async (options) => {
-      const flags = optionFlags(options)
-      const requested = flags.values('id')
-      const resolvedFlags = requested.length
-        ? {
-            ...flags,
-            values: (name: string) =>
-              name === 'id'
-                ? requested.map((value) => {
-                    const parsed = classifyRunIdentifier(value)
-                    if (!parsed) return value
-                    if (parsed.kind === 'record-id') return parsed.recordId
-                    return resolveRunIdentifierOrNull(db(), parsed.number) ?? value
-                  })
-                : flags.values(name),
-          }
-        : flags
-      const json = resolvedFlags.has('json') || options.json === 'v1'
-      const jsonV1 = options.json === 'v1'
-      const changedAfter = parseChangedAfter({
-        value: resolvedFlags.flag('changed-after'),
-        since: resolvedFlags.flag('since'),
-        hasRequestedRuns: requested.length > 0,
-        json,
-        jsonV1,
-        limit: resolvedFlags.flag('limit'),
-        job: resolvedFlags.flag('job'),
-        agent: resolvedFlags.flag('agent'),
-        live: resolvedFlags.has('live'),
-        unscored: resolvedFlags.has('unscored'),
-      })
-      await runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
-        log,
-        dur: duration,
-        chainIsStranded: chainHasPendingDelivery,
-        strandedRecovery,
-        thinOutputWarning: (row) => {
-          const recordedJob = resolveRecordedRunJob(row)
-          return !recordedJob.declared && !recordedJob.writesRepo
-            ? null
-            : thinOutputWarning({
-                ...row,
-                writesRepo: recordedJob.writesRepo,
-              })
-        },
-        processObservation: { sampleProcesses, processStartTime },
-        clock: Date.now,
-        subscriptionCost: json ? await loadSubscriptionCostContext() : undefined,
-      })
-    })
+    .action(listRuns)
 }
