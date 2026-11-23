@@ -822,15 +822,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       case 'caller':
         break
     }
-    cwd = confinedLaunchCwd({
-      mode: claimTreePlan.mode,
-      worktreePath: worktree?.path ?? '',
-      isolatedDirectory: isolatedCwd ?? '',
-      callerCwd,
-    })
-    if (claimTreePlan.mode === 'isolate') {
-      db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
-    }
+    cwd = confinedLaunchCwd(claimTreePlan.mode, worktree?.path ?? '', isolatedCwd ?? '', callerCwd)
+    db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
     if (worktree) {
       const inheritedWorktree = worktree
       const recordWorktree = () => {

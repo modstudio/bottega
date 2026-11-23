@@ -111,6 +111,7 @@ export const confinementModules: ConfinementModule[] = [
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/confined-launch-cwd.ts', []),
+  module('orchestrator/src/sandbox/confinement-probe-verdict.ts', []),
   module('orchestrator/src/sandbox/confinement-browser-probe.ts', [
     'node:fs',
     'node:os',
@@ -141,6 +142,7 @@ export const confinementModules: ConfinementModule[] = [
     './confinement-browser-probe.ts',
     './confined-launch-cwd.ts',
     './confinement-probe-launch.ts',
+    './confinement-probe-verdict.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
     './sandbox.ts',

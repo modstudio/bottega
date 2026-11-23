@@ -17,28 +17,30 @@ test('confined launch cwd follows the claim tree mode', () => {
     ['caller', paths.callerCwd],
   ]
   for (const [mode, expected] of cases) {
-    expect(confinedLaunchCwd({ mode, ...paths })).toBe(expected)
+    expect(
+      confinedLaunchCwd(mode, paths.worktreePath, paths.isolatedDirectory, paths.callerCwd),
+    ).toBe(expected)
   }
 })
 
 describe('confinement probe command cell', () => {
   test('launches from the fixture worktree chosen for create mode', async () => {
     const fixtureWorktree = '/tmp/confinement-fixture/tree'
-    const expectedCwd = confinedLaunchCwd({
-      mode: 'create',
-      worktreePath: fixtureWorktree,
-      isolatedDirectory: '/tmp/confinement-fixture/isolated',
-      callerCwd: '/projects/main-checkout',
-    })
+    const expectedCwd = confinedLaunchCwd(
+      'create',
+      fixtureWorktree,
+      '/tmp/confinement-fixture/isolated',
+      '/projects/main-checkout',
+    )
     let observedCwd: string | undefined
     const launcher = (async (_profile, _executable, _argv, _environment, _scratchDir, options) => {
-      observedCwd = options.cwd
+      observedCwd = options?.cwd
       return { exitCode: 0, stderr: '' } as Awaited<ReturnType<typeof launchSandboxProbe>>
     }) satisfies typeof launchSandboxProbe
 
     await launchCommand(
       {} as Parameters<typeof launchCommand>[0],
-      ['bottega', 'task', 'show'],
+      ['platform', 'task', 'show'],
       {},
       '/tmp/confinement-fixture/scratch',
       expectedCwd,

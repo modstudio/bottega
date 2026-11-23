@@ -43,6 +43,13 @@ import {
   createConfinementProbeTask,
 } from './confinement-probe-task-port.ts'
 import {
+  type AccessTarget,
+  applyCommandCellVerdict,
+  type CommandProbe,
+  type FilesystemProbeAccess,
+  probeVerdict,
+} from './confinement-probe-verdict.ts'
+import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
@@ -55,9 +62,6 @@ import {
   writerProfile,
 } from './sandbox.ts'
 
-type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
-type CommandProbeStatus = 'ran' | 'failed'
-type CommandProbe = { status: CommandProbeStatus; reason: string }
 const SANDBOX_GIT_SPAWN_SAMPLES = 9
 const SANDBOX_GIT_SPAWN_RATIO_MAX = 8
 
@@ -86,19 +90,11 @@ export type ConfinementFilesystemProbeRow = {
     | 'host override'
     | 'sandbox git spawn'
     | 'headless browser'
-  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
+  status: FilesystemProbeAccess | CommandProbe['status'] | 'committed' | 'refused' | 'ok' | 'slow'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   gitSpawn?: SandboxGitSpawnMeasurement
   reason?: string
-}
-
-type AccessTarget = {
-  name: string
-  path: string
-  expected: 'denied' | 'readable'
-  plant?: boolean
-  createAfterLaunch?: boolean
 }
 
 type AfterLaunchFixture = { target: string; ready: string; release: string }
@@ -187,54 +183,6 @@ function initializeProbeGitFixture(ownPath: string, worktree: string): void {
   assertBranchRefMayBeCreated(ownPath, 'probe-writer')
   // branch-ref-guard: assertBranchRefMayBeCreated
   gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
-}
-
-export function probeVerdict(
-  targets: readonly AccessTarget[],
-  paths: Record<string, FilesystemProbeAccess>,
-  commands: Record<string, CommandProbe>,
-  missingExpectedReadableTargets: readonly string[] = [],
-): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
-  let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
-  const missingTargetReason =
-    missingExpectedReadableTargets.length > 0
-      ? `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
-      : null
-  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
-    filesystemVerdict = {
-      status: 'readable',
-      reason: `one or more denied paths were unexpectedly readable${missingTargetReason ? `; ${missingTargetReason}` : ''}`,
-    }
-  } else if (missingTargetReason) {
-    filesystemVerdict = {
-      status: 'not covered',
-      reason: missingTargetReason,
-    }
-  } else if (targets.some(({ name }) => paths[name] === 'not covered')) {
-    filesystemVerdict = {
-      status: 'not covered',
-      reason: 'one or more filesystem probe output lines were missing',
-    }
-  } else if (targets.some(({ name, expected }) => paths[name] !== expected)) {
-    filesystemVerdict = {
-      status: 'failed',
-      reason: 'one or more expected-readable paths were denied',
-    }
-  } else {
-    filesystemVerdict = { status: 'denied' }
-  }
-  return applyCommandCellVerdict(filesystemVerdict, commands)
-}
-
-function applyCommandCellVerdict(
-  filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>,
-  commands: Record<string, CommandProbe>,
-): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
-  if (filesystemVerdict.status !== 'denied') return filesystemVerdict
-  const failed = Object.entries(commands).find(([, command]) => command.status === 'failed')
-  if (!failed) return filesystemVerdict
-  const [name, command] = failed
-  return { status: 'failed', reason: `command cell ${name} failed: ${command.reason}` }
 }
 
 export async function launchCommand(
@@ -778,12 +726,7 @@ function probeHubOpenMode(hubDatabase: string): string {
 }
 
 function fixtureConfinedLaunchCwd(worktreePath: string): string {
-  return confinedLaunchCwd({
-    mode: 'create',
-    worktreePath,
-    isolatedDirectory: worktreePath,
-    callerCwd: worktreePath,
-  })
+  return confinedLaunchCwd('create', worktreePath, worktreePath, worktreePath)
 }
 
 function missingExpectedReadableTargetNames(targets: readonly AccessTarget[]): string[] {
