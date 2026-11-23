@@ -75,8 +75,7 @@ export type ReleaseRungCoverageFacts = {
 export function releaseRungCoversTarget(facts: ReleaseRungCoverageFacts): boolean {
   return Boolean(
     facts.liveCommit &&
-      (facts.liveContainsTarget ||
-        (facts.targetContainsLive && facts.requiredSinceLive === false)),
+      (facts.liveContainsTarget || (facts.targetContainsLive && facts.requiredSinceLive === false)),
   )
 }
 

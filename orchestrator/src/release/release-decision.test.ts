@@ -16,8 +16,8 @@ import {
   releaseProcessEnvironment,
   releaseReasonDecision,
   releaseRowProvesCandidate,
-  releaseRungsDriftDecision,
   releaseRungProofRefusal,
+  releaseRungsDriftDecision,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
   selectReleaseRung,
@@ -93,7 +93,7 @@ describe('release rung snapshot drift', () => {
 
   test('refuses a differing field and names the generator', () => {
     const edited = {
-      rungs: [{ ...tracked.rungs[0], branch: 'release' }],
+      rungs: tracked.rungs.map((rung) => ({ ...rung, branch: 'release' })),
     }
     const decision = releaseRungsDriftDecision(edited, { ok: true, rungs: tracked })
     expect(decision.status).toBe('different')
