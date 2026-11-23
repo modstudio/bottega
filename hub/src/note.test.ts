@@ -26,7 +26,7 @@ import {
   staleNotes,
 } from './note.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
-import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
+import { getNote, listActionableNotes, listNotes, listProjectSlimNotes } from './note-read.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
@@ -92,7 +92,7 @@ describe('suggestion notes', () => {
   })
 
   test('an outside project list supports only text filtering', async () => {
-    await expect(listProjectNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
+    await expect(listProjectSlimNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
       "outside project 'outside-project' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable",
     )
   })

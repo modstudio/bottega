@@ -2,7 +2,7 @@ import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { getNote, listNotes, listProjectNotes } from './note-read.ts'
+import { getNote, listNotes } from './note-read.ts'
 
 beforeEach(resetFixtureStore)
 
@@ -62,14 +62,14 @@ function crossSpaceFetch(id: string) {
 
 test('a project-filtered hosted list reads the project destination space', async () => {
   const id = crypto.randomUUID()
-  const rows = await listProjectNotes({
-    project: 'gamma',
-    hosted: {
+  const rows = await listNotes(
+    { project: 'gamma' },
+    {
       baseUrl: 'https://hub.example.test',
       token: 'test',
       fetch: crossSpaceFetch(id),
     },
-  })
+  )
 
   expect(rows.map((row) => row.record_id)).toEqual([id])
 })
@@ -116,9 +116,9 @@ test('a project-filtered hosted list surfaces destination refusal without active
   let noteRequests = 0
 
   await expect(
-    listProjectNotes({
-      project: 'gamma',
-      hosted: {
+    listNotes(
+      { project: 'gamma' },
+      {
         baseUrl: 'https://hub.example.test',
         token: 'test',
         recordSpace: 'space-active',
@@ -132,7 +132,7 @@ test('a project-filtered hosted list surfaces destination refusal without active
           return Response.json({ notes: [], acknowledgements: [], cursor: '', more: false })
         },
       },
-    }),
+    ),
   ).rejects.toThrow("project 'gamma' declares a record space the signed-in user is not a member of")
   expect(noteRequests).toBe(0)
 })

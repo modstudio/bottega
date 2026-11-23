@@ -6,6 +6,7 @@ import {
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
 import { listHostedNotes } from './hosted-note-list.ts'
+import { listHostedSlimNotes } from './hosted-note-slim-list.ts'
 import {
   createHostedNote,
   getHostedNote,
@@ -83,6 +84,14 @@ async function outsideRoute(context: RouteContext): Promise<Response | null> {
 async function readRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who } = context
   if (request.method !== 'GET') return null
+  if (url.pathname === '/v1/notes/list')
+    return json(
+      await call(dependencies.listSlim, listHostedSlimNotes)(
+        config.recordDatabaseUrl,
+        who,
+        slimListFilters(url),
+      ),
+    )
   if (url.pathname === '/v1/notes')
     return json(
       await call(dependencies.list, listHostedNotes)(config.recordDatabaseUrl, who, {
@@ -105,6 +114,18 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
     match[1]!,
   )
   return value ? json(value) : json({ error: 'note not found' }, 404)
+}
+
+function slimListFilters(url: URL) {
+  return {
+    project: url.searchParams.get('project') ?? undefined,
+    stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
+    actionable: url.searchParams.get('actionable') === 'true',
+    sessions: url.searchParams.getAll('session'),
+    kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
+    text: url.searchParams.get('text') ?? undefined,
+    limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
+  }
 }
 
 async function noteWriteRoute(context: RouteContext): Promise<Response | null> {

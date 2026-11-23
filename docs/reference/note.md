@@ -116,7 +116,7 @@ Options are documented by `--help`.
 
 ## bottega note list
 
-**Synopsis:** `bottega note list [text] [--project <X>] [--stale] [--session <ID>] [--actionable] [--kept] [--json] [--new]`
+**Synopsis:** `bottega note list [text] [--project <X>] [--stale] [--session <ID>] [--actionable] [--kept] [--limit <n>] [--json] [--new]`
 
 list notes from the local record
 
@@ -127,6 +127,7 @@ list notes from the local record
 - `--session <ID>`: limit notes to this session
 - `--actionable`: list notes ready for disposition
 - `--kept`: list notes acknowledged by the selected sessions
+- `--limit <n>`: limit the number of notes shown
 - `--json`: write the note rows as JSON
 - `--new`: treat list as note text and show the filing remedy
 

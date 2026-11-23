@@ -3,6 +3,7 @@ import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.t
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { processMemo } from '../../shared/process-memo.ts'
+import type { SlimNote } from './hosted-note-slim-list.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import {
@@ -227,6 +228,29 @@ export async function hostedListNotes(
     if (!page.more) return { notes, acknowledgements }
     cursor = page.cursor
   }
+}
+export async function hostedListSlimNotes(
+  filters: {
+    project?: string
+    stale?: boolean
+    actionable?: boolean
+    sessions?: string[]
+    kept?: boolean
+    text?: string
+    limit?: number
+  },
+  options: NoteReadOptions,
+) {
+  await hostedNoteIdentity(options)
+  const query = new URLSearchParams()
+  if (filters.project) query.set('project', filters.project)
+  if (filters.stale !== undefined) query.set('stale', String(filters.stale))
+  if (filters.actionable !== undefined) query.set('actionable', String(filters.actionable))
+  for (const session of filters.sessions ?? []) query.append('session', session)
+  if (filters.kept !== undefined) query.set('kept', String(filters.kept))
+  if (filters.text !== undefined) query.set('text', filters.text)
+  if (filters.limit !== undefined) query.set('limit', String(filters.limit))
+  return request<{ notes: SlimNote[]; total: number }>(`/v1/notes/list?${query}`, options)
 }
 export type OutsideNote = {
   id: string

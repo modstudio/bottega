@@ -561,6 +561,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...readEntries('hub', 'noteClient', [
     'hostedGetNote',
     'hostedListNotes',
+    'hostedListSlimNotes',
     'hostedListOutsideNotes',
     'hostedNoteChanges',
     'hostedNoteCounts',

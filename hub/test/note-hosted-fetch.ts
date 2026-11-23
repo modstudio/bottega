@@ -68,6 +68,37 @@ function noteBelongsToRequestedSpace(project: string, init?: RequestInit) {
 }
 
 async function getRoute(url: URL, at: string, init?: RequestInit) {
+  if (url.pathname === '/v1/notes/list') {
+    const notes = await listNotes(
+      {
+        project: url.searchParams.get('project') ?? undefined,
+        stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
+        actionable: url.searchParams.get('actionable') === 'true',
+        session: url.searchParams.getAll('session'),
+        kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
+        text: url.searchParams.get('text') ?? undefined,
+      },
+      { baseUrl: '' },
+    )
+    const matching = notes.filter((note) => noteBelongsToRequestedSpace(note.project, init))
+    const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined
+    return Response.json({
+      notes: (limit === undefined ? matching : matching.slice(0, limit)).map((note) => ({
+        record_id: note.record_id,
+        label: note.label,
+        number: note.number,
+        project: note.project,
+        text: note.text,
+        sightings: note.sightings,
+        created_at: note.created_at,
+        last_seen_at: note.last_seen_at,
+        stale_at: note.stale_at,
+        stale_reason: note.stale_reason,
+        promoted_task: note.promoted_task,
+      })),
+      total: matching.length,
+    })
+  }
   const noteMatch = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (noteMatch) {
     try {
