@@ -359,7 +359,7 @@ const docSchema = DocSchema.extend({
   subject: z.string().nullable(),
   owner: z.string().uuid().nullable(),
   delivery: z.enum(['inject', 'demand']),
-  latestRevisionId: z.string().uuid().nullable(),
+  latestRevisionId: z.string().uuid().nullable().default(null),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
