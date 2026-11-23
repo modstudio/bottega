@@ -21,7 +21,10 @@ import type { HostedTaskLookupRow } from './task-types.ts'
 
 export type { HostedTaskLookupRow } from './task-types.ts'
 
-export type HostedTask = PushedTask & { newly_assigned?: boolean }
+export type HostedTask = PushedTask & {
+  newly_assigned?: boolean
+  project_id?: string | null
+}
 export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument
 export type HostedStatusEvent = PushedStatusEvent

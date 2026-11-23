@@ -11,6 +11,20 @@ const importMetaUrlPathnameSelector = {
   message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
 }
 
+const headersSpreadSelectors = [
+  {
+    selector: "ObjectExpression > SpreadElement > NewExpression[callee.name='Headers']",
+    message:
+      'Spreading a Headers object yields {}; pass the Headers object or copy it with Object.fromEntries(headers.entries()). This rule matches by name: add any new function that returns Headers to its list.',
+  },
+  {
+    selector:
+      'ObjectExpression > SpreadElement > CallExpression[callee.name=/^(recordRequestHeaders|boardStreamHeaders|requestHeadersFor)$/]',
+    message:
+      'Spreading a Headers object yields {}; pass the Headers object or copy it with Object.fromEntries(headers.entries()). This rule matches by name: add any new function that returns Headers to its list.',
+  },
+]
+
 const recordPushModules = [
   'orchestrator/src/record/outbox-failure.ts',
   'orchestrator/src/record/outbox-held-contract.ts',
@@ -68,7 +82,7 @@ export default [
     },
     plugins: { sonarjs },
     rules: {
-      'no-restricted-syntax': ['error', importMetaUrlPathnameSelector],
+      'no-restricted-syntax': ['error', importMetaUrlPathnameSelector, ...headersSpreadSelectors],
       'sonarjs/cognitive-complexity': ['error', 15],
     },
   },
@@ -78,6 +92,7 @@ export default [
       'no-restricted-syntax': [
         'error',
         importMetaUrlPathnameSelector,
+        ...headersSpreadSelectors,
         {
           selector: "ThrowStatement > NewExpression[callee.name='Error']",
           message:
@@ -92,6 +107,7 @@ export default [
       'no-restricted-syntax': [
         'error',
         importMetaUrlPathnameSelector,
+        ...headersSpreadSelectors,
         ...RECORD_TIMESTAMP_COMPARISON_SELECTORS,
       ],
     },
