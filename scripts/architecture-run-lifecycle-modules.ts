@@ -345,8 +345,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-confinement-count.ts', [
     'bun:sqlite',
     '../jobs/jobs.ts',
+    './run-confinement-constants.ts',
     './run-listing-since.ts',
   ]),
+  module('orchestrator/src/run/run-confinement-constants.ts', []),
   module('orchestrator/src/run/run-listing-since.ts', ['../../../shared/refusal.ts']),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [

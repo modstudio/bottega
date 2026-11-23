@@ -667,7 +667,16 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     './record-auth.ts',
     './record-pool.ts',
+    './record-token.ts',
   ]),
+  module('orchestrator/src/record/record-token.ts', [
+    'bun:sqlite',
+    '../../../shared/record-session.ts',
+    '../database/db.ts',
+    './record-token-key.ts',
+  ]),
+  module('orchestrator/src/record/record-token-key.ts', []),
+  module('orchestrator/src/record/record-password.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-api-access.ts', [
     'hono',

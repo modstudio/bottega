@@ -3,20 +3,6 @@
 
 import { type Command, InvalidArgumentError, Option } from 'commander'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { sessionId } from '../database/db.ts'
-import { adoptSessionRuns, formatSessionAdoption } from '../session/session-adopt.ts'
-import {
-  closeOutSession,
-  formatSessionCloseOut,
-  SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
-} from '../session/session-close-out.ts'
-import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
-import { safeStartSession } from '../session/session-start.ts'
-import { sessionStopSummary } from '../session/stop-summary.ts'
-import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
-import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
-import { sessionReport } from '../session-report/session-report-adapter.ts'
-import { formatSessionReport } from '../session-report/session-report-format.ts'
 import { collect, log } from './support.ts'
 
 function stopSummaryBlockKey(value: string): string {
@@ -38,6 +24,10 @@ function registerStatus(session: Command): void {
     .option('--json', 'write the summary as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ sessionId }, { sessionStopSummary }] = await Promise.all([
+        import('../database/db.ts'),
+        import('../session/stop-summary.ts'),
+      ])
       if (options.blockKey && !options.stop)
         throw new Error('--block-key is only meaningful with --stop')
       const selectedSession = options.session ?? sessionId()
@@ -70,6 +60,10 @@ function registerReport(session: Command): void {
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ sessionReport }, { formatSessionReport }] = await Promise.all([
+        import('../session-report/session-report-adapter.ts'),
+        import('../session-report/session-report-format.ts'),
+      ])
       const report = await sessionReport({
         sessions: options.session,
         all: Boolean(options.all),
@@ -92,7 +86,7 @@ export function register(program: Command): void {
     )
     .allowExcessArguments(false)
     .action(async () => {
-      log((await safeStartSession()).line)
+      log((await (await import('../session/session-start.ts')).safeStartSession()).line)
     })
   session
     .command('losses')
@@ -110,6 +104,10 @@ export function register(program: Command): void {
     .option('--judge', 'dispatch blind semantic-loss judges without waiting')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ sessionLosses }, { formatSessionLosses }] = await Promise.all([
+        import('../session-losses/session-losses-adapter.ts'),
+        import('../session-losses/session-losses-format.ts'),
+      ])
       const report = await sessionLosses({
         sessions: options.session,
         all: Boolean(options.all),
@@ -125,7 +123,8 @@ export function register(program: Command): void {
     .option('--release <id>', 'release the hold on this board message')
     .option('--reason <text>', 'record why the hold was released')
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
+      const { formatSessionHold, sessionHold } = await import('../session/session-hold.ts')
       log(formatSessionHold(sessionHold(options)))
     })
   session
@@ -137,6 +136,11 @@ export function register(program: Command): void {
     .option('--json', 'write the close-out report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const {
+        closeOutSession,
+        formatSessionCloseOut,
+        SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
+      } = await import('../session/session-close-out.ts')
       const report = await closeOutSession({
         session: options.session,
         dryRun: options.dryRun,
@@ -152,7 +156,8 @@ export function register(program: Command): void {
     .option('--cut-off', 'adopt when every owner process is gone but last_seen is recent')
     .option('--json', 'write the adoption report as JSON')
     .allowExcessArguments(false)
-    .action((target, options) => {
+    .action(async (target, options) => {
+      const { adoptSessionRuns, formatSessionAdoption } = await import('../session/session-adopt.ts')
       const report = adoptSessionRuns(target, options.reason, {
         consent: options.cutOff ? 'cut-off' : 'standard',
       })

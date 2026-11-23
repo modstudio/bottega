@@ -8,8 +8,9 @@ import {
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
+import { RECORD_SESSION_KEY } from './record-token-key.ts'
 
-export const RECORD_SESSION_KEY = 'record_session'
+export { RECORD_SESSION_KEY } from './record-token-key.ts'
 
 export function storedRecordToken(
   local: Database = db(),

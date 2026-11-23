@@ -9,15 +9,7 @@ import {
   ANSWER_CHANNEL_VALUES,
   type AnswerChannel,
 } from '../../../shared/question-vocabulary.ts'
-import { db } from '../database/db.ts'
-import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
-import { setDoc } from '../doc/docs.ts'
-import { fileNote } from '../mcp/hub-notes.ts'
-import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
-import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
-import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
-import { listRulingChanges, listRulings } from '../run/ruling-list.ts'
-import { overturnRuling } from '../run/ruling-overturn.ts'
+import type { RulingFileStores } from '../run/ruling-file.ts'
 import { log, parseChangedAfter } from './support.ts'
 
 function requiredText(value: string, label: string): string {
@@ -46,14 +38,21 @@ function filingChannel(value: string | undefined): AnswerChannel {
   return channel as AnswerChannel
 }
 
-const rulingFileStores: RulingFileStores = {
-  writeDoc: async (input) => {
-    const doc = await setDoc(input)
-    const revision = doc.revision ? getDocRevision(doc.revision) : null
-    if (!revision) throw new Error('filed ruling document has no revision')
-    return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
-  },
-  fileNote,
+async function rulingFileStores(): Promise<RulingFileStores> {
+  const [docs, revisions, notes] = await Promise.all([
+    import('../doc/docs.ts'),
+    import('../doc/doc-revision-store.ts'),
+    import('../mcp/hub-notes.ts'),
+  ])
+  return {
+    writeDoc: async (input) => {
+      const doc = await docs.setDoc(input)
+      const revision = doc.revision ? revisions.getStoredDocRevision(doc.revision) : null
+      if (!revision) throw new Error('filed ruling document has no revision')
+      return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
+    },
+    fileNote: notes.fileNote,
+  }
 }
 
 function registerQuestionIdentities(program: Command): void {
@@ -62,9 +61,13 @@ function registerQuestionIdentities(program: Command): void {
     .description('print numeric question identities and their durable record ids as JSON')
     .argument('<identifiers...>', 'question numbers or UUIDs')
     .allowExcessArguments(false)
-    .action(async (identifiers: string[]) =>
-      log(JSON.stringify(await questionIdentityMap(db(), identifiers))),
-    )
+    .action(async (identifiers: string[]) => {
+      const [database, identity] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-identifier.ts'),
+      ])
+      log(JSON.stringify(await identity.questionIdentityMap(database.db(), identifiers)))
+    })
 }
 
 async function printRulings(options: {
@@ -81,6 +84,7 @@ async function printRulings(options: {
     since: options.since,
     json: options.json,
   })
+  const { listRulingChanges, listRulings } = await import('../run/ruling-list.ts')
   if (changedAfter === null) {
     log(JSON.stringify(await listRulings({ since: options.since, kind })))
     return
@@ -97,8 +101,12 @@ export function register(program: Command): void {
     .requiredOption('--reason <text>', 'record why the question is closed')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      const questionId = await resolveQuestionIdentifier(db(), id)
-      const { closeQuestionByOperator } = await import('../run/question-close.ts')
+      const [database, identity, { closeQuestionByOperator }] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-identifier.ts'),
+        import('../run/question-close.ts'),
+      ])
+      const questionId = await identity.resolveQuestionIdentifier(database.db(), id)
       await closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
     })
@@ -121,6 +129,12 @@ export function register(program: Command): void {
     .option('--from-operator', 'attribute the overturn to the operator')
     .allowExcessArguments(false)
     .action(async (questionId, options) => {
+      const [database, identity, overturn, text] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-identifier.ts'),
+        import('../run/ruling-overturn.ts'),
+        import('../run/ruling-file-text.ts'),
+      ])
       if (options.replacement !== undefined && options.replacementFile !== undefined) {
         throw new Error(
           'pass a replacement with either --replacement or --replacement-file, not both',
@@ -130,15 +144,15 @@ export function register(program: Command): void {
         options.replacementFile === undefined
           ? (options.replacement ?? null)
           : readFileSync(options.replacementFile, 'utf8')
-      const result = await overturnRuling({
-        questionId: await resolveQuestionIdentifier(db(), questionId),
+      const result = await overturn.overturnRuling({
+        questionId: await identity.resolveQuestionIdentifier(database.db(), questionId),
         reason: requiredText(options.because, '--because'),
         replacement: replacement === null ? null : requiredText(replacement, 'replacement'),
         fromOperator: Boolean(options.fromOperator),
       })
-      for (const line of rulingFileOfferLines({
+      for (const line of text.rulingFileOfferLines({
         questionIds: [result.question_id],
-        operatorAttributed: operatorAttributedRuling({
+        operatorAttributed: text.operatorAttributedRuling({
           fromOperator: Boolean(options.fromOperator),
         }),
         json: false,
@@ -158,9 +172,14 @@ export function register(program: Command): void {
     .option('--json', 'write the filing result as JSON')
     .allowExcessArguments(false)
     .action(async (questionId, options) => {
-      const result = await fileRuling(
+      const [database, identity, ruling] = await Promise.all([
+        import('../database/db.ts'),
+        import('../run/question-identifier.ts'),
+        import('../run/ruling-file.ts'),
+      ])
+      const result = await ruling.fileRuling(
         {
-          questionId: await resolveQuestionIdentifier(db(), questionId),
+          questionId: await identity.resolveQuestionIdentifier(database.db(), questionId),
           as: rulingFileAs(options.as),
           scope: filingScope(options.scope),
           subject: options.subject,
@@ -168,7 +187,7 @@ export function register(program: Command): void {
           fromOperator: Boolean(options.fromOperator),
           channel: filingChannel(options.channel),
         },
-        rulingFileStores,
+        await rulingFileStores(),
       )
       if (options.json) log(JSON.stringify(result))
       else {

@@ -4,11 +4,8 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
 import type { ReleaseAtCommitReport } from '../release/release-at-commit.ts'
-import { checkRelease } from '../release/release-check.ts'
 import { releaseProofDecision } from '../release/release-decision.ts'
-import { writeRegisteredReleaseRungs } from '../release/release-rungs.ts'
-import { type ReleaseResult, releaseLog, releaseProject } from '../release/release-service.ts'
-import { releaseAtCommitFromHookTree } from './release-tree.ts'
+import type { ReleaseResult } from '../release/release-service.ts'
 import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
@@ -77,6 +74,7 @@ async function runRelease(project: string | undefined, options: ReleaseOptions):
       `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
     )
   const releaseTree = options.at ? await runReleaseAtCommit(project, options) : undefined
+  const { releaseProject } = await import('../release/release-service.ts')
   const result =
     releaseTree?.result ??
     releaseProject(project, options.rung, options.rollback, options.behindTrunk, options.redeploy)
@@ -94,7 +92,11 @@ async function runReleaseAtCommit(
   if (!options.rung) throw new Error('--at requires --rung')
   if (options.rollback || options.behindTrunk || options.redeploy)
     throw new Error('--at cannot be combined with --rollback, --behind-trunk, or --redeploy')
-  return releaseAtCommitFromHookTree({ project, rung: options.rung, commit: options.at })
+  return (await import('./release-tree.ts')).releaseAtCommitFromHookTree({
+    project,
+    rung: options.rung,
+    commit: options.at,
+  })
 }
 
 function writeReleaseOutput(
@@ -151,6 +153,7 @@ export function register(program: Command): void {
     .description('validate the tag, tracked rungs, and release binary working-directory isolation')
     .allowExcessArguments(false)
     .action(async (tag) => {
+      const { checkRelease } = await import('../release/release-check.ts')
       const checked = await checkRelease(tag)
       if (checked.runtimeConfigGuardSkip) log(checked.runtimeConfigGuardSkip)
       log(checked.rungsComparison)
@@ -162,10 +165,10 @@ export function register(program: Command): void {
     .description('generate the tracked release-rung snapshot from the project register')
     .option('--write', 'write the tracked release-rung snapshot')
     .allowExcessArguments(false)
-    .action((options: { write?: boolean }) => {
+    .action(async (options: { write?: boolean }) => {
       if (!options.write)
         throw new Error(`refusing release rungs: pass --write to generate the file`)
-      log(`wrote ${writeRegisteredReleaseRungs()}`)
+      log(`wrote ${(await import('../release/release-rungs.ts')).writeRegisteredReleaseRungs()}`)
     })
 
   release
@@ -174,8 +177,11 @@ export function register(program: Command): void {
     .option('--rung <name>', 'release rung to include')
     .option('--json', 'write the release entries as JSON')
     .allowExcessArguments(false)
-    .action((project, options) => {
-      const rows = releaseLog(project, options.rung)
+    .action(async (project, options) => {
+      const rows = (await import('../release/release-service.ts')).releaseLog(
+        project,
+        options.rung,
+      )
       if (options.json) {
         log(JSON.stringify(rows))
         return

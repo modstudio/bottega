@@ -32,7 +32,7 @@ import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
-export { RECORD_SESSION_KEY } from './record-token.ts'
+export { RECORD_SESSION_KEY } from './record-token-key.ts'
 
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 

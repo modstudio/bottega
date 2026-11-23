@@ -3,25 +3,7 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
-import { workerHarnessName } from '../agent/worker-launch-env.ts'
-import { clearConfinement } from '../confinement/confinement-ruling.ts'
-import { db } from '../database/db.ts'
-import { JOBS } from '../jobs/jobs.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
-import {
-  calibrationReviewCommand,
-  completeReviewCommand,
-  coverageAuditReviewCommand,
-  listReviewCommand,
-  pinsReviewCommand,
-  printReviewTier,
-  recordReviewCommand,
-  reviewTierCommandOutput,
-  showReviewCommand,
-  triageReviewCommand,
-  yieldReviewCommand,
-} from '../review/review-commands.ts'
 import { amendReviewFindingCommand } from '../review/review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from '../review/review-finding-restore.ts'
 import { recordArchitectReadCommand } from '../review/review-read.ts'
@@ -38,32 +20,31 @@ import {
   replayReviewFunnelCommand,
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
-import { CONFINEMENT_RUN_WINDOW_DAYS, countRunConfinement } from '../run/run-confinement-count.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { CONFINEMENT_RUN_WINDOW_DAYS } from '../run/run-confinement-constants.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
-import {
-  formatConfinementFilesystemProbes,
-  runConfinementFilesystemProbes,
-} from '../sandbox/confinement-filesystem-probe.ts'
-import {
-  formatConfinementReport,
-  parseConfinementJobSelector,
-  parseConfinementMcpSelector,
-  reportConfinement,
-} from '../sandbox/confinement-report.ts'
-import { formatConfinementRunMeasurement } from '../sandbox/confinement-run-measurement.ts'
-import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 
 const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
 const REPORT_USAGE = `${PLATFORM_SLUG} review confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--since <ISO>] [--json]`
 
 async function confinementReportCommand(flags: CliFlags): Promise<void> {
-  const lens = readonlyLensReportInputs(process.env)
-  const rows = reportConfinement({
-    agents: Object.values(AGENTS).map((agent) => ({
+  const [agents, worker, jobs, filesystem, report, measurement, sandbox, count, database] =
+    await Promise.all([
+      import('../agent/agent-registry.ts'),
+      import('../agent/worker-launch-env.ts'),
+      import('../jobs/jobs.ts'),
+      import('../sandbox/confinement-filesystem-probe.ts'),
+      import('../sandbox/confinement-report.ts'),
+      import('../sandbox/confinement-run-measurement.ts'),
+      import('../sandbox/sandbox.ts'),
+      import('../run/run-confinement-count.ts'),
+      import('../database/db.ts'),
+    ])
+  const lens = sandbox.readonlyLensReportInputs(process.env)
+  const rows = report.reportConfinement({
+    agents: Object.values(agents.AGENTS).map((agent) => ({
       name: agent.name,
-      harness: workerHarnessName(agent),
+      harness: worker.workerHarnessName(agent),
       enabled: agent.enabled !== false,
       readsRepo: agent.caps.readsRepo,
       writesRepo: agent.caps.writesRepo,
@@ -76,31 +57,62 @@ async function confinementReportCommand(flags: CliFlags): Promise<void> {
     envFilePaths: lens.envFilePaths,
     keychainPaths: lens.keychainPaths,
     agent: flags.flag('agent'),
-    job: parseConfinementJobSelector(flags.flag('job'), JOBS),
-    mcp: parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
+    job: report.parseConfinementJobSelector(flags.flag('job'), jobs.JOBS),
+    mcp: report.parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
   })
-  const probes = await runConfinementFilesystemProbes()
-  const runMeasurement = countRunConfinement(db(), flags.flag('since'))
+  const probes = await filesystem.runConfinementFilesystemProbes()
+  const runMeasurement = count.countRunConfinement(database.db(), flags.flag('since'))
   if (flags.has('json')) {
     log(JSON.stringify({ rows, filesystemProbes: probes, readOnlyRuns: runMeasurement }))
     return
   }
-  for (const line of formatConfinementReport(rows, false)) log(line)
+  for (const line of report.formatConfinementReport(rows, false)) log(line)
   log('')
-  for (const line of formatConfinementFilesystemProbes(probes)) log(line)
+  for (const line of filesystem.formatConfinementFilesystemProbes(probes)) log(line)
   log('')
-  for (const line of formatConfinementRunMeasurement(runMeasurement)) log(line)
+  for (const line of measurement.formatConfinementRunMeasurement(runMeasurement)) log(line)
 }
 
 const reviewPresentation = {
   log,
 }
 
+type ReviewCommands = typeof import('../review/review-commands.ts')
+type ReviewCommandName = {
+  [Name in keyof ReviewCommands]: ReviewCommands[Name] extends (...args: never[]) => unknown
+    ? Name
+    : never
+}[keyof ReviewCommands]
+const lazyReviewCommand = <Name extends ReviewCommandName>(name: Name) =>
+  async (
+    ...args: Parameters<ReviewCommands[Name]>
+  ): Promise<Awaited<ReturnType<ReviewCommands[Name]>>> => {
+    const commands = await import('../review/review-commands.ts')
+    return await (
+      commands[name] as unknown as (
+        ...values: Parameters<ReviewCommands[Name]>
+      ) => ReturnType<ReviewCommands[Name]>
+    )(...args)
+  }
+
+const calibrationReviewCommand = lazyReviewCommand('calibrationReviewCommand')
+const completeReviewCommand = lazyReviewCommand('completeReviewCommand')
+const coverageAuditReviewCommand = lazyReviewCommand('coverageAuditReviewCommand')
+const listReviewCommand = lazyReviewCommand('listReviewCommand')
+const pinsReviewCommand = lazyReviewCommand('pinsReviewCommand')
+const recordReviewCommand = lazyReviewCommand('recordReviewCommand')
+const showReviewCommand = lazyReviewCommand('showReviewCommand')
+const triageReviewCommand = lazyReviewCommand('triageReviewCommand')
+const yieldReviewCommand = lazyReviewCommand('yieldReviewCommand')
+
 async function tierReviewCliCommand(
   argv: string[],
   flags: CliFlags,
   { log }: ReviewPresentation,
 ): Promise<void> {
+  const { printReviewTier, reviewTierCommandOutput } = await import(
+    '../review/review-commands.ts'
+  )
   const value = argv[2]
   if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
   const result = await reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
@@ -424,9 +436,15 @@ function registerConfinement(program: Command): void {
     .option('--note <value>', 'record the confinement ruling')
     .option('--tip <value>', 'record the current branch tip')
     .allowExcessArguments(false)
-    .action((runId: string | undefined, options) => {
+    .action(async (runId: string | undefined, options) => {
+      const [{ clearConfinement }, database, identifier] = await Promise.all([
+        import('../confinement/confinement-ruling.ts'),
+        import('../database/db.ts'),
+        import('../run/run-identifier.ts'),
+      ])
       const flags = optionFlags(options)
-      const id = runId === undefined ? null : resolveRunIdentifier(db(), runId)
+      const id =
+        runId === undefined ? null : identifier.resolveRunIdentifier(database.db(), runId)
       const writer = flags.flag('writer')?.trim()
       const note = flags.flag('note')?.trim()
       if (!id || !writer || !note) throw new Error(CLEAR_USAGE)
