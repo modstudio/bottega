@@ -135,9 +135,14 @@ Unanswered questions use the durable open-question predicate: neither answered n
 
 ## bottega session start
 
-**Synopsis:** `bottega session start`
+**Synopsis:** `bottega session start [--harness-pid <pid>] [--source <source>]`
 
 open explore for a session that holds no open cursor, name the explore it holds, or name its open task cursor and open none
+
+### Options
+
+- `--harness-pid <pid>`: publish the harness process session
+- `--source <source>`: name the SessionStart source
 
 ### Related
 

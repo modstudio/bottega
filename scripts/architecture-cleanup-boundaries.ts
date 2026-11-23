@@ -522,6 +522,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-named-tree.ts',
       './cleanup-sweep-outbox.ts',
       './cleanup-sweep-report.ts',
+      './cleanup-sweep-harness-session.ts',
       './cleanup-sweep-orphan-report.ts',
       './cleanup-sweep-orphan-candidate.ts',
       './cleanup-sweep-orphan-claims.ts',
@@ -710,6 +711,19 @@ export const cleanupBoundarySpecs = [
     ],
     typeOnlyAllowed: [],
     reason: 'Keep bounded outbox sweep maintenance behind its database owners.',
+  },
+  {
+    name: 'cleanup-sweep-harness-session-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-harness-session.ts',
+    allowed: [
+      'node:path',
+      '../harness-session/harness-session.ts',
+      '../harness-session/harness-session-decision.ts',
+      '../resources/process-inventory.ts',
+      './cleanup.ts',
+    ],
+    typeOnlyAllowed: ['./cleanup.ts'],
+    reason: 'Keep harness publication cleanup and measurement behind one sweep adapter.',
   },
   {
     name: 'cleanup-sweep-report-boundary',

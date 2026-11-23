@@ -117,6 +117,11 @@ export function autonomyContextDirectory(env: StateEnvironment): string {
   return join(concernStateDirectory('orchestrator', env), 'autonomy-context')
 }
 
+/** Machine-local publications that associate harness processes with their current session. */
+export function harnessSessionDirectory(env: StateEnvironment): string {
+  return join(concernStateDirectory('orchestrator', env), 'harness-sessions')
+}
+
 /** Directory launchd watches for pending hosted-record evidence. */
 export function recordSyncQueueDirectory(env: StateEnvironment): string {
   return join(resolveStatePaths(env).orchestratorDirectory, RECORD_SYNC_QUEUE_DIRECTORY)
@@ -186,6 +191,11 @@ export function ensureRecordSessionDirectory(env: StateEnvironment): string {
 /** Ensure the sandbox-denied login-token directory exists with private permissions. */
 export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
   return ensureOwnedPrivateDirectory(hubLoginTokenDirectory(env), 'hub login-token')
+}
+
+/** Ensure the harness-session publication directory exists and belongs to this user. */
+export function ensureHarnessSessionDirectory(env: StateEnvironment): string {
+  return ensureOwnedPrivateDirectory(harnessSessionDirectory(env), 'harness session')
 }
 
 export function resolveOrchestratorDatabase(env: StateEnvironment): string {
