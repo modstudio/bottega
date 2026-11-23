@@ -22,8 +22,8 @@ const task = (
   key: string,
   parentKey: string | null,
   statusCategory = 'open',
-  hasChildren = false,
-): TaskReadRow & { has_children: boolean } => ({
+  hasChildren?: boolean,
+): TaskReadRow => ({
   key,
   record_id: `task-${key}`,
   project: 'fixture',
@@ -35,10 +35,10 @@ const task = (
   last_seen: null,
   body: null,
   opened_at: null,
-  has_children: hasChildren,
+  ...(hasChildren === undefined ? {} : { has_children: hasChildren }),
 })
 
-function installGuardReader(tasks: Array<TaskReadRow & { has_children: boolean }>) {
+function installGuardReader(tasks: TaskReadRow[]) {
   const calls: Array<{ operation: 'list' | 'lookup'; status?: string }> = []
   const byKey = new Map(tasks.map((row) => [row.key, row]))
   const port: TaskReadPort = {
@@ -51,7 +51,7 @@ function installGuardReader(tasks: Array<TaskReadRow & { has_children: boolean }
     },
     async lookup(_project, keys) {
       calls.push({ operation: 'lookup' })
-      const found = new Map<string, TaskReadRow & { has_children: boolean }>()
+      const found = new Map<string, TaskReadRow>()
       for (const key of keys) {
         let row = byKey.get(key)
         while (row && !found.has(row.key)) {
@@ -125,4 +125,30 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
   expect(calls.every((call) => call.operation !== 'list' || call.status !== undefined)).toBe(true)
   expect(surfaces).toEqual([expect.objectContaining({ epic: 'DEV-1', open: ['DEV-3'], queue: [] })])
   installTaskReader(undefined as never)
+})
+
+test('sessionEpicWork lists only cursors proven to have children by the shared rule', async () => {
+  async function epicWorkFor(tasks: TaskReadRow[]) {
+    const d = database()
+    const session = 'epic-classification-session'
+    installGuardReader(tasks)
+    await openEpicAtStart(d, session)
+    const sessionStages = await taskFlowReadStore(d).listOpenStages({ sessionId: session })
+    return sessionEpicWork(session, sessionStages, d)
+  }
+
+  try {
+    expect(await epicWorkFor([task('DEV-1', null, 'open', false)])).toEqual([])
+    expect(
+      await epicWorkFor([task('DEV-1', null, 'open', true), task('DEV-2', 'DEV-1', 'open', false)]),
+    ).toEqual([expect.objectContaining({ epic: 'DEV-1' })])
+    expect(await epicWorkFor([task('DEV-1', null), task('DEV-2', 'DEV-1', 'open', false)])).toEqual(
+      [expect.objectContaining({ epic: 'DEV-1' })],
+    )
+    expect(await epicWorkFor([task('DEV-2', 'DEV-1', 'open', false)])).toEqual([
+      expect.objectContaining({ epic: 'DEV-1' }),
+    ])
+  } finally {
+    installTaskReader(undefined as never)
+  }
 })

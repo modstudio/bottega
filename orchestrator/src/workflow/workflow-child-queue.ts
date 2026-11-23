@@ -33,6 +33,17 @@ export type ChildClaimFact = {
   holderSession: string | null
 }
 
+export function taskKeysWithChildren(
+  tasks: readonly Pick<ChildTaskFact, 'key' | 'parentKey' | 'hasChildren'>[],
+): ReadonlySet<string> {
+  const keys = new Set(tasks.flatMap(({ parentKey }) => (parentKey ? [parentKey] : [])))
+  for (const task of tasks) {
+    if (task.hasChildren === true) keys.add(task.key)
+    if (task.hasChildren === false) keys.delete(task.key)
+  }
+  return keys
+}
+
 export function sessionWorksUnderEpic(
   claims: readonly ChildClaimFact[],
   session: string,
@@ -89,14 +100,12 @@ export function childQueueState(
   session: string,
   tasks: readonly ChildTaskFact[],
 ): ChildQueueState {
-  const childCount = new Map<string, number>()
-  for (const task of tasks)
-    if (task.parentKey) childCount.set(task.parentKey, (childCount.get(task.parentKey) ?? 0) + 1)
   const descendants = descendantTaskKeys(rootKey, tasks)
+  const hasChildren = taskKeysWithChildren(tasks)
   const queueable = tasks.filter(
     (task) =>
       descendants.has(task.key) &&
-      !(task.hasChildren ?? childCount.has(task.key)) &&
+      !hasChildren.has(task.key) &&
       task.statusCategory !== 'done' &&
       task.statusCategory !== 'dropped' &&
       !task.cursorEverComposed &&
