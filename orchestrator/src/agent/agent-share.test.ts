@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
@@ -147,14 +147,19 @@ test('space-agent route refuses a non-member space with the membership remedy', 
   })
 })
 
-test('share and unshare refuse on a local-only install with the hosted-record remedy', async () => {
-  delete process.env.BOTTEGA_RECORD_API_URL
-  const client = spaceAgentClient(true)
+describe('on a local-only install', () => {
+  beforeEach(() => {
+    delete process.env.BOTTEGA_RECORD_API_URL
+  })
 
-  await expect(shareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
-    `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent share\``,
-  )
-  await expect(unshareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
-    `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent unshare\``,
-  )
+  test('share and unshare refuse with the hosted-record remedy', async () => {
+    const client = spaceAgentClient(true)
+
+    await expect(shareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
+      `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent share\``,
+    )
+    await expect(unshareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
+      `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent unshare\``,
+    )
+  })
 })
