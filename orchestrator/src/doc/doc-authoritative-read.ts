@@ -4,7 +4,10 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import type { Database } from 'bun:sqlite'
+import { db } from '../database/db.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
+import { projectByRecordId } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient, listAllHostedDocs, readHostedDocReference } from './doc-hosted-client.ts'
@@ -47,7 +50,7 @@ export type ResolvedDocReference = {
   updatedAt: string
 }
 
-function resolvedReference(row: Doc | HostedRow): ResolvedDocReference {
+function resolvedReference(row: Doc | HostedRow, database?: Database): ResolvedDocReference {
   const hosted = 'id' in row
   const scope = String(row.scope)
   const subject = row.subject == null ? null : String(row.subject)
@@ -57,31 +60,43 @@ function resolvedReference(row: Doc | HostedRow): ResolvedDocReference {
     scope,
     subject,
     slug,
-    projectName: hosted ? (row.projectName == null ? null : String(row.projectName)) : null,
+    projectName: hosted
+      ? row.projectName == null
+        ? null
+        : String(row.projectName)
+      : row.project_record_id
+        ? (projectByRecordId(row.project_record_id, database)?.name ?? null)
+        : null,
     address: `${scope}/${subject ?? '_'}/${slug}`,
     updatedAt: String(hosted ? row.updatedAt : row.updated_at),
   }
 }
 
-export function readDocReference(value: string): Promise<ResolvedDocReference | null> {
-  return applyRecordReadAuthority({
-    local: () => {
-      const rows = listDocsStore()
-      const row = hasRecordIdShape(value)
-        ? rows.find(({ record_id }) => record_id === value)
-        : rows.find(({ scope, subject, slug }) => `${scope}/${subject ?? '_'}/${slug}` === value)
-      return row ? resolvedReference(row) : null
+export function readDocReference(
+  value: string,
+  database: Database = db(),
+): Promise<ResolvedDocReference | null> {
+  return applyRecordReadAuthority(
+    {
+      local: () => {
+        const rows = listDocsStore({}, database)
+        const row = hasRecordIdShape(value)
+          ? rows.find(({ record_id }) => record_id === value)
+          : rows.find(({ scope, subject, slug }) => `${scope}/${subject ?? '_'}/${slug}` === value)
+        return row ? resolvedReference(row, database) : null
+      },
+      hosted: () =>
+        withReadRemedy(async () => {
+          try {
+            return resolvedReference(await readHostedDocReference(value))
+          } catch (cause) {
+            if (String((cause as Error).message ?? cause).includes('404')) return null
+            throw cause
+          }
+        }),
     },
-    hosted: () =>
-      withReadRemedy(async () => {
-        try {
-          return resolvedReference(await readHostedDocReference(value))
-        } catch (cause) {
-          if (String((cause as Error).message ?? cause).includes('404')) return null
-          throw cause
-        }
-      }),
-  })
+    database,
+  )
 }
 
 function resolvedFilters(filters: DocListFilters): DocListFilters {
@@ -326,7 +341,8 @@ export function readDocRevision(
     hosted: () =>
       withReadRemedy(async () => {
         const revision = await (await hostedDocClient(scope, subject)).getDocRevision(revisionId)
-        return mapHostedDocRevisions([revision])[0] ?? null
+        const mapped = mapHostedDocRevisions([revision])[0] ?? null
+        return mapped?.owner === owner ? mapped : null
       }),
   })
 }

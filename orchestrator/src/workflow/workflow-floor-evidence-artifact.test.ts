@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { decideFloorSatisfaction } from './workflow-floor.ts'
 import {
@@ -11,6 +11,13 @@ import {
   unlinkedIdentity,
 } from './workflow-floor-evidence.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
+
+const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+beforeEach(() => delete process.env.BOTTEGA_RECORD_API_URL)
+afterEach(() => {
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
+})
 
 test('a bare number still refuses a run bound to another cursor', async () => {
   const d = database()

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
@@ -16,6 +16,13 @@ import {
 import { gatherRuling } from './workflow-floor-evidence.ts'
 import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
+
+const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+beforeEach(() => delete process.env.BOTTEGA_RECORD_API_URL)
+afterEach(() => {
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
+})
 
 test(
   'gathers a bound answered ruling and a finished matching gate',
