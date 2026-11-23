@@ -45,7 +45,11 @@ export async function canonMirrorRevisionSnapshot(
     project,
     projectRows,
     globalRows,
-    newestAt: [...projectRows.values(), ...globalRows.values()].map(({ at }) => at).sort().at(-1) ?? null,
+    newestAt:
+      [...projectRows.values(), ...globalRows.values()]
+        .map(({ at }) => at)
+        .sort()
+        .at(-1) ?? null,
   }
 }
 

@@ -8,9 +8,5 @@ export async function storedRepositoryCanonRows(project: string) {
     readDocs({ scope: 'canon', subject: null, status: 'current' }),
     readDocs({ scope: 'canon', subject: project, status: 'current' }),
   ])
-  return composeCanonRows(
-    globalRows,
-    [],
-    projectRows,
-  )
+  return composeCanonRows(globalRows, [], projectRows)
 }

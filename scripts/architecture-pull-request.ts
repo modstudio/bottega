@@ -149,6 +149,7 @@ export const pullRequestModuleSpecs = [
       '../review-funnel/gather-funnel-facts.ts',
       '../review-funnel/review-funnel-admission-evidence.ts',
       '../review-funnel/review-funnel-decision-log.ts',
+      '../review-funnel/review-funnel-policy.ts',
       '../review-funnel/review-funnel-verdict-service.ts',
       '../review/review-group.ts',
       '../review/review-applicability.ts',

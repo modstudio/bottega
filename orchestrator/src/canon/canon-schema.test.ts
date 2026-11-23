@@ -525,7 +525,8 @@ describe('scoped operator docs', () => {
 
     expect(repoRootForDoc({ scope: 'job', subject: 'understand' })).toBeNull()
     expect(
-      (await allInjectChecks()).find(({ doc }) => doc.slug === 'distribution-canon-check')?.findings,
+      (await allInjectChecks()).find(({ doc }) => doc.slug === 'distribution-canon-check')
+        ?.findings,
     ).toEqual([
       {
         kind: 'unchecked',

@@ -3,7 +3,10 @@
 
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDoc as getDoc, readDocRevision as getDocRevision } from '../doc/doc-authoritative-read.ts'
+import {
+  readDoc as getDoc,
+  readDocRevision as getDocRevision,
+} from '../doc/doc-authoritative-read.ts'
 import { setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {

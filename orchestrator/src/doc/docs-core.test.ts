@@ -797,9 +797,9 @@ describe('scoped operator docs', () => {
       title: 'Resume',
       body: resume,
     })
-    expect((await docsForRun({ job: 'file-question', cwd: '/w/known/src' })).map((d) => d.title)).toEqual([
-      'Job',
-    ])
+    expect(
+      (await docsForRun({ job: 'file-question', cwd: '/w/known/src' })).map((d) => d.title),
+    ).toEqual(['Job'])
   })
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
@@ -833,9 +833,9 @@ describe('scoped operator docs', () => {
     expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
     expect(pack.sha256).toHaveLength(64)
     expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')
-    expect((await docsForRun({ job: 'understand', cwd: dir })).map((doc) => doc.slug)).not.toContain(
-      'demand',
-    )
+    expect(
+      (await docsForRun({ job: 'understand', cwd: dir })).map((doc) => doc.slug),
+    ).not.toContain('demand')
   })
 
   test('setDoc closes project and global inject while allowing canon and estate facts', async () => {

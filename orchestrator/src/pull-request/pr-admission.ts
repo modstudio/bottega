@@ -39,7 +39,10 @@ import {
   recordReviewFunnelDecision,
 } from '../review-funnel/review-funnel-decision-log.ts'
 import { budgetedRoundApplicabilityForChange } from '../review-funnel/review-funnel-plan-service.ts'
-import { activeReviewFunnelPolicy, type VersionedReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
+import {
+  activeReviewFunnelPolicy,
+  type VersionedReviewFunnelPolicy,
+} from '../review-funnel/review-funnel-policy.ts'
 import { reviewFunnelVerdictForChangeWithPolicy } from '../review-funnel/review-funnel-verdict-service.ts'
 import {
   type AdmissionDecision,
@@ -672,17 +675,17 @@ type CreatePullRequestOptions = {
   fromOperator?: boolean
 }
 
-async function createPullRequestAdmittedChange(
+function createPullRequestAdmittedChange(
   args: string[],
   options: CreatePullRequestOptions,
   cwd: string,
   change: PullRequestChange,
-): Promise<{ output: string; overrideId: string | null }> {
+  policy: VersionedReviewFunnelPolicy,
+): { output: string; overrideId: string | null } {
   const trunk = change.project.settings.trunk!.trim()
   const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
-  const policy = await activeReviewFunnelPolicy()
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database, replayContext(change))
     const beforeOverride = funnelVerdict(change, database, policy)
@@ -784,7 +787,28 @@ export async function createPullRequestAdmitted(
   options: CreatePullRequestOptions,
   cwd = process.cwd(),
 ): Promise<{ output: string; overrideId: string | null }> {
-  return createPullRequestAdmittedChange(args, options, cwd, preparePullRequestCreate(options, cwd))
+  return createPullRequestAdmittedChange(
+    args,
+    options,
+    cwd,
+    preparePullRequestCreate(options, cwd),
+    await activeReviewFunnelPolicy(),
+  )
+}
+
+export function createPullRequestAdmittedWithPolicy(
+  args: string[],
+  options: CreatePullRequestOptions,
+  cwd: string,
+  policy: VersionedReviewFunnelPolicy,
+): { output: string; overrideId: string | null } {
+  return createPullRequestAdmittedChange(
+    args,
+    options,
+    cwd,
+    preparePullRequestCreate(options, cwd),
+    policy,
+  )
 }
 
 function preparePullRequestCreate(
@@ -806,7 +830,13 @@ export async function createPullRequest(
     project: change.project,
     branch: change.branch,
   })
-  return createPullRequestAdmittedChange(args, options, cwd, change)
+  return createPullRequestAdmittedChange(
+    args,
+    options,
+    cwd,
+    change,
+    await activeReviewFunnelPolicy(),
+  )
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {

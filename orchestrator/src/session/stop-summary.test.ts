@@ -180,13 +180,18 @@ test('an open cursor branch with a missing ref keeps its verdict failure line', 
     workflow_key: 'DEV-2304',
     args: JSON.stringify({ branch: 'DEV-2304-gone' }),
   } as WorkflowCursorListRow
-  const lines = await sessionReviewVerdictLines('missing-cursor-branch-session', [missingCursor], db(), {
-    gather: (branch) => ({
-      branch: branch.branch,
-      taskKey: branch.taskKey,
-      failure: 'Error: git could not resolve branch DEV-2304-gone',
-    }),
-  })
+  const lines = await sessionReviewVerdictLines(
+    'missing-cursor-branch-session',
+    [missingCursor],
+    db(),
+    {
+      gather: (branch) => ({
+        branch: branch.branch,
+        taskKey: branch.taskKey,
+        failure: 'Error: git could not resolve branch DEV-2304-gone',
+      }),
+    },
+  )
 
   expect(lines).toEqual([
     `DEV-2304: review verdict unavailable (Error: git could not resolve branch DEV-2304-gone) → ${PLATFORM_SLUG} review tier DEV-2304`,

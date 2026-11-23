@@ -40,6 +40,7 @@ export const reviewModuleSpecs = [
       'zod',
       '../../../shared/brand.ts',
       '../doc/docs.ts',
+      '../doc/doc-authoritative-read.ts',
       '../doc/doc-read-store.ts',
       '../doc/doc-revision-store.ts',
       '../review/review-evidence-sql.ts',

@@ -65,7 +65,10 @@ async function gatherDispatchWaiverFacts(
   ports: FloorEvidencePorts,
   args: Record<string, string>,
   database: Database,
-): Promise<{ facts: DispatchWaiverFact[]; refusal?: Extract<FloorDecision, { action: 'refuse' }> }> {
+): Promise<{
+  facts: DispatchWaiverFact[]
+  refusal?: Extract<FloorDecision, { action: 'refuse' }>
+}> {
   const facts: DispatchWaiverFact[] = []
   const checksReviewOwed = floors.some(({ kind }) => kind === 'review-owed')
   const gathersNoLensOwed = step.dispatchWaivedBy?.includes('no-lens-owed') ?? false

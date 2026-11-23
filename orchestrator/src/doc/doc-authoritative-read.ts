@@ -3,11 +3,11 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { hostedDocClient, listAllHostedDocs, readHostedDocReference } from './doc-hosted-client.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import {
   type HostedDocRevision,
   hostedDocRevisionRead,
@@ -57,11 +57,7 @@ function resolvedReference(row: Doc | HostedRow): ResolvedDocReference {
     scope,
     subject,
     slug,
-    projectName: hosted
-      ? row.projectName == null
-        ? null
-        : String(row.projectName)
-      : null,
+    projectName: hosted ? (row.projectName == null ? null : String(row.projectName)) : null,
     address: `${scope}/${subject ?? '_'}/${slug}`,
     updatedAt: String(hosted ? row.updatedAt : row.updated_at),
   }

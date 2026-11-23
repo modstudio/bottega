@@ -340,7 +340,10 @@ function printReviewRoundStatus(
 }
 
 function printPostFixTriggers(
-  postFix: Extract<Awaited<ReturnType<typeof reviewTierOutputForTarget>>['post_fix'], { kind: 're-lens' }>,
+  postFix: Extract<
+    Awaited<ReturnType<typeof reviewTierOutputForTarget>>['post_fix'],
+    { kind: 're-lens' }
+  >,
   lenses: readonly string[],
   secondOpinion: string | null | undefined,
   log: (...values: unknown[]) => void,

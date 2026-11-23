@@ -3,10 +3,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import {
-  activeReviewFunnelPolicy,
-  DEFAULT_REVIEW_FUNNEL_POLICY,
-} from './review-funnel-policy.ts'
+import { activeReviewFunnelPolicy, DEFAULT_REVIEW_FUNNEL_POLICY } from './review-funnel-policy.ts'
 
 const revisionId = '01990000-0000-7000-8000-000000000301'
 

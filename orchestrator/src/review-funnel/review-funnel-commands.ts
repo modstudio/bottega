@@ -86,7 +86,10 @@ async function policyFromFlags(flags: Flags) {
   return reviewFunnelPolicyAt(version!)
 }
 
-export async function replayReviewFunnelCommand(flags: Flags, { log }: Presentation): Promise<void> {
+export async function replayReviewFunnelCommand(
+  flags: Flags,
+  { log }: Presentation,
+): Promise<void> {
   const candidate = await policyFromFlags(flags)
   const rows = db()
     .query<{ record_id: string; facts: string; verdict: string }, []>(

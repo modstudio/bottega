@@ -30,8 +30,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
   return {
     name: 'doc-local-read-store-authority',
     severity: 'error' as const,
-    comment:
-      'Hosted-capable document reads reach local stores only through the authority adapter.',
+    comment: 'Hosted-capable document reads reach local stores only through the authority adapter.',
     from: {
       path: '^orchestrator/src/',
       pathNot: [

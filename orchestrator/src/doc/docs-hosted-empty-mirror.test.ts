@@ -7,10 +7,10 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { compilePack } from '../canon/canon.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import { compilePack } from '../canon/canon.ts'
 import { readDocRevision, readDocs } from './doc-authoritative-read.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import {
@@ -81,7 +81,12 @@ test('pack compile batches five hosted inject reads and uses row revision ids', 
         activeSpaceId: 'personal-space',
         personalSpaceId: 'personal-space',
         memberships: [
-          { space_id: 'personal-space', slug: 'personal-space', permission: 'write', role: 'owner' },
+          {
+            space_id: 'personal-space',
+            slug: 'personal-space',
+            permission: 'write',
+            role: 'owner',
+          },
         ],
       }),
       listDocs: async (query) => {
@@ -108,9 +113,7 @@ test('pack compile batches five hosted inject reads and uses row revision ids', 
   )
 
   const pack = await compilePack({ job: 'understand', cwd: path })
-  expect(pack.docs).toEqual([
-    expect.objectContaining({ slug: 'hosted-inject', revisionId }),
-  ])
+  expect(pack.docs).toEqual([expect.objectContaining({ slug: 'hosted-inject', revisionId })])
   expect(queries).toHaveLength(5)
   expect(queries.filter((query) => query.delivery === 'inject')).toHaveLength(3)
   expect(peak).toBe(5)
@@ -170,7 +173,12 @@ test('hosted revision and resume count work with an empty mirror', async () => {
         activeSpaceId: 'personal-space',
         personalSpaceId: 'personal-space',
         memberships: [
-          { space_id: 'personal-space', slug: 'personal-space', permission: 'write', role: 'owner' },
+          {
+            space_id: 'personal-space',
+            slug: 'personal-space',
+            permission: 'write',
+            role: 'owner',
+          },
         ],
       }),
       listDocs: async (query) => ({

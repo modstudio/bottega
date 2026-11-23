@@ -784,33 +784,6 @@ export async function readOpenResumes(cwd: string, now = Date.now()): Promise<Op
   return { open, unreadable }
 }
 
-export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
-  const project = projectAt(cwd)
-  if (!project) return { open: [], unreadable: [] }
-  const open: OpenResume[] = []
-  const unreadable: UnreadableResume[] = []
-  for (const doc of listDocs({ scope: 'resume', subject: project.name })) {
-    const fm = parseResumeFrontmatter(doc.body)
-    if (!fm) {
-      unreadable.push({ slug: doc.slug, reason: 'no-frontmatter' })
-      continue
-    }
-    if (!fm.status) {
-      unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
-      continue
-    }
-    if (fm.status !== 'open' && fm.status !== 'consumed') {
-      unreadable.push({ slug: doc.slug, reason: 'unrecognized-status' })
-      continue
-    }
-    if (fm.status !== 'open') continue
-    const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
-    open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
-  }
-  open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
-  return { open, unreadable }
-}
-
 export function exportDocs(dir: string): number {
   return exportDocFiles(dir, listDocs())
 }

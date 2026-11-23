@@ -213,22 +213,22 @@ export async function sessionReviewVerdictLines(
   const landingIdentity = options.landingIdentity ?? branchLandingIdentity
   const facts: StopSummaryReviewVerdictFact[] = []
   for (const branch of sessionInFlightReviewBranches(session, cursors, database)) {
-      const landedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
-      if (landedTip !== null) {
-        try {
-          if (
-            landedBranchOwesNoReviewLine({
-              ...landingIdentity(branch, landedTip, database),
-              tip: landedTip,
-            })
-          )
-            continue
-        } catch {
-          // Gathering owns the user-visible remedy when the git comparison fails.
-        }
+    const landedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
+    if (landedTip !== null) {
+      try {
+        if (
+          landedBranchOwesNoReviewLine({
+            ...landingIdentity(branch, landedTip, database),
+            tip: landedTip,
+          })
+        )
+          continue
+      } catch {
+        // Gathering owns the user-visible remedy when the git comparison fails.
       }
-      const fact = await gather(branch, database)
-      if (fact !== null) facts.push(fact)
+    }
+    const fact = await gather(branch, database)
+    if (fact !== null) facts.push(fact)
   }
   return stopSummaryReviewVerdictLines(facts)
 }

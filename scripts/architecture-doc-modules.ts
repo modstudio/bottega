@@ -199,10 +199,7 @@ export const docModules: DocModule[] = [
     './doc-authoritative-read.ts',
     './docs.ts',
   ]),
-  module('orchestrator/src/doc/doc-reference-read.ts', [
-    'bun:sqlite',
-    '../../../shared/record-id.ts',
-  ]),
+  module('orchestrator/src/doc/doc-reference-read.ts', ['./doc-authoritative-read.ts']),
   module('orchestrator/src/doc/doc-command-mentions.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-hosted-write-operation.ts', [
     '../record/record-write-authority.ts',
@@ -213,6 +210,8 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
+    '../../../shared/record-id.ts',
+    '../../../shared/record-id.ts',
     './doc-command-mentions.ts',
   ]),
   module('orchestrator/src/doc/doc-search-service.ts', [
@@ -290,6 +289,7 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
+    '../../../shared/record-id.ts',
     '../identity/doc-revision-identity.ts',
     '../record/record-read-authority.ts',
     '../subject/subjects.ts',

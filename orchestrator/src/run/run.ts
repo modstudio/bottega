@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -39,7 +39,6 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
-import { GATE_FACTS_ENV, writeGateFacts } from '../gate/gate-facts.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, projectsIncludingRetired, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -88,6 +87,7 @@ import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
+import { prepareRunGateFacts } from './run-gate-facts.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { inheritedRunDispatch } from './run-inherited-dispatch.ts'
@@ -649,16 +649,9 @@ export async function run(
         project: runProject,
       })
       ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
-      const gateFactsPath = join(scratchDir, 'gate-facts.json')
-      try {
-        await writeGateFacts(gateFactsPath)
-      } catch (cause) {
-        throw new Error(
-          `refusing dispatch: authoritative gate facts could not be written: ${String((cause as Error).message ?? cause)}; remedy: verify record access and retry the run`,
-        )
-      }
-      mcpEnvironment[GATE_FACTS_ENV] = gateFactsPath
-      sandboxEnvironment[GATE_FACTS_ENV] = gateFactsPath
+      const gateFactsEnvironment = await prepareRunGateFacts(scratchDir)
+      Object.assign(mcpEnvironment, gateFactsEnvironment)
+      Object.assign(sandboxEnvironment, gateFactsEnvironment)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)

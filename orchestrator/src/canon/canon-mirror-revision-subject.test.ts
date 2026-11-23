@@ -30,9 +30,7 @@ test('revision rows ignore another project revision of the same canon path', asy
       allowCanonBootstrap: true,
     })
     const snapshot = await canonMirrorRevisionSnapshot('cm-revision-subject')
-    expect(revisionRows(snapshot, ['AGENTS.md'])[0]?.reason).toBe(
-      'mirror ownership fixture',
-    )
+    expect(revisionRows(snapshot, ['AGENTS.md'])[0]?.reason).toBe('mirror ownership fixture')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

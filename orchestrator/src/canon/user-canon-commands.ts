@@ -108,17 +108,19 @@ export async function userCanonImportCommand(
       body,
     }),
   )
-  const surroundings = await Promise.all(userCanonWriteTargets(projects()).map(async (project) => ({
-    global,
-    project: project
-      ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(
-          ({ slug, body }) => ({
-            slug,
-            body,
-          }),
-        )
-      : [],
-  })))
+  const surroundings = await Promise.all(
+    userCanonWriteTargets(projects()).map(async (project) => ({
+      global,
+      project: project
+        ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(
+            ({ slug, body }) => ({
+              slug,
+              body,
+            }),
+          )
+        : [],
+    })),
+  )
   const preview = planCanonImport({
     address: { kind: 'user' },
     current: currentRows.map(({ slug, body }) => ({ slug, body })),

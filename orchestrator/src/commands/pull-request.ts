@@ -299,7 +299,11 @@ export function register(program: Command): void {
     .requiredOption('--remote-ref <ref>', 'name the destination ref')
     .allowExcessArguments(false)
     .action(async (options) => {
-      const result = await checkPushedTip(process.cwd(), options.sha.trim(), options.remoteRef.trim())
+      const result = await checkPushedTip(
+        process.cwd(),
+        options.sha.trim(),
+        options.remoteRef.trim(),
+      )
       if (result.infrastructureError) {
         log(`pre-push: triage check could not run: ${result.infrastructureError}; allowing push`)
         return

@@ -607,7 +607,10 @@ test('admission follows the exhausted round budget and requires an architect rea
         serializePathSet(change.group.pathSet),
       )
 
-    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({
+      kind: 'measured',
+      complete: true,
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -651,7 +654,10 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({
+      kind: 'measured',
+      complete: true,
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -696,7 +702,10 @@ test('the architect read credits an owed second opinion at the ceiling', async (
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({
+      kind: 'measured',
+      complete: true,
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

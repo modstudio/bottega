@@ -95,10 +95,12 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): Promise<{ change: PullRequestChange; decision: PullRequestAdmission }> | {
-    change: PullRequestChange
-    decision: PullRequestAdmission
-  }
+  ):
+    | Promise<{ change: PullRequestChange; decision: PullRequestAdmission }>
+    | {
+        change: PullRequestChange
+        decision: PullRequestAdmission
+      }
   recordAdmission(
     change: PullRequestChange,
     decision: AdmissionWithTriage,
@@ -755,7 +757,12 @@ async function collectMergeAdmission(
       }),
     }
   }
-  const checked = await adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
+  const checked = await adapter.admission(
+    cwd,
+    pullRequest.headCommit,
+    pullRequest.headBranch,
+    database,
+  )
   if (checked.decision.kind === 'empty') {
     throw new Error(
       renderRefusal(
@@ -829,7 +836,12 @@ async function admitViewedPullRequest(
       landingBranch: input.landingBranch,
     }),
   )
-  const admission = await collectMergeAdmission(pullRequest, input.cwd, input.adapter, input.database)
+  const admission = await collectMergeAdmission(
+    pullRequest,
+    input.cwd,
+    input.adapter,
+    input.database,
+  )
   refuseUnlessAdmitted(admission.decision)
   refuseUnlessAdmitted(
     decideMergeProof(

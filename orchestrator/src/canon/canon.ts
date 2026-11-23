@@ -11,7 +11,7 @@ import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
-import type { Doc } from '../doc/doc-read-store.ts'
+import type { Doc } from '../doc/doc-authoritative-read.ts'
 import { readDoc, readDocs } from '../doc/doc-authoritative-read.ts'
 import { docsForRun } from '../doc/docs.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -300,11 +300,7 @@ async function packedCanonMarkdown(projectName: string | null) {
     readDocs({ scope: 'canon', subject: null, status: 'current' }),
     readDocs({ scope: 'canon', subject: projectName, status: 'current' }),
   ])
-  return packedCanonMarkdownFromRows(
-    projectName,
-    globalRows,
-    projectRows,
-  )
+  return packedCanonMarkdownFromRows(projectName, globalRows, projectRows)
 }
 
 type PackInputDoc = {
@@ -565,27 +561,32 @@ function uncheckedRootMessage(doc: Pick<Doc, 'scope' | 'subject'>): string {
     : `unchecked: canon validation requires the ${PLATFORM_NAME} source checkout`
 }
 
-export async function findingsForPack(pack: Pack): Promise<{ doc: PackDoc; findings: Finding[] }[]> {
-  return Promise.all(pack.docs.map(async (packed) => {
-    const doc = await getDocForPack(packed)
-    const root = repoRootForDoc(doc)
-    const findings = root
-      ? checkDoc(doc.body, { repoRoot: root })
-      : [
-          {
-            kind: 'unchecked' as const,
-            token: doc.subject ?? '',
-            line: 0,
-            message: uncheckedRootMessage(doc),
-          },
-        ]
-    return { doc: packed, findings }
-  }))
+export async function findingsForPack(
+  pack: Pack,
+): Promise<{ doc: PackDoc; findings: Finding[] }[]> {
+  return Promise.all(
+    pack.docs.map(async (packed) => {
+      const doc = await getDocForPack(packed)
+      const root = repoRootForDoc(doc)
+      const findings = root
+        ? checkDoc(doc.body, { repoRoot: root })
+        : [
+            {
+              kind: 'unchecked' as const,
+              token: doc.subject ?? '',
+              line: 0,
+              message: uncheckedRootMessage(doc),
+            },
+          ]
+      return { doc: packed, findings }
+    }),
+  )
 }
 
 async function getDocForPack(packed: PackDoc): Promise<Doc> {
   const doc = await readDoc(packed.scope, packed.subject, packed.slug)
-  if (!doc) throw new Error(`document ${packed.scope}/${packed.subject ?? '_'}/${packed.slug} is missing`)
+  if (!doc)
+    throw new Error(`document ${packed.scope}/${packed.subject ?? '_'}/${packed.slug} is missing`)
   return doc
 }
 
@@ -675,32 +676,31 @@ export async function diffPack(input: { job: string; cwd: string }): Promise<Pac
 }
 
 export async function allInjectChecks(): Promise<{ doc: PackDoc; findings: Finding[] }[]> {
-  return (await readDocs({ delivery: 'inject' }))
-    .map((doc) => {
-      const revisionId = doc.revision ?? ''
-      const packed = {
-        revisionId,
-        scope: doc.scope,
-        subject: doc.subject,
-        slug: doc.slug,
-        title: doc.title,
-        bytes: Buffer.byteLength(renderPackDocSection(doc)),
-      }
-      const root = repoRootForDoc(doc)
-      return {
-        doc: packed,
-        findings: root
-          ? checkDoc(doc.body, { repoRoot: root })
-          : [
-              {
-                kind: 'unchecked',
-                token: doc.subject ?? '',
-                line: 0,
-                message: uncheckedRootMessage(doc),
-              },
-            ],
-      }
-    })
+  return (await readDocs({ delivery: 'inject' })).map((doc) => {
+    const revisionId = doc.revision ?? ''
+    const packed = {
+      revisionId,
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      title: doc.title,
+      bytes: Buffer.byteLength(renderPackDocSection(doc)),
+    }
+    const root = repoRootForDoc(doc)
+    return {
+      doc: packed,
+      findings: root
+        ? checkDoc(doc.body, { repoRoot: root })
+        : [
+            {
+              kind: 'unchecked',
+              token: doc.subject ?? '',
+              line: 0,
+              message: uncheckedRootMessage(doc),
+            },
+          ],
+    }
+  })
 }
 
 export async function storedPackDrift(): Promise<PackDiff[]> {
@@ -709,21 +709,23 @@ export async function storedPackDrift(): Promise<PackDiff[]> {
     project: string | null
   }[]
   const seen = new Set<string>()
-  const diffs = await Promise.all(rows.map(async (row) => {
-    if (!JOBS[row.job]) return []
-    const cwd = row.project ? projectByName(row.project)?.path : canonCheckoutRoot()
-    if (!cwd) return []
-    try {
-      const diff = await diffPack({ job: row.job, cwd })
-      const address = JSON.stringify([diff.job, diff.project])
-      if (seen.has(address)) return []
-      seen.add(address)
-      return diff.removed.length || (diff.stored && diff.bytesDelta < -(diff.stored.bytes * 0.25))
-        ? [diff]
-        : []
-    } catch {
-      return []
-    }
-  }))
+  const diffs = await Promise.all(
+    rows.map(async (row) => {
+      if (!JOBS[row.job]) return []
+      const cwd = row.project ? projectByName(row.project)?.path : canonCheckoutRoot()
+      if (!cwd) return []
+      try {
+        const diff = await diffPack({ job: row.job, cwd })
+        const address = JSON.stringify([diff.job, diff.project])
+        if (seen.has(address)) return []
+        seen.add(address)
+        return diff.removed.length || (diff.stored && diff.bytesDelta < -(diff.stored.bytes * 0.25))
+          ? [diff]
+          : []
+      } catch {
+        return []
+      }
+    }),
+  )
   return diffs.flat()
 }

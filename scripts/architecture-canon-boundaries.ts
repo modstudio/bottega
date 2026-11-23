@@ -133,6 +133,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
       'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
@@ -149,6 +150,17 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
 ]
 
 export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-mirror-authoritative-snapshot-boundary',
+    file: `${source}canon-mirror-authoritative-snapshot.ts`,
+    allowed: [
+      `${source}canon-mirror-revisions.ts`,
+      `${source}canon-stored-rows.ts`,
+      'orchestrator/src/review-funnel/review-funnel-policy.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep hosted mirror prefetch outside the synchronous worktree lock.',
+  },
   {
     name: 'canon-mirror-failure-boundary',
     file: `${source}canon-mirror-failure.ts`,
@@ -175,6 +187,7 @@ export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
     file: `${source}canon-mirror-revisions.ts`,
     allowed: [
       'orchestrator/src/database/db.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
       `${source}canon-hydrate.ts`,
       `${source}canon-mirror-revert-guard.ts`,
     ],
@@ -215,6 +228,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       `${source}canon-mirror-failure.ts`,
       `${source}canon-mirror-leftover.ts`,
       `${source}canon-mirror-revisions.ts`,
+      `${source}canon-mirror-authoritative-snapshot.ts`,
       'orchestrator/src/close/close-out.ts',
       'orchestrator/src/close/close-out-preparation.ts',
       'orchestrator/src/close/close-out-questions.ts',
@@ -309,6 +323,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'shared/ratchet.ts',
       'shared/state-directory.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
       'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',

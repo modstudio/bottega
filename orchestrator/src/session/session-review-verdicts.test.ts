@@ -154,7 +154,9 @@ test("a cursor uses only this session's latest writing run for its own key", asy
     },
   }
 
-  expect(await sessionReviewVerdictLines('session', [cursor('DEV-2')], database, options)).toEqual([])
+  expect(await sessionReviewVerdictLines('session', [cursor('DEV-2')], database, options)).toEqual(
+    [],
+  )
   expect(gathered).toEqual([])
   expect(await sessionReviewVerdictLines('session', [cursor('DEV-1')], database, options)).toEqual([
     `DEV-1: review verdict unavailable (gathered) → ${PLATFORM_SLUG} review tier DEV-1`,

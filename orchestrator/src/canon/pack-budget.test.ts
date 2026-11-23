@@ -133,7 +133,8 @@ describe('canon pack budget', () => {
       body: 'Valid content. '.repeat(150),
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = (await compilePack({ job: 'file-question', cwd: dir })).bytes + 5_000
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 5_000
     try {
       await expect(
         setDoc({
@@ -160,7 +161,8 @@ describe('canon pack budget', () => {
       settings: { trunk: 'main' },
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
     try {
       await expect(
         setDoc({
@@ -188,7 +190,8 @@ describe('canon pack budget', () => {
       settings: { trunk: 'main' },
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
     try {
       await expect(
         setDoc({
