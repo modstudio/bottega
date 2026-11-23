@@ -178,7 +178,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
   printShownTask(shown)
 }
 
-function printShownTask(shown: Awaited<ReturnType<typeof showTask>>): void {
+export function printShownTask(shown: Awaited<ReturnType<typeof showTask>>): void {
   printTaskRow(shown.task)
   if (shown.task.revision !== undefined) console.log(`revision: ${shown.task.revision}`)
   if (shown.task.retired_reason) console.log(`retired: ${shown.task.retired_reason}`)
@@ -197,6 +197,12 @@ function printShownTask(shown: Awaited<ReturnType<typeof showTask>>): void {
     console.log(
       `\n${comment.id}  ${comment.created_at}  ${comment.actor_name ?? 'unknown'}${comment.revision === undefined ? '' : `  revision ${comment.revision}`}\n${comment.body}`,
     )
+}
+
+export function printShownTaskDocument(item: Awaited<ReturnType<typeof getTaskDocument>>): void {
+  console.log(`${item.label}  ${item.task_key}${item.role ? ` [${item.role}]` : ''}  ${item.title}`)
+  console.log(`version: ${item.version}`)
+  if (item.body) console.log(`\n${item.body}`)
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
@@ -538,13 +544,7 @@ function registerTaskDocumentReadCommands(document: Command): void {
       const options = taskOptions(command)
       const item = await getTaskDocument(reference, { project: options.project })
       if (options.json) console.log(JSON.stringify(item))
-      else {
-        console.log(
-          `${item.label}  ${item.task_key}${item.role ? ` [${item.role}]` : ''}  ${item.title}`,
-        )
-        console.log(`version: ${item.version}`)
-        if (item.body) console.log(`\n${item.body}`)
-      }
+      else printShownTaskDocument(item)
     })
 }
 

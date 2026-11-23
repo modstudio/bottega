@@ -2,7 +2,9 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 export const cliConcernEntries = [
   'hub/src/cli.ts',
+  'hub/src/task-cli.ts',
   'orchestrator/src/ask/ask-proxy.ts',
+  'orchestrator/src/ask/worker-record-read-client.ts',
   'orchestrator/src/check/check-attribution.ts',
   'orchestrator/src/check/check-strict-schema.ts',
   'orchestrator/src/cli/orch.ts',
@@ -19,6 +21,16 @@ export const cliModules = [
       'shared/install-root.ts',
       'cli/dispatch.ts',
       'cli/task-read-adapter.ts',
+      'cli/worker-record-read.ts',
+    ],
+  },
+  {
+    file: 'cli/worker-record-read.ts',
+    allowed: [
+      'hub/src/task-cli.ts',
+      'orchestrator/src/ask/worker-record-read-client.ts',
+      'shared/brand.ts',
+      'shared/caller-classification.ts',
     ],
   },
   {
