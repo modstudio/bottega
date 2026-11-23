@@ -15,7 +15,7 @@ import {
 } from '../question-store/question-store.ts'
 import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
 import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
-import { readRecordInstallBinding } from './install-binding.ts'
+import { storeHasAttachedToHostedRecord } from './install-binding.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import {
@@ -822,7 +822,7 @@ export async function uploadMissingWorkflowHistory(
 ): Promise<HistorySyncResult> {
   const resolveDestination = destinationFor ?? recordWriteDestination
   return withDatabase(async (database) => {
-    if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [], skipped: false }
+    if (!storeHasAttachedToHostedRecord(database)) return { failed: 0, lines: [], skipped: false }
     if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
       return {
         failed: 0,

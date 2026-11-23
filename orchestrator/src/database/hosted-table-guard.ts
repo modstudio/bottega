@@ -90,13 +90,13 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
     pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
     reason:
-      'Workflow record-cache SQL is selected only on local installs by readRecordInstallBinding(local).bound',
+      'Workflow record-cache SQL is selected only when hostedRecordOwnsHostedTables(local) is false',
     expectedSites: 1,
   },
   {
     pattern: /^orchestrator\/src\/session-report\/session-report-adapter\.ts$/,
     reason:
-      'Workflow-cursor report SQL is selected only on local installs by currentRecordWriteDecision(database).verdict',
+      'Workflow-cursor report SQL is selected only when hostedRecordOwnsHostedTables(database) is false',
     expectedSites: 1,
   },
   {

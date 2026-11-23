@@ -7,6 +7,7 @@ import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
 import {
   checkHostedLocalSql,
   hostedLocalRenderedSqlRisk,
+  hostedLocalSqlSelectorFailures,
   hostedLocalSqlViolations,
 } from './check-hosted-local-sql.ts'
 import {
@@ -75,6 +76,54 @@ test('hosted-only SQL in a declared local file passes', () => {
     }),
   ).toEqual([])
 })
+
+test.each([
+  'readRecordInstallBinding(database).bound is false',
+  'record_install_binding has no row',
+  'storeHasAttachedToHostedRecord(database) is false',
+])('a hosted-only SQL exemption cannot cite attachment state: %s', (reason) => {
+  expect(
+    hostedLocalSqlViolations({
+      sites: [site('orchestrator/src/run/unsafe.ts')],
+      tables: ['question'],
+      allowedFiles: [{ pattern: /unsafe\.ts$/, reason }],
+      stateClasses: [hostedQuestion],
+    }),
+  ).toEqual([expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead')])
+})
+
+test.each([
+  {
+    name: 'an attachment predicate',
+    source: 'storeHasAttachedToHostedRecord(database)',
+    expectedFailure: 'select local SQL with hostedRecordOwnsHostedTables instead',
+  },
+  {
+    name: 'no ownership predicate',
+    source: 'selectLocalWorkflowStore(database)',
+    expectedFailure: 'the file does not call it',
+  },
+  {
+    name: 'the ownership predicate',
+    source: 'hostedRecordOwnsHostedTables(database)',
+    expectedFailure: null,
+  },
+])(
+  'an answer-A exemption with $name is checked against its source',
+  ({ source, expectedFailure }) => {
+    const file = 'orchestrator/src/run/selector.ts'
+    const root = temporaryProductionFile(file, source)
+    const failures = hostedLocalSqlSelectorFailures(root, [
+      {
+        pattern: /^orchestrator\/src\/run\/selector\.ts$/,
+        reason: 'Local SQL runs when hostedRecordOwnsHostedTables(database) is false',
+      },
+    ])
+    expect(failures).toEqual(
+      expectedFailure === null ? [] : [expect.stringContaining(expectedFailure)],
+    )
+  },
+)
 
 test('a guarded table not declared hosted fails', () => {
   expect(

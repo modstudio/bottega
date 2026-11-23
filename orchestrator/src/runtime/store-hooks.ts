@@ -7,7 +7,7 @@ import {
 } from '../database/hosted-table-guard.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import { backfillReviewRounds } from '../review/review-round-backfill.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
@@ -19,10 +19,10 @@ const reapStaleRuns = (database: Parameters<typeof reapStale>[0]) =>
   reapStale(database, terminalSharedGitConfigForRecordedRun)
 
 function shouldGuardHostedTables(
-  verdict: 'hosted' | 'local-authoritative' | 'refused',
+  hostedRecordOwnsTables: boolean,
   tables: readonly string[],
 ): boolean {
-  return verdict === 'hosted' && tables.length > 0
+  return hostedRecordOwnsTables && tables.length > 0
 }
 
 const accessedHandles = new WeakMap<
@@ -34,7 +34,7 @@ function standardStoreAccess(database: Parameters<NonNullable<OpenHooks['access'
   const cached = accessedHandles.get(database)
   if (cached) return cached
   const accessed = shouldGuardHostedTables(
-    currentRecordWriteDecision(database).verdict,
+    hostedRecordOwnsHostedTables(database),
     HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
   )
     ? guardHostedTables(database)

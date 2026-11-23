@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
-import { readRecordInstallBinding } from '../record/install-binding.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
   readHeldFlowIds,
@@ -253,7 +253,7 @@ export async function releaseHostedRowsAfterUpdate(
 ): Promise<void> {
   const withDatabase = deps.withDatabase ?? withSynchronousDatabaseForMigrationStep
   const state = withDatabase((database) =>
-    readRecordInstallBinding(database).bound ? collectHostedRowState(database) : null,
+    storeHasAttachedToHostedRecord(database) ? collectHostedRowState(database) : null,
   )
   if (!state || hostedRowIdsAreEmpty(state.ids)) return
   let present: HostedRowPresence

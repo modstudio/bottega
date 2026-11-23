@@ -1000,6 +1000,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-id.ts',
       '../database/db.ts',
       '../review/review-vocabulary.ts',
+      '../record/install-binding.ts',
       './step-catalogue.ts',
       './workflow-step-sequences.ts',
       './workflow-built-ins.ts',

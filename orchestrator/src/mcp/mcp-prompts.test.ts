@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -64,6 +64,25 @@ describe('MCP workflow space', () => {
 })
 
 describe('workflow prompt definitions', () => {
+  describe('with a configured record URL and no install binding', () => {
+    let previousUrl: string | undefined
+
+    beforeAll(() => {
+      previousUrl = process.env.BOTTEGA_RECORD_API_URL
+      process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    })
+
+    afterAll(() => {
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+    })
+
+    test('a configured record URL without an install binding still builds local workflow prompts', () => {
+      expect(db().query('SELECT 1 FROM record_install_binding WHERE id=1').get()).toBeNull()
+      expect(() => createDocsMcpServer()).not.toThrow()
+    })
+  })
+
   test('declared-argument and mode-list mutation: retains every argument and mode, naming the required ones', () => {
     const [prompt] = workflowPromptDefinitions([
       workflow('ship-task', [
