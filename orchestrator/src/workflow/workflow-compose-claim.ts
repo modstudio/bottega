@@ -10,8 +10,6 @@ import {
   taskClaimFollowWarning,
 } from './workflow-task-claim.ts'
 
-export { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
-
 export async function followComposeTaskClaim(
   row: SelectableCursorRow,
   reused: boolean,

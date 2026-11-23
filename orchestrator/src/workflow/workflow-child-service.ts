@@ -14,7 +14,7 @@ import {
   selectChildToStart,
   sessionWorksUnderEpic,
 } from './workflow-child-queue.ts'
-import { abandonCursorAfterClaimFailure } from './workflow-compose-claim.ts'
+import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import {
