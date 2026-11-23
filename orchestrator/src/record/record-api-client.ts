@@ -299,6 +299,7 @@ export type RecordApiClient = ProjectIdentityClient &
         owner?: string | null
         audience?: DocAudience
         status?: DocStatus
+        delivery?: DocDelivery
         updatedSince?: string
         limit?: number
         cursor?: string | null
@@ -838,6 +839,7 @@ const recordDocReadClient = (
     if (query.owner !== undefined) search.set('owner', query.owner ?? '')
     if (query.audience) search.set('audience', query.audience)
     if (query.status) search.set('status', query.status)
+    if (query.delivery) search.set('delivery', query.delivery)
     if (query.kind) search.set('kind', query.kind)
     if (query.updatedSince) search.set('updatedSince', query.updatedSince)
     if (query.limit) search.set('limit', String(query.limit))

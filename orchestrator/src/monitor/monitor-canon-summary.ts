@@ -3,8 +3,8 @@
 
 import { allInjectChecks } from '../canon/canon.ts'
 
-export function monitorCanonSummary(): { findings: number; docs: number } {
-  const rows = allInjectChecks()
+export async function monitorCanonSummary(): Promise<{ findings: number; docs: number }> {
+  const rows = await allInjectChecks()
   return {
     findings: rows.reduce(
       (count, row) => count + row.findings.filter((finding) => finding.kind !== 'unchecked').length,

@@ -51,8 +51,8 @@ function putCanon(
     .run(newRecordId(), recordId, subject, projectRecordId, slug, slug, body, status, AT)
 }
 
-function operatorPack(cwd: string): string {
-  return docsMarkdown(docsForRun({ job: 'understand', cwd }))
+async function operatorPack(cwd: string): Promise<string> {
+  return docsMarkdown(await docsForRun({ job: 'understand', cwd }))
 }
 
 async function putOperator(body: string): Promise<void> {
@@ -60,7 +60,7 @@ async function putOperator(body: string): Promise<void> {
 }
 
 describe('worker pack canon', () => {
-  test('ignores checkout-backed stored rows in a distribution', () => {
+  test('ignores checkout-backed stored rows in a distribution', async () => {
     registerEmbeddedAssets({
       assets: {},
       files: {},
@@ -79,10 +79,10 @@ describe('worker pack canon', () => {
       )
       .run(newRecordId(), 'understand', null, null, 'global', 1, 0, '[]', AT)
 
-    expect(storedPackDrift()).toEqual([])
+    expect(await storedPackDrift()).toEqual([])
   })
 
-  test('draft canon is absent from a compiled pack', () => {
+  test('draft canon is absent from a compiled pack', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'pack-draft-canon',
@@ -91,12 +91,12 @@ describe('worker pack canon', () => {
     })
     putCanon('pack-draft-canon', 'AGENTS.md', 'CURRENT-CANON-UNIQUE\n')
     putCanon('pack-draft-canon', '.agents/rules/draft.md', 'DRAFT-CANON-UNIQUE\n', 'draft')
-    const markdown = compilePack({ job: 'understand', cwd: repositoryPath }).markdown
+    const markdown = (await compilePack({ job: 'understand', cwd: repositoryPath })).markdown
     expect(markdown).toContain('CURRENT-CANON-UNIQUE')
     expect(markdown).not.toContain('DRAFT-CANON-UNIQUE')
   })
 
-  test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
+  test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, async () => {
     const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
     upsertProject({
       recordId: newRecordId(),
@@ -127,7 +127,7 @@ describe('worker pack canon', () => {
     insert.run(newRecordId(), 'review-lens', null, null, 'global', 1, 1, docs, AT)
     insert.run(newRecordId(), 'review-lens', PLATFORM_SLUG, projectId, 'project', 1, 1, docs, AT)
 
-    expect(storedPackDrift().map(({ job, project }) => [job, project])).toEqual([
+    expect((await storedPackDrift()).map(({ job, project }) => [job, project])).toEqual([
       ['review-lens', PLATFORM_SLUG],
     ])
   })
@@ -146,7 +146,7 @@ describe('worker pack canon', () => {
       '.agents/rules/alpha.md',
       '---\ndescription: A rule\n---\nRULE-BODY-UNIQUE\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
+    const pack = await compilePack({ job: 'understand', cwd: repositoryPath })
     expect(pack.markdown.indexOf('ENTRY-BODY-UNIQUE')).toBeGreaterThanOrEqual(0)
     expect(pack.markdown.indexOf('RULE-BODY-UNIQUE')).toBeGreaterThan(
       pack.markdown.indexOf('ENTRY-BODY-UNIQUE'),
@@ -170,7 +170,7 @@ describe('worker pack canon', () => {
       '.agents/rules/project.md',
       '---\ndescription: Project\n---\nPROJECT-RULE-UNIQUE\n',
     )
-    const markdown = compilePack({ job: 'understand', cwd: repositoryPath }).markdown
+    const markdown = (await compilePack({ job: 'understand', cwd: repositoryPath })).markdown
     expect(markdown.indexOf('GLOBAL-RULE-UNIQUE')).toBeLessThan(
       markdown.indexOf('PROJECT-RULE-UNIQUE'),
     )
@@ -189,7 +189,7 @@ describe('worker pack canon', () => {
       '.agents/contexts/api.md',
       '---\ndescription: API surface\npaths:\n  - src/**\n  - tests/**\n---\nCONTEXT-BODY-MUST-NOT-APPEAR\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
+    const pack = await compilePack({ job: 'understand', cwd: repositoryPath })
     expect(pack.markdown).toContain('## Path-scoped contexts')
     expect(pack.markdown).toContain(
       'Read the context file in your worktree before editing a path it governs.',
@@ -214,8 +214,8 @@ describe('worker pack canon', () => {
       'hub/AGENTS.md',
       '## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\nCARD-BODY-MUST-NOT-APPEAR\n',
     )
-    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
-    expect(pack.markdown).toBe(operatorPack(repositoryPath))
+    const pack = await compilePack({ job: 'understand', cwd: repositoryPath })
+    expect(pack.markdown).toBe(await operatorPack(repositoryPath))
     expect(pack.markdown).not.toContain('CARD-BODY-MUST-NOT-APPEAR')
     expect(pack.canonBytes).toBe(0)
     expect(pack.docBytes).toBe(pack.bytes)
@@ -230,16 +230,16 @@ describe('worker pack canon', () => {
     })
     await putOperator('text')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)
-    const measured = compilePack({ job: 'understand', cwd: repositoryPath })
+    const measured = await compilePack({ job: 'understand', cwd: repositoryPath })
     const old = JOBS.understand!.packBytes
     JOBS.understand!.packBytes = measured.bytes - 1
     try {
-      expect(() => compilePack({ job: 'understand', cwd: repositoryPath })).toThrow(
+      await expect(compilePack({ job: 'understand', cwd: repositoryPath })).rejects.toThrow(
         CanonBudgetError,
       )
       let message = ''
       try {
-        compilePack({ job: 'understand', cwd: repositoryPath })
+        await compilePack({ job: 'understand', cwd: repositoryPath })
       } catch (error) {
         message = (error as Error).message
       }
@@ -268,8 +268,8 @@ describe('worker pack canon', () => {
       title: 'Injected',
       body: 'today',
     })
-    const pack = compilePack({ job: 'understand', cwd: repositoryPath })
-    const today = operatorPack(repositoryPath)
+    const pack = await compilePack({ job: 'understand', cwd: repositoryPath })
+    const today = await operatorPack(repositoryPath)
     expect(pack.markdown).toBe(today)
     expect(pack.bytes).toBe(Buffer.byteLength(today))
     expect(pack.canonBytes).toBe(0)

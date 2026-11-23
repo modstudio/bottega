@@ -30,8 +30,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
   return {
     name: 'doc-local-read-store-authority',
     severity: 'error' as const,
-    comment:
-      'Hosted-capable document reads reach local stores only through the authority adapter. DEV-2584 PR 2: canon and revision-id reads are temporary exceptions.',
+    comment: 'Hosted-capable document reads reach local stores only through the authority adapter.',
     from: {
       path: '^orchestrator/src/',
       pathNot: [
@@ -65,7 +64,7 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/doc-revision-store.ts',
         // search out of scope (note 01a20248)
         'orchestrator/src/doc/doc-search-service.ts',
-        // Local-install document branches and synchronous pack compilation.
+        // Local-install document branches.
         'orchestrator/src/doc/docs.ts',
         // Write path: local lifecycle validation checks replacement rows.
         'orchestrator/src/doc/local-doc-status.ts',
@@ -77,26 +76,12 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/resume-brief-author.ts',
         // Write path: derives the identity attached to a local revision mutation.
         'orchestrator/src/doc/doc-write-identity.ts',
-        // PR 2: gate facts compile the local canon/injection pack synchronously.
-        'orchestrator/src/gate/gate-facts.ts',
         // Write path: ruling filing reads the revision written in the same operation.
         'orchestrator/src/commands/rulings.ts',
         // Write path: ruling filing reads the revision written in the same operation.
         'orchestrator/src/mcp/mcp-operator-tools.ts',
-        // PR 2: review admission reads the policy snapshot synchronously
-        'orchestrator/src/review-funnel/review-funnel-policy.ts',
         // Write path: machine apply reads the local rows it materializes.
         'orchestrator/src/settings/settings-machine-apply.ts',
-        // PR 2: canon commands remain synchronous and local.
-        'orchestrator/src/canon/canon-commands.ts',
-        // PR 2: canon pack compilation remains synchronous and local.
-        'orchestrator/src/canon/canon-stored-rows.ts',
-        // PR 2: canon pack compile/hydrate/list/check/diff/evals remain local.
-        'orchestrator/src/canon/canon.ts',
-        // PR 2: user canon hydrate/list/check/diff remains local.
-        'orchestrator/src/canon/user-canon-commands.ts',
-        // PR 2: get_doc_revision remains local until revision-id lookup exists.
-        'orchestrator/src/mcp/mcp-doc-tools.ts',
       ].map(exact),
     },
     to: {

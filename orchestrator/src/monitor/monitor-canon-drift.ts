@@ -59,15 +59,15 @@ export function canonDriftCondition(
 }
 
 /** Read one managed project's landed ref and canon store, returning visible observation failures. */
-export function observeProjectCanonDrift(
+export async function observeProjectCanonDrift(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
-): MonitorCondition[] {
+): Promise<MonitorCondition[]> {
   if (project.settings.managedContext !== true) return []
   try {
     const trunk = project.settings.trunk?.trim()
     if (!trunk) throw new Error('registered project has no landing branch in settings.trunk')
     const landed = collectCanonTreeAtRef(project.path, `origin/${trunk}`)
-    const rows = storedRepositoryCanonRows(project.name)
+    const rows = await storedRepositoryCanonRows(project.name)
     const plan = planHydration({ rows, tree: landed.tree })
     const condition = canonDriftCondition(project, {
       ref: landed.ref,

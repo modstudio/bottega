@@ -85,13 +85,13 @@ describe('canon pack budget', () => {
       body: 's',
     })
     const old = JOBS.understand!.packBytes
-    const measured = compilePack({ job: 'understand', cwd: dir })
+    const measured = await compilePack({ job: 'understand', cwd: dir })
     JOBS.understand!.packBytes = measured.bytes - 1
     try {
-      expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
+      await expect(compilePack({ job: 'understand', cwd: dir })).rejects.toThrow(CanonBudgetError)
       let message = ''
       try {
-        compilePack({ job: 'understand', cwd: dir })
+        await compilePack({ job: 'understand', cwd: dir })
       } catch (error) {
         message = (error as Error).message
       }
@@ -102,7 +102,7 @@ describe('canon pack budget', () => {
     } finally {
       JOBS.understand!.packBytes = measured.bytes
     }
-    expect(() => compilePack({ job: 'understand', cwd: dir })).not.toThrow()
+    await expect(compilePack({ job: 'understand', cwd: dir })).resolves.toBeDefined()
     JOBS.understand!.packBytes = old
   })
 
@@ -133,7 +133,8 @@ describe('canon pack budget', () => {
       body: 'Valid content. '.repeat(150),
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 5_000
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 5_000
     try {
       await expect(
         setDoc({
@@ -160,7 +161,8 @@ describe('canon pack budget', () => {
       settings: { trunk: 'main' },
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 20
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
     try {
       await expect(
         setDoc({
@@ -188,7 +190,8 @@ describe('canon pack budget', () => {
       settings: { trunk: 'main' },
     })
     const old = JOBS['file-question']!.packBytes
-    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 20
+    JOBS['file-question']!.packBytes =
+      (await compilePack({ job: 'file-question', cwd: dir })).bytes + 20
     try {
       await expect(
         setDoc({

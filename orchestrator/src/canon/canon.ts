@@ -11,8 +11,8 @@ import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
-import type { Doc } from '../doc/doc-read-store.ts'
-import { listDocsStore as listDocs } from '../doc/doc-read-store.ts'
+import type { Doc } from '../doc/doc-authoritative-read.ts'
+import { readDoc, readDocs } from '../doc/doc-authoritative-read.ts'
 import { docsForRun } from '../doc/docs.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
@@ -295,12 +295,12 @@ export class CanonBudgetError extends Error {
   }
 }
 
-function packedCanonMarkdown(projectName: string | null) {
-  return packedCanonMarkdownFromRows(
-    projectName,
-    listDocs({ scope: 'canon', subject: null, status: 'current' }),
-    listDocs({ scope: 'canon', subject: projectName, status: 'current' }),
-  )
+async function packedCanonMarkdown(projectName: string | null) {
+  const [globalRows, projectRows] = await Promise.all([
+    readDocs({ scope: 'canon', subject: null, status: 'current' }),
+    readDocs({ scope: 'canon', subject: projectName, status: 'current' }),
+  ])
+  return packedCanonMarkdownFromRows(projectName, globalRows, projectRows)
 }
 
 type PackInputDoc = {
@@ -348,22 +348,20 @@ function assemblePack(input: {
   return pack
 }
 
-function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
+async function buildPack(job: string, cwd: string, budgetBytes: number): Promise<Pack> {
   const project = projectAt(cwd)
-  const selected = docsForRun({ job, cwd })
-  const latest = db().query(
-    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
-  )
+  const [selected, canon] = await Promise.all([
+    docsForRun({ job, cwd }),
+    packedCanonMarkdown(project?.name ?? null),
+  ])
   const withRevisions = selected.map((doc: Doc & { revision_id?: string }) => {
-    const revisionId =
-      doc.revision_id ?? (latest.get(doc.record_id) as { record_id: string } | null)?.record_id
+    const revisionId = doc.revision_id ?? doc.revision
     if (revisionId == null)
       throw new Error(
         `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing canon`,
       )
     return { doc, revisionId }
   })
-  const canon = packedCanonMarkdown(project?.name ?? null)
   return assemblePack({
     job,
     projectName: project?.name ?? null,
@@ -373,7 +371,7 @@ function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
   })
 }
 
-export function compilePack(input: { job: string; cwd: string }): Pack {
+export function compilePack(input: { job: string; cwd: string }): Promise<Pack> {
   const selected = getJob(input.job)
   return buildPack(input.job, input.cwd, selected.packBytes ?? DEFAULT_PACK_BYTES)
 }
@@ -563,33 +561,38 @@ function uncheckedRootMessage(doc: Pick<Doc, 'scope' | 'subject'>): string {
     : `unchecked: canon validation requires the ${PLATFORM_NAME} source checkout`
 }
 
-export function findingsForPack(pack: Pack): { doc: PackDoc; findings: Finding[] }[] {
-  return pack.docs.map((packed) => {
-    const doc = getDocForPack(packed)
-    const root = repoRootForDoc(doc)
-    const findings = root
-      ? checkDoc(doc.body, { repoRoot: root })
-      : [
-          {
-            kind: 'unchecked' as const,
-            token: doc.subject ?? '',
-            line: 0,
-            message: uncheckedRootMessage(doc),
-          },
-        ]
-    return { doc: packed, findings }
-  })
+export async function findingsForPack(
+  pack: Pack,
+): Promise<{ doc: PackDoc; findings: Finding[] }[]> {
+  return Promise.all(
+    pack.docs.map(async (packed) => {
+      const doc = await getDocForPack(packed)
+      const root = repoRootForDoc(doc)
+      const findings = root
+        ? checkDoc(doc.body, { repoRoot: root })
+        : [
+            {
+              kind: 'unchecked' as const,
+              token: doc.subject ?? '',
+              line: 0,
+              message: uncheckedRootMessage(doc),
+            },
+          ]
+      return { doc: packed, findings }
+    }),
+  )
 }
 
-function getDocForPack(packed: PackDoc): Doc {
-  return db()
-    .query('SELECT * FROM doc WHERE scope=? AND subject IS ? AND owner IS NULL AND slug=?')
-    .get(packed.scope, packed.subject, packed.slug) as Doc
+async function getDocForPack(packed: PackDoc): Promise<Doc> {
+  const doc = await readDoc(packed.scope, packed.subject, packed.slug)
+  if (!doc)
+    throw new Error(`document ${packed.scope}/${packed.subject ?? '_'}/${packed.slug} is missing`)
+  return doc
 }
 
-export function recordPack(pack: Pack): void {
+export async function recordPack(pack: Pack): Promise<void> {
   if (storeWritesRefused()) return
-  const findings = findingsForPack(pack).reduce((sum, row) => sum + row.findings.length, 0)
+  const findings = (await findingsForPack(pack)).reduce((sum, row) => sum + row.findings.length, 0)
   const projectId = pack.project ? (projectByName(pack.project)?.recordId ?? null) : null
   writeTransaction(() => {
     db()
@@ -628,7 +631,7 @@ export type PackDiff = {
 }
 
 /** Store the pack the diff compiled as the new snapshot; null when it matches the stored one. */
-export function acceptPackDiff(diff: PackDiff): Pack | null {
+export async function acceptPackDiff(diff: PackDiff): Promise<Pack | null> {
   if (diff.stored?.sha256 === diff.current.sha256) return null
   if (storeWritesRefused()) {
     throw new Error(
@@ -637,12 +640,12 @@ export function acceptPackDiff(diff: PackDiff): Pack | null {
         `cleared by: run this command as an operator from the main checkout with bin/${PLATFORM_SLUG}; a worker reports the change in its reply for the architect to accept`,
     )
   }
-  recordPack(diff.current)
+  await recordPack(diff.current)
   return diff.current
 }
 
-export function diffPack(input: { job: string; cwd: string }): PackDiff {
-  const current = compilePack(input)
+export async function diffPack(input: { job: string; cwd: string }): Promise<PackDiff> {
+  const current = await compilePack(input)
   const projectId = current.project ? (projectByName(current.project)?.recordId ?? null) : null
   const row = db()
     .query('SELECT * FROM canon_pack WHERE job=? AND project_record_id IS ?')
@@ -672,60 +675,57 @@ export function diffPack(input: { job: string; cwd: string }): PackDiff {
   }
 }
 
-export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
-  const latest = db().query(
-    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
-  )
-  return listDocs()
-    .filter((doc) => doc.delivery === 'inject')
-    .map((doc) => {
-      const revisionId =
-        (latest.get(doc.record_id) as { record_id: string } | null)?.record_id ?? ''
-      const packed = {
-        revisionId,
-        scope: doc.scope,
-        subject: doc.subject,
-        slug: doc.slug,
-        title: doc.title,
-        bytes: Buffer.byteLength(renderPackDocSection(doc)),
-      }
-      const root = repoRootForDoc(doc)
-      return {
-        doc: packed,
-        findings: root
-          ? checkDoc(doc.body, { repoRoot: root })
-          : [
-              {
-                kind: 'unchecked',
-                token: doc.subject ?? '',
-                line: 0,
-                message: uncheckedRootMessage(doc),
-              },
-            ],
-      }
-    })
+export async function allInjectChecks(): Promise<{ doc: PackDoc; findings: Finding[] }[]> {
+  return (await readDocs({ delivery: 'inject' })).map((doc) => {
+    const revisionId = doc.revision ?? ''
+    const packed = {
+      revisionId,
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      title: doc.title,
+      bytes: Buffer.byteLength(renderPackDocSection(doc)),
+    }
+    const root = repoRootForDoc(doc)
+    return {
+      doc: packed,
+      findings: root
+        ? checkDoc(doc.body, { repoRoot: root })
+        : [
+            {
+              kind: 'unchecked',
+              token: doc.subject ?? '',
+              line: 0,
+              message: uncheckedRootMessage(doc),
+            },
+          ],
+    }
+  })
 }
 
-export function storedPackDrift(): PackDiff[] {
+export async function storedPackDrift(): Promise<PackDiff[]> {
   const rows = db().query('SELECT job, project FROM canon_pack ORDER BY job,project').all() as {
     job: string
     project: string | null
   }[]
   const seen = new Set<string>()
-  return rows.flatMap((row) => {
-    if (!JOBS[row.job]) return []
-    const cwd = row.project ? projectByName(row.project)?.path : canonCheckoutRoot()
-    if (!cwd) return []
-    try {
-      const diff = diffPack({ job: row.job, cwd })
-      const address = JSON.stringify([diff.job, diff.project])
-      if (seen.has(address)) return []
-      seen.add(address)
-      return diff.removed.length || (diff.stored && diff.bytesDelta < -(diff.stored.bytes * 0.25))
-        ? [diff]
-        : []
-    } catch {
-      return []
-    }
-  })
+  const diffs = await Promise.all(
+    rows.map(async (row) => {
+      if (!JOBS[row.job]) return []
+      const cwd = row.project ? projectByName(row.project)?.path : canonCheckoutRoot()
+      if (!cwd) return []
+      try {
+        const diff = await diffPack({ job: row.job, cwd })
+        const address = JSON.stringify([diff.job, diff.project])
+        if (seen.has(address)) return []
+        seen.add(address)
+        return diff.removed.length || (diff.stored && diff.bytesDelta < -(diff.stored.bytes * 0.25))
+          ? [diff]
+          : []
+      } catch {
+        return []
+      }
+    }),
+  )
+  return diffs.flat()
 }

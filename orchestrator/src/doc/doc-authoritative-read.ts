@@ -1,12 +1,20 @@
 // concern: authoritative-document-read
 /** Routes operator document reads to their authoritative store. */
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
+import { projectByRecordId } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
-import { hostedDocClient, listAllHostedDocs } from './doc-hosted-client.ts'
+import {
+  hostedDocClient,
+  isMissingHostedDoc,
+  listAllHostedDocs,
+  readHostedDocReference,
+} from './doc-hosted-client.ts'
 import {
   type HostedDocRevision,
   hostedDocRevisionRead,
@@ -35,6 +43,63 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+
+export type ResolvedDocReference = {
+  recordId: string
+  scope: string
+  subject: string | null
+  slug: string
+  projectName: string | null
+  address: string
+  updatedAt: string
+}
+
+function resolvedReference(row: Doc | HostedRow, projectName: string | null): ResolvedDocReference {
+  const hosted = 'id' in row
+  const scope = String(row.scope)
+  const subject = row.subject == null ? null : String(row.subject)
+  const slug = String(row.slug)
+  return {
+    recordId: String(hosted ? row.id : row.record_id),
+    scope,
+    subject,
+    slug,
+    projectName,
+    address: `${scope}/${subject ?? '_'}/${slug}`,
+    updatedAt: String(hosted ? row.updatedAt : row.updated_at),
+  }
+}
+
+export function readDocReference(
+  value: string,
+  database: Database,
+): Promise<ResolvedDocReference | null> {
+  return applyRecordReadAuthority(
+    {
+      local: () => {
+        const rows = listDocsStore({}, database)
+        const row = hasRecordIdShape(value)
+          ? rows.find(({ record_id }) => record_id === value)
+          : rows.find(({ scope, subject, slug }) => `${scope}/${subject ?? '_'}/${slug}` === value)
+        const projectName = row?.project_record_id
+          ? (projectByRecordId(row.project_record_id, database)?.name ?? null)
+          : null
+        return row ? resolvedReference(row, projectName) : null
+      },
+      hosted: () =>
+        withReadRemedy(async () => {
+          try {
+            const row = await readHostedDocReference(value)
+            return resolvedReference(row, row.projectName == null ? null : String(row.projectName))
+          } catch (cause) {
+            if (isMissingHostedDoc(cause)) return null
+            throw cause
+          }
+        }),
+    },
+    database,
+  )
+}
 
 function resolvedFilters(filters: DocListFilters): DocListFilters {
   if (filters.articleSubject === undefined) return filters
@@ -89,6 +154,7 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     owner: filters.owner,
     audience: filters.audience as DocAudience | undefined,
     status: filters.status as Doc['status'] | undefined,
+    delivery: filters.delivery,
     kind: filters.kind as Doc['kind'] | undefined,
     acrossReadableSpaces:
       filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
@@ -106,7 +172,8 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
   const hasArticleSubject = (subject: Doc['articleSubject']) =>
     subject?.id === filters.articleSubject || subject?.name === filters.articleSubject
   return rows
-    .filter((doc) => filters.owner === undefined || doc.owner === filters.owner)
+    .filter((doc) => doc.owner === (filters.owner ?? null))
+    .filter((doc) => !filters.delivery || doc.delivery === filters.delivery)
     .filter((doc) => !filters.scopes || filters.scopes.includes(doc.scope))
     .filter(
       (doc) =>
@@ -277,7 +344,8 @@ export function readDocRevision(
     hosted: () =>
       withReadRemedy(async () => {
         const revision = await (await hostedDocClient(scope, subject)).getDocRevision(revisionId)
-        return mapHostedDocRevisions([revision])[0] ?? null
+        const mapped = mapHostedDocRevisions([revision])[0] ?? null
+        return mapped?.owner === owner ? mapped : null
       }),
   })
 }

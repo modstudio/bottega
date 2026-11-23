@@ -10,7 +10,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
-import { resolveDocReference } from '../doc/doc-reference-read.ts'
+import { readDocReference } from '../doc/doc-authoritative-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
@@ -450,8 +450,12 @@ export function docAdmissibleAsCursorEvidence(
   )
 }
 
-function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database): string {
-  const row = resolveDocReference(value, d)
+async function resolveDocArtifact(
+  value: string,
+  identity: CursorIdentity,
+  d: Database,
+): Promise<string> {
+  const row = await readDocReference(value, d)
   const flag = `--artifact doc:${value}`
   if (!row)
     throw new Error(
@@ -522,7 +526,7 @@ async function resolveStoredArtifact(
     }
   }
   if (ref.kind === 'doc')
-    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
+    return { ref: `doc:${await resolveDocArtifact(ref.address, identity, d)}`, exists: true }
   const row = d
     .query<{ tip: string }, [string]>('SELECT tip FROM review_read WHERE record_id=?')
     .get(ref.recordId)

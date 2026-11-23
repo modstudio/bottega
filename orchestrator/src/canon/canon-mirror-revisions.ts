@@ -1,7 +1,6 @@
 // concern: canon-mirror-revisions
 /** Reads the revision timestamps needed by the canon mirror's revert guard. */
-import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
+import { readDocRevision, readDocs } from '../doc/doc-authoritative-read.ts'
 import { type HydrationPlan, isGeneratedCanonOutputPath } from './canon-hydrate.ts'
 import { canonMirrorRevertRefusal } from './canon-mirror-revert-guard.ts'
 
@@ -13,30 +12,52 @@ type CanonRevisionRow = {
   status: string
 }
 
-/** Project canon wins over shared canon; revision number decides within that subject. */
-function selectCanonRevisionRow(
-  project: string,
-  path: string,
-  database: Database = db(),
-): CanonRevisionRow | null {
-  return database
-    .query<CanonRevisionRow, [string, string, string]>(
-      `SELECT record_id,op,reason,at,status FROM doc_revision
-       WHERE scope='canon' AND owner IS NULL AND slug=? AND (subject=? OR subject IS NULL)
-       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,number DESC LIMIT 1`,
-    )
-    .get(path, project, project)
+export type CanonMirrorRevisionSnapshot = {
+  project: string
+  projectRows: Map<string, CanonRevisionRow>
+  globalRows: Map<string, CanonRevisionRow>
+  newestAt: string | null
 }
 
-function newestCanonRevisionAt(project: string, database: Database): string | null {
-  const newest = database
-    .query<{ at: string }, [string]>(
-      `SELECT at FROM doc_revision
-       WHERE scope='canon' AND owner IS NULL AND (subject=? OR subject IS NULL)
-       ORDER BY at DESC,number DESC LIMIT 1`,
-    )
-    .get(project)
-  return newest?.at ?? null
+export async function canonMirrorRevisionSnapshot(
+  project: string,
+): Promise<CanonMirrorRevisionSnapshot> {
+  const rows = await readDocs({ scope: 'canon' })
+  const revisions = await Promise.all(
+    rows
+      .filter(({ subject, revision }) => revision && (subject === project || subject === null))
+      .map(async (doc) => ({ doc, revision: await readDocRevision(doc.revision!) })),
+  )
+  const projectRows = new Map<string, CanonRevisionRow>()
+  const globalRows = new Map<string, CanonRevisionRow>()
+  for (const { doc, revision } of revisions) {
+    if (!revision) continue
+    const row = {
+      record_id: revision.record_id,
+      op: revision.op,
+      reason: revision.reason,
+      at: revision.at,
+      status: revision.status,
+    }
+    ;(doc.subject === project ? projectRows : globalRows).set(doc.slug, row)
+  }
+  return {
+    project,
+    projectRows,
+    globalRows,
+    newestAt:
+      [...projectRows.values(), ...globalRows.values()]
+        .map(({ at }) => at)
+        .sort()
+        .at(-1) ?? null,
+  }
+}
+
+function selectCanonRevisionRow(
+  snapshot: CanonMirrorRevisionSnapshot,
+  path: string,
+): CanonRevisionRow | null {
+  return snapshot.projectRows.get(path) ?? snapshot.globalRows.get(path) ?? null
 }
 
 export type MirrorRevision = { path: string; revision: string; op: string; reason: string }
@@ -52,12 +73,11 @@ export function canonMirrorCommitBody(rows: MirrorRevision[]): string {
 }
 
 export function revisionRows(
-  project: string,
+  snapshot: CanonMirrorRevisionSnapshot,
   paths: string[],
-  database: Database = db(),
 ): MirrorRevision[] {
   return paths.map((path) => {
-    const row = selectCanonRevisionRow(project, path, database)
+    const row = selectCanonRevisionRow(snapshot, path)
     return {
       path,
       revision: row?.record_id ?? 'unrecorded',
@@ -69,16 +89,16 @@ export function revisionRows(
 
 export function assertHydrationDoesNotRevertBranchCanon(input: {
   project: string
+  revisions: CanonMirrorRevisionSnapshot
   base: string
   plan: HydrationPlan
   rows: Array<{ slug: string; subject: string | null }>
   lastPathCommit(path: string): { sha: string; at: string } | null
-  database?: Database
 }): void {
   for (const write of input.plan.writes) {
     const row = input.rows.find((candidate) => candidate.slug === write.path)
     if (!row) continue // generated output has no independently adoptable store slug
-    const history = selectCanonRevisionRow(input.project, write.path, input.database)
+    const history = selectCanonRevisionRow(input.revisions, write.path)
     const refusal = canonMirrorRevertRefusal({
       project: input.project,
       path: write.path,
@@ -86,13 +106,13 @@ export function assertHydrationDoesNotRevertBranchCanon(input: {
       commit: input.lastPathCommit(write.path),
       rowRevisionAt: history?.at ?? null,
       removalAt: null,
-      newestCanonAt: newestCanonRevisionAt(input.project, input.database ?? db()),
+      newestCanonAt: input.revisions.newestAt,
     })
     if (refusal) throw new Error(refusal)
   }
   for (const path of input.plan.deletes) {
     if (isGeneratedCanonOutputPath(path)) continue
-    const history = selectCanonRevisionRow(input.project, path, input.database)
+    const history = selectCanonRevisionRow(input.revisions, path)
     const refusal = canonMirrorRevertRefusal({
       project: input.project,
       path,
@@ -101,7 +121,7 @@ export function assertHydrationDoesNotRevertBranchCanon(input: {
       rowRevisionAt: history?.at ?? null,
       removalAt:
         history && (history.op === 'delete' || history.status !== 'current') ? history.at : null,
-      newestCanonAt: newestCanonRevisionAt(input.project, input.database ?? db()),
+      newestCanonAt: input.revisions.newestAt,
     })
     if (refusal) throw new Error(refusal)
   }

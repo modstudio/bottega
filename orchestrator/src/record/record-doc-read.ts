@@ -74,6 +74,7 @@ export type RecordDocListInput = {
   owner?: string | null
   audience?: DocAudience
   status?: DocStatus
+  delivery?: 'inject' | 'demand'
   kind?: DocKind
   updatedSince?: string
   limit: number
@@ -113,19 +114,21 @@ export async function recordDocRows(
        AND ($3::text IS NULL OR $3=ANY(d.audiences))
        AND ($4::text IS NULL OR d.status=$4)
        AND ($5::text IS NULL OR d.kind=$5)
-       AND ($6::boolean OR ($7::boolean AND d.subject IS NULL) OR d.subject=$8)
-       AND ($9::boolean OR d.slug=$10)
-       AND ($11::boolean OR ($12::boolean AND d.owner_user_id IS NULL) OR d.owner_user_id=$13::uuid)
-       AND ($14::boolean OR d.deleted_at IS NULL)
-       AND ($15::timestamptz IS NULL OR d.updated_at>$15::timestamptz)
-       AND ($16::timestamptz IS NULL OR (d.updated_at,d.id)>($16::timestamptz,$17::uuid))
-     ORDER BY d.updated_at,d.id LIMIT $18`,
+       AND ($6::text IS NULL OR d.delivery=$6)
+       AND ($7::boolean OR ($8::boolean AND d.subject IS NULL) OR d.subject=$9)
+       AND ($10::boolean OR d.slug=$11)
+       AND ($12::boolean OR ($13::boolean AND d.owner_user_id IS NULL) OR d.owner_user_id=$14::uuid)
+       AND ($15::boolean OR d.deleted_at IS NULL)
+       AND ($16::timestamptz IS NULL OR d.updated_at>$16::timestamptz)
+       AND ($17::timestamptz IS NULL OR (d.updated_at,d.id)>($17::timestamptz,$18::uuid))
+     ORDER BY d.updated_at,d.id LIMIT $19`,
     [
       (spaces ?? []).join(','),
       selection.scope ?? null,
       selection.audience ?? null,
       selection.status ?? null,
       selection.kind ?? null,
+      selection.delivery ?? null,
       selection.subject === undefined,
       selection.subject === null,
       selection.subject ?? null,

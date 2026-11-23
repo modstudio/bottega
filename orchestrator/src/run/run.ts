@@ -87,6 +87,7 @@ import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
+import { installRunGateFacts } from './run-gate-facts.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { inheritedRunDispatch } from './run-inherited-dispatch.ts'
@@ -276,14 +277,13 @@ export async function run(
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const attribution = runProjectAttribution(runProjectName, opts.projectRecordId)
-  let pack: ReturnType<typeof compilePack> | null = null
+  let pack: Awaited<ReturnType<typeof compilePack>> | null = null
   if (resume.isFirstTurn) {
     try {
-      pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
-      recordPack(pack)
+      pack = opts.canonPack ?? (await compilePack({ job: opts.job, cwd: callerCwd }))
+      await recordPack(pack)
     } catch (cause) {
-      const message = (cause as Error).message
-      const failedId = opts.reserveId ?? newRecordId()
+      const [message, failedId] = [(cause as Error).message, opts.reserveId ?? newRecordId()]
       if (opts.reserveId) recordRunStartupFailure(failedId, cause)
       else {
         const links = await admitNewRunReference({
@@ -294,13 +294,12 @@ export async function run(
           launchCwd: callerCwd,
           probe: Boolean(opts.probe),
         })
-        const rowProjectId = attribution.rowProjectId(links.projectRecordId)
         recordNeverStartedRunFailure({
           recordId: failedId,
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: rowProjectId,
+          projectRecordId: attribution.rowProjectId(links.projectRecordId),
           taskRecordId: links.taskRecordId,
           probe: Boolean(opts.probe),
           cwd: callerCwd,
@@ -648,6 +647,7 @@ export async function run(
         project: runProject,
       })
       ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
+      await installRunGateFacts(scratchDir, mcpEnvironment, sandboxEnvironment)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)

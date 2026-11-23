@@ -31,7 +31,10 @@ export type FloorEvidencePorts = {
   readOriginUrl?: (project: string) => string | null
   resolveCommit?: (checkout: string, reference: string) => string
   resolveTreeCommit?: (worktree: string) => string | null
-  reviewOwed?: (project: string, args: Record<string, string>) => ReviewOwedFloorDecision
+  reviewOwed?: (
+    project: string,
+    args: Record<string, string>,
+  ) => ReviewOwedFloorDecision | Promise<ReviewOwedFloorDecision>
   noAcceptedFindings?: (
     project: string,
     args: Record<string, string>,

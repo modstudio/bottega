@@ -39,7 +39,7 @@ test('landed branch review-line decisions use commit identity and ancestry', () 
   ).toBeFalse()
 })
 
-test('cursor-claimed branches skip merged heads but gather commits made after the merge', () => {
+test('cursor-claimed branches skip merged heads but gather commits made after the merge', async () => {
   const database = migratedTestDatabase()
   const projectId = newRecordId()
   database
@@ -67,30 +67,30 @@ test('cursor-claimed branches skip merged heads but gather commits made after th
     return { branch: 'DEV-2336-merged', taskKey: 'DEV-2336', failure: 'gathered' }
   }
   let identity = { head: 'recorded-tip' as string | null, headIsAncestorOfTip: false }
-  const lines = () =>
+  const lines = async () =>
     sessionReviewVerdictLines('session', [cursor], database, {
       gather,
       landingIdentity: () => identity,
     })
 
-  expect(lines()).toEqual([])
+  expect(await lines()).toEqual([])
   expect(gatherCount).toBe(0)
 
   identity = { head: 'pre-rebase-head', headIsAncestorOfTip: true }
-  expect(lines()).toEqual([])
+  expect(await lines()).toEqual([])
   expect(gatherCount).toBe(0)
 
   identity = { head: null, headIsAncestorOfTip: false }
-  expect(lines()).toEqual([])
+  expect(await lines()).toEqual([])
   expect(gatherCount).toBe(0)
 
   identity = { head: 'post-merge-head', headIsAncestorOfTip: false }
-  expect(lines()).toHaveLength(1)
+  expect(await lines()).toHaveLength(1)
   expect(gatherCount).toBe(1)
   database.close()
 })
 
-test('a fix-defect cursor contributes its explicit branch', () => {
+test('a fix-defect cursor contributes its explicit branch', async () => {
   const database = migratedTestDatabase()
   const projectId = newRecordId()
   database
@@ -108,7 +108,7 @@ test('a fix-defect cursor contributes its explicit branch', () => {
   const gathered: string[] = []
 
   expect(
-    sessionReviewVerdictLines('session', [cursor], database, {
+    await sessionReviewVerdictLines('session', [cursor], database, {
       gather: (branch) => {
         gathered.push(branch.branch)
         return { branch: branch.branch, taskKey: branch.taskKey, failure: 'gathered' }
@@ -121,7 +121,7 @@ test('a fix-defect cursor contributes its explicit branch', () => {
   database.close()
 })
 
-test("a cursor uses only this session's latest writing run for its own key", () => {
+test("a cursor uses only this session's latest writing run for its own key", async () => {
   const database = migratedTestDatabase()
   const projectId = newRecordId()
   database
@@ -154,9 +154,11 @@ test("a cursor uses only this session's latest writing run for its own key", () 
     },
   }
 
-  expect(sessionReviewVerdictLines('session', [cursor('DEV-2')], database, options)).toEqual([])
+  expect(await sessionReviewVerdictLines('session', [cursor('DEV-2')], database, options)).toEqual(
+    [],
+  )
   expect(gathered).toEqual([])
-  expect(sessionReviewVerdictLines('session', [cursor('DEV-1')], database, options)).toEqual([
+  expect(await sessionReviewVerdictLines('session', [cursor('DEV-1')], database, options)).toEqual([
     `DEV-1: review verdict unavailable (gathered) → ${PLATFORM_SLUG} review tier DEV-1`,
   ])
   expect(gathered).toEqual(['DEV-1-work'])

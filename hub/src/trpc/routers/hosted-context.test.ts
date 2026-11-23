@@ -24,6 +24,7 @@ const canonDoc: RecordDoc = {
   title: 'Preferences',
   body: 'Use concise prose.',
   delivery: 'inject',
+  latestRevisionId: revisionId,
   audiences: ['technical'],
   parentId: null,
   position: 0,
@@ -172,9 +173,15 @@ describe('hosted context router', () => {
   })
 
   test('userCanon.list returns only the signed-in owner with a revision', async () => {
-    const rows = await caller(fakeClient()).userCanon.list()
+    const client = fakeClient({
+      docRevisions: mock(async () => ({
+        items: [{ id: nextRevisionId, at: '2099-01-01T00:00:00.000Z' } as never],
+      })),
+    })
+    const rows = await caller(client).userCanon.list()
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ slug: 'preferences', revision: revisionId, updated_at: at })
+    expect(client.docRevisions).not.toHaveBeenCalled()
   })
 
   test.each([personalSpaceId, organizationSpaceId])(
@@ -186,7 +193,7 @@ describe('hosted context router', () => {
         expect.objectContaining({ scope: 'canon' }),
         personalSpaceId,
       )
-      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.docRevisions).not.toHaveBeenCalled()
     },
   )
 
@@ -526,7 +533,7 @@ describe('hosted context router', () => {
         expect.objectContaining({ scope: 'settings', subject: '' }),
         personalSpaceId,
       )
-      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.docRevisions).not.toHaveBeenCalled()
     },
   )
 

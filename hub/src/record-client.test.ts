@@ -616,6 +616,7 @@ describe('record client', () => {
       })
     const doc = await clientWith(fetch).doc('01990000-0000-7000-8000-0000000000d1')
     expect(doc).toMatchObject({ audiences: ['technical'], parentId: null, position: 0 })
+    expect(doc.latestRevisionId).toBeNull()
   })
 
   test('scores and voids hosted runs without sending a scorer identity', async () => {

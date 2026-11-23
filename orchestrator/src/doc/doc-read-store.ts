@@ -83,6 +83,7 @@ export type DocListFilters = {
   owner?: string | null
   audience?: string
   status?: string
+  delivery?: 'inject' | 'demand'
   kind?: string
   articleSubject?: string
 }
@@ -358,6 +359,7 @@ export function listDocsStore(
     owner?: string | null
     audience?: string
     status?: string
+    delivery?: 'inject' | 'demand'
     kind?: string
     articleSubject?: string
   } = {},
@@ -375,6 +377,7 @@ function listDocsStoreWithPrefix(
     owner?: string | null
     audience?: string
     status?: string
+    delivery?: 'inject' | 'demand'
     kind?: string
     articleSubject?: string
   } = {},
@@ -395,6 +398,10 @@ function listDocsStoreWithPrefix(
       where.push('d.status = ?')
       values.push(filters.status)
     } else if (filters.status !== 'current') where.push('0')
+  }
+  if (filters.delivery !== undefined) {
+    where.push('d.delivery = ?')
+    values.push(filters.delivery)
   }
   if (filters.kind !== undefined) {
     validKind(filters.kind)
@@ -498,6 +505,10 @@ function metadataFilters(filters: DocListFilters): { where: string[]; values: st
     validStatus(filters.status)
     where.push('d.status = ?')
     values.push(filters.status)
+  }
+  if (filters.delivery !== undefined) {
+    where.push('d.delivery = ?')
+    values.push(filters.delivery)
   }
   if (filters.kind !== undefined) {
     validKind(filters.kind)

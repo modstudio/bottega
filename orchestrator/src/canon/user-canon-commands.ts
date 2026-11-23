@@ -6,7 +6,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { listDocsStore as listDocs } from '../doc/doc-read-store.ts'
+import { readDocs as listDocs } from '../doc/doc-authoritative-read.ts'
 import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
@@ -94,7 +94,7 @@ export async function userCanonImportCommand(
     slug,
     body: stripUserCanonManagedMarker(text),
   }))
-  const allUserRows = listDocs({ scope: 'canon', subject: null, owner })
+  const allUserRows = await listDocs({ scope: 'canon', subject: null, owner })
   const collision = nonCurrentCanonCollisionRefusal({
     rows: allUserRows,
     desiredSlugs: rows.map((row) => row.slug),
@@ -102,23 +102,25 @@ export async function userCanonImportCommand(
   })
   if (collision) throw new Error(collision)
   const currentRows = allUserRows.filter((row) => row.status === 'current')
-  const global = listDocs({ scope: 'canon', subject: null, status: 'current' }).map(
+  const global = (await listDocs({ scope: 'canon', subject: null, status: 'current' })).map(
     ({ slug, body }) => ({
       slug,
       body,
     }),
   )
-  const surroundings = userCanonWriteTargets(projects()).map((project) => ({
-    global,
-    project: project
-      ? listDocs({ scope: 'canon', subject: project.name, status: 'current' }).map(
-          ({ slug, body }) => ({
-            slug,
-            body,
-          }),
-        )
-      : [],
-  }))
+  const surroundings = await Promise.all(
+    userCanonWriteTargets(projects()).map(async (project) => ({
+      global,
+      project: project
+        ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(
+            ({ slug, body }) => ({
+              slug,
+              body,
+            }),
+          )
+        : [],
+    })),
+  )
   const preview = planCanonImport({
     address: { kind: 'user' },
     current: currentRows.map(({ slug, body }) => ({ slug, body })),
@@ -185,7 +187,7 @@ export async function userCanonHydrateCommand(
   const owner = await signedInDocOwner()
   const overrideStatus = userCanonHomeOverridesStatus(homes)
   if (overrideStatus) presentation.log(overrideStatus)
-  const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
+  const rows = await listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
   const plans = homes
     .filter((home) => {
       const status = userCanonHomeInstallationStatus(home)

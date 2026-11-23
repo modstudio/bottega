@@ -778,7 +778,7 @@ describe('scoped operator docs', () => {
 
   test('docsForRun injects job docs and omits demand and non-run scopes', async () => {
     upsertFixtureProject('known', '/w/known', true)
-    expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
+    expect(await docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
     await setDoc({
       scope: 'project',
       subject: 'known',
@@ -797,9 +797,9 @@ describe('scoped operator docs', () => {
       title: 'Resume',
       body: resume,
     })
-    expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title)).toEqual([
-      'Job',
-    ])
+    expect(
+      (await docsForRun({ job: 'file-question', cwd: '/w/known/src' })).map((d) => d.title),
+    ).toEqual(['Job'])
   })
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
@@ -827,15 +827,15 @@ describe('scoped operator docs', () => {
       title: 'Project',
       body: 'P',
     })
-    const pack = compilePack({ job: 'understand', cwd: dir })
+    const pack = await compilePack({ job: 'understand', cwd: dir })
     expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
     expect(pack.docs.every((doc) => doc.revisionId.length > 0)).toBe(true)
     expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
     expect(pack.sha256).toHaveLength(64)
     expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')
-    expect(docsForRun({ job: 'understand', cwd: dir }).map((doc) => doc.slug)).not.toContain(
-      'demand',
-    )
+    expect(
+      (await docsForRun({ job: 'understand', cwd: dir })).map((doc) => doc.slug),
+    ).not.toContain('demand')
   })
 
   test('setDoc closes project and global inject while allowing canon and estate facts', async () => {

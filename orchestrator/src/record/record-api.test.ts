@@ -576,6 +576,7 @@ describe('record API', () => {
       acrossReadableSpaces: boolean
       slug?: string
       owner?: string | null
+      delivery?: 'inject' | 'demand'
     }> = []
     const personal = {
       ...identity,
@@ -595,7 +596,7 @@ describe('record API', () => {
       },
     })
 
-    expect((await app.request('/v1/docs?slug=guide&owner=')).status).toBe(200)
+    expect((await app.request('/v1/docs?slug=guide&owner=&delivery=inject')).status).toBe(200)
     const invalidOwner = await app.request('/v1/docs?owner=not-a-uuid')
     expect(invalidOwner.status).toBe(400)
     expect(await invalidOwner.json()).toEqual({ error: 'invalid doc list query' })
@@ -616,6 +617,7 @@ describe('record API', () => {
         acrossReadableSpaces: false,
         slug: 'guide',
         owner: null,
+        delivery: 'inject',
       }),
       expect.objectContaining({
         spaceId: 'space-a',

@@ -9,12 +9,70 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { hostedStoredDoc } from '../../test/fixtures/record-api-docs.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { addAgent, refreshAgents, removeAgent } from '../agent/agent-registry.ts'
 import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { dispatchCanonCommand } from './canon-commands.ts'
 import { userCanonHydrateCommand } from './user-canon-commands.ts'
+
+test('user canon list reads the hosted row when the local mirror is empty', async () => {
+  const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  const owner = newRecordId()
+  const session = memoryRecordSession()
+  const row = hostedStoredDoc({
+    id: newRecordId(),
+    scope: 'canon',
+    subject: null,
+    owner,
+    slug: 'AGENTS.md',
+    title: 'User instructions',
+    body: 'Hosted user instructions.',
+    delivery: 'inject',
+    status: 'current',
+    kind: 'working',
+    projectName: null,
+    createdAt: '2026-11-22T00:00:00.000Z',
+    updatedAt: '2026-11-22T00:00:00.000Z',
+    deletedAt: null,
+    latestRevisionId: newRecordId(),
+  })
+  try {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    session.setToken('fixture-session')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: owner },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal-space', permission: 'write' }],
+      }),
+      listDocs: async () => ({
+        items: [row],
+        nextCursor: null,
+      }),
+    })
+    const output: string[] = []
+    await dispatchCanonCommand(
+      ['canon', 'list'],
+      { has: (name) => name === 'user', flag: () => undefined },
+      { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: process.cwd },
+    )
+    expect(output.filter((line) => line.includes('AGENTS.md'))).toHaveLength(1)
+  } finally {
+    installRecordSessionRunner(null)
+    installRecordApiClient(createMemoryRecordApiClient())
+    if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
+  }
+})
 
 test('user canon hydrate refuses writes from a worker process', async () => {
   await expect(

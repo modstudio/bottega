@@ -666,7 +666,7 @@ export async function monitor(
   )
   const load = sampleMonitorHostLoad(database, invocationRecordId)
   const { conditions, errors, hostPressure } = await initialMonitorObservations(database, clock)
-  const canon = monitorCanonSummary()
+  const canon = await monitorCanonSummary()
   type ConditionInput =
     | (Omit<AddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
     | (Omit<UnaddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
@@ -798,7 +798,7 @@ export async function monitor(
     })
 
   for (const project of projects().filter(isProjectRepository)) {
-    conditions.push(...observeProjectCanonDrift(project))
+    conditions.push(...(await observeProjectCanonDrift(project)))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     const releaseLive = observeProjectReleaseLive(project)
     conditions.push(...releaseLive.conditions)
@@ -952,7 +952,7 @@ export async function monitor(
   conditions.push(...refGuards.conditions)
   errors.push(...refGuards.errors)
 
-  for (const drift of storedPackDrift())
+  for (const drift of await storedPackDrift())
     add({
       kind: 'canon-pack-drift',
       subject: `${drift.job}/${drift.project ?? '_'}`,

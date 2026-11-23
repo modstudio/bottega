@@ -50,6 +50,10 @@ import {
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
+import {
+  authoritativePackBudgetProjection,
+  type PackBudgetProjection,
+} from './doc-pack-budget-read.ts'
 import { assertDocProse } from './doc-prose.ts'
 import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
@@ -130,12 +134,21 @@ async function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): Promi
   return warnings
 }
 
-function injectedDocsForPack(job: string, projectName: string | null): Doc[] {
-  return [
-    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
-    ...listDocs({ scope: 'job', subject: job, status: 'current' }),
-    ...(projectName ? listDocs({ scope: 'project', subject: projectName, status: 'current' }) : []),
-  ].filter((doc) => isDocInjectedForRun(doc, job, projectName))
+async function authoritativeInjectedDocsForPack(
+  job: string,
+  projectName: string | null,
+): Promise<Doc[]> {
+  const rows = await Promise.all([
+    readDocs({ scope: 'global', subject: null, status: 'current', delivery: 'inject' }),
+    readDocs({ scope: 'job', subject: job, status: 'current', delivery: 'inject' }),
+    readDocs({
+      scope: 'project',
+      subject: projectName,
+      status: 'current',
+      delivery: 'inject',
+    }),
+  ])
+  return rows.flat().filter((doc) => isDocInjectedForRun(doc, job, projectName))
 }
 
 type PackSizeInput = {
@@ -148,7 +161,7 @@ type PackSizeInput = {
   forceInject?: string
 }
 
-type PackProject = { name: string; path: string }
+type PackProject = { name: string; path: string; subject: string | null }
 
 function assertIndividualInjectSize(input: PackSizeInput): void {
   if (input.delivery !== 'inject') return
@@ -173,14 +186,20 @@ function affectedPackProjects(input: PackSizeInput, projectRows: PackProject[]):
   if (input.scope === 'project') {
     return projectRows.filter((project) => project.name === input.subject)
   }
-  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
+  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd(), subject: null }]
 }
 
-function canonForPackWrite(input: PackSizeInput, projectName: string, identity: string) {
-  const globalCanon = listDocs({ scope: 'canon', subject: null, status: 'current' }).filter(
+function canonForPackWrite(
+  input: PackSizeInput,
+  projectName: string,
+  identity: string,
+  globalRows: Doc[],
+  projectRows: Doc[],
+) {
+  const globalCanon = globalRows.filter(
     (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
   )
-  const projectCanon = listDocs({ scope: 'canon', subject: projectName, status: 'current' }).filter(
+  const projectCanon = projectRows.filter(
     (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
   )
   if (input.scope !== 'canon') {
@@ -198,12 +217,23 @@ function packBudgetRefusalFor(
   input: PackSizeInput,
   project: PackProject,
   jobName: string,
+  projection: PackBudgetProjection,
 ): string | null {
   const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  const selected = injectedDocsForPack(jobName, project.name).filter(
-    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  const selected = [
+    ...projection.globalDocs,
+    ...(projection.jobDocs.get(jobName) ?? []),
+    ...(project.subject ? (projection.projectDocs.get(project.subject) ?? []) : []),
+  ]
+    .filter((doc) => isDocInjectedForRun(doc, jobName, project.subject))
+    .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
+  const canon = canonForPackWrite(
+    input,
+    project.name,
+    identity,
+    projection.globalCanon,
+    project.subject ? (projection.projectCanon.get(project.subject) ?? []) : [],
   )
-  const canon = canonForPackWrite(input, project.name, identity)
   return injectPackBudgetRefusal({
     job: jobName,
     project: project.name,
@@ -223,7 +253,7 @@ function packBudgetRefusalFor(
   })
 }
 
-function assertPackSize(input: PackSizeInput): void {
+async function assertPackSize(input: PackSizeInput): Promise<void> {
   assertIndividualInjectSize(input)
   const measuresPack =
     input.scope === 'canon' ||
@@ -233,11 +263,18 @@ function assertPackSize(input: PackSizeInput): void {
     name: string
     path: string
   }[]
-  const projectsToCheck = affectedPackProjects(input, projectRows)
+  const projectsToCheck = affectedPackProjects(
+    input,
+    projectRows.map((project) => ({ ...project, subject: project.name })),
+  )
   const jobsToCheck = input.scope === 'job' && input.subject ? [input.subject] : Object.keys(JOBS)
+  const projection = await authoritativePackBudgetProjection(
+    projectsToCheck.flatMap(({ subject }) => (subject ? [subject] : [])),
+    jobsToCheck,
+  )
   for (const project of projectsToCheck) {
     for (const jobName of jobsToCheck) {
-      const refusal = packBudgetRefusalFor(input, project, jobName)
+      const refusal = packBudgetRefusalFor(input, project, jobName, projection)
       if (refusal) throw new Error(refusal)
     }
   }
@@ -357,7 +394,7 @@ async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<strin
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
   if (settings) throw new Error(settings)
-  assertPackSize(input)
+  await assertPackSize(input)
   return assertCanonWriteAllowed(input)
 }
 
@@ -722,14 +759,11 @@ export async function consumeDoc(
 
 export type InjectedDoc = Doc & { revision_id: string }
 
-export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
+export async function docsForRun(input: { job: string; cwd: string }): Promise<InjectedDoc[]> {
   const project = projectAt(input.cwd)
-  const docs = injectedDocsForPack(input.job, project?.name ?? null)
-  const latest = db().query(
-    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
-  )
+  const docs = await authoritativeInjectedDocsForPack(input.job, project?.name ?? null)
   return docs.map((doc) => {
-    const revisionId = (latest.get(doc.record_id) as { record_id: string } | null)?.record_id
+    const revisionId = doc.revision
     if (!revisionId) {
       throw new Error(
         `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`,
@@ -765,33 +799,6 @@ export async function readOpenResumes(cwd: string, now = Date.now()): Promise<Op
       const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
       open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
     }
-  }
-  open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
-  return { open, unreadable }
-}
-
-export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
-  const project = projectAt(cwd)
-  if (!project) return { open: [], unreadable: [] }
-  const open: OpenResume[] = []
-  const unreadable: UnreadableResume[] = []
-  for (const doc of listDocs({ scope: 'resume', subject: project.name })) {
-    const fm = parseResumeFrontmatter(doc.body)
-    if (!fm) {
-      unreadable.push({ slug: doc.slug, reason: 'no-frontmatter' })
-      continue
-    }
-    if (!fm.status) {
-      unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
-      continue
-    }
-    if (fm.status !== 'open' && fm.status !== 'consumed') {
-      unreadable.push({ slug: doc.slug, reason: 'unrecognized-status' })
-      continue
-    }
-    if (fm.status !== 'open') continue
-    const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
-    open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
   }
   open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
   return { open, unreadable }

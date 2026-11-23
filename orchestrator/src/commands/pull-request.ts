@@ -298,8 +298,12 @@ export function register(program: Command): void {
     .requiredOption('--sha <sha>', 'name the commit being pushed')
     .requiredOption('--remote-ref <ref>', 'name the destination ref')
     .allowExcessArguments(false)
-    .action((options) => {
-      const result = checkPushedTip(process.cwd(), options.sha.trim(), options.remoteRef.trim())
+    .action(async (options) => {
+      const result = await checkPushedTip(
+        process.cwd(),
+        options.sha.trim(),
+        options.remoteRef.trim(),
+      )
       if (result.infrastructureError) {
         log(`pre-push: triage check could not run: ${result.infrastructureError}; allowing push`)
         return

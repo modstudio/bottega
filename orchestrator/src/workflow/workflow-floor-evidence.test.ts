@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import '../../test/fixtures/record-authority.ts'
 import {
   CURSOR_RECORD_ID,
   database,

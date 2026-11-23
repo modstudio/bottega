@@ -58,19 +58,22 @@ export function refuseForeignKeylessCursor(row: FloorCursor, callerSession?: str
     )
 }
 
-function gatherDispatchWaiverFacts(
+async function gatherDispatchWaiverFacts(
   row: FloorCursor,
   floors: Floor[],
   step: StepRunObligation,
   ports: FloorEvidencePorts,
   args: Record<string, string>,
   database: Database,
-): { facts: DispatchWaiverFact[]; refusal?: Extract<FloorDecision, { action: 'refuse' }> } {
+): Promise<{
+  facts: DispatchWaiverFact[]
+  refusal?: Extract<FloorDecision, { action: 'refuse' }>
+}> {
   const facts: DispatchWaiverFact[] = []
   const checksReviewOwed = floors.some(({ kind }) => kind === 'review-owed')
   const gathersNoLensOwed = step.dispatchWaivedBy?.includes('no-lens-owed') ?? false
   if (row.enforcement === 'floors' && (checksReviewOwed || gathersNoLensOwed)) {
-    const reviewOwed = invokeFloorEvidencePort(
+    const reviewOwed = await invokeFloorEvidencePort(
       ports,
       'reviewOwed',
       () => {
@@ -121,7 +124,7 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
-  const waiver = gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
+  const waiver = await gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
   if (waiver.refusal) return waiver.refusal
   const stepActivatedAt = currentStepActivatedAt(
     row,

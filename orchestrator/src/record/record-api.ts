@@ -317,6 +317,7 @@ const docListQuery = z.object({
   owner: z.union([z.literal(''), idSchema]).optional(),
   audience: z.enum(DOC_AUDIENCES).optional(),
   status: z.enum(DOC_STATUSES).optional(),
+  delivery: z.enum(['inject', 'demand']).optional(),
   kind: z.enum(DOC_KINDS).optional(),
   updatedSince: z.string().datetime({ offset: true }).optional(),
   limit: limitSchema,
@@ -770,11 +771,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/docs', async (context) => {
     const query = docListQuery.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
-    const subject = query.data.subject === undefined ? undefined : query.data.subject || null
-    const owner = query.data.owner === undefined ? undefined : query.data.owner || null
     const listTarget = personalListTarget(
       query.data.scope,
-      subject,
+      query.data.subject === undefined ? undefined : query.data.subject || null,
       context.get('identity').user.id,
     )
     const tenant = listTarget
@@ -790,11 +789,12 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const entries = await deps.listDocs({
       ...tenant,
       scope: query.data.scope,
-      subject,
+      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
       slug: query.data.slug,
-      owner,
+      owner: query.data.owner === undefined ? undefined : query.data.owner || null,
       audience: query.data.audience,
       status: query.data.status,
+      delivery: query.data.delivery,
       kind: query.data.kind,
       updatedSince: query.data.updatedSince,
       limit: query.data.limit,

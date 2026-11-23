@@ -33,7 +33,7 @@ test('an empty hydration plan closes its synthetic run without creating a tree',
     })
     applyHydration(
       root,
-      planHydration({ rows: storedRepositoryCanonRows('canon-mirror-empty'), tree: [] }),
+      planHydration({ rows: await storedRepositoryCanonRows('canon-mirror-empty'), tree: [] }),
     )
     spawnFixtureGitSync(['add', '.'], { cwd: root })
     if (spawnFixtureGitSync(['status', '--porcelain'], { cwd: root }).stdout.toString().trim()) {

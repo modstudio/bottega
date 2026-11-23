@@ -368,7 +368,7 @@ async function runCanon(verb: string, command: Command): Promise<void> {
     },
     cwd: process.cwd,
   }
-  if (verb === 'lint') canonLintCommand(flags, presentation)
+  if (verb === 'lint') await canonLintCommand(flags, presentation)
   else await dispatchCanonCommand(['canon', verb], flags, presentation)
 }
 

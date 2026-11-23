@@ -32,7 +32,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { type Project, projects, stackAt } from '../project/projects.ts'
-import { createPullRequestAdmitted } from '../pull-request/pr-admission.ts'
+import { createPullRequestAdmittedWithPolicy } from '../pull-request/pr-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-cursor-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
@@ -50,40 +50,26 @@ import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
 import { emptyStoreHydrationRefusal, hydrationDrift, planHydration } from './canon-hydrate.ts'
+import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import {
-  type CanonFinding,
-  introducedCanonFindings,
-  lintCanon,
-  refusingCanonFindings,
-  warningCanonFindings,
-} from './canon-lint.ts'
+  type CanonMirrorRows,
+  canonMirrorAuthoritativeSnapshot,
+  type VersionedReviewFunnelPolicy,
+} from './canon-mirror-authoritative-snapshot.ts'
 import { appendMirrorFailure, mirrorFailureText } from './canon-mirror-failure.ts'
 import { decideLeftoverDisposition, leftoverDispositionMessage } from './canon-mirror-leftover.ts'
+import { canonMirrorLintDecision } from './canon-mirror-lint-decision.ts'
+import {
+  type ChecksState,
+  canonMirrorMergeArgs,
+  decideCanonMirrorMerge,
+} from './canon-mirror-merge-decision.ts'
 import {
   assertHydrationDoesNotRevertBranchCanon,
+  type CanonMirrorRevisionSnapshot,
   canonMirrorCommitBody,
   revisionRows,
 } from './canon-mirror-revisions.ts'
-import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
-
-export type ChecksState = 'passed' | 'failed' | 'pending'
-export type MergeDecision = { merge: true } | { merge: false; reason: string }
-export function decideCanonMirrorMerge(input: {
-  shipLevel: string
-  headMatches: boolean
-  baseUnchanged: boolean
-  checks: ChecksState
-}): MergeDecision {
-  if (input.shipLevel !== 'auto')
-    return { merge: false, reason: `ship autonomy is ${input.shipLevel}` }
-  if (!input.headMatches)
-    return { merge: false, reason: 'pull-request head does not match the pushed commit' }
-  if (!input.baseUnchanged)
-    return { merge: false, reason: 'the landing branch changed after hydration was planned' }
-  if (input.checks !== 'passed')
-    return { merge: false, reason: `GitHub checks are ${input.checks}` }
-  return { merge: true }
-}
 
 type PullRequest = {
   number: number
@@ -118,7 +104,12 @@ export type CanonMirrorPort = {
   push(path: string, branch: string, expected: string | null): void
   pullRequest(path: string, branch: string): PullRequest | null
   admitPullRequest(project: Project, branch: string): Promise<void>
-  openPullRequest(path: string, title: string, bodyFile: string): PullRequest
+  openPullRequest(
+    path: string,
+    title: string,
+    bodyFile: string,
+    policy: VersionedReviewFunnelPolicy,
+  ): PullRequest
   refreshPullRequest(path: string, number: number, title: string, bodyFile: string): PullRequest
   merge(path: string, number: number, commit: string): void
   releaseBranch(project: Project, branch: string, expected: string): void
@@ -280,8 +271,13 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
       branch,
       systemJob: CANON_MIRROR_JOB,
     }),
-  openPullRequest: (path, title, bodyFile) => {
-    createPullRequestAdmitted(['--title', title, '--body-file', bodyFile], {}, path)
+  openPullRequest: (path, title, bodyFile, policy) => {
+    createPullRequestAdmittedWithPolicy(
+      ['--title', title, '--body-file', bodyFile],
+      {},
+      path,
+      policy,
+    )
     const opened = systemCanonMirrorPort.pullRequest(
       path,
       command(path, ['git', 'branch', '--show-current']),
@@ -320,27 +316,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   },
 }
 
-export function canonMirrorMergeArgs(number: number, commit: string): string[] {
-  return ['gh', 'pr', 'merge', String(number), '--squash', '--match-head-commit', commit]
-}
-
 type MirrorResult = { project: string; text: string; failed: boolean }
-
-export function canonMirrorLintDecision(findings: CanonFinding[]): {
-  refusal: string | null
-  warnings: string[]
-} {
-  const errors = refusingCanonFindings(findings)
-  return {
-    refusal: errors.length
-      ? `canon lint found ${errors.length} findings: ${errors.map((finding) => `${finding.file}:${finding.line} ${finding.message}`).join('; ')}`
-      : null,
-    warnings: warningCanonFindings(findings).map(
-      (finding) =>
-        `canon lint warning: ${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
-    ),
-  }
-}
 
 function createLifecycleRun(project: Project, key: string): string {
   writableDb()
@@ -622,20 +598,23 @@ type MirrorPublicationInput = {
   shipLevel: string
   execution: MirrorExecution
   releasePreparation: CloseOutPreparation
+  rows: CanonMirrorRows
+  revisions: CanonMirrorRevisionSnapshot
+  reviewPolicy: VersionedReviewFunnelPolicy
 }
 
 function prepareMirrorPublication(input: MirrorPublicationInput):
   | { result: MirrorResult }
   | {
       base: string
-      rows: ReturnType<typeof storedRepositoryCanonRows>
+      rows: CanonMirrorRows
       plan: ReturnType<typeof planHydration>
     } {
   const { project, dryRun, port, runId, trunk, path, started, execution } = input
   port.fetch(project)
   const base = port.refTip(project, `origin/${trunk}`)
   const landed = collectCanonTreeAtRef(project.path, base)
-  const rows = storedRepositoryCanonRows(project.name)
+  const { rows } = input
   const plan = planHydration({ rows, tree: landed.tree })
   const drift = hydrationDrift(plan)
   const leftoverReport = releaseOwnedLeftover(
@@ -682,6 +661,7 @@ function performMirrorPublication(input: MirrorPublicationInput): MirrorResult {
   )
   assertHydrationDoesNotRevertBranchCanon({
     project: project.name,
+    revisions: input.revisions,
     base,
     plan,
     rows,
@@ -725,7 +705,7 @@ function performMirrorPublication(input: MirrorPublicationInput): MirrorResult {
   const commit = port.commit(
     path,
     `${key} sync canon from the store`,
-    canonMirrorCommitBody(revisionRows(project.name, changed)),
+    canonMirrorCommitBody(revisionRows(input.revisions, changed)),
   )
   execution.commit = commit
   port.push(path, branch, remoteTip === null ? null : previous!.tip)
@@ -768,7 +748,7 @@ function finishPullRequestPublication(
     const title = `${key} sync canon from the store`
     const pr = existing
       ? port.refreshPullRequest(path, existing.number, title, bodyFile)
-      : port.openPullRequest(path, title, bodyFile)
+      : port.openPullRequest(path, title, bodyFile, input.reviewPolicy)
     const decision = decideCanonMirrorMerge({
       shipLevel: input.shipLevel,
       headMatches: pr.headSha === commit,
@@ -946,6 +926,7 @@ async function mirrorProject(
           ['ship'],
         )
     if (!dryRun) await port.admitPullRequest(project, branch)
+    const { rows, revisions, reviewPolicy } = await canonMirrorAuthoritativeSnapshot(project.name)
     const lockedOutcome = runMirrorLocked({
       project,
       dryRun,
@@ -959,6 +940,9 @@ async function mirrorProject(
       shipLevel: autonomy?.stages?.ship?.value ?? 'ask',
       execution,
       releasePreparation: preparedRelease,
+      rows,
+      revisions,
+      reviewPolicy,
     })
     return await finishMirrorQuestionCleanup(
       runId,

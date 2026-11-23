@@ -24,7 +24,7 @@ describe('document status', () => {
       reason: 'create draft',
     })
     expect(
-      docsForRun({ job: 'file-question', cwd: '/elsewhere' }).map((doc) => doc.slug),
+      (await docsForRun({ job: 'file-question', cwd: '/elsewhere' })).map((doc) => doc.slug),
     ).not.toContain(draft.slug)
     await expect(
       setDocStatus('job', 'file-question', draft.slug, 'superseded', 'missing-guide', {

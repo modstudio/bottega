@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import '../../test/fixtures/record-authority.ts'
 import { decideFloorSatisfaction } from './workflow-floor.ts'
 import {
   CURSOR_RECORD_ID,
