@@ -142,9 +142,7 @@ describe('canon drift branch gate', () => {
         user: { id: 'fixture-user', name: 'Fixture', email: 'fixture@example.test' },
         activeSpaceId: 'fixture',
         personalSpaceId: 'fixture',
-        memberships: [
-          { space_id: 'fixture', slug: 'fixture', permission: 'write', role: 'owner' },
-        ],
+        memberships: [{ space_id: 'fixture', slug: 'fixture', permission: 'write', role: 'owner' }],
       }),
     })
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')

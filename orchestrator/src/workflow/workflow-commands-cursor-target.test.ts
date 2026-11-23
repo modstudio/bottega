@@ -178,15 +178,7 @@ test('next by cursor alone reads the authoritative row and links the hosted task
   const lines: string[] = []
   let taskLookups = 0
   await workflowCommand(
-    [
-      'workflow',
-      'next',
-      '--cursor',
-      String(cursor),
-      '--note',
-      'closed hosted step',
-      ...artifact,
-    ],
+    ['workflow', 'next', '--cursor', String(cursor), '--note', 'closed hosted step', ...artifact],
     presentation(lines),
     {
       json: true,

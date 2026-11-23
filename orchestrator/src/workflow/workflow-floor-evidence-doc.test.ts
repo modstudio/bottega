@@ -1,15 +1,9 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import '../../test/fixtures/record-authority.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { type CursorIdentity, docAdmissibleAsCursorEvidence } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
-
-const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-beforeEach(() => delete process.env.BOTTEGA_RECORD_API_URL)
-afterEach(() => {
-  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
-})
 
 test('accepts a document in a project-less scope on any cursor', async () => {
   expect(

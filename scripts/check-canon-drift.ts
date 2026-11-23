@@ -198,32 +198,30 @@ if (import.meta.main) {
     }
     if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
-    const findings = await (
-      storeKind === 'ahead'
-        ? withBranchStoreScratch('canon-drift', (dir) =>
-            withMainGateFactsSnapshot(
-              storeKind,
-              dir,
-              (snapshotError) => {
-                const database = new Database(live!, { readonly: true })
-                try {
-                  throw new Error(
-                    `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
-                  )
-                } finally {
-                  database.close()
-                }
-              },
-              (snapshot) => {
-                console.log(
-                  `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
+    const findings = await (storeKind === 'ahead'
+      ? withBranchStoreScratch('canon-drift', (dir) =>
+          withMainGateFactsSnapshot(
+            storeKind,
+            dir,
+            (snapshotError) => {
+              const database = new Database(live!, { readonly: true })
+              try {
+                throw new Error(
+                  `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
                 )
-                return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
-              },
-            ),
-          )
-        : checkCanonDrift(root)
-    )
+              } finally {
+                database.close()
+              }
+            },
+            (snapshot) => {
+              console.log(
+                `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
+              )
+              return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+            },
+          ),
+        )
+      : checkCanonDrift(root))
     for (const finding of findings) {
       console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
     }

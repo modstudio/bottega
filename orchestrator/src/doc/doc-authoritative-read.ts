@@ -1,11 +1,10 @@
 // concern: authoritative-document-read
 /** Routes operator document reads to their authoritative store. */
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { projectByRecordId } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
@@ -50,7 +49,7 @@ export type ResolvedDocReference = {
   updatedAt: string
 }
 
-function resolvedReference(row: Doc | HostedRow, database?: Database): ResolvedDocReference {
+function resolvedReference(row: Doc | HostedRow, projectName: string | null): ResolvedDocReference {
   const hosted = 'id' in row
   const scope = String(row.scope)
   const subject = row.subject == null ? null : String(row.subject)
@@ -60,13 +59,7 @@ function resolvedReference(row: Doc | HostedRow, database?: Database): ResolvedD
     scope,
     subject,
     slug,
-    projectName: hosted
-      ? row.projectName == null
-        ? null
-        : String(row.projectName)
-      : row.project_record_id
-        ? (projectByRecordId(row.project_record_id, database)?.name ?? null)
-        : null,
+    projectName,
     address: `${scope}/${subject ?? '_'}/${slug}`,
     updatedAt: String(hosted ? row.updatedAt : row.updated_at),
   }
@@ -74,7 +67,7 @@ function resolvedReference(row: Doc | HostedRow, database?: Database): ResolvedD
 
 export function readDocReference(
   value: string,
-  database: Database = db(),
+  database: Database,
 ): Promise<ResolvedDocReference | null> {
   return applyRecordReadAuthority(
     {
@@ -83,12 +76,16 @@ export function readDocReference(
         const row = hasRecordIdShape(value)
           ? rows.find(({ record_id }) => record_id === value)
           : rows.find(({ scope, subject, slug }) => `${scope}/${subject ?? '_'}/${slug}` === value)
-        return row ? resolvedReference(row, database) : null
+        const projectName = row?.project_record_id
+          ? (projectByRecordId(row.project_record_id, database)?.name ?? null)
+          : null
+        return row ? resolvedReference(row, projectName) : null
       },
       hosted: () =>
         withReadRemedy(async () => {
           try {
-            return resolvedReference(await readHostedDocReference(value))
+            const row = await readHostedDocReference(value)
+            return resolvedReference(row, row.projectName == null ? null : String(row.projectName))
           } catch (cause) {
             if (String((cause as Error).message ?? cause).includes('404')) return null
             throw cause

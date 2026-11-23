@@ -26,6 +26,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { identity } from '../record/record-api-identity.fixture.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import {
   type HostedTaskFlow,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -942,7 +943,7 @@ describe('orch MCP', () => {
     const owner = '01990000-0000-7000-8000-000000000001'
     const docRecordId = newRecordId()
     const revisionId = newRecordId()
-    const revision = {
+    const revision: RecordDocRevision = {
       id: revisionId,
       docId: docRecordId,
       scope: 'canon',
@@ -954,7 +955,7 @@ describe('orch MCP', () => {
       body: 'body',
       withheldForAudience: false,
       delivery: 'demand' as const,
-      audiences: ['technical'] as const,
+      audiences: ['technical'],
       parentId: null,
       position: 0,
       author: 'operator',
@@ -972,9 +973,7 @@ describe('orch MCP', () => {
         user: { id: owner },
         activeSpaceId: 'personal-space',
         personalSpaceId: 'personal-space',
-        memberships: [
-          { space_id: 'personal-space', slug: 'personal-space', permission: 'write' },
-        ],
+        memberships: [{ space_id: 'personal-space', slug: 'personal-space', permission: 'write' }],
       }),
       getDocRevision: async () => revision,
     })
