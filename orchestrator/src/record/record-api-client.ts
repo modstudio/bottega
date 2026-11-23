@@ -9,13 +9,9 @@ import type {
   DocKind,
   DocStatus,
 } from '../../../shared/docs.ts'
-import {
-  hostedJsonFailureMessage,
-  jsonBody,
-  type JsonBodyFailure,
-} from '../../../shared/http-json.ts'
+import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -36,6 +32,8 @@ import {
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
   recordApiUnreachable as classifyRecordApiUnreachable,
+  hostedErrorBody,
+  hostedRequestSafety,
   recordApiError,
   recordAuthRefusal,
   recordAuthToken,
@@ -490,12 +488,9 @@ export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
 const recordApiUnreachable = (
   error: unknown,
-  outcome: HostedRequestSafety,
+  outcome: Parameters<typeof classifyRecordApiUnreachable>[2],
   origin = recordApiBaseUrl(),
 ) => classifyRecordApiUnreachable(error, origin, outcome)
-
-const hostedErrorBody = (body: unknown, failure: JsonBodyFailure): unknown =>
-  body ?? { error: hostedJsonFailureMessage(failure) }
 
 export const recordIdentityResponse = (body: unknown) =>
   parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message), 'probe'))
@@ -515,16 +510,12 @@ async function recordEmailAuthRequest(
   } catch (error) {
     throw classifyRecordApiUnreachable(error, origin, 'non-idempotent')
   }
-  const url = `${origin}${path}`
-  const result = await jsonBody(response, url)
+  const result = await jsonBody(response, `${origin}${path}`)
   const payload = result.ok ? result.value : null
   if (!response.ok)
     throw recordAuthRefusal(
       response.status,
-      hostedErrorBody(
-        payload,
-        result.ok ? { ok: false, url, status: response.status, contentType: 'missing' } : result,
-      ),
+      hostedErrorBody(payload, result, `${origin}${path}`, response.status),
       response.headers,
     )
   if (!result.ok) throw new Error(hostedJsonFailureMessage(result))
@@ -588,12 +579,7 @@ export async function recordApiRequest<T>(
     try {
       return await recordTransport(resolvedOrigin, path, { ...init, headers }, transport)
     } catch (error) {
-      const method = init.method?.toUpperCase() ?? 'GET'
-      throw classifyRecordApiUnreachable(
-        error,
-        resolvedOrigin,
-        method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
-      )
+      throw classifyRecordApiUnreachable(error, resolvedOrigin, hostedRequestSafety(init.method))
     }
   }
   const sendStored = async (token: string | null) => {
@@ -606,28 +592,22 @@ export async function recordApiRequest<T>(
         signal: init.signal ?? undefined,
         readToken,
       })
-  const url = `${resolvedOrigin}${path}`
-  const result = await jsonBody(response, url)
+  const result = await jsonBody(response, `${resolvedOrigin}${path}`)
   const body = result.ok ? result.value : null
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
     throw recordApiError(
-      hostedErrorBody(
-        body,
-        result.ok ? { ok: false, url, status: response.status, contentType: 'missing' } : result,
-      ),
+      hostedErrorBody(body, result, `${resolvedOrigin}${path}`, response.status),
       response.status,
       response.headers,
     )
   }
-  if (!result.ok) {
-    const method = init.method?.toUpperCase() ?? 'GET'
+  if (!result.ok)
     throw classifyRecordApiUnreachable(
       new Error(hostedJsonFailureMessage(result)),
       resolvedOrigin,
-      method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
+      hostedRequestSafety(init.method),
     )
-  }
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -663,13 +643,7 @@ async function publicRequest<T>(
   const result = await jsonBody(response, url)
   const body = result.ok ? result.value : null
   if (!response.ok)
-    throw recordApiError(
-      hostedErrorBody(
-        body,
-        result.ok ? { ok: false, url, status: response.status, contentType: 'missing' } : result,
-      ),
-      response.status,
-    )
+    throw recordApiError(hostedErrorBody(body, result, url, response.status), response.status)
   if (!result.ok)
     throw classifyRecordApiUnreachable(
       new Error(hostedJsonFailureMessage(result)),

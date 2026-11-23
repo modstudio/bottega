@@ -233,7 +233,6 @@ describe('record client', () => {
     expect(error).toBeInstanceOf(TRPCError)
     expect(error.code).toBe('TIMEOUT')
     expect(error.message).toContain('/v1/runs/window')
-    expect(error.message).toContain('nothing was written')
     expect(error.message).toContain('nothing was written; retry, and if it stalls again')
     expect(requestSignal?.aborted).toBe(true)
   })

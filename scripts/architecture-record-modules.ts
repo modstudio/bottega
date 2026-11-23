@@ -181,6 +181,7 @@ export const recordModules: RecordModule[] = [
     './record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-error.ts', [
+    '../../../shared/http-json.ts',
     '../../../shared/record-remedies.ts',
     '../doc/doc-revision-conflict.ts',
     '../doc/doc-write-allowed.ts',
