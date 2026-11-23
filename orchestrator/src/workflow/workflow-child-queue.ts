@@ -29,7 +29,8 @@ export type ChildQueueState = {
 export type ChildClaimFact = {
   subject_kind: string
   subject_value: string
-  holder_session: string
+  holderUserId: string | null
+  holderSession: string | null
 }
 
 export function sessionWorksUnderEpic(
@@ -40,7 +41,7 @@ export function sessionWorksUnderEpic(
 ): boolean {
   return claims.some(
     (claim) =>
-      claim.holder_session === session &&
+      claim.holderSession === session &&
       ((claim.subject_kind === 'task' && claim.subject_value === rootKey) ||
         (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
   )

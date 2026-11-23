@@ -113,7 +113,7 @@ export async function queueWorkflowChild(
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
   const root = ancestors.at(-1)!
-  const claims = liveChildClaims(database, input.project)
+  const claims = await liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(
     root,
     tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),
@@ -165,7 +165,7 @@ export async function startWorkflowChild(
   const facts = await gatherChildTaskFacts(database, input.project, tasks)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
-  const claims = liveChildClaims(database, input.project)
+  const claims = await liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(epic.workflow_key, facts)
   if (!sessionWorksUnderEpic(claims, input.callerSession, epic.workflow_key, descendants))
     throw new Error(

@@ -94,15 +94,7 @@ test('a session works under an epic through its epic claim or a queued descendan
   const descendants = new Set(['DEV-2', 'DEV-3'])
   expect(
     sessionWorksUnderEpic(
-      [{ subject_kind: 'task', subject_value: 'DEV-1', holder_session: 'mine' }],
-      'mine',
-      'DEV-1',
-      descendants,
-    ),
-  ).toBeTrue()
-  expect(
-    sessionWorksUnderEpic(
-      [{ subject_kind: 'queued-task', subject_value: 'DEV-3', holder_session: 'mine' }],
+      [{ subject_kind: 'task', subject_value: 'DEV-1', holderUserId: null, holderSession: 'mine' }],
       'mine',
       'DEV-1',
       descendants,
@@ -111,10 +103,50 @@ test('a session works under an epic through its epic claim or a queued descendan
   expect(
     sessionWorksUnderEpic(
       [
-        { subject_kind: 'queued-task', subject_value: 'DEV-9', holder_session: 'mine' },
-        { subject_kind: 'task', subject_value: 'DEV-1', holder_session: 'other' },
+        {
+          subject_kind: 'queued-task',
+          subject_value: 'DEV-3',
+          holderUserId: null,
+          holderSession: 'mine',
+        },
       ],
       'mine',
+      'DEV-1',
+      descendants,
+    ),
+  ).toBeTrue()
+  expect(
+    sessionWorksUnderEpic(
+      [
+        {
+          subject_kind: 'queued-task',
+          subject_value: 'DEV-9',
+          holderUserId: null,
+          holderSession: 'mine',
+        },
+        {
+          subject_kind: 'task',
+          subject_value: 'DEV-1',
+          holderUserId: null,
+          holderSession: 'other',
+        },
+      ],
+      'mine',
+      'DEV-1',
+      descendants,
+    ),
+  ).toBeFalse()
+  expect(
+    sessionWorksUnderEpic(
+      [
+        {
+          subject_kind: 'task',
+          subject_value: 'DEV-1',
+          holderUserId: 'user-u',
+          holderSession: null,
+        },
+      ],
+      'user-u',
       'DEV-1',
       descendants,
     ),

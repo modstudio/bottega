@@ -1,6 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
@@ -19,11 +25,16 @@ const database = testDatabaseFixture((d) => {
 })
 
 let previousTaskReader: TaskReadPort | undefined
+let previousRecordApiUrl: string | undefined
 beforeEach(() => {
   previousTaskReader = installTaskReader(undefined)
+  previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 })
 afterEach(() => {
   installTaskReader(previousTaskReader)
+  installRecordApiClient(null)
+  if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
 })
 
 const row = (key: string, parentKey: string | null): TaskReadRow => ({
@@ -119,6 +130,39 @@ async function openEpicAtStart(
   return { cursor: opened.cursor!.id, startOrdinal, closed }
 }
 
+function hostedClaim(
+  subject: { kind: 'task' | 'queued-task'; value: string },
+  holderSession: string | null,
+) {
+  return {
+    id: newRecordId(),
+    project: 'fixture',
+    subject,
+    holder: 'user-u',
+    holderSession,
+    note: null,
+    runId: null,
+    takenAt: '2026-11-23T12:00:00.000Z',
+    renewedAt: '2026-11-23T12:00:00.000Z',
+    lapsesAt: '2099-11-23T12:00:00.000Z',
+    live: true,
+    closedAt: null,
+    closeReason: null,
+    previousClaimIds: [],
+    supersededByClaimId: null,
+  }
+}
+
+function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) {
+  d.query('DELETE FROM board_claim').run()
+  d.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listBoardClaims: async () => ({ claims }),
+  })
+}
+
 test('start-child opens at start with inherited closures and parent flow', async () => {
   const d = database()
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
@@ -146,6 +190,61 @@ test('start-child opens at start with inherited closures and parent flow', async
   expect(
     flows.find(({ task_record_id }) => task_record_id === 'task-DEV-2')?.parent_flow_record_id,
   ).toBe(flows.find(({ task_record_id }) => task_record_id === 'task-DEV-1')?.record_id)
+})
+
+test('hosted child eligibility reads the record claim and compares its session identity', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  useHostedClaims(d, [hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s')])
+
+  for (const callerSession of ['other-session', 'user-u']) {
+    await expect(
+      queueWorkflowChild(
+        {
+          project: 'fixture',
+          child: 'DEV-2',
+          session: callerSession,
+          callerSession,
+          off: true,
+        },
+        d,
+      ),
+    ).rejects.toThrow(
+      `calling session ${callerSession} does not hold epic DEV-1 or a queued child under it`,
+    )
+  }
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'session-s',
+        callerSession: 'session-s',
+        off: true,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2' })
+})
+
+test('a hosted queued descendant claim authorizes its holder session', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  useHostedClaims(d, [hostedClaim({ kind: 'queued-task', value: 'DEV-2' }, 'session-s')])
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'session-s',
+        callerSession: 'session-s',
+        off: true,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2' })
 })
 
 test('inherited start maps parent closures to child ordinals by slug', () => {

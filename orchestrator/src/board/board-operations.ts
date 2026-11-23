@@ -190,6 +190,7 @@ export type BoardClaimResult = {
   project: string
   subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
   holder: string
+  holderSession: string | null
   note: string | null
   runId: string | null
   run_record_id: string | null
@@ -343,6 +344,12 @@ function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   } = value as HostedBoardClaim & ClaimView
   return {
     ...fields,
+    holderSession:
+      'holderSession' in value
+        ? value.holderSession
+        : value.holder === 'operator'
+          ? null
+          : value.holder,
     recordId,
     runId: stringId(value.runId),
     run_record_id: value.runId,

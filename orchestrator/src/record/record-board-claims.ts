@@ -81,6 +81,7 @@ function claimView(
       value: String(row.subject_value),
     },
     holder: String(row.holder_user_id),
+    holderSession: row.holder_session == null ? null : String(row.holder_session),
     note: row.note == null ? null : String(row.note),
     runId: row.run_id == null ? null : String(row.run_id),
     takenAt: nullableRecordIso(row.taken_at)!,

@@ -2,7 +2,8 @@
 /** Gathers the one task/claim fact model used by child services and session surfaces. */
 
 import type { Database } from 'bun:sqlite'
-import { boardLiveClaimsForProject } from '../board/board-operations.ts'
+import { boardClaimList, boardLiveClaimsForProject } from '../board/board-operations.ts'
+import { boardMode } from '../board/board-mode.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { ChildTaskFact } from './workflow-child-queue.ts'
@@ -12,19 +13,34 @@ import { ancestorTaskKeys } from './workflow-task-tree.ts'
 export type LiveChildClaim = {
   subject_kind: string
   subject_value: string
-  holder_session: string
+  holderUserId: string | null
+  holderSession: string | null
   taken_at: string
 }
 
-export function liveChildClaims(database: Database, project: string, now = Date.now()) {
-  return boardLiveClaimsForProject(project, now, database)
-    .filter((claim) => claim.holder !== 'operator')
-    .map<LiveChildClaim>((claim) => ({
-      subject_kind: claim.subject.kind,
-      subject_value: claim.subject.value,
-      holder_session: claim.holder,
-      taken_at: claim.takenAt,
-    }))
+export async function liveChildClaims(database: Database, project: string, now = Date.now()) {
+  if (boardMode('shared', process.env, database) === 'local')
+    return boardLiveClaimsForProject(project, now, database)
+      .filter((claim) => claim.holder !== 'operator')
+      .map<LiveChildClaim>((claim) => ({
+        subject_kind: claim.subject.kind,
+        subject_value: claim.subject.value,
+        holderUserId: null,
+        holderSession: claim.holder,
+        taken_at: claim.takenAt,
+      }))
+  const listed = await boardClaimList(project, false, {
+    database,
+    clock: now,
+    taskCursorAuthority: { mode: 'coverage-read', session: null },
+  })
+  return listed.claims.map<LiveChildClaim>((claim) => ({
+    subject_kind: claim.subject.kind,
+    subject_value: claim.subject.value,
+    holderUserId: claim.holder,
+    holderSession: claim.holderSession,
+    taken_at: claim.takenAt,
+  }))
 }
 
 export async function gatherChildTaskFacts(
@@ -45,7 +61,7 @@ export async function gatherChildTaskFacts(
     if (!existing || existing.number < cursor.id)
       cursors.set(cursor.workflow_key, { number: cursor.id, state: cursor.state })
   }
-  const claims = liveChildClaims(database, project)
+  const claims = await liveChildClaims(database, project)
   return tasks.map((task) => {
     const queued = claims.find(
       (claim) => claim.subject_kind === 'queued-task' && claim.subject_value === task.key,
@@ -62,8 +78,8 @@ export async function gatherChildTaskFacts(
       cursorState: cursors.get(task.key)?.state ?? null,
       liveTaskClaimSession:
         claims.find((claim) => claim.subject_kind === 'task' && claim.subject_value === task.key)
-          ?.holder_session ?? null,
-      liveQueuedClaimSession: queued?.holder_session ?? null,
+          ?.holderSession ?? null,
+      liveQueuedClaimSession: queued?.holderSession ?? null,
       queuedAt: queued?.taken_at ?? null,
     }
   })

@@ -79,5 +79,9 @@ test('a task claim is admitted only for the session that owns its open stage', a
     fixture.client.takeBoardClaim(claim('01990000-0000-7000-8000-000000024589', 'owner-session'), {
       destinationSpaceId: RECORD_CONTRACT_SPACE_A,
     }),
-  ).resolves.toMatchObject({ action: 'taken', subject: { kind: 'task', value: 'DEV-2424' } })
+  ).resolves.toMatchObject({
+    action: 'taken',
+    holderSession: 'owner-session',
+    subject: { kind: 'task', value: 'DEV-2424' },
+  })
 })
