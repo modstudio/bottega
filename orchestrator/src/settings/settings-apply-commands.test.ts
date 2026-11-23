@@ -27,6 +27,7 @@ import {
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
 import { settingsEnvCommand } from './settings-env-commands.ts'
+import { settingsSubagentsCommand } from './settings-subagents.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const priorHome = process.env.HOME
@@ -152,6 +153,25 @@ async function seedFutureUser(): Promise<string> {
   return body
 }
 
+const readLocalUserSettings = async () => ({
+  owner: OWNER,
+  row: getDoc('settings', null, 'settings', OWNER),
+})
+
+const readHostedUserSettings = async () => {
+  const page = await hostedClient.listDocs({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+  })
+  const row = page.items[0]
+  return {
+    owner: OWNER,
+    row: row && typeof row.body === 'string' ? { body: row.body, revision: 'hosted' } : null,
+  }
+}
+
 describe('future settings edit refusals', () => {
   const adapters = [
     {
@@ -192,6 +212,11 @@ describe('future settings edit refusals', () => {
       prepare: () => {},
       edit: () =>
         restoreStoredSettingsEnvironmentNames([{ oldName: 'OLD_NAME', newName: 'NEW_NAME' }]),
+    },
+    {
+      name: 'subagent choice',
+      prepare: () => {},
+      edit: () => settingsSubagentsCommand('allow', { read: readHostedUserSettings }),
     },
   ]
 
@@ -247,6 +272,25 @@ test('stored settings environment migration can be restored from its recorded na
 })
 
 describe('settings env import', () => {
+  test('dry-run tolerates unknown stored keys because it writes nothing', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    const body = await seedFutureUser()
+    await settingsEnvImportCommand(flags({ user: true, 'dry-run': true }), shown().port)
+    expect((await readHostedUserSettings()).row?.body).toBe(body)
+    expect(hostedWrites).toEqual([])
+  })
+
+  test('unknown stored keys refuse before changing settings.env', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    writeFileSync(join(claude, 'settings.env'), 'EXISTING="kept"\n', { mode: 0o600 })
+    await seedFutureUser()
+
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+    )
+    expect(readFileSync(join(claude, 'settings.env'), 'utf8')).toBe('EXISTING="kept"\n')
+  })
+
   test('never sends or prints a sentinel value', async () => {
     const sentinel = 'sentinel-env-value-that-must-not-escape'
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { API_TOKEN: sentinel } }))
@@ -319,6 +363,57 @@ describe('settings env import', () => {
     expect(message).toContain('cannot parse JSON')
     expect(message).not.toContain(sentinel)
     expect(output.logs.join('\n')).not.toContain(sentinel)
+  })
+})
+
+describe('settings subagents', () => {
+  test('a missing row names the import command that clears the refusal', async () => {
+    await expect(settingsSubagentsCommand()).rejects.toThrow(
+      `${PLATFORM_SLUG} machine settings import --user`,
+    )
+  })
+
+  test('block and allow round trip the option and report its source', async () => {
+    await seedUser()
+    expect(
+      await settingsSubagentsCommand(undefined, { read: readLocalUserSettings }),
+    ).toMatchObject({ blocking: 'off', source: 'default' })
+    expect(await settingsSubagentsCommand('block', { read: readLocalUserSettings })).toMatchObject({
+      blocking: 'on',
+      source: 'user',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).options,
+    ).toEqual({ subagentHooks: 'on' })
+    expect(await settingsSubagentsCommand('allow', { read: readLocalUserSettings })).toMatchObject({
+      blocking: 'off',
+      source: 'default',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body),
+    ).not.toHaveProperty('options')
+  })
+
+  test('unknown choice lists allow and block', async () => {
+    await expect(settingsSubagentsCommand('maybe')).rejects.toThrow(/allow or block/)
+  })
+
+  test('refuses to change a row whose read has no revision', async () => {
+    await expect(
+      settingsSubagentsCommand('block', {
+        read: async () => ({
+          owner: OWNER,
+          row: {
+            body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+            revision: null,
+          },
+        }),
+      }),
+    ).rejects.toThrow(
+      'refusing settings subagents: the settings row has no revision; upgrade the hosted record and retry',
+    )
   })
 })
 

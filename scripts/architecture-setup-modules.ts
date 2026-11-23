@@ -243,11 +243,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../record/record-session.ts',
       '../settings/settings-files.ts',
       '../settings/settings-machine-hooks.ts',
+      '../settings/settings.ts',
+      '../settings/settings-user-row.ts',
       './setup-install-verify.ts',
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep setup settings facts local-only and independent of hosted reads and setup policy.',
+      'Keep setup settings facts independent of direct stores while sharing the settings option projection policy.',
   },
   {
     name: 'setup-install-verify-runtime-boundary',
@@ -264,6 +266,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../settings/settings-files.ts',
       '../settings/settings-machine-apply.ts',
       '../settings/settings-machine-hooks.ts',
+      '../settings/settings-user-row.ts',
       './setup-install-verify.ts',
     ],
     typeOnlyAllowed: [],

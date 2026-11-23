@@ -41,6 +41,8 @@ import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
+  type SubagentHooksChoice,
+  subagentBlockingOn,
 } from './settings.ts'
 import {
   readSettingsEnv,
@@ -81,6 +83,8 @@ export type MachineSettingsApplyResult = {
   detail?: string
   changed: boolean
   superseded?: SupersededProfileHook[]
+  subagentHooksRemoved?: boolean
+  subagentHooks?: SubagentHooksChoice
 }
 
 export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyResult): boolean {
@@ -221,13 +225,28 @@ function applyUserSettings(
       readMachinePermissions(deps.environment),
     )
     const settingsSourceDetail = row ? undefined : 'product hooks only; no user settings row'
+    const databasePath = resolveOrchestratorDatabase(deps.environment)
+    const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
+    const runtime = resolveMachineHookRuntime()
     const productHooks = withMachineProductHooks(
       merged.settings,
-      resolveOrchestratorDatabase(deps.environment),
-      readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
-      resolveMachineHookRuntime(),
+      row ? merged.settings.options : undefined,
+      databasePath,
+      globalUse,
+      runtime,
     )
+    const renderedBlockAgentPresent = withMachineProductHooks(
+      parsed.owned,
+      undefined,
+      databasePath,
+      globalUse,
+      runtime,
+    ).superseded.some((hook) => hook.script === 'block-agent.py')
     const owned = productHooks.settings
+    const subagentHooks =
+      row && subagentBlockingOn(merged.settings.options)
+        ? merged.settings.options?.subagentHooks
+        : undefined
     let environment: Record<string, string> | undefined
     if (row) {
       const secretsPath = userSettingsEnvPath(home)
@@ -256,6 +275,11 @@ function applyUserSettings(
       settingsSourceDetail,
       unmatchedDropDetail: unmatchedDropDetail(merged.unmatchedDrops),
       superseded: productHooks.superseded,
+      subagentHooksRemoved:
+        !subagentBlockingOn(merged.settings.options) &&
+        (renderedBlockAgentPresent ||
+          productHooks.superseded.some((hook) => hook.script === 'block-agent.py')),
+      subagentHooks,
       deps,
     })
   } catch (error) {
@@ -272,6 +296,8 @@ function applyRenderedUserSettings(input: {
   settingsSourceDetail?: string
   unmatchedDropDetail?: string
   superseded: SupersededProfileHook[]
+  subagentHooksRemoved: boolean
+  subagentHooks?: SubagentHooksChoice
   deps: Dependencies
 }): MachineSettingsApplyResult {
   const plan = input.exists ? planSettingsWrite(input.path, input.rendered) : null
@@ -283,6 +309,8 @@ function applyRenderedUserSettings(input: {
       detail,
       changed: false,
       ...(!input.check && input.superseded.length ? { superseded: input.superseded } : {}),
+      ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+      subagentHooks: input.subagentHooks,
     }
   }
   if (input.check) {
@@ -291,6 +319,7 @@ function applyRenderedUserSettings(input: {
       outcome: 'applied',
       detail: ['would apply', detail].filter(Boolean).join('; '),
       changed: true,
+      subagentHooks: input.subagentHooks,
     }
   }
   let result: { backup: string | null }
@@ -309,6 +338,8 @@ function applyRenderedUserSettings(input: {
       .join('; '),
     changed: true,
     ...(input.superseded.length ? { superseded: input.superseded } : {}),
+    ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+    subagentHooks: input.subagentHooks,
   }
 }
 
@@ -504,7 +535,11 @@ export function printMachineSettingsApplyResults(
     const status = result.outcome === 'current' ? 'already current' : result.outcome
     const detail = result.detail?.replaceAll('\n', '; ')
     log(`${result.target}: ${status}${detail ? `; ${detail}` : ''}`)
+    if (result.subagentHooksRemoved) {
+      log('block-agent hooks removed: subagent blocking is off')
+    }
     for (const hook of result.superseded ?? []) {
+      if (result.subagentHooksRemoved && hook.script === 'block-agent.py') continue
       log(
         `profile hook ${hook.event} ${hook.matcher ?? '-'} ${hook.script} is superseded by the product hook and can be deleted from the profile`,
       )

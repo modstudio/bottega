@@ -9,7 +9,6 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'zod',
       'shared/brand.ts',
-      'shared/refusal.ts',
       'shared/secret-shaped.ts',
       'shared/settings-permission-lists.ts',
       'shared/stored-settings.ts',
@@ -56,6 +55,31 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     ],
     typeOnlyAllowed: [],
     reason: 'Keep plain canonical environment edits independent of files, runs, and the CLI.',
+  },
+  {
+    name: 'settings-subagents-boundary',
+    file: `${source}settings-subagents.ts`,
+    allowed: [
+      'shared/brand.ts',
+      'shared/refusal.ts',
+      'orchestrator/src/doc/docs.ts',
+      `${source}settings.ts`,
+      `${source}settings-edit-refusal.ts`,
+      `${source}settings-user-row.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep the hosted subagent choice independent of files, runs, and CLI grammar.',
+  },
+  {
+    name: 'settings-user-row-boundary',
+    file: `${source}settings-user-row.ts`,
+    allowed: [
+      'orchestrator/src/doc/doc-authoritative-read.ts',
+      'orchestrator/src/doc/docs.ts',
+      `${source}settings.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep user settings reads behind the active record authority.',
   },
   {
     name: 'settings-write-boundary',

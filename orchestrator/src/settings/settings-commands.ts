@@ -361,6 +361,7 @@ function effectiveStoredSettings(
   const merged = mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
   return withMachineProductHooks(
     merged,
+    hosted.options,
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
     resolveMachineHookRuntime(),

@@ -23,8 +23,8 @@ export const settingsModules: SettingsModule[] = [
     './stored-settings.ts',
   ]),
   module('orchestrator/src/settings/settings-edit-refusal.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/stored-settings.ts',
     './settings.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', [
@@ -328,6 +328,7 @@ export const settingsModules: SettingsModule[] = [
     '../settings/settings-env-commands.ts',
     '../settings/settings-machine-apply.ts',
     '../settings/settings-machine-permissions.ts',
+    '../settings/settings-subagents.ts',
     './support.ts',
   ]),
   module('orchestrator/src/settings/settings-auto-mode.ts', ['./settings.ts']),
@@ -336,6 +337,19 @@ export const settingsModules: SettingsModule[] = [
     '../doc/docs.ts',
     './settings.ts',
     './settings-edit-refusal.ts',
+  ]),
+  module('orchestrator/src/settings/settings-subagents.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../doc/docs.ts',
+    './settings.ts',
+    './settings-edit-refusal.ts',
+    './settings-user-row.ts',
+  ]),
+  module('orchestrator/src/settings/settings-user-row.ts', [
+    '../doc/doc-authoritative-read.ts',
+    '../doc/docs.ts',
+    './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [

@@ -12,7 +12,7 @@ afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
-test('setup settings fact reports matching and absent hooks from the local settings file', () => {
+test('setup settings fact reports matching hooks and the signed-in subagent choice', async () => {
   const home = mkdtempSync(join(tmpdir(), 'setup-settings-fact-'))
   temporary.push(home)
   const claudeHome = join(home, '.claude')
@@ -25,6 +25,7 @@ test('setup settings fact reports matching and absent hooks from the local setti
   }
   const settings = withMachineProductHooks(
     { permissions: {}, hooks: {} },
+    { subagentHooks: 'on' },
     join(home, 'orchestrator.db'),
     'on',
     runtime,
@@ -39,9 +40,13 @@ test('setup settings fact reports matching and absent hooks from the local setti
   group.hooks.shift()
   writeFileSync(join(claudeHome, 'settings.json'), JSON.stringify(settings))
 
-  const fact = gatherSetupSettingsFact(
+  const fact = await gatherSetupSettingsFact(
     { HOME: home },
-    { sessionPresent: () => true, assetRoot: () => assetRoot },
+    {
+      sessionPresent: () => true,
+      assetRoot: () => assetRoot,
+      settingsOptions: async () => ({ subagentHooks: 'on' }),
+    },
   )
 
   expect(fact.state).toBe('signed-in')
@@ -52,4 +57,14 @@ test('setup settings fact reports matching and absent hooks from the local setti
     state: 'missing',
   })
   expect(fact.hooks.some((hook) => hook.state === 'present')).toBe(true)
+  expect(fact.subagents).toEqual({ blocking: 'on', source: 'user' })
+})
+
+test('setup settings fact defaults subagent blocking off while waiting for sign-in', async () => {
+  const fact = await gatherSetupSettingsFact(
+    { HOME: '/missing' },
+    { sessionPresent: () => false, assetRoot: () => '/installed' },
+  )
+  expect(fact.subagents).toEqual({ blocking: 'off', source: 'default' })
+  expect(fact.hooks.some((hook) => hook.script === 'block-agent.py')).toBe(false)
 })
