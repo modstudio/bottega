@@ -3,8 +3,8 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { validateStepCatalogue } from './step-catalogue.ts'
 import {
   BUILT_IN_WORKFLOW_AUTHOR,

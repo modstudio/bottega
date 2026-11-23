@@ -8,11 +8,11 @@ import {
   applyWorkflowWriteResponse,
 } from '../record/record-cache-workflow.ts'
 import { recordMemberships } from '../record/record-space.ts'
-import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import {
   RECORD_WORKFLOW_TABLES,
   type RecordWorkflowTable,
 } from '../record/record-workflow-contract.ts'
+import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {

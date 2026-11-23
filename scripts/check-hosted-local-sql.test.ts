@@ -6,8 +6,8 @@ import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hos
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
 import {
   checkHostedLocalSql,
-  hostedLocalSqlExemptionReasonFailures,
   hostedLocalRenderedSqlRisk,
+  hostedLocalSqlExemptionReasonFailures,
   hostedLocalSqlViolations,
 } from './check-hosted-local-sql.ts'
 import {

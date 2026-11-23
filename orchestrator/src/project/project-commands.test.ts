@@ -419,7 +419,7 @@ test('an unbound store with a configured record pulls catalogues and adds a proj
         table === 'step_catalogue'
           ? [
               {
-                id: catalogueIds.get(destination!.destinationSpaceId),
+                id: catalogueIds.get(destination!.destinationSpaceId)!,
                 spaceId: destination!.destinationSpaceId,
                 slug: 'shared',
                 generation: 1,

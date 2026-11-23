@@ -822,8 +822,7 @@ export async function uploadMissingWorkflowHistory(
 ): Promise<HistorySyncResult> {
   const resolveDestination = destinationFor ?? recordWriteDestination
   return withDatabase(async (database) => {
-    if (!storeHasAttachedToHostedRecord(database))
-      return { failed: 0, lines: [], skipped: false }
+    if (!storeHasAttachedToHostedRecord(database)) return { failed: 0, lines: [], skipped: false }
     if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
       return {
         failed: 0,

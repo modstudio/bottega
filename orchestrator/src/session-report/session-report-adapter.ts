@@ -35,10 +35,9 @@ export type SessionReport = {
 }
 
 function knownSessions(database: Database): string[] {
-  const cursorSessions =
-    hostedRecordOwnsHostedTables(database)
-      ? ''
-      : 'UNION SELECT session_id FROM workflow_cursor WHERE session_id IS NOT NULL'
+  const cursorSessions = hostedRecordOwnsHostedTables(database)
+    ? ''
+    : 'UNION SELECT session_id FROM workflow_cursor WHERE session_id IS NOT NULL'
   return database
     .query<{ session_id: string }, []>(
       `SELECT session_id FROM session_seen

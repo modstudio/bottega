@@ -631,7 +631,7 @@ test('shared hosted promotion reads every space, copies followers, and reports a
   const fixture = installSharedPromotionFixture()
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
     version: 2,
-    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    changedSpaces: [SPACE, FOLLOWER_SPACE],
     overrideSpaces: [],
     pinnedSpaces: [],
   })
@@ -646,7 +646,7 @@ test('shared hosted promotion gives a follower the required catalogue before the
   const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
     version: 2,
-    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    changedSpaces: [SPACE, FOLLOWER_SPACE],
     overrideSpaces: [],
     pinnedSpaces: [],
   })
@@ -663,7 +663,7 @@ test('shared hosted promotion validates catalogue catch-up against the incoming 
   const fixture = installSharedPromotionFixture({ catalogueDrop: true })
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
     version: 2,
-    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    changedSpaces: [SPACE, FOLLOWER_SPACE],
     overrideSpaces: [],
     pinnedSpaces: [],
   })
@@ -685,7 +685,7 @@ test('shared hosted promotion does not catch up catalogue outside its workflow w
   })
 
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toMatchObject({
-    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    changedSpaces: [SPACE, FOLLOWER_SPACE],
     overrideSpaces: [SECOND_FOLLOWER_SPACE],
   })
   expect(fixture.calls).not.toContain(`catalogue-draft:${SECOND_FOLLOWER_SPACE}:test`)
@@ -715,7 +715,7 @@ test('shared hosted promotion skips an override whose catalogue cannot carry the
 
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
     version: 2,
-    changedSpaces: ['local', SPACE, SECOND_FOLLOWER_SPACE],
+    changedSpaces: [SPACE, SECOND_FOLLOWER_SPACE],
     overrideSpaces: [],
     pinnedSpaces: [],
     blockedByCatalogue: [
@@ -739,10 +739,10 @@ test('shared hosted promotion skips an override whose catalogue cannot carry the
   expect(fixture.state.get(FOLLOWER_SPACE)!.versions[0]!.status).toBe('production')
 })
 
-test('shared hosted promotion skips a local override whose catalogue cannot carry the workflow', async () => {
-  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+test('shared hosted promotion ignores a local override outside its hosted write set', async () => {
   const local = db()
   const localCatalogue = structuredClone(productionStepCatalogue(local).definition)
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
   localCatalogue.steps[0]!.title = 'Local override'
   const localDraft = setStepCatalogueLocal(localCatalogue, 'local override', 'test', local)
   promoteStepCatalogueLocal(localDraft.n, 'local override', 'test', local)
@@ -752,15 +752,6 @@ test('shared hosted promotion skips a local override whose catalogue cannot carr
     changedSpaces: [SPACE, FOLLOWER_SPACE],
     overrideSpaces: [],
     pinnedSpaces: [],
-    blockedByCatalogue: [
-      {
-        space: 'local',
-        disposition: 'override',
-        plannedVersion: localDraft.n,
-        reason:
-          'invalid workflow definition:\n- mode "default" references missing step "new-shared-step"; add and promote that catalogue step, or edit the workflow mode',
-      },
-    ],
   })
   expect(fixture.calls).toEqual([
     `catalogue-draft:${FOLLOWER_SPACE}:test`,
@@ -789,7 +780,7 @@ test('shared hosted promotion refusal names the target catalogue plan before wri
   sourceCatalogue.definition = JSON.stringify(definition)
 
   await expect(promoteWorkflow(fixture.slug, 2, 'release')).rejects.toThrow(
-    'space local catalogue follower planned version 2 cannot carry the workflow: invalid workflow definition:\n- mode "default" references missing step "new-shared-step"',
+    `space ${SPACE} catalogue follower planned version 2 cannot carry the workflow: invalid workflow definition:\n- mode "default" references missing step "new-shared-step"`,
   )
   expect(fixture.calls).toEqual([])
 })
@@ -798,7 +789,7 @@ test('shared hosted promotion keeps and reports a space-specific pin', async () 
   const fixture = installSharedPromotionFixture({ pinned: true })
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
     version: 2,
-    changedSpaces: ['local', SPACE],
+    changedSpaces: [SPACE],
     overrideSpaces: [],
     pinnedSpaces: [FOLLOWER_SPACE],
   })
