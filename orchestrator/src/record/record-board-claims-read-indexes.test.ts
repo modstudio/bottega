@@ -169,7 +169,8 @@ test('open and predecessor reads use board_claim index conditions under RLS', as
     openOnly: true,
   })
   const openQuery = capturedQueries.find(
-    ({ statement }) => statement.includes('SELECT * FROM board_claim') && statement.includes('project_id='),
+    ({ statement }) =>
+      statement.includes('SELECT * FROM board_claim') && statement.includes('project_id='),
   )
   const previousQuery = capturedQueries.find(({ statement }) =>
     statement.includes('WHERE superseded_by_claim_id = ANY('),

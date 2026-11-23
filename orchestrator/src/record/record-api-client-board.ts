@@ -208,10 +208,7 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
       project: string,
       projectId?: string | null,
       options?: { openOnly?: boolean },
-    ) =>
-      request<{ claims: HostedBoardClaim[] }>(
-        boardClaimListPath(project, projectId, options),
-      ),
+    ) => request<{ claims: HostedBoardClaim[] }>(boardClaimListPath(project, projectId, options)),
   }
 }
 
