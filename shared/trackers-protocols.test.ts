@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
-import { resolveTrackerAgentActions, trackerWireAction } from './tracker-actions.ts'
+import {
+  resolveTrackerAgentActions,
+  type TrackerAction,
+  trackerWireAction,
+} from './tracker-actions.ts'
 import { createTrackerTask, trackerCreatedTaskKey } from './tracker-create.ts'
 import type { ToolCaller } from './tracker-list-scope.ts'
 import { TrackerLookupUnverifiable } from './tracker-task-text.ts'
@@ -34,9 +38,10 @@ describe('tracker action names', () => {
     expect(trackerWireAction('workspace-mcp', 'search')).toBe('list-tasks-tool')
   })
 
-  test('keeps cursor agent and wire names distinct', () => {
-    expect(resolveTrackerAgentActions('cursor-mcp').get).toBe('task_getByKey')
-    expect(trackerWireAction('cursor-mcp', 'get')).toBe('task.getByKey')
+  test('uses every cursor agent name as its wire name', () => {
+    for (const [action, agentName] of Object.entries(resolveTrackerAgentActions('cursor-mcp'))) {
+      expect(trackerWireAction('cursor-mcp', action as TrackerAction)).toBe(agentName)
+    }
   })
 
   test('refuses an action unsupported by the protocol', () => {
@@ -115,7 +120,7 @@ const fixtureCaller = () => {
 
 const scopeTools = async () => [
   { name: 'list-tasks-tool', inputSchema: { properties: { team_id: {} } } },
-  { name: 'task.list', inputSchema: { properties: { projectId: {} } } },
+  { name: 'task_list', inputSchema: { properties: { projectId: {} } } },
 ]
 
 describe('tracker create protocols', () => {
@@ -181,13 +186,13 @@ describe('tracker create protocols', () => {
     ])
   })
 
-  test('cursor-mcp passes the registered project id to task.create', async () => {
+  test('cursor-mcp passes the registered project id to task_create', async () => {
     const fixture = fixtureCaller()
 
     await createTrackerTask(fixture.caller, project('stopal', 'cursor-mcp'), task)
     expect(fixture.calls).toEqual([
       {
-        name: 'task.create',
+        name: 'task_create',
         args: {
           projectId: '019d9699-a223-729f-a032-50de9fdf4303',
           title: 'Move the adapter',
@@ -368,7 +373,7 @@ describe('tracker status protocols', () => {
       ),
     ).toEqual({ status: 'done', category: 'done' })
     expect(fixture.calls).toEqual([
-      { name: 'task.update', args: { id: 'cursor-uuid', status: 'done' } },
+      { name: 'task_update', args: { id: 'cursor-uuid', status: 'done' } },
     ])
     await expect(
       source.writeStatus!(
@@ -431,7 +436,7 @@ describe('tracker list scope', () => {
       const source = trackerSourceFor(
         project(protocol === 'workspace-mcp' ? 'workspace' : 'stopal', protocol),
       )!
-      const toolName = protocol === 'workspace-mcp' ? 'list-tasks-tool' : 'task.list'
+      const toolName = protocol === 'workspace-mcp' ? 'list-tasks-tool' : 'task_list'
       const response = (rows: Record<string, unknown>[]) =>
         protocol === 'workspace-mcp' ? { tasks: rows } : { data: { items: rows } }
       const scoped =
