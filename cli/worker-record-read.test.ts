@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { workerRecordReadCliRefusal } from './worker-record-read.ts'
 
-test('codex worker CLI reads refuse with the matching bottega-ask remedy', () => {
+test('codex worker CLI reads refuse with the matching ask MCP remedy', () => {
   for (const [route, tool] of [
     ['task', 'read_task'],
     ['document', 'read_task_document'],
@@ -13,7 +13,7 @@ test('codex worker CLI reads refuse with the matching bottega-ask remedy', () =>
       codexSandbox: true,
       askUrl: false,
     })
-    expect(refusal).toContain(`bottega-ask tool ${tool}`)
+    expect(refusal).toContain(`MCP tool ${tool}`)
     expect(refusal).not.toContain('record sign-in')
   }
   expect(

@@ -4,7 +4,7 @@
 import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
 import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
 import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
-import { classifyCaller, type CallerClassification } from '../shared/caller-classification.ts'
+import { type CallerClassification, classifyCaller } from '../shared/caller-classification.ts'
 
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name)
@@ -49,7 +49,7 @@ export function workerRecordReadCliRefusal(input: {
   if (!input.route || input.callerKind !== 'worker' || input.askUrl || !input.codexSandbox)
     return null
   const tool = WORKER_READ_TOOLS[input.route]
-  return `a codex worker reads this record with the bottega-ask tool ${tool}; the CLI can't reach the record session from codex's sandbox`
+  return `a codex worker reads this record with the worker ask MCP tool ${tool}; the CLI can't reach the record session from codex's sandbox`
 }
 
 /** Return null when the normal CLI owner should handle this invocation. */

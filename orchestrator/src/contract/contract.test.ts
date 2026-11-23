@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { detectBlockers } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -51,7 +51,7 @@ test('the harness worker preamble offers only the durable question path', () => 
   expect(preamble).not.toContain('live orchestrator tools are available')
 })
 
-test('the live worker pack directs hosted reads through bottega-ask', () => {
+test(`the live worker pack directs hosted reads through ${WORKER_MCP_SERVER_NAME}`, () => {
   const preamble = workerPreamble('implement', false)
   expect(preamble).toContain('`read_task`, `read_task_document` and `read_workflow_text`')
 })
