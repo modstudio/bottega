@@ -566,6 +566,15 @@ export const hubModuleSpecs = [
     ],
   },
   {
+    file: 'hub/src/task-print.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      './task-document-types.ts',
+      './task-row.ts',
+      './task-types.ts',
+    ],
+  },
+  {
     file: 'hub/src/task-record.ts',
     allowed: [
       './db.ts',
@@ -800,6 +809,7 @@ export const hubModuleSpecs = [
       './task-document.ts',
       './task-hosted-cli.ts',
       './task-machine-attribution.ts',
+      './task-print.ts',
       './task-import.ts',
       './tracker-new.ts',
       './tracker-task-cli.ts',
