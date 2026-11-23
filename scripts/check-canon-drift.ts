@@ -65,12 +65,12 @@ export function registeredProjectAt(checkout: string, database: Database): Proje
   return project
 }
 
-export function readCanonGateInput(
+export async function readCanonGateInput(
   checkout: string,
   database: Database,
-): { project: Project; rows: ReturnType<typeof storedRepositoryCanonRows> } {
+): Promise<{ project: Project; rows: Awaited<ReturnType<typeof storedRepositoryCanonRows>> }> {
   const project = registeredProjectAt(checkout, database)
-  return { project, rows: storedRepositoryCanonRows(project.name, database) }
+  return { project, rows: await storedRepositoryCanonRows(project.name) }
 }
 
 function readCanonGateFactsInput(
@@ -163,11 +163,11 @@ function canonDriftFromInput(
   return findings
 }
 
-function checkCanonDrift(
+async function checkCanonDrift(
   checkout: string,
   databasePath = DB_PATH,
   facts?: GateFacts,
-): HydrationDrift[] {
+): Promise<HydrationDrift[]> {
   if (facts) return canonDriftFromInput(checkout, readCanonGateFactsInput(checkout, facts))
   let database: Database
   try {
@@ -178,7 +178,7 @@ function checkCanonDrift(
     )
   }
   try {
-    return canonDriftFromInput(checkout, readCanonGateInput(checkout, database))
+    return canonDriftFromInput(checkout, await readCanonGateInput(checkout, database))
   } catch (cause) {
     if (String((cause as Error).message ?? cause).includes('\nremedy: ')) throw cause
     refuse(
@@ -198,7 +198,7 @@ if (import.meta.main) {
     }
     if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
-    const findings =
+    const findings = await (
       storeKind === 'ahead'
         ? withBranchStoreScratch('canon-drift', (dir) =>
             withMainGateFactsSnapshot(
@@ -223,6 +223,7 @@ if (import.meta.main) {
             ),
           )
         : checkCanonDrift(root)
+    )
     for (const finding of findings) {
       console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
     }

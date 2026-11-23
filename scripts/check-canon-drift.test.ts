@@ -4,7 +4,18 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
-import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import {
+  closeDatabaseForFixture,
+  DB_PATH,
+  db,
+  openReadOnlyDatabase,
+} from '../orchestrator/src/database/db.ts'
+import { writeMigratedTestDatabase } from '../orchestrator/src/database/test-database.fixture.ts'
+import { registerStandardHooks } from '../orchestrator/src/runtime/store-hooks.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../orchestrator/test/fixtures/record-api.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
@@ -36,6 +47,8 @@ function commit(root: string, message: string): string {
 }
 
 afterEach(() => {
+  installRecordApiClient(null)
+  closeDatabaseForFixture()
   scratch = null
   if (originalGithubBase === undefined) delete process.env.GITHUB_BASE_REF
   else process.env.GITHUB_BASE_REF = originalGithubBase
@@ -111,43 +124,40 @@ describe('canon drift branch gate', () => {
     ])
   })
 
-  test('reads register and canon rows without changing a scratch store', () => {
+  test('reads register and canon rows without changing a scratch store', async () => {
     const root = repository()
-    const store = join(root, 'scratch.db')
+    const store = DB_PATH
+    writeMigratedTestDatabase(store)
     const writable = new Database(store, { create: true })
-    writable.exec(`
-      CREATE TABLE project (
-        id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, stack TEXT,
-        canon INTEGER NOT NULL DEFAULT 0, settings TEXT, retired_at TEXT,
-        record_id TEXT NOT NULL UNIQUE
-      );
-      CREATE TABLE doc (
-        record_id TEXT NOT NULL PRIMARY KEY, scope TEXT NOT NULL, subject TEXT, owner TEXT,
-        project_id INTEGER, slug TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
-        delivery TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        revision TEXT, audience TEXT NOT NULL DEFAULT 'technical',
-        parent_record_id TEXT, position INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE doc_revision (
-        record_id TEXT NOT NULL PRIMARY KEY, doc_record_id TEXT, number INTEGER NOT NULL UNIQUE
-      );
-    `)
     writable
       .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')
-      .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main' }))
+      .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main', space: 'fixture' }))
     writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
+    writable.close()
+    registerStandardHooks()
+    db().exec('PRAGMA wal_checkpoint(TRUNCATE);')
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: 'fixture-user', name: 'Fixture', email: 'fixture@example.test' },
+        activeSpaceId: 'fixture',
+        personalSpaceId: 'fixture',
+        memberships: [
+          { space_id: 'fixture', slug: 'fixture', permission: 'write', role: 'owner' },
+        ],
+      }),
+    })
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
     const before = digest()
 
     const readonly = openReadOnlyDatabase(store)
-    expect(readCanonGateInput(root, readonly)).toMatchObject({
+    expect(await readCanonGateInput(root, readonly)).toMatchObject({
       project: { name: 'fixture' },
       rows: [],
     })
     readonly.close()
 
     expect(digest()).toBe(before)
-    writable.close()
   })
 
   test('refuses CI base metadata that differs from registered trunk', () => {
