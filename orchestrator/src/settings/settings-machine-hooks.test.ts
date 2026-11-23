@@ -15,7 +15,6 @@ import {
 } from '../session/context-review-decision.ts'
 import {
   commandNamesHookScript,
-  PRODUCT_HOOKS,
   productHookDeclarations,
   withMachineProductHooks,
 } from './settings-machine-hooks.ts'
