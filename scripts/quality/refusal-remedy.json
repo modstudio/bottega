@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/database/checkout-cli-build.ts#checkoutCliBuildFailure": {
+      "test": "orchestrator/src/database/checkout-cli-build.test.ts: the checkout CLI build failure names machine update as the clearing command"
+    },
     "orchestrator/src/settings/settings-subagents.ts#settingsSubagentsCommand": {
       "test": "orchestrator/src/settings/settings-apply-commands.test.ts: a missing row names the import command that clears the refusal"
     },

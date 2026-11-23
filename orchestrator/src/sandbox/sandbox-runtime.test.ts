@@ -17,6 +17,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { runningInstallationIdentity } from '../../../shared/install-root.ts'
+import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import {
   sandboxRuntimeAssets,
   sandboxRuntimePayloadPaths,
@@ -27,11 +29,13 @@ import {
   extractSandboxRuntime,
   packageManagerFromOsRelease,
   prepareSandboxRuntimeConfig,
-  SRT_LIBRARY,
   sandboxRuntimeAvailability,
+  srtLibrary,
   withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
 import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
+
+const SRT_LIBRARY = srtLibrary()
 
 const availabilityFacts = {
   location: '/runtime',
@@ -107,6 +111,20 @@ describe('sandbox runtime payloads', () => {
       else process.env.BOTTEGA_STATE_HOME = previous
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  test('a checkout carves back only its compiled CLI and stamp beneath the denied state root', () => {
+    const environment = { BOTTEGA_STATE_HOME: '/operator/state', HOME: '/operator' }
+    const identity = runningInstallationIdentity(import.meta.dir, environment)
+    if (identity.kind !== 'checkout') throw new Error('expected a checkout install')
+    const runtime = `/operator/state/runtime/${identity.version}/`
+    const carvebacks = workerRuntimeReadCarvebacks(environment, null)
+    expect(carvebacks).toEqual([
+      `${runtime}${WORKER_RUNTIME_ASSETS.checkoutCli}`,
+      `${runtime}${WORKER_RUNTIME_ASSETS.checkoutCliStamp}`,
+    ])
+    expect(carvebacks).not.toContain('/operator/state')
+    expect(carvebacks.every((path) => path.startsWith(runtime))).toBeTrue()
   })
 
   test('temporary directory is scoped to one launch and restored before the next', async () => {

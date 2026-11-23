@@ -362,6 +362,23 @@ jobs:
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch'
         run: "echo 'release smoke: no pull request, merge queue or dispatch event'"
 
+  checkout-cli-confinement:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install
+        run: bun install --silent
+      - name: Prove confined checkout ask-server tools
+        run: bun run --cwd orchestrator check:checkout-cli-confinement
+      - name: Prove source-launch mutation fails
+        run: bun run --cwd orchestrator check:checkout-cli-confinement -- --force-source
+
   migration-paths:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -437,7 +454,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-future-clock, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal, release-smoke, migration-paths, migration-compatibility, install-proof]
+    needs: [secrets, static, cli, orchestrator, orchestrator-future-clock, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal, release-smoke, checkout-cli-confinement, migration-paths, migration-compatibility, install-proof]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { ROOT } from '../database/database-location.ts'
+import { runningOrchestratorRoot } from '../database/database-location.ts'
 import {
   CODEX_ASK_ENV_VARS,
   CODEX_ORCH_ENV_VARS,
@@ -14,6 +14,8 @@ import {
   codexWithheldTools,
 } from './codex-mcp-scope.ts'
 import { selectProjectMcpServers } from './project-mcp-scope.ts'
+
+const ROOT = runningOrchestratorRoot()
 
 // Codex renders the launch's single selection; compose it here the way
 // run-mcp-launch-scope.ts does so the argv under test is the launch's argv.

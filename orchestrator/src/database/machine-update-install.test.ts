@@ -32,8 +32,14 @@ test.each([
 })
 
 test.each([
-  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate', 'workflow-sync'] },
-  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate', 'workflow-sync'] },
+  {
+    changedPaths: 'package.json\0',
+    expected: ['pull', 'install', 'migrate', 'workflow-sync', 'build-cli'],
+  },
+  {
+    changedPaths: 'shared/source.ts\0',
+    expected: ['pull', 'migrate', 'workflow-sync', 'build-cli'],
+  },
 ])(
   'machine update orders dependency refresh for pulled paths $changedPaths',
   async ({ changedPaths, expected }) => {
@@ -62,6 +68,7 @@ test.each([
           expect({ cwd, since }).toEqual({ cwd: dir, since: 'before-commit' })
           events.push('workflow-sync')
         },
+        buildCli: () => events.push('build-cli'),
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -98,6 +105,70 @@ test('machine update verifies the main checkout before synchronizing workflows',
     ),
   ).rejects.toThrow('tracked workflow edit remains')
   expect(synchronized).toBeFalse()
+})
+
+test('machine update does not build the checkout CLI when migration fails', async () => {
+  let built = false
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          return ''
+        },
+        migrate: () => {
+          throw new Error('injected migration failure')
+        },
+        buildCli: () => {
+          built = true
+        },
+      },
+    ),
+  ).rejects.toThrow('migration failed: injected migration failure')
+  expect(built).toBeFalse()
+})
+
+test('machine update reports a post-migration CLI build failure without rolling back', async () => {
+  const gitCalls: string[][] = []
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          return ''
+        },
+        migrate: () => {},
+        syncWorkflows: () => {},
+        buildCli: () => {
+          throw new Error('injected build failure')
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `compiled checkout CLI build failed: injected build failure; rerun ${PLATFORM_SLUG} machine update`,
+  )
+  expect(gitCalls).not.toContainEqual(['reset', '--keep', 'before-commit'])
 })
 
 test('machine update restores main when dependency install fails after the pull', async () => {

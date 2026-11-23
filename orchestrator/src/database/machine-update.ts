@@ -26,6 +26,7 @@ import { projectAt } from '../project/projects.ts'
 import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
+import { buildCheckoutCli } from './checkout-cli-build.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
@@ -234,6 +235,7 @@ type UpdateDependencies = {
   git?: (cwd: string, args: string[]) => string
   install?: (cwd: string) => void
   migrate?: (cwd: string) => void
+  buildCli?: (cwd: string) => void
   syncWorkflows?: (cwd: string, since: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
@@ -653,6 +655,14 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   verifyMainCheckout(target, branch, runGit)
   const syncWorkflows = deps.syncWorkflows ?? runWorkflowSync
   syncWorkflows(target, beforePull)
+  try {
+    ;(deps.buildCli ?? buildCheckoutCli)(target)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `compiled checkout CLI build failed: ${detail}; rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb

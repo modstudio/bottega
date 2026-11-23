@@ -7,6 +7,7 @@ import {
   type BottegaEntry,
   bottegaEntryArgv,
   installedBottegaExecutable,
+  runExecSourceExecutable,
   sourceBunExecutable,
 } from './self-spawn.ts'
 
@@ -63,6 +64,16 @@ test('source Bun resolution prefers PATH and falls back to the current executabl
   ).toBe('/stable/bin/bun')
   expect(sourceBunExecutable((executable) => (executable === 'bun' ? null : '/wrong'))).toBe(
     process.execPath,
+  )
+})
+
+test('run-exec executable selection never re-enters a compiled checkout binary', () => {
+  expect(runExecSourceExecutable(true, undefined, '/compiled/cli', '/bin/bun')).toBe('/bin/bun')
+  expect(runExecSourceExecutable(true, '/override/bun', '/compiled/cli', '/bin/bun')).toBe(
+    '/override/bun',
+  )
+  expect(runExecSourceExecutable(false, undefined, '/bin/bun-current', '/bin/bun')).toBe(
+    '/bin/bun-current',
   )
 })
 

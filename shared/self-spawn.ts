@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
 import {
   assetPath,
+  compiledCheckoutCli,
   installationExecutable,
   installRoot,
   readDistributionManifest,
@@ -38,6 +39,17 @@ export function sourceBunExecutable(
   return which('bun') ?? process.execPath
 }
 
+/** Choose the executable for source-shaped run-exec argv without re-entering a compiled CLI. */
+export function runExecSourceExecutable(
+  compiledCheckout: boolean,
+  override: string | undefined,
+  execPath: string,
+  resolvedBun: string,
+): string {
+  if (override) return override
+  return compiledCheckout ? resolvedBun : execPath
+}
+
 function sourceArguments(
   entry: BottegaEntry,
   whichSourceBun?: (executable: string) => string | null,
@@ -45,13 +57,20 @@ function sourceArguments(
   switch (entry) {
     case PLATFORM_SLUG:
       return [assetPath('bin', PLATFORM_SLUG)]
-    case 'run-exec':
+    case 'run-exec': {
+      const compiledCheckout = compiledCheckoutCli()
       return [
-        process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
+        runExecSourceExecutable(
+          compiledCheckout,
+          process.env.BOTTEGA_EXEC_PATH,
+          process.execPath,
+          compiledCheckout ? sourceBunExecutable(whichSourceBun) : process.execPath,
+        ),
         '--no-env-file',
         assetPath('cli', `${PLATFORM_SLUG}.ts`),
         BOTTEGA_ENTRY_PROTOCOL['run-exec'].compiledArguments[0],
       ]
+    }
     case 'ask-server':
       return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'ask-server']
     case 'ask-proxy':

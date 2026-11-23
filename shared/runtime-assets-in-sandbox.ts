@@ -1,17 +1,54 @@
 // concern: extracted runtime assets that sandboxed workers read or execute.
 
 import { isAbsolute, join, relative, resolve, win32 } from 'node:path'
+import { PLATFORM_SLUG } from './brand.ts'
 import { REF_GUARD_RUNTIME_ASSET } from './embedded-assets.ts'
 import { extractedRuntimeAssetRelativePath } from './runtime-assets.ts'
 
 /** The extraction directory owned by the sandbox-runtime payload adapter. */
 const SANDBOX_RUNTIME_ASSET_DIRECTORY = 'sandbox-runtime'
+const CHECKOUT_CLI_DIRECTORY = 'checkout-cli'
 
 /** Paths relative to <state>/runtime/<version> required inside worker sandboxes. */
 export const WORKER_RUNTIME_ASSETS = {
   sandboxRuntime: SANDBOX_RUNTIME_ASSET_DIRECTORY,
   refGuard: extractedRuntimeAssetRelativePath(REF_GUARD_RUNTIME_ASSET),
+  checkoutCli: join(CHECKOUT_CLI_DIRECTORY, PLATFORM_SLUG),
+  checkoutCliStamp: join(CHECKOUT_CLI_DIRECTORY, `${PLATFORM_SLUG}.stamp`),
 } as const
+
+/** The exact runtime asset subset published and read for a compiled checkout CLI. */
+export const CHECKOUT_CLI_RUNTIME_ASSETS = {
+  checkoutCli: WORKER_RUNTIME_ASSETS.checkoutCli,
+  checkoutCliStamp: WORKER_RUNTIME_ASSETS.checkoutCliStamp,
+} as const
+
+const CHECKOUT_CLI_STAMP_KEYS = ['head', 'lock', 'binary', 'size', 'mtime', 'inode'] as const
+
+type CheckoutCliStampKey = (typeof CHECKOUT_CLI_STAMP_KEYS)[number]
+export type CheckoutCliStamp = Record<CheckoutCliStampKey, string | number>
+
+/**
+ * Format the compiled checkout CLI stamp. `bin/bottega` is the intentional
+ * second reader of the size, mtime and inode lines because POSIX sh cannot
+ * import this TypeScript owner.
+ */
+export function formatCheckoutCliStamp(values: CheckoutCliStamp): string {
+  return `${CHECKOUT_CLI_STAMP_KEYS.map((key) => `${key}=${values[key]}`).join('\n')}\n`
+}
+
+/** Parse the declared compiled checkout CLI stamp fields from text. */
+export function stampValues(contents: string): Record<string, string> {
+  const knownKeys = new Set<string>(CHECKOUT_CLI_STAMP_KEYS)
+  const values: Record<string, string> = {}
+  for (const line of contents.trim().split('\n')) {
+    const separator = line.indexOf('=')
+    if (separator < 1) continue
+    const key = line.slice(0, separator)
+    if (knownKeys.has(key)) values[key] = line.slice(separator + 1)
+  }
+  return values
+}
 
 function safeRuntimeAsset(entry: string, versionRoot: string): string {
   if (

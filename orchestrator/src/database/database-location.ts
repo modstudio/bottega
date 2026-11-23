@@ -33,7 +33,10 @@ export type DatabaseResolution = {
   mainStorePath: string
 }
 
-export const ROOT = join(runningInstallRoot(import.meta.dir, process.env), 'orchestrator')
+/** Resolve the running orchestrator root lazily so import can report a bad compiled root cleanly. */
+export function runningOrchestratorRoot(): string {
+  return join(runningInstallRoot(import.meta.dir, process.env), 'orchestrator')
+}
 
 type RepositoryRoot = {
   root: string
@@ -109,7 +112,7 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
 export function resolveDatabase(
   cwd: string | undefined = undefined,
   env: StateEnvironment = process.env as StateEnvironment,
-  binaryRoot = ROOT,
+  binaryRoot = runningOrchestratorRoot(),
 ): DatabaseResolution {
   const binaryRepository = embeddedDistributionManifest()
     ? null
@@ -179,11 +182,12 @@ export function recoverMissingWorkingDirectory(): string {
   try {
     return process.cwd()
   } catch (error) {
+    const root = runningOrchestratorRoot()
     const recovered = missingWorkingDirectoryFallback(error, {
       mainCheckout: process.env.BOTTEGA_MAIN_CHECKOUT,
       binaryRepositoryRoot:
-        repositoryRootFromGit(ROOT)?.root ?? repositoryRootFromDotGit(ROOT)?.root ?? null,
-      binaryRoot: ROOT,
+        repositoryRootFromGit(root)?.root ?? repositoryRootFromDotGit(root)?.root ?? null,
+      binaryRoot: root,
     })
     process.chdir(recovered)
     return recovered

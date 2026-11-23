@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ProjectMcpSelection, selectProjectMcpServers } from '../sandbox/project-mcp-scope.ts'
 import type { TransportStartOpts } from './transport.ts'
 import { acpMcpServers } from './transport-acp.ts'
@@ -24,9 +24,27 @@ const direct: ProjectMcpSelection = {
 }
 
 test('MCP off gives exactly the worker channel', () => {
-  const servers = acpMcpServers(opts({ projectMcpSelection: null }))
+  const checkoutBinary = `/state/runtime/version/checkout-cli/${PLATFORM_SLUG}`
+  const servers = acpMcpServers(
+    opts({
+      env: {
+        BOTTEGA_RUN_ID: 'run-1',
+        BOTTEGA_RUN_TOKEN: 'token-1',
+        BOTTEGA_CLI_BINARY: checkoutBinary,
+      },
+      projectMcpSelection: null,
+    }),
+  )
   expect(servers.map((entry) => entry.name)).toEqual([WORKER_MCP_SERVER_NAME])
-  expect(servers[0]).toMatchObject({ name: WORKER_MCP_SERVER_NAME, env: expect.any(Array) })
+  expect(servers[0]).toMatchObject({
+    name: WORKER_MCP_SERVER_NAME,
+    env: expect.arrayContaining([
+      {
+        name: 'BOTTEGA_CLI_BINARY',
+        value: checkoutBinary,
+      },
+    ]),
+  })
 })
 
 test('the worker channel comes first, then the selected project servers in both shapes', () => {

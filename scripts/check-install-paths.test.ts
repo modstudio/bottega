@@ -123,6 +123,15 @@ test('refuses platform binary templates after head and middle spans', () => {
   ])
 })
 
+test('allows the checkout launcher remedy only in compiled checkout root resolution', () => {
+  const source =
+    'function compiledCheckoutRoot() { throw new Error(`run through bin/${PLATFORM_SLUG}`) }\n'
+  expect(distributionUnsafeInstallPathFindings(source, 'shared/install-root.ts')).toEqual([])
+  expect(distributionUnsafeInstallPathFindings(source, 'orchestrator/src/example.ts')).toEqual([
+    { path: 'orchestrator/src/example.ts', line: 1 },
+  ])
+})
+
 test('refuses assetPath platform binary resolution outside the canonical self-spawn resolver', () => {
   expect(
     distributionUnsafeInstallPathFindings(

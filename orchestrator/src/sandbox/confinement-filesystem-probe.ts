@@ -29,6 +29,7 @@ import {
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import { BUILTIN_AGENTS } from '../agent/agents.ts'
 import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
+import { buildCheckoutCli } from '../database/checkout-cli-build.ts'
 import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
@@ -852,6 +853,7 @@ function createProbeFixture(root: string) {
     [HARNESS_ENV_FILE_ENV]: '',
     [PLATFORM_ENV_FILE_ENV]: '',
   } as Record<string, string>
+  if (runningInstall.kind === 'checkout') buildCheckoutCli(runningInstall.root, environment)
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
   const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')

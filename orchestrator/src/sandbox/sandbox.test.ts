@@ -27,7 +27,7 @@ import {
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
-import { ROOT } from '../database/db.ts'
+import { runningOrchestratorRoot } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import {
   probeSandboxProfile as buildProbeSandboxProfile,
@@ -52,6 +52,9 @@ import {
   sandboxRuntimeConfig,
   withoutRegisteredOrchAskServer,
 } from './sandbox.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
+
+const ROOT = runningOrchestratorRoot()
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   recordId: '01990000-0000-7000-8000-000000001214',
@@ -609,6 +612,7 @@ describe('readonly-lens sandbox profile', () => {
       '/install/hub/views',
       '/install/hub/web',
       '/install/retrieval',
+      ...workerRuntimeReadCarvebacks(environment, null),
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])

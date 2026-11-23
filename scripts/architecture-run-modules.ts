@@ -1,5 +1,15 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/run/checkout-cli-freshness.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/install-root.ts',
+      '../../../shared/runtime-assets-in-sandbox.ts',
+      '../../../shared/state-directory.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/evidence/pending-score-sql.ts',
     allowed: ['../failure/failure.ts', '../run/run-status.ts'],
   },

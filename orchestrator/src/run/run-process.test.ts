@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import {
   AGENTS,
@@ -10,6 +11,7 @@ import {
 import { db } from '../database/db.ts'
 import { probeContextLimitEnvironment } from '../dispatch/probe-launch-overrides.ts'
 import { job, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
+import { checkoutCliBinaryEnvironment } from './checkout-cli-freshness.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
 afterEach(() => mock.restore())
@@ -25,6 +27,48 @@ test('repository workers receive test caps while inline workers do not', () => {
 
 test('codex workers enable the retry warning log without trace volume', () => {
   expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false).RUST_LOG).toBe('codex_core=warn')
+})
+
+test('a worker replaces an inherited checkout CLI binary only when the host selects one', () => {
+  const inherited = process.env[CHECKOUT_CLI_BINARY_ENV]
+  process.env[CHECKOUT_CLI_BINARY_ENV] = '/foreign/checkout-cli'
+  try {
+    const rejected = childEnv(
+      AGENTS.codex!,
+      undefined,
+      undefined,
+      {},
+      false,
+      undefined,
+      {},
+      null,
+      null,
+      false,
+      () => false,
+    )
+    expect(rejected[CHECKOUT_CLI_BINARY_ENV]).toBeUndefined()
+
+    const selected = childEnv(
+      AGENTS.codex!,
+      undefined,
+      undefined,
+      {},
+      false,
+      undefined,
+      {},
+      null,
+      null,
+      false,
+      () => true,
+    )
+    expect(selected[CHECKOUT_CLI_BINARY_ENV]).toBe(
+      checkoutCliBinaryEnvironment(selected, () => true)[CHECKOUT_CLI_BINARY_ENV],
+    )
+    expect(selected[CHECKOUT_CLI_BINARY_ENV]).not.toBe('/foreign/checkout-cli')
+  } finally {
+    if (inherited === undefined) delete process.env[CHECKOUT_CLI_BINARY_ENV]
+    else process.env[CHECKOUT_CLI_BINARY_ENV] = inherited
+  }
 })
 
 test('worker context controls override inherited values only for grok', () => {

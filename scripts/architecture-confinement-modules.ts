@@ -84,6 +84,7 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/worker-runtime-read-carvebacks.ts', [
     '../../../shared/embedded-assets.ts',
     '../../../shared/distribution-manifest.ts',
+    '../../../shared/install-root.ts',
     '../../../shared/runtime-assets-in-sandbox.ts',
     '../../../shared/state-directory.ts',
   ]),
@@ -130,6 +131,7 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/store-access.ts',
     '../agent/agents.ts',
     '../branch/branch-ref-guard.ts',
+    '../database/checkout-cli-build.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
     '../resources/ref-guard.ts',

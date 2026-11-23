@@ -15,7 +15,7 @@ import { join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { AGENTS } from '../src/agent/agent-registry.ts'
-import { db, ROOT } from '../src/database/db.ts'
+import { db, runningOrchestratorRoot } from '../src/database/db.ts'
 import { questionsForRun } from '../src/question-store/question-store-read.ts'
 import { run } from '../src/run/run.ts'
 import {
@@ -42,6 +42,7 @@ type CaseSpec = {
 }
 
 export const ACP_PARITY_REPOSITORY_ROOT = resolve(import.meta.dir, '../..')
+const ROOT = runningOrchestratorRoot()
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 
 const parsedJson = (reply: SemanticReply): unknown => {

@@ -7,7 +7,7 @@ import {
   REF_GUARD_RUNTIME_ASSET,
 } from '../../../shared/embedded-assets.ts'
 import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
-import { ROOT } from '../database/db.ts'
+import { runningOrchestratorRoot } from '../database/db.ts'
 
 /** Select the tracked checkout hook or the installed binary's extracted hook. */
 export function refGuardRuntimePath(input: { sourceRoot: string }): string {
@@ -17,7 +17,7 @@ export function refGuardRuntimePath(input: { sourceRoot: string }): string {
 /** Resolve the checkout hook or extract and SHA-256 verify the binary's embedded hook. */
 export function resolveRefGuardHook(
   environment: NodeJS.ProcessEnv = process.env,
-  sourceRoot = ROOT,
+  sourceRoot = runningOrchestratorRoot(),
 ): string {
   const manifest = embeddedDistributionManifest()
   if (!manifest) return realpathSync(refGuardRuntimePath({ sourceRoot }))

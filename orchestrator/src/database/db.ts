@@ -90,7 +90,7 @@ import {
 
 export const dbSourcePath = fileURLToPath(import.meta.url)
 
-export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
+export { DATABASE_RESOLUTION, DB_PATH, runningOrchestratorRoot } from './database-location.ts'
 export { callerIdentity, sessionId }
 
 let handle: Database | null = null
