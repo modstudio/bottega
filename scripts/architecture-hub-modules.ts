@@ -654,6 +654,7 @@ export const hubModuleSpecs = [
       './note-client.ts',
       './note-hosted-record.ts',
       './note-outside.ts',
+      './note-project-space.ts',
       './note-row.ts',
     ],
   },
@@ -797,7 +798,12 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/note-project-space.ts',
-    allowed: ['./hosted-write-destination.ts', './note-client.ts', './task-project-space.ts'],
+    allowed: [
+      './hosted-write-destination.ts',
+      './note-client.ts',
+      './projects.ts',
+      './task-project-space.ts',
+    ],
   },
   {
     file: 'hub/src/note-file-anchors.ts',

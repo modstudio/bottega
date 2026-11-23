@@ -564,6 +564,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'hostedListOutsideNotes',
     'hostedNoteChanges',
     'hostedNoteCounts',
+    'hostedNoteIdentity',
     'isMissingHostedNote',
   ]),
   ...writeEntries('hub', 'noteClient', [], ['hostedCreateNote', 'hostedCreateOutsideNote']),

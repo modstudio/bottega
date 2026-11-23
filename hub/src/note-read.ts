@@ -9,15 +9,13 @@ import { hostedWriteMode } from './hosted-write-mode.ts'
 import {
   hostedGetNote,
   hostedListNotes,
-  hostedNoteIdentity,
   isMissingHostedNote,
   type NoteClientOptions,
 } from './note-client.ts'
 import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
-import { noteDestinationOptions, notePullSpaces } from './note-project-space.ts'
+import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
-import { projects } from './projects.ts'
 
 export type NoteFilters = {
   project?: string
@@ -108,10 +106,7 @@ async function readHostedNote(
   project?: string,
 ): Promise<NoteRow> {
   const untargeted = untargetedReadOptions(options)
-  const identity = await hostedNoteIdentity(untargeted)
-  const spaces = project
-    ? [(await noteDestinationOptions(project, untargeted, identity)).recordSpace]
-    : notePullSpaces(projects(), identity)
+  const spaces = await noteReadSpaces(project, untargeted)
   try {
     for (const recordSpace of spaces) {
       try {
@@ -146,10 +141,7 @@ async function listHostedNoteRows(
   options: NoteClientOptions = {},
 ): Promise<NoteRow[]> {
   const untargeted = untargetedReadOptions(options)
-  const identity = await hostedNoteIdentity(untargeted)
-  const spaces = filters.project
-    ? [(await noteDestinationOptions(filters.project, untargeted, identity)).recordSpace]
-    : notePullSpaces(projects(), identity)
+  const spaces = await noteReadSpaces(filters.project, untargeted)
   try {
     const notesById = new Map<
       string,

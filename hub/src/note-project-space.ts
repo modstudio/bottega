@@ -1,18 +1,24 @@
 import { hostedWriteDestination } from './hosted-write-destination.ts'
-import type { NoteClientOptions, NoteWriteOptions } from './note-client.ts'
-import type { HostedTaskIdentity } from './task-client.ts'
+import { hostedNoteIdentity, type NoteClientOptions, type NoteWriteOptions } from './note-client.ts'
+import { projects } from './projects.ts'
 import { taskProjectDestination } from './task-project-space.ts'
 
 export async function noteDestinationOptions(
   project: string | null,
   options: NoteClientOptions = {},
-  knownIdentity?: HostedTaskIdentity,
 ): Promise<NoteWriteOptions> {
   if (options.recordSpace) return { ...options, recordSpace: options.recordSpace }
-  return {
-    ...options,
-    recordSpace: await hostedWriteDestination(project, options, knownIdentity),
-  }
+  return { ...options, recordSpace: await hostedWriteDestination(project, options) }
+}
+
+export async function noteReadSpaces(
+  project: string | undefined,
+  options: NoteClientOptions,
+): Promise<string[]> {
+  const identity = await hostedNoteIdentity(options)
+  return project
+    ? [await hostedWriteDestination(project, options, identity)]
+    : notePullSpaces(projects(), identity)
 }
 
 export function notePullSpaces(
