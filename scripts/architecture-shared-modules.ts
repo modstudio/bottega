@@ -17,7 +17,6 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/project-trunk.ts', []),
   module('shared/distribution-manifest.ts', ['./brand.ts']),
   module('shared/record-shape.ts', []),
-  module('shared/hosted-json.ts', []),
   module('shared/record-no-destination-write-counter.ts', [
     'bun',
     './record-no-destination-write-contract.ts',

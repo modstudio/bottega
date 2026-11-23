@@ -29,7 +29,7 @@ const hostedResponseJsonCatchSelector = {
   selector:
     "CallExpression[callee.property.name='catch'][callee.object.type='CallExpression'][callee.object.callee.property.name='json'][callee.object.callee.object.type='Identifier'][callee.object.callee.object.name=/^(response|res)$/]",
   message:
-    'This rule matches only receivers named response or res; read every hosted response through readHostedJson from shared/hosted-json.ts whatever it is named.',
+    'This rule matches only receivers named response or res; read every hosted response through jsonBody and format failures with hostedJsonFailureMessage from shared/http-json.ts whatever it is named.',
 }
 
 const recordPushModules = [
@@ -75,6 +75,7 @@ export default [
       'orchestrator/src/**/*.{ts,tsx}',
       'orchestrator/test/**/*.{ts,tsx}',
       'hub/src/**/*.{ts,tsx}',
+      'hub/data/src/**/*.{ts,tsx}',
       'hub/web/src/**/*.{ts,tsx}',
       'shared/**/*.{ts,tsx}',
       'scripts/**/*.{ts,tsx}',

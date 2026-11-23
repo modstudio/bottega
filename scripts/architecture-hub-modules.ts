@@ -369,7 +369,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
-      '../../shared/hosted-json.ts',
+      '../../shared/http-json.ts',
       '../../shared/record-call-trace.ts',
       '../../shared/record-request-headers.ts',
       '../../shared/record-no-destination-write-contract.ts',

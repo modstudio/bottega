@@ -18,7 +18,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
-import { readHostedJson } from '../../shared/hosted-json.ts'
+import { hostedJsonFailureMessage, jsonBody, type JsonBodyFailure } from '../../shared/http-json.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
@@ -503,9 +503,19 @@ const settingsAutoModeResultSchema = z.object({
 export type RecordDoc = z.infer<typeof docSchema>
 export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
-function mappedError(status: number, body: unknown, path: string): TRPCError {
+function mappedError(
+  status: number,
+  body: unknown,
+  path: string,
+  bodyFailure: JsonBodyFailure | null,
+): TRPCError {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  const error = typeof record.error === 'string' ? record.error : `record API ${status}`
+  const error =
+    typeof record.error === 'string'
+      ? record.error
+      : bodyFailure
+        ? hostedJsonFailureMessage(bodyFailure)
+        : `record API ${status}`
   const remedy = typeof record.remedy === 'string' ? record.remedy : undefined
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
   if (status === 403) return new TRPCError({ code: 'FORBIDDEN', message: error })
@@ -515,7 +525,7 @@ function mappedError(status: number, body: unknown, path: string): TRPCError {
     return new TRPCError({
       code: 'NOT_FOUND',
       message:
-        body === null && path.startsWith('/v1/board/')
+        bodyFailure && path.startsWith('/v1/board/')
           ? 'the hosted record does not serve the message board yet'
           : error,
     })
@@ -572,25 +582,19 @@ async function request<T>(
           { ...init, headers, signal },
           fetchImpl as typeof fetch,
         )
-        const result = await readHostedJson(response, url)
-        const body = result.kind === 'json' ? result.value : null
-        if (!response.ok)
-          throw mappedError(
-            response.status,
-            body ??
-              (response.status === 404 && path.startsWith('/v1/board/')
-                ? null
-                : { error: `${new URL(url).host} answered ${response.status}` }),
-            path,
-          )
+        const result = await jsonBody(response, url)
+        const body = result.ok ? result.value : null
+        if (!response.ok) throw mappedError(response.status, body, path, result.ok ? null : result)
+        if (!result.ok)
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: hostedJsonFailureMessage(result),
+          })
         const parsed = schema.safeParse(body)
         if (!parsed.success) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message:
-              result.kind === 'empty'
-                ? `hosted response from ${new URL(url).host}${new URL(url).pathname} was empty (status ${response.status})`
-                : 'record API returned an invalid body',
+            message: 'record API returned an invalid body',
           })
         }
         return parsed.data

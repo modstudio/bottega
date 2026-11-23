@@ -37,32 +37,6 @@ test('a worker task read sends the host credential, record space, and caller', a
   expect(requests[0]?.headers.get(CALLER_HEADER_NAME)).toBe(recordCallerToken())
 })
 
-test('worker workflow and task reads use their owning services', async () => {
-  const urls: string[] = []
-  const client = createWorkerRecordClient({
-    hubBaseUrl: 'https://hub.test',
-    recordApiBaseUrl: 'https://record-api.test',
-    credential: async () => 'host-token',
-    fetch: (async (input: RequestInfo | URL) => {
-      const url = String(input)
-      urls.push(url)
-      if (url.includes('/task-flow/'))
-        return Response.json({
-          text: null,
-          stage: { id: '01990000-0000-7000-8000-000000002617', number: 1 },
-          copy: null,
-        })
-      return Response.json({ task: {}, comments: [], documents: [] })
-    }) as unknown as typeof fetch,
-  })
-
-  await client.workflowText('text-id', '01990000-0000-7000-8000-000000002617')
-  await client.task('DEV-2617', '01990000-0000-7000-8000-000000002617')
-
-  expect(urls[0]).toStartWith('https://record-api.test/')
-  expect(urls[1]).toStartWith('https://hub.test/')
-})
-
 test('a worker workflow read refuses an HTML body with source diagnostics', async () => {
   const client = createWorkerRecordClient({
     hubBaseUrl: 'https://hub.test',

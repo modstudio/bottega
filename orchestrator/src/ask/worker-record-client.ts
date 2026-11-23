@@ -3,7 +3,7 @@
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
-import { readHostedJson } from '../../../shared/hosted-json.ts'
+import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
@@ -65,8 +65,8 @@ export function workerRecordBaseUrl(
 
 function errorMessage(value: unknown, status: number, url: string): string {
   if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string')
-    return `${new URL(url).host} answered ${status}: ${value.error}`
-  return `${new URL(url).host} answered ${status}`
+    return `${hostedJsonFailureMessage({ ok: false, url, status, contentType: 'missing' })}: ${value.error}`
+  return hostedJsonFailureMessage({ ok: false, url, status, contentType: 'missing' })
 }
 
 export function createWorkerRecordClient(
@@ -100,8 +100,8 @@ export function createWorkerRecordClient(
       ...init,
       headers,
     })
-    const body = await readHostedJson(response, url)
-    const value = body.kind === 'json' ? body.value : null
+    const body = await jsonBody(response, url)
+    const value = body.ok ? body.value : null
     if (!response.ok)
       throw new RecordApiRequestError(
         errorMessage(value, response.status, url),
@@ -109,6 +109,7 @@ export function createWorkerRecordClient(
         response.status,
         responseCode(value),
       )
+    if (!body.ok) throw new Error(hostedJsonFailureMessage(body))
     return init.schema ? init.schema(value) : (value as T)
   }
   const taskFlow = recordTaskFlowClient(request)

@@ -1,3 +1,4 @@
+import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { recordErrorMessage, recordRequest } from './record-request.ts'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member'
@@ -47,7 +48,8 @@ function errorCode(body: unknown): string | null {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await recordRequest(`/api/auth${path}`, init)
-  const body = await response.json().catch(() => null)
+  const result = await jsonBody(response, response.url)
+  const body = result.ok ? result.value : null
   if (!response.ok) {
     throw new OrganizationRequestError(
       recordErrorMessage(body, 'The request could not be completed'),
@@ -55,6 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       errorCode(body),
     )
   }
+  if (!result.ok) throw new Error(hostedJsonFailureMessage(result))
   return body as T
 }
 

@@ -242,7 +242,10 @@ describe('record client', () => {
     const client = createRecordClient({
       baseUrl: 'https://api.example.test',
       headers: {},
-      fetch: async () => new Response(new ReadableStream({ start() {} })),
+      fetch: async () =>
+        new Response(new ReadableStream({ start() {} }), {
+          headers: { 'content-type': 'application/json' },
+        }),
       requestDeadlineMs: 20,
     })
 
