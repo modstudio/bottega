@@ -782,20 +782,6 @@ function pushPullRequestBranch(cwd: string, branch: string): void {
   )
 }
 
-export async function createPullRequestAdmitted(
-  args: string[],
-  options: CreatePullRequestOptions,
-  cwd = process.cwd(),
-): Promise<{ output: string; overrideId: string | null }> {
-  return createPullRequestAdmittedChange(
-    args,
-    options,
-    cwd,
-    preparePullRequestCreate(options, cwd),
-    await activeReviewFunnelPolicy(),
-  )
-}
-
 export function createPullRequestAdmittedWithPolicy(
   args: string[],
   options: CreatePullRequestOptions,

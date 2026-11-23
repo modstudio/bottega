@@ -771,11 +771,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/docs', async (context) => {
     const query = docListQuery.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
-    const subject = query.data.subject === undefined ? undefined : query.data.subject || null
-    const owner = query.data.owner === undefined ? undefined : query.data.owner || null
     const listTarget = personalListTarget(
       query.data.scope,
-      subject,
+      query.data.subject === undefined ? undefined : query.data.subject || null,
       context.get('identity').user.id,
     )
     const tenant = listTarget
@@ -791,9 +789,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const entries = await deps.listDocs({
       ...tenant,
       scope: query.data.scope,
-      subject,
+      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
       slug: query.data.slug,
-      owner,
+      owner: query.data.owner === undefined ? undefined : query.data.owner || null,
       audience: query.data.audience,
       status: query.data.status,
       delivery: query.data.delivery,

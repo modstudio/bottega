@@ -35,7 +35,6 @@ import { type Project, projects, stackAt } from '../project/projects.ts'
 import { createPullRequestAdmittedWithPolicy } from '../pull-request/pr-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-cursor-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
-import type { VersionedReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { CANON_MIRROR_JOB, canonMirrorBranchName } from '../run/synthetic-lifecycle-job.ts'
@@ -51,44 +50,26 @@ import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
 import { emptyStoreHydrationRefusal, hydrationDrift, planHydration } from './canon-hydrate.ts'
+import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import {
-  type CanonFinding,
-  introducedCanonFindings,
-  lintCanon,
-  refusingCanonFindings,
-  warningCanonFindings,
-} from './canon-lint.ts'
-import {
-  canonMirrorAuthoritativeSnapshot,
   type CanonMirrorRows,
+  canonMirrorAuthoritativeSnapshot,
+  type VersionedReviewFunnelPolicy,
 } from './canon-mirror-authoritative-snapshot.ts'
 import { appendMirrorFailure, mirrorFailureText } from './canon-mirror-failure.ts'
 import { decideLeftoverDisposition, leftoverDispositionMessage } from './canon-mirror-leftover.ts'
+import { canonMirrorLintDecision } from './canon-mirror-lint-decision.ts'
+import {
+  type ChecksState,
+  canonMirrorMergeArgs,
+  decideCanonMirrorMerge,
+} from './canon-mirror-merge-decision.ts'
 import {
   assertHydrationDoesNotRevertBranchCanon,
   type CanonMirrorRevisionSnapshot,
   canonMirrorCommitBody,
   revisionRows,
 } from './canon-mirror-revisions.ts'
-
-export type ChecksState = 'passed' | 'failed' | 'pending'
-export type MergeDecision = { merge: true } | { merge: false; reason: string }
-export function decideCanonMirrorMerge(input: {
-  shipLevel: string
-  headMatches: boolean
-  baseUnchanged: boolean
-  checks: ChecksState
-}): MergeDecision {
-  if (input.shipLevel !== 'auto')
-    return { merge: false, reason: `ship autonomy is ${input.shipLevel}` }
-  if (!input.headMatches)
-    return { merge: false, reason: 'pull-request head does not match the pushed commit' }
-  if (!input.baseUnchanged)
-    return { merge: false, reason: 'the landing branch changed after hydration was planned' }
-  if (input.checks !== 'passed')
-    return { merge: false, reason: `GitHub checks are ${input.checks}` }
-  return { merge: true }
-}
 
 type PullRequest = {
   number: number
@@ -335,27 +316,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   },
 }
 
-export function canonMirrorMergeArgs(number: number, commit: string): string[] {
-  return ['gh', 'pr', 'merge', String(number), '--squash', '--match-head-commit', commit]
-}
-
 type MirrorResult = { project: string; text: string; failed: boolean }
-
-export function canonMirrorLintDecision(findings: CanonFinding[]): {
-  refusal: string | null
-  warnings: string[]
-} {
-  const errors = refusingCanonFindings(findings)
-  return {
-    refusal: errors.length
-      ? `canon lint found ${errors.length} findings: ${errors.map((finding) => `${finding.file}:${finding.line} ${finding.message}`).join('; ')}`
-      : null,
-    warnings: warningCanonFindings(findings).map(
-      (finding) =>
-        `canon lint warning: ${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
-    ),
-  }
-}
 
 function createLifecycleRun(project: Project, key: string): string {
   writableDb()

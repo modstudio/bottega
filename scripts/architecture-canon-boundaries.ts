@@ -151,6 +151,20 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
 
 export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
   {
+    name: 'canon-mirror-lint-decision-boundary',
+    file: `${source}canon-mirror-lint-decision.ts`,
+    allowed: [`${source}canon-lint.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep mirror lint refusal rendering separate from publication lifecycle.',
+  },
+  {
+    name: 'canon-mirror-merge-decision-boundary',
+    file: `${source}canon-mirror-merge-decision.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep automatic mirror merge policy pure over supplied facts.',
+  },
+  {
     name: 'canon-mirror-authoritative-snapshot-boundary',
     file: `${source}canon-mirror-authoritative-snapshot.ts`,
     allowed: [
@@ -227,6 +241,8 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       `${source}canon-stored-rows.ts`,
       `${source}canon-mirror-failure.ts`,
       `${source}canon-mirror-leftover.ts`,
+      `${source}canon-mirror-lint-decision.ts`,
+      `${source}canon-mirror-merge-decision.ts`,
       `${source}canon-mirror-revisions.ts`,
       `${source}canon-mirror-authoritative-snapshot.ts`,
       'orchestrator/src/close/close-out.ts',

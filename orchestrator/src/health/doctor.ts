@@ -755,10 +755,7 @@ export async function doctorCommand(
     if (!(error instanceof CanonBudgetError)) throw error
     doctorPack = error.pack
   }
-  const doctorFindings = (await findingsForPack(doctorPack)).reduce(
-    (n, row) => n + row.findings.length,
-    0,
-  )
+  const doctorFindings = (await findingsForPack(doctorPack)).flatMap((row) => row.findings).length
   const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()

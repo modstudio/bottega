@@ -16,6 +16,8 @@ export type CanonMirrorAuthoritativeSnapshot = {
   reviewPolicy: VersionedReviewFunnelPolicy
 }
 
+export type { VersionedReviewFunnelPolicy }
+
 export async function canonMirrorAuthoritativeSnapshot(
   project: string,
 ): Promise<CanonMirrorAuthoritativeSnapshot> {

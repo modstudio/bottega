@@ -87,7 +87,7 @@ import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
-import { prepareRunGateFacts } from './run-gate-facts.ts'
+import { installRunGateFacts } from './run-gate-facts.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { inheritedRunDispatch } from './run-inherited-dispatch.ts'
@@ -283,8 +283,7 @@ export async function run(
       pack = opts.canonPack ?? (await compilePack({ job: opts.job, cwd: callerCwd }))
       await recordPack(pack)
     } catch (cause) {
-      const message = (cause as Error).message
-      const failedId = opts.reserveId ?? newRecordId()
+      const [message, failedId] = [(cause as Error).message, opts.reserveId ?? newRecordId()]
       if (opts.reserveId) recordRunStartupFailure(failedId, cause)
       else {
         const links = await admitNewRunReference({
@@ -295,13 +294,12 @@ export async function run(
           launchCwd: callerCwd,
           probe: Boolean(opts.probe),
         })
-        const rowProjectId = attribution.rowProjectId(links.projectRecordId)
         recordNeverStartedRunFailure({
           recordId: failedId,
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: rowProjectId,
+          projectRecordId: attribution.rowProjectId(links.projectRecordId),
           taskRecordId: links.taskRecordId,
           probe: Boolean(opts.probe),
           cwd: callerCwd,
@@ -649,9 +647,7 @@ export async function run(
         project: runProject,
       })
       ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
-      const gateFactsEnvironment = await prepareRunGateFacts(scratchDir)
-      Object.assign(mcpEnvironment, gateFactsEnvironment)
-      Object.assign(sandboxEnvironment, gateFactsEnvironment)
+      await installRunGateFacts(scratchDir, mcpEnvironment, sandboxEnvironment)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
