@@ -5,15 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { boardClaimList } from '../board/board-operations.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import type { ChildTaskFact } from './workflow-child-queue.ts'
+import type { ChildClaimFact, ChildTaskFact } from './workflow-child-queue.ts'
 import type { HubTaskReference } from './workflow-task-reference.ts'
 import { ancestorTaskKeys } from './workflow-task-tree.ts'
 
-export type LiveChildClaim = {
-  subject_kind: string
-  subject_value: string
-  holderUserId: string | null
-  holderSession: string | null
+export type LiveChildClaim = ChildClaimFact & {
   taken_at: string
 }
 
@@ -38,6 +34,7 @@ export async function gatherChildTaskFacts(
   database: Database,
   project: string,
   tasks: readonly HubTaskReference[],
+  claims: readonly LiveChildClaim[],
 ): Promise<ChildTaskFact[]> {
   if (tasks.length === 0) return []
   const workflowKeys = [...new Set(tasks.map(({ key }) => key))]
@@ -52,7 +49,6 @@ export async function gatherChildTaskFacts(
     if (!existing || existing.number < cursor.id)
       cursors.set(cursor.workflow_key, { number: cursor.id, state: cursor.state })
   }
-  const claims = await liveChildClaims(database, project)
   return tasks.map((task) => {
     const queued = claims.find(
       (claim) => claim.subject_kind === 'queued-task' && claim.subject_value === task.key,

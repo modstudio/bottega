@@ -116,6 +116,29 @@ export async function abandonWorkflowCursor(
   }
 }
 
+/** Undo a newly inserted task cursor when its follow-on claim cannot be taken. */
+export async function abandonCursorAfterClaimFailure(
+  row: SelectableCursorRow,
+  context: WorkflowCursorContext,
+  database: Database,
+  error: unknown,
+): Promise<never> {
+  try {
+    await abandonWorkflowCursor(row, 'task claim take failed', context, database)
+  } catch (abandonError) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const abandonDetail =
+      abandonError instanceof Error ? abandonError.message : String(abandonError)
+    throw new Error(
+      `${detail}\nwarning: could not abandon cursor after claim failure: ${abandonDetail}`,
+      {
+        cause: error,
+      },
+    )
+  }
+  throw error
+}
+
 function abandonedCursorTrail(
   row: SelectableCursorRow,
   reason: string,

@@ -3,11 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
-import {
-  boardClaimReleaseTask,
-  boardClaimTake,
-  boardQueuedClaimClose,
-} from '../board/board-operations.ts'
+import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { readProjectTaskList } from './project-task-list.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
@@ -20,6 +16,7 @@ import {
 } from './workflow-child-queue.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
+import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
@@ -123,14 +120,18 @@ export async function queueWorkflowChild(
       `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it`,
     )
   if (input.off) {
-    const closed = boardQueuedClaimClose(
+    const closed = await boardQueuedClaimClose(
       { project: input.project, key: input.child, session: input.session, reason: 'released' },
       Date.now(),
       database,
     )
+    if (closed.closed === 0)
+      throw new Error(
+        `queued claim for ${input.child} held by session ${input.session} was not released; verify the session and retry workflow queue --off`,
+      )
     return { action: closed.reason ?? 'none', child: input.child, released: closed.closed }
   }
-  const facts = await gatherChildTaskFacts(database, input.project, tasks)
+  const facts = await gatherChildTaskFacts(database, input.project, tasks, claims)
   const state = childQueueState(root, input.session, facts)
   const eligibility = childEligibility(state, facts, input.child)
   if (eligibility.action === 'refuse') throw new Error(eligibility.message)
@@ -162,10 +163,10 @@ export async function startWorkflowChild(
   if (epic.workflow_slug !== 'plan-task' || epic.step_slug !== 'start')
     throw new Error(`cursor ${input.cursor} is not an epic plan-task cursor at start`)
   const tasks = await readProjectTaskList(input.project)
-  const facts = await gatherChildTaskFacts(database, input.project, tasks)
+  const claims = await liveChildClaims(database, input.project)
+  const facts = await gatherChildTaskFacts(database, input.project, tasks, claims)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
-  const claims = await liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(epic.workflow_key, facts)
   if (!sessionWorksUnderEpic(claims, input.callerSession, epic.workflow_key, descendants))
     throw new Error(
@@ -198,38 +199,32 @@ export async function startWorkflowChild(
     },
     database,
   )
-  await (ports.takeTaskClaim ?? boardClaimTake)(
-    { project: input.project, subject: `task:${child.key}` },
+  const row = await insertWorkflowCursor(
+    composition,
+    context,
+    database,
+    live.resolution,
+    undefined,
+    false,
     {
-      database,
-      taskCursorAuthority: { mode: 'start-child', session: input.callerSession },
+      parentFlowRecordId: inheritance.parentFlowRecordId,
+      activeOrdinal: inheritance.startOrdinal,
+      activeSlug: 'start',
+      closedStepNotes: inheritance.closed,
     },
   )
-  let row: Awaited<ReturnType<typeof insertWorkflowCursor>>
   try {
-    row = await insertWorkflowCursor(
-      composition,
-      context,
-      database,
-      live.resolution,
-      undefined,
-      false,
+    await (ports.takeTaskClaim ?? boardClaimTake)(
+      { project: input.project, subject: `task:${child.key}` },
       {
-        parentFlowRecordId: inheritance.parentFlowRecordId,
-        activeOrdinal: inheritance.startOrdinal,
-        activeSlug: 'start',
-        closedStepNotes: inheritance.closed,
+        database,
+        taskCursorAuthority: { mode: 'start-child', session: input.callerSession },
       },
     )
   } catch (error) {
-    await boardClaimReleaseTask(child.key, input.project, {
-      database,
-      taskCursorAuthority: { mode: 'release', session: input.callerSession },
-    })
-    throw error
+    await abandonCursorAfterClaimFailure(row, context, database, error)
   }
-  // Take the task claim first; a stranded queued claim is harmless and lapses naturally.
-  boardQueuedClaimClose(
+  await boardQueuedClaimClose(
     {
       project: input.project,
       key: child.key,

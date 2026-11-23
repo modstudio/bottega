@@ -239,7 +239,7 @@ function hostedClient(c: ReturnType<typeof context>): RecordApiClient {
 }
 
 function writeDestination(c: ReturnType<typeof context>, project?: string | null) {
-  return c.destinationResolver(hostedClient(c), project)
+  return c.destinationResolver(hostedClient(c), project, c.database)
 }
 
 function locality(audience: string) {
@@ -336,7 +336,7 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 }
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
-  const hosted = 'holderSession' in value
+  const hosted = !('recordId' in value)
   const recordId = 'recordId' in value ? value.recordId : value.id
   const {
     id: _id,
@@ -347,7 +347,11 @@ function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   return {
     ...fields,
     holderUserId: hosted ? value.holder : null,
-    holderSession: hosted ? value.holderSession : value.holder === 'operator' ? null : value.holder,
+    holderSession: hosted
+      ? (value.holderSession ?? null)
+      : value.holder === 'operator'
+        ? null
+        : value.holder,
     recordId,
     runId: stringId(value.runId),
     run_record_id: value.runId,
@@ -913,19 +917,36 @@ export function boardQueuedClaimsRenew(
 ) {
   return renewLiveQueuedClaimsOfSession(session, clock, database)
 }
-export function boardQueuedClaimClose(
+export async function boardQueuedClaimClose(
   input: { project: string; key: string; session: string; reason: 'released' | 'started' },
   clock = Date.now(),
   database: Database = db(),
 ) {
-  return closeQueuedTaskClaim(
-    input.project,
-    input.key,
-    input.session,
-    input.reason,
-    clock,
-    database,
+  const c = context({ clock, database })
+  if (boardMode('shared', c.env, c.database) === 'local')
+    return closeQueuedTaskClaim(
+      input.project,
+      input.key,
+      input.session,
+      input.reason,
+      clock,
+      database,
+    )
+  const claim = (await boardClaimList(input.project, false, c)).claims.find(
+    (candidate) =>
+      candidate.subject.kind === 'queued-task' &&
+      candidate.subject.value === input.key &&
+      candidate.holderSession === input.session,
   )
+  if (!claim) return { closed: 0, reason: null }
+  await hostedClient(c).releaseBoardClaim(
+    claim.recordId,
+    await writeDestination(c, input.project),
+    {
+      holderSession: input.session,
+    },
+  )
+  return { closed: 1, reason: input.reason }
 }
 
 /** Read projects where a session holds a live local claim through the board's liveness policy. */
