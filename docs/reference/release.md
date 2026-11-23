@@ -30,7 +30,7 @@ releases and rungs
 
 **Synopsis:** `bottega release check <tag>`
 
-validate the release tag and prove release binaries ignore working-directory config
+validate the tag, tracked rungs, and release binary working-directory isolation
 
 ### Related
 

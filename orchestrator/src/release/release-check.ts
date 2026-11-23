@@ -10,12 +10,12 @@ import {
   checkReleaseBinaryAutoload,
   RELEASE_REQUIRE_PINNED_BUN_ENV,
 } from './release-binary-autoload-check.ts'
-import { releaseRuntimeConfigGuardDecision, releaseTagVersionDecision } from './release-decision.ts'
 import {
-  readTrackedReleaseRungs,
-  registeredReleaseRungs,
   releaseRungsDriftDecision,
-} from './release-rungs.ts'
+  releaseRuntimeConfigGuardDecision,
+  releaseTagVersionDecision,
+} from './release-decision.ts'
+import { readTrackedReleaseRungs, registeredReleaseRungs } from './release-rungs.ts'
 
 function releaseCheckoutRoot(
   fromDirectory?: string,

@@ -16,6 +16,7 @@ import {
   releaseProcessEnvironment,
   releaseReasonDecision,
   releaseRowProvesCandidate,
+  releaseRungsDriftDecision,
   releaseRungProofRefusal,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
@@ -52,7 +53,7 @@ describe('release tag rung liveness', () => {
     expect(decision.message).toContain(
       `${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-hub`,
     )
-    expect(decision.message).toContain(`${PLATFORM_SLUG} pr merge --release-required`)
+    expect(decision.message).toContain(`${PLATFORM_SLUG} pr merge <number> --release-required`)
   })
 
   test('refuses a diverged live commit', () => {
@@ -69,6 +70,42 @@ describe('release tag rung liveness', () => {
     if (decision.ok) throw new Error('expected a live-probe refusal')
     expect(decision.message).toContain(error)
     expect(decision.message).toContain('live commit unknown')
+  })
+})
+
+describe('release rung snapshot drift', () => {
+  const tracked = {
+    rungs: [
+      {
+        name: 'hosted-api',
+        branch: 'main',
+        live: 'read hosted api',
+        requiredWhenChanged: ['orchestrator/deploy/api/**'],
+        entryPoints: ['orchestrator/src/record/record-api-server.ts'],
+        onDemand: true,
+      },
+    ],
+  }
+
+  test('accepts equal register and tracked rungs', () => {
+    expect(releaseRungsDriftDecision(tracked, { ok: true, rungs: tracked }).status).toBe('match')
+  })
+
+  test('refuses a differing field and names the generator', () => {
+    const edited = {
+      rungs: [{ ...tracked.rungs[0], branch: 'release' }],
+    }
+    const decision = releaseRungsDriftDecision(edited, { ok: true, rungs: tracked })
+    expect(decision.status).toBe('different')
+    expect(decision.message).toContain(`${PLATFORM_SLUG} release rungs --write`)
+  })
+
+  test('reports that an unreadable register was not compared', () => {
+    expect(releaseRungsDriftDecision(tracked, { ok: false, error: 'store missing' })).toEqual({
+      status: 'unverified',
+      message:
+        'release rungs comparison was not run because the project register could not be read: store missing',
+    })
   })
 })
 

@@ -6,24 +6,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { projectByName } from '../project/projects.ts'
+import type { TrackedReleaseRung, TrackedReleaseRungs } from './release-decision.ts'
 import type { RequiredReleaseRung } from './release-required.ts'
 
 const RELEASE_RUNGS_FILE = 'scripts/quality/release-rungs.json'
 const RELEASE_RUNGS_GENERATOR = `${PLATFORM_SLUG} release rungs --write`
-
-type TrackedReleaseRung = Pick<RequiredReleaseRung, 'name' | 'branch'> & {
-  live: string
-  requiredWhenChanged?: readonly string[]
-  entryPoints?: readonly string[]
-  onDemand?: boolean
-}
-
-export type TrackedReleaseRungs = { rungs: TrackedReleaseRung[] }
-
-export type ReleaseRungsDriftDecision =
-  | { status: 'match'; message: string }
-  | { status: 'different'; message: string }
-  | { status: 'unverified'; message: string }
 
 function normalizeRung(rung: TrackedReleaseRung): TrackedReleaseRung {
   return {
@@ -60,26 +47,6 @@ export function releaseRungsFromRegister(
 
 function serialized(rungs: TrackedReleaseRungs): string {
   return `${JSON.stringify({ rungs: rungs.rungs.map(normalizeRung) }, null, 2)}\n`
-}
-
-/** Compare plain snapshot values, retaining an unavailable register as a distinct outcome. */
-export function releaseRungsDriftDecision(
-  tracked: TrackedReleaseRungs,
-  register: { ok: true; rungs: TrackedReleaseRungs } | { ok: false; error: string },
-): ReleaseRungsDriftDecision {
-  if (!register.ok) {
-    return {
-      status: 'unverified',
-      message: `release rungs comparison was not run because the project register could not be read: ${register.error}`,
-    }
-  }
-  if (serialized(tracked) === serialized(register.rungs)) {
-    return { status: 'match', message: 'tracked release rungs match the project register' }
-  }
-  return {
-    status: 'different',
-    message: `tracked release rungs differ from the project register; run ${RELEASE_RUNGS_GENERATOR}, then retry`,
-  }
 }
 
 function stringArray(value: unknown, field: string): string[] | undefined {

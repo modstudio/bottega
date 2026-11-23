@@ -20,9 +20,13 @@ export const releaseModules = [
       'shared/brand.ts',
       'shared/install-root.ts',
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/release-required.ts',
     ],
-    typeOnlyAllowed: ['orchestrator/src/release/release-required.ts'],
+    typeOnlyAllowed: [
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
   },
   {
     file: 'orchestrator/src/release/release-decision.ts',
