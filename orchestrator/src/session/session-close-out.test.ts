@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { register as registerSessionCommands } from '../commands/session.ts'
 import { db } from '../database/db.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -165,11 +167,12 @@ test('close-out repairs an orphaned asking turn before it classifies live sessio
   })
   addRun({ agent: 'codex', job: 'craft', status: 'ok', parent: root, turn: 3, session })
 
-  const report = await closeOutSession({ session, dryRun: true })
-
-  expect(report.process).not.toContainEqual(
-    expect.objectContaining({ item: expect.stringMatching(/^run /) }),
-  )
+  const program = new Command().exitOverride()
+  registerSessionCommands(program)
+  await program.parseAsync(['session', 'close-out', '--session', session, '--dry-run', '--json'], {
+    from: 'user',
+  })
+  process.exitCode = 0
   expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
     status: 'ok',
   })

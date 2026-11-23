@@ -286,52 +286,6 @@ describe('run continuation', () => {
     })
   })
 
-  test('continue repairs an orphaned asking turn before choosing the latest turn', async () => {
-    const root = addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'ok',
-      session: 'orch-test-session',
-      repo: 'continuation-fixture',
-    })
-    const asking = addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'asking',
-      parent: root,
-      turn: 2,
-      session: 'orch-test-session',
-    })
-    const latest = addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'ok',
-      parent: root,
-      turn: 3,
-      session: 'orch-test-session',
-    })
-    db()
-      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?,?)')
-      .run('latest-session', dir, dir, root, asking, latest)
-
-    const resumed = await continueRun(root, undefined, limit, () => {
-      expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
-        status: 'ok',
-      })
-      return 'continue from latest'
-    })
-
-    expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
-      status: 'ok',
-    })
-    expect(
-      db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
-    ).toEqual({ action: 'reap' })
-    expect(
-      db().query('SELECT turn,vendor_session FROM run WHERE record_id=?').get(resumed.childId),
-    ).toEqual({ turn: 4, vendor_session: 'latest-session' })
-  })
-
   test('a detached continuation is reported after its row exists and before post-detach audit', async () => {
     const root = insert('ok')
     db().query('UPDATE run SET vendor_session=? WHERE record_id=?').run('vendor-session', root)

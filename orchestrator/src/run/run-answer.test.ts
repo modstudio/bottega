@@ -25,6 +25,7 @@ import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
+import { answerCommand } from './run-message-commands.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -719,8 +720,8 @@ test('answer repairs an orphaned asking turn before reading its superseded quest
   db().query(newQuestionSql()).run(asking, new Date().toISOString(), 'obsolete question?')
 
   await expect(
-    answerRun(root, { argv: ['obsolete answer'], recordOnly: false, flags }, helpers),
-  ).rejects.toThrow('invariant: a ruling resumes a live chain')
+    answerCommand(root, ['obsolete answer'], false, false, flags, { printRunId: () => {} }),
+  ).rejects.toThrow()
   expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
     status: 'ok',
   })

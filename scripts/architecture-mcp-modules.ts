@@ -145,6 +145,8 @@ export const mcpModules: McpModule[] = [
     '../run/run-answer.ts',
     '../run/run-inbox.ts',
     '../run/run-identifier.ts',
+    // Repairs superseded asking turns before acting on them.
+    '../run/run-liveness.ts',
     '../run/run-message-commands.ts',
     '../workflow/workflow-context-moment.ts',
     './hub-notes.ts',

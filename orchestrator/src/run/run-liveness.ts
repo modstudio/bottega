@@ -282,7 +282,7 @@ export function repairAskingTurns(
   if (!superseded.length && !overwrittenAbandons.length) {
     return { supersededCount: 0, repairedAbandoned: [] }
   }
-  return writeTransaction(() => {
+  const repaired = writeTransaction(() => {
     return {
       supersededCount: reconcileSupersededAskingTurns(database, superseded, finishedAt),
       repairedAbandoned: reconcileOverwrittenAbandonedAskingTurns(
@@ -292,6 +292,10 @@ export function repairAskingTurns(
       ),
     }
   }, database)
+  if (repaired.repairedAbandoned.length) {
+    rollUpReapedRoots(database, repaired.repairedAbandoned, new Set(), machineId(), finishedAt)
+  }
+  return repaired
 }
 
 function finalizeReapedRuns(

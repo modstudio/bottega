@@ -5,8 +5,6 @@ import { formatPeek, peekRun } from '../events.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { closeStaleChainQuestions, reapStale, repairAskingTurns } from '../run/run-liveness.ts'
-import { rootRunRecordId } from '../run/run-root-record.ts'
-import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
 import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
@@ -87,8 +85,7 @@ export async function resultCommand(
 export async function waitCommand(database: Database, argv: string[]): Promise<void> {
   await collectWait(database, argv, async () => {
     const repairedAt = new Date().toISOString()
-    const repaired = repairAskingTurns(database, repairedAt)
-    rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), repairedAt)
+    repairAskingTurns(database, repairedAt)
     const observed = reapStale(database, terminalSharedGitConfigForRecordedRun)
     await closeStaleChainQuestions(database, { throttled: true })
     return observed

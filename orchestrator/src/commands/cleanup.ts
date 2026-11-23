@@ -67,6 +67,13 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)
+      if (!flags.has('dry-run')) {
+        const { repairAskingTurns } = await import('../run/run-liveness.ts')
+        const repaired = repairAskingTurns(db(), new Date().toISOString())
+        presentation.log(
+          `asking-turn repair repaired ${repaired.supersededCount + repaired.repairedAbandoned.length} rows`,
+        )
+      }
       await sweepRuns(
         {
           dryRun: flags.has('dry-run'),

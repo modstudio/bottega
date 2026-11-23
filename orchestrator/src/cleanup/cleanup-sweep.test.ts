@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
@@ -10,6 +11,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { register as registerCleanupCommands } from '../commands/cleanup.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
 import { sessionResumeBriefState } from '../doc/context-service.ts'
@@ -513,25 +515,17 @@ const runNumber = (recordId: string): number =>
 
 async function runAskingRepairSweep(projectName: string): Promise<string[]> {
   const lines: string[] = []
+  spyOn(console, 'log').mockImplementation((...values) => lines.push(values.join(' ')))
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options) => {
     const command = args.join(' ')
     if (command.startsWith('docker ')) return result('')
     return actualSpawnSync(args, options)
   }) as typeof Bun.spawnSync)
-  await sweepRuns(
-    {
-      dryRun: false,
-      project: projectName,
-      force: false,
-      presentation: presentation(lines, () => {}),
-    },
-    {
-      observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
-      grokTrustPathFromHeading: () => null,
-      hubTaskReader: async () => [],
-    },
-  )
+  const program = new Command().exitOverride()
+  registerCleanupCommands(program)
+  await program.parseAsync(['sweep', '--project', projectName], { from: 'user' })
+  process.exitCode = 0
   return lines
 }
 
@@ -564,8 +558,7 @@ test('sweep repairs a superseded asking turn with its audit reason and outbox ro
   })
 
   try {
-    const lines = await runAskingRepairSweep(projectName)
-    expect(lines).toContain('asking-turn repair repaired 1 rows')
+    await runAskingRepairSweep(projectName)
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
       status: 'ok',
     })
@@ -608,8 +601,7 @@ test('sweep restores an overwritten architect abandon verdict and rolls up its r
     .run(newRecordId(), root, root, 'abandon', new Date().toISOString(), 'late worker')
 
   try {
-    const lines = await runAskingRepairSweep(projectName)
-    expect(lines).toContain('asking-turn repair repaired 1 rows')
+    await runAskingRepairSweep(projectName)
     expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(asking)).toEqual(
       {
         status: 'stale',

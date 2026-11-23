@@ -74,9 +74,6 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
-import { repairAskingTurns } from './run-liveness.ts'
-import { rootRunRecordId } from './run-root-record.ts'
-import { rollUpChangedTurnRoots } from './run-root-rollup.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import {
   previousAttemptTaskPointer,
@@ -834,9 +831,6 @@ export async function answerRun(
   const id = row.record_id
   refuseEscapedChain(id)
   writableDb()
-  const repairedAt = new Date().toISOString()
-  const repaired = repairAskingTurns(db(), repairedAt)
-  rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), repairedAt)
   let answerAuthority = runMutationActor(requestedId)
   const authorityDecision = requireAnswerAuthority(
     requestedId,

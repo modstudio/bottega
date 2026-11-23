@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
@@ -53,12 +53,10 @@ import {
 import { detach } from './run-dispatch.ts'
 import {
   closeStaleChainQuestions,
-  repairAskingTurns,
   RUN_FOLLOW_TIMEOUT_MS,
   reapStale,
+  repairAskingTurns,
 } from './run-liveness.ts'
-import { rootRunRecordId } from './run-root-record.ts'
-import { rollUpChangedTurnRoots } from './run-root-rollup.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
@@ -308,8 +306,7 @@ export async function follow(
       process.exit(2)
     }
     const repairedAt = new Date().toISOString()
-    const repaired = repairAskingTurns(db(), repairedAt)
-    rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), repairedAt)
+    repairAskingTurns(db(), repairedAt)
     const observed = reapStale(db(), terminalSharedGitConfigForRecordedRun)
     await closeStaleChainQuestions(db(), { throttled: true })
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
@@ -741,10 +738,6 @@ export async function continueRun(
   produceMessage?: () => string | undefined,
   dependencies: ContinueRunDependencies = {},
 ): Promise<{ childId: string; job: string; reported: boolean }> {
-  writableDb()
-  const repairedAt = new Date().toISOString()
-  const repaired = repairAskingTurns(db(), repairedAt)
-  rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), repairedAt)
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(

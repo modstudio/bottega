@@ -45,9 +45,6 @@ import {
   runLeaseIds,
 } from '../run/run-lease.ts'
 import { backfillRunRecordsForSweep } from '../run/run-outbox.ts'
-import { repairAskingTurns } from '../run/run-liveness.ts'
-import { rootRunRecordId } from '../run/run-root-record.ts'
-import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -819,14 +816,6 @@ function prepareSweepContext(options: SweepOptions, helpers: SweepHelpers) {
 
 export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
   const dry = options.dryRun
-  if (!dry) {
-    const finishedAt = new Date().toISOString()
-    const repaired = repairAskingTurns(db(), finishedAt)
-    rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), finishedAt)
-    options.presentation.log(
-      `asking-turn repair repaired ${repaired.supersededCount + repaired.repairedAbandoned.length} rows`,
-    )
-  }
   const { selectedProject, sweepProjects } = await sweepScope(options)
   const { archiveRetention, trustObservation } = prepareSweepContext(options, helpers)
   reconcileAbsentClaims({

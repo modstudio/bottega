@@ -20,7 +20,6 @@ import {
   staleQuestionSweepDue,
 } from './run-liveness.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
-import { rollUpChangedTurnRoots } from './run-root-rollup.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null
@@ -132,7 +131,6 @@ describe('reapStale', () => {
 
     const repairedAt = nowIso()
     const repaired = repairAskingTurns(db(), repairedAt)
-    rollUpChangedTurnRoots([root], repairedAt)
     expect(repaired).toEqual({ supersededCount: 0, repairedAbandoned: [id] })
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(id),
