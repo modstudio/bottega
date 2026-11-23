@@ -112,8 +112,7 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
         (await callWorkerRecordRead('read_task_document', { reference: value })) as JsonObject,
       )
       if (json) console.log(JSON.stringify(document))
-      else
-        printShownTaskDocument(document as Parameters<typeof printShownTaskDocument>[0])
+      else printShownTaskDocument(document as Parameters<typeof printShownTaskDocument>[0])
     } else {
       const id = value.replace(/^attached-text:/, '')
       const shown = (await callWorkerRecordRead('read_workflow_text', { id })) as JsonObject
