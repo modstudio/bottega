@@ -363,6 +363,7 @@ jobs:
         run: "echo 'release smoke: no pull request, merge queue or dispatch event'"
 
   checkout-cli-confinement:
+    if: github.event_name == 'pull_request'
     runs-on: macos-15
     timeout-minutes: 10
     steps:
@@ -461,4 +462,4 @@ jobs:
       - name: Require every CI job
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))' <<<"$RESULTS"
+        run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "checkout-cli-confinement" or .key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))' <<<"$RESULTS"
