@@ -10,6 +10,10 @@ import {
   type HostedPreparedPage,
 } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import {
+  clearHostedChangeQuarantine,
+  recordHostedChangeQuarantine,
+} from './hosted-change-quarantine.ts'
 import { createHostedSendChangeFamily } from './hosted-send-change-family.ts'
 import { createHostedTaskChangeFamily } from './hosted-task-change-family.ts'
 import {
@@ -321,6 +325,41 @@ const pair = (name: FamilyName, space: string) => `${name}:${space}`
 const snapshotCursorKey = (feed: FeedFamily, space: string) =>
   `collect.hosted-record-changes.snapshot.${feed.name}.${space}`
 
+function sqliteConstraintError(cause: unknown): Error | null {
+  let current = cause
+  const seen = new Set<unknown>()
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current)
+    const code = (current as Error & { code?: unknown }).code
+    if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return current
+    current = current.cause
+  }
+  return null
+}
+
+function applyFeedChange(
+  conn: Database,
+  feed: FeedFamily,
+  change: HostedRecordChange,
+  counts: SpaceCounts,
+): void {
+  conn.exec('SAVEPOINT hosted_change_row')
+  try {
+    applyOneChange(conn, change, change.space, feed.family, counts)
+    clearHostedChangeQuarantine(conn, feed.name, change.space, change)
+    conn.exec('RELEASE SAVEPOINT hosted_change_row')
+  } catch (cause) {
+    const constraint = sqliteConstraintError(cause)
+    conn.exec('ROLLBACK TO SAVEPOINT hosted_change_row')
+    if (!constraint) {
+      conn.exec('RELEASE SAVEPOINT hosted_change_row')
+      throw cause
+    }
+    recordHostedChangeQuarantine(conn, feed.name, change.space, change, constraint.message)
+    conn.exec('RELEASE SAVEPOINT hosted_change_row')
+  }
+}
+
 function feedFamilies(
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
@@ -428,7 +467,7 @@ async function applyFeedPage(
         if (prep.skippedForAbsentParent.has(`${change.table}:${change.id}`)) {
           familyCounts.absentParentSkipped += 1
           pending.add(pair(feed.name, change.space))
-        } else applyOneChange(conn, change, change.space, feed.family, familyCounts)
+        } else applyFeedChange(conn, feed, change, familyCounts)
       }
     }
     putSetting(conn, FEED_PENDING, JSON.stringify([...pending].sort()))

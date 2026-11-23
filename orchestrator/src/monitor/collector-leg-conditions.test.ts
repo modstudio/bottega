@@ -67,4 +67,42 @@ describe('collector leg failure decision', () => {
       'collector leg observation unreadable: hosted outbox state is unreadable',
     ])
   })
+
+  test('raises a hosted-row quarantine condition from the enriched collector payload', () => {
+    const firstQuarantinedAt = '2026-11-20T11:30:00.000Z'
+    const result = collectorLegFailureDecision(
+      [
+        {
+          ...leg(null),
+          source: 'hosted changes',
+          quarantinedRows: 2,
+          oldestQuarantinedRow: {
+            table: 'hub_task',
+            constraintError: 'CHECK constraint failed: status_category',
+            firstQuarantinedAt,
+          },
+        },
+      ],
+      now,
+    )
+
+    expect(result.conditions).toEqual([
+      expect.objectContaining({
+        kind: 'hosted-row-quarantined',
+        subject: 'hosted changes',
+        since: firstQuarantinedAt,
+        detail:
+          '2 hosted rows are quarantined; oldest is hub_task: CHECK constraint failed: status_category',
+        action: expect.stringContaining('record collector-legs --quarantined --json'),
+      }),
+    ])
+  })
+
+  test('an old collector payload without quarantine fields means zero quarantined rows', () => {
+    expect(collectorLegFailureDecision([{ ...leg(null), source: 'hosted changes' }], now)).toEqual({
+      conditions: [],
+      errors: [],
+      failures: [],
+    })
+  })
 })

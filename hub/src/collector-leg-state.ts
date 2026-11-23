@@ -4,6 +4,7 @@
 import type { CollectorLegHealth } from '@bottega/hub-views/work-summary'
 import { collectionStaleness } from './collect-slow-health.ts'
 import { db, writeTransaction } from './db.ts'
+import type { HostedChangeQuarantineSummary } from './hosted-change-quarantine.ts'
 
 const SETTING_PREFIX = 'collect.leg.'
 
@@ -121,6 +122,7 @@ export function collectorLegStates(): CollectorLegObservation[] {
 export function collectorLegView(
   states: readonly CollectorLegObservation[],
   now: number,
+  hostedChangeQuarantine?: HostedChangeQuarantineSummary,
 ): { collectedAt: string | null; collectorLegs: CollectorLegHealth[] } {
   const collectorLegs = states.map((state): CollectorLegHealth => {
     if ('unreadable' in state) {
@@ -135,6 +137,19 @@ export function collectorLegView(
       }
     }
     const staleness = collectionStaleness(now, state.lastSuccessAt)
+    const quarantine =
+      state.source === 'hosted changes' && hostedChangeQuarantine
+        ? {
+            quarantinedRows: hostedChangeQuarantine.count,
+            oldestQuarantinedRow: hostedChangeQuarantine.oldest
+              ? {
+                  table: hostedChangeQuarantine.oldest.table,
+                  constraintError: hostedChangeQuarantine.oldest.constraintError,
+                  firstQuarantinedAt: hostedChangeQuarantine.oldest.firstQuarantinedAt,
+                }
+              : null,
+          }
+        : {}
     return {
       ...state,
       status:
@@ -144,6 +159,7 @@ export function collectorLegView(
             ? 'current'
             : 'stale',
       ageMs: staleness.ageMs,
+      ...quarantine,
     }
   })
   const successes = collectorLegs.flatMap((leg) =>

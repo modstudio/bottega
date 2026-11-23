@@ -421,6 +421,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   synced('hub', 'day', 'Daily usage collected on this machine'),
   machine('hub', 'hosted_outbox', 'Local hosted outbox bookkeeping', PORTABLE_RULING),
   machine('hub', 'hosted_outbox_trace', 'Local hosted outbox trace', PORTABLE_RULING),
+  machine(
+    'hub',
+    'hosted_change_quarantine',
+    'Local hosted change apply state',
+    PORTABLE_RULING,
+  ),
   machine('hub', 'hub_migrations', 'Local migration bookkeeping', PORTABLE_RULING),
   machine('hub', 'hub_schema_lock', 'Local schema lock bookkeeping', PORTABLE_RULING),
   machine('hub', 'install_binding', "This install's record binding", PORTABLE_RULING),

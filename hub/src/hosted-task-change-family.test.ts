@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedChanges } from './hosted-change-cache.ts'
+import { hostedChangeQuarantineRows } from './hosted-change-quarantine.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { queueHostedChange } from './outbox.ts'
 import { applyHostedTask } from './task-cache.ts'
@@ -316,32 +317,33 @@ for (const order of ['delete-upsert', 'upsert-delete'] as const) {
   })
 }
 
-test('a malformed record row leaves the feed cursor and cached task untouched', async () => {
+test('a malformed constraint-violating row is quarantined and leaves the cached task untouched', async () => {
   seedFeed()
   writeTransaction((conn) => applyHostedTask(conn, hostedTask()))
-  await expect(
-    pullHostedChanges({
-      ...options,
-      fetch: route({
-        feed: () =>
-          page('after', [
-            {
-              table: 'hub_task',
-              id: taskId,
-              space: 'space-one',
-              op: 'upsert',
-              row: { id: 'wrong' },
-            },
-          ]),
-      }),
-      registeredProjects: registered,
+  await pullHostedChanges({
+    ...options,
+    fetch: route({
+      feed: () =>
+        page('after', [
+          {
+            table: 'hub_task',
+            id: taskId,
+            space: 'space-one',
+            op: 'upsert',
+            row: { id: 'wrong' },
+          },
+        ]),
     }),
-  ).rejects.toThrow()
-  expect(stored('collect.hosted-record-changes.cursor')).toBe('before')
+    registeredProjects: registered,
+  })
+  expect(stored('collect.hosted-record-changes.cursor')).toBe('after')
   expect(
     db().query<{ title: string }, [string]>('SELECT title FROM task WHERE record_id=?').get(taskId)
       ?.title,
   ).toBe('log task')
+  expect(hostedChangeQuarantineRows(db())).toEqual([
+    expect.objectContaining({ table: 'hub_task', rowId: taskId, sightings: 1 }),
+  ])
 })
 
 const taskComment = () => ({

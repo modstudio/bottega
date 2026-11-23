@@ -170,6 +170,39 @@ describe('collector leg state', () => {
     })
   })
 
+  test('the hosted changes leg carries the local quarantine count and oldest row', () => {
+    const states = [
+      {
+        source: 'hosted changes',
+        lastSuccessAt: '2026-11-20T11:59:00.000Z',
+        lastError: null,
+        lastErrorAt: null,
+        failingSince: null,
+      },
+    ]
+    const view = collectorLegView(states, Date.parse('2026-11-20T12:00:00.000Z'), {
+      count: 2,
+      oldest: {
+        feed: 'task',
+        spaceId: 'space-one',
+        table: 'hub_task',
+        rowId: 'row-one',
+        constraintError: 'CHECK constraint failed',
+        firstQuarantinedAt: '2026-11-20T11:30:00.000Z',
+      },
+    })
+
+    expect(view.collectorLegs[0]).toMatchObject({
+      source: 'hosted changes',
+      quarantinedRows: 2,
+      oldestQuarantinedRow: {
+        table: 'hub_task',
+        constraintError: 'CHECK constraint failed',
+        firstQuarantinedAt: '2026-11-20T11:30:00.000Z',
+      },
+    })
+  })
+
   test('a fresh non-Error failure repairs an unparsable stored leg', async () => {
     const error = spyOn(console, 'error').mockImplementation(() => {})
     writeTransaction((conn) =>
