@@ -1,6 +1,7 @@
 // concern: record-write-destination
 /** Adapts a record write owner to an authorized hosted request destination. */
 
+import type { Database } from 'bun:sqlite'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { type RecordWriteOwner, recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
@@ -11,9 +12,10 @@ import type { RecordWriteDestination } from './record-api-client-paths.ts'
 export async function recordWriteDestination(
   client: RecordApiClient,
   owner: RecordWriteOwner | null,
+  database?: Database,
 ): Promise<RecordWriteDestination> {
   const identity = await client.whoami()
-  const registered = [...projects(), ...projects({ retired: true })]
+  const registered = [...projects({}, database), ...projects({ retired: true }, database)]
   const decision = recordWriteSpace(owner, {
     declaredSpaces: Object.fromEntries(
       registered.map((project) => [project.name, declaredRecordSpace(project.settings)]),

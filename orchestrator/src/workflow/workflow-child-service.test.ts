@@ -1,7 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import type { HostedBoardClaim } from '../record/record-board-contract.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { installTaskReader, type TaskReadPort, type TaskReadRow } from './task-read-port.ts'
@@ -19,11 +26,16 @@ const database = testDatabaseFixture((d) => {
 })
 
 let previousTaskReader: TaskReadPort | undefined
+let previousRecordApiUrl: string | undefined
 beforeEach(() => {
   previousTaskReader = installTaskReader(undefined)
+  previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 })
 afterEach(() => {
   installTaskReader(previousTaskReader)
+  installRecordApiClient(null)
+  if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
 })
 
 const row = (key: string, parentKey: string | null): TaskReadRow => ({
@@ -119,6 +131,77 @@ async function openEpicAtStart(
   return { cursor: opened.cursor!.id, startOrdinal, closed }
 }
 
+function hostedClaim(
+  subject: { kind: 'task' | 'queued-task'; value: string },
+  holderSession: string | null,
+): HostedBoardClaim {
+  return {
+    id: newRecordId(),
+    project: 'fixture',
+    subject,
+    holder: 'user-u',
+    holderSession,
+    note: null,
+    runId: null,
+    takenAt: '2026-11-23T12:00:00.000Z',
+    renewedAt: '2026-11-23T12:00:00.000Z',
+    lapsesAt: '2099-11-23T12:00:00.000Z',
+    live: true,
+    closedAt: null,
+    closeReason: null,
+    previousClaimIds: [],
+    supersededByClaimId: null,
+  }
+}
+
+function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) {
+  d.query('DELETE FROM board_claim').run()
+  d.query(
+    "UPDATE project SET settings=json_set(settings,'$.space','space-fixture') WHERE name='fixture'",
+  ).run()
+  d.query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  let listCalls = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-u', email: 'u@example.test' },
+      activeSpaceId: 'space-fixture',
+      personalSpaceId: 'space-fixture',
+      memberships: [
+        {
+          space_id: 'space-fixture',
+          name: 'Fixture',
+          slug: 'space-fixture',
+          role: 'member' as const,
+          permission: 'write' as const,
+        },
+      ],
+    }),
+    listBoardClaims: async () => {
+      listCalls++
+      return { claims }
+    },
+    takeBoardClaim: async (input) => {
+      const [kind, value] = input.subject.split(':', 2)
+      if (kind !== 'queued-task' || !value) throw new Error('unexpected hosted claim subject')
+      const claim = hostedClaim({ kind, value }, input.holderSession ?? null)
+      claims.push(claim)
+      return { ...claim, action: 'taken' as const }
+    },
+    releaseBoardClaim: async (id, _destination, input) => {
+      const claim = claims.find((candidate) => candidate.id === id)
+      if (!claim || claim.holderSession !== input?.holderSession)
+        throw new Error('hosted queued claim release did not match its holder session')
+      claim.live = false
+      claim.closedAt = '2026-11-23T12:01:00.000Z'
+      claim.closeReason = 'released'
+      return claim
+    },
+  })
+  return { listCalls: () => listCalls }
+}
+
 test('start-child opens at start with inherited closures and parent flow', async () => {
   const d = database()
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
@@ -146,6 +229,94 @@ test('start-child opens at start with inherited closures and parent flow', async
   expect(
     flows.find(({ task_record_id }) => task_record_id === 'task-DEV-2')?.parent_flow_record_id,
   ).toBe(flows.find(({ task_record_id }) => task_record_id === 'task-DEV-1')?.record_id)
+})
+
+test('hosted child eligibility reads the record claim and compares its session identity', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  const queued = hostedClaim({ kind: 'queued-task', value: 'DEV-2' }, 'session-s')
+  const reads = useHostedClaims(d, [
+    hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s'),
+    queued,
+  ])
+
+  for (const callerSession of ['other-session', 'user-u']) {
+    await expect(
+      queueWorkflowChild(
+        {
+          project: 'fixture',
+          child: 'DEV-2',
+          session: callerSession,
+          callerSession,
+          off: true,
+        },
+        d,
+      ),
+    ).rejects.toThrow(
+      `calling session ${callerSession} does not hold epic DEV-1 or a queued child under it`,
+    )
+  }
+  const released = await queueWorkflowChild(
+    {
+      project: 'fixture',
+      child: 'DEV-2',
+      session: 'session-s',
+      callerSession: 'session-s',
+      off: true,
+    },
+    d,
+  )
+  expect(released).toMatchObject({ child: 'DEV-2' })
+  expect(queued.live).toBeFalse()
+  expect(reads.listCalls()).toBe(4)
+})
+
+test('a hosted queued descendant claim authorizes its holder session', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  const queued = hostedClaim({ kind: 'queued-task', value: 'DEV-2' }, 'session-s')
+  useHostedClaims(d, [queued])
+  const released = await queueWorkflowChild(
+    {
+      project: 'fixture',
+      child: 'DEV-2',
+      session: 'session-s',
+      callerSession: 'session-s',
+      off: true,
+    },
+    d,
+  )
+  expect(released).toMatchObject({ child: 'DEV-2' })
+  expect(queued.live).toBeFalse()
+})
+
+test('queue reads the hosted claim snapshot once before taking the child claim', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks)
+  const claims = [hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s')]
+  const reads = useHostedClaims(d, claims)
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'session-s',
+        callerSession: 'session-s',
+        off: false,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2' })
+  expect(reads.listCalls()).toBe(1)
+  expect(claims).toContainEqual(
+    expect.objectContaining({
+      subject: { kind: 'queued-task', value: 'DEV-2' },
+      holderSession: 'session-s',
+    }),
+  )
 })
 
 test('inherited start maps parent closures to child ordinals by slug', () => {
@@ -225,6 +396,9 @@ test('start-child does not take over a task claim that appears after selection',
       d,
       {
         takeTaskClaim: async (input, context) => {
+          expect(
+            d.query("SELECT state FROM workflow_cursor WHERE workflow_key='DEV-2'").get(),
+          ).toEqual({ state: 'running' })
           if (!inserted) {
             inserted = true
             await boardClaimTake(
@@ -241,13 +415,9 @@ test('start-child does not take over a task claim that appears after selection',
       },
     ),
   ).rejects.toThrow(/other-session/)
-  expect(
-    d
-      .query(
-        "SELECT holder_session FROM board_claim WHERE subject_kind='task' AND subject_value='DEV-2' AND closed_at IS NULL",
-      )
-      .get(),
-  ).toEqual({ holder_session: 'other-session' })
+  expect(d.query("SELECT state FROM workflow_cursor WHERE workflow_key='DEV-2'").get()).toEqual({
+    state: 'abandoned',
+  })
 })
 
 test('queue authorization belongs to the caller while the named session receives the claim', async () => {
@@ -323,7 +493,7 @@ test('closing an already lapsed queued claim records lapsed instead of the reque
   )
   d.query("UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_kind='queued-task'").run()
   expect(
-    boardQueuedClaimClose(
+    await boardQueuedClaimClose(
       { project: 'fixture', key: 'DEV-2', session: 'lane-a', reason: 'released' },
       Date.now(),
       d,

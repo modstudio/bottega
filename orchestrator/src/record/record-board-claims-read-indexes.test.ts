@@ -200,6 +200,7 @@ test('open-only list keeps lapsed claims, predecessors, and a constant statement
   const first = await listedWithStatementCount()
   expect(first.result.claims.map((claim) => claim.id)).toEqual([openId, secondOpenId, lapsedId])
   expect(first.result.claims.find((claim) => claim.id === lapsedId)).toMatchObject({
+    holderSession: null,
     live: false,
     closedAt: null,
   })

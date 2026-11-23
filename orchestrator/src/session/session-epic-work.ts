@@ -30,10 +30,10 @@ export async function sessionEpicWork(
     const listedTasks = await readLiveProjectTasks(readProjectTaskList, project)
     const listedKeys = [...new Set(listedTasks.map((task) => task.key))]
     const tasks = await lookupProjectTasks(project, listedKeys)
-    const facts = await gatherChildTaskFacts(database, project, tasks)
-    const claims = liveChildClaims(database, project).filter(
-      ({ holder_session }) => holder_session === session,
+    const claims = (await liveChildClaims(database, project)).filter(
+      ({ holderSession }) => holderSession === session,
     )
+    const facts = await gatherChildTaskFacts(database, project, tasks, claims)
     const epicCursors = stages.filter(
       (stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start',
     )

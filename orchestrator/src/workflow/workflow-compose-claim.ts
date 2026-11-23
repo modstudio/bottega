@@ -2,7 +2,7 @@
 /** Follows a persisted compose with its claim, undoing only a new cursor on refusal. */
 
 import type { Database } from 'bun:sqlite'
-import { abandonWorkflowCursor } from './workflow-cursor-mutation.ts'
+import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   followTaskCursorClaim,
@@ -31,17 +31,6 @@ export async function followComposeTaskClaim(
     return null
   } catch (error) {
     if (reused) return row.workflow_key ? taskClaimFollowWarning(row.workflow_key, error) : null
-    try {
-      await abandonWorkflowCursor(row, 'task claim take failed', context, database)
-    } catch (abandonError) {
-      const detail = error instanceof Error ? error.message : String(error)
-      const abandonDetail =
-        abandonError instanceof Error ? abandonError.message : String(abandonError)
-      throw new Error(
-        `${detail}\nwarning: could not abandon cursor after claim failure: ${abandonDetail}`,
-        { cause: error },
-      )
-    }
-    throw error
+    return abandonCursorAfterClaimFailure(row, context, database, error)
   }
 }

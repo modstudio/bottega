@@ -170,6 +170,7 @@ test('uploaded message and claim UUIDs route to hosted rows instead of retired l
     project: localClaim.project,
     subject: localClaim.subject,
     holder: localClaim.holder,
+    holderSession: localClaim.holder,
     note: 'hosted row with shared UUID',
     runId: null,
     takenAt: localClaim.takenAt,
@@ -486,6 +487,8 @@ test('claim verbs stringify every id and share the same local and hosted result 
     project: 'board-route-project',
     subject: { kind: 'resource', value: 'local' },
     holder: 'operator',
+    holderUserId: null,
+    holderSession: null,
     note: null,
     runId: null,
     run_record_id: null,
@@ -529,6 +532,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     project: 'board-route-project',
     subject: { kind: 'resource' as const, value: 'hosted' },
     holder: newRecordId(),
+    holderSession: 'hosted-session',
     note: null,
     runId: newRecordId(),
     takenAt: '2026-10-05T12:00:00.000Z',
@@ -542,6 +546,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
   }
   const hostedResult = {
     ...hostedClaim,
+    holderUserId: hostedClaim.holder,
     recordId: hostedClaim.id,
     previousClaimRecordIds: hostedClaim.previousClaimIds,
     supersededByClaimRecordId: hostedClaim.supersededByClaimId,

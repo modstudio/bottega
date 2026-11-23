@@ -1,6 +1,7 @@
 // concern: board-write-destination
 /** Names the space of every board write; presence uses the checkout session owner. */
 
+import type { Database } from 'bun:sqlite'
 import { projectAt } from '../project/projects.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
@@ -13,10 +14,12 @@ export type BoardPresenceDestinationResolver = typeof boardPresenceDestination
 export async function boardWriteDestination(
   client: RecordApiClient,
   project?: string | null,
+  database?: Database,
 ): Promise<RecordWriteDestination> {
   return recordWriteDestination(
     client,
     project ? { kind: 'project', name: project } : { kind: 'personal' },
+    database,
   )
 }
 

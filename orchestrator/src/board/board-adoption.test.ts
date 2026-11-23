@@ -331,6 +331,7 @@ function capturingClient(calls: string[], failTitle?: string) {
         project: input.project,
         subject: { kind: 'task', value: 'DEV-968' },
         holder: input.holderSession ?? 'operator',
+        holderSession: input.holderSession ?? null,
         note: input.note ?? null,
         runId: input.runId ?? null,
         takenAt: new Date(NOW).toISOString(),

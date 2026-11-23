@@ -48,6 +48,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-child-queue.ts',
     './workflow-cursor-compose.ts',
     './workflow-cursor-live-autonomy.ts',
+    './workflow-cursor-mutation.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-trail.ts',
     './workflow-task-reference.ts',

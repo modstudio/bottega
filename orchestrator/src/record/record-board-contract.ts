@@ -188,6 +188,7 @@ export type HostedBoardClaim = {
   project: string
   subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
   holder: string
+  holderSession: string | null
   note: string | null
   runId: string | null
   takenAt: string
