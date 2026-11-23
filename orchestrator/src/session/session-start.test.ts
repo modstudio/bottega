@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { reapHarnessSessions } from '../harness-session/harness-session.ts'

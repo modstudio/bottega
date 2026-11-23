@@ -6,7 +6,7 @@ export const sessionStartBoundarySpecs = [
     name: 'harness-session-decision-boundary',
     file: 'orchestrator/src/harness-session/harness-session-decision.ts',
     allowed: [],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['../../../shared/process-identity.ts'],
     reason: 'Keep harness publication measurement pure over process identities.',
   },
   {

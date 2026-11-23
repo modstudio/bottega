@@ -14,11 +14,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
+import { publishHarnessSession, reapHarnessSessions } from './harness-session.ts'
 import { HARNESS_SESSION_TEMP_GRACE_MS } from './harness-session-decision.ts'
-import {
-  publishHarnessSession,
-  reapHarnessSessions,
-} from './harness-session.ts'
 
 const roots: string[] = []
 const state = () => {

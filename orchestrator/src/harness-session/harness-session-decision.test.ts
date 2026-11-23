@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import {
   HARNESS_SESSION_TEMP_GRACE_MS,
-  type ObservedHarnessSessionPublication,
   isClaudeHarness,
+  type ObservedHarnessSessionPublication,
   temporaryPublicationDisposition,
   unpublishedHarnessProcesses,
 } from './harness-session-decision.ts'
@@ -26,9 +26,9 @@ test('classifies temporary publication entries by name and age', () => {
   expect(
     temporaryPublicationDisposition(temporary, now - HARNESS_SESSION_TEMP_GRACE_MS - 1, now),
   ).toBe('reap')
-  expect(
-    temporaryPublicationDisposition(temporary, now - HARNESS_SESSION_TEMP_GRACE_MS, now),
-  ).toBe('keep')
+  expect(temporaryPublicationDisposition(temporary, now - HARNESS_SESSION_TEMP_GRACE_MS, now)).toBe(
+    'keep',
+  )
   expect(temporaryPublicationDisposition('42-start.json', 0, now)).toBe('ignore')
 })
 

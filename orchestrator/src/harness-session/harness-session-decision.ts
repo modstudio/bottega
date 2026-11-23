@@ -23,9 +23,7 @@ const TEMPORARY_PUBLICATION =
   /^\.\d+-.+\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i
 
 /** Decide how storage treats a publication after observing its process identity. */
-export function harnessSessionDisposition(
-  identity: PidRecordIdentity,
-): HarnessSessionDisposition {
+export function harnessSessionDisposition(identity: PidRecordIdentity): HarnessSessionDisposition {
   if (identity === 'dead' || identity === 'reused') return 'reap'
   if (identity === 'live') return 'keep'
   return 'unknown'
@@ -52,13 +50,15 @@ export function unpublishedHarnessProcesses(
   processes: readonly HarnessProcessFact[],
   publications: readonly Pick<ObservedHarnessSessionPublication, 'identity' | 'observedIdentity'>[],
 ): HarnessProcessFact[] {
-  return processes.filter(isClaudeHarness).filter(
-    (process) =>
-      !publications.some(
-        (publication) =>
-          publication.observedIdentity === 'live' &&
-          publication.identity.pid === process.pid &&
-          publication.identity.startTime === process.startTime,
-      ),
-  )
+  return processes
+    .filter(isClaudeHarness)
+    .filter(
+      (process) =>
+        !publications.some(
+          (publication) =>
+            publication.observedIdentity === 'live' &&
+            publication.identity.pid === process.pid &&
+            publication.identity.startTime === process.startTime,
+        ),
+    )
 }

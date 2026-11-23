@@ -34,6 +34,7 @@ import {
 
 type StoredPublication = Omit<HarnessSessionPublication, 'identity'>
 type Identity = (pid: number, startTime: string) => PidRecordIdentity
+type Stat = (path: string) => { mtimeMs: number }
 
 function publicationPath(directory: string, identity: HarnessProcessIdentity): string {
   return join(directory, `${identity.pid}-${identity.startTime}.json`)
@@ -78,6 +79,29 @@ function storedPublications(env: StateEnvironment): HarnessSessionPublication[] 
   })
 }
 
+function reapTemporaryPublications(input: {
+  directory: string
+  dryRun?: boolean
+  nowMs: number
+  stat: Stat
+}): number {
+  let reaped = 0
+  for (const name of readdirSync(input.directory)) {
+    const temporary = join(input.directory, name)
+    let mtimeMs: number
+    try {
+      mtimeMs = input.stat(temporary).mtimeMs
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') continue
+      throw error
+    }
+    if (temporaryPublicationDisposition(name, mtimeMs, input.nowMs) !== 'reap') continue
+    reaped++
+    if (!input.dryRun) rmSync(temporary, { force: true })
+  }
+  return reaped
+}
+
 export function publishHarnessSession(input: {
   pid: number
   session: string
@@ -115,7 +139,7 @@ export function reapHarnessSessions(
     dryRun?: boolean
     identity?: Identity
     now?: Date
-    stat?: (path: string) => { mtimeMs: number }
+    stat?: Stat
   } = {},
 ): { reaped: number; publications: ObservedHarnessSessionPublication[] } {
   const env = options.env ?? process.env
@@ -134,20 +158,11 @@ export function reapHarnessSessions(
       if (!options.dryRun) rmSync(publicationPath(directory, publication.identity), { force: true })
     } else kept.push({ ...publication, observedIdentity })
   }
-  const nowMs = (options.now ?? new Date()).getTime()
-  const stat = options.stat ?? statSync
-  for (const name of readdirSync(directory)) {
-    const temporary = join(directory, name)
-    let mtimeMs: number
-    try {
-      mtimeMs = stat(temporary).mtimeMs
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') continue
-      throw error
-    }
-    if (temporaryPublicationDisposition(name, mtimeMs, nowMs) !== 'reap') continue
-    reaped++
-    if (!options.dryRun) rmSync(temporary, { force: true })
-  }
+  reaped += reapTemporaryPublications({
+    directory,
+    dryRun: options.dryRun,
+    nowMs: (options.now ?? new Date()).getTime(),
+    stat: options.stat ?? statSync,
+  })
   return { reaped, publications: kept }
 }
