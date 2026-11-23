@@ -9,7 +9,7 @@ test('codex worker CLI reads refuse with the matching bottega-ask remedy', () =>
   ] as const) {
     const refusal = workerRecordReadCliRefusal({
       route,
-      worker: true,
+      callerKind: 'worker',
       codexSandbox: true,
       askUrl: false,
     })
@@ -19,9 +19,17 @@ test('codex worker CLI reads refuse with the matching bottega-ask remedy', () =>
   expect(
     workerRecordReadCliRefusal({
       route: 'task',
-      worker: true,
+      callerKind: 'worker',
       codexSandbox: true,
       askUrl: true,
+    }),
+  ).toBeNull()
+  expect(
+    workerRecordReadCliRefusal({
+      route: 'task',
+      callerKind: 'operator',
+      codexSandbox: true,
+      askUrl: false,
     }),
   ).toBeNull()
 })

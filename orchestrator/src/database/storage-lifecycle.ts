@@ -160,14 +160,6 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
   },
   {
     store: 'orchestrator',
-    table: 'worker_record_read_request',
-    class: 'machine',
-    keep: 'A row stays until its ask-server returns or the supervising record-read broker closes.',
-    remover: 'orchestrator/src/ask/worker-record-read-broker.ts#startWorkerRecordReadBroker',
-    slice: 'working-set',
-  },
-  {
-    store: 'orchestrator',
     table: 'session_seen',
     class: 'machine',
     keep: "A row is deleted through expireSessionSeen when the session's newest clean close-out is swept; a session that never closes out keeps its row.",

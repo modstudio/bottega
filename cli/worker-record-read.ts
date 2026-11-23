@@ -4,7 +4,7 @@
 import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
 import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
 import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
-import { classifyCaller } from '../shared/caller-classification.ts'
+import { classifyCaller, type CallerClassification } from '../shared/caller-classification.ts'
 
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name)
@@ -42,11 +42,12 @@ const WORKER_READ_TOOLS = {
 
 export function workerRecordReadCliRefusal(input: {
   route: keyof typeof WORKER_READ_TOOLS | null
-  worker: boolean
+  callerKind: CallerClassification['kind']
   codexSandbox: boolean
   askUrl: boolean
 }): string | null {
-  if (!input.route || !input.worker || input.askUrl || !input.codexSandbox) return null
+  if (!input.route || input.callerKind !== 'worker' || input.askUrl || !input.codexSandbox)
+    return null
   const tool = WORKER_READ_TOOLS[input.route]
   return `a codex worker reads this record with the bottega-ask tool ${tool}; the CLI can't reach the record session from codex's sandbox`
 }
@@ -54,11 +55,12 @@ export function workerRecordReadCliRefusal(input: {
 /** Return null when the normal CLI owner should handle this invocation. */
 export async function dispatchWorkerRecordRead(argv: string[]): Promise<number | null> {
   const route = workerReadRoute(argv)
-  const worker = classifyCaller(process.env).kind === 'worker'
+  const callerKind = classifyCaller(process.env).kind
+  const worker = callerKind === 'worker'
   const askUrl = Boolean(process.env.BOTTEGA_ASK_URL?.trim())
   const refusal = workerRecordReadCliRefusal({
     route,
-    worker,
+    callerKind,
     askUrl,
     codexSandbox: Boolean(process.env.CODEX_SANDBOX?.trim()),
   })

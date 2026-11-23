@@ -10,10 +10,6 @@ import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
-import {
-  startWorkerRecordReadBroker,
-  type WorkerRecordReadBroker,
-} from '../ask/worker-record-read-broker.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
 import {
   isAsking,
@@ -215,11 +211,9 @@ function endpointAsk(loopback: AskLoopback | null) {
 async function closeLiveBrokers(
   execution: WorkerExecutionBrokers | null,
   note: WorkerNoteBroker | null,
-  recordRead: WorkerRecordReadBroker | null,
 ): Promise<void> {
   await closeWorkerExecutionBrokers(execution)
   await closeWorkerNoteBroker(note)
-  if (recordRead) await recordRead.close()
 }
 
 export const FINAL_MESSAGE_FALLBACK_MARKER = 'used final-message fallback'
@@ -660,7 +654,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
-  let recordReadBroker: WorkerRecordReadBroker | null = null
   let workerEvents: StreamEvent[] = []
   let wallArmedAtMs: number | null = null
   let accruedGateMs = 0
@@ -713,7 +706,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       },
     })
     noteBroker = startWorkerNoteBroker(claim.id)
-    recordReadBroker = startWorkerRecordReadBroker(claim.id, runToken)
     const t = transportFor(transportName)
     const checkpointMessages = unreadWorkerMessages(claim.id)
     const boardDelivery = await prepareLaterRunBoardPrompt(
@@ -1055,7 +1047,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   }
   rearmWallDeadline = () => {}
   clearTimeout(timer ?? undefined)
-  await closeLiveBrokers(executionBrokers, noteBroker, recordReadBroker)
+  await closeLiveBrokers(executionBrokers, noteBroker)
   return {
     proc,
     timer: null,
