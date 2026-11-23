@@ -493,6 +493,9 @@ const recordApiUnreachable = (
 const hostedErrorBody = (body: unknown, url: string, status: number): unknown =>
   body ?? { error: `${new URL(url).host} answered ${status}` }
 
+const emptyHostedResponse = (path: string, origin: string, status: number): Error =>
+  new Error(`hosted response from ${new URL(path, origin)} was empty (status ${status})`)
+
 export const recordIdentityResponse = (body: unknown) =>
   parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message), 'probe'))
 
@@ -608,9 +611,7 @@ export async function recordApiRequest<T>(
     )
   }
   if (result.kind === 'empty' && !init.schema)
-    throw new Error(
-      `hosted response from ${new URL(path, resolvedOrigin).host}${new URL(path, resolvedOrigin).pathname} was empty (status ${response.status})`,
-    )
+    throw emptyHostedResponse(path, resolvedOrigin, response.status)
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -649,10 +650,7 @@ async function publicRequest<T>(
       hostedErrorBody(body, `${resolvedOrigin}${path}`, response.status),
       response.status,
     )
-  if (result.kind === 'empty')
-    throw new Error(
-      `hosted response from ${new URL(path, resolvedOrigin).host}${new URL(path, resolvedOrigin).pathname} was empty (status ${response.status})`,
-    )
+  if (result.kind === 'empty') throw emptyHostedResponse(path, resolvedOrigin, response.status)
   return body as T
 }
 
