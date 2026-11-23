@@ -150,6 +150,11 @@ export function register(program: Command): void {
     .option('--json', 'write the close-out report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { db, storeWritesRefused } = await import('../database/db.ts')
+      if (!storeWritesRefused()) {
+        const { repairAskingTurns } = await import('../run/run-liveness.ts')
+        repairAskingTurns(db(), new Date().toISOString())
+      }
       const report = await closeOutSession({
         session: options.session,
         dryRun: options.dryRun,

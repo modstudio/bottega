@@ -29,6 +29,7 @@ import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
+import { repairAskingTurns } from '../run/run-liveness.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
 import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
 import { fileNote } from './hub-notes.ts'
@@ -148,6 +149,7 @@ function registerAnswerQuestionsTool(
       const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
       const run = await resolve(run_record_id, identityContext(db()), 'run')
       const admission = await admitKeyedTurn({ runId: run.recordId, turn: 'answer' })
+      repairAskingTurns(db(), new Date().toISOString())
       const report = await answerRun(
         run.recordId,
         {

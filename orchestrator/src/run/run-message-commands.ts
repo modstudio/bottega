@@ -48,6 +48,7 @@ import {
   reportContinuedRun,
   reportsBeforeFollow,
 } from './run-control.ts'
+import { repairAskingTurns } from './run-liveness.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
@@ -256,6 +257,7 @@ export async function answerCommand(
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
+  repairAskingTurns(db(), new Date().toISOString())
   const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'answer',
@@ -374,6 +376,7 @@ export async function continueCommand(
         )
       }
     : undefined
+  repairAskingTurns(db(), new Date().toISOString())
   const resumed = await dependencies.continueRun(
     id,
     message,

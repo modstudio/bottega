@@ -327,6 +327,42 @@ test('continue without --findings hands the architect message through unchanged'
   expect(received).toBe('Continue exactly as before.')
 })
 
+test('continue repairs an orphaned asking turn before invoking the continuation service', async () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+  })
+  addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 3 })
+  bindRunToCursor(root)
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(root) as { number: number }
+  ).number
+  const program = new Command().exitOverride()
+  register(program, {
+    continueCommandDependencies: {
+      continueRun: async () => {
+        expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+          status: 'ok',
+        })
+        return { childId: 'child', job: 'implement', reported: false }
+      },
+      reportContinuedRun: async () => {},
+    },
+  })
+
+  await program.parseAsync(['node', 'orch', 'continue', String(number), 'continue latest'])
+
+  expect(
+    db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
+  ).toEqual({
+    action: 'reap',
+  })
+})
+
 test('continue admits the later turn and records an attributed override on its child', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const number = db()

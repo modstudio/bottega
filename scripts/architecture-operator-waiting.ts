@@ -37,6 +37,8 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './ruling-file-text.ts',
     './run-answer.ts',
     './run-control.ts',
+    // Repairs superseded asking turns before acting on them.
+    './run-liveness.ts',
   ]),
   module('orchestrator/src/run/collect-change.ts', [
     '../../../shared/orch-contract.ts',

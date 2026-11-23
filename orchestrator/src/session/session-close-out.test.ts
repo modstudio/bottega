@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { register as registerSessionCommands } from '../commands/session.ts'
 import { db } from '../database/db.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -150,6 +152,33 @@ test('close-out closes an idle explore as answered and reports the session clean
   await expect(showWorkflowText(workflowTextAttachmentToken(textRecordId), db())).rejects.toThrow(
     "has no live workflow text or copy link in this machine's store",
   )
+})
+
+test('close-out repairs an orphaned asking turn before it classifies live session work', async () => {
+  const session = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok', session })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+    session,
+  })
+  addRun({ agent: 'codex', job: 'craft', status: 'ok', parent: root, turn: 3, session })
+
+  const program = new Command().exitOverride()
+  registerSessionCommands(program)
+  await program.parseAsync(['session', 'close-out', '--session', session, '--dry-run', '--json'], {
+    from: 'user',
+  })
+  process.exitCode = 0
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+    status: 'ok',
+  })
+  expect(
+    db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
+  ).toEqual({ action: 'reap' })
 })
 
 test('close-out parks only an awaiting cursor with a recorded open question', async () => {

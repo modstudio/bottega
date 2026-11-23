@@ -7,6 +7,24 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { enqueueReview } from '../review/review-outbox.ts'
 import { STANDARD_OPEN_HOOKS } from './store-hooks.ts'
 
+test('standard writable-open hooks leave superseded asking turns for explicit repair paths', () => {
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+  })
+  addRun({ agent: 'codex', job: 'craft', status: 'ok', parent: root, turn: 3 })
+
+  for (const hook of STANDARD_OPEN_HOOKS.afterWritableOpen ?? []) hook(db())
+
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+    status: 'asking',
+  })
+})
+
 test('standard after-initialize hooks backfill classifiable rounds and re-enqueue them once', () => {
   const project = newRecordId()
   db()

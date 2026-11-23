@@ -273,7 +273,7 @@ function terminalizeHarnessFailures(
   }
 }
 
-function repairAskingTurns(
+export function repairAskingTurns(
   database: Database,
   finishedAt: string,
 ): { supersededCount: number; repairedAbandoned: string[] } {
@@ -282,7 +282,7 @@ function repairAskingTurns(
   if (!superseded.length && !overwrittenAbandons.length) {
     return { supersededCount: 0, repairedAbandoned: [] }
   }
-  return writeTransaction(() => {
+  const repaired = writeTransaction(() => {
     return {
       supersededCount: reconcileSupersededAskingTurns(database, superseded, finishedAt),
       repairedAbandoned: reconcileOverwrittenAbandonedAskingTurns(
@@ -292,6 +292,10 @@ function repairAskingTurns(
       ),
     }
   }, database)
+  if (repaired.repairedAbandoned.length) {
+    rollUpReapedRoots(database, repaired.repairedAbandoned, new Set(), machineId(), finishedAt)
+  }
+  return repaired
 }
 
 function finalizeReapedRuns(
@@ -358,10 +362,6 @@ export function reapStale(
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths, ...recordedCauseDeaths]
   const localMachineId = ended.length ? machineId() : ''
   const finishedAt = new Date(now).toISOString()
-  const askingRepairs = repairAskingTurns(d, finishedAt)
-  if (askingRepairs.repairedAbandoned.length) {
-    rollUpReapedRoots(d, askingRepairs.repairedAbandoned, new Set(), machineId(), finishedAt)
-  }
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness', own_failure_kind='harness',
@@ -409,14 +409,7 @@ export function reapStale(
     }
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
-  return (
-    askingRepairs.supersededCount +
-    askingRepairs.repairedAbandoned.length +
-    dead.length +
-    abandonedBootstraps.length +
-    setupDeaths.length +
-    recordedCauseDeaths.length
-  )
+  return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
 
 /**

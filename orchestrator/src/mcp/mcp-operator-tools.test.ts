@@ -200,6 +200,54 @@ describe('operator MCP tools', () => {
     })
   })
 
+  test('answer_questions repairs a superseded asking turn before acting on its question', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      session: SESSION,
+    })
+    bindRunToCursor(root)
+    const asking = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+      session: SESSION,
+    })
+    addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      parent: root,
+      turn: 3,
+      session: SESSION,
+    })
+    const questionId = addQuestion(asking, 'Obsolete question?')
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: root,
+          rulings: [{ question_id: questionId, ruling: 'Obsolete answer.' }],
+        },
+      }),
+    )
+
+    expect(result.isError).toBe(true)
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+      status: 'ok',
+    })
+    expect(db().query('SELECT answer FROM question WHERE number=?').get(questionId)).toEqual({
+      answer: null,
+    })
+    expect(
+      db().query('SELECT COUNT(*) count FROM run WHERE parent_run_record_id=?').get(root),
+    ).toEqual({ count: 2 })
+  })
+
   test('answer_questions refuses a foreign machine run label without writing an answer', async () => {
     writeMachineNames({ shortName: 'mine', displayName: 'Mine' })
     const runId = addRun({
