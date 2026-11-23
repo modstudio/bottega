@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
@@ -7,7 +7,6 @@ import {
   publishHarnessSession,
   readHarnessSession,
   reapHarnessSessions,
-  sweepHarnessSessions,
 } from './harness-session.ts'
 
 const roots: string[] = []
@@ -74,44 +73,4 @@ test('reaper removes a dead publication and keeps a live publication', () => {
   expect(result.reaped).toBe(1)
   expect(result.publications.map(({ identity }) => identity.pid)).toEqual([43])
   expect(readdirSync(harnessSessionDirectory(env))).toHaveLength(1)
-})
-
-test('sweep reports each live claude process without a matching publication', () => {
-  const env = state()
-  publishHarnessSession({
-    pid: 42,
-    session: 'published',
-    source: 'resume',
-    env,
-    observeStartTime: () => 'published-start',
-  })
-  const lines: string[] = []
-  const fact = (pid: number, startTime: string, command: string) => ({
-    pid,
-    startTime,
-    command,
-    ppid: 1,
-    pgid: pid,
-    cpu: 0,
-    ageSeconds: 1,
-    cwd: null,
-    cwdVerified: false,
-  })
-  const result = sweepHarnessSessions({
-    dryRun: false,
-    env,
-    log: (line) => lines.push(line),
-    error: (line) => lines.push(line),
-    identity: () => 'live',
-    snapshot: () => ({
-      facts: [
-        fact(42, 'published-start', '/usr/local/bin/claude -p'),
-        fact(43, 'missing-start', 'claude'),
-        fact(44, 'other-start', 'bun test'),
-      ],
-      error: null,
-    }),
-  })
-  expect(result.unpublished).toEqual([{ pid: 43, startTime: 'missing-start' }])
-  expect(lines).toEqual(['harness processes without a published session: 1', '  43 missing-start'])
 })

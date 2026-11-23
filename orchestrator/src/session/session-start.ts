@@ -34,15 +34,15 @@ const remediedLine = (condition: string, remedy: string) =>
 export async function startSession(
   dependencies: SessionStartDependencies = {},
 ): Promise<SessionStartResult> {
-  const database = dependencies.database ?? db()
-  const cwd = resolve(dependencies.cwd ?? process.cwd())
-  const session = dependencies.session === undefined ? sessionId(database) : dependencies.session
+  const session = dependencies.session === undefined ? sessionId() : dependencies.session
   if (session && dependencies.harnessPid !== undefined)
     publishHarnessSession({
       pid: dependencies.harnessPid,
       session,
       source: dependencies.source ?? 'startup',
     })
+  const database = dependencies.database ?? db()
+  const cwd = resolve(dependencies.cwd ?? process.cwd())
   const project = projectAt(cwd, database)
   const openCursors = session
     ? await taskFlowReadStore(database).listOpenStages({

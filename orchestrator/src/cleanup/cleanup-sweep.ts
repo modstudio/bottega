@@ -13,7 +13,6 @@ import { pruneContentionRows, rollupContentionDays } from '../database/contentio
 import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
-import { sweepHarnessSessions } from '../harness-session/harness-session.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { pruneHostedCallOutcomes } from '../hosted-call-outcome.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
@@ -76,6 +75,7 @@ import {
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import { sweepHarnessSessionPublications } from './cleanup-sweep-harness-session.ts'
 import { sweepHubTasks } from './cleanup-sweep-hub-tasks.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
 import {
@@ -811,25 +811,25 @@ function prepareSweepContext(options: SweepOptions, helpers: SweepHelpers) {
   prepareSweepWithHelpers(options.dryRun, options.presentation, helpers)
   return {
     archiveRetention: pruneSweepArchives(options),
+    harnessSessionFailed: sweepHarnessSessionPublications(options.dryRun, options.presentation),
     trustObservation: helpers.observeGrokTrustHeadings(),
   }
+}
+
+function reconcileSweepClaims(options: SweepOptions, trust: GrokTrustObservation): void {
+  reconcileAbsentClaims({
+    dryRun: options.dryRun,
+    project: options.project,
+    presentation: options.presentation,
+    trust,
+  })
 }
 
 export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
   const dry = options.dryRun
   const { selectedProject, sweepProjects } = await sweepScope(options)
-  const { archiveRetention, trustObservation } = prepareSweepContext(options, helpers)
-  const harnessSessions = sweepHarnessSessions({
-    dryRun: dry,
-    log: options.presentation.log,
-    error: options.presentation.error,
-  })
-  reconcileAbsentClaims({
-    dryRun: dry,
-    project: options.project,
-    presentation: options.presentation,
-    trust: trustObservation,
-  })
+  const context = prepareSweepContext(options, helpers)
+  reconcileSweepClaims(options, context.trustObservation)
   const runLeftovers = sweepExpiredRunStore(options, selectedProject, options.presentation)
   const rows = recordedSweepCandidates(selectedProject)
 
@@ -840,7 +840,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed || runLeftovers.failed || harnessSessions.failed
+  let cleanupFailed =
+    context.archiveRetention.failed || runLeftovers.failed || context.harnessSessionFailed
   const sessionCleanupFailed = await sweepSessionState({
     project: selectedProject?.name ?? null,
     dryRun: dry,
@@ -1038,7 +1039,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const trustCleanupFailed = reclaimAbsentTrustEntries({
     dryRun: dry,
     selectedProject,
-    headings: trustObservation.headings,
+    headings: context.trustObservation.headings,
     pathFromHeading: helpers.grokTrustPathFromHeading,
     presentation: options.presentation,
   })

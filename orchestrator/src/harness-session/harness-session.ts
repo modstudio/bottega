@@ -1,29 +1,27 @@
 // concern: harness session publication storage
 /** Publishes, reads, and reaps machine-local harness-to-session associations. */
 
+import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import {
+  type PidRecordIdentity,
   pidRecordIdentity,
   processStartTime,
-  type PidRecordIdentity,
 } from '../../../shared/process-identity.ts'
 import { harnessSessionDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { processTableSnapshot, type ProcessFact } from '../resources/process-inventory.ts'
-import {
-  type HarnessProcessIdentity,
-  type HarnessSessionPublication,
-  unpublishedHarnessProcesses,
+import type {
+  HarnessProcessIdentity,
+  HarnessSessionPublication,
 } from './harness-session-decision.ts'
 
 type StoredPublication = Omit<HarnessSessionPublication, 'identity'>
@@ -136,36 +134,4 @@ export function reapHarnessSessions(
     } else if (state === 'live') kept.push(publication)
   }
   return { reaped, publications: kept }
-}
-
-function isClaudeHarness(process: Pick<ProcessFact, 'command'>): boolean {
-  const executable = process.command.trim().split(/\s+/, 1)[0] ?? ''
-  return basename(executable) === 'claude'
-}
-
-export function sweepHarnessSessions(input: {
-  dryRun: boolean
-  log: (line: string) => void
-  error: (line: string) => void
-  env?: StateEnvironment
-  snapshot?: () => { facts: ProcessFact[]; error: string | null }
-  identity?: Identity
-}): { failed: boolean; unpublished: HarnessProcessIdentity[]; reaped: number } {
-  const reaped = reapHarnessSessions({
-    env: input.env,
-    dryRun: input.dryRun,
-    identity: input.identity,
-  })
-  const inventory = (input.snapshot ?? processTableSnapshot)()
-  if (inventory.error) {
-    input.error(`harness process inventory failed: ${inventory.error}`)
-    return { failed: true, unpublished: [], reaped: reaped.reaped }
-  }
-  const harnesses = inventory.facts
-    .filter(isClaudeHarness)
-    .map(({ pid, startTime }) => ({ pid, startTime }))
-  const unpublished = unpublishedHarnessProcesses(harnesses, reaped.publications)
-  input.log(`harness processes without a published session: ${unpublished.length}`)
-  for (const process of unpublished) input.log(`  ${process.pid} ${process.startTime}`)
-  return { failed: false, unpublished, reaped: reaped.reaped }
 }
