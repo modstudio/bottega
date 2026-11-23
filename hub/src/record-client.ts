@@ -18,11 +18,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
-import {
-  hostedJsonFailureMessage,
-  type JsonBodyResult,
-  jsonBody,
-} from '../../shared/http-json.ts'
+import { hostedJsonFailureMessage, type JsonBodyResult, jsonBody } from '../../shared/http-json.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
@@ -34,10 +30,7 @@ import {
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
-import {
-  hostedRequestSafety,
-  hostedRequestSafetyStatement,
-} from '../../shared/record-remedies.ts'
+import { hostedRequestSafety, hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
@@ -510,11 +503,13 @@ const settingsAutoModeResultSchema = z.object({
 export type RecordDoc = z.infer<typeof docSchema>
 export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
-function mappedError(
-  status: number,
-  result: JsonBodyResult,
-  path: string,
-): TRPCError {
+function mappedNotFoundMessage(result: JsonBodyResult, path: string, error: string): string {
+  if (!result.ok && path.startsWith('/v1/board/'))
+    return 'the hosted record does not serve the message board yet'
+  return error
+}
+
+function mappedError(status: number, result: JsonBodyResult, path: string): TRPCError {
   const body = result.ok ? result.value : null
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   const error =
@@ -531,10 +526,7 @@ function mappedError(
   if (status === 404)
     return new TRPCError({
       code: 'NOT_FOUND',
-      message:
-        !result.ok && path.startsWith('/v1/board/')
-          ? 'the hosted record does not serve the message board yet'
-          : error,
+      message: mappedNotFoundMessage(result, path, error),
     })
   if (status === 400) return new TRPCError({ code: 'BAD_REQUEST', message: error })
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error })

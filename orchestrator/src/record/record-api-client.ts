@@ -11,11 +11,7 @@ import type {
 } from '../../../shared/docs.ts'
 import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import {
-  hostedRequestSafety,
-  type HostedRequestSafety,
-  RECORD_SIGN_IN_REMEDY,
-} from '../../../shared/record-remedies.ts'
+import { hostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -490,7 +486,7 @@ export const recordApiClientInjected = (): boolean => injectSlot().current !== n
 
 const recordApiUnreachable = (
   error: unknown,
-  outcome: HostedRequestSafety,
+  outcome: Parameters<typeof classifyRecordApiUnreachable>[2],
   origin = recordApiBaseUrl(),
 ) => classifyRecordApiUnreachable(error, origin, outcome)
 
