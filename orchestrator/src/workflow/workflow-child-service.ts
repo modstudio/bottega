@@ -14,10 +14,8 @@ import {
   selectChildToStart,
   sessionWorksUnderEpic,
 } from './workflow-child-queue.ts'
-import {
-  abandonInsertedCursorAfterClaimFailure,
-  insertWorkflowCursor,
-} from './workflow-cursor-compose.ts'
+import { abandonCursorAfterClaimFailure } from './workflow-compose-claim.ts'
+import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import {
   cliWorkflowCursorContext,
@@ -224,7 +222,7 @@ export async function startWorkflowChild(
       },
     )
   } catch (error) {
-    await abandonInsertedCursorAfterClaimFailure(row, context, database, error)
+    await abandonCursorAfterClaimFailure(row, context, database, error)
   }
   await boardQueuedClaimClose(
     {

@@ -10,6 +10,8 @@ import {
   taskClaimFollowWarning,
 } from './workflow-task-claim.ts'
 
+export { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
+
 export async function followComposeTaskClaim(
   row: SelectableCursorRow,
   reused: boolean,
@@ -31,6 +33,6 @@ export async function followComposeTaskClaim(
     return null
   } catch (error) {
     if (reused) return row.workflow_key ? taskClaimFollowWarning(row.workflow_key, error) : null
-    await abandonCursorAfterClaimFailure(row, context, database, error)
+    return abandonCursorAfterClaimFailure(row, context, database, error)
   }
 }

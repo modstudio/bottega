@@ -191,7 +191,7 @@ function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) 
     },
     releaseBoardClaim: async (id, _destination, input) => {
       const claim = claims.find((candidate) => candidate.id === id)
-      if (!claim || claim.holderSession !== input.holderSession)
+      if (!claim || claim.holderSession !== input?.holderSession)
         throw new Error('hosted queued claim release did not match its holder session')
       claim.live = false
       claim.closedAt = '2026-11-23T12:01:00.000Z'
