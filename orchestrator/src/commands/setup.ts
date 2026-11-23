@@ -69,11 +69,7 @@ async function applyNonInteractiveSetup(
     }
   }
   const outcome = options.yes
-    ? await service.applyRecommended(
-        folders,
-        await levelAnswer(options),
-        includedFolders(options),
-      )
+    ? await service.applyRecommended(folders, await levelAnswer(options), includedFolders(options))
     : await service.apply(
         folders,
         answerValue,

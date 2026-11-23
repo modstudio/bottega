@@ -8,10 +8,7 @@ import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
-import type {
-  WorkflowCommandOptions,
-  WorkflowPresentation,
-} from '../workflow/workflow-commands.ts'
+import type { WorkflowCommandOptions, WorkflowPresentation } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { cursorsCommand } from '../workflow/workflow-cursor-report.ts'
@@ -48,7 +45,8 @@ type WorkflowCommandName = {
     ? Name
     : never
 }[keyof WorkflowCommands]
-const lazyWorkflowCommand = <Name extends WorkflowCommandName>(name: Name) =>
+const lazyWorkflowCommand =
+  <Name extends WorkflowCommandName>(name: Name) =>
   async (
     ...args: Parameters<WorkflowCommands[Name]>
   ): Promise<Awaited<ReturnType<WorkflowCommands[Name]>>> => {
@@ -87,7 +85,8 @@ const startChildCommand = lazyWorkflowCommand('startChildCommand')
 const stepCommand = lazyWorkflowCommand('stepCommand')
 const workflowVersionsCommand = lazyWorkflowCommand('workflowVersionsCommand')
 
-const workflowPrint = (json: boolean, output: WorkflowPresentation) =>
+const workflowPrint =
+  (json: boolean, output: WorkflowPresentation) =>
   (value: unknown, line?: string): void =>
     output.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
 

@@ -10,8 +10,6 @@ import {
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import { RECORD_SESSION_KEY } from './record-token-key.ts'
 
-export { RECORD_SESSION_KEY } from './record-token-key.ts'
-
 export function storedRecordToken(
   local: Database = db(),
   runner?: SecurityRunner,

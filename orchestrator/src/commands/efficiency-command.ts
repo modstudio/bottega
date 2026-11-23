@@ -222,20 +222,20 @@ const sectionDescriptors = [
     load: async ({ database, windows, project }) => {
       const { loadProvisioningReport } = await import('../monitor/provisioning-report.ts')
       return {
-      current: withWindow(windows.currentWindow, {
-        rows: loadProvisioningReport(database, {
-          project,
-          since: windows.currentWindow.start,
-          until: windows.currentWindow.end,
+        current: withWindow(windows.currentWindow, {
+          rows: loadProvisioningReport(database, {
+            project,
+            since: windows.currentWindow.start,
+            until: windows.currentWindow.end,
+          }),
         }),
-      }),
-      previous: withWindow(windows.previousWindow, {
-        rows: loadProvisioningReport(database, {
-          project,
-          since: windows.previousWindow.start,
-          until: windows.previousWindow.end,
+        previous: withWindow(windows.previousWindow, {
+          rows: loadProvisioningReport(database, {
+            project,
+            since: windows.previousWindow.start,
+            until: windows.previousWindow.end,
+          }),
         }),
-      }),
       }
     },
     format: (report) => pairLines(report, formatProvisioning),
@@ -246,22 +246,22 @@ const sectionDescriptors = [
     load: async ({ database, windows, project }) => {
       const { loadRunResourceReport } = await import('../monitor/run-resource-report.ts')
       return {
-      current: withWindow(
-        windows.currentWindow,
-        loadRunResourceReport(database, {
-          project,
-          since: windows.currentWindow.start,
-          until: windows.currentWindow.end,
-        }),
-      ),
-      previous: withWindow(
-        windows.previousWindow,
-        loadRunResourceReport(database, {
-          project,
-          since: windows.previousWindow.start,
-          until: windows.previousWindow.end,
-        }),
-      ),
+        current: withWindow(
+          windows.currentWindow,
+          loadRunResourceReport(database, {
+            project,
+            since: windows.currentWindow.start,
+            until: windows.currentWindow.end,
+          }),
+        ),
+        previous: withWindow(
+          windows.previousWindow,
+          loadRunResourceReport(database, {
+            project,
+            since: windows.previousWindow.start,
+            until: windows.previousWindow.end,
+          }),
+        ),
       }
     },
     format: (report) => pairLines(report, formatResources),

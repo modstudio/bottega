@@ -51,74 +51,119 @@ import { registerWorkflowCommands } from './workflow.ts'
 const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
-const checkCommand = async (...args: Parameters<typeof import('../check/check-commands.ts').checkCommand>) =>
-  (await import('../check/check-commands.ts')).checkCommand(...args)
-const closeOutCommand = async (...args: Parameters<typeof import('../close/close-out-command.ts').closeOutCommand>) =>
-  (await import('../close/close-out-command.ts')).closeOutCommand(...args)
-const contractCommand = async (...args: Parameters<typeof import('../contract/contract-command.ts').contractCommand>) =>
-  (await import('../contract/contract-command.ts')).contractCommand(...args)
-const enforcementCommand = async (...args: Parameters<typeof import('../enforcement/enforcement-commands.ts').enforcementCommand>) =>
-  (await import('../enforcement/enforcement-commands.ts')).enforcementCommand(...args)
-const pendingCommand = async (...args: Parameters<typeof import('../evidence/pending-commands.ts').pendingCommand>) =>
-  (await import('../evidence/pending-commands.ts')).pendingCommand(...args)
-const tellCommand = async (...args: Parameters<typeof import('../mailbox/mailbox-commands.ts').tellCommand>) =>
-  (await import('../mailbox/mailbox-commands.ts')).tellCommand(...args)
-const relayCommand = async (...args: Parameters<typeof import('../operator/operator-commands.ts').relayCommand>) =>
-  (await import('../operator/operator-commands.ts')).relayCommand(...args)
-const waitingCommand = async (...args: Parameters<typeof import('../operator/operator-commands.ts').waitingCommand>) =>
-  (await import('../operator/operator-commands.ts')).waitingCommand(...args)
-const resultCommand = async (...args: Parameters<typeof import('../collect/collection-commands.ts').resultCommand>) =>
-  (await import('../collect/collection-commands.ts')).resultCommand(...args)
-const waitCommand = async (...args: Parameters<typeof import('../collect/collection-commands.ts').waitCommand>) =>
-  (await import('../collect/collection-commands.ts')).waitCommand(...args)
-const peekCommand = async (...args: Parameters<typeof import('../collect/collection-commands.ts').peekCommand>) =>
-  (await import('../collect/collection-commands.ts')).peekCommand(...args)
-const renameMachine = async (...args: Parameters<typeof import('../record/machine-name-command.ts').renameMachine>) =>
-  (await import('../record/machine-name-command.ts')).renameMachine(...args)
-const retireMachine = async (...args: Parameters<typeof import('../record/machine-name-command.ts').retireMachine>) =>
-  (await import('../record/machine-name-command.ts')).retireMachine(...args)
-const storageCommand = async (...args: Parameters<typeof import('../monitor/storage-commands.ts').storageCommand>) =>
-  (await import('../monitor/storage-commands.ts')).storageCommand(...args)
-const reclaimCommand = async (...args: Parameters<typeof import('../reclaim/reclaim-commands.ts').reclaimCommand>) =>
-  (await import('../reclaim/reclaim-commands.ts')).reclaimCommand(...args)
-const treeCreateCommand = async (...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeCreateCommand>) =>
-  (await import('../hook-tree/tree-commands.ts')).treeCreateCommand(...args)
-const treeOpenCommand = async (...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeOpenCommand>) =>
-  (await import('../hook-tree/tree-commands.ts')).treeOpenCommand(...args)
-const treeRemoveCommand = async (...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeRemoveCommand>) =>
-  (await import('../hook-tree/tree-commands.ts')).treeRemoveCommand(...args)
-const treeRefreshCommand = async (...args: Parameters<typeof import('../recipe/tree-refresh.ts').treeRefreshCommand>) =>
-  (await import('../recipe/tree-refresh.ts')).treeRefreshCommand(...args)
-const treeReseedCommand = async (...args: Parameters<typeof import('../recipe/tree-reseed.ts').treeReseedCommand>) =>
-  (await import('../recipe/tree-reseed.ts')).treeReseedCommand(...args)
-const metricCommand = async (...args: Parameters<typeof import('../metric/metric-commands.ts').metricCommand>) =>
-  (await import('../metric/metric-commands.ts')).metricCommand(...args)
-const typedQuestionCommand = async (...args: Parameters<typeof import('../typed-question/typed-question-commands.ts').typedQuestionCommand>) =>
-  (await import('../typed-question/typed-question-commands.ts')).typedQuestionCommand(...args)
-const typedQuestionBacktestCommand = async (...args: Parameters<typeof import('../typed-question/typed-question-commands.ts').typedQuestionBacktestCommand>) =>
-  (await import('../typed-question/typed-question-commands.ts')).typedQuestionBacktestCommand(...args)
-const epicCommand = async (...args: Parameters<typeof import('../epic/epic-commands.ts').epicCommand>) =>
-  (await import('../epic/epic-commands.ts')).epicCommand(...args)
-const loadSubscriptionCostContext = async (...args: Parameters<typeof import('../run/run-subscription-prices.ts').loadSubscriptionCostContext>) =>
-  (await import('../run/run-subscription-prices.ts')).loadSubscriptionCostContext(...args)
-const finishHarnessRun = async (...args: Parameters<typeof import('../run/run-harness-finish.ts').finishHarnessRun>) =>
-  (await import('../run/run-harness-finish.ts')).finishHarnessRun(...args)
-const doCommand = async (...args: Parameters<typeof import('../dispatch/dispatch-cli-service.ts').doCommand>) =>
-  (await import('../dispatch/dispatch-cli-service.ts')).doCommand(...args)
-const pickPreviewCommand = async (...args: Parameters<typeof import('../dispatch/dispatch-cli-service.ts').pickPreviewCommand>) =>
-  (await import('../dispatch/dispatch-cli-service.ts')).pickPreviewCommand(...args)
-const spawnsCommand = async (...args: Parameters<typeof import('../health/spawn-commands.ts').spawnsCommand>) =>
-  (await import('../health/spawn-commands.ts')).spawnsCommand(...args)
-const jobsCommand = async (...args: Parameters<typeof import('../jobs/job-commands.ts').jobsCommand>) =>
-  (await import('../jobs/job-commands.ts')).jobsCommand(...args)
-const answerClosedWorkflowQuestionCommand = async (...args: Parameters<typeof import('../run/run-message-commands.ts').answerClosedWorkflowQuestionCommand>) =>
-  (await import('../run/run-message-commands.ts')).answerClosedWorkflowQuestionCommand(...args)
-const answerCommand = async (...args: Parameters<typeof import('../run/run-message-commands.ts').answerCommand>) =>
-  (await import('../run/run-message-commands.ts')).answerCommand(...args)
-const continueCommand = async (...args: Parameters<typeof import('../run/run-message-commands.ts').continueCommand>) =>
-  (await import('../run/run-message-commands.ts')).continueCommand(...args)
-const retryCommand = async (...args: Parameters<typeof import('../run/run-message-commands.ts').retryCommand>) =>
-  (await import('../run/run-message-commands.ts')).retryCommand(...args)
+const checkCommand = async (
+  ...args: Parameters<typeof import('../check/check-commands.ts').checkCommand>
+) => (await import('../check/check-commands.ts')).checkCommand(...args)
+const closeOutCommand = async (
+  ...args: Parameters<typeof import('../close/close-out-command.ts').closeOutCommand>
+) => (await import('../close/close-out-command.ts')).closeOutCommand(...args)
+const contractCommand = async (
+  ...args: Parameters<typeof import('../contract/contract-command.ts').contractCommand>
+) => (await import('../contract/contract-command.ts')).contractCommand(...args)
+const enforcementCommand = async (
+  ...args: Parameters<typeof import('../enforcement/enforcement-commands.ts').enforcementCommand>
+) => (await import('../enforcement/enforcement-commands.ts')).enforcementCommand(...args)
+const pendingCommand = async (
+  ...args: Parameters<typeof import('../evidence/pending-commands.ts').pendingCommand>
+) => (await import('../evidence/pending-commands.ts')).pendingCommand(...args)
+const tellCommand = async (
+  ...args: Parameters<typeof import('../mailbox/mailbox-commands.ts').tellCommand>
+) => (await import('../mailbox/mailbox-commands.ts')).tellCommand(...args)
+const relayCommand = async (
+  ...args: Parameters<typeof import('../operator/operator-commands.ts').relayCommand>
+) => (await import('../operator/operator-commands.ts')).relayCommand(...args)
+const waitingCommand = async (
+  ...args: Parameters<typeof import('../operator/operator-commands.ts').waitingCommand>
+) => (await import('../operator/operator-commands.ts')).waitingCommand(...args)
+const resultCommand = async (
+  ...args: Parameters<typeof import('../collect/collection-commands.ts').resultCommand>
+) => (await import('../collect/collection-commands.ts')).resultCommand(...args)
+const waitCommand = async (
+  ...args: Parameters<typeof import('../collect/collection-commands.ts').waitCommand>
+) => (await import('../collect/collection-commands.ts')).waitCommand(...args)
+const peekCommand = async (
+  ...args: Parameters<typeof import('../collect/collection-commands.ts').peekCommand>
+) => (await import('../collect/collection-commands.ts')).peekCommand(...args)
+const renameMachine = async (
+  ...args: Parameters<typeof import('../record/machine-name-command.ts').renameMachine>
+) => (await import('../record/machine-name-command.ts')).renameMachine(...args)
+const retireMachine = async (
+  ...args: Parameters<typeof import('../record/machine-name-command.ts').retireMachine>
+) => (await import('../record/machine-name-command.ts')).retireMachine(...args)
+const storageCommand = async (
+  ...args: Parameters<typeof import('../monitor/storage-commands.ts').storageCommand>
+) => (await import('../monitor/storage-commands.ts')).storageCommand(...args)
+const reclaimCommand = async (
+  ...args: Parameters<typeof import('../reclaim/reclaim-commands.ts').reclaimCommand>
+) => (await import('../reclaim/reclaim-commands.ts')).reclaimCommand(...args)
+const treeCreateCommand = async (
+  ...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeCreateCommand>
+) => (await import('../hook-tree/tree-commands.ts')).treeCreateCommand(...args)
+const treeOpenCommand = async (
+  ...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeOpenCommand>
+) => (await import('../hook-tree/tree-commands.ts')).treeOpenCommand(...args)
+const treeRemoveCommand = async (
+  ...args: Parameters<typeof import('../hook-tree/tree-commands.ts').treeRemoveCommand>
+) => (await import('../hook-tree/tree-commands.ts')).treeRemoveCommand(...args)
+const treeRefreshCommand = async (
+  ...args: Parameters<typeof import('../recipe/tree-refresh.ts').treeRefreshCommand>
+) => (await import('../recipe/tree-refresh.ts')).treeRefreshCommand(...args)
+const treeReseedCommand = async (
+  ...args: Parameters<typeof import('../recipe/tree-reseed.ts').treeReseedCommand>
+) => (await import('../recipe/tree-reseed.ts')).treeReseedCommand(...args)
+const metricCommand = async (
+  ...args: Parameters<typeof import('../metric/metric-commands.ts').metricCommand>
+) => (await import('../metric/metric-commands.ts')).metricCommand(...args)
+const typedQuestionCommand = async (
+  ...args: Parameters<
+    typeof import('../typed-question/typed-question-commands.ts').typedQuestionCommand
+  >
+) => (await import('../typed-question/typed-question-commands.ts')).typedQuestionCommand(...args)
+const typedQuestionBacktestCommand = async (
+  ...args: Parameters<
+    typeof import('../typed-question/typed-question-commands.ts').typedQuestionBacktestCommand
+  >
+) =>
+  (await import('../typed-question/typed-question-commands.ts')).typedQuestionBacktestCommand(
+    ...args,
+  )
+const epicCommand = async (
+  ...args: Parameters<typeof import('../epic/epic-commands.ts').epicCommand>
+) => (await import('../epic/epic-commands.ts')).epicCommand(...args)
+const loadSubscriptionCostContext = async (
+  ...args: Parameters<
+    typeof import('../run/run-subscription-prices.ts').loadSubscriptionCostContext
+  >
+) => (await import('../run/run-subscription-prices.ts')).loadSubscriptionCostContext(...args)
+const finishHarnessRun = async (
+  ...args: Parameters<typeof import('../run/run-harness-finish.ts').finishHarnessRun>
+) => (await import('../run/run-harness-finish.ts')).finishHarnessRun(...args)
+const doCommand = async (
+  ...args: Parameters<typeof import('../dispatch/dispatch-cli-service.ts').doCommand>
+) => (await import('../dispatch/dispatch-cli-service.ts')).doCommand(...args)
+const pickPreviewCommand = async (
+  ...args: Parameters<typeof import('../dispatch/dispatch-cli-service.ts').pickPreviewCommand>
+) => (await import('../dispatch/dispatch-cli-service.ts')).pickPreviewCommand(...args)
+const spawnsCommand = async (
+  ...args: Parameters<typeof import('../health/spawn-commands.ts').spawnsCommand>
+) => (await import('../health/spawn-commands.ts')).spawnsCommand(...args)
+const jobsCommand = async (
+  ...args: Parameters<typeof import('../jobs/job-commands.ts').jobsCommand>
+) => (await import('../jobs/job-commands.ts')).jobsCommand(...args)
+const answerClosedWorkflowQuestionCommand = async (
+  ...args: Parameters<
+    typeof import('../run/run-message-commands.ts').answerClosedWorkflowQuestionCommand
+  >
+) => (await import('../run/run-message-commands.ts')).answerClosedWorkflowQuestionCommand(...args)
+const answerCommand = async (
+  ...args: Parameters<typeof import('../run/run-message-commands.ts').answerCommand>
+) => (await import('../run/run-message-commands.ts')).answerCommand(...args)
+const continueCommand = async (
+  ...args: Parameters<typeof import('../run/run-message-commands.ts').continueCommand>
+) => (await import('../run/run-message-commands.ts')).continueCommand(...args)
+const retryCommand = async (
+  ...args: Parameters<typeof import('../run/run-message-commands.ts').retryCommand>
+) => (await import('../run/run-message-commands.ts')).retryCommand(...args)
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--cursor <number>] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
@@ -814,9 +859,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   )
   continueCommandDefinition(program).action(async (_id, _message, options, command) => {
     const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
-    const defaultFindings = (
-      await import('../review/review-continuation-findings.ts')
-    ).continuationFindingsForRun
+    const defaultFindings = (await import('../review/review-continuation-findings.ts'))
+      .continuationFindingsForRun
     return continueCommand(
       localRunId(parsed.identifier),
       parsed,
@@ -824,11 +868,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       runFlags(options),
       presentation,
       (runId, message) =>
-        (dependencies.continuationFindingsForRun ?? defaultFindings)(
-          db(),
-          runId,
-          message,
-        ),
+        (dependencies.continuationFindingsForRun ?? defaultFindings)(db(), runId, message),
       dependencies.continueCommandDependencies,
       keyedTurnOptions(options),
     )

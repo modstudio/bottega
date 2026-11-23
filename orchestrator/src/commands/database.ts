@@ -32,14 +32,10 @@ export function registerDatabaseCommands(
     .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
     .action(async (options) =>
-      (await import('../database/database-commands.ts')).migrateCommand(
-        presentation,
-        undefined,
-        {
+      (await import('../database/database-commands.ts')).migrateCommand(presentation, undefined, {
         forceInFlight: options.forceInFlight,
         fromOperator: Boolean(options.fromOperator),
-        },
-      ),
+      }),
     )
   program
     .command('reconcile <id>')

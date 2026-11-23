@@ -13,6 +13,7 @@ import { recordSecretMaskModules } from './architecture-record-secret-mask-modul
 import { recordSpaceAgentModules } from './architecture-record-space-agent-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
+import { recordTokenModules } from './architecture-record-token-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
@@ -33,6 +34,7 @@ export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...recordInvariantModules,
   ...recordMigrationModules,
+  ...recordTokenModules,
   ...recordQuestionModules,
   ...recordSecretMaskModules,
   ...recordSyncModules,
@@ -660,23 +662,6 @@ export const recordModules: RecordModule[] = [
     './outbox-quarantine.ts',
   ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
-  module('orchestrator/src/record/record-session.ts', [
-    '../../../shared/record-remedies.ts',
-    '../../../shared/record-request-headers.ts',
-    '../../../shared/record-session.ts',
-    '../database/db.ts',
-    './record-auth.ts',
-    './record-pool.ts',
-    './record-token.ts',
-  ]),
-  module('orchestrator/src/record/record-token.ts', [
-    'bun:sqlite',
-    '../../../shared/record-session.ts',
-    '../database/db.ts',
-    './record-token-key.ts',
-  ]),
-  module('orchestrator/src/record/record-token-key.ts', []),
-  module('orchestrator/src/record/record-password.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-api-access.ts', [
     'hono',
