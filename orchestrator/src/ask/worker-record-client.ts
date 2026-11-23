@@ -28,7 +28,7 @@ export type WorkerHostedTaskDetail = {
 
 type WorkerRecordCredential = () => Promise<string | null>
 
-/** Credential seam replaced by DEV-2531's machine credential without changing broker policy. */
+/** The one credential seam for hosted worker reads; swapping it leaves broker policy unchanged. */
 const workerRecordCredential: WorkerRecordCredential = () => readRecordSessionTokenAsync()
 
 export type WorkerRecordClient = {
