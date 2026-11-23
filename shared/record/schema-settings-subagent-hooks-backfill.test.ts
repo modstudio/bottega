@@ -34,6 +34,7 @@ test('settings subagent hook backfill preserves options and is idempotent', asyn
     INSERT INTO doc(id,scope,slug,body) VALUES
       ('valid','settings','valid','{"permissions":{},"hooks":{},"options":{"other":"kept"}}'),
       ('invalid-json','settings','invalid-json','not json at all'),
+      ('invalid-unicode','settings','invalid-unicode','{"hooks":{"c":"a\\u0000b"}}'),
       ('scalar','settings','scalar','5'),
       ('array-options','settings','array-options','{"options":[1,2]}'),
       ('null-options','settings','null-options','{"options":null}'),
@@ -56,6 +57,11 @@ test('settings subagent hook backfill preserves options and is idempotent', asyn
     { id: 'array-options', scope: 'settings', body: '{"options":[1,2]}' },
     { id: 'canon', scope: 'canon', body: '{"options":{"other":"untouched"}}' },
     { id: 'invalid-json', scope: 'settings', body: 'not json at all' },
+    {
+      id: 'invalid-unicode',
+      scope: 'settings',
+      body: '{"hooks":{"c":"a\\u0000b"}}',
+    },
     { id: 'null-options', scope: 'settings', body: '{"options":null}' },
     { id: 'scalar', scope: 'settings', body: '5' },
     {

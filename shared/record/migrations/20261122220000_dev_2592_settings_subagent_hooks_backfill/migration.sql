@@ -11,7 +11,7 @@ BEGIN
     RETURN NULL;
   END IF;
   RETURN parsed;
-EXCEPTION WHEN invalid_text_representation THEN
+EXCEPTION WHEN invalid_text_representation OR untranslatable_character THEN
   RETURN NULL;
 END;
 $$;--> statement-breakpoint

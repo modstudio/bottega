@@ -852,6 +852,20 @@ describe('settings apply', () => {
           detail: 'missing path',
           changed: false,
         },
+        {
+          target: 'settings subagent hooks',
+          outcome: 'applied',
+          changed: true,
+          subagentHooksRemoved: true,
+          superseded: [
+            {
+              event: 'PreToolUse',
+              matcher: 'Agent|Task|Workflow',
+              script: 'block-agent.py',
+            },
+            { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
+          ],
+        },
         { target: 'settings apply', outcome: 'skipped', changed: false },
       ],
       (...values) => lines.push(values.join(' ')),
@@ -861,6 +875,8 @@ describe('settings apply', () => {
       'profile hook PreToolUse Bash git-guard.py is superseded by the product hook and can be deleted from the profile',
       'canon two: refused; first; second',
       'project /projects/missing: skipped; missing path',
+      'settings subagent hooks: applied',
+      'block-agent hooks removed: subagent blocking is off',
       'settings apply already running; skipped',
     ])
   })

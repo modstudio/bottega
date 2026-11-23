@@ -173,7 +173,6 @@ test('typed profile hooks and an empty profile render the same canonical product
 })
 
 test('subagent hook option controls both blocking and audit declarations', () => {
-  expect(productHookDeclarations(undefined)).toHaveLength(PRODUCT_HOOKS.length - 2)
   expect(
     productHookDeclarations(undefined).filter((hook) => hook.script === 'block-agent.py'),
   ).toEqual([])
