@@ -42,6 +42,7 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths, runTempDir } from '../run-owned-paths.ts'
+import { confinedLaunchCwd } from '../sandbox/confined-launch-cwd.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -638,7 +639,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * taken worktree path. This used to happen outside the try/finally below, so
    * its row stayed `running` with no process until the stale sweep guessed at it.
    * A run must write its own terminal state for setup as well as for the agent. */
-  let cwd = callerCwd
+  let cwd: string
   try {
     prepareReadOnlyRunTemp(writesJob, runtimeDir)
     await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
@@ -655,8 +656,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         // checkout at all, while launch_cwd retains project attribution.
         isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
         removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
-        cwd = isolatedCwd
-        db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
         break
       }
       case 'create': {
@@ -823,6 +822,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       case 'caller':
         break
     }
+    cwd = confinedLaunchCwd({
+      mode: claimTreePlan.mode,
+      worktreePath: worktree?.path ?? '',
+      isolatedDirectory: isolatedCwd ?? '',
+      callerCwd,
+    })
+    if (claimTreePlan.mode === 'isolate') {
+      db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
+    }
     if (worktree) {
       const inheritedWorktree = worktree
       const recordWorktree = () => {
@@ -872,7 +880,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                             carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE record_id=?`,
           )
           .run(
-            inheritedWorktree.path,
+            cwd,
             inheritedWorktree.path,
             recordedBranch(inheritedWorktree.branch),
             inheritedWorktree.mintedBranch ?? null,
@@ -949,7 +957,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       } else {
         recordWorktree()
       }
-      cwd = inheritedWorktree.path
       if (
         resume.isFirstTurn &&
         !(taskBranchAttachment && realpathOrSpelled(callerCwd) === realpathOrSpelled(worktree.path))

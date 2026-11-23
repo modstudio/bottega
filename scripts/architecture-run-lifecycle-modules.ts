@@ -356,6 +356,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-role.ts',
     '../review/review-target.ts',
+    '../sandbox/confined-launch-cwd.ts',
     './run-artifacts.ts',
     './run-executor.ts',
     './run-git-guard.ts',
