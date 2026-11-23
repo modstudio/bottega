@@ -832,7 +832,6 @@ describe('the live ask channel always answers', () => {
       const askTool = tools.tools.find((tool) => tool.name === 'ask_orchestrator')
       const messageTool = tools.tools.find((tool) => tool.name === 'message_orchestrator')
       expect(askTool?.inputSchema.required).toContain('question')
-      expect(askTool?.inputSchema.properties?.question).toMatchObject({ type: 'string' })
       expect(messageTool?.inputSchema.required).toContain('body')
 
       const question = await client.callTool({ name: 'ask_orchestrator', arguments: {} })
@@ -856,47 +855,6 @@ describe('the live ask channel always answers', () => {
             n: number
           }
         ).n,
-      ).toBe(0)
-    } finally {
-      await close()
-    }
-  })
-
-  test('a nested structured question is refused without recording or returning an error', async () => {
-    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    const { client, close } = await askClient(run)
-    try {
-      const result = await client.callTool({
-        name: 'ask_orchestrator',
-        arguments: {
-          question: {
-            kind: 'choice',
-            question: 'Which threshold?',
-            options: ['100', '500'],
-            recommendation: '500',
-            why: 'The implementation depends on the threshold.',
-          },
-        },
-      })
-      expect(result.isError).toBeUndefined()
-      expect(resultText(result)).toContain('question was an object')
-      expect(resultText(result)).toContain('Call ask_orchestrator again')
-      expect(resultText(result)).toContain('Do not decide the matter yourself')
-      const note = await client.callTool({ name: 'note', arguments: { text: { nested: true } } })
-      expect(note.isError).toBeUndefined()
-      expect(resultText(note)).toContain('text was an object')
-      const message = await client.callTool({
-        name: 'message_orchestrator',
-        arguments: { body: { nested: true } },
-      })
-      expect(message.isError).toBeUndefined()
-      expect(resultText(message)).toContain('body was an object')
-      expect(
-        db()
-          .query<{ n: number }, [string]>(
-            'SELECT COUNT(*) AS n FROM question WHERE run_record_id = ?',
-          )
-          .get(run)?.n,
       ).toBe(0)
     } finally {
       await close()

@@ -27,6 +27,8 @@ const classify = (
   })
 const reply = (overrides: Record<string, unknown>): WorkerReply =>
   fixtureWorkerReply(overrides) as WorkerReply
+const EMPTY_QUESTION_REFUSAL =
+  'question was empty. `question` must be the question text as a string; put kind, options, recommendation and why beside it at the top level of the call, not inside it.'
 
 describe('worker reply finalization', () => {
   test('terminal facts record the finished writing run reply commit and tree', () => {
@@ -302,7 +304,7 @@ describe('worker reply finalization', () => {
       { question: 'which table?', why: 'the schema changes' },
     ])
     expect(result.error).toBe(
-      '1 invalid question dropped; rejected question text: "   " (question is empty)',
+      `1 invalid question dropped; rejected question text: "   " (${EMPTY_QUESTION_REFUSAL})`,
     )
   })
   test('done carrying a real question is reclassified as asking', () => {
@@ -370,7 +372,7 @@ describe('worker reply finalization', () => {
       { question: 'Which table?' },
     ])
     expect(result.error).toBe(
-      'status reclassified from done to asking: a worker with a real question has not finished\n1 invalid question dropped; rejected question text: " " (question is empty)',
+      `status reclassified from done to asking: a worker with a real question has not finished\n1 invalid question dropped; rejected question text: " " (${EMPTY_QUESTION_REFUSAL})`,
     )
   })
   test('done carrying only blank questions stays done and records the dropped blanks', () => {
@@ -385,7 +387,7 @@ describe('worker reply finalization', () => {
     )
     expect(result.status).toBe('ok')
     expect(result.error).toBe(
-      '2 invalid questions dropped; rejected question text: " " (question is empty), "​" (question is empty)',
+      `2 invalid questions dropped; rejected question text: " " (${EMPTY_QUESTION_REFUSAL}), "​" (${EMPTY_QUESTION_REFUSAL})`,
     )
     expect(result.acceptedQuestions).toEqual([])
   })

@@ -659,6 +659,20 @@ function askServerState(runId: string, dependencies: AskServerDependencies) {
   return [new Set<string>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
 }
 
+function missingRequiredText(field: 'question' | 'body'): string {
+  const call = field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'
+  return `No ${field} was supplied. Call ${call} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`
+}
+
+function requiredTextRetry(value: string, field: string, call: string): string | null {
+  const refusal = questionTextRefusal(value, field)
+  if (!refusal) return null
+  if (!value.replace(/\p{Cf}/gu, '').trim())
+    return missingRequiredText(field === 'question' ? 'question' : 'body')
+  const instruction = field === 'question' ? ' Do not decide the matter yourself.' : ''
+  return `${refusal} Call ${call} again.${instruction}`
+}
+
 export function createAskMcpServer(
   runId: string,
   token: string,
@@ -690,10 +704,6 @@ export function createAskMcpServer(
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
   })
-  const missing = (field: 'question' | 'body') =>
-    text(
-      `No ${field} was supplied. Call ${field === 'question' ? 'ask_orchestrator' : 'message_orchestrator'} again with the ${field} in the \`${field}\` field. Do not decide the matter yourself.`,
-    )
   const unauthorized = () =>
     'This process is not a recognized orchestrator worker. Return status "blocked" with your question in the final answer.'
 
@@ -715,11 +725,8 @@ export function createAskMcpServer(
     },
     async (questionInput) => {
       const { question } = questionInput
-      const refusal = questionTextRefusal(question)
-      if (refusal) {
-        if (!question.replace(/\p{Cf}/gu, '').trim()) return missing('question')
-        return text(`${refusal} Call ask_orchestrator again. Do not decide the matter yourself.`)
-      }
+      const refusal = requiredTextRetry(question, 'question', 'ask_orchestrator')
+      if (refusal) return text(refusal)
       try {
         const typedQuestion = WorkerQuestionSchema.parse(questionInput)
         const result = authorized()
@@ -839,11 +846,8 @@ export function createAskMcpServer(
       }),
     },
     async ({ body }) => {
-      const refusal = questionTextRefusal(body, 'body')
-      if (refusal) {
-        if (!body.replace(/\p{Cf}/gu, '').trim()) return missing('body')
-        return text(`${refusal} Call message_orchestrator again.`)
-      }
+      const refusal = requiredTextRetry(body, 'body', 'message_orchestrator')
+      if (refusal) return text(refusal)
       try {
         if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)

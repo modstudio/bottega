@@ -143,6 +143,14 @@ export function requireQuestionMutationApplied(
   throw new Error(`question ${String(question.number)} changed; rerun the command`)
 }
 
+function refuseMalformedQuestionText(value: unknown): void {
+  const refusal = questionTextRefusal(value)
+  if (!refusal) return
+  throw new Error(
+    `${refusal} The question text must be a non-empty string; fix the caller that built it.`,
+  )
+}
+
 export async function askQuestion(
   database: Database,
   input: {
@@ -165,11 +173,7 @@ export async function askQuestion(
     levels?: unknown
   },
 ) {
-  const refusal = questionTextRefusal(input.question)
-  if (refusal)
-    throw new Error(
-      `${refusal} The question text must be a non-empty string; fix the caller that built it.`,
-    )
+  refuseMalformedQuestionText(input.question)
   const id = input.id ?? newRecordId()
   let projectId = input.projectId ?? null
   if (!projectId && input.runId) {
