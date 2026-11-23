@@ -158,6 +158,20 @@ const readLocalUserSettings = async () => ({
   row: getDoc('settings', null, 'settings', OWNER),
 })
 
+const readHostedUserSettings = async () => {
+  const page = await hostedClient.listDocs({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+  })
+  const row = page.items[0]
+  return {
+    owner: OWNER,
+    row: row && typeof row.body === 'string' ? { body: row.body, revision: 'hosted' } : null,
+  }
+}
+
 describe('future settings edit refusals', () => {
   const adapters = [
     {
@@ -202,7 +216,7 @@ describe('future settings edit refusals', () => {
     {
       name: 'subagent choice',
       prepare: () => {},
-      edit: () => settingsSubagentsCommand('allow', { read: readLocalUserSettings }),
+      edit: () => settingsSubagentsCommand('allow', { read: readHostedUserSettings }),
     },
   ]
 
@@ -262,7 +276,8 @@ describe('settings env import', () => {
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
     const body = await seedFutureUser()
     await settingsEnvImportCommand(flags({ user: true, 'dry-run': true }), shown().port)
-    expect(getDoc('settings', null, 'settings', OWNER)?.body).toBe(body)
+    expect((await readHostedUserSettings()).row?.body).toBe(body)
+    expect(hostedWrites).toEqual([])
   })
 
   test('unknown stored keys refuse before changing settings.env', async () => {
