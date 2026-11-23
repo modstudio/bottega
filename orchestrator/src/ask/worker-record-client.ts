@@ -3,6 +3,7 @@
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { RecordApiRequestError, responseCode } from '../record/record-api-client-response.ts'
@@ -40,13 +41,25 @@ export type WorkerRecordClient = {
 type WorkerRecordClientDependencies = {
   credential?: WorkerRecordCredential
   fetch?: typeof fetch
-  baseUrl?: string
+  hubBaseUrl?: string
+  recordApiBaseUrl?: string
 }
 
-function requiredBaseUrl(override?: string): string {
+function requiredHubBaseUrl(override?: string): string {
   const configured = override ?? readEnvValues(['BOTTEGA_HOSTED_URL']).BOTTEGA_HOSTED_URL
   if (!configured) throw new Error('hosted record is not configured; set BOTTEGA_HOSTED_URL')
   return configured.replace(/\/$/, '')
+}
+
+/** Select the only service that owns a confined worker record-read route. */
+export function workerRecordBaseUrl(
+  path: string,
+  hubBaseUrl: string,
+  recordApiBaseUrl: string,
+): string {
+  if (path.startsWith('/v1/task-flow/')) return recordApiBaseUrl
+  if (path.startsWith('/v1/tasks/')) return hubBaseUrl
+  throw new Error(`worker record route has no configured base: ${path}`)
 }
 
 function errorMessage(value: unknown, status: number): string {
@@ -58,7 +71,8 @@ function errorMessage(value: unknown, status: number): string {
 export function createWorkerRecordClient(
   dependencies: WorkerRecordClientDependencies = {},
 ): WorkerRecordClient {
-  const baseUrl = requiredBaseUrl(dependencies.baseUrl)
+  const hubBaseUrl = requiredHubBaseUrl(dependencies.hubBaseUrl)
+  const recordApiBaseUrl = (dependencies.recordApiBaseUrl ?? resolveRecordApiUrl()).replace(/\/$/, '')
   const readCredential = dependencies.credential ?? workerRecordCredential
   const request = async <T>(
     path: string,
@@ -76,11 +90,29 @@ export function createWorkerRecordClient(
     })) {
       headers.set(name, value)
     }
-    const response = await (dependencies.fetch ?? hostedApiFetch)(`${baseUrl}${path}`, {
+    const baseUrl = workerRecordBaseUrl(path, hubBaseUrl, recordApiBaseUrl)
+    const url = `${baseUrl}${path}`
+    const response = await (dependencies.fetch ?? hostedApiFetch)(url, {
       ...init,
       headers,
     })
-    const value: unknown = await response.json().catch(() => null)
+    const contentType = response.headers.get('content-type') ?? 'missing'
+    const body = await response.text()
+    let value: unknown
+    try {
+      value = JSON.parse(body)
+    } catch {
+      const source = new URL(url)
+      throw new Error(
+        `hosted record read of ${source.pathname} on ${source.host} returned a non-JSON body (status ${response.status}, content-type ${contentType})`,
+      )
+    }
+    if (contentType.toLowerCase().includes('text/html')) {
+      const source = new URL(url)
+      throw new Error(
+        `hosted record read of ${source.pathname} on ${source.host} returned a non-JSON body (status ${response.status}, content-type ${contentType})`,
+      )
+    }
     if (!response.ok)
       throw new RecordApiRequestError(
         errorMessage(value, response.status),
