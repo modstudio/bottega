@@ -2,8 +2,8 @@
 /** Builds hosted board root-message requests. */
 
 import {
-  boardClaimListPath,
   type BoardClaimListOptions,
+  boardClaimListPath,
   type RecordClientRequest,
   type RecordRequestDestination,
   type RecordWriteDestination,
