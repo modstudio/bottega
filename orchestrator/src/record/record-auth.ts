@@ -33,8 +33,8 @@ import { keepOwnerWrite } from './record-member-permission.ts'
 import { activeMembershipSpace } from './record-membership.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
-export { activeMembershipSpace } from './record-membership.ts'
-export { RECORD_SESSION_KEY } from './record-token-key.ts'
+export * from './record-token-key.ts'
+export { activeMembershipSpace }
 
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
