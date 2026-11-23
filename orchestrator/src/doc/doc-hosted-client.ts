@@ -5,7 +5,7 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { db } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { cachedProjectSpaces } from '../project-space-cache.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -73,7 +73,7 @@ export async function hostedDocClient(
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
   const owner = suppliedOwner ?? docOwner(projectName)
-  const seededSpaceId = projectName ? (cachedProjectSpaces(db())[projectName] ?? null) : null
+  const seededSpaceId = effectiveProjectSpace(db(), projectName)
   const bindDestination = (destination: { destinationSpaceId: string }): HostedDocClient => ({
     listDocs: (query) =>
       client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),

@@ -275,7 +275,7 @@ export const docModules: DocModule[] = [
     '../../../shared/record-write-space.ts',
     '../database/db.ts',
     '../project/projects.ts',
-    '../project-space-cache.ts',
+    '../project-space.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',
@@ -284,7 +284,10 @@ export const docModules: DocModule[] = [
     './doc-authoritative-read.ts',
     './doc-tree-rules.ts',
   ]),
-  module('orchestrator/src/doc/doc-pack-budget-read.ts', ['./doc-authoritative-read.ts']),
+  module('orchestrator/src/doc/doc-pack-budget-read.ts', [
+    '../../../shared/canon-frontmatter.ts',
+    './doc-authoritative-read.ts',
+  ]),
   module('orchestrator/src/doc/doc-authoritative-read.ts', [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',

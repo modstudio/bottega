@@ -97,7 +97,7 @@ export function classifyCanonFile(file: CanonFile): CanonKind | null {
   if (/^\.agents\/reference\/[^/]+\.md$/.test(file.path)) return 'reference'
   if (posix.basename(file.path) === 'CLAUDE.md') return 'alias'
   if (posix.basename(file.path) !== 'AGENTS.md') return null
-  return resolvedTarget(file)?.startsWith('.agents/contexts/') ? 'publication' : 'card'
+  return resolvedTarget(file)?.startsWith(CANON_CONTEXT_SLUG_PREFIX) ? 'publication' : 'card'
 }
 
 function bytes(file: CanonFile): number {

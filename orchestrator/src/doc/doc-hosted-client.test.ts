@@ -292,6 +292,7 @@ test('a missing project route waits for the confirmed space before reading', asy
     settings: { space: 'confirmed-team' },
   })
   const events: string[] = []
+  const destinations: string[] = []
   const memory = createMemoryRecordApiClient()
   installRecordApiClient({
     ...memory,
@@ -304,8 +305,9 @@ test('a missing project route waits for the confirmed space before reading', asy
         memberships: [{ space_id: 'confirmed-space', slug: 'confirmed-team', permission: 'write' }],
       }
     },
-    listDocs: async () => {
+    listDocs: async (_query, destination) => {
       events.push('read')
+      destinations.push(destination?.destinationSpaceId ?? 'unbound')
       return { items: [], nextCursor: null }
     },
   })
@@ -314,6 +316,7 @@ test('a missing project route waits for the confirmed space before reading', asy
   expect(events).toEqual(['destination'])
   await client.listDocs({})
   expect(events).toEqual(['destination', 'read'])
+  expect(destinations).toEqual(['confirmed-space'])
 })
 
 test('a refused confirmed destination refuses a successful speculative read', async () => {
