@@ -124,9 +124,11 @@ function cliTaskReadAdapter(): TaskReadPort {
 export function installCliProjectRegisterReader(): void {
   loadedProjectRegisterReads = undefined
   installProjectRegisterReader((options) => {
-    const { project, presentation, contract } = projectRegisterReads()
-    return contract.OrchProjectListSchema.parse(
-      project.projects(options).map(presentation.listedProjectJson),
+    const { database, project, presentation, contract } = projectRegisterReads()
+    return database.withReadOnlyDatabaseAccess(() =>
+      contract.OrchProjectListSchema.parse(
+        project.projects(options).map(presentation.listedProjectJson),
+      ),
     )
   })
 }

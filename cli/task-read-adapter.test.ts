@@ -6,7 +6,12 @@ import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { projectRegisterReader } from '../hub/src/project-register-reader.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../hub/test/migration-values.ts'
 import { resetFixtureStore } from '../hub/test/run-fixtures.ts'
-import { DB_PATH, db } from '../orchestrator/src/database/db.ts'
+import {
+  closeDatabaseForFixture as closeOrchestratorDatabaseForFixture,
+  DB_PATH,
+  db,
+  registerOpenHooks,
+} from '../orchestrator/src/database/db.ts'
 import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
 import { registerStandardRuntime } from '../orchestrator/src/runtime/runtime-registration.ts'
 import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
@@ -108,4 +113,19 @@ test('the standalone register reader returns schema-valid registered projects', 
       name: 'alpha',
     }),
   )
+})
+
+test('the standalone register reader does not require writable store hooks', () => {
+  closeOrchestratorDatabaseForFixture()
+  const restoreHooks = registerOpenHooks({})
+  try {
+    installCliProjectRegisterReader()
+
+    expect(projectRegisterReader()?.()).toContainEqual(
+      expect.objectContaining({ record_id: projectRecordId, name: 'alpha' }),
+    )
+  } finally {
+    closeOrchestratorDatabaseForFixture()
+    restoreHooks()
+  }
 })

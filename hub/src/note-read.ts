@@ -115,12 +115,14 @@ async function readHostedNote(
   const spaces = await noteReadSpaces(project, options)
   try {
     for (const recordSpace of spaces) {
+      let hostedNote: Awaited<ReturnType<typeof hostedGetNote>>
       try {
-        return noteRowFromHosted(await hostedGetNote(recordId, { ...options, recordSpace }))
+        hostedNote = await hostedGetNote(recordId, { ...options, recordSpace })
       } catch (cause) {
         if (isMissingHostedNote(cause)) continue
         throw spaceReadFailure(recordSpace, project, cause)
       }
+      return noteRowFromHosted(hostedNote)
     }
     throw new NoteNotFoundError(recordId)
   } catch (cause) {
