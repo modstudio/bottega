@@ -7,6 +7,9 @@ import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { type AgentRow, agentRows } from './agent-registry.ts'
 
+const shellQuote = (argument: string): string =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`
+
 export function sharedAgentDeclaration(row: AgentRow): RecordSpaceAgent {
   return {
     name: row.name,
@@ -30,7 +33,10 @@ export function sharedAgentDeclaration(row: AgentRow): RecordSpaceAgent {
 
 function localAgent(name: string): AgentRow {
   const row = agentRows().find((candidate) => candidate.name === name)
-  if (!row) throw new Error(`unknown local agent ${JSON.stringify(name)}`)
+  if (!row)
+    throw new Error(
+      `unknown local agent ${JSON.stringify(name)}; run \`${PLATFORM_SLUG} agent list\` to list local agents`,
+    )
   return row
 }
 
@@ -55,9 +61,10 @@ export async function unshareAgent(
   suppliedClient?: RecordApiClient,
 ): Promise<void> {
   requireHostedRecord(`${PLATFORM_SLUG} agent unshare`)
-  localAgent(name)
   const client = suppliedClient ?? recordApiClient()
   const result = await client.deleteSpaceAgent(name, await destination(client, space))
   if (!result.removed)
-    throw new Error(`agent ${JSON.stringify(name)} is not declared in space ${space}`)
+    throw new Error(
+      `agent ${JSON.stringify(name)} is not declared in space ${JSON.stringify(space)}; run \`${PLATFORM_SLUG} agent share ${shellQuote(name)} --space ${shellQuote(space)}\` to declare it, or the declaration may already be absent`,
+    )
 }

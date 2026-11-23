@@ -3,7 +3,7 @@ CREATE TABLE "space_agent" (
 	"space_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"harness" text NOT NULL,
-	"backend" text NOT NULL,
+	"backend" text,
 	"model" text NOT NULL,
 	"base_url" text,
 	"transport" text NOT NULL,

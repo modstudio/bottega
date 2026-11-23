@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c5a66441-6758-4c0f-b28b-66bae1ea12b3",
+  "id": "2b83c14f-2130-4110-9d53-4b16ebef04a4",
   "prevIds": [
     "d668af74-21a4-471c-8ee3-eaa23a7c9277",
     "fe6dbc8b-a022-476c-ac60-bb060e130c95"
@@ -10855,7 +10855,7 @@
     {
       "type": "text",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 0,
       "default": null,
       "generated": null,

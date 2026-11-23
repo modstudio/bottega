@@ -34,6 +34,14 @@ test('accepts the named NOT VALID string-refusing check', () => {
   expect(missingJsonbStringChecks([{ file: 'fixture.ts', source: schema }], migration)).toEqual([])
 })
 
+test('accepts a directly validated string-refusing check on a new table', () => {
+  const schemas = [{ file: 'fixture.ts', source: schema }]
+  const migration =
+    'ALTER TABLE "sample" ADD CONSTRAINT "sample_stored_payload_not_json_string_check" CHECK (jsonb_typeof("stored_payload") <> \'string\');'
+  expect(missingJsonbStringChecks(schemas, migration)).toEqual([])
+  expect(jsonbStringValidationFailures(schemas, migration, [])).toEqual([])
+})
+
 test('fails when an ordinary hosted jsonb check is added but not validated', () => {
   const name = jsonbStringCheckName({ table: 'sample', column: 'stored_payload' })
   const migration = `ALTER TABLE "sample" ADD CONSTRAINT "${name}" CHECK (jsonb_typeof("stored_payload") <> 'string') NOT VALID;`
