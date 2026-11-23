@@ -71,6 +71,10 @@ import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
 import {
+  questionTextRefusal,
+  requiredTextReachingHandler,
+} from '../question-store/question-text.ts'
+import {
   isRunQuestionOwnerNotLive,
   runQuestionOwnerNotLiveMessage,
 } from '../question-store/run-question-write-guard.ts'
@@ -465,12 +469,12 @@ export async function ask(
   ),
 ): Promise<AskResult> {
   writableDb()
+  const typed = WorkerQuestionSchema.parse(o)
   const prose = await orchestratorProseGate([
-    { field: 'question text', text: o.question, prior: null },
+    { field: 'question text', text: typed.question, prior: null },
   ])
   const proseNotice = prose.refusal ?? (prose.notices.join('\n') || undefined)
   const askedAt = nowIso()
-  const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   let transitioned = false
   const live = writeTransaction(() => {
@@ -489,7 +493,7 @@ export async function ask(
     id = await recordQuestion({
       runId: o.runId,
       askedAt,
-      question: o.question,
+      question: typed.question,
       options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
       recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
       why: typed.why,
@@ -697,7 +701,7 @@ export function createAskMcpServer(
   // required) while ensuring an omitted value reaches the handler. Otherwise
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
-  const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
+  const handlerText = z.preprocess(requiredTextReachingHandler, z.string())
   registerAskBoardTools({ server, runId, authorized, unauthorized, text })
 
   registerTool(
@@ -711,7 +715,11 @@ export function createAskMcpServer(
     },
     async (questionInput) => {
       const { question } = questionInput
-      if (!question.trim()) return missing('question')
+      const refusal = questionTextRefusal(question)
+      if (refusal) {
+        if (!question.replace(/\p{Cf}/gu, '').trim()) return missing('question')
+        return text(`${refusal} Call ask_orchestrator again. Do not decide the matter yourself.`)
+      }
       try {
         const typedQuestion = WorkerQuestionSchema.parse(questionInput)
         const result = authorized()
@@ -773,7 +781,7 @@ export function createAskMcpServer(
         'your own task in your final reply. The orchestrator derives the project and run anchors; ' +
         'you may optionally anchor the observation to a relative path and line.',
       inputSchema: z.object({
-        text: requiredTextReachingHandler.describe('One non-empty line describing the defect.'),
+        text: handlerText.describe('One non-empty line describing the defect.'),
         project: z
           .string()
           .trim()
@@ -794,6 +802,8 @@ export function createAskMcpServer(
       }),
     },
     async ({ text: noteText, project, file, same_as }) => {
+      const refusal = questionTextRefusal(noteText, 'text')
+      if (refusal) return text(`${refusal} Call note again.`)
       try {
         if (!authorized()) throw new Error(unauthorized())
         const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
@@ -825,11 +835,15 @@ export function createAskMcpServer(
         'Send the architect a non-blocking progress or context message and keep working. ' +
         'This is not a question and does not request or wait for a ruling.',
       inputSchema: z.object({
-        body: requiredTextReachingHandler.describe('The context to put on this run.'),
+        body: handlerText.describe('The context to put on this run.'),
       }),
     },
     async ({ body }) => {
-      if (!body.trim()) return missing('body')
+      const refusal = questionTextRefusal(body, 'body')
+      if (refusal) {
+        if (!body.replace(/\p{Cf}/gu, '').trim()) return missing('body')
+        return text(`${refusal} Call message_orchestrator again.`)
+      }
       try {
         if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)

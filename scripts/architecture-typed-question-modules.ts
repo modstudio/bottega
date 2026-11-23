@@ -11,7 +11,11 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const typedQuestionModules = [
   module('orchestrator/src/run/prompt-sha.ts', ['node:crypto']),
   module('shared/typed-question/registry.ts', []),
-  module('orchestrator/src/ask/worker-question.ts', ['zod', '../../../shared/orch-contract.ts']),
+  module('orchestrator/src/ask/worker-question.ts', [
+    'zod',
+    '../../../shared/orch-contract.ts',
+    '../question-store/question-text.ts',
+  ]),
   module('shared/typed-question/client.ts', [
     '../brand.ts',
     '../config-client.ts',

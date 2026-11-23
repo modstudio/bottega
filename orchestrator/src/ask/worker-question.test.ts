@@ -4,6 +4,7 @@ import {
   decodeAnswerValue,
   normalizeWorkerQuestionChoice,
   type WorkerQuestionInput,
+  WorkerQuestionInputSchema,
   WorkerQuestionSchema,
 } from './worker-question.ts'
 
@@ -17,6 +18,24 @@ const choice = (recommendation?: string | null) => ({
 })
 
 describe('worker question answerability', () => {
+  test('refuses run 40561 call 20 when the structured question is nested in question', () => {
+    const wire = WorkerQuestionInputSchema.parse({
+      question: {
+        kind: 'choice',
+        question: 'Which threshold?',
+        options: ['100', '500'],
+        recommendation: '500',
+        why: 'The implementation depends on the threshold.',
+      },
+    })
+    const parsed = WorkerQuestionSchema.safeParse(wire)
+    expect(parsed.success).toBe(false)
+    if (!parsed.success)
+      expect(parsed.error.issues.map(({ message }) => message)).toContainEqual(
+        expect.stringContaining('question was an object'),
+      )
+  })
+
   test('normalizes the identity used across recommendation, duplicate, and answer matching', () => {
     expect(normalizeWorkerQuestionChoice('  AL\u200Bpha  Choice ')).toBe('alpha choice')
   })

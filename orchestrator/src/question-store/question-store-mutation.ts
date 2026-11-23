@@ -8,6 +8,7 @@ import { machineId } from '../record/machine-identity.ts'
 import type { QuestionLiveIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
+import { questionTextRefusal } from './question-text.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)
@@ -164,6 +165,11 @@ export async function askQuestion(
     levels?: unknown
   },
 ) {
+  const refusal = questionTextRefusal(input.question)
+  if (refusal)
+    throw new Error(
+      `${refusal} The question text must be a non-empty string; fix the caller that built it.`,
+    )
   const id = input.id ?? newRecordId()
   let projectId = input.projectId ?? null
   if (!projectId && input.runId) {

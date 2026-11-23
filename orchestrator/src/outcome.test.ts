@@ -47,6 +47,31 @@ describe('worker question finalization regression', () => {
     expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
     expect(result.error).toContain('"..." (question is empty)')
   })
+
+  test('a mixed reply keeps the good question and reports the malformed one as dropped', () => {
+    const malformed = {
+      question: { kind: 'choice', question: 'Nested?', options: ['one', 'two'] },
+      why: 'Nested incorrectly.',
+    } as unknown as WorkerQuestionInput
+    const result = finalizeWorkerReply({
+      reply: {
+        status: 'asking',
+        questions: [
+          malformed,
+          { question: 'Which path?', why: 'The implementation depends on the answer.' },
+        ],
+      },
+      measuredFiles: [],
+      turnChanged: false,
+      status: 'asking',
+      failureKind: null,
+      error: null,
+    })
+
+    expect(result.acceptedQuestions.map(({ question }) => question)).toEqual(['Which path?'])
+    expect(result.droppedQuestions).toEqual([malformed])
+    expect(result.error).toContain('question was an object')
+  })
 })
 
 const base: OutcomeInputs = {

@@ -3,10 +3,21 @@
 
 import { z } from 'zod'
 import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import {
+  questionTextRefusal,
+  requiredTextReachingHandler,
+} from '../question-store/question-text.ts'
 
 const nullableAbsent = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null ? undefined : value), schema.optional())
-const requiredQuestion = z.preprocess((value) => String(value ?? ''), z.string())
+const requiredQuestionInput = z.preprocess(requiredTextReachingHandler, z.string())
+const requiredQuestion = z.preprocess(
+  requiredTextReachingHandler,
+  z.string().superRefine((value, context) => {
+    const refusal = questionTextRefusal(value)
+    if (refusal) context.addIssue({ code: 'custom', message: refusal })
+  }),
+)
 
 export function normalizeWorkerQuestionChoice(value: string): string {
   return value
@@ -111,7 +122,7 @@ export const WorkerQuestionInputSchema = z.object({
     .describe(
       'choice when there are named options, yesno for a yes/no ruling, score for an ordered scale, text otherwise',
     ),
-  question: requiredQuestion,
+  question: requiredQuestionInput,
   why: z.string().nullable().optional(),
   options: z
     .array(

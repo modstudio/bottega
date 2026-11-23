@@ -215,6 +215,24 @@ test("a run-bound ask resolves the run's project destination", async () => {
   database.close()
 })
 
+test.each(['[object Object]', ''])(
+  'refuses malformed question text %j before writing',
+  async (text) => {
+    const database = migratedTestDatabase()
+    seedProject(database)
+    const writtenSpaces: string[] = []
+    installRecordApiClient(recordClient(writtenSpaces))
+
+    await expect(
+      askQuestion(database, { projectId: PROJECT_ID, askedAt: STAMP, question: text }),
+    ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+
+    expect(writtenSpaces).toEqual([])
+    expect((database.query('SELECT COUNT(*) AS n FROM question').get() as { n: number }).n).toBe(0)
+    database.close()
+  },
+)
+
 test('a cursor-bound ask without a project is refused without writing', async () => {
   const database = migratedTestDatabase()
   const writtenSpaces: string[] = []
