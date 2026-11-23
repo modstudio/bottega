@@ -117,6 +117,53 @@ test('a hosted project listing without a subject reads all spaces and never the 
   ])
 })
 
+test('hosted and local listings without an owner both exclude owned rows', async () => {
+  const owner = newRecordId()
+  const publicSlug = `.agents/rules/public-${newRecordId()}.md`
+  const ownedSlug = `.agents/rules/owned-${newRecordId()}.md`
+  await setDoc({
+    scope: 'canon',
+    subject: null,
+    slug: publicSlug,
+    title: 'Public',
+    body: '---\ndescription: Public\n---\n\nPublic rule.\n',
+    reason: 'seed public canon',
+    allowCanonBootstrap: true,
+  })
+  await setDoc({
+    scope: 'canon',
+    subject: null,
+    owner,
+    slug: ownedSlug,
+    title: 'Owned',
+    body: '---\ndescription: Owned\n---\n\nOwned rule.\n',
+    reason: 'seed owned canon',
+    allowCanonBootstrap: true,
+  })
+  const local = (await readDocs({ scope: 'canon', subject: null }))
+    .map(({ slug }) => slug)
+    .filter((slug) => slug === publicSlug || slug === ownedSlug)
+
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({ scope: 'canon', slug: publicSlug }),
+        hostedRow({ id: newRecordId(), scope: 'canon', owner, slug: ownedSlug }),
+      ],
+      nextCursor: null,
+    }),
+  })
+  const hosted = (await readDocs({ scope: 'canon', subject: null }))
+    .map(({ slug }) => slug)
+    .filter((slug) => slug === publicSlug || slug === ownedSlug)
+
+  expect(local).toEqual([publicSlug])
+  expect(hosted).toEqual(local)
+})
+
 test('a hosted listing applies the local position order after transport', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const client = createMemoryRecordApiClient()

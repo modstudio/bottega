@@ -106,7 +106,18 @@ test('pack compile batches five hosted inject reads and uses row revision ids', 
                 body: 'Hosted inject body.',
                 delivery: 'inject',
               })
-            : null
+            : query.scope === 'canon' && query.subject === null
+              ? hostedRow({
+                  id: newRecordId(),
+                  scope: 'canon',
+                  subject: null,
+                  owner: 'user-a',
+                  slug: 'owned-canon.md',
+                  title: 'Owned canon',
+                  body: 'OWNED-CANON-MUST-NOT-BE-GLOBAL',
+                  delivery: 'inject',
+                })
+              : null
         return { items: row ? [row] : [], nextCursor: null }
       },
     }),
@@ -117,6 +128,7 @@ test('pack compile batches five hosted inject reads and uses row revision ids', 
   expect(queries).toHaveLength(5)
   expect(queries.filter((query) => query.delivery === 'inject')).toHaveLength(3)
   expect(peak).toBe(5)
+  expect(pack.markdown).not.toContain('OWNED-CANON-MUST-NOT-BE-GLOBAL')
 })
 
 test('pack compile refuses with a hosted-read remedy when the record is unreachable', async () => {

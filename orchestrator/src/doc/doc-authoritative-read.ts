@@ -167,7 +167,7 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
   const hasArticleSubject = (subject: Doc['articleSubject']) =>
     subject?.id === filters.articleSubject || subject?.name === filters.articleSubject
   return rows
-    .filter((doc) => filters.owner === undefined || doc.owner === filters.owner)
+    .filter((doc) => doc.owner === (filters.owner ?? null))
     .filter((doc) => !filters.scopes || filters.scopes.includes(doc.scope))
     .filter(
       (doc) =>

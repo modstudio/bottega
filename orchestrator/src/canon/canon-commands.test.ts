@@ -54,8 +54,8 @@ test('user canon list reads the hosted row when the local mirror is empty', asyn
         personalSpaceId: 'personal-space',
         memberships: [{ space_id: 'personal-space', slug: 'personal-space', permission: 'write' }],
       }),
-      listDocs: async (query) => ({
-        items: query.owner === owner ? [row] : [],
+      listDocs: async () => ({
+        items: [row],
         nextCursor: null,
       }),
     })
@@ -65,7 +65,7 @@ test('user canon list reads the hosted row when the local mirror is empty', asyn
       { has: (name) => name === 'user', flag: () => undefined },
       { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: process.cwd },
     )
-    expect(output.join('\n')).toContain('AGENTS.md')
+    expect(output.filter((line) => line.includes('AGENTS.md'))).toHaveLength(1)
   } finally {
     installRecordSessionRunner(null)
     installRecordApiClient(createMemoryRecordApiClient())
