@@ -363,7 +363,7 @@ jobs:
         run: "echo 'release smoke: no pull request, merge queue or dispatch event'"
 
   checkout-cli-confinement:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -374,10 +374,6 @@ jobs:
           bun-version-file: .bun-version
       - name: Install
         run: bun install --silent
-      - name: Allow unprivileged user namespaces for the sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Install sandbox host packages
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap socat ripgrep
       - name: Prove confined checkout ask-server tools
         run: bun run --cwd orchestrator check:checkout-cli-confinement
       - name: Prove source-launch mutation fails
