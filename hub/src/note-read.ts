@@ -148,15 +148,20 @@ async function listHostedNoteRows(
       { note: ReturnType<typeof noteRowFromHosted>; space: string }
     >()
     const acknowledgements: HostedAcknowledgement[] = []
-    for (const recordSpace of spaces) {
-      const result = await hostedListNotes(
-        {
-          project: filters.project,
-          stale: filters.stale,
-          actionable: filters.actionable,
-        },
-        { ...untargeted, recordSpace },
-      )
+    const results = await Promise.all(
+      spaces.map(async (recordSpace) => ({
+        recordSpace,
+        result: await hostedListNotes(
+          {
+            project: filters.project,
+            stale: filters.stale,
+            actionable: filters.actionable,
+          },
+          { ...untargeted, recordSpace },
+        ),
+      })),
+    )
+    for (const { recordSpace, result } of results) {
       acknowledgements.push(...result.acknowledgements)
       for (const hostedNote of result.notes) {
         const note = noteRowFromHosted(hostedNote)

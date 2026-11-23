@@ -166,6 +166,32 @@ test('an unfiltered hosted list unions the active and project destination spaces
   expect(requestedSpaces).toEqual(['space-active', 'space-gamma'])
 })
 
+test('an unfiltered hosted list requests its spaces concurrently', async () => {
+  let started = 0
+  let release: (() => void) | undefined
+  const bothStarted = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  await listNotes(
+    {},
+    {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input) => {
+        if (new URL(input).pathname === '/v1/tasks/identity')
+          return Response.json(crossSpaceIdentity)
+        started++
+        if (started === 2) release?.()
+        await bothStarted
+        return Response.json({ notes: [], acknowledgements: [], cursor: '', more: false })
+      },
+    },
+  )
+
+  expect(started).toBe(2)
+})
+
 test('an unfiltered hosted list refuses a note id duplicated across spaces', async () => {
   const id = crypto.randomUUID()
 
