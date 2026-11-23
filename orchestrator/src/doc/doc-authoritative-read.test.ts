@@ -6,11 +6,14 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
   readDoc,
   readDocForAudience,
   readDocMetadata,
+  readDocReference,
   readDocRevisions,
   readDocs,
 } from './doc-authoritative-read.ts'
@@ -162,6 +165,45 @@ test('hosted and local listings without an owner both exclude owned rows', async
 
   expect(local).toEqual([publicSlug])
   expect(hosted).toEqual(local)
+})
+
+test('a hosted delivery filter excludes rows returned by an older server', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [
+        hostedRow({ delivery: 'inject', slug: 'injected' }),
+        hostedRow({ id: newRecordId(), delivery: 'demand', slug: 'on-demand' }),
+      ],
+      nextCursor: null,
+    }),
+  })
+
+  expect((await readDocs({ scope: 'global', delivery: 'inject' })).map(({ slug }) => slug)).toEqual(
+    ['injected'],
+  )
+})
+
+test('a missing hosted document reference returns null while server failures still throw', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    getDoc: async () => {
+      throw new RecordApiRequestError('doc not found', 'refused', 404)
+    },
+  })
+  await expect(readDocReference(newRecordId(), db())).resolves.toBeNull()
+
+  installRecordApiClient({
+    ...client,
+    getDoc: async () => {
+      throw new RecordApiRequestError('record failed', 'server', 500)
+    },
+  })
+  await expect(readDocReference(newRecordId(), db())).rejects.toThrow('record failed')
 })
 
 test('a hosted listing applies the local position order after transport', async () => {

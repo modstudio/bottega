@@ -9,7 +9,12 @@ import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts
 import { projectByRecordId } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
-import { hostedDocClient, listAllHostedDocs, readHostedDocReference } from './doc-hosted-client.ts'
+import {
+  hostedDocClient,
+  isMissingHostedDoc,
+  listAllHostedDocs,
+  readHostedDocReference,
+} from './doc-hosted-client.ts'
 import {
   type HostedDocRevision,
   hostedDocRevisionRead,
@@ -87,7 +92,7 @@ export function readDocReference(
             const row = await readHostedDocReference(value)
             return resolvedReference(row, row.projectName == null ? null : String(row.projectName))
           } catch (cause) {
-            if (String((cause as Error).message ?? cause).includes('404')) return null
+            if (isMissingHostedDoc(cause)) return null
             throw cause
           }
         }),
@@ -168,6 +173,7 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
     subject?.id === filters.articleSubject || subject?.name === filters.articleSubject
   return rows
     .filter((doc) => doc.owner === (filters.owner ?? null))
+    .filter((doc) => !filters.delivery || doc.delivery === filters.delivery)
     .filter((doc) => !filters.scopes || filters.scopes.includes(doc.scope))
     .filter(
       (doc) =>

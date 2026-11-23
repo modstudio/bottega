@@ -4,7 +4,11 @@
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
@@ -113,6 +117,10 @@ export async function readHostedDocReference(address: string): Promise<Record<st
     throw new Error(`invalid document address ${JSON.stringify(address)}`)
   const subject = rawSubject === '_' ? null : rawSubject
   return (await hostedDocClient(scope, subject)).getDoc(encodeURIComponent(slug))
+}
+
+export function isMissingHostedDoc(cause: unknown): boolean {
+  return cause instanceof RecordApiRequestError && cause.status === 404
 }
 
 function docOwner(projectName: string | null): RecordWriteOwner {
