@@ -551,6 +551,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
   delete (hostedResult as Partial<typeof hostedResult>).previousClaimIds
   delete (hostedResult as Partial<typeof hostedResult>).supersededByClaimId
   let claimDestination: string | undefined
+  const claimListOptions: Array<{ openOnly?: boolean } | undefined> = []
   const hostedClient = {
     ...createMemoryRecordApiClient(),
     takeBoardClaim: async (_input: unknown, destination?: { destinationSpaceId?: string }) => {
@@ -564,7 +565,14 @@ test('claim verbs stringify every id and share the same local and hosted result 
       closedAt: '2026-10-05T12:00:02.000Z',
       closeReason: 'released',
     }),
-    listBoardClaims: async () => ({ claims: [hostedClaim] }),
+    listBoardClaims: async (
+      _project: string,
+      _projectId?: string | null,
+      options?: { openOnly?: boolean },
+    ) => {
+      claimListOptions.push(options)
+      return { claims: [hostedClaim] }
+    },
   }
   const hostedContext = {
     env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
@@ -588,6 +596,10 @@ test('claim verbs stringify every id and share the same local and hosted result 
   await expect(boardClaimList('board-route-project', true, hostedContext)).resolves.toEqual({
     claims: [hostedResult],
   })
+  await expect(boardClaimList('board-route-project', false, hostedContext)).resolves.toEqual({
+    claims: [hostedResult],
+  })
+  expect(claimListOptions).toEqual([{ openOnly: false }, { openOnly: true }])
 })
 
 test('release-task normalizes before hosted release and refuses another shape before calling', async () => {

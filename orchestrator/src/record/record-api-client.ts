@@ -471,6 +471,7 @@ export type RecordApiClient = ProjectIdentityClient &
     listBoardClaims(
       project: string,
       projectId?: string | null,
+      options?: { openOnly?: boolean },
     ): Promise<{ claims: HostedBoardClaim[] }>
     releaseBoardTaskClaims(
       input: {

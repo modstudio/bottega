@@ -204,8 +204,14 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
         body: JSON.stringify(input ?? {}),
         ...destination,
       }),
-    listBoardClaims: (project: string, projectId?: string | null) =>
-      request<{ claims: HostedBoardClaim[] }>(boardClaimListPath(project, projectId)),
+    listBoardClaims: (
+      project: string,
+      projectId?: string | null,
+      options?: { openOnly?: boolean },
+    ) =>
+      request<{ claims: HostedBoardClaim[] }>(
+        `${boardClaimListPath(project, projectId)}${options?.openOnly ? '&openOnly=true' : ''}`,
+      ),
   }
 }
 
