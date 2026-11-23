@@ -54,8 +54,13 @@ def main():
             return 0
         environment = os.environ.copy()
         environment["CLAUDE_CODE_SESSION_ID"] = session
+        source = payload.get("source") or "startup"
         result = subprocess.run(
-            [bottega_bin(), "session", "start"],
+            [
+                bottega_bin(), "session", "start",
+                "--harness-pid", str(os.getppid()),
+                "--source", source,
+            ],
             cwd=cwd,
             env=environment,
             capture_output=True,

@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
+import { publishHarnessSession } from '../harness-session/harness-session.ts'
 import { projectAt, retiredProjectAt, retiredProjectRefusal } from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
@@ -22,6 +23,8 @@ type SessionStartDependencies = {
   database?: Database
   cwd?: string
   session?: string | null
+  harnessPid?: number
+  source?: string
 }
 
 const cursorLine = (cursor: number, workflow = 'explore') => `cursor ${cursor} ${workflow}`
@@ -34,6 +37,12 @@ export async function startSession(
   const database = dependencies.database ?? db()
   const cwd = resolve(dependencies.cwd ?? process.cwd())
   const session = dependencies.session === undefined ? sessionId(database) : dependencies.session
+  if (session && dependencies.harnessPid !== undefined)
+    publishHarnessSession({
+      pid: dependencies.harnessPid,
+      session,
+      source: dependencies.source ?? 'startup',
+    })
   const project = projectAt(cwd, database)
   const openCursors = session
     ? await taskFlowReadStore(database).listOpenStages({

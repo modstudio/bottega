@@ -34,6 +34,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/bounded-process.ts',
       '../branch/branch-landing-records.ts',
       '../git/git-environment.ts',
+      '../harness-session/harness-session.ts',
       '../jobs/jobs.ts',
       '../project/projects.ts',
       '../review/review-target.ts',

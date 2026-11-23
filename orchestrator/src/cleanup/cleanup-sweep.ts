@@ -13,6 +13,7 @@ import { pruneContentionRows, rollupContentionDays } from '../database/contentio
 import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
+import { sweepHarnessSessions } from '../harness-session/harness-session.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { pruneHostedCallOutcomes } from '../hosted-call-outcome.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
@@ -818,6 +819,11 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const dry = options.dryRun
   const { selectedProject, sweepProjects } = await sweepScope(options)
   const { archiveRetention, trustObservation } = prepareSweepContext(options, helpers)
+  const harnessSessions = sweepHarnessSessions({
+    dryRun: dry,
+    log: options.presentation.log,
+    error: options.presentation.error,
+  })
   reconcileAbsentClaims({
     dryRun: dry,
     project: options.project,
@@ -834,7 +840,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed || runLeftovers.failed
+  let cleanupFailed = archiveRetention.failed || runLeftovers.failed || harnessSessions.failed
   const sessionCleanupFailed = await sweepSessionState({
     project: selectedProject?.name ?? null,
     dryRun: dry,

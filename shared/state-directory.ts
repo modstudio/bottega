@@ -117,6 +117,11 @@ export function autonomyContextDirectory(env: StateEnvironment): string {
   return join(concernStateDirectory('orchestrator', env), 'autonomy-context')
 }
 
+/** Machine-local publications that associate harness processes with their current session. */
+export function harnessSessionDirectory(env: StateEnvironment): string {
+  return join(concernStateDirectory('orchestrator', env), 'harness-sessions')
+}
+
 /** Directory launchd watches for pending hosted-record evidence. */
 export function recordSyncQueueDirectory(env: StateEnvironment): string {
   return join(resolveStatePaths(env).orchestratorDirectory, RECORD_SYNC_QUEUE_DIRECTORY)

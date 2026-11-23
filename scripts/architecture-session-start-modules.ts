@@ -3,6 +3,28 @@
 
 export const sessionStartBoundarySpecs = [
   {
+    name: 'harness-session-decision-boundary',
+    file: 'orchestrator/src/harness-session/harness-session-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep harness publication measurement pure over process identities.',
+  },
+  {
+    name: 'harness-session-boundary',
+    file: 'orchestrator/src/harness-session/harness-session.ts',
+    allowed: [
+      'node:crypto',
+      'node:fs',
+      'node:path',
+      '../../../shared/process-identity.ts',
+      '../../../shared/state-directory.ts',
+      '../resources/process-inventory.ts',
+      './harness-session-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep machine-local harness publication storage behind one adapter.',
+  },
+  {
     name: 'session-start-decision-boundary',
     file: 'orchestrator/src/session/session-start-decision.ts',
     allowed: [],
@@ -19,6 +41,7 @@ export const sessionStartBoundarySpecs = [
       '../../../shared/refusal.ts',
       '../caller-classification.ts',
       '../database/db.ts',
+      '../harness-session/harness-session.ts',
       '../project/projects.ts',
       '../workflow/task-flow-store.ts',
       '../workflow/workflow-cursor-live-autonomy.ts',
