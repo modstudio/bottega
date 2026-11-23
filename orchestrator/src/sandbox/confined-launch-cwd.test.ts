@@ -10,16 +10,17 @@ const paths = {
 }
 
 test('confined launch cwd follows the claim tree mode', () => {
-  const cases: [ConfinedLaunchMode, string][] = [
-    ['attach', paths.worktreePath],
-    ['create', paths.worktreePath],
-    ['isolate', paths.isolatedDirectory],
-    ['caller', paths.callerCwd],
+  const cases: [ConfinedLaunchMode, string | null, string][] = [
+    ['attach', paths.worktreePath, paths.worktreePath],
+    ['create', paths.worktreePath, paths.worktreePath],
+    ['isolate', null, paths.isolatedDirectory],
+    ['caller', paths.worktreePath, paths.worktreePath],
+    ['caller', null, paths.callerCwd],
   ]
-  for (const [mode, expected] of cases) {
-    expect(
-      confinedLaunchCwd(mode, paths.worktreePath, paths.isolatedDirectory, paths.callerCwd),
-    ).toBe(expected)
+  for (const [mode, worktreePath, expected] of cases) {
+    expect(confinedLaunchCwd(mode, worktreePath, paths.isolatedDirectory, paths.callerCwd)).toBe(
+      expected,
+    )
   }
 })
 

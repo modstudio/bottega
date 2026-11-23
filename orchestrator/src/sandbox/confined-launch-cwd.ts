@@ -5,11 +5,11 @@ export type ConfinedLaunchMode = 'attach' | 'create' | 'isolate' | 'caller'
 /** Decide the directory a confined worker process starts in. */
 export function confinedLaunchCwd(
   mode: ConfinedLaunchMode,
-  worktreePath: string,
+  worktreePath: string | null,
   isolatedDirectory: string,
   callerCwd: string,
 ): string {
-  if (mode === 'attach' || mode === 'create') return worktreePath
+  if (worktreePath) return worktreePath
   if (mode === 'isolate') return isolatedDirectory
   return callerCwd
 }

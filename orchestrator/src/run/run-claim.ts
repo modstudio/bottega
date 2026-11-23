@@ -42,7 +42,7 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths, runTempDir } from '../run-owned-paths.ts'
-import { confinedLaunchCwd } from '../sandbox/confined-launch-cwd.ts'
+import { confinedLaunchCwd as decideCwd } from '../sandbox/confined-launch-cwd.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -822,7 +822,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       case 'caller':
         break
     }
-    cwd = confinedLaunchCwd(claimTreePlan.mode, worktree?.path ?? '', isolatedCwd ?? '', callerCwd)
+    cwd = decideCwd(claimTreePlan.mode, worktree?.path ?? null, isolatedCwd ?? '', callerCwd)
     db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
     if (worktree) {
       const inheritedWorktree = worktree
