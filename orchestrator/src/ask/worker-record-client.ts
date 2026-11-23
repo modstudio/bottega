@@ -3,6 +3,7 @@
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
+import { readHostedJson } from '../../../shared/hosted-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
@@ -62,10 +63,10 @@ export function workerRecordBaseUrl(
   throw new Error(`worker record route has no configured base: ${path}`)
 }
 
-function errorMessage(value: unknown, status: number): string {
+function errorMessage(value: unknown, status: number, url: string): string {
   if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string')
     return value.error
-  return `hosted record read failed with status ${status}`
+  return `${new URL(url).host} answered ${status}`
 }
 
 export function createWorkerRecordClient(
@@ -99,26 +100,11 @@ export function createWorkerRecordClient(
       ...init,
       headers,
     })
-    const contentType = response.headers.get('content-type') ?? 'missing'
-    const body = await response.text()
-    let value: unknown
-    try {
-      value = JSON.parse(body)
-    } catch {
-      const source = new URL(url)
-      throw new Error(
-        `hosted record read of ${source.pathname} on ${source.host} returned a non-JSON body (status ${response.status}, content-type ${contentType})`,
-      )
-    }
-    if (contentType.toLowerCase().includes('text/html')) {
-      const source = new URL(url)
-      throw new Error(
-        `hosted record read of ${source.pathname} on ${source.host} returned a non-JSON body (status ${response.status}, content-type ${contentType})`,
-      )
-    }
+    const body = await readHostedJson(response, url)
+    const value = body.kind === 'json' ? body.value : null
     if (!response.ok)
       throw new RecordApiRequestError(
-        errorMessage(value, response.status),
+        errorMessage(value, response.status, url),
         response.status >= 500 ? 'server' : 'refused',
         response.status,
         responseCode(value),

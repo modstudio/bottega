@@ -372,7 +372,7 @@ test('transport failures report the request write outcome', async () => {
       } as never
       await expect(
         malformed.importDoc(malformedInput, { destinationSpaceId: 'project-space' }),
-      ).rejects.toThrow('the write may have been applied; check before retrying')
+      ).rejects.toThrow('hosted response from api.example.test/v1/docs/import was not JSON')
     } finally {
       installRecordApiClient(createMemoryRecordApiClient())
     }

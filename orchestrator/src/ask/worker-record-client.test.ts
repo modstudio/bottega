@@ -22,10 +22,10 @@ test('a worker task read sends the host credential, record space, and caller', a
     hubBaseUrl: 'https://hub.test',
     recordApiBaseUrl: 'https://record-api.test',
     credential: async () => 'host-token',
-    fetch: (async (input, init) => {
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({ url: String(input), headers: new Headers(init?.headers) })
       return Response.json({ task: {}, comments: [], documents: [] })
-    }) as typeof fetch,
+    }) as unknown as typeof fetch,
   })
 
   await client.task('DEV-2613', '01990000-0000-7000-8000-000000002613')
@@ -43,7 +43,7 @@ test('worker workflow and task reads use their owning services', async () => {
     hubBaseUrl: 'https://hub.test',
     recordApiBaseUrl: 'https://record-api.test',
     credential: async () => 'host-token',
-    fetch: (async (input) => {
+    fetch: (async (input: RequestInfo | URL) => {
       const url = String(input)
       urls.push(url)
       if (url.includes('/task-flow/'))
@@ -53,7 +53,7 @@ test('worker workflow and task reads use their owning services', async () => {
           copy: null,
         })
       return Response.json({ task: {}, comments: [], documents: [] })
-    }) as typeof fetch,
+    }) as unknown as typeof fetch,
   })
 
   await client.workflowText('text-id', '01990000-0000-7000-8000-000000002617')
@@ -72,12 +72,12 @@ test('a worker workflow read refuses an HTML body with source diagnostics', asyn
       new Response('<html>app</html>', {
         status: 200,
         headers: { 'content-type': 'text/html' },
-      })) as typeof fetch,
+      })) as unknown as typeof fetch,
   })
 
   await expect(
     client.workflowText('text-id', '01990000-0000-7000-8000-000000002617'),
   ).rejects.toThrow(
-    'hosted record read of /v1/task-flow/texts/text-id on record-api.test returned a non-JSON body (status 200, content-type text/html)',
+    'hosted response from record-api.test/v1/task-flow/texts/text-id was not JSON (status 200, content-type text/html)',
   )
 })

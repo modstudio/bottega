@@ -79,6 +79,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/worker-record-client.ts', [
     '../../../shared/bounded-fetch.ts',
     '../../../shared/env-values.ts',
+    '../../../shared/hosted-json.ts',
     '../../../shared/record-api-url.ts',
     '../../../shared/record-request-headers.ts',
     '../../../shared/record-session.ts',

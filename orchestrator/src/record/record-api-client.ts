@@ -9,6 +9,7 @@ import type {
   DocKind,
   DocStatus,
 } from '../../../shared/docs.ts'
+import { readHostedJson } from '../../../shared/hosted-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
@@ -489,6 +490,9 @@ const recordApiUnreachable = (
   origin = recordApiBaseUrl(),
 ) => classifyRecordApiUnreachable(error, origin, outcome)
 
+const hostedErrorBody = (body: unknown, url: string, status: number): unknown =>
+  body ?? { error: `${new URL(url).host} answered ${status}` }
+
 export const recordIdentityResponse = (body: unknown) =>
   parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message), 'probe'))
 
@@ -507,8 +511,14 @@ async function recordEmailAuthRequest(
   } catch (error) {
     throw classifyRecordApiUnreachable(error, origin, 'non-idempotent')
   }
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
+  const result = await readHostedJson(response, `${origin}${path}`)
+  const payload = result.kind === 'json' ? result.value : null
+  if (!response.ok)
+    throw recordAuthRefusal(
+      response.status,
+      hostedErrorBody(payload, `${origin}${path}`, response.status),
+      response.headers,
+    )
   const token = recordAuthToken(response.headers, payload)
   const user = responseRecord(payload).user
   if (!token || !user || typeof user !== 'object') throw new Error(RECORD_SIGN_IN_REMEDY)
@@ -587,11 +597,20 @@ export async function recordApiRequest<T>(
         signal: init.signal ?? undefined,
         readToken,
       })
-  const body = await response.json().catch(() => null)
+  const result = await readHostedJson(response, `${resolvedOrigin}${path}`)
+  const body = result.kind === 'json' ? result.value : null
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
-    throw recordApiError(body, response.status, response.headers)
+    throw recordApiError(
+      hostedErrorBody(body, `${resolvedOrigin}${path}`, response.status),
+      response.status,
+      response.headers,
+    )
   }
+  if (result.kind === 'empty' && !init.schema)
+    throw new Error(
+      `hosted response from ${new URL(path, resolvedOrigin).host}${new URL(path, resolvedOrigin).pathname} was empty (status ${response.status})`,
+    )
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -622,8 +641,18 @@ async function publicRequest<T>(
   } catch (error) {
     throw recordApiUnreachable(error, 'probe')
   }
-  const body = await response.json().catch(() => null)
-  if (!response.ok) throw recordApiError(body, response.status)
+  const resolvedOrigin = origin()
+  const result = await readHostedJson(response, `${resolvedOrigin}${path}`)
+  const body = result.kind === 'json' ? result.value : null
+  if (!response.ok)
+    throw recordApiError(
+      hostedErrorBody(body, `${resolvedOrigin}${path}`, response.status),
+      response.status,
+    )
+  if (result.kind === 'empty')
+    throw new Error(
+      `hosted response from ${new URL(path, resolvedOrigin).host}${new URL(path, resolvedOrigin).pathname} was empty (status ${response.status})`,
+    )
   return body as T
 }
 

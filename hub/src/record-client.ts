@@ -18,6 +18,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
+import { readHostedJson } from '../../shared/hosted-json.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
@@ -571,13 +572,25 @@ async function request<T>(
           { ...init, headers, signal },
           fetchImpl as typeof fetch,
         )
-        const body = await response.json().catch(() => null)
-        if (!response.ok) throw mappedError(response.status, body, path)
+        const result = await readHostedJson(response, url)
+        const body = result.kind === 'json' ? result.value : null
+        if (!response.ok)
+          throw mappedError(
+            response.status,
+            body ??
+              (response.status === 404 && path.startsWith('/v1/board/')
+                ? null
+                : { error: `${new URL(url).host} answered ${response.status}` }),
+            path,
+          )
         const parsed = schema.safeParse(body)
         if (!parsed.success) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: 'record API returned an invalid body',
+            message:
+              result.kind === 'empty'
+                ? `hosted response from ${new URL(url).host}${new URL(url).pathname} was empty (status ${response.status})`
+                : 'record API returned an invalid body',
           })
         }
         return parsed.data
