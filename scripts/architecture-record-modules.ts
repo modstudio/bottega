@@ -6,6 +6,7 @@ import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordCacheModules } from './architecture-record-cache-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
+import { recordMigrationModules } from './architecture-record-migration-modules.ts'
 import { recordQuestionModules } from './architecture-record-question-modules.ts'
 import { recordSecretMaskModules } from './architecture-record-secret-mask-modules.ts'
 import { recordSpaceAgentModules } from './architecture-record-space-agent-modules.ts'
@@ -29,6 +30,7 @@ export const recordModules: RecordModule[] = [
   ...recordCacheModules,
   ...recordChangeModules,
   ...recordInvariantModules,
+  ...recordMigrationModules,
   ...recordQuestionModules,
   ...recordSecretMaskModules,
   ...recordSyncModules,
@@ -48,10 +50,6 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record-id.ts',
     './record-board-contract.ts',
-  ]),
-  module('orchestrator/src/postgres/postgres-migrate.ts', [
-    '../../../shared/install-root.ts',
-    '../../../shared/record/migration-session.ts',
   ]),
   module('orchestrator/src/lens/lens-built-ins.ts', []),
   module('orchestrator/src/lens/lens-profile-version.ts', []),

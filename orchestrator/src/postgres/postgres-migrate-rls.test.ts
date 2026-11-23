@@ -42,7 +42,10 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.ts'
-import { registerSpaceAgentRlsProof } from '../../test/postgres-space-agent-proof.ts'
+import {
+  registerSpaceAgentRlsProof,
+  registerSpaceAgentServiceProof,
+} from '../../test/postgres-space-agent-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { registerTaskFlowReadThroughTakeoverProof } from '../../test/postgres-task-flow-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
@@ -865,6 +868,12 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerRecordGrantProofs()
   registerSpaceAgentRlsProof(ids.SPACE_A, ids.SPACE_B)
+  registerSpaceAgentServiceProof({
+    actorUrl: actorUrl!,
+    spaceA: ids.SPACE_A,
+    spaceB: ids.SPACE_B,
+    userId: ids.USER_A,
+  })
 
   test('same-space SELECT remains visible', () => {
     const result = asSpace(

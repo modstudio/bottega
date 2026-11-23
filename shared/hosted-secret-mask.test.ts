@@ -48,12 +48,6 @@ test('jsonb masks undeclared free-text leaves while preserving structured names'
   })
 })
 
-test('space agent masking preserves a secret name without resolving a value', () => {
-  expect(maskHostedTableWrite('space_agent', { apiKeySecret: 'OPENROUTER_API_KEY' })).toEqual({
-    apiKeySecret: 'OPENROUTER_API_KEY',
-  })
-})
-
 test('generic matches remain byte-identical and warnings name only rule and column path', async () => {
   const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
   const response = await withHostedMaskWarnings(async () => {

@@ -1,14 +1,12 @@
 // concern: agent-share
 /** Publishes local agent declarations to one explicitly named hosted record space. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { type AgentRow, agentRows } from './agent-registry.ts'
-
-const shellQuote = (argument: string): string =>
-  /^[A-Za-z0-9_@%+=:,./-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`
 
 export function sharedAgentDeclaration(row: AgentRow): RecordSpaceAgent {
   return {

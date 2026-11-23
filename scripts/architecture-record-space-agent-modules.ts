@@ -9,8 +9,6 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordSpaceAgentModules = [
-  module('orchestrator/src/postgres/migration-failure.ts', []),
-  module('orchestrator/src/postgres/migration-notices.ts', []),
   module('orchestrator/src/record/record-space-agents.ts', [
     'bun',
     '../../../shared/hosted-secret-mask.ts',

@@ -97,7 +97,7 @@ test('unshare refusal names the space, agent, and restoration remedy', async () 
     await expect(
       unshareAgent('not-a-local-agent', 'shared-agents', spaceAgentClient(false)),
     ).rejects.toThrow(
-      `agent "not-a-local-agent" is not declared in space "shared-agents"; run \`${PLATFORM_SLUG} agent share not-a-local-agent --space shared-agents\` to declare it, or the declaration may already be absent`,
+      `agent "not-a-local-agent" is not declared in space "shared-agents"; run \`${PLATFORM_SLUG} agent share 'not-a-local-agent' --space 'shared-agents'\` to declare it, or the declaration may already be absent`,
     )
   })
 })

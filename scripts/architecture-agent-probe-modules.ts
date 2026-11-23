@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const agentProbeModules = [
   module('orchestrator/src/agent/agent-share.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/shell-quote.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     '../record/record-write-authority.ts',
