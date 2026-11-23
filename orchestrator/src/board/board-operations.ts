@@ -190,6 +190,7 @@ export type BoardClaimResult = {
   project: string
   subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
   holder: string
+  holderUserId: string | null
   holderSession: string | null
   note: string | null
   runId: string | null
@@ -335,6 +336,7 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 }
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
+  const hosted = 'holderSession' in value
   const recordId = 'recordId' in value ? value.recordId : value.id
   const {
     id: _id,
@@ -344,12 +346,8 @@ function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   } = value as HostedBoardClaim & ClaimView
   return {
     ...fields,
-    holderSession:
-      'holderSession' in value
-        ? value.holderSession
-        : value.holder === 'operator'
-          ? null
-          : value.holder,
+    holderUserId: hosted ? value.holder : null,
+    holderSession: hosted ? value.holderSession : value.holder === 'operator' ? null : value.holder,
     recordId,
     runId: stringId(value.runId),
     run_record_id: value.runId,
@@ -928,18 +926,6 @@ export function boardQueuedClaimClose(
     clock,
     database,
   )
-}
-
-/** Read live local claims through the board's liveness policy for workflow decisions. */
-export function boardLiveClaimsForProject(
-  project: string,
-  clock = Date.now(),
-  database: Database = db(),
-): ClaimView[] {
-  return listClaims(project, false, {}, clock, '', database, {
-    mode: 'coverage-read',
-    session: null,
-  }).claims
 }
 
 /** Read projects where a session holds a live local claim through the board's liveness policy. */

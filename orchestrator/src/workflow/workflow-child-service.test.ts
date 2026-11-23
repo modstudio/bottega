@@ -5,8 +5,8 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
+import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'

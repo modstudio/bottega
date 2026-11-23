@@ -487,6 +487,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     project: 'board-route-project',
     subject: { kind: 'resource', value: 'local' },
     holder: 'operator',
+    holderUserId: null,
     holderSession: null,
     note: null,
     runId: null,
@@ -545,6 +546,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
   }
   const hostedResult = {
     ...hostedClaim,
+    holderUserId: hostedClaim.holder,
     recordId: hostedClaim.id,
     previousClaimRecordIds: hostedClaim.previousClaimIds,
     supersededByClaimRecordId: hostedClaim.supersededByClaimId,
