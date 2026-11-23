@@ -15,7 +15,7 @@ function option(argv: readonly string[], name: string): string | undefined {
   return index < 0 ? undefined : argv[index + 1]
 }
 
-function normalizedDocument(document: JsonObject): ShownTaskDocument {
+function normalizedDocument(document: JsonObject): JsonObject {
   const number = Number(document.number)
   const key = String(document.task_key)
   return {
@@ -33,7 +33,7 @@ function normalizedDocument(document: JsonObject): ShownTaskDocument {
   }
 }
 
-function normalizedTask(detail: JsonObject): ShownTask {
+function normalizedTask(detail: JsonObject): JsonObject {
   const task = detail.task as JsonObject
   return {
     task: {
@@ -105,13 +105,13 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
         (await callWorkerRecordRead('read_task', { key: value })) as JsonObject,
       )
       if (json) console.log(JSON.stringify(shown))
-      else printShownTask(shown)
+      else printShownTask(shown as ShownTask)
     } else if (route === 'document') {
       const document = normalizedDocument(
         (await callWorkerRecordRead('read_task_document', { reference: value })) as JsonObject,
       )
       if (json) console.log(JSON.stringify(document))
-      else printShownTaskDocument(document)
+      else printShownTaskDocument(document as ShownTaskDocument)
     } else {
       const id = value.replace(/^attached-text:/, '')
       const shown = (await callWorkerRecordRead('read_workflow_text', { id })) as JsonObject
