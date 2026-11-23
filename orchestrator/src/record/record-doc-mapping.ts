@@ -50,6 +50,7 @@ export type RecordDoc = {
   summary?: string
   summarySource?: 'written' | 'derived'
   projectName: string | null
+  latestRevisionId: string | null
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -382,6 +383,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     ...effectiveDocSummary(row.summary == null ? null : String(row.summary), String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
+    latestRevisionId: row.latest_revision_id == null ? null : String(row.latest_revision_id),
     createdAt: nullableRecordIso(row.created_at)!,
     updatedAt: nullableRecordIso(row.updated_at)!,
     deletedAt: nullableRecordIso(row.deleted_at),
