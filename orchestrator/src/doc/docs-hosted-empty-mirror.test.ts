@@ -8,6 +8,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { compilePack } from '../canon/canon.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
@@ -244,6 +245,74 @@ test('doc set updates the hosted row when the local mirror is empty', async () =
   expect(requests[0]).toEqual(
     expect.objectContaining({ id: docId, expectedRevision: revisionId, op: 'set' }),
   )
+})
+
+test('doc set pack budget includes hosted docs when the local mirror is empty', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const project = `hosted-write-budget-${newRecordId()}`
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: process.cwd(),
+    settings: { space: 'personal-space' },
+  })
+  const queries: Array<Record<string, unknown>> = []
+  installRecordApiClient(
+    hostedClient({
+      whoami: async () => ({
+        user: { id: 'user-a', name: 'Fixture', email: 'fixture@example.test' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          {
+            space_id: 'personal-space',
+            slug: 'personal-space',
+            permission: 'write',
+            role: 'owner',
+          },
+        ],
+      }),
+      listDocs: async (query) => {
+        queries.push(query)
+        return {
+          items:
+            query.scope === 'job' && query.subject === 'file-question' && !query.slug
+              ? [
+                  hostedRow({
+                    scope: 'job',
+                    subject: 'file-question',
+                    slug: 'hosted-pack-base',
+                    title: 'Hosted pack base',
+                    body: 'Hosted content. '.repeat(200),
+                    delivery: 'inject',
+                  }),
+                ]
+              : [],
+          nextCursor: null,
+        }
+      },
+    }),
+  )
+  const ceiling = JOBS['file-question']!.packBytes
+  JOBS['file-question']!.packBytes = 1_000
+  try {
+    await expect(
+      setDoc({
+        scope: 'job',
+        subject: 'file-question',
+        slug: 'proposed',
+        title: 'Proposed',
+        body: 'Small proposed content.',
+        delivery: 'inject',
+        reason: 'test hosted pack budget',
+      }),
+    ).rejects.toThrow(
+      new RegExp(`canon pack file-question/${project} would be \\d+ bytes; ceiling is 1000 bytes`),
+    )
+    expect(queries.filter((query) => query.status === 'current')).toHaveLength(5)
+  } finally {
+    JOBS['file-question']!.packBytes = ceiling
+  }
 })
 
 test('doc status updates the hosted row when the local mirror is empty', async () => {

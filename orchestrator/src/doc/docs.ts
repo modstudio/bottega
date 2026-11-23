@@ -50,6 +50,10 @@ import {
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
+import {
+  authoritativePackBudgetProjection,
+  type PackBudgetProjection,
+} from './doc-pack-budget-read.ts'
 import { assertDocProse } from './doc-prose.ts'
 import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
@@ -130,14 +134,6 @@ async function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): Promi
   return warnings
 }
 
-function injectedDocsForPack(job: string, projectName: string | null): Doc[] {
-  return [
-    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
-    ...listDocs({ scope: 'job', subject: job, status: 'current' }),
-    ...(projectName ? listDocs({ scope: 'project', subject: projectName, status: 'current' }) : []),
-  ].filter((doc) => isDocInjectedForRun(doc, job, projectName))
-}
-
 async function authoritativeInjectedDocsForPack(
   job: string,
   projectName: string | null,
@@ -165,7 +161,7 @@ type PackSizeInput = {
   forceInject?: string
 }
 
-type PackProject = { name: string; path: string }
+type PackProject = { name: string; path: string; subject: string | null }
 
 function assertIndividualInjectSize(input: PackSizeInput): void {
   if (input.delivery !== 'inject') return
@@ -190,14 +186,20 @@ function affectedPackProjects(input: PackSizeInput, projectRows: PackProject[]):
   if (input.scope === 'project') {
     return projectRows.filter((project) => project.name === input.subject)
   }
-  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
+  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd(), subject: null }]
 }
 
-function canonForPackWrite(input: PackSizeInput, projectName: string, identity: string) {
-  const globalCanon = listDocs({ scope: 'canon', subject: null, status: 'current' }).filter(
+function canonForPackWrite(
+  input: PackSizeInput,
+  projectName: string,
+  identity: string,
+  globalRows: Doc[],
+  projectRows: Doc[],
+) {
+  const globalCanon = globalRows.filter(
     (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
   )
-  const projectCanon = listDocs({ scope: 'canon', subject: projectName, status: 'current' }).filter(
+  const projectCanon = projectRows.filter(
     (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
   )
   if (input.scope !== 'canon') {
@@ -215,12 +217,23 @@ function packBudgetRefusalFor(
   input: PackSizeInput,
   project: PackProject,
   jobName: string,
+  projection: PackBudgetProjection,
 ): string | null {
   const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  const selected = injectedDocsForPack(jobName, project.name).filter(
-    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  const selected = [
+    ...projection.globalDocs,
+    ...(projection.jobDocs.get(jobName) ?? []),
+    ...(project.subject ? (projection.projectDocs.get(project.subject) ?? []) : []),
+  ]
+    .filter((doc) => isDocInjectedForRun(doc, jobName, project.subject))
+    .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
+  const canon = canonForPackWrite(
+    input,
+    project.name,
+    identity,
+    projection.globalCanon,
+    project.subject ? (projection.projectCanon.get(project.subject) ?? []) : [],
   )
-  const canon = canonForPackWrite(input, project.name, identity)
   return injectPackBudgetRefusal({
     job: jobName,
     project: project.name,
@@ -240,7 +253,7 @@ function packBudgetRefusalFor(
   })
 }
 
-function assertPackSize(input: PackSizeInput): void {
+async function assertPackSize(input: PackSizeInput): Promise<void> {
   assertIndividualInjectSize(input)
   const measuresPack =
     input.scope === 'canon' ||
@@ -250,11 +263,18 @@ function assertPackSize(input: PackSizeInput): void {
     name: string
     path: string
   }[]
-  const projectsToCheck = affectedPackProjects(input, projectRows)
+  const projectsToCheck = affectedPackProjects(
+    input,
+    projectRows.map((project) => ({ ...project, subject: project.name })),
+  )
   const jobsToCheck = input.scope === 'job' && input.subject ? [input.subject] : Object.keys(JOBS)
+  const projection = await authoritativePackBudgetProjection(
+    projectsToCheck.flatMap(({ subject }) => (subject ? [subject] : [])),
+    jobsToCheck,
+  )
   for (const project of projectsToCheck) {
     for (const jobName of jobsToCheck) {
-      const refusal = packBudgetRefusalFor(input, project, jobName)
+      const refusal = packBudgetRefusalFor(input, project, jobName, projection)
       if (refusal) throw new Error(refusal)
     }
   }
@@ -374,7 +394,7 @@ async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<strin
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
   if (settings) throw new Error(settings)
-  assertPackSize(input)
+  await assertPackSize(input)
   return assertCanonWriteAllowed(input)
 }
 

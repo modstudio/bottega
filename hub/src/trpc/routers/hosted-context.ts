@@ -82,7 +82,7 @@ async function allPersonalDocs(client: RecordClient, input: { scope: string; sub
   return { personal, rows }
 }
 
-async function canonRow(_client: RecordClient, row: RecordDoc, _destinationSpaceId?: string) {
+function canonRow(row: RecordDoc) {
   return {
     id: row.id,
     scope: row.scope,
@@ -325,15 +325,15 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     userCanon: t.router({
       list: t.procedure.query(async ({ ctx }) => {
         const client = clientFor(ctx)
-        const { rows, spaceId } = await userCanonRows(client)
-        return Promise.all(rows.map((row) => canonRow(client, row, spaceId)))
+        const { rows } = await userCanonRows(client)
+        return rows.map(canonRow)
       }),
       get: t.procedure.input(z.object({ slug })).query(async ({ ctx, input }) => {
         const client = clientFor(ctx)
-        const { rows, spaceId } = await userCanonRows(client)
+        const { rows } = await userCanonRows(client)
         const row = rows.find((candidate) => candidate.slug === input.slug)
         if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'canon doc not found' })
-        return canonRow(client, row, spaceId)
+        return canonRow(row)
       }),
       set: t.procedure
         .input(
@@ -363,7 +363,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             },
             spaceId,
           )
-          return canonRow(client, await client.doc(written.id, undefined, spaceId), spaceId)
+          return canonRow(await client.doc(written.id, undefined, spaceId))
         }),
       remove: t.procedure
         .input(z.object({ slug, reason, expectedRevision }))

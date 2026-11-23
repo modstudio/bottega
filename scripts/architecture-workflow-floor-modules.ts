@@ -465,7 +465,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../branch/task-key-pull-request.ts',
     '../database/database-location.ts',
     '../database/db.ts',
-    '../doc/doc-reference-read.ts',
+    '../doc/doc-authoritative-read.ts',
     '../git/commit-resolution.ts',
     '../gate/gate-identifier.ts',
     '../project/projects.ts',
