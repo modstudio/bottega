@@ -376,6 +376,8 @@ jobs:
         run: bun install --silent
       - name: Allow unprivileged user namespaces for the sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install sandbox host packages
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap socat ripgrep
       - name: Prove confined checkout ask-server tools
         run: bun run --cwd orchestrator check:checkout-cli-confinement
       - name: Prove source-launch mutation fails
