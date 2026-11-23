@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
@@ -13,14 +13,23 @@ import {
 } from './record-client-contract.ts'
 
 const urlKey = 'BOTTEGA_RECORD_API_URL'
+const originalConsoleError = console.error
 let previousUrl: string | undefined
+let consoleErrorSpy: ReturnType<typeof spyOn>
 
 beforeAll(() => {
   previousUrl = Reflect.get(process.env, urlKey) as string | undefined
   Reflect.set(process.env, urlKey, CONTRACT_ORIGIN)
+  // The contract records idle fixture 500s whose API error handling would otherwise print traces.
+  consoleErrorSpy = spyOn(console, 'error').mockImplementation((...args) => {
+    const [error] = args
+    if (error instanceof Error && error.message.includes('unused in this fixture')) return
+    originalConsoleError(...args)
+  })
 })
 
 afterAll(() => {
+  consoleErrorSpy.mockRestore()
   if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
   else Reflect.set(process.env, urlKey, previousUrl)
 })
