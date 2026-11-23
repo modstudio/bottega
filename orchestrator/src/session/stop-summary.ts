@@ -156,7 +156,7 @@ export async function sessionStopSummary(
     )
     .all(session)
   const reviews = classifyStopSummaryReviews(reviewRows)
-  const reviewVerdictLines = sessionReviewVerdictLines(session, cursors, database, {
+  const reviewVerdictLines = await sessionReviewVerdictLines(session, cursors, database, {
     gather: options.reviewVerdictGatherer,
   })
   const sessionLandings = activeLandings(database, session)

@@ -565,7 +565,7 @@ function postFixFixture(options: {
   return { repo, branch, runId, reviewed, mergeTip }
 }
 
-test('admission follows the exhausted round budget and requires an architect read on the tip', () => {
+test('admission follows the exhausted round budget and requires an architect read on the tip', async () => {
   const { repo, branch } = postFixFixture({
     shiftReviewedPath: true,
     fixPath: 'critical/fix.ts',
@@ -580,7 +580,7 @@ test('admission follows the exhausted round budget and requires an architect rea
       admissionRequired: { lenses: ['safety'] },
     })
 
-    const withoutRead = admissionDecision(change, db())
+    const withoutRead = await admissionDecision(change, db())
     if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
@@ -607,13 +607,13 @@ test('admission follows the exhausted round budget and requires an architect rea
         serializePathSet(change.group.pathSet),
       )
 
-    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
 })
 
-test('the architect read credits a never-reviewed tier-three path lens at the ceiling', () => {
+test('the architect read credits a never-reviewed tier-three path lens at the ceiling', async () => {
   const { repo, branch } = postFixFixture({
     fixPath: 'critical/fix.ts',
     priorRounds: 2,
@@ -626,7 +626,7 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
       admissionRequired: { lenses: ['correctness'] },
       completedLensesOnBranch: ['correctness'],
     })
-    const withoutRead = admissionDecision(change, db())
+    const withoutRead = await admissionDecision(change, db())
     if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
@@ -651,13 +651,13 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
 })
 
-test('the architect read credits an owed second opinion at the ceiling', () => {
+test('the architect read credits an owed second opinion at the ceiling', async () => {
   const { repo, branch } = postFixFixture({
     fixPath: 'critical/fix.ts',
     priorRounds: 2,
@@ -671,7 +671,7 @@ test('the architect read credits an owed second opinion at the ceiling', () => {
       admissionRequired: { lenses: ['correctness'] },
       completedLensesOnBranch: ['correctness'],
     })
-    const withoutRead = admissionDecision(change, db())
+    const withoutRead = await admissionDecision(change, db())
     if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
@@ -696,7 +696,7 @@ test('the architect read credits an owed second opinion at the ceiling', () => {
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
+    expect(await admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

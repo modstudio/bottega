@@ -173,14 +173,14 @@ test('session summary renders line one in the cached display time zone', async (
   }
 })
 
-test('an open cursor branch with a missing ref keeps its verdict failure line', () => {
+test('an open cursor branch with a missing ref keeps its verdict failure line', async () => {
   const missingCursor = {
     ...cursor,
     project: PLATFORM_NAME,
     workflow_key: 'DEV-2304',
     args: JSON.stringify({ branch: 'DEV-2304-gone' }),
   } as WorkflowCursorListRow
-  const lines = sessionReviewVerdictLines('missing-cursor-branch-session', [missingCursor], db(), {
+  const lines = await sessionReviewVerdictLines('missing-cursor-branch-session', [missingCursor], db(), {
     gather: (branch) => ({
       branch: branch.branch,
       taskKey: branch.taskKey,

@@ -31,7 +31,7 @@ type RootRunBranchRow = Omit<InFlightBranch, 'taskKey'> & {
 export type SessionReviewVerdictGatherer = (
   branch: InFlightBranch,
   database: Database,
-) => StopSummaryReviewVerdictFact | null
+) => StopSummaryReviewVerdictFact | null | Promise<StopSummaryReviewVerdictFact | null>
 
 type LandedBranchIdentity = {
   head: string | null
@@ -163,10 +163,10 @@ function branchLandingIdentity(
   )
 }
 
-function gatherBranchReviewVerdict(
+async function gatherBranchReviewVerdict(
   branch: InFlightBranch,
   database: Database,
-): StopSummaryReviewVerdictFact | null {
+): Promise<StopSummaryReviewVerdictFact | null> {
   try {
     const project = registeredBranchProject(branch, database)
     const trunk = project.settings.trunk?.trim()
@@ -185,7 +185,7 @@ function gatherBranchReviewVerdict(
     const headCommit = head.stdout.toString().trim()
     const base = resolveReviewBase(cwd, headCommit, trunk)
     if (!base) throw new Error(`cannot find merge-base with trunk ${trunk}`)
-    const result = reviewFunnelVerdictForChange({
+    const result = await reviewFunnelVerdictForChange({
       database,
       cwd,
       base,
@@ -200,7 +200,7 @@ function gatherBranchReviewVerdict(
   }
 }
 
-export function sessionReviewVerdictLines(
+export async function sessionReviewVerdictLines(
   session: string,
   cursors: readonly WorkflowCursorListRow[],
   database: Database,
@@ -208,11 +208,11 @@ export function sessionReviewVerdictLines(
     gather?: SessionReviewVerdictGatherer
     landingIdentity?: SessionReviewBranchLandingIdentity
   } = {},
-): string[] {
+): Promise<string[]> {
   const gather = options.gather ?? gatherBranchReviewVerdict
   const landingIdentity = options.landingIdentity ?? branchLandingIdentity
-  return stopSummaryReviewVerdictLines(
-    sessionInFlightReviewBranches(session, cursors, database).flatMap((branch) => {
+  const facts: StopSummaryReviewVerdictFact[] = []
+  for (const branch of sessionInFlightReviewBranches(session, cursors, database)) {
       const landedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
       if (landedTip !== null) {
         try {
@@ -222,13 +222,13 @@ export function sessionReviewVerdictLines(
               tip: landedTip,
             })
           )
-            return []
+            continue
         } catch {
           // Gathering owns the user-visible remedy when the git comparison fails.
         }
       }
-      const fact = gather(branch, database)
-      return fact === null ? [] : [fact]
-    }),
-  )
+      const fact = await gather(branch, database)
+      if (fact !== null) facts.push(fact)
+  }
+  return stopSummaryReviewVerdictLines(facts)
 }

@@ -459,7 +459,7 @@ export async function contextBriefWithCursors(
       }
     }),
     claims: inFlight.claims,
-    reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
+    reviewVerdictLines: await sessionReviewVerdictLines(session, cursors, database),
     waiting: {
       boardRequests,
       questions: questionCounts,

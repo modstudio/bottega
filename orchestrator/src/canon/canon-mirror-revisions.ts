@@ -12,34 +12,48 @@ type CanonRevisionRow = {
   status: string
 }
 
-/** Project canon wins over shared canon; revision number decides within that subject. */
-async function selectCanonRevisionRow(
-  project: string,
-  path: string,
-): Promise<CanonRevisionRow | null> {
-  const rows = await readDocs({ scope: 'canon', slug: path })
-  const row = rows.find(({ subject }) => subject === project) ?? rows.find(({ subject }) => subject === null)
-  if (!row?.revision) return null
-  const revision = await readDocRevision(row.revision)
-  return revision
-    ? {
-        record_id: revision.record_id,
-        op: revision.op,
-        reason: revision.reason,
-        at: revision.at,
-        status: revision.status,
-      }
-    : null
+export type CanonMirrorRevisionSnapshot = {
+  project: string
+  projectRows: Map<string, CanonRevisionRow>
+  globalRows: Map<string, CanonRevisionRow>
+  newestAt: string | null
 }
 
-async function newestCanonRevisionAt(project: string): Promise<string | null> {
-  const rows = await readDocs({ scope: 'canon', status: 'current' })
+export async function canonMirrorRevisionSnapshot(
+  project: string,
+): Promise<CanonMirrorRevisionSnapshot> {
+  const rows = await readDocs({ scope: 'canon' })
   const revisions = await Promise.all(
     rows
       .filter(({ subject, revision }) => revision && (subject === project || subject === null))
-      .map(({ revision }) => readDocRevision(revision!)),
+      .map(async (doc) => ({ doc, revision: await readDocRevision(doc.revision!) })),
   )
-  return revisions.flatMap((revision) => (revision ? [revision.at] : [])).sort().at(-1) ?? null
+  const projectRows = new Map<string, CanonRevisionRow>()
+  const globalRows = new Map<string, CanonRevisionRow>()
+  for (const { doc, revision } of revisions) {
+    if (!revision) continue
+    const row = {
+      record_id: revision.record_id,
+      op: revision.op,
+      reason: revision.reason,
+      at: revision.at,
+      status: revision.status,
+    }
+    ;(doc.subject === project ? projectRows : globalRows).set(doc.slug, row)
+  }
+  return {
+    project,
+    projectRows,
+    globalRows,
+    newestAt: [...projectRows.values(), ...globalRows.values()].map(({ at }) => at).sort().at(-1) ?? null,
+  }
+}
+
+function selectCanonRevisionRow(
+  snapshot: CanonMirrorRevisionSnapshot,
+  path: string,
+): CanonRevisionRow | null {
+  return snapshot.projectRows.get(path) ?? snapshot.globalRows.get(path) ?? null
 }
 
 export type MirrorRevision = { path: string; revision: string; op: string; reason: string }
@@ -54,33 +68,33 @@ export function canonMirrorCommitBody(rows: MirrorRevision[]): string {
     .join('\n\n')
 }
 
-export async function revisionRows(
-  project: string,
+export function revisionRows(
+  snapshot: CanonMirrorRevisionSnapshot,
   paths: string[],
-): Promise<MirrorRevision[]> {
-  return Promise.all(paths.map(async (path) => {
-    const row = await selectCanonRevisionRow(project, path)
+): MirrorRevision[] {
+  return paths.map((path) => {
+    const row = selectCanonRevisionRow(snapshot, path)
     return {
       path,
       revision: row?.record_id ?? 'unrecorded',
       op: row?.op ?? 'link',
       reason: row?.reason ?? 'generated canon link',
     }
-  }))
+  })
 }
 
-export async function assertHydrationDoesNotRevertBranchCanon(input: {
+export function assertHydrationDoesNotRevertBranchCanon(input: {
   project: string
+  revisions: CanonMirrorRevisionSnapshot
   base: string
   plan: HydrationPlan
   rows: Array<{ slug: string; subject: string | null }>
   lastPathCommit(path: string): { sha: string; at: string } | null
-}): Promise<void> {
-  const newestCanonAt = await newestCanonRevisionAt(input.project)
+}): void {
   for (const write of input.plan.writes) {
     const row = input.rows.find((candidate) => candidate.slug === write.path)
     if (!row) continue // generated output has no independently adoptable store slug
-    const history = await selectCanonRevisionRow(input.project, write.path)
+    const history = selectCanonRevisionRow(input.revisions, write.path)
     const refusal = canonMirrorRevertRefusal({
       project: input.project,
       path: write.path,
@@ -88,13 +102,13 @@ export async function assertHydrationDoesNotRevertBranchCanon(input: {
       commit: input.lastPathCommit(write.path),
       rowRevisionAt: history?.at ?? null,
       removalAt: null,
-      newestCanonAt,
+      newestCanonAt: input.revisions.newestAt,
     })
     if (refusal) throw new Error(refusal)
   }
   for (const path of input.plan.deletes) {
     if (isGeneratedCanonOutputPath(path)) continue
-    const history = await selectCanonRevisionRow(input.project, path)
+    const history = selectCanonRevisionRow(input.revisions, path)
     const refusal = canonMirrorRevertRefusal({
       project: input.project,
       path,
@@ -103,7 +117,7 @@ export async function assertHydrationDoesNotRevertBranchCanon(input: {
       rowRevisionAt: history?.at ?? null,
       removalAt:
         history && (history.op === 'delete' || history.status !== 'current') ? history.at : null,
-      newestCanonAt,
+      newestCanonAt: input.revisions.newestAt,
     })
     if (refusal) throw new Error(refusal)
   }

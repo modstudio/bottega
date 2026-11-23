@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { reviewFunnelVerdictForChange } from './review-funnel-verdict-service.ts'
 
-test('an empty change returns before gathering funnel facts', () => {
+test('an empty change returns before gathering funnel facts', async () => {
   const commit = '0123456789abcdef'
   expect(
-    reviewFunnelVerdictForChange({
+    await reviewFunnelVerdictForChange({
       head: commit,
       base: commit,
       database: new Proxy(

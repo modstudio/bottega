@@ -15,11 +15,11 @@ import {
   type ReviewOwedFloorDecision,
 } from './workflow-review-owed-decision.ts'
 
-function gatherReviewOwedFloor(
+async function gatherReviewOwedFloor(
   projectName: string,
   args: Record<string, string>,
   database: Database,
-): ReviewOwedFloorDecision {
+): Promise<ReviewOwedFloorDecision> {
   const resolved = resolveBranchUnderReview(projectName, args, database)
   if (resolved.action === 'refuse') {
     if (resolved.kind !== 'tip') return { action: 'refuse', message: resolved.condition }
@@ -46,7 +46,7 @@ function gatherReviewOwedFloor(
       action: 'refuse',
       message: `floor review-owed cannot find a merge-base between branch ${branch} and trunk ${trunk}; pass \`--arg worktree=<path>\` naming an up-to-date checkout, or fetch ${trunk}`,
     }
-  const result = reviewFunnelVerdictForChange({
+  const result = await reviewFunnelVerdictForChange({
     database,
     cwd,
     base,
@@ -75,4 +75,4 @@ function gatherReviewOwedFloor(
 export const productionReviewOwedFloor = (
   project: string,
   args: Record<string, string>,
-): ReviewOwedFloorDecision => gatherReviewOwedFloor(project, args, db())
+): Promise<ReviewOwedFloorDecision> => gatherReviewOwedFloor(project, args, db())

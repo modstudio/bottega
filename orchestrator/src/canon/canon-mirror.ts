@@ -61,7 +61,9 @@ import { appendMirrorFailure, mirrorFailureText } from './canon-mirror-failure.t
 import { decideLeftoverDisposition, leftoverDispositionMessage } from './canon-mirror-leftover.ts'
 import {
   assertHydrationDoesNotRevertBranchCanon,
+  canonMirrorRevisionSnapshot,
   canonMirrorCommitBody,
+  type CanonMirrorRevisionSnapshot,
   revisionRows,
 } from './canon-mirror-revisions.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
@@ -622,20 +624,22 @@ type MirrorPublicationInput = {
   shipLevel: string
   execution: MirrorExecution
   releasePreparation: CloseOutPreparation
+  rows: Awaited<ReturnType<typeof storedRepositoryCanonRows>>
+  revisions: CanonMirrorRevisionSnapshot
 }
 
 function prepareMirrorPublication(input: MirrorPublicationInput):
   | { result: MirrorResult }
   | {
       base: string
-      rows: ReturnType<typeof storedRepositoryCanonRows>
+      rows: Awaited<ReturnType<typeof storedRepositoryCanonRows>>
       plan: ReturnType<typeof planHydration>
     } {
   const { project, dryRun, port, runId, trunk, path, started, execution } = input
   port.fetch(project)
   const base = port.refTip(project, `origin/${trunk}`)
   const landed = collectCanonTreeAtRef(project.path, base)
-  const rows = storedRepositoryCanonRows(project.name)
+  const { rows } = input
   const plan = planHydration({ rows, tree: landed.tree })
   const drift = hydrationDrift(plan)
   const leftoverReport = releaseOwnedLeftover(
@@ -682,6 +686,7 @@ function performMirrorPublication(input: MirrorPublicationInput): MirrorResult {
   )
   assertHydrationDoesNotRevertBranchCanon({
     project: project.name,
+    revisions: input.revisions,
     base,
     plan,
     rows,
@@ -725,7 +730,7 @@ function performMirrorPublication(input: MirrorPublicationInput): MirrorResult {
   const commit = port.commit(
     path,
     `${key} sync canon from the store`,
-    canonMirrorCommitBody(revisionRows(project.name, changed)),
+    canonMirrorCommitBody(revisionRows(input.revisions, changed)),
   )
   execution.commit = commit
   port.push(path, branch, remoteTip === null ? null : previous!.tip)
@@ -946,6 +951,18 @@ async function mirrorProject(
           ['ship'],
         )
     if (!dryRun) await port.admitPullRequest(project, branch)
+    let rows: Awaited<ReturnType<typeof storedRepositoryCanonRows>>
+    let revisions: CanonMirrorRevisionSnapshot
+    try {
+      ;[rows, revisions] = await Promise.all([
+        storedRepositoryCanonRows(project.name),
+        canonMirrorRevisionSnapshot(project.name),
+      ])
+    } catch (cause) {
+      throw new Error(
+        `refusing canon mirror before taking the worktree lock: authoritative canon could not be read: ${String((cause as Error).message ?? cause)}; remedy: verify record access and retry canon mirror`,
+      )
+    }
     const lockedOutcome = runMirrorLocked({
       project,
       dryRun,
@@ -959,6 +976,8 @@ async function mirrorProject(
       shipLevel: autonomy?.stages?.ship?.value ?? 'ask',
       execution,
       releasePreparation: preparedRelease,
+      rows,
+      revisions,
     })
     return await finishMirrorQuestionCleanup(
       runId,

@@ -798,7 +798,7 @@ export async function monitor(
     })
 
   for (const project of projects().filter(isProjectRepository)) {
-    conditions.push(...observeProjectCanonDrift(project))
+    conditions.push(...(await observeProjectCanonDrift(project)))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     const releaseLive = observeProjectReleaseLive(project)
     conditions.push(...releaseLive.conditions)

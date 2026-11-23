@@ -39,7 +39,8 @@ import {
   recordReviewFunnelDecision,
 } from '../review-funnel/review-funnel-decision-log.ts'
 import { budgetedRoundApplicabilityForChange } from '../review-funnel/review-funnel-plan-service.ts'
-import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
+import { activeReviewFunnelPolicy, type VersionedReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
+import { reviewFunnelVerdictForChangeWithPolicy } from '../review-funnel/review-funnel-verdict-service.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -219,8 +220,12 @@ function funnelChange(change: PullRequestChange, database: Database) {
   }
 }
 
-function funnelVerdict(change: PullRequestChange, database: Database) {
-  return reviewFunnelVerdictForChange(funnelChange(change, database))
+function funnelVerdict(
+  change: PullRequestChange,
+  database: Database,
+  policy: VersionedReviewFunnelPolicy,
+) {
+  return reviewFunnelVerdictForChangeWithPolicy(funnelChange(change, database), policy)
 }
 
 function emptyAdmission(
@@ -243,12 +248,13 @@ export function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): 
 }
 
 /** The one admission evaluation used by create, merge, and pre-push. */
-export function admissionDecision(
+function admissionDecisionWithPolicy(
   change: PullRequestChange,
   database: Database,
+  policy: VersionedReviewFunnelPolicy,
   surface: Extract<ReviewFunnelDecisionSurface, 'admission' | 'pre-push'> = 'admission',
 ): PullRequestAdmission {
-  const funnel = funnelVerdict(change, database)
+  const funnel = funnelVerdict(change, database, policy)
   if (funnel.kind === 'empty') return emptyAdmission(change, funnel)
   const replay = replayContext(change)
   const triage = triageDecision(change, database, replay)
@@ -262,6 +268,14 @@ export function admissionDecision(
     verdict,
   })
   return { kind: 'measured', ...decision, verdict, triage }
+}
+
+export async function admissionDecision(
+  change: PullRequestChange,
+  database: Database,
+  surface: Extract<ReviewFunnelDecisionSurface, 'admission' | 'pre-push'> = 'admission',
+): Promise<PullRequestAdmission> {
+  return admissionDecisionWithPolicy(change, database, await activeReviewFunnelPolicy(), surface)
 }
 
 export function emptyCreateRefusal(change: PullRequestChange, admission: EmptyAdmission): string {
@@ -658,19 +672,20 @@ type CreatePullRequestOptions = {
   fromOperator?: boolean
 }
 
-function createPullRequestAdmittedChange(
+async function createPullRequestAdmittedChange(
   args: string[],
   options: CreatePullRequestOptions,
   cwd: string,
   change: PullRequestChange,
-): { output: string; overrideId: string | null } {
+): Promise<{ output: string; overrideId: string | null }> {
   const trunk = change.project.settings.trunk!.trim()
   const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
+  const policy = await activeReviewFunnelPolicy()
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database, replayContext(change))
-    const beforeOverride = funnelVerdict(change, database)
+    const beforeOverride = funnelVerdict(change, database, policy)
     if (beforeOverride.kind === 'empty') {
       throw new Error(emptyCreateRefusal(change, emptyAdmission(change, beforeOverride)))
     }
@@ -685,7 +700,7 @@ function createPullRequestAdmittedChange(
       },
       database,
     )
-    const checkedAdmission = admissionDecision(change, database)
+    const checkedAdmission = admissionDecisionWithPolicy(change, database, policy)
     if (checkedAdmission.kind === 'empty') {
       throw new Error(emptyCreateRefusal(change, checkedAdmission))
     }
@@ -764,11 +779,11 @@ function pushPullRequestBranch(cwd: string, branch: string): void {
   )
 }
 
-export function createPullRequestAdmitted(
+export async function createPullRequestAdmitted(
   args: string[],
   options: CreatePullRequestOptions,
   cwd = process.cwd(),
-): { output: string; overrideId: string | null } {
+): Promise<{ output: string; overrideId: string | null }> {
   return createPullRequestAdmittedChange(args, options, cwd, preparePullRequestCreate(options, cwd))
 }
 
@@ -834,7 +849,11 @@ export function emptyPrePushRefusal(
   }
 }
 
-export function checkPushedTip(cwd: string, sha: string, remoteRef: string): PushedTipCheck {
+export async function checkPushedTip(
+  cwd: string,
+  sha: string,
+  remoteRef: string,
+): Promise<PushedTipCheck> {
   try {
     const database = db()
     const project = projectAt(cwd, database)
@@ -858,7 +877,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     }
     const tip = git(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
     const change = resolvePullRequestChange(cwd, tip, database, git, branch)
-    const checked = admissionDecision(change, database, 'pre-push')
+    const checked = await admissionDecision(change, database, 'pre-push')
     if (checked.kind === 'empty') return emptyPrePushRefusal(change, checked)
     const decision = checked
     const policy = decidePrePush({

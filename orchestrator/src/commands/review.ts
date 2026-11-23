@@ -96,10 +96,14 @@ const reviewPresentation = {
   log,
 }
 
-function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPresentation): void {
+async function tierReviewCliCommand(
+  argv: string[],
+  flags: CliFlags,
+  { log }: ReviewPresentation,
+): Promise<void> {
   const value = argv[2]
   if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
-  const result = reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
+  const result = await reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
   const json = flags.has('json')
   const verdict = result.output.funnel_verdict
   const creditsCeilingWork =

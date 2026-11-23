@@ -228,14 +228,14 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   }
 }
 
-function reviewTierOutputForTarget({
+async function reviewTierOutputForTarget({
   repo,
   from,
   to,
   branch,
   project,
 }: ReturnType<typeof resolveTierTarget>) {
-  const funnelResult = reviewFunnelVerdictForChange({
+  const funnelResult = await reviewFunnelVerdictForChange({
     database: db(),
     cwd: repo,
     base: from,
@@ -307,7 +307,7 @@ function reviewTierOutputForTarget({
 }
 
 function printReviewRoundStatus(
-  output: ReturnType<typeof reviewTierOutputForTarget>,
+  output: Awaited<ReturnType<typeof reviewTierOutputForTarget>>,
   log: (...values: unknown[]) => void,
 ): void {
   if (output.post_fix.kind === 'comparison-failed') {
@@ -340,7 +340,7 @@ function printReviewRoundStatus(
 }
 
 function printPostFixTriggers(
-  postFix: Extract<ReturnType<typeof reviewTierOutputForTarget>['post_fix'], { kind: 're-lens' }>,
+  postFix: Extract<Awaited<ReturnType<typeof reviewTierOutputForTarget>>['post_fix'], { kind: 're-lens' }>,
   lenses: readonly string[],
   secondOpinion: string | null | undefined,
   log: (...values: unknown[]) => void,
@@ -357,7 +357,7 @@ function printPostFixTriggers(
 }
 
 function printCeilingArchitectCredit(
-  output: ReturnType<typeof reviewTierOutputForTarget>,
+  output: Awaited<ReturnType<typeof reviewTierOutputForTarget>>,
   guidance: string | null,
   log: (...values: unknown[]) => void,
 ): boolean {
@@ -388,7 +388,7 @@ function printCeilingArchitectCredit(
 }
 
 export function printReviewTier(
-  output: ReturnType<typeof reviewTierOutputForTarget>,
+  output: Awaited<ReturnType<typeof reviewTierOutputForTarget>>,
   json: boolean,
   ceilingGuidance: string | null,
   log: (...values: unknown[]) => void,
@@ -439,7 +439,7 @@ export function printReviewTier(
 }
 
 function reviewTierLensLine(
-  lens: ReturnType<typeof reviewTierOutputForTarget>['lens_profiles'][number],
+  lens: Awaited<ReturnType<typeof reviewTierOutputForTarget>>['lens_profiles'][number],
   sources: string,
 ): string {
   if (lens.reason?.startsWith('decision-conformance not admitted:')) return lens.reason
@@ -547,13 +547,13 @@ export async function yieldReviewCommand(
   }
 }
 
-export function reviewTierCommandOutput(value: string, cwd: string) {
+export async function reviewTierCommandOutput(value: string, cwd: string) {
   const target = resolveTierTarget(value, cwd)
   return {
     cwd: target.project.path,
     branch: target.branch,
     tip: target.to,
-    output: reviewTierOutputForTarget(target),
+    output: await reviewTierOutputForTarget(target),
   }
 }
 

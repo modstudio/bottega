@@ -525,7 +525,7 @@ describe('scoped operator docs', () => {
 
     expect(repoRootForDoc({ scope: 'job', subject: 'understand' })).toBeNull()
     expect(
-      allInjectChecks().find(({ doc }) => doc.slug === 'distribution-canon-check')?.findings,
+      (await allInjectChecks()).find(({ doc }) => doc.slug === 'distribution-canon-check')?.findings,
     ).toEqual([
       {
         kind: 'unchecked',
@@ -750,13 +750,11 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {
+  test('canon check keeps its exit-zero JSON contract for a missing cwd', async () => {
     const missing = join(dir, 'numeric-missing-cwd')
-    expect(
-      findingsForPack(compilePack({ job: 'understand', cwd: missing })).flatMap(
-        (row) => row.findings,
-      ),
-    ).toEqual([])
+    const pack = await compilePack({ job: 'understand', cwd: missing })
+    const findings = await findingsForPack(pack)
+    expect(findings.flatMap((row) => row.findings)).toEqual([])
     expect(inspectNumericLiterals(missing)).toEqual({
       numericLiterals: [],
       canonFiles: { read: [], missing: [] },

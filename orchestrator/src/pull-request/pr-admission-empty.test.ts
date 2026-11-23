@@ -20,8 +20,8 @@ function emptyChange(): PullRequestChange {
   } as PullRequestChange
 }
 
-function emptyAdmissionForTest(change: PullRequestChange) {
-  const admission = admissionDecision(
+async function emptyAdmissionForTest(change: PullRequestChange) {
+  const admission = await admissionDecision(
     change,
     new Proxy(
       {},
@@ -36,16 +36,16 @@ function emptyAdmissionForTest(change: PullRequestChange) {
   return admission
 }
 
-test('create refuses an empty admission with its own remedy', () => {
+test('create refuses an empty admission with its own remedy', async () => {
   const change = emptyChange()
-  expect(emptyCreateRefusal(change, emptyAdmissionForTest(change))).toBe(
+  expect(emptyCreateRefusal(change, await emptyAdmissionForTest(change))).toBe(
     `refusing pull request for DEV-2350-empty at 0123456789abcdef: DEV-2350-empty resolves to 01234567, which is already on main, so there is no change to review; cleared by: commit the change to DEV-2350-empty, then ${PLATFORM_SLUG} pr create`,
   )
 })
 
-test('pre-push refuses an empty admission with its own remedy', () => {
+test('pre-push refuses an empty admission with its own remedy', async () => {
   const change = emptyChange()
-  expect(emptyPrePushRefusal(change, emptyAdmissionForTest(change))).toEqual({
+  expect(emptyPrePushRefusal(change, await emptyAdmissionForTest(change))).toEqual({
     known: true,
     complete: false,
     infrastructureError: null,
