@@ -277,6 +277,15 @@ async function probeConfinedTools(
   })
 }
 
+/**
+ * Bun words an unresolvable bare specifier as either "Cannot find package" or
+ * "Cannot find module", depending on which import it reaches first; a relative
+ * path is a different failure and never matches.
+ */
+function packageResolutionFailure(error: string): string | null {
+  return error.match(/Cannot find (?:package|module) '(?![./])[^']*'/)?.[0] ?? null
+}
+
 async function main(): Promise<void> {
   const checkout = resolve(import.meta.dir, '../..')
   try {
@@ -331,11 +340,12 @@ async function main(): Promise<void> {
     })
     if (!result.ok) {
       const error = result.error ?? 'unknown MCP probe failure'
-      if (forceSource && error.includes('Cannot find package')) {
-        console.log('forced source launch failed with the package-resolution error')
+      const resolution = packageResolutionFailure(error)
+      if (forceSource && resolution) {
+        console.log(`forced source launch failed with the package-resolution error: ${resolution}`)
         return
       }
-      if (!forceSource && error.includes('Cannot find package')) {
+      if (!forceSource && resolution) {
         throw new Error(`confined ask-server fell back to source: ${error}`)
       }
       throw new Error(`confined ask-server tools/list failed: ${error}`)
