@@ -1,14 +1,10 @@
 // concern: confined worker CLI record reads
 /** Routes the three run-scoped worker reads through the host ask server before stores load. */
 
-import { printShownTask, printShownTaskDocument } from '../hub/src/task-cli.ts'
-import { callWorkerRecordRead } from '../orchestrator/src/ask/worker-record-read-client.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { classifyCaller } from '../shared/caller-classification.ts'
 
 type JsonObject = Record<string, unknown>
-type ShownTask = Parameters<typeof printShownTask>[0]
-type ShownTaskDocument = Parameters<typeof printShownTaskDocument>[0]
 
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name)
@@ -94,6 +90,11 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
   )
     return null
   try {
+    const [{ printShownTask, printShownTaskDocument }, { callWorkerRecordRead }] =
+      await Promise.all([
+        import('../hub/src/task-cli.ts'),
+        import('../orchestrator/src/ask/worker-record-read-client.ts'),
+      ])
     const json = argv.includes('--json')
     const value = route === 'task' ? argv[2] : argv[3]
     if (!value || value.startsWith('-')) throw new Error(`missing ${route} reference`)
@@ -105,13 +106,14 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
         (await callWorkerRecordRead('read_task', { key: value })) as JsonObject,
       )
       if (json) console.log(JSON.stringify(shown))
-      else printShownTask(shown as ShownTask)
+      else printShownTask(shown as Parameters<typeof printShownTask>[0])
     } else if (route === 'document') {
       const document = normalizedDocument(
         (await callWorkerRecordRead('read_task_document', { reference: value })) as JsonObject,
       )
       if (json) console.log(JSON.stringify(document))
-      else printShownTaskDocument(document as ShownTaskDocument)
+      else
+        printShownTaskDocument(document as Parameters<typeof printShownTaskDocument>[0])
     } else {
       const id = value.replace(/^attached-text:/, '')
       const shown = (await callWorkerRecordRead('read_workflow_text', { id })) as JsonObject
