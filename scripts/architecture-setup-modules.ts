@@ -236,6 +236,22 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep install verification as a pure decision over adapter-supplied facts.',
   },
   {
+    name: 'setup-settings-fact-boundary',
+    file: 'orchestrator/src/setup/setup-settings-fact.ts',
+    allowed: [
+      '../../../shared/runtime-assets.ts',
+      '../record/record-session.ts',
+      '../settings/settings-files.ts',
+      '../settings/settings-machine-hooks.ts',
+      '../settings/settings.ts',
+      '../settings/settings-user-row.ts',
+      './setup-install-verify.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep setup settings facts independent of direct stores while sharing the settings option projection policy.',
+  },
+  {
     name: 'setup-install-verify-runtime-boundary',
     file: 'orchestrator/src/setup/setup-install-verify-runtime.ts',
     allowed: [
@@ -250,6 +266,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../settings/settings-files.ts',
       '../settings/settings-machine-apply.ts',
       '../settings/settings-machine-hooks.ts',
+      '../settings/settings-user-row.ts',
       './setup-install-verify.ts',
     ],
     typeOnlyAllowed: [],

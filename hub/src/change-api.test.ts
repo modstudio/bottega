@@ -35,6 +35,42 @@ const pushRequest = (body: unknown, space = 'space-b') =>
     body: JSON.stringify(body),
   })
 
+test('task-comment push leaves masking to the hosted writer', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const id = '01990000-0000-7000-8000-000000000101'
+  let storedBody = ''
+  const response = await changeApi(
+    pushRequest([
+      {
+        table: 'hub_task_comment',
+        id,
+        op: 'upsert',
+        row: {
+          id,
+          task_key: 'DEV-2578',
+          task_id: '01990000-0000-7000-8000-000000000102',
+          project_name: 'workshop',
+          body: `${generic} quoted ${secret}`,
+          created_at: '2026-11-21T20:00:00.000Z',
+          updated_at: '2026-11-21T20:00:00.000Z',
+          deleted_at: null,
+        },
+      },
+    ]),
+    config,
+    {
+      fetch: whoami,
+      push: async (_url, _identity, inputs) => {
+        storedBody = String((inputs[0] as { row: { body: string } }).row.body)
+        return [{ id, status: 'applied' }]
+      },
+    },
+  )
+  expect(response?.status).toBe(200)
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
+})
+
 test('legacy table-scoped change requests name the upgrade remedy', async () => {
   const response = await changeApi(request('after=0&tables=hub_task,hub_note'), config)
   expect(response?.status).toBe(410)

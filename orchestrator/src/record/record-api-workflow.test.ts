@@ -11,6 +11,8 @@ import {
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_PRESENCE_BATCH_MAX,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
+  TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
   type TaskFlowPresence,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -19,6 +21,8 @@ const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
+const SECRET = 'ghp_123456789012345678901234567890123456'
+const GENERIC = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
 
 const recordApiAppWith = (overrides: Record<string, unknown>) =>
   recordApiTestApp(
@@ -57,6 +61,114 @@ function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   return app
 }
 
+test('task-flow routes forward validated text to the masked writer', async () => {
+  let stored = ''
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      writeTaskFlow: async (_intent, input) => {
+        stored = (input as { rows: Array<{ body: string }> }).rows[0]!.body
+        return {}
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/task-flow/attach-text', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      requestId: KNOWN_ID,
+      rows: [
+        {
+          id: UNKNOWN_ID,
+          stageRecordId: PROJECT,
+          stepOrdinal: 1,
+          stepSlug: 'measure',
+          body: `${GENERIC} quoted ${SECRET}`,
+          createdAt: '2026-11-21T12:00:00.000Z',
+        },
+      ],
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(`${GENERIC} quoted ${SECRET}`)
+})
+
+test('workflow draft forwards validated fields to the masked writer', async () => {
+  let stored: Record<string, unknown> | null = null
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    api,
+    {
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async (input) => {
+        stored = input
+        return input
+      },
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await api.request('/v1/workflow-catalogue/draft', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      event: 'set',
+      definition: `${GENERIC} quoted ${SECRET}`,
+      author: `author ${SECRET}`,
+      reason: `reason ${SECRET}`,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toMatchObject({
+    definition: `${GENERIC} quoted ${SECRET}`,
+    author: `author ${SECRET}`,
+    reason: `reason ${SECRET}`,
+  })
+})
+
+test('workflow promote forwards its validated transition reason to the masked writer', async () => {
+  let reason = ''
+  const app = recordApiAppWith({
+    promoteWorkflow: async (input: { reason: string }) => {
+      reason = input.reason
+      return input
+    },
+  })
+  const response = await app.request('/v1/workflow-catalogue/promote', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      kind: 'workflow',
+      slug: 'mask-test',
+      n: 1,
+      expectedProductionVersion: null,
+      author: 'tester',
+      reason: SECRET,
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(reason).toBe(SECRET)
+})
+
 test('task-flow stage list validates combined filters and applies its default limit', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
@@ -70,6 +182,18 @@ test('task-flow stage list validates combined filters and applies its default li
     states: TASK_FLOW_OPEN_STAGE_STATES,
     limit: 200,
   })
+})
+
+test('task-flow stage list accepts summary only alongside a real filter', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const summaryOnly = await taskFlowApp(calls).request('/v1/task-flow/stages?view=summary')
+  expect(summaryOnly.status).toBe(400)
+  const filtered = await taskFlowApp(calls).request(
+    `/v1/task-flow/stages?projectId=${PROJECT}&view=summary`,
+  )
+  expect(filtered.status).toBe(200)
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ projectId: PROJECT, view: 'summary' })
 })
 
 test.each(['', '?number=2', '?taskKey=DEV-2234&limit=0', '?taskKey=DEV-2234&limit=1001'])(
@@ -219,6 +343,67 @@ test('destinationless task-flow presence reads every member space without write 
   expect(recorded).not.toHaveBeenCalled()
 })
 
+test('task-flow stage summaries validate bounds, scope the read, and omit missing ids and text bodies', async () => {
+  const calls: Array<{ stageIds: string[]; spaceId: string; uuidKeyedRead?: true }> = []
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    app,
+    {
+      readTaskFlowStageSummaries: async (input) => {
+        calls.push(input)
+        return {
+          items: input.stageIds.includes(KNOWN_ID)
+            ? [{ stage: { id: KNOWN_ID, number: 7, obligations: [] }, flow: { id: PROJECT } }]
+            : [],
+        }
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused',
+        userId: SPACE,
+        spaceId: SPACE,
+        spaceIds: [SPACE],
+        uuidKeyedRead: true,
+      }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await app.request('/v1/task-flow/stage-summaries', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stageIds: [KNOWN_ID, UNKNOWN_ID] }),
+  })
+  expect(response.status).toBe(200)
+  const body = (await response.json()) as { items: Array<{ stage: Record<string, unknown> }> }
+  expect(body.items).toHaveLength(1)
+  expect(body.items[0]?.stage).not.toHaveProperty('stepTexts')
+  expect(body.items[0]?.stage).not.toHaveProperty('textCopies')
+  expect(calls).toEqual([
+    expect.objectContaining({
+      stageIds: [KNOWN_ID, UNKNOWN_ID],
+      spaceId: SPACE,
+      uuidKeyedRead: true,
+    }),
+  ])
+
+  const oversized = await app.request('/v1/task-flow/stage-summaries', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      stageIds: Array(TASK_FLOW_STAGE_SUMMARY_BATCH_MAX + 1).fill(KNOWN_ID),
+    }),
+  })
+  expect(oversized.status).toBe(400)
+  expect(calls).toHaveLength(1)
+})
+
 test('task-flow stage list refuses contradictory task-link filters', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
@@ -235,13 +420,16 @@ test('task-flow stage list refuses contradictory task-link filters', async () =>
 test('task-flow stage list passes the hosted filters and ordering', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
-    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
+    `/v1/task-flow/stages?projectId=${PROJECT}&state=running&workflow=fix-defect&mode=default&workflowKey=DEV-2234&workflowKeys=DEV-2234&workflowKeys=DEV-2235&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
   )
   expect(response.status).toBe(200)
   expect(calls[0]).toMatchObject({
     workflow: 'fix-defect',
     mode: 'default',
     workflowKey: 'DEV-2234',
+    workflowKeys: ['DEV-2234', 'DEV-2235'],
+    projectId: PROJECT,
+    states: ['running'],
     keyless: true,
     primaryInstance: true,
     taskId: KNOWN_ID,
@@ -249,6 +437,23 @@ test('task-flow stage list passes the hosted filters and ordering', async () => 
     openedMachineId: UNKNOWN_ID,
     order: 'newest',
   })
+})
+
+test('task-flow stage list refuses more than the workflow-key batch maximum', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const query = new URLSearchParams({ projectId: PROJECT })
+  for (let index = 0; index <= TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX; index++)
+    query.append('workflowKeys', `DEV-${index}`)
+  const response = await taskFlowApp(calls).request(`/v1/task-flow/stages?${query}`)
+  expect(response.status).toBe(400)
+  expect(calls).toEqual([])
+})
+
+test('task-flow stage list without workflowKeys preserves the existing query', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const response = await taskFlowApp(calls).request(`/v1/task-flow/stages?projectId=${PROJECT}`)
+  expect(response.status).toBe(200)
+  expect(calls[0]?.workflowKeys).toBeUndefined()
 })
 
 type ByIdKind = 'stage' | 'text' | 'obligation'

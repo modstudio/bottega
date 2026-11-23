@@ -11,6 +11,8 @@ import {
   requiredMcpProbeDecision,
 } from './project-mcp-preflight.ts'
 import {
+  HEADER_MISMATCH_REMEDY,
+  headerMismatchFindings,
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   projectMcpWriterRemedy,
@@ -23,6 +25,54 @@ const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) =>
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
+const FAKE_FIXTURE_HEADER_VALUE = 'FAKE_FIXTURE_HEADER_VALUE'
+
+test('a require run refuses header mismatches and a prefer run allows them', () => {
+  const headerMismatches = headerMismatchFindings(
+    { starship: { name: 'starship', url: 'https://tree.test/mcp' } },
+    {
+      starship: {
+        name: 'starship',
+        url: 'https://checkout.test/mcp',
+        headers: { Authorization: FAKE_FIXTURE_HEADER_VALUE },
+      },
+    },
+  )
+  const required = requiredMcpProbeRefusal({
+    mode: 'require',
+    project,
+    failures: [],
+    headerMismatches,
+  })!
+  expect(required).toContain('starship')
+  expect(required).toContain('Authorization')
+  expect(required).toContain(HEADER_MISMATCH_REMEDY)
+  expect(required).not.toContain(FAKE_FIXTURE_HEADER_VALUE)
+  expect(
+    requiredMcpProbeRefusal({ mode: 'prefer', project, failures: [], headerMismatches }),
+  ).toBeNull()
+  expect(
+    requiredMcpProbeRefusal({ mode: 'require', project, failures: [], headerMismatches: [] }),
+  ).toBeNull()
+})
+
+test('a require run refuses when the checkout config could not be checked', () => {
+  const checkoutConfigPath = '/opt/starship/.mcp.json'
+  const remedy = `fix or remove ${checkoutConfigPath}, then rerun`
+  const headerMismatches = [{ checkoutConfigPath, reason: 'invalid' as const, remedy }]
+  const required = requiredMcpProbeRefusal({
+    mode: 'require',
+    project,
+    failures: [],
+    headerMismatches,
+  })!
+  expect(required).toContain(checkoutConfigPath)
+  expect(required).toContain('invalid')
+  expect(required).toContain(remedy)
+  expect(
+    requiredMcpProbeRefusal({ mode: 'prefer', project, failures: [], headerMismatches }),
+  ).toBeNull()
+})
 
 test('a require run refuses a failed probe and never a passed one', () => {
   expect(requiredMcpProbeRefusal({ mode: 'require', project, failures: [failure] })).not.toBeNull()

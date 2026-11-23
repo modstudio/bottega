@@ -16,15 +16,23 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
-import { mergePullRequest } from '../pull-request/pr-merge.ts'
-import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
+import {
+  cliPullRequestMergeAdapterWithPostLanding,
+  mergePullRequest,
+} from '../pull-request/pr-merge.ts'
+import {
+  cliPostLandingAdapter,
+  runPullRequestPostLanding,
+} from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
   type PullRequestPostLandingPayload,
   parsePullRequestPostLandingPayload,
   postLandingRecovery,
 } from '../pull-request/pr-post-landing-payload.ts'
+import { releaseRequiredRungsBeforeMainMove } from '../release/release-required.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
+import { releaseAtCommitFromHookTree } from './release-tree.ts'
 import { log } from './support.ts'
 
 export const PR_CREATE_OPTIONS = [
@@ -210,10 +218,13 @@ export async function mergePullRequestCommand(
     return
   }
   const cwd = resolveReviewCommandCwd(options.cwd)
+  const postLanding = cliPostLandingAdapter((input) =>
+    releaseRequiredRungsBeforeMainMove({ ...input, releaseAt: releaseAtCommitFromHookTree }),
+  )
   const outcome = await mergePullRequest(
     target,
     cwd,
-    undefined,
+    cliPullRequestMergeAdapterWithPostLanding(postLanding),
     undefined,
     Boolean(options.releaseRequired),
     options.depth,
@@ -287,8 +298,12 @@ export function register(program: Command): void {
     .requiredOption('--sha <sha>', 'name the commit being pushed')
     .requiredOption('--remote-ref <ref>', 'name the destination ref')
     .allowExcessArguments(false)
-    .action((options) => {
-      const result = checkPushedTip(process.cwd(), options.sha.trim(), options.remoteRef.trim())
+    .action(async (options) => {
+      const result = await checkPushedTip(
+        process.cwd(),
+        options.sha.trim(),
+        options.remoteRef.trim(),
+      )
       if (result.infrastructureError) {
         log(`pre-push: triage check could not run: ${result.infrastructureError}; allowing push`)
         return

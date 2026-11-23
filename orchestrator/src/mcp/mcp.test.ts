@@ -26,6 +26,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { identity } from '../record/record-api-identity.fixture.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import {
   type HostedTaskFlow,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -941,25 +942,41 @@ describe('orch MCP', () => {
   test('get_doc_revision resolves user canon only when user is true', async () => {
     const owner = '01990000-0000-7000-8000-000000000001'
     const docRecordId = newRecordId()
-    db()
-      .query(
-        `INSERT INTO doc
-          (record_id,scope,subject,owner,slug,title,body,delivery,audiences,created_at,updated_at)
-         VALUES (?,'canon',NULL,?,'.agents/rules/private.md','Private','body','demand','["technical"]','2026-01-01','2026-01-01')`,
-      )
-      .run(docRecordId, owner)
-    const revision = db()
-      .query<{ record_id: string }, [string, string, string]>(
-        `INSERT INTO doc_revision
-          (record_id,number,doc_record_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,'canon',NULL,?,'.agents/rules/private.md','create','Private','body',
-           'demand','["technical"]','operator','mcp owner proof','2026-01-01')
-         RETURNING record_id`,
-      )
-      .get(newRecordId(), docRecordId, owner)!
+    const revisionId = newRecordId()
+    const revision: RecordDocRevision = {
+      id: revisionId,
+      docId: docRecordId,
+      scope: 'canon',
+      subject: null,
+      owner,
+      slug: '.agents/rules/private.md',
+      op: 'create' as const,
+      title: 'Private',
+      body: 'body',
+      withheldForAudience: false,
+      delivery: 'demand' as const,
+      audiences: ['technical'],
+      parentId: null,
+      position: 0,
+      author: 'operator',
+      authorName: null,
+      reason: 'mcp owner proof',
+      sessionId: null,
+      at: '2026-01-01',
+    }
     const session = memoryRecordSession()
     const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: owner },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal-space', permission: 'write' }],
+      }),
+      getDocRevision: async () => revision,
+    })
     session.setToken('fixture-session')
     installRecordSessionRunner(session.runner)
     const server = createDocsMcpServer()
@@ -970,22 +987,23 @@ describe('orch MCP', () => {
     try {
       const ordinary = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.record_id },
+        arguments: { id: revisionId },
       })
       expect(ordinary.isError).toBe(true)
 
       const owned = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.record_id, user: true },
+        arguments: { id: revisionId, user: true },
       })
       expect(owned.isError).not.toBe(true)
       expect(JSON.parse((owned.content as { text: string }[])[0]!.text)).toMatchObject({
-        record_id: revision.record_id,
+        record_id: revisionId,
         owner,
       })
     } finally {
       await client.close()
       await server.close()
+      installRecordApiClient(createMemoryRecordApiClient())
       installRecordSessionRunner(null)
       if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
       else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl

@@ -66,7 +66,7 @@ test('every CLI record client write method sends its required destination space'
       if (captured.length === before) unobserved.push(name)
     }
 
-    expect(unobserved).toEqual(['openBoardStream'])
+    expect(unobserved).toEqual(['listContextItems', 'openBoardStream'])
     for (const { path, init } of captured) {
       const method = typeof init.method === 'string' ? init.method.toUpperCase() : 'GET'
       if (method === 'GET' || method === 'HEAD' || exemptWrite(method, path)) continue

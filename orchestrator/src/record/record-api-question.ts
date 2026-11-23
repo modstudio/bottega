@@ -10,6 +10,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { parseRulingPageCursor } from './record-cursor.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
+  isMembershipQuestionRead,
   type QuestionIntent,
   type QuestionIntentBody,
   type QuestionReadInput,
@@ -100,6 +101,23 @@ export function registerRecordQuestionRoutes(
   deps: RecordQuestionRouteDeps,
   ports: Ports,
 ): void {
+  app.get('/v1/questions/memberships', async (context) => {
+    const tenant = ports.scope(context)
+    if (!tenant) return ports.noSpace(context)
+    if (!deps.readQuestions)
+      return context.json({ error: 'hosted question reads are unavailable' }, 503)
+    const query = questionReadSchema.safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
+    if (isMembershipQuestionRead(query.data))
+      return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
+    return context.json(
+      {
+        error:
+          'question memberships reads allow only inbox without limit or changedAfter and open-for-tasks',
+      },
+      400,
+    )
+  })
   app.get('/v1/questions', async (context) => {
     const tenant = ports.scope(context)
     if (!tenant) return ports.noSpace(context)

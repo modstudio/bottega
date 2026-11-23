@@ -785,6 +785,8 @@ describe('record API client test safety', () => {
           { destinationSpaceId: 'project-space' },
         ),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
+      await expect(client.listBoardClaims(PLATFORM_SLUG, id)).rejects.toThrow(/nope/)
+      await client.listBoardClaims(PLATFORM_SLUG, id, { openOnly: true }).catch(() => undefined)
       boardController.abort()
       expect(calls[0]?.signal?.aborted).toBeTrue()
       expect(calls[0]).toMatchObject({
@@ -796,14 +798,10 @@ describe('record API client test safety', () => {
         method: 'GET',
         destination: 'project-space',
       })
-      expect(calls[2]).toMatchObject({
-        url: `https://api.example.test/v1/board/threads/${id}`,
-        method: 'GET',
-      })
-      expect(calls[3]).toMatchObject({
-        url: `https://api.example.test/v1/board/messages/${id}/status`,
-        method: 'GET',
-      })
+      expect(calls.slice(2, 4).map(({ url }) => url)).toEqual([
+        `https://api.example.test/v1/board/threads/${id}`,
+        `https://api.example.test/v1/board/messages/${id}/status`,
+      ])
       expect(calls[4]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages',
         method: 'PUT',
@@ -817,6 +815,8 @@ describe('record API client test safety', () => {
         method: 'POST',
         body: { body: 'Directed reply', audience: 'session:in-reach' },
       })
+      const claimUrl = `https://api.example.test/v1/board/claims?project=${PLATFORM_SLUG}&projectId=${id}`
+      expect(calls.slice(6).map(({ url }) => url)).toEqual([claimUrl, `${claimUrl}&openOnly=true`])
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

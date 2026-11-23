@@ -34,7 +34,7 @@ export function reviewFunnelYieldCells(
            FROM review_lens rl
            JOIN review r ON r.record_id=rl.review_record_id
            JOIN run ON run.record_id=rl.run_record_id
-          WHERE r.tier IN (0,1,2,3) AND ${completedReviewEvidenceSql('r', 'run', 'rl')}
+          WHERE r.tier IN (0,1,2,3) AND ${completedReviewEvidenceSql('routing', 'r', 'run', 'rl')}
        )
        SELECT ranked.lens,ranked.stack,ranked.tier,
               COALESCE(SUM(CASE WHEN ${acceptedReviewFindingSql()} THEN 1 ELSE 0 END),0) AS accepted,

@@ -6,7 +6,12 @@ import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { projectRegisterReader } from '../hub/src/project-register-reader.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../hub/test/migration-values.ts'
 import { resetFixtureStore } from '../hub/test/run-fixtures.ts'
-import { DB_PATH, db } from '../orchestrator/src/database/db.ts'
+import {
+  closeDatabaseForFixture as closeOrchestratorDatabaseForFixture,
+  DB_PATH,
+  db,
+  registerOpenHooks,
+} from '../orchestrator/src/database/db.ts'
 import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
 import { registerStandardRuntime } from '../orchestrator/src/runtime/runtime-registration.ts'
 import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
@@ -14,7 +19,7 @@ import { addProject } from '../orchestrator/test/fixtures/offline-branch-landing
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
 import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { captureTestHubDatabase, mintTestHubDatabase } from '../shared/test-hub-database.ts'
-import { installCliTaskReader } from './task-read-adapter.ts'
+import { installCliProjectRegisterReader, installCliTaskReader } from './task-read-adapter.ts'
 
 const lazyHubTaskModules = [
   require.resolve('../hub/src/task.ts'),
@@ -97,8 +102,8 @@ test('installing the CLI adapter leaves hub unloaded until the first read', asyn
   for (const module of lazyHubTaskModules) expect(require.cache[module]).toBeDefined()
 })
 
-test('the installed register reader returns schema-valid registered projects', () => {
-  installCliTaskReader()
+test('the standalone register reader returns schema-valid registered projects', () => {
+  installCliProjectRegisterReader()
 
   const rows = projectRegisterReader()?.()
 
@@ -108,4 +113,19 @@ test('the installed register reader returns schema-valid registered projects', (
       name: 'alpha',
     }),
   )
+})
+
+test('the standalone register reader does not require writable store hooks', () => {
+  closeOrchestratorDatabaseForFixture()
+  const restoreHooks = registerOpenHooks({})
+  try {
+    installCliProjectRegisterReader()
+
+    expect(projectRegisterReader()?.()).toContainEqual(
+      expect.objectContaining({ record_id: projectRecordId, name: 'alpha' }),
+    )
+  } finally {
+    closeOrchestratorDatabaseForFixture()
+    restoreHooks()
+  }
 })

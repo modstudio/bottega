@@ -144,11 +144,11 @@ export const testPorts = {
   readTask: (key: string) => ({
     recordId: `task-${key}`,
     key,
+    updatedAt: null,
     status: 'done' as const,
     statusCategory: 'done' as const,
     commentIds: [1],
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({
     state: 'MERGED',

@@ -5,6 +5,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries, sqliteAdapterImportRule } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { canonModules } from './architecture-canon-modules.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import {
   cliCompositionRule,
@@ -17,6 +18,7 @@ import { confinementModules } from './architecture-confinement-modules.ts'
 import { contextHealthModules } from './architecture-context-health-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { databaseModules } from './architecture-database-modules.ts'
+import { docLocalReadStoreAuthorityRule } from './architecture-doc-boundaries.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
@@ -168,6 +170,10 @@ const declaredModules: ArchitectureModule[] = [
     '../health/launch-agent-refresh.ts',
     '../setup/setup-schedule-policy.ts',
   ]),
+  module('orchestrator/src/commands/release-tree.ts', [
+    '../hook-tree/tree.ts',
+    '../release/release-at-commit.ts',
+  ]),
   module('orchestrator/src/health/launch-agent-refresh.ts', [
     'node:path',
     '../../../shared/brand.ts',
@@ -234,6 +240,7 @@ const declaredModules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...canonModules,
   ...[...cleanupBoundarySpecs, ...sessionStartBoundarySpecs].map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
@@ -248,20 +255,6 @@ const declaredModules: ArchitectureModule[] = [
   ...contextHealthModules,
   ...sessionLossesModules,
   ...sessionReportModules,
-  module('orchestrator/src/canon/pack-content.ts', [
-    '../../../shared/canon-frontmatter.ts',
-    './canon-hydrate.ts',
-    './canon-lint.ts',
-  ]),
-  module('orchestrator/src/doc/canon-removal.ts', [
-    '../canon/canon-files.ts',
-    '../canon/canon-hydrate.ts',
-    '../canon/canon-write-gate.ts',
-    '../project/projects.ts',
-    '../workflow/workflow-tree-store.ts',
-    './doc-read-store.ts',
-    './doc-write-allowed.ts',
-  ]),
   module('orchestrator/src/code/code-search.ts', [
     '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',
@@ -615,6 +608,7 @@ const declaredModules: ArchitectureModule[] = [
     './setup-mcp.ts',
     './setup-schedule-policy.ts',
     './setup-schedule-runtime.ts',
+    './setup-settings-fact.ts',
     '../../../shared/bounded-process.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
@@ -791,6 +785,7 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
 /** Modules that must not reach a runtime they would otherwise import freely. */
 function runtimeBoundaryRules() {
   return [
+    docLocalReadStoreAuthorityRule(exactArchitecturePath),
     {
       name: 'import-hosted-hub-server-transitive-boundary',
       severity: 'error' as const,

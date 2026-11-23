@@ -5,6 +5,7 @@ import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
+import { trackerObservationTimes } from './tracker-observation-times.ts'
 import {
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
@@ -18,8 +19,8 @@ import {
   trackerKeyInScope,
   trackerKeyPrefix,
   trackerLegError,
-  trackerObservationTimes,
   trackerProjectsReadSince,
+  trackerReadPassComplete,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
@@ -339,6 +340,29 @@ describe('tracker register', () => {
         )
         .get()?.value,
     ).toBe(first)
+  })
+
+  test('a refused hosted change keeps the cursor and forces the next read to be full', () => {
+    const first = '2026-11-06T10:00:00.000Z'
+    recordTrackerReadState('refused', 'full', first, true)
+    const tracker = source(
+      true,
+      async () => ({ tasks: [], complete: true, deletedKeys: [] }),
+      'refused',
+    )
+    const before = storedTrackerReadMode(tracker, first)
+
+    recordTrackerReadState(
+      'refused',
+      'incremental',
+      '2026-11-06T11:00:00.000Z',
+      trackerReadPassComplete(true, ['task-id: fixture refusal']),
+    )
+
+    expect(storedTrackerReadMode(tracker, '2026-11-06T11:00:00.000Z')).toEqual({
+      mode: 'full',
+      since: before.since,
+    })
   })
 
   test('a repeated deletion report keeps the first drop and a closed task keeps its closure', () => {

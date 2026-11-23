@@ -13,6 +13,8 @@ import {
   type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummaries,
+  type HostedTaskFlowStageSummary,
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -30,7 +32,8 @@ export class RecordTaskFlowError extends Error {
 }
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
-type HostedStageSummary = HostedTaskFlowStageList['items'][number]['stage']
+type HostedStageSummary = HostedTaskFlowStageSummary
+type HostedStageListSummary = HostedTaskFlowStageList['items'][number]['stage']
 
 const STAGE_SELECT = `
   s.id stage_id,s.space_id stage_space_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
@@ -41,6 +44,20 @@ const STAGE_SELECT = `
   s.arguments stage_arguments,s.active_ordinal stage_active_ordinal,s.active_slug stage_active_slug,
   s.state stage_state,s.closed_step_notes stage_closed_step_notes,s.question stage_question,
   s.autonomy stage_autonomy,s.enforcement stage_enforcement,s.total_steps stage_total_steps,
+  s.opened_machine_id stage_opened_machine_id,
+  s.taken_over_from_machine_id stage_taken_over_from_machine_id,
+  s.last_advanced_machine_id stage_last_advanced_machine_id,
+  s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
+  s.created_at stage_created_at,s.updated_at stage_updated_at`
+
+const STAGE_LIST_SUMMARY_SELECT = `
+  s.id stage_id,s.space_id stage_space_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
+  sp.name stage_project_name,s.number stage_number,s.workflow stage_workflow,s.mode stage_mode,
+  s.workflow_key stage_workflow_key,s.instance_id stage_instance_id,s.session_id stage_session_id,
+  s.workflow_version_id stage_workflow_version_id,wv.n stage_workflow_version_number,
+  s.catalogue_version_id stage_catalogue_version_id,cv.n stage_catalogue_version_number,
+  s.arguments stage_arguments,s.active_ordinal stage_active_ordinal,s.active_slug stage_active_slug,
+  s.state stage_state,s.question stage_question,s.enforcement stage_enforcement,s.total_steps stage_total_steps,
   s.opened_machine_id stage_opened_machine_id,
   s.taken_over_from_machine_id stage_taken_over_from_machine_id,
   s.last_advanced_machine_id stage_last_advanced_machine_id,
@@ -102,6 +119,15 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
     createdAt: recordIso(row.stage_created_at),
     updatedAt: recordIso(row.stage_updated_at),
   }
+}
+
+function toHostedStageListSummary(row: Record<string, unknown>): HostedStageListSummary {
+  const {
+    closedStepNotes: _closedStepNotes,
+    autonomy: _autonomy,
+    ...summary
+  } = toHostedStageSummary(row)
+  return summary
 }
 
 function toHostedStage(row: Record<string, unknown>): HostedStage {
@@ -286,12 +312,19 @@ export async function readRecordTaskFlowTransaction(
 export async function listRecordTaskFlowStages(
   input: TenantPrincipal & { url: string } & TaskFlowStageListQuery,
 ): Promise<HostedTaskFlowStageList> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    const query = taskFlowStageListSql(input.spaceId, input)
-    query.values.push(input.limit + 1)
-    const rows = await tx.unsafe(
-      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+  return recordPool(input.url).begin((tx) => listRecordTaskFlowStagesTransaction(tx, input))
+}
+
+export async function listRecordTaskFlowStagesTransaction(
+  tx: SQL,
+  input: TenantPrincipal & TaskFlowStageListQuery,
+): Promise<HostedTaskFlowStageList> {
+  await bindTenant(tx, input)
+  const query = taskFlowStageListSql(input.spaceId, input)
+  query.values.push(input.limit + 1)
+  const stageSelect = input.view === 'summary' ? STAGE_LIST_SUMMARY_SELECT : STAGE_SELECT
+  const rows = await tx.unsafe(
+    `SELECT ${stageSelect},${FLOW_SELECT}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
@@ -299,20 +332,19 @@ export async function listRecordTaskFlowStages(
        WHERE ${query.clauses.join(' AND ')}
        ORDER BY ${query.orderBy}
        LIMIT $${query.values.length}::integer`,
-      query.values,
-    )
-    const truncated = rows.length > input.limit
-    const pageRows = rows.slice(0, input.limit) as Array<Record<string, unknown>>
-    const last = pageRows.at(-1)
-    return {
-      items: pageRows.map((row) => ({
-        stage: toHostedStageSummary(row),
-        flow: toHostedFlow(row),
-      })),
-      truncated,
-      nextCursor: truncated ? taskFlowStageListNextCursor(input, last) : null,
-    }
-  })
+    query.values,
+  )
+  const truncated = rows.length > input.limit
+  const pageRows = rows.slice(0, input.limit) as Array<Record<string, unknown>>
+  const last = pageRows.at(-1)
+  return {
+    items: pageRows.map((row) => ({
+      stage: input.view === 'summary' ? toHostedStageListSummary(row) : toHostedStageSummary(row),
+      flow: toHostedFlow(row),
+    })),
+    truncated,
+    nextCursor: truncated ? taskFlowStageListNextCursor(input, last) : null,
+  }
 }
 
 export async function readRecordTaskFlowProjectReferenceCounts(
@@ -409,6 +441,47 @@ export async function readRecordTaskFlowStage(
       space_id: rowSpaceId,
       stage: withChildren(toHostedStage(row), children),
       flow: toHostedFlow(row),
+    }
+  })
+}
+
+export async function readRecordTaskFlowStageSummaries(
+  input: TenantPrincipal & { url: string; stageIds: string[] },
+): Promise<HostedTaskFlowStageSummaries> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    if (!input.stageIds.length) return { items: [] }
+    const rows = await tx.unsafe(
+      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+       FROM task_flow_stage s
+       JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
+       LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
+       ${STAGE_JOINS}
+       WHERE s.id=ANY($1::uuid[])
+       ORDER BY array_position($1::uuid[],s.id)`,
+      [input.stageIds],
+    )
+    const obligations = await tx.unsafe(
+      `SELECT o.* FROM workflow_obligation o
+       WHERE o.stage_record_id=ANY($1::uuid[])
+       ORDER BY o.created_at,o.id`,
+      [input.stageIds],
+    )
+    const byStage = new Map<string, ReturnType<typeof toHostedObligation>[]>()
+    for (const row of obligations) {
+      const obligation = toHostedObligation(row)
+      const current = byStage.get(obligation.stageRecordId) ?? []
+      current.push(obligation)
+      byStage.set(obligation.stageRecordId, current)
+    }
+    return {
+      items: rows.map((row: Record<string, unknown>) => {
+        const stage = toHostedStageSummary(row)
+        return {
+          stage: { ...stage, obligations: byStage.get(stage.id) ?? [] },
+          flow: toHostedFlow(row),
+        }
+      }),
     }
   })
 }

@@ -120,6 +120,7 @@ function adapter(input: {
       changedPaths: () => [],
       entryClosure: () => new Map(),
       mainHead: () => 'fixture-main-head',
+      releaseBeforeMove: async () => ({ required: [], releases: [], satisfied: true }),
       moveMain: () => {},
       fence: () => {},
       handOff: (payload) => ({

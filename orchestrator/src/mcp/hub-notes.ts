@@ -16,6 +16,7 @@ const noteRowsSchema = z.array(
     stale_at: z.string().nullable(),
     stale_reason: z.string().nullable(),
     promoted_task: z.string().nullable(),
+    created_at: z.string(),
     last_seen_at: z.string(),
   }),
 )

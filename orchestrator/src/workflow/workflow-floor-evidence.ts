@@ -2,17 +2,15 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
-import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
-import { resolveDocReference } from '../doc/doc-reference-read.ts'
+import { readDocReference } from '../doc/doc-authoritative-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
@@ -32,6 +30,7 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import type {
+  ArtifactEvidence,
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
 } from './workflow-artifact-evidence.ts'
@@ -40,6 +39,7 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutResolution,
 } from './workflow-checkout-refusal.ts'
+import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
@@ -49,12 +49,18 @@ import {
   type Floor,
   flagForFloor,
   floorGuidance,
+  floorsAcceptCommandArtifact,
+  floorsIncludeTrackerTransition,
   githubPullRequestUrlIn,
   hasGateFloor,
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import {
+  requireAttachedTextFreshness,
+  requireMutableArtifactFreshness,
+} from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
@@ -68,7 +74,8 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
-import { readHubTask } from './workflow-floor-task-read.ts'
+import { resolveTaskArtifact } from './workflow-floor-task-artifact-evidence.ts'
+import { readHubTask, readHubTaskDocument } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
 import {
@@ -94,7 +101,7 @@ export type CursorIdentity = {
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
-  runHasArtifacts: runHasRecordedArtifacts,
+  readTaskDocument: readHubTaskDocument,
   viewPullRequest: viewPullRequestInProject,
   readOriginUrl: (project) => {
     const row = projectByName(project)
@@ -102,20 +109,6 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
     return gitText(row.path, ['remote', 'get-url', 'origin'])
   },
 })
-
-function runHasRecordedArtifacts(
-  runId: string,
-  runsDir = resolveRunsDirectory(process.env),
-): boolean {
-  const recordId = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(runId)?.record_id
-  if (!recordId) return false
-  const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = runScratchReplyPath(recordId, runsDir)
-  if (existsSync(reply)) return true
-  return existsSync(artifacts) && readdirSync(artifacts).length > 0
-}
 
 export async function gatherRuling(
   id: number,
@@ -355,6 +348,16 @@ function requireCheckout(
   return checkout
 }
 
+function requireCommandArtifactCheckout(
+  required: boolean,
+  flag: string,
+  row: { cwd: string; head_commit: string | null },
+  identity: CursorIdentity,
+  resolveCheckout: FloorEvidencePorts['resolveCheckout'],
+): void {
+  if (required) requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+}
+
 async function gatherGate(
   recordId: string,
   identity: CursorIdentity,
@@ -447,8 +450,12 @@ export function docAdmissibleAsCursorEvidence(
   )
 }
 
-function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database): string {
-  const row = resolveDocReference(value, d)
+async function resolveDocArtifact(
+  value: string,
+  identity: CursorIdentity,
+  d: Database,
+): Promise<string> {
+  const row = await readDocReference(value, d)
   const flag = `--artifact doc:${value}`
   if (!row)
     throw new Error(
@@ -463,6 +470,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
     throw new Error(
       `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
+  requireMutableArtifactFreshness('doc', row.updatedAt, identity.stepActivatedAt)
   return row.address
 }
 
@@ -479,46 +487,17 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-  runHasArtifacts: (runId: string) => boolean,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
-  const runOk = run !== null && runHasArtifacts(run.record_id)
   if (run) {
     const binding = loadRunBinding(run.record_id, d)
-    if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+    if (!binding) throw new Error(`--artifact ${id} is not a run bound to this cursor`)
     await requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
-    return { ref: String(id), exists: runOk }
+    return { ref: String(id), exists: true }
   }
-  throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
-}
-
-function resolveTaskArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
-  raw: string,
-  identity: CursorIdentity,
-  ports: FloorEvidencePorts,
-): { ref: string; exists: boolean } {
-  if (!ports.readTask)
-    throw new Error(
-      `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
-    )
-  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
-  if (
-    identity.workflowTaskRecordId
-      ? task.recordId !== identity.workflowTaskRecordId
-      : Boolean(identity.workflowKey) && ref.key !== identity.workflowKey
-  )
-    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
-  if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  if (task.commentsVerifiable === false)
-    throw new Error(
-      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
-    )
-  if (!task.commentIds.map(String).includes(ref.id))
-    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  return { ref: raw, exists: true }
+  throw new Error(`--artifact ${id} is not a recorded run`)
 }
 
 async function resolveStoredArtifact(
@@ -527,7 +506,7 @@ async function resolveStoredArtifact(
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text') {
     const row = await taskFlowReadStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
@@ -537,15 +516,17 @@ async function resolveStoredArtifact(
           stepOrdinal: row.step_ordinal,
           stepSlug: row.step_slug,
           body: row.body,
+          writtenAt: row.created_at,
         }
       : null
+    requireAttachedTextFreshness(attachment, identity.stepActivatedAt)
     return {
       ref: 'attached-text',
       exists: attachedTextReferenceMeetsFloor({ ...binding, attachment }),
     }
   }
   if (ref.kind === 'doc')
-    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
+    return { ref: `doc:${await resolveDocArtifact(ref.address, identity, d)}`, exists: true }
   const row = d
     .query<{ tip: string }, [string]>('SELECT tip FROM review_read WHERE record_id=?')
     .get(ref.recordId)
@@ -568,17 +549,12 @@ async function resolveArtifact(
   ports: FloorEvidencePorts,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
-): Promise<{ ref: string; exists: boolean }> {
+  requireCommandCheckout: boolean,
+  hasTrackerTransitionFloor: boolean,
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
-  if (ref.kind === 'id')
-    return await resolveNumericArtifact(
-      ref.id,
-      identity,
-      binding.cursorId,
-      d,
-      ports.runHasArtifacts ?? runHasRecordedArtifacts,
-    )
+  if (ref.kind === 'id') return await resolveNumericArtifact(ref.id, identity, binding.cursorId, d)
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'commit') {
     const project = projectByName(identity.project, d)
@@ -615,7 +591,7 @@ async function resolveArtifact(
     if (!row) throw new Error(`${unresolvedFlag} does not exist`)
     const flag = `--artifact ${ref.kind}:${row.number}`
     if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
-    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+    requireCommandArtifactCheckout(requireCommandCheckout, flag, row, identity, resolveCheckout)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
@@ -625,11 +601,11 @@ async function resolveArtifact(
     await requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
-      exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),
+      exists: true,
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
-  return resolveTaskArtifact(ref, raw, identity, ports)
+  return await resolveTaskArtifact(ref, raw, identity, ports, hasTrackerTransitionFloor)
 }
 
 function gatherTask(
@@ -751,7 +727,10 @@ async function gatheredCommandEvidence(
     exitCode: row.exit_code,
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
-    createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
+    createdAfterStepActivation: createdAfterStepActivation(
+      row.created_at,
+      identity.stepActivatedAt,
+    ),
     checkoutLocation: classifyCheckoutResolution(checkout),
     headCommit: row.head_commit,
     cursorBranch: identity.branch,
@@ -942,7 +921,13 @@ async function gatherArtifactEntry(
   if ('error' in parsed) throw new Error(parsed.error)
   const noteEvidence =
     parsed.kind === 'note'
-      ? await gatherNoteArtifactEvidence(parsed, offeredArtifact, input.identity.project, ports)
+      ? await gatherNoteArtifactEvidence(
+          parsed,
+          offeredArtifact,
+          input.identity.project,
+          input.identity.stepActivatedAt,
+          ports,
+        )
       : undefined
   const entry: ValidatedArtifactEvidence = {
     artifact: noteEvidence
@@ -960,6 +945,8 @@ async function gatherArtifactEntry(
           ports,
           resolveCheckout,
           gathered.tree!.commit,
+          floorsAcceptCommandArtifact(input.floors),
+          floorsIncludeTrackerTransition(input.floors),
         ),
     ...offeredArtifactRunEvidence(parsed, d),
   }

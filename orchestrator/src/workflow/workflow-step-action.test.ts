@@ -2,6 +2,12 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import {
@@ -26,6 +32,23 @@ const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => 
 
 test('the action target selects the cursor handle and reads its composed ordinal', async () => {
   const d = database()
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogueLocal(
+    {
+      ...current,
+      steps: current.steps.map((step) =>
+        step.slug === 'rebase'
+          ? { ...step, actions: ['pr-create'] }
+          : step.slug === 'lens'
+            ? { ...step, actions: ['pr-merge'] }
+            : step,
+      ),
+    },
+    'step action read fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(catalogue.n, 'step action read fixture', 'test', d)
   const composition = await composeWorkflowWithCursor(
     'flow',
     'fixture',
@@ -50,6 +73,7 @@ test('the action target selects the cursor handle and reads its composed ordinal
     jobs: composition.steps[0]!.jobs,
     actions: composition.steps[0]!.actions,
   })
+  expect((await openQuestionStages(d, context.session!))[0]?.step_actions).toEqual(['pr-create'])
 })
 
 test('a declared job dispatches with the cursor record and current step binding', async () => {

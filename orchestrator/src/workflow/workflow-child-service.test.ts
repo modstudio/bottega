@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
@@ -16,6 +16,14 @@ import { composeWorkflow } from './workflows.ts'
 
 const database = testDatabaseFixture((d) => {
   seedCurrentWorkflowTreeFixture(d, ['plan-task'], 'epic child service fixture')
+})
+
+let previousTaskReader: TaskReadPort | undefined
+beforeEach(() => {
+  previousTaskReader = installTaskReader(undefined)
+})
+afterEach(() => {
+  installTaskReader(previousTaskReader)
 })
 
 const row = (key: string, parentKey: string | null): TaskReadRow => ({
@@ -35,11 +43,33 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
+    lookup: async (_project, keys) => {
+      const found = new Map<string, TaskReadRow & { has_children: boolean }>()
+      for (const key of keys) {
+        let task = byKey.get(key)
+        while (task && !found.has(task.key)) {
+          found.set(task.key, {
+            ...task,
+            has_children: tasks.some((candidate) => candidate.parent_key === task!.key),
+          })
+          task = task.parent_key ? byKey.get(task.parent_key) : undefined
+        }
+      }
+      return [...found.values()]
+    },
     list: async ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
     show: async (key) => ({ task: byKey.get(key)! }),
     duplicates: async () => [],
     documents: async () => [],
-    document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+    document: async () => ({
+      id: 'none',
+      label: 'none',
+      task_record_id: 'task-none',
+      title: 'none',
+      body: '',
+      version: '1',
+      updated_at: '2026-11-19T00:00:00.000Z',
+    }),
   }
   installTaskReader(port)
 }

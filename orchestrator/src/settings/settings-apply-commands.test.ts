@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -12,8 +13,9 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { getDoc, setDoc } from '../doc/docs.ts'
+import { setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
+import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import { parseStoredOwnedSettings, serializeOwnedSettings } from './settings.ts'
 import {
   migrateStoredSettingsEnvironmentNames,
@@ -24,6 +26,8 @@ import {
   settingsRestoreCommand,
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
+import { settingsEnvCommand } from './settings-env-commands.ts'
+import { settingsSubagentsCommand } from './settings-subagents.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const priorHome = process.env.HOME
@@ -31,6 +35,9 @@ const priorState = process.env.BOTTEGA_STATE_HOME
 const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
 let root = ''
 let claude = ''
+let hostedClient: RecordApiClient
+let hostedBody: string | null = null
+let hostedWrites: RecordDocUpsertInput[] = []
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'settings-apply-'))
@@ -42,6 +49,32 @@ beforeEach(() => {
   const session = memoryRecordSession()
   session.setToken('fixture-session')
   installRecordSessionRunner(session.runner)
+  const inner = createMemoryRecordApiClient()
+  hostedBody = null
+  hostedWrites = []
+  hostedClient = {
+    ...inner,
+    listDocs: async (query, destination) => {
+      const result = await inner.listDocs(query, destination)
+      return {
+        ...result,
+        items: result.items.map((item) =>
+          hostedBody !== null &&
+          item.scope === 'settings' &&
+          item.subject === null &&
+          item.owner === OWNER &&
+          item.slug === 'settings'
+            ? { ...item, body: hostedBody }
+            : item,
+        ),
+      }
+    },
+    upsertDoc: async (input, destination) => {
+      hostedWrites.push(input)
+      return inner.upsertDoc(input, destination)
+    },
+  }
+  installRecordApiClient(hostedClient)
 })
 
 afterEach(() => {
@@ -100,6 +133,113 @@ async function seedUser(environment: { env?: Record<string, string>; envKeys?: s
   })
 }
 
+async function seedFutureUser(): Promise<string> {
+  await seedUser({ envKeys: ['NEW_NAME'] })
+  const page = await hostedClient.listDocs({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+  })
+  const row = page.items[0]
+  if (!row || typeof row.body !== 'string') throw new Error('hosted settings fixture is missing')
+  const parsed = JSON.parse(row.body) as Record<string, unknown>
+  const body = JSON.stringify({
+    ...parsed,
+    options: { subagentHooks: 'on', futureOption: 1 },
+  })
+  hostedBody = body
+  hostedWrites = []
+  return body
+}
+
+const readLocalUserSettings = async () => ({
+  owner: OWNER,
+  row: getDoc('settings', null, 'settings', OWNER),
+})
+
+const readHostedUserSettings = async () => {
+  const page = await hostedClient.listDocs({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+  })
+  const row = page.items[0]
+  return {
+    owner: OWNER,
+    row: row && typeof row.body === 'string' ? { body: row.body, revision: 'hosted' } : null,
+  }
+}
+
+describe('future settings edit refusals', () => {
+  const adapters = [
+    {
+      name: 'env set',
+      prepare: () => {},
+      edit: () => settingsEnvCommand('set', 'PLAIN', 'value'),
+    },
+    {
+      name: 'env unset',
+      prepare: () => {},
+      edit: () => settingsEnvCommand('unset', 'PLAIN'),
+    },
+    {
+      name: 'env import',
+      prepare: () =>
+        writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } })),
+      edit: () => settingsEnvImportCommand(flags({ user: true }), shown().port),
+    },
+    {
+      name: 'adopt',
+      prepare: () =>
+        writeFileSync(
+          join(claude, 'settings.local.json'),
+          JSON.stringify({ permissions: { allow: ['Bash(git status)'] } }),
+        ),
+      edit: () => settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
+    },
+    {
+      name: 'environment-name migrate',
+      prepare: () => {},
+      edit: () =>
+        migrateStoredSettingsEnvironmentNames((name) =>
+          name === 'NEW_NAME' ? 'MIGRATED_NAME' : null,
+        ),
+    },
+    {
+      name: 'environment-name restore',
+      prepare: () => {},
+      edit: () =>
+        restoreStoredSettingsEnvironmentNames([{ oldName: 'OLD_NAME', newName: 'NEW_NAME' }]),
+    },
+    {
+      name: 'subagent choice',
+      prepare: () => {},
+      edit: () => settingsSubagentsCommand('allow', { read: readHostedUserSettings }),
+    },
+  ]
+
+  for (const adapter of adapters) {
+    test(`${adapter.name} refuses a future options key without changing the row`, async () => {
+      adapter.prepare()
+      const body = await seedFutureUser()
+
+      await expect(adapter.edit()).rejects.toThrow(
+        new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+      )
+      const page = await hostedClient.listDocs({
+        scope: 'settings',
+        subject: null,
+        owner: OWNER,
+        slug: 'settings',
+      })
+      expect(page.items[0]?.body).toBe(body)
+      expect(hostedWrites).toEqual([])
+    })
+  }
+})
+
 test('stored settings environment migration can be restored from its recorded name pairs', async () => {
   const oldName = ['ORCH', 'RECORD', 'MIGRATE', 'URL'].join('_')
   const newName = 'BOTTEGA_RECORD_MIGRATE_URL'
@@ -132,6 +272,25 @@ test('stored settings environment migration can be restored from its recorded na
 })
 
 describe('settings env import', () => {
+  test('dry-run tolerates unknown stored keys because it writes nothing', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    const body = await seedFutureUser()
+    await settingsEnvImportCommand(flags({ user: true, 'dry-run': true }), shown().port)
+    expect((await readHostedUserSettings()).row?.body).toBe(body)
+    expect(hostedWrites).toEqual([])
+  })
+
+  test('unknown stored keys refuse before changing settings.env', async () => {
+    writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { NEXT: 'value' } }))
+    writeFileSync(join(claude, 'settings.env'), 'EXISTING="kept"\n', { mode: 0o600 })
+    await seedFutureUser()
+
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      new RegExp(`options\\.futureOption.*upgrade ${PLATFORM_NAME}`, 's'),
+    )
+    expect(readFileSync(join(claude, 'settings.env'), 'utf8')).toBe('EXISTING="kept"\n')
+  })
+
   test('never sends or prints a sentinel value', async () => {
     const sentinel = 'sentinel-env-value-that-must-not-escape'
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { API_TOKEN: sentinel } }))
@@ -204,6 +363,57 @@ describe('settings env import', () => {
     expect(message).toContain('cannot parse JSON')
     expect(message).not.toContain(sentinel)
     expect(output.logs.join('\n')).not.toContain(sentinel)
+  })
+})
+
+describe('settings subagents', () => {
+  test('a missing row names the import command that clears the refusal', async () => {
+    await expect(settingsSubagentsCommand()).rejects.toThrow(
+      `${PLATFORM_SLUG} machine settings import --user`,
+    )
+  })
+
+  test('block and allow round trip the option and report its source', async () => {
+    await seedUser()
+    expect(
+      await settingsSubagentsCommand(undefined, { read: readLocalUserSettings }),
+    ).toMatchObject({ blocking: 'off', source: 'default' })
+    expect(await settingsSubagentsCommand('block', { read: readLocalUserSettings })).toMatchObject({
+      blocking: 'on',
+      source: 'user',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).options,
+    ).toEqual({ subagentHooks: 'on' })
+    expect(await settingsSubagentsCommand('allow', { read: readLocalUserSettings })).toMatchObject({
+      blocking: 'off',
+      source: 'default',
+      changed: true,
+    })
+    expect(
+      parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body),
+    ).not.toHaveProperty('options')
+  })
+
+  test('unknown choice lists allow and block', async () => {
+    await expect(settingsSubagentsCommand('maybe')).rejects.toThrow(/allow or block/)
+  })
+
+  test('refuses to change a row whose read has no revision', async () => {
+    await expect(
+      settingsSubagentsCommand('block', {
+        read: async () => ({
+          owner: OWNER,
+          row: {
+            body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+            revision: null,
+          },
+        }),
+      }),
+    ).rejects.toThrow(
+      'refusing settings subagents: the settings row has no revision; upgrade the hosted record and retry',
+    )
   })
 })
 

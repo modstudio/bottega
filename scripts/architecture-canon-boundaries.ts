@@ -133,6 +133,8 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/worker-launch-env.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
+      'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/canon-import.ts',
@@ -147,7 +149,69 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
   },
 ]
 
+export const canonMirrorDecisionBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-mirror-lint-decision-boundary',
+    file: `${source}canon-mirror-lint-decision.ts`,
+    allowed: [`${source}canon-lint.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep mirror lint refusal rendering separate from publication lifecycle.',
+  },
+  {
+    name: 'canon-mirror-merge-decision-boundary',
+    file: `${source}canon-mirror-merge-decision.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep automatic mirror merge policy pure over supplied facts.',
+  },
+  {
+    name: 'canon-mirror-authoritative-snapshot-boundary',
+    file: `${source}canon-mirror-authoritative-snapshot.ts`,
+    allowed: [
+      `${source}canon-mirror-revisions.ts`,
+      `${source}canon-stored-rows.ts`,
+      'orchestrator/src/review-funnel/review-funnel-policy.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep hosted mirror prefetch outside the synchronous worktree lock.',
+  },
+  {
+    name: 'canon-mirror-failure-boundary',
+    file: `${source}canon-mirror-failure.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep canon mirror failure composition a pure decision over supplied messages.',
+  },
+  {
+    name: 'canon-mirror-leftover-boundary',
+    file: `${source}canon-mirror-leftover.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep leftover reclamation policy independent of Git, stores, and lifecycle adapters.',
+  },
+  {
+    name: 'canon-mirror-revert-guard-boundary',
+    file: `${source}canon-mirror-revert-guard.ts`,
+    allowed: ['shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the silent-revert guard a pure decision over commit and revision facts.',
+  },
+  {
+    name: 'canon-mirror-revisions-boundary',
+    file: `${source}canon-mirror-revisions.ts`,
+    allowed: [
+      'orchestrator/src/database/db.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
+      `${source}canon-hydrate.ts`,
+      `${source}canon-mirror-revert-guard.ts`,
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep revision-history reads separate from the mirror publication lifecycle.',
+  },
+]
+
 const canonMirrorBoundarySpecs: ImportBoundary[] = [
+  ...canonMirrorDecisionBoundarySpecs,
   {
     name: 'canon-apply-boundary',
     file: `${source}canon-apply.ts`,
@@ -160,6 +224,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
     file: `${source}canon-mirror.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/git.ts',
       'shared/git-path-list.ts',
       'node:crypto',
       'node:fs',
@@ -174,6 +239,12 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       `${source}canon-hydrate.ts`,
       `${source}canon-lint.ts`,
       `${source}canon-stored-rows.ts`,
+      `${source}canon-mirror-failure.ts`,
+      `${source}canon-mirror-leftover.ts`,
+      `${source}canon-mirror-lint-decision.ts`,
+      `${source}canon-mirror-merge-decision.ts`,
+      `${source}canon-mirror-revisions.ts`,
+      `${source}canon-mirror-authoritative-snapshot.ts`,
       'orchestrator/src/close/close-out.ts',
       'orchestrator/src/close/close-out-preparation.ts',
       'orchestrator/src/close/close-out-questions.ts',
@@ -248,6 +319,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/record/record-write-authority.ts',
       'shared/record/schema.ts',
       'orchestrator/src/worker-store-write.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
       'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/doc-hosted-client.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
@@ -267,6 +339,8 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'shared/ratchet.ts',
       'shared/state-directory.ts',
       'orchestrator/src/doc/docs.ts',
+      'orchestrator/src/doc/doc-authoritative-read.ts',
+      'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/canon-import.ts',

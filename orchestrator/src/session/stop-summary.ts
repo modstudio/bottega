@@ -129,7 +129,7 @@ export async function sessionStopSummary(
   const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
-  const epicWork = await sessionEpicWork(session, database)
+  const epicWork = await sessionEpicWork(session, cursors, database)
   const epicCursorNumbers = new Set(epicWork.map(({ cursor }) => cursor))
   const questionCounts = await questionInboxCountsForSession(session, database)
   const livePlaceholders = RUN_LIVE_STATUSES.map(() => '?').join(',')
@@ -156,7 +156,7 @@ export async function sessionStopSummary(
     )
     .all(session)
   const reviews = classifyStopSummaryReviews(reviewRows)
-  const reviewVerdictLines = sessionReviewVerdictLines(session, cursors, database, {
+  const reviewVerdictLines = await sessionReviewVerdictLines(session, cursors, database, {
     gather: options.reviewVerdictGatherer,
   })
   const sessionLandings = activeLandings(database, session)

@@ -317,11 +317,11 @@ soft-delete foreign tasks from one hosted space
 
 **Synopsis:** `bottega task push [--repair] [--json]`
 
-audit hosted identity sets; --repair queues missing machine rows
+audit hosted identity sets; --repair writes missing machine rows to the record
 
 ### Options
 
-- `--repair`: queue machine task rows missing from the hosted record
+- `--repair`: write machine rows missing from the hosted record (hosted task tables directly, synced tables through the outbox)
 - `--json`: write the audit report as JSON
 
 ### Related

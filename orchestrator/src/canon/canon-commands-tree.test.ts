@@ -3,12 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { getDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { dispatchCanonCommand } from './canon-commands.ts'
 

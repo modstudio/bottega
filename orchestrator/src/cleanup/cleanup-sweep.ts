@@ -65,7 +65,6 @@ import { pruneSweepArchives } from './cleanup-sweep-archive.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
-  decideFilesystemOrphanUnderLock,
   decideRecordedRunCloseOut,
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
@@ -82,7 +81,12 @@ import {
   observeNamedRunForSweep,
   orphanCandidateDecision,
 } from './cleanup-sweep-orphan-candidate.ts'
-import { finishRemovedOrphan, reportOrphanAfterRemovalKeep } from './cleanup-sweep-orphan-report.ts'
+import { orphanClaimRuling, rememberedWorktrees } from './cleanup-sweep-orphan-claims.ts'
+import {
+  finishRemovedOrphan,
+  reportClaimedOrphanKeep,
+  reportOrphanAfterRemovalKeep,
+} from './cleanup-sweep-orphan-report.ts'
 import {
   DEFAULT_OUTBOX_MAINTENANCE,
   maintainOutboxForSweep,
@@ -132,15 +136,6 @@ async function sweepOrphanProcesses(
     }
   }
   return failed
-}
-
-function rememberedWorktrees(): Set<string> {
-  const rows = db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
-    worktree: string
-  }[]
-  return new Set(
-    rows.map((row) => (existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree)),
-  )
 }
 
 export type SweepOptions = {
@@ -944,10 +939,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const locked = observeLockedRun(path, p, runId, label, options.presentation)
           cleanupFailed ||= locked.failed
-          const lockedRuling = decideFilesystemOrphanUnderLock({
-            sharers: sharersBefore.length,
-            lockedAlive: locked.alive,
-          })
+          const lockedRuling = orphanClaimRuling(path, sharersBefore.length, locked.alive)
+          if (reportClaimedOrphanKeep(lockedRuling, label, keepHeld)) return
           if (lockedRuling.action === 'shared-before') {
             const owners = worktreeSharerList(sharersBefore)
             cleanupFailed ||= lockedRuling.cleanupFailed

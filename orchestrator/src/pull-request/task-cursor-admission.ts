@@ -9,8 +9,17 @@ import { classifyCaller, resolveCallerIdentity } from '../caller-classification.
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
+import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
+import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 
-type HeldTaskCursor = { project: string; workflowKey: string }
+type HeldTaskCursor = {
+  number: number
+  project: string
+  workflowSlug: string
+  workflowKey: string
+  stepSlug: string
+  actions: readonly string[]
+}
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
@@ -20,14 +29,52 @@ export function decidePullRequestTaskCursorAdmission(input: {
   taskKey: string | null
   harnessSession: string | null
   heldCursors: readonly HeldTaskCursor[]
+  systemJob: string | null
+  branch: string
+  canonMirrorBranch: string | null
 }): PullRequestTaskCursorAdmission {
-  if (!input.taskKey || !input.harnessSession) return { kind: 'allow' }
   if (
-    input.heldCursors.some(
-      (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
-    )
+    isSystemLifecycleJob(input.systemJob) &&
+    input.canonMirrorBranch !== null &&
+    input.branch === input.canonMirrorBranch
   )
     return { kind: 'allow' }
+  if (!input.taskKey || !input.harnessSession) return { kind: 'allow' }
+  const matching = input.heldCursors.filter(
+    (cursor) => cursor.project === input.project && cursor.workflowKey === input.taskKey,
+  )
+  if (matching.length) {
+    const required: StepLandAction = input.command === 'pr create' ? 'pr-create' : 'pr-merge'
+    if (matching.some((cursor) => cursor.actions.includes(required))) return { kind: 'allow' }
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          matching
+            .map(
+              (cursor) =>
+                `refusing ${PLATFORM_SLUG} ${input.command}: cursor ${cursor.number} (${cursor.workflowSlug}, ${cursor.workflowKey}) is at step ${cursor.stepSlug}, which does not run ${input.command}`,
+            )
+            .join('\n'),
+          matching.map((cursor) => ({
+            kind: 'command' as const,
+            argv: [
+              PLATFORM_SLUG,
+              'workflow',
+              'next',
+              cursor.workflowSlug,
+              '--cursor',
+              String(cursor.number),
+              '--project',
+              cursor.project,
+              '--arg',
+              `key=${cursor.workflowKey}`,
+            ],
+          })),
+        ),
+      ),
+    }
+  }
   return {
     kind: 'refuse',
     message: renderRefusal(
@@ -49,14 +96,19 @@ export async function assertPullRequestTaskCursorAdmission(
     branch: string
     database?: Database
     env?: Record<string, string | undefined>
+    systemJob?: string | null
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
     session,
   ) =>
     (await openQuestionStages(database, session)).map((cursor) => ({
+      number: cursor.number,
       project: cursor.project,
+      workflowSlug: cursor.workflow_slug,
       workflowKey: cursor.workflow_key,
+      stepSlug: cursor.step_slug,
+      actions: cursor.step_actions,
     })),
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
@@ -72,6 +124,11 @@ export async function assertPullRequestTaskCursorAdmission(
     taskKey,
     harnessSession,
     heldCursors,
+    systemJob: input.systemJob ?? null,
+    branch: input.branch,
+    canonMirrorBranch: input.project.settings.canonMirrorKey?.trim()
+      ? canonMirrorBranchName(input.project.settings.canonMirrorKey.trim())
+      : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }

@@ -4,7 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { readBranchLandingTaskRows } from '../branch/branch-landing-records.ts'
 import { observeLandedTasks } from '../branch/task-status-observation.ts'
-import { taskContextItems } from '../doc/context-service.ts'
+import { listContextItems } from '../doc/context-item-store.ts'
+import { taskContextHolder } from '../doc/doc-subjects.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
 import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
@@ -35,6 +36,19 @@ export async function sessionCloseOutObligationItems(
     ),
   })
   const landedTasks = await observeLandedTasks(identities, taskReader)
+  const taskHolders = landedTasks.flatMap((observation) =>
+    observation.task
+      ? [
+          {
+            holder: taskContextHolder(observation.task.record_id),
+            owner: { kind: 'task' as const, projectName: observation.task.project },
+          },
+        ]
+      : [],
+  )
+  const contextByTask = Map.groupBy(await listContextItems(taskHolders, database), (item) =>
+    item.holder.slice('task:'.length),
+  )
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
     acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
@@ -42,7 +56,7 @@ export async function sessionCloseOutObligationItems(
       ...observation,
       openAfterLandingAcknowledged:
         observation.task !== null &&
-        taskContextItems(observation.task, database).some(
+        (contextByTask.get(observation.task.record_id) ?? []).some(
           (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
         ),
     })),

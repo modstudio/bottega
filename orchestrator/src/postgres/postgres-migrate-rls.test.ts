@@ -42,6 +42,10 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.ts'
+import {
+  registerSpaceAgentRlsProof,
+  registerSpaceAgentServiceProof,
+} from '../../test/postgres-space-agent-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { registerTaskFlowReadThroughTakeoverProof } from '../../test/postgres-task-flow-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
@@ -217,18 +221,32 @@ realPostgres('RLS proof against real Postgres', () => {
     installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
-    await signUpCommand(SIGN_UP_AUTH.emailA, 'Auth A', async () => SIGN_UP_AUTH.password, {
-      log: (value) => cliOutput.push(value),
-    })
+    await signUpCommand(
+      SIGN_UP_AUTH.emailA,
+      'Auth A',
+      async () => SIGN_UP_AUTH.password,
+      {
+        log: (value) => cliOutput.push(value),
+      },
+      undefined,
+      { applySettings: async () => [] },
+    )
     tokenA = storedToken()
     const first = await actorSession(tokenA)
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
 
-    await signUpCommand(SIGN_UP_AUTH.emailB, 'Auth B', async () => SIGN_UP_AUTH.password, {
-      log: (value) => cliOutput.push(value),
-    })
+    await signUpCommand(
+      SIGN_UP_AUTH.emailB,
+      'Auth B',
+      async () => SIGN_UP_AUTH.password,
+      {
+        log: (value) => cliOutput.push(value),
+      },
+      undefined,
+      { applySettings: async () => [] },
+    )
     tokenB = storedToken()
     const second = await actorSession(tokenB)
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
@@ -849,6 +867,14 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerRecordGrantProofs()
+  registerSpaceAgentRlsProof(ids.SPACE_A, ids.SPACE_B)
+  registerSpaceAgentServiceProof({
+    actorUrl: actorUrl!,
+    spaceA: ids.SPACE_A,
+    spaceB: ids.SPACE_B,
+    userId: ids.USER_A,
+    otherUserId: ids.USER_B,
+  })
 
   test('same-space SELECT remains visible', () => {
     const result = asSpace(

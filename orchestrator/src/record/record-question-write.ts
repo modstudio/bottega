@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
@@ -14,6 +15,7 @@ import {
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
+import { questionTextWriteRefusal } from '../question-store/question-text-refusal.ts'
 import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
@@ -38,11 +40,13 @@ import { projectRecordId } from './record-sync-project-identity.ts'
 import { recordColumnName, sameRecordValue } from './record-task-flow-write-decision.ts'
 
 type Tenant = { url: string } & TenantPrincipal
+const maskQuestionValues = <T>(value: T): T => maskHostedTableWrite('question', value)
 type ExistingQuestion = {
   number: number | string | null
   revision: number | string
   last_request_id: string | null
   project_id: string | null
+  question: string
 }
 
 function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
@@ -128,6 +132,50 @@ async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void>
   }
 }
 
+function assertQuestionTextWriteAllowed(
+  intent: QuestionIntent,
+  stored: string | null,
+  proposed: unknown,
+  status: 409 | 422,
+): void {
+  const refusal = questionTextWriteRefusal(intent, stored, proposed)
+  if (refusal) throw new RecordQuestionError(refusal.message, status)
+}
+
+function maskedQuestionText(question: string): string {
+  return maskQuestionValues({ question }).question
+}
+
+async function existingQuestionForWrite(
+  id: string,
+  tx: SQL,
+): Promise<ExistingQuestion | undefined> {
+  const rows = (await tx`
+    SELECT number,revision,last_request_id::text,project_id::text,question
+      FROM question WHERE id=${id}::uuid FOR UPDATE
+  `) as ExistingQuestion[]
+  return rows[0]
+}
+
+function replayedQuestionWrite(id: string, existing: ExistingQuestion): QuestionWriteResult {
+  return {
+    id,
+    number: Number(existing.number),
+    revision: Number(existing.revision),
+    applied: true,
+    replayed: true,
+  }
+}
+
+function questionWritePayload(writeInput: Tenant & QuestionWriteBody, number: number) {
+  return {
+    ...writeInput.question,
+    number,
+    spaceId: writeInput.spaceId,
+    audits: [{ ...writeInput.audit, id: writeInput.requestId }],
+  }
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -171,43 +219,39 @@ export async function writeRecordQuestionTransaction(
   input: Tenant & QuestionIntentBody,
   tx: SQL,
 ): Promise<QuestionWriteResult> {
+  assertQuestionTextWriteAllowed(intent, input.question.question, input.question.question, 422)
   if (intent === 'import')
     return importRecordQuestionTransaction(input as Tenant & QuestionImportBody, tx)
   const writeInput = input as Tenant & QuestionWriteBody
   requireRestoreNumber(intent, writeInput)
   if (intent === 'ask' && writeInput.question.runId)
     await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
-  const existing = (await tx`
-      SELECT number,revision,last_request_id::text,project_id::text
-        FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE
-    `) as ExistingQuestion[]
-  if (existing[0]?.last_request_id === writeInput.requestId)
-    return {
-      id: writeInput.question.id,
-      number: Number(existing[0].number),
-      revision: Number(existing[0].revision),
-      applied: true,
-      replayed: true,
-    }
-  const number = await questionNumberForWrite(intent, writeInput, existing[0], tx)
-  const payload = {
-    ...writeInput.question,
-    number,
-    spaceId: writeInput.spaceId,
-    audits: [{ ...writeInput.audit, id: writeInput.requestId }],
-  }
+  const existing = await existingQuestionForWrite(writeInput.question.id, tx)
+  if (existing?.last_request_id === writeInput.requestId)
+    return replayedQuestionWrite(writeInput.question.id, existing)
+  if (existing)
+    assertQuestionTextWriteAllowed(
+      intent,
+      existing.question,
+      maskedQuestionText(writeInput.question.question),
+      409,
+    )
+  const number = await questionNumberForWrite(intent, writeInput, existing, tx)
+  const payload = questionWritePayload(writeInput, number)
   const workflowTaskId = await hostedTaskIdForReference(tx, writeInput.spaceId, {
     id: writeInput.question.workflowTaskId,
     key: writeInput.question.workflowKey,
   })
-  const projectId = await projectIdForQuestionWrite(intent, writeInput, existing[0], tx)
-  const values = await questionValuesForWrite(
-    tx,
-    payload,
-    projectId,
-    workflowTaskId,
-    writeInput.question.workflowCursorRecordId,
-    intent === 'ask',
+  const projectId = await projectIdForQuestionWrite(intent, writeInput, existing, tx)
+  const values = maskQuestionValues(
+    await questionValuesForWrite(
+      tx,
+      payload,
+      projectId,
+      workflowTaskId,
+      writeInput.question.workflowCursorRecordId,
+      intent === 'ask',
+    ),
   )
   const {
     id: _id,
@@ -242,11 +286,11 @@ export async function writeRecordQuestionTransaction(
       revision: questionRecord.revision,
     })
   const result = written[0]
-  if (!result && existing[0] && existing[0].number !== null)
+  if (!result && existing && existing.number !== null)
     return {
       id: writeInput.question.id,
-      number: Number(existing[0].number),
-      revision: Number(existing[0].revision),
+      number: Number(existing.number),
+      revision: Number(existing.revision),
       applied: false,
     }
   if (!result || result.number == null)
@@ -306,7 +350,7 @@ async function importRecordQuestionTransaction(
     key: input.question.workflowKey,
   })
   const projectId = await projectRecordId(tx, input.question, input)
-  const values = {
+  const values = maskQuestionValues({
     ...questionValues(
       { ...input.question, number, spaceId: input.spaceId },
       projectId,
@@ -315,7 +359,7 @@ async function importRecordQuestionTransaction(
     workflowStepOrdinal: input.question.workflowStepOrdinal ?? null,
     workflowStepSlug: input.question.workflowStepSlug ?? null,
     lastRequestId: input.requestId,
-  }
+  })
   if (existing[0]) assertSameQuestionRow('question', input.question.id, existing[0], values)
   else await drizzle({ client: tx }).insert(questionRecord).values(values)
   for (const audit of input.audits)

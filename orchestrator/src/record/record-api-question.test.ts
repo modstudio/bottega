@@ -153,6 +153,48 @@ test('hosted question reads other than rulings still refuse changedAfter', async
   expect(await response.json()).toMatchObject({ remedy: expect.stringContaining('rulings read') })
 })
 
+test('one question memberships request returns rows from three spaces', async () => {
+  const spaceIds = [tenant.spaceId, crypto.randomUUID(), crypto.randomUUID()]
+  const api = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordQuestionRoutes(
+    api,
+    {
+      readQuestions: async (input) => ({
+        items: input.spaceIds.map((spaceId, index) => ({
+          space_id: spaceId,
+          number: index + 1,
+        })),
+      }),
+    },
+    {
+      scope: () => ({ ...tenant, spaceIds, uuidKeyedRead: true }),
+      noSpace: () => new Response(null, { status: 409 }),
+    },
+  )
+
+  const response = await api.request('/v1/questions/memberships?read=inbox')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({
+    items: spaceIds.map((spaceId, index) => ({ space_id: spaceId, number: index + 1 })),
+  })
+})
+
+test.each(['read=waiting', 'read=inbox&limit=1'])(
+  'question memberships refuses unsupported read %s',
+  async (query) => {
+    const response = await app({ readQuestions: async () => ({ items: [] }) }).request(
+      `/v1/questions/memberships?${query}`,
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error:
+        'question memberships reads allow only inbox without limit or changedAfter and open-for-tasks',
+    })
+  },
+)
+
 test('a destinationless question by-id miss returns the membership-safe refusal', async () => {
   const response = await app(
     { readQuestions: async () => ({ items: [] }) },
@@ -296,6 +338,7 @@ function mutationBody(
   questionId: string,
   requestId: string,
   number: number,
+  questionText = 'Which way?',
 ): QuestionWriteBody {
   const question: QuestionWriteBody['question'] = {
     id: questionId,
@@ -308,7 +351,7 @@ function mutationBody(
     machineId: CONTRACT_MACHINE,
     revision: 2,
     askedAt: CONTRACT_STAMP,
-    question: 'Which way?',
+    question: questionText,
     options: null,
     recommendation: null,
     why: null,
@@ -371,7 +414,6 @@ function mutationBody(
     question.filedAt = CONTRACT_STAMP
   } else if (intent === 'link') {
     question.workflowKey = 'contract-flow'
-    question.question = 'Which linked way?'
   } else if (intent === 'overturn') {
     question.overturnedAt = CONTRACT_STAMP
     question.overturnedBy = 'contract-test'
@@ -387,6 +429,107 @@ function mutationBody(
     audit: { action: intent, actorSession: 'contract-test', at: CONTRACT_STAMP, reason: null },
   }
 }
+
+test.each(['', '[object Object]'])(
+  'hosted ask refuses malformed question text %j and writes no row',
+  async (question) => {
+    const fixture = await createRecordContractFixture()
+    try {
+      const body = mutationBody('answer', contractId(29_100), contractId(29_101), 1)
+      body.question.question = question
+      body.audit.action = 'ask'
+      const response = await fixture.app.request('/v1/questions/ask', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-record-space': RECORD_CONTRACT_SPACE_A,
+        },
+        body: JSON.stringify(body),
+      })
+
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining(question ? 'question was the text' : 'question was empty'),
+      })
+      expect(
+        (await fixture.database.query('SELECT count(*)::int AS count FROM question')).rows,
+      ).toEqual([{ count: 0 }])
+    } finally {
+      await fixture.close()
+    }
+  },
+)
+
+test('hosted import and restore preserve legacy coerced-object wording', async () => {
+  const fixture = await createRecordContractFixture()
+  try {
+    await fixture.database.exec(`
+      RESET ROLE;
+      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+      VALUES ('${CONTRACT_MACHINE}','${RECORD_CONTRACT_USER}','Legacy question machine',now(),now());
+      SET ROLE record_actor;
+    `)
+    const importWrite = mutationBody('answer', contractId(29_110), contractId(29_111), 1)
+    importWrite.question.projectId = null
+    importWrite.question.question = '[object Object]'
+    const importBody = {
+      requestId: importWrite.requestId,
+      question: importWrite.question,
+      audits: [{ ...importWrite.audit, id: contractId(29_112), action: 'ask' }],
+    }
+    const restoreBody = mutationBody('answer', contractId(29_113), contractId(29_114), 2)
+    restoreBody.question.projectId = null
+    restoreBody.question.question = '[object Object]'
+    restoreBody.audit.action = 'restore'
+
+    for (const [intent, body] of [
+      ['import', importBody],
+      ['restore', restoreBody],
+    ] as const) {
+      const response = await fixture.app.request(`/v1/questions/${intent}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-record-space': RECORD_CONTRACT_SPACE_A,
+        },
+        body: JSON.stringify(body),
+      })
+      expect(response.status).toBe(200)
+    }
+
+    expect(
+      (
+        await fixture.database.query<{ question: string }>(`
+          SELECT question FROM question
+          WHERE id IN ('${importWrite.question.id}','${restoreBody.question.id}')
+          ORDER BY number
+        `)
+      ).rows,
+    ).toEqual([{ question: '[object Object]' }, { question: '[object Object]' }])
+  } finally {
+    await fixture.close()
+  }
+})
+
+test('question routes forward validated free text to the masked writer', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  const body = mutationBody('answer', contractId(29001), contractId(29002), 1)
+  body.question.answer = `${generic} quoted ${secret}`
+  let stored = ''
+  const response = await app({
+    writeQuestion: async (_intent, input) => {
+      stored = input.question.answer ?? ''
+      return { id: input.question.id, number: 1, revision: 1, applied: true, replayed: false }
+    },
+  }).request('/v1/questions/answer', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  expect(response.status).toBe(200)
+  expect(stored).toBe(`${generic} quoted ${secret}`)
+})
 
 test('existing question mutations keep the stored project while asks still resolve payload projects', async () => {
   const fixture = await createRecordContractFixture()
@@ -412,7 +555,7 @@ test('existing question mutations keep the stored project while asks still resol
           .map(
             (row) =>
               `('${row.id}','${RECORD_CONTRACT_SPACE_A}',${row.storedProject ? `'${row.storedProject}'` : 'NULL'},` +
-              `'${CONTRACT_MACHINE}',${row.number},1,'[]','${CONTRACT_STAMP}','Which way?',` +
+              `'${CONTRACT_MACHINE}',${row.number},1,'[]','${CONTRACT_STAMP}','[object Object]',` +
               `'${CONTRACT_STAMP}','${CONTRACT_STAMP}')`,
           )
           .join(',\n')};
@@ -439,6 +582,7 @@ test('existing question mutations keep the stored project while asks still resol
                 row.id,
                 contractId(25_200 + intentIndex * 2 + projectIndex),
                 row.number,
+                '[object Object]',
               ),
             ),
           }),

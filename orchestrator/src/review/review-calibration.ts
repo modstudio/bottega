@@ -137,7 +137,7 @@ function calibrationCell(
     .query(
       `SELECT DISTINCT r.record_id FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
       JOIN run ON run.record_id=rl.run_record_id
-      WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('r', 'run', 'rl')} ${modelClause}
+      WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('routing', 'r', 'run', 'rl')} ${modelClause}
       ORDER BY r.completed_at DESC, r.number DESC LIMIT ?`,
     )
     .all(lens, agent, ...modelDecision.params, REVIEW_WINDOW) as { record_id: string }[]

@@ -10,7 +10,7 @@ import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { openQuestionsForTasks } from '../question-store/question-store-read.ts'
+import { openQuestionsForMemberTasks } from '../question-store/question-store-read.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
@@ -19,6 +19,10 @@ import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
+import {
+  lookupProjectTasks,
+  type ProjectTaskLookupReader,
+} from '../workflow/project-task-lookup.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
@@ -46,10 +50,10 @@ import {
   formatContextBriefCursorLine,
   formatContextBriefRunLine,
 } from './context-brief-format.ts'
-import { storedItems, taskProfile } from './context-write-adapter.ts'
+import { listContextItems } from './context-item-store.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
-import { listOpenResumes } from './docs.ts'
+import { readOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
   key: string
@@ -197,14 +201,14 @@ export function holderSequence(
   ]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
-  const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
+  const add = (task: HubTaskReference) => {
     const identity = projectTaskKey(task.project, task.key)
     if (emitted.has(identity)) return
     emitted.add(identity)
     holders.push({
       key: task.key,
       title: task.title ?? '',
-      kind: taskProfile(task.key, projectTasks),
+      kind: task.has_children ? 'epic' : 'task',
       recordId: task.record_id,
       project: task.project,
     })
@@ -212,13 +216,12 @@ export function holderSequence(
   for (const { key, project } of working) {
     const task = taskReferenceForProjectKey(index, project, key)
     if (!task) continue
-    const projectTasks = tasks.filter((row) => row.project === project)
-    add(task, projectTasks)
+    add(task)
     let parent = task.parent_key ?? null
     while (parent) {
       const parentTask = taskReferenceForProjectKey(index, project, parent)
       if (!parentTask) break
-      add(parentTask, projectTasks)
+      add(parentTask)
       parent = parentTask.parent_key ?? null
     }
   }
@@ -235,43 +238,59 @@ export async function storedBriefHolders(
   )
   const openByTask = new Map<string, Array<{ number: number; question: string }>>()
   const unresolvedProjects = new Set<string>()
+  const resolvedTaskReferences: typeof taskReferences = []
   for (const projectName of new Set(taskReferences.map(({ project }) => project))) {
     const project = projectByName(projectName, database)
     if (!project) {
       unresolvedProjects.add(projectName)
       continue
     }
-    const projectTasks = taskReferences.filter((reference) => reference.project === projectName)
-    const rows = await openQuestionsForTasks(
-      database,
-      projectTasks.map(({ recordId }) => recordId),
-      project.recordId,
+    resolvedTaskReferences.push(
+      ...taskReferences.filter((reference) => reference.project === projectName),
     )
-    for (const row of rows) {
-      const taskId = String(row.workflow_task_record_id)
-      const questions = openByTask.get(taskId) ?? []
-      questions.push({ number: Number(row.number), question: String(row.question) })
-      openByTask.set(taskId, questions)
-    }
   }
+  const rows = await openQuestionsForMemberTasks(
+    database,
+    resolvedTaskReferences.map(({ recordId }) => recordId),
+  )
+  for (const row of rows) {
+    const taskId = String(row.workflow_task_record_id)
+    const questions = openByTask.get(taskId) ?? []
+    questions.push({ number: Number(row.number), question: String(row.question) })
+    openByTask.set(taskId, questions)
+  }
+  const holderAddresses = references.map((reference) =>
+    reference.kind === 'session'
+      ? `session:${reference.key}`
+      : reference.kind === 'cursor'
+        ? cursorContextHolder(reference.recordId)
+        : {
+            holder: taskContextHolder(reference.recordId),
+            owner: { kind: 'task' as const, projectName: reference.project },
+          },
+  )
+  const itemsByHolder = Map.groupBy(
+    await listContextItems(holderAddresses, database),
+    (item) => item.holder,
+  )
   return (
     await Promise.all(
       references.map(async (reference) => {
         if (reference.kind === 'session') {
           return {
             ...reference,
-            items: storedItems(`session:${reference.key}`, database),
+            items: itemsByHolder.get(`session:${reference.key}`) ?? [],
           }
         }
         if (reference.kind === 'cursor') {
           const { recordId, ...holder } = reference
-          return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
+          return { ...holder, items: itemsByHolder.get(cursorContextHolder(recordId)) ?? [] }
         }
         const { recordId, project: projectName, ...holder } = reference
         const openQuestions = openByTask.get(recordId) ?? []
         return {
           ...holder,
-          items: storedItems(taskContextHolder(recordId), database),
+          items: itemsByHolder.get(taskContextHolder(recordId)) ?? [],
           ...(unresolvedProjects.has(projectName)
             ? {
                 openQuestionsUnavailable: `questions unread for unresolved project ${projectName}; register or refresh the project, then retry`,
@@ -370,21 +389,27 @@ function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext
   ].join(' · ')
 }
 
-export async function contextBrief(
+export async function contextBriefWithCursors(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
   hubTaskReader: ProjectTaskListReader = readProjectTaskList,
-): Promise<ContextBrief> {
+  hubTaskLookup: ProjectTaskLookupReader = lookupProjectTasks,
+): Promise<{ brief: ContextBrief; cursors: WorkflowCursorListRow[] }> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
-    Promise.all(workingProjects.map((project) => hubTaskReader(project))).then((rows) =>
-      rows.flat(),
-    ),
+    Promise.all(
+      workingProjects.map((project) =>
+        hubTaskLookup(
+          project,
+          working.filter((row) => row.project === project).map((row) => row.key),
+        ),
+      ),
+    ).then((rows) => rows.flat()),
     architectSessionContext(cwd, { database }),
     filedIssueQueueState(projectAt(cwd, database)?.name ?? null, hubTaskReader),
   ])
@@ -407,7 +432,7 @@ export async function contextBrief(
   const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims, handoffLinks)
-  return {
+  const brief: ContextBrief = {
     session,
     fullCommand: fullHolder
       ? `${PLATFORM_SLUG} agent context show --task ${fullHolder.key}`
@@ -434,13 +459,20 @@ export async function contextBrief(
       }
     }),
     claims: inFlight.claims,
-    reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
+    reviewVerdictLines: await sessionReviewVerdictLines(session, cursors, database),
     waiting: {
       boardRequests,
       questions: questionCounts,
       filedIssues: filedIssues.waiting.length,
-      resumeBriefs: listOpenResumes(cwd).open.length,
+      resumeBriefs: (await readOpenResumes(cwd)).open.length,
     },
     autonomy: autonomyLine(autonomy),
   }
+  return { brief, cursors }
+}
+
+export async function contextBrief(
+  ...args: Parameters<typeof contextBriefWithCursors>
+): Promise<ContextBrief> {
+  return (await contextBriefWithCursors(...args)).brief
 }

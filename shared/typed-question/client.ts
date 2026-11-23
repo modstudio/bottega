@@ -4,8 +4,10 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 
 import { PLATFORM_SLUG } from '../brand.ts'
 import { ConfigClientError } from '../config-client.ts'
+import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../config-read-memo.ts'
 import { credentialIdentityPath } from '../credential.ts'
 import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
+import { processMemo } from '../process-memo.ts'
 import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
@@ -73,18 +75,43 @@ export type TypedQuestionsClientResult =
   | { kind: 'error'; error: string; latencyMs: number }
 
 export type TypedQuestionClientDependencies = {
-  resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
+  resolveCredential(): Promise<
+    { kind: 'resolved'; value: string; version?: number } | { kind: 'missing' }
+  >
+  invalidateCredential?(refused: { value: string; version?: number }): void
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
   random?(): number
 }
 
-const clientDependencies: TypedQuestionClientDependencies = {
-  resolveCredential: () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
-  fetch: (input, init) => hostedApiFetch(input, init),
-  sleep: (ms) => Bun.sleep(ms),
-  random: Math.random,
+export function typedQuestionClientDependencies(
+  resolveCredential: TypedQuestionClientDependencies['resolveCredential'],
+  fetch: TypedQuestionClientDependencies['fetch'],
+): TypedQuestionClientDependencies {
+  let loads = 0
+  const credential = processMemo(
+    async () => ({
+      ...(await resolveCredential()),
+      version: ++loads,
+    }),
+    {
+      maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+    },
+  )
+  return {
+    resolveCredential: credential.get,
+    invalidateCredential: (refused) =>
+      credential.clearIf((result) => result.version === refused.version),
+    fetch,
+    sleep: (ms) => Bun.sleep(ms),
+    random: Math.random,
+  }
 }
+
+const clientDependencies = typedQuestionClientDependencies(
+  () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
+  (input, init) => hostedApiFetch(input, init),
+)
 
 type ActiveSpaceCredentialResolver = typeof resolveActiveSpaceCredentialValue
 
@@ -204,15 +231,32 @@ function elapsed(started: number): number {
   return Math.max(0, Math.round(performance.now() - started))
 }
 
+type CredentialResolution =
+  | { kind: 'key'; value: string; version?: number }
+  | { kind: 'missing-key' }
+  | { kind: 'key-resolution' }
+
+type CredentialKey = { value: string; version?: number }
+
+function credentialResolutionFailure(
+  result: Exclude<CredentialResolution, { kind: 'key' }>,
+  started: number,
+): TypedQuestionsClientResult {
+  return result.kind === 'missing-key'
+    ? result
+    : { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
+}
+
 async function resolveKey(
   dependencies: TypedQuestionClientDependencies,
-): Promise<{ kind: 'key'; value: string } | { kind: 'missing-key' } | { kind: 'error' }> {
+): Promise<CredentialResolution> {
   try {
     const credential = await dependencies.resolveCredential()
-    if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
+    if (credential.kind === 'resolved')
+      return { kind: 'key', value: credential.value, version: credential.version }
     return { kind: 'missing-key' }
   } catch {
-    return { kind: 'error' }
+    return { kind: 'key-resolution' }
   }
 }
 
@@ -251,6 +295,55 @@ function retryable(result: Response | 'timeout' | 'transport'): boolean {
   )
 }
 
+type CredentialRequestResult =
+  | {
+      kind: 'response'
+      response: Response | 'timeout' | 'transport'
+      key: CredentialKey
+      refreshed: boolean
+    }
+  | Exclude<CredentialResolution, { kind: 'key' }>
+
+async function sendWithCredentialRefresh(
+  key: CredentialKey,
+  body: string,
+  dependencies: TypedQuestionClientDependencies,
+  allowRefresh: boolean,
+): Promise<CredentialRequestResult> {
+  const response = await sendRequest(key.value, body, dependencies.fetch)
+  if (
+    !allowRefresh ||
+    typeof response === 'string' ||
+    (response.status !== 401 && response.status !== 403)
+  )
+    return { kind: 'response', response, key, refreshed: false }
+
+  dependencies.invalidateCredential?.(key)
+  const resolved = await resolveKey(dependencies)
+  if (resolved.kind !== 'key') return resolved
+  return {
+    kind: 'response',
+    response: await sendRequest(resolved.value, body, dependencies.fetch),
+    key: resolved,
+    refreshed: true,
+  }
+}
+
+async function responseResult(
+  questions: readonly TypedQuestion[],
+  response: Response | 'timeout' | 'transport',
+  started: number,
+): Promise<TypedQuestionsClientResult> {
+  if (typeof response === 'string')
+    return { kind: 'error', error: response, latencyMs: elapsed(started) }
+  if (!response.ok)
+    return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
+  const parsed = await parsedAnswers(questions, response)
+  return parsed
+    ? { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
+    : { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
+}
+
 function numericHeader(response: Response, name: string): number | null {
   const value = response.headers.get(name)?.trim()
   if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return null
@@ -271,7 +364,10 @@ function retryDelay(
   return Math.min(5_000, 500 * 2 ** retry * (0.75 + random() * 0.5))
 }
 
-/** Resolve the key at call time and retry bounded transient failures with backoff. */
+/**
+ * Ask with the process-wide cached credential, refresh it once on a 401 or 403,
+ * and retry bounded transient failures with backoff.
+ */
 export async function askTypedQuestionClient(
   question: TypedQuestion,
   state: string | Record<string, unknown>,
@@ -285,7 +381,11 @@ export async function askTypedQuestionClient(
     : { kind: 'error', error: 'unparsable_body', latencyMs: result.latencyMs }
 }
 
-/** Resolve the key once and ask every question sharing the supplied state. */
+/**
+ * Resolve the key once and ask every question sharing the supplied state.
+ * A 401 or 403 clears that cached key, resolves once more, and resends once before
+ * returning the second HTTP refusal.
+ */
 export async function askTypedQuestionsClient(
   questions: readonly TypedQuestion[],
   state: string | Record<string, unknown>,
@@ -293,10 +393,8 @@ export async function askTypedQuestionsClient(
 ): Promise<TypedQuestionsClientResult> {
   const started = performance.now()
   const resolved = await resolveKey(dependencies)
-  if (resolved.kind === 'error') {
-    return { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
-  }
-  if (resolved.kind === 'missing-key') return resolved
+  if (resolved.kind !== 'key') return credentialResolutionFailure(resolved, started)
+  let key: CredentialKey = resolved
   const body = JSON.stringify({
     model: JEV_MODEL,
     state,
@@ -306,20 +404,18 @@ export async function askTypedQuestionsClient(
   })
   const sleep = dependencies.sleep ?? clientDependencies.sleep!
   const random = dependencies.random ?? clientDependencies.random!
+  let authRetried = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await sendRequest(resolved.value, body, dependencies.fetch)
+    const sent = await sendWithCredentialRefresh(key, body, dependencies, !authRetried)
+    if (sent.kind !== 'response') return credentialResolutionFailure(sent, started)
+    const response = sent.response
+    key = sent.key
+    authRetried ||= sent.refreshed
     if (retryable(response) && attempt < 2) {
       await sleep(retryDelay(response, attempt, random))
       continue
     }
-    if (typeof response === 'string')
-      return { kind: 'error', error: response, latencyMs: elapsed(started) }
-    if (!response.ok) {
-      return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
-    }
-    const parsed = await parsedAnswers(questions, response)
-    if (!parsed) return { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
-    return { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
+    return responseResult(questions, response, started)
   }
   throw new Error('unreachable typed-question retry loop')
 }

@@ -1,7 +1,47 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { missingTaskMessage } from '../../../shared/task-missing.ts'
-import { hubTaskReadRefusal } from './workflow-floor-task-read.ts'
+import {
+  hubTaskReadFromJson,
+  hubTaskReadRefusal,
+  namesMissingTaskDocument,
+} from './workflow-floor-task-read.ts'
+
+const task = {
+  key: 'DEV-1070',
+  record_id: 'task-DEV-1070',
+  status: 'done',
+  status_category: 'done',
+}
+
+test('task reads map the local task update time and its absence', () => {
+  expect(
+    hubTaskReadFromJson('DEV-1070', {
+      task: { ...task, updated_at: '2026-11-20T12:00:00.000Z' },
+    }).updatedAt,
+  ).toBe('2026-11-20T12:00:00.000Z')
+  expect(hubTaskReadFromJson('DEV-1070', { task }).updatedAt).toBeNull()
+})
+
+test('a fresh tracker update time takes precedence over the local observation time', () => {
+  expect(
+    hubTaskReadFromJson('DEV-1070', {
+      task: { ...task, updated_at: '2026-11-20T12:00:00.000Z' },
+      tracker_updated_at: null,
+    }).updatedAt,
+  ).toBeNull()
+  expect(
+    hubTaskReadFromJson('DEV-1070', {
+      task: { ...task, updated_at: '2026-11-20T12:00:00.000Z' },
+      tracker_updated_at: '2026-11-19T12:00:00.000Z',
+    }).updatedAt,
+  ).toBe('2026-11-19T12:00:00.000Z')
+})
+
+test('a missing task document matcher requires the complete hub miss line', () => {
+  expect(namesMissingTaskDocument('no task document DEV-1070/2', 'DEV-1070/2')).toBeTrue()
+  expect(namesMissingTaskDocument('no task document DEV-1070/20', 'DEV-1070/2')).toBeFalse()
+})
 
 test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
   const detail = missingTaskMessage('DEV-1070')

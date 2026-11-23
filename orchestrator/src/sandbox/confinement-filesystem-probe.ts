@@ -34,6 +34,9 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
+import { median } from '../state/statistics.ts'
+import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
+import { firstErrorLine, launchSandboxProbe } from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -47,7 +50,6 @@ import {
   probeSandboxProfile,
   readonlyLensProfile,
   resetSandbox,
-  type SandboxRuntimeConfig,
   sandboxLaunchArgv,
   writerProfile,
 } from './sandbox.ts'
@@ -55,6 +57,21 @@ import {
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 type CommandProbeStatus = 'ran' | 'failed'
 type CommandProbe = { status: CommandProbeStatus; reason: string }
+const SANDBOX_GIT_SPAWN_SAMPLES = 9
+const SANDBOX_GIT_SPAWN_RATIO_MAX = 8
+
+export type SandboxGitSpawnVerdict = {
+  status: 'ok' | 'slow'
+  gitMedianMs: number
+  trueMedianMs: number
+  ratio: number
+}
+
+type SandboxGitSpawnMeasurement = SandboxGitSpawnVerdict & {
+  gitMs: number[]
+  trueMs: number[]
+}
+
 export type ConfinementFilesystemProbeRow = {
   family:
     | 'goose'
@@ -66,9 +83,12 @@ export type ConfinementFilesystemProbeRow = {
     | 'Codex'
     | 'read-only MCP'
     | 'host override'
-  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused'
+    | 'sandbox git spawn'
+    | 'headless browser'
+  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
+  gitSpawn?: SandboxGitSpawnMeasurement
   reason?: string
 }
 
@@ -119,12 +139,27 @@ function fixtureProject(
   }
 }
 
-function firstErrorLine(stderr: string): string {
-  return stderr.trim().split(/\r?\n/, 1)[0] || 'no stderr'
-}
-
 function stderrTail(stderr: string): string {
   return stderr.trim().split(/\r?\n/).slice(-3).join(' | ') || 'no stderr'
+}
+
+/** Compare sandboxed git startup with the host's minimal executable startup. */
+export function sandboxGitSpawnVerdict(input: {
+  gitMs: readonly number[]
+  trueMs: readonly number[]
+}): SandboxGitSpawnVerdict {
+  const gitMedianMs = median([...input.gitMs])
+  const trueMedianMs = median([...input.trueMs])
+  if (gitMedianMs === null || trueMedianMs === null) {
+    throw new TypeError('sandbox git spawn verdict requires samples')
+  }
+  const ratio = gitMedianMs / trueMedianMs
+  return {
+    status: ratio <= SANDBOX_GIT_SPAWN_RATIO_MAX ? 'ok' : 'slow',
+    gitMedianMs,
+    trueMedianMs,
+    ratio,
+  }
 }
 
 function gitFixture(argv: string[], cwd: string): string {
@@ -201,21 +236,6 @@ function applyCommandCellVerdict(
   return { status: 'failed', reason: `command cell ${name} failed: ${command.reason}` }
 }
 
-async function launchSandboxProbe(
-  profile: SandboxRuntimeConfig,
-  executable: string,
-  argv: string[],
-  environment: Record<string, string>,
-  scratchDir: string,
-  options: { cwd?: string; environment?: Record<string, string> } = {},
-) {
-  return startBounded(await sandboxLaunchArgv(profile, executable, argv, scratchDir, environment), {
-    budget: 'sandbox-probe',
-    cwd: options.cwd,
-    env: { ...process.env, ...environment, ...options.environment },
-  })
-}
-
 async function launchCommand(
   profile: ReturnType<typeof readonlyLensProfile>,
   argv: string[],
@@ -227,6 +247,63 @@ async function launchCommand(
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
     reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
+  }
+}
+
+async function launchSandboxGitSpawnProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  environment: Record<string, string>,
+  scratchDir: string,
+): Promise<ConfinementFilesystemProbeRow> {
+  const script = `
+function samples(argv) {
+  return Array.from({ length: ${SANDBOX_GIT_SPAWN_SAMPLES} }, () => {
+    const started = performance.now()
+    const result = Bun.spawnSync(argv, { stdout: 'ignore', stderr: 'ignore' })
+    const duration = performance.now() - started
+    if (result.exitCode !== 0) throw new Error(argv[0] + ' exited ' + result.exitCode)
+    return duration
+  })
+}
+console.log(JSON.stringify({
+  gitMs: samples(['git', '--version']),
+  trueMs: samples(['/usr/bin/true']),
+}))
+`
+  try {
+    const result = await launchSandboxProbe(
+      profile,
+      process.execPath,
+      ['-e', script],
+      environment,
+      scratchDir,
+      { environment: { BUN_BE_BUN: '1' } },
+    )
+    if (result.exitCode !== 0) {
+      return {
+        family: 'sandbox git spawn',
+        status: 'failed',
+        paths: {},
+        reason: `measurement exited ${result.exitCode}: ${firstErrorLine(result.stderr)}`,
+      }
+    }
+    const samples = JSON.parse(result.stdout) as { gitMs: number[]; trueMs: number[] }
+    const verdict = sandboxGitSpawnVerdict(samples)
+    return {
+      family: 'sandbox git spawn',
+      status: verdict.status,
+      paths: {},
+      gitSpawn: { ...samples, ...verdict },
+    }
+  } catch (error) {
+    return {
+      family: 'sandbox git spawn',
+      status: 'failed',
+      paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await resetSandbox()
   }
 }
 
@@ -845,6 +922,17 @@ function createProbeFixture(root: string) {
   }
 }
 
+function launchHeadlessBrowserProbeRow(
+  common: ReturnType<typeof createProbeFixture>['common'],
+  environment: Record<string, string>,
+) {
+  return launchHeadlessBrowserProbe(
+    readonlyLensProfile({ ...common, agent: 'goose' }),
+    common.scratchDir,
+    environment,
+  )
+}
+
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
   const probeParent = tmpdir()
@@ -915,6 +1003,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.hubOpenMode,
         fixture.commandLabel,
       ),
+      await launchSandboxGitSpawnProbe(
+        readonlyLensProfile({ ...common, agent: 'grok' }),
+        fixture.environment,
+        common.scratchDir,
+      ),
+      await launchHeadlessBrowserProbeRow(common, fixture.environment),
       ...NOT_COVERED,
     ]
   } finally {
@@ -931,6 +1025,10 @@ export function formatConfinementFilesystemProbes(
   return rows.map((row) => {
     if (row.status === 'not covered')
       return `filesystem-probe  ${row.family}  not covered: ${row.reason}`
+    if (row.gitSpawn) {
+      const measurement = row.gitSpawn
+      return `filesystem-probe  ${row.family}  ${row.status}  git-ms=${measurement.gitMs.join(',')} true-ms=${measurement.trueMs.join(',')} git-median-ms=${measurement.gitMedianMs} true-median-ms=${measurement.trueMedianMs} ratio=${measurement.ratio} max-ratio=${SANDBOX_GIT_SPAWN_RATIO_MAX}`
+    }
     const paths = Object.entries(row.paths)
       .map(([name, access]) => `${name}=${access}`)
       .join(' ')

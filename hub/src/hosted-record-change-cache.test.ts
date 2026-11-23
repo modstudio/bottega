@@ -5,12 +5,7 @@ import { pullHostedChanges } from './hosted-change-cache.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import { applyHostedAcknowledgement, applyHostedNote } from './note-cache.ts'
-import {
-  drainHostedOutbox,
-  listHostedOutbox,
-  queueHostedChange,
-  showHostedOutboxEntry,
-} from './outbox.ts'
+import { drainHostedOutbox, listHostedOutbox, showHostedOutboxEntry } from './outbox.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 
 beforeEach(resetFixtureStore)
@@ -36,6 +31,19 @@ const identity = {
     projectNoteCounters: true,
     targetSpaceNotes: true,
   },
+}
+
+function seedLegacyNoteOutbox(
+  table: typeof HOSTED_NOTE_TABLE | typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  rowId: string,
+  fields: readonly string[] | null = null,
+) {
+  db()
+    .query(
+      `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at,fields)
+       VALUES (?,?,?,'upsert',?,?)`,
+    )
+    .run(crypto.randomUUID(), table, rowId, at, fields ? JSON.stringify(fields) : null)
 }
 const emptyTaskPage = {
   tasks: [],
@@ -312,6 +320,60 @@ test('a cursor compare-and-set mismatch aborts the page', async () => {
     pullHostedChanges({ ...options, fetch, registeredProjects: registered }),
   ).rejects.toThrow('another collector')
   expect(stored('collect.hosted-record-changes.cursor')).toBe('concurrent')
+})
+
+test('a failed record change names its table and record id and keeps the original cause', async () => {
+  seedFeed()
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,title,source,first_seen,last_seen)
+         VALUES ('task-for-bad-document','DEV-9','one','bad document','local',?,?)`,
+      )
+      .run(at, at),
+  )
+  const recordId = 'bad-document-record-id'
+  let thrown: unknown
+  try {
+    await pullHostedChanges({
+      ...options,
+      fetch: route({
+        feed: () =>
+          page('after', [
+            {
+              table: 'hub_task_document',
+              id: recordId,
+              space: 'space-one',
+              op: 'upsert',
+              row: {
+                id: recordId,
+                task_key: 'DEV-9',
+                task_id: 'task-for-bad-document',
+                project_name: 'one',
+                number: null,
+                role: null,
+                title: 'bad document',
+                body: '',
+                version: 'v1',
+                created_at: at,
+                updated_at: at,
+                deleted_at: null,
+              },
+            },
+          ]),
+      }),
+      registeredProjects: registered,
+    })
+  } catch (error) {
+    thrown = error
+  }
+
+  expect(thrown).toBeInstanceOf(Error)
+  expect((thrown as Error).message).toContain(
+    `hosted task change hub_task_document ${recordId}: live task document ${recordId}`,
+  )
+  expect((thrown as Error).cause).toBeInstanceOf(Error)
+  expect(((thrown as Error).cause as Error).message).toContain('has no number')
 })
 
 test('a 410 during follow restarts once from a fresh horizon', async () => {
@@ -623,7 +685,7 @@ test('a pulled acknowledgement adopts its hosted id without stranding a queued k
       .query(`INSERT INTO note_acknowledgement
       (record_id,note_record_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?,?)`)
       .run(localId, noteId, 'session-1', '2026-10-09T13:00:00.000Z', 2)
-    queueHostedChange(conn, HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId, 'upsert', at)
+    seedLegacyNoteOutbox(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId)
   })
   await pullHostedChanges({
     ...options,
@@ -666,7 +728,7 @@ test('record-feed note reconciliation merges pending sightings and quarantines a
         sightings: 2,
       }),
     )
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
+    seedLegacyNoteOutbox(HOSTED_NOTE_TABLE, noteId, ['anchors', 'last_seen_at'])
   })
   await pullHostedChanges({
     ...options,
@@ -722,7 +784,7 @@ test('record-feed note reconciliation merges pending sightings and quarantines a
   seedFeed()
   writeTransaction((conn) => {
     applyHostedNote(conn, note({ anchors: JSON.stringify([{ id: localAnchor, kind: 'run' }]) }))
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
+    seedLegacyNoteOutbox(HOSTED_NOTE_TABLE, noteId, ['anchors', 'last_seen_at'])
   })
   await pullHostedChanges({
     ...options,

@@ -99,6 +99,10 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
     }
   }
   query.unsafe = (sql: string) => ({ sql })
+  query.array = (values: unknown[], type: string) => ({
+    sql: `$1::${type}[]`,
+    parameters: [values],
+  })
   return query as unknown as SQL
 }
 

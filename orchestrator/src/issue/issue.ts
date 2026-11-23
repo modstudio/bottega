@@ -215,16 +215,17 @@ async function handoff(key: string, title: string, body: string) {
     writeFileSync(path, body)
     const documents = (await taskReader().documents(key, { project: PLATFORM_SLUG })) as {
       id: string
+      label: string
       role: string | null
     }[]
     const existing = documents.find((document) => document.role === 'handoff')
     if (existing) {
-      const current = await taskReader().document(existing.id)
+      const current = await taskReader().document(existing.label)
       await hub([
         'task',
         'doc',
         'set',
-        existing.id,
+        existing.label,
         '--title',
         title,
         '--role',

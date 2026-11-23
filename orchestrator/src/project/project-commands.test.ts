@@ -13,6 +13,7 @@ import { effectiveProjectSpace, rememberActiveRecordSpace } from '../project-spa
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
+import { pullRecordCataloguesForSpace } from '../record/record-cache-catalogues.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
 import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
@@ -394,6 +395,52 @@ test('project add pulls the hosted project space catalogues before lens validati
   ).resolves.toContain('adopted catalogue-adoption from record space target')
   expect(projectByName('catalogue-adoption')?.recordId).toBe(hostedId)
   expect(effectiveProjectSpace(db(), 'catalogue-adoption')).toBe(targetSpace)
+})
+
+test('an unbound store with a configured record pulls catalogues and adds a project', async () => {
+  const local = db()
+  const directSpace = newRecordId()
+  const targetSpace = newRecordId()
+  const catalogueIds = new Map([
+    [directSpace, newRecordId()],
+    [targetSpace, newRecordId()],
+  ])
+  expect(readRecordInstallBinding(local).bound).toBe(false)
+  installRecordApiClient({
+    ...createProjectRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: targetSpace,
+      personalSpaceId: targetSpace,
+      memberships: [{ space_id: targetSpace, slug: 'target', permission: 'write' }],
+    }),
+    listWorkflowCatalogue: async (table, _query, destination) => ({
+      items:
+        table === 'step_catalogue'
+          ? [
+              {
+                id: catalogueIds.get(destination!.destinationSpaceId!)!,
+                spaceId: destination!.destinationSpaceId,
+                slug: 'shared',
+                generation: 1,
+                createdAt: '2026-11-22T12:00:00.000Z',
+                updatedAt: '2026-11-22T12:00:00.000Z',
+              },
+            ]
+          : [],
+      nextCursor: null,
+    }),
+  })
+
+  await pullRecordCataloguesForSpace(local, directSpace)
+  const path = mkdtempSync(join(tmpdir(), 'orch-unbound-hosted-add-'))
+  const output = await runProject(['project', 'add', path], {
+    name: 'unbound-hosted-add',
+    space: 'target',
+    'allow-incomplete': true,
+  })
+  expect(output).toContain('registered unbound-hosted-add')
+  expect(projectByName('unbound-hosted-add')?.path).toBe(path)
 })
 
 test('project add refuses a failed catalogue pull with the named stream', async () => {

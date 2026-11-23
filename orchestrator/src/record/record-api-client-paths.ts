@@ -8,6 +8,11 @@ import {
 } from '../../../shared/record-project-contract.ts'
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
+export const RECORD_CONTEXT_ITEMS_ROUTE = '/v1/context-items'
+export const RECORD_SPACE_AGENTS_ROUTE = '/v1/space-agents'
+export const RECORD_CONTEXT_ITEM_HOLDERS_ROUTE = '/v1/context-items/holders'
+export const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
+
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordWriteDestination = { destinationSpaceId: string }
 export type RecordApiAuthentication = {
@@ -34,7 +39,12 @@ export type RecordSnapshotAndPublicDocMethod =
   | 'listPublicDocs'
   | 'getPublicDoc'
   | 'searchPublicDocs'
-export type RecordDocReadMethod = 'searchDocs' | 'listDocs' | 'getDoc' | 'listRevisions'
+export type RecordDocReadMethod =
+  | 'searchDocs'
+  | 'listDocs'
+  | 'getDoc'
+  | 'getDocRevision'
+  | 'listRevisions'
 export type RecordDocWriteMethod =
   | 'upsertDoc'
   | 'reorderDocs'
@@ -62,8 +72,7 @@ export type RecordIdentityAndSpaceMethod =
   | 'acceptInvitation'
   | 'inviteMember'
   | 'removeMember'
-export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
-
+export type RecordBoardWatchMethod = 'openBoardStream'
 export type ProjectIdentityClient = {
   upsertProject(
     input: {
@@ -106,9 +115,16 @@ export function subjectMutationBody(
   return JSON.stringify({ project: input.project, projectId: input.projectId, ...change })
 }
 
-export function boardClaimListPath(project: string, projectId?: string | null): string {
+export type BoardClaimListOptions = { openOnly?: boolean }
+
+export function boardClaimListPath(
+  project: string,
+  projectId?: string | null,
+  options?: BoardClaimListOptions,
+): string {
   const search = new URLSearchParams({ project })
   if (projectId) search.set('projectId', projectId)
+  if (options?.openOnly) search.set('openOnly', 'true')
   return `/v1/board/claims?${search}`
 }
 

@@ -3,7 +3,10 @@
 
 import { decideReviewFunnel } from './decide-review-funnel.ts'
 import { gatherFunnelFacts, type ReviewFunnelChange } from './gather-funnel-facts.ts'
-import { activeReviewFunnelPolicy } from './review-funnel-policy.ts'
+import {
+  activeReviewFunnelPolicy,
+  type VersionedReviewFunnelPolicy,
+} from './review-funnel-policy.ts'
 
 export type ReviewFunnelVerdictForChange =
   | { kind: 'empty'; commit: string; base: string }
@@ -13,13 +16,21 @@ export type ReviewFunnelVerdictForChange =
       verdict: ReturnType<typeof decideReviewFunnel>
     }
 
-export function reviewFunnelVerdictForChange(
+export async function reviewFunnelVerdictForChange(
   change: Omit<ReviewFunnelChange, 'selectionWindow'>,
-): ReviewFunnelVerdictForChange {
+): Promise<ReviewFunnelVerdictForChange> {
   if (change.head === change.base) {
     return { kind: 'empty', commit: change.head, base: change.base }
   }
-  const active = activeReviewFunnelPolicy()
+  const active = await activeReviewFunnelPolicy()
+  return reviewFunnelVerdictForChangeWithPolicy(change, active)
+}
+
+export function reviewFunnelVerdictForChangeWithPolicy(
+  change: Omit<ReviewFunnelChange, 'selectionWindow'>,
+  active: VersionedReviewFunnelPolicy,
+): ReviewFunnelVerdictForChange {
+  if (change.head === change.base) return { kind: 'empty', commit: change.head, base: change.base }
   const facts = gatherFunnelFacts({
     ...change,
     selectionWindow: active.policy.selection.window,

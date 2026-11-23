@@ -17,6 +17,12 @@ import {
   UNIT_TEST_CHECK_CATEGORY,
   uncheckedReasonFromLines,
 } from '../shared/check-execution'
+import {
+  checkSingleBunTestScript,
+  checkSuiteTestTimeoutArguments,
+  gateTestTimeoutArguments,
+  isBunUnitTestCommand,
+} from '../shared/gate-test-timeout.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import { findingLine } from '../shared/ratchet.ts'
 import { checkExecutionCardinality } from './check-execution-completeness.ts'
@@ -55,7 +61,7 @@ import {
   workerCheckProjection,
 } from './static-check-plan.ts'
 
-type Command = { cwd: string; argv: string[]; category?: string }
+type Command = { cwd: string; argv: string[]; category?: string; unitTests?: boolean }
 type Leg = {
   name: (typeof CHECK_LEGS)[number]['name']
   typecheck: Command | null
@@ -75,6 +81,7 @@ function pipedOutput(
 }
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const ci = Boolean(process.env.CI)
 const STATIC_CHECKS = staticCheckPlan()
 const checkArguments: CheckArguments = (() => {
   try {
@@ -235,21 +242,55 @@ function track(
   return child
 }
 
+function checkForwardedPackageTestScript(directory: string, argv: readonly string[]): void {
+  if (argv[0] !== 'bun' || argv[1] !== 'run') return
+  const cwdIndex = argv.indexOf('--cwd')
+  const scriptIndex = cwdIndex < 0 ? 2 : cwdIndex + 2
+  if (argv[scriptIndex] !== 'test') return
+  const packageDirectory = cwdIndex < 0 ? directory : join(directory, argv[cwdIndex + 1]!)
+  const packageJson = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8')) as {
+    scripts?: Record<string, string>
+  }
+  checkSingleBunTestScript(packageJson.scripts?.test ?? '', `${packageDirectory} package test`)
+}
+
 const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   name: leg.name,
   typecheck: leg.typecheck ? { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] } : null,
   worker: leg.worker,
-  suite: leg.suite.map(({ argv, unitTests }) => ({
-    cwd: `${root}${leg.directory}`,
-    ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
-    argv: [
-      ...argv,
-      ...(leg.name === 'orchestrator' && checkArguments.shard
-        ? [`--shard=${checkArguments.shard.value}`]
-        : []),
-    ],
-  })),
+  suite: leg.suite.map(({ argv, unitTests }) => {
+    const cwd = `${root}${leg.directory}`
+    if (isBunUnitTestCommand({ argv, unitTests })) checkForwardedPackageTestScript(cwd, argv)
+    return {
+      cwd,
+      unitTests,
+      ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
+      argv: [
+        ...argv,
+        ...(isBunUnitTestCommand({ argv, unitTests }) ? gateTestTimeoutArguments(ci) : []),
+        ...(leg.name === 'orchestrator' && checkArguments.shard
+          ? [`--shard=${checkArguments.shard.value}`]
+          : []),
+      ],
+    }
+  }),
 }))
+
+const rootTests = [
+  // Every .githooks test must be named here. The list is explicit rather than a
+  // glob so this runs in a fixed order, and the cost of that is
+  // that an unnamed hook test is not gated at all - which reports safety it is
+  // not providing.
+  'bun',
+  'test',
+  ...ROOT_TEST_FILES.map((file) => `./${file}`),
+  ...gateTestTimeoutArguments(ci),
+]
+
+checkSuiteTestTimeoutArguments(
+  [...legs.flatMap((leg) => leg.suite), { argv: rootTests, unitTests: true }],
+  ci,
+)
 
 async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
   const startedAt = performance.now()
@@ -627,16 +668,6 @@ if (dependencyAuditResult.exitCode === UNCHECKED_EXIT_CODE) {
   if (!reason) process.exit(1)
   uncheckedChecks.push({ check: 'dependency audit', reason })
 } else if (dependencyAuditResult.exitCode !== 0) process.exit(1)
-
-const rootTests = [
-  // Every .githooks test must be named here. The list is explicit rather than a
-  // glob so this runs in a fixed order, and the cost of that is
-  // that an unnamed hook test is not gated at all - which reports safety it is
-  // not providing.
-  'bun',
-  'test',
-  ...ROOT_TEST_FILES.map((file) => `./${file}`),
-]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
 let workerQualityBase: string | undefined

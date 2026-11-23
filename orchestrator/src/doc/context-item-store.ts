@@ -1,178 +1,121 @@
 // concern: context-item-store
-/** Owns local context-item persistence. Context policy belongs to doc-context-write. */
+/** Selects the authoritative context-item reader while retaining local-only persistence. */
 import type { Database } from 'bun:sqlite'
-import {
-  type ContextHolderKind,
-  type ContextItemKind,
-  splitContextHolder,
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type {
+  ContextHolderKind,
+  ContextItemHolderGroup,
+  StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
-import type { ContextItem } from './doc-context-write.ts'
+import { db } from '../database/db.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
+import type { RecordWriteDecision } from '../record/record-write-decision.ts'
+import { hostedContextItemDestination } from './context-item-hosted-client.ts'
+import {
+  getLocalContextItem,
+  listLocalContextHolders,
+  listLocalContextItems,
+  removeLocalContextHolder,
+  removeLocalContextItem,
+  setLocalContextItem,
+} from './context-item-store-sqlite.ts'
 
-type ContextItemRow = {
-  record_id: string
-  holder_kind: ContextHolderKind
-  holder_id: string
-  slug: string
-  kind: ContextItemKind
-  body: string
-  source: string
-  question_number: number | null
-  target: string | null
-  created_at: string
-  updated_at: string
+export type { StoredContextItem } from '../../../shared/context-item-vocabulary.ts'
+export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
+
+type ContextItemReadOwner = NonNullable<Parameters<typeof hostedContextItemDestination>[1]>
+export type ContextItemHolderEntry = string | { holder: string; owner: ContextItemReadOwner }
+
+type ContextItemReadSource = 'local' | 'hosted'
+
+/** Pure install-mode decision for the context-item read boundary. */
+export function contextItemReadSource(decision: RecordWriteDecision): ContextItemReadSource {
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted' ? 'hosted' : 'local'
 }
 
-export type StoredContextItem = ContextItem & {
-  recordId: string
-  revision: string
-  createdAt: string
-  updatedAt: string
+export function contextItemReadSourceFor(database: Database = db()): ContextItemReadSource {
+  return contextItemReadSource(currentRecordWriteDecision(database))
 }
 
-function stored(row: ContextItemRow): StoredContextItem {
-  return {
-    holder: `${row.holder_kind}:${row.holder_id}`,
-    id: row.slug,
-    recordId: row.record_id,
-    kind: row.kind,
-    body: row.body,
-    source: row.source,
-    questionNumber: row.question_number,
-    target: row.target,
-    revision: row.updated_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+export function contextItemReadFailure(error: unknown): never {
+  const detail = error instanceof Error ? error.message : String(error)
+  throw new Error(
+    `hosted context items could not be read (${detail})\n` +
+      `remedy: run \`${PLATFORM_SLUG} record doctor\`, update a server missing the context-item read routes, then retry`,
+  )
+}
+
+export async function listContextItems(
+  holder: ContextItemHolderEntry | readonly ContextItemHolderEntry[],
+  database: Database = db(),
+): Promise<StoredContextItem[]> {
+  const entries = Array.isArray(holder) ? [...holder] : [holder as ContextItemHolderEntry]
+  if (entries.length === 0) return []
+  const holders = entries.map((entry) => (typeof entry === 'string' ? entry : entry.holder))
+  if (contextItemReadSourceFor(database) === 'local')
+    return holders.flatMap((value) => listLocalContextItems(value, database))
+  try {
+    const client = recordApiClient()
+    const groups = new Map<string, { destinationSpaceId: string; holders: string[] }>()
+    for (const entry of entries) {
+      const value = typeof entry === 'string' ? entry : entry.holder
+      const destination = await hostedContextItemDestination(
+        value,
+        typeof entry === 'string' ? undefined : entry.owner,
+      )
+      const group = groups.get(destination.destinationSpaceId)
+      if (group) group.holders.push(value)
+      else groups.set(destination.destinationSpaceId, { ...destination, holders: [value] })
+    }
+    const items = (
+      await Promise.all(
+        [...groups.values()].map(({ holders: groupedHolders, ...destination }) =>
+          client.listContextItems(groupedHolders, destination),
+        ),
+      )
+    ).flat()
+    const holderOrder = new Map(holders.map((value, index) => [value, index]))
+    return items.sort(
+      (left, right) =>
+        (holderOrder.get(left.holder) ?? holders.length) -
+        (holderOrder.get(right.holder) ?? holders.length),
+    )
+  } catch (error) {
+    return contextItemReadFailure(error)
   }
 }
 
-export function listContextItems(holder: string, database: Database = db()): StoredContextItem[] {
-  const { holderKind, holderId } = splitContextHolder(holder)
-  return database
-    .query<ContextItemRow, [string, string]>(
-      'SELECT * FROM context_item WHERE holder_kind=? AND holder_id=? ORDER BY slug',
-    )
-    .all(holderKind, holderId)
-    .map(stored)
-}
-
-export function getContextItem(
+export async function getContextItem(
   holder: string,
   slug: string,
   database: Database = db(),
-): StoredContextItem | null {
-  const { holderKind, holderId } = splitContextHolder(holder)
-  const row = database
-    .query<ContextItemRow, [string, string, string]>(
-      'SELECT * FROM context_item WHERE holder_kind=? AND holder_id=? AND slug=?',
-    )
-    .get(holderKind, holderId, slug)
-  return row ? stored(row) : null
+  owner?: ContextItemReadOwner,
+): Promise<StoredContextItem | null> {
+  if (contextItemReadSourceFor(database) === 'local')
+    return getLocalContextItem(holder, slug, database)
+  try {
+    const destination = await hostedContextItemDestination(holder, owner)
+    return await recordApiClient().getContextItem(holder, slug, destination)
+  } catch (error) {
+    return contextItemReadFailure(error)
+  }
 }
 
-export function listContextHolders(
-  holderKind: ContextItemRow['holder_kind'],
+export async function listContextHolders(
+  holderKind: ContextHolderKind,
   database: Database = db(),
-) {
-  const rows = database
-    .query<ContextItemRow, [string]>(
-      'SELECT * FROM context_item WHERE holder_kind=? ORDER BY holder_id,slug',
-    )
-    .all(holderKind)
-  return [...Map.groupBy(rows, (row) => row.holder_id)].map(([holderId, items]) => ({
-    holder: `${holderKind}:${holderId}`,
-    holderId,
-    updatedAt: items.reduce(
-      (latest, row) => (row.updated_at > latest ? row.updated_at : latest),
-      items[0]!.updated_at,
-    ),
-    items: items.map(stored),
-  }))
-}
-
-type SetContextItem = {
-  holder: string
-  slug: string
-  kind: ContextItemKind
-  body: string
-  source: string
-  questionNumber: number | null
-  target: string | null
-  expectedRevision?: string
-  recordId?: string
-  createdAt?: string
-  updatedAt?: string
-}
-
-export function setLocalContextItem(input: SetContextItem): StoredContextItem {
-  return writeTransaction(() => {
-    const current = getContextItem(input.holder, input.slug)
-    if (input.expectedRevision !== undefined && input.expectedRevision !== current?.revision) {
-      throw new Error(
-        `context item ${input.holder}/${input.slug} changed; expected revision ${input.expectedRevision}, current revision ${current?.revision ?? 'missing'}`,
-      )
-    }
-    const { holderKind, holderId } = splitContextHolder(input.holder)
-    const at = input.updatedAt ?? nowIso()
-    if (current) {
-      db()
-        .query(
-          'UPDATE context_item SET kind=?,body=?,source=?,question_number=?,target=?,updated_at=? WHERE record_id=?',
-        )
-        .run(
-          input.kind,
-          input.body,
-          input.source,
-          input.questionNumber,
-          input.target,
-          at,
-          current.recordId,
-        )
-    } else {
-      db()
-        .query(
-          'INSERT INTO context_item(record_id,holder_kind,holder_id,slug,kind,body,source,question_number,target,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-        )
-        .run(
-          input.recordId ?? newRecordId(),
-          holderKind,
-          holderId,
-          input.slug,
-          input.kind,
-          input.body,
-          input.source,
-          input.questionNumber,
-          input.target,
-          input.createdAt ?? at,
-          at,
-        )
-    }
-    return getContextItem(input.holder, input.slug)!
-  })
-}
-
-export function removeLocalContextItem(
-  holder: string,
-  slug: string,
-  expectedRevision?: string,
-): boolean {
-  return writeTransaction(() => {
-    const current = getContextItem(holder, slug)
-    if (!current) return false
-    if (expectedRevision !== undefined && expectedRevision !== current.revision) {
-      throw new Error(
-        `context item ${holder}/${slug} changed; expected revision ${expectedRevision}, current revision ${current.revision}`,
-      )
-    }
-    db().query('DELETE FROM context_item WHERE record_id=?').run(current.recordId)
-    return true
-  })
-}
-
-export function removeLocalContextHolder(holder: string): number {
-  const { holderKind, holderId } = splitContextHolder(holder)
-  return db()
-    .query('DELETE FROM context_item WHERE holder_kind=? AND holder_id=?')
-    .run(holderKind, holderId).changes
+): Promise<ContextItemHolderGroup[]> {
+  if (contextItemReadSourceFor(database) === 'local')
+    return listLocalContextHolders(holderKind, database)
+  try {
+    const destination = await hostedContextItemDestination('session:context-holder-catalogue')
+    return await recordApiClient().listContextHolders(holderKind, destination)
+  } catch (error) {
+    return contextItemReadFailure(error)
+  }
 }

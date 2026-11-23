@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -52,6 +52,10 @@ export function mirrorFixturePort(
     fetch: () => {},
     localBranch: () => false,
     refTip: () => head,
+    treeDirty: systemCanonMirrorPort.treeDirty,
+    unpushedCommitCount: systemCanonMirrorPort.unpushedCommitCount,
+    resetTree: systemCanonMirrorPort.resetTree,
+    lastPathCommit: systemCanonMirrorPort.lastPathCommit,
     remoteBranchTip: () => null,
     remoteTrunkTip: () => head,
     push: () => {},
@@ -63,12 +67,7 @@ export function mirrorFixturePort(
       headSha: 'different-head',
       checks: 'passed',
     }),
-    releaseRun: () => {
-      const tree = join(root, '.claude', 'worktrees', 'canon-mirror')
-      if (existsSync(join(tree, '.git')))
-        spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })
-      return { outcome: 'released', detail: 'fixture release' }
-    },
+    releaseRun: systemCanonMirrorPort.releaseRun,
     releaseBranch: (_project, branch, expected) => {
       if (
         spawnFixtureGitSync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {

@@ -38,7 +38,7 @@ export const canonLoadBoundarySpecs: ImportBoundary[] = [
   boundary(
     'canon-stored-rows-boundary',
     'orchestrator/src/canon/canon-stored-rows.ts',
-    ['bun:sqlite', '../database/db.ts', '../doc/doc-read-store.ts', './canon-hydrate.ts'],
+    ['../doc/doc-authoritative-read.ts', './canon-hydrate.ts'],
     'Keep stored canon gathering as the single adapter between hydration decisions and document storage.',
   ),
 ]

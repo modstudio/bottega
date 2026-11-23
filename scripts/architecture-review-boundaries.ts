@@ -39,6 +39,7 @@ export const reviewModuleSpecs = [
     allowed: [
       'zod',
       '../../../shared/brand.ts',
+      '../doc/doc-authoritative-read.ts',
       '../doc/docs.ts',
       '../review/review-evidence-sql.ts',
       '../review/review-tier-classifier.ts',
@@ -363,6 +364,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       'zod',
       '../../../shared/brand.ts',
+      '../doc/doc-authoritative-read.ts',
       '../doc/docs.ts',
       '../review/review-evidence-sql.ts',
       '../review/review-tier-classifier.ts',

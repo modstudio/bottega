@@ -1,14 +1,19 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   decideFloorSatisfaction,
   type Floor,
   type FloorSatisfactionInput,
 } from './workflow-floor.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import { dispatchObligationRefusal } from './workflow-run-obligation.ts'
+import {
+  gatherEarlierStepWorkflowRunChains,
+  gatherLandedEarlierStepWorkflowRunChains,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -70,6 +75,65 @@ test('a terminal scored dispatch allows', () => {
   ).toBe('allow')
 })
 
+test('a current-step chain is credited without mentioning an earlier chain', () => {
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
+      dispatchRuns: [terminalDispatch],
+      earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+    }),
+  ).toBeNull()
+})
+
+test('empty earlier-step evidence keeps the existing zero-dispatch wording', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      ...dispatchStep,
+      slug: 'apply-findings',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no implement run was dispatched from this cursor at step apply-findings; dispatch one with \`${PLATFORM_SLUG} run start implement --key DEV-1 ...\` from this cursor`,
+  )
+})
+
+test('earlier-step evidence keeps the existing wording outside apply-findings', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      slug: 'review-lenses',
+      jobs: ['review-lens'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-lens-owed'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no review-lens run was dispatched from this cursor at step review-lenses; dispatch one with \`${PLATFORM_SLUG} run start review-lens --key DEV-1 ...\` from this cursor`,
+  )
+})
+
 test('run-chain evidence includes only the requested cursor and step', () => {
   const cursorRecordId = newRecordId()
   const otherCursorRecordId = newRecordId()
@@ -84,9 +148,305 @@ test('run-chain evidence includes only the requested cursor and step', () => {
     .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
     .get(matching)!.number
 
-  expect(gatherWorkflowRunChains(cursorRecordId, ['implement'], db(), 'start')).toEqual([
+  expect(gatherWorkflowRunChains(cursorRecordId, ['implement'], db(), 'binding', 'start')).toEqual([
     expect.objectContaining({ number: matchingNumber, job: 'implement' }),
   ])
+})
+
+test('a plain continuation turn bound to this cursor after activation is credited', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: root,
+    turn: 2,
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(cursorRecordId, 'blast-radius', root)
+  bind.run(cursorRecordId, 'blast-radius', turn)
+  score(root, 'full', 'right', 'faithful')
+
+  const dispatchRuns = gatherWorkflowRunChains(
+    cursorRecordId,
+    ['implement'],
+    db(),
+    'binding',
+    'apply-findings',
+    '2026-11-19T01:00:00.000Z',
+  )
+  expect(dispatchRuns).toEqual([
+    expect.objectContaining({ job: 'implement', terminal: true, needsVerdict: false }),
+  ])
+  expect(
+    gatherEarlierStepWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+      db(),
+    ),
+  ).toEqual([])
+  expect(
+    decide({
+      floors: [tracker],
+      evidence: { ...closedTask, dispatchRuns },
+      workflowKey: 'DEV-1',
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a findings continuation is credited by its binding rather than its root job', () => {
+  const rootCursorRecordId = newRecordId()
+  const findingsCursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'fix',
+    status: 'ok',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'fix',
+    status: 'ok',
+    parent: root,
+    turn: 2,
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(rootCursorRecordId, 'start', root)
+  bind.run(findingsCursorRecordId, 'apply-findings', turn)
+  score(root, 'full', 'right', 'faithful')
+
+  const dispatchRuns = gatherWorkflowRunChains(
+    findingsCursorRecordId,
+    ['implement'],
+    db(),
+    'binding',
+    'apply-findings',
+    '2026-11-19T01:00:00.000Z',
+  )
+
+  expect(dispatchRuns).toEqual([
+    expect.objectContaining({ job: 'fix', terminal: true, needsVerdict: false }),
+  ])
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: { ...dispatchStep, slug: 'apply-findings' },
+      dispatchRuns,
+      earlierStepRuns: [],
+    }),
+  ).toBeNull()
+})
+
+test('a continuation bound only to another cursor is not credited', () => {
+  const rootCursorRecordId = newRecordId()
+  const findingsCursorRecordId = newRecordId()
+  const foreignCursorRecordId = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'fix' })
+  const turn = addRun({ agent: 'codex', job: 'fix', parent: root, turn: 2 })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(rootCursorRecordId, 'start', root)
+  bind.run(findingsCursorRecordId, 'apply-findings', turn)
+
+  expect(
+    gatherWorkflowRunChains(
+      foreignCursorRecordId,
+      ['implement'],
+      db(),
+      'binding',
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+    ),
+  ).toEqual([])
+})
+
+test('an undeclared root job bound directly to this cursor is not credited', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'fix' })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'apply-findings', root)
+
+  expect(
+    gatherWorkflowRunChains(cursorRecordId, ['implement'], db(), 'binding', 'apply-findings'),
+  ).toEqual([])
+})
+
+test('a landed earlier-step chain satisfies apply-findings', () => {
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
+      dispatchRuns: [],
+      earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+      landedEarlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius', prNumber: 2252 }],
+    }),
+  ).toBeNull()
+})
+
+test('a landed earlier-step chain is read from its newest turn branch', () => {
+  const root = addRun({ agent: 'codex', job: 'implement' })
+  const turn = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+  const projectRecordId = db()
+    .query<{ project_record_id: string }, [string]>(
+      'SELECT project_record_id FROM run WHERE record_id=?',
+    )
+    .get(root)!.project_record_id
+  db()
+    .query('UPDATE run SET branch=?,branch_kept=? WHERE record_id=?')
+    .run(null, 'DEV-1-landed', turn)
+  db()
+    .query(
+      `INSERT INTO branch_landing_record
+        (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+       VALUES (?,'run-fixture',?,'DEV-1-landed','tip',2252,'merge','2026-11-19','2026-11-19')`,
+    )
+    .run(newRecordId(), projectRecordId)
+  const number = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(root)!.number
+
+  expect(
+    gatherLandedEarlierStepWorkflowRunChains([{ number, stepSlug: 'blast-radius' }], db()),
+  ).toEqual([{ number, stepSlug: 'blast-radius', prNumber: 2252 }])
+})
+
+test('an unlanded earlier-step chain keeps the confirmation-turn remedy', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      ...dispatchStep,
+      slug: 'apply-findings',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+    landedEarlierStepRuns: [],
+  })
+
+  expect(refusal).toContain(
+    'A finding applied before triage needs a confirmation turn at this step',
+  )
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} run continue --findings --cursor 1214 987654 "<message>"`,
+  )
+})
+
+test('a landed earlier-step chain gets no credit outside apply-findings', () => {
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: { ...dispatchStep, slug: 'verify-fix' },
+      dispatchRuns: [],
+      earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+      landedEarlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius', prNumber: 2252 }],
+    }),
+  ).toContain('no implement run was dispatched from this cursor at step verify-fix')
+})
+
+test('earlier-step evidence excludes a turn started after current-step activation', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'blast-radius', root)
+
+  expect(
+    gatherEarlierStepWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+      db(),
+    ),
+  ).toEqual([])
+})
+
+test('a turn bound at another step before activation is not credited', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'blast-radius', root)
+
+  expect(
+    gatherWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      db(),
+      'binding',
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+    ),
+  ).toEqual([])
+})
+
+test('a turn bound to another cursor after activation is not credited', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T00:00:00.000Z',
+  })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'implement',
+    parent: root,
+    turn: 2,
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(cursorRecordId, 'blast-radius', root)
+  bind.run(newRecordId(), 'blast-radius', turn)
+
+  expect(
+    gatherWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      db(),
+      'binding',
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+    ),
+  ).toEqual([])
 })
 
 test('a root that is ok while its latest turn runs refuses the bound step', () => {
@@ -106,6 +466,7 @@ test('a root that is ok while its latest turn runs refuses the bound step', () =
     cursorRecordId,
     ['implement'],
     db(),
+    'binding',
     'apply-findings',
   )
 
@@ -147,6 +508,19 @@ test('a judging step refuses an unscored lens chain', () => {
   })
   expect(decision).toMatchObject({ action: 'refuse' })
   if (decision.action === 'refuse') expect(decision.message).toContain(`${PLATFORM_SLUG} score 51`)
+})
+
+test('a judging step ignores an implement continuation bound to its cursor', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'implement' })
+  const turn = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'triage-findings', turn)
+
+  const judgedRuns = gatherWorkflowRunChains(cursorRecordId, ['review-lens'], db(), 'declared-job')
+
+  expect(judgedRuns).toEqual([])
 })
 
 test.each([

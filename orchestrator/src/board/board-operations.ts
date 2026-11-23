@@ -989,6 +989,7 @@ export async function boardClaimList(
   const hosted = await hostedClient(c).listBoardClaims(
     resolvedProject,
     projectRowByName(resolvedProject, c.database)?.recordId ?? null,
+    { openOnly: !all },
   )
   return {
     claims: (all ? hosted.claims : hosted.claims.filter((claim) => claim.live)).map(claimResult),

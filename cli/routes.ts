@@ -208,9 +208,15 @@ export const ROUTES = (
       'release check',
       'orch',
       'release check',
-      'validate the release tag and prove release binaries ignore working-directory config',
+      'validate the tag, tracked rungs, and release binary working-directory isolation',
     ),
     route('release log', 'orch', 'release log'),
+    route(
+      'release rungs',
+      'orch',
+      'release rungs',
+      'generate the tracked release-rung snapshot from the project register',
+    ),
     {
       command: ['record', 'sync'],
       owner: 'composite',
@@ -256,6 +262,8 @@ export const ROUTES = (
     route('agent add', 'orch', 'agent add'),
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
+    route('agent share', 'orch', 'agent share'),
+    route('agent unshare', 'orch', 'agent unshare'),
     route('agent list', 'orch', 'agents'),
     route('agent typed-question backtest', 'orch', 'typed-question backtest'),
     route(

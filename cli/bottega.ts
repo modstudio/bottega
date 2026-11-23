@@ -1,7 +1,7 @@
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { installationVersionText } from '../shared/install-root.ts'
 import { dispatchBinary } from './dispatch.ts'
-import { installCliTaskReader } from './task-read-adapter.ts'
+import { installCliProjectRegisterReader, installCliTaskReader } from './task-read-adapter.ts'
 
 // Each entry loads its owner only when called, so a call to one program never pays for another.
 const entries = {
@@ -9,8 +9,10 @@ const entries = {
     installCliTaskReader()
     return (await import('../orchestrator/src/cli/orch.ts')).main(argv, invocation)
   },
-  hub: async (argv: string[], invocation?: PublicCommandInvocation) =>
-    (await import('../hub/src/cli.ts')).main(argv, invocation),
+  hub: async (argv: string[], invocation?: PublicCommandInvocation) => {
+    installCliProjectRegisterReader()
+    return (await import('../hub/src/cli.ts')).main(argv, invocation)
+  },
   orchOutbox: async () => (await import('../orchestrator/src/cli/orch.ts')).outboxEntries(),
   hubOutbox: async () => (await import('../hub/src/cli.ts')).outboxEntries(),
   hubOutboxSummaryLines: async (rows: readonly Record<string, unknown>[]) =>

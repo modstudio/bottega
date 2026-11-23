@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import type { HostLoad } from '../gate-load.ts'
 import { upsertProject } from '../project/projects.ts'
 import { type ClaimInput, claimRun } from './run-claim.ts'
+import { runProjectAttribution } from './run-project-attribution.ts'
 
 const available = (): HostLoad => ({
   gates: 0,
@@ -42,7 +43,7 @@ test('claim records host admission before its repository tree plan runs', async 
     writesJob: false,
     repoJob: true,
     runProjectName: 'admission-order-fixture',
-    runProjectId: projectRecordId,
+    ...runProjectAttribution('admission-order-fixture'),
     reason: 'test',
     vendorSession: null,
     pack: null,

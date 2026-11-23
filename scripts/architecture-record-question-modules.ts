@@ -40,6 +40,7 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-question.ts', [
     'hono',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/record/record-changes.ts',
     './record-auth.ts',
     './record-cursor.ts',
@@ -88,6 +89,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-values.ts',
   ]),
   module('orchestrator/src/record/record-question-write.ts', [
+    '../../../shared/hosted-secret-mask.ts',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/brand.ts',
@@ -96,6 +98,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record/schema-question.ts',
     '../../../shared/record/schema-run.ts',
     '../doc/doc-revision-conflict.ts',
+    '../question-store/question-text-refusal.ts',
     '../question-store/run-question-write-guard.ts',
     './record-config-error.ts',
     './record-pool.ts',
@@ -155,8 +158,11 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record-timestamp.ts',
     '../record/machine-identity.ts',
     '../record/record-question-contract.ts',
+    './question-text-refusal.ts',
     './question-store.ts',
   ]),
+  module('orchestrator/src/question-store/question-text-refusal.ts', []),
+  module('orchestrator/src/question-store/question-text.ts', ['zod', './question-text-refusal.ts']),
   module('orchestrator/src/question-store/question-store-read.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

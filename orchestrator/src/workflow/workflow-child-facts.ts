@@ -32,10 +32,14 @@ export async function gatherChildTaskFacts(
   project: string,
   tasks: readonly HubTaskReference[],
 ): Promise<ChildTaskFact[]> {
+  if (tasks.length === 0) return []
+  const workflowKeys = [...new Set(tasks.map(({ key }) => key))]
   const cursors = new Map<string, { number: number; state: string }>()
   for (const cursor of await taskFlowReadStore(database).listStages({
     project,
+    workflowKeys,
     states: [...TASK_FLOW_STAGE_STATES],
+    view: 'summary',
   })) {
     const existing = cursors.get(cursor.workflow_key)
     if (!existing || existing.number < cursor.id)
@@ -52,6 +56,7 @@ export async function gatherChildTaskFacts(
       parentKey: task.parent_key ?? null,
       number: Number(/(\d+)$/.exec(task.key)?.[1] ?? Number.MAX_SAFE_INTEGER),
       statusCategory: task.status_category ?? null,
+      hasChildren: task.has_children,
       cursorEverComposed: cursors.has(task.key),
       cursorNumber: cursors.get(task.key)?.number ?? null,
       cursorState: cursors.get(task.key)?.state ?? null,

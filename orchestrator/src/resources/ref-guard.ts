@@ -21,7 +21,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import type {
   FilesystemIdentityPlan,
   FilesystemIdentityProject,
@@ -490,6 +490,7 @@ export function removeSharedRefGuard(cwd: string, runId: string): void {
     state: 'released',
     settledAt: new Date().toISOString(),
     detail: 'shared ref guard directory removed',
+    by: { verb: 'ref-guard:removeSharedRefGuard', session: sessionId() },
     allocationKey: path,
   })
 }

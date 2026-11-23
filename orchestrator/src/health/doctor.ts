@@ -746,16 +746,16 @@ export async function doctorCommand(
   const [configuredUrl, installed] = retrievalFacts(modelHostUrl())
   await reportRetrieval(configuredUrl, installed, process.env, presentation, retrievalCheck)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
-  const { listDocs } = await import('../doc/docs.ts')
+  const { readDocs } = await import('../doc/doc-authoritative-read.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')
-  let doctorPack: ReturnType<typeof compilePack>
+  let doctorPack: Awaited<ReturnType<typeof compilePack>>
   try {
-    doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
+    doctorPack = await compilePack({ job: 'understand', cwd: process.cwd() })
   } catch (error) {
     if (!(error instanceof CanonBudgetError)) throw error
     doctorPack = error.pack
   }
-  const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
+  const doctorFindings = (await findingsForPack(doctorPack)).flatMap((row) => row.findings).length
   const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()
@@ -763,7 +763,7 @@ export async function doctorCommand(
   log(
     `canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`,
   )
-  const oversized = listDocs()
+  const oversized = (await readDocs())
     .filter(
       (doc) => doc.delivery === 'inject' && Buffer.byteLength(doc.body) > MAX_INJECT_DOC_BYTES,
     )
@@ -784,7 +784,7 @@ export async function doctorCommand(
     let currentSha: string | null = null
     let currentCanonError: string | null = null
     try {
-      currentSha = currentCanonEvalSha(ev, { project: PLATFORM_SLUG })
+      currentSha = await currentCanonEvalSha(ev, { project: PLATFORM_SLUG })
     } catch (error) {
       currentCanonError = error instanceof Error ? error.message : String(error)
     }

@@ -40,6 +40,8 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
+  TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -209,6 +211,38 @@ class SqliteTaskFlowStore {
       .get(recordId)
   }
 
+  private openObligationRows(
+    recordIds: readonly string[],
+  ): Array<TaskFlowOpenObligationRow & { cursor_record_id: string }> {
+    if (!recordIds.length) return []
+    const placeholders = recordIds.map(() => '?').join(',')
+    return this.database
+      .query<TaskFlowOpenObligationRow & { cursor_record_id: string }, string[]>(
+        `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
+                step_ordinal AS stepOrdinal,step_slug AS stepSlug
+         FROM workflow_obligation
+         WHERE cursor_record_id IN (${placeholders})
+           AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
+      )
+      .all(...recordIds)
+  }
+
+  stageSummaries(recordIds: readonly string[]): TaskFlowStageSummaryRow[] {
+    if (!recordIds.length) return []
+    const placeholders = recordIds.map(() => '?').join(',')
+    const stages = this.database
+      .query<TaskFlowStageCursorRow, string[]>(
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor
+         WHERE cursor.record_id IN (${placeholders})`,
+      )
+      .all(...recordIds)
+    const obligations = this.openObligationRows(recordIds)
+    return stages.map((stage) => ({
+      stage,
+      obligations: obligations.filter((row) => row.cursor_record_id === stage.record_id),
+    }))
+  }
+
   latestStageForTask(input: {
     project: string
     workflow: string
@@ -272,11 +306,7 @@ class SqliteTaskFlowStore {
           .all(input.project, input.workflow, input.sessionId)
   }
 
-  listStages(input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }): TaskFlowListedStageRow[] {
+  listStages(input: TaskFlowStageListInput<TaskFlowStageState>): TaskFlowListedStageRow[] {
     const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
     const values: string[] = [...input.states]
     if (input.project) {
@@ -287,9 +317,21 @@ class SqliteTaskFlowStore {
       clauses.push('cursor.session_id=?')
       values.push(input.sessionId)
     }
+    if (input.workflowKeys) {
+      if (input.workflowKeys.length === 0) return []
+      clauses.push(`cursor.workflow_key IN (${input.workflowKeys.map(() => '?').join(',')})`)
+      values.push(...input.workflowKeys)
+    }
+    const columns =
+      input.view === 'summary'
+        ? LISTED_STAGE_COLUMNS.replace('cursor.autonomy', 'NULL autonomy').replace(
+            'cursor.closed',
+            "'[]' closed",
+          )
+        : LISTED_STAGE_COLUMNS
     return this.database
       .query<TaskFlowListedStageRow, string[]>(
-        `SELECT ${LISTED_STAGE_COLUMNS},NULL question_number
+        `SELECT ${columns},NULL question_number
          FROM workflow_cursor cursor WHERE ${clauses.join(' AND ')}
          ORDER BY cursor.updated_at,cursor.number`,
       )
@@ -425,7 +467,7 @@ class SqliteTaskFlowStore {
   textAttachmentByRecordId(recordId: string): TaskFlowTextRow | null {
     return this.database
       .query<TaskFlowTextRow, [string]>(
-        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body
+        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body,created_at
          FROM workflow_step_text WHERE record_id=?`,
       )
       .get(recordId)
@@ -499,14 +541,7 @@ class SqliteTaskFlowStore {
   }
 
   openObligations(stageRecordId: string): TaskFlowOpenObligationRow[] {
-    return this.database
-      .query<TaskFlowOpenObligationRow, [string]>(
-        `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},
-                step_ordinal AS stepOrdinal, step_slug AS stepSlug
-         FROM workflow_obligation
-         WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
-      )
-      .all(stageRecordId)
+    return this.openObligationRows([stageRecordId]).map(({ cursor_record_id: _, ...row }) => row)
   }
 
   obligationByRecordId(recordId: string): TaskFlowObligationRow | null {
@@ -717,11 +752,7 @@ type SqliteTaskFlowReadStoreWithOpenStages = SqliteTaskFlowReadStore & {
 /** Delegates async reads to the single synchronous SQLite implementation. */
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStoreWithOpenStages {
   const local = new SqliteTaskFlowStore(database)
-  const listStages = async (input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }) => {
+  const listStages = async (input: TaskFlowStageListInput<TaskFlowStageState>) => {
     const rows = local.listStages(input)
     const openByCursor = new Map<string, number>()
     for (const row of await openQuestionsForCursors(
@@ -740,6 +771,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
     flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
     stageByRecordId: async (recordId) => local.stageByRecordId(recordId),
+    stageSummaries: async (recordIds) => local.stageSummaries(recordIds),
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),

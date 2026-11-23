@@ -18,11 +18,15 @@ export type TaskReadRow = {
   opened_at: string | null
 }
 
+export type TaskLookupRow = Omit<TaskReadRow, 'source' | 'body'> & { has_children: boolean }
+
 type TaskReadDocumentSummary = {
   id: string
   label: string
+  task_record_id: string
   title: string
   role?: string | null
+  updated_at: string
 }
 
 type TaskReadDocument = TaskReadDocumentSummary & {
@@ -45,6 +49,7 @@ type TaskReadDuplicateCandidate = {
 
 export type TaskReadPort = {
   list(filters?: { project?: string; status?: string; parent?: string }): Promise<TaskReadRow[]>
+  lookup(project: string, keys: string[]): Promise<TaskLookupRow[]>
   duplicates(project: string, title: string): Promise<TaskReadDuplicateCandidate[]>
   show(key: string, scope?: { project?: string; recordId?: string }): Promise<TaskReadShow>
   documents(
@@ -59,9 +64,11 @@ export type TaskReadPort = {
 
 let installedTaskReader: TaskReadPort | undefined
 
-/** Install the task reader used by every orchestrator read in this process. */
-export function installTaskReader(port: TaskReadPort): void {
+/** Install the task reader used by every orchestrator read in this process and return its prior state. */
+export function installTaskReader(port: TaskReadPort | undefined): TaskReadPort | undefined {
+  const previous = installedTaskReader
   installedTaskReader = port
+  return previous
 }
 
 /** Refuse instead of silently falling back to a CLI spawn. */

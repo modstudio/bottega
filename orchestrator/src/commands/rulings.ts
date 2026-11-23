@@ -10,7 +10,8 @@ import {
   type AnswerChannel,
 } from '../../../shared/question-vocabulary.ts'
 import { db } from '../database/db.ts'
-import { getDocRevision, setDoc } from '../doc/docs.ts'
+import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
+import { setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'

@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
+import { applyHostedRow } from './hosted-change-family.ts'
 import { otherTaskDocumentIdentityByNumber } from './identity/identity.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
@@ -9,6 +10,7 @@ import { projectRecordIdFor } from './project-record-id.ts'
 import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
+import { demoteOtherTaskDocumentRoleHolders } from './task-document-demotion.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { hostedTaskRow } from './task-hosted-record.ts'
 import { taskIdentityDecision } from './task-identity.ts'
@@ -262,6 +264,9 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
       `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
+  if (row.role !== null) {
+    demoteOtherTaskDocumentRoleHolders(conn, taskRecordId, row.role, row.id)
+  }
   conn
     .query(
       `INSERT INTO task_document
@@ -387,10 +392,14 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
   writeStatusEvent(conn, row, taskRecordId)
 }
 
-export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
+export function applyHostedTaskRows(
+  conn: Database,
+  changes: HostedChanges,
+  failureLabel = 'hosted task change',
+) {
   let unsupportedSources = 0
   changes.tasks.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task', row.id, row, (taskConn, taskRow) => {
+    applySnapshotRow(conn, failureLabel, 'hub_task', row.id, row, (taskConn, taskRow) => {
       if (!applyHostedTask(taskConn, taskRow)) unsupportedSources += 1
     })
   })
@@ -400,31 +409,34 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
     )
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyHostedTaskComment)
+    applySnapshotRow(conn, failureLabel, 'hub_task_comment', row.id, row, applyHostedTaskComment)
   })
   changes.documents.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
+    applySnapshotRow(conn, failureLabel, 'hub_task_document', row.id, row, applyDocument)
   })
   changes.statusEvents.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task_status_event', row.id, row, applyStatusEvent)
+    applySnapshotRow(conn, failureLabel, 'hub_task_status_event', row.id, row, applyStatusEvent)
   })
 }
 
 function applySnapshotRow(
   conn: Database,
+  failureLabel: string,
   table: HostedTaskChangeTable,
   id: string,
   row: HostedChangeRow,
   apply: (conn: Database, row: never) => void,
 ) {
-  reconcilePulledRow(conn, {
-    table,
-    id,
-    operation: row.deleted_at ? 'delete' : 'upsert',
-    current: () => hostedChangeMachineRow(conn, table, id),
-    apply: () => apply(conn, row as never),
-    remove: () => deleteHostedChangeRow(conn, table, id),
-  })
+  return applyHostedRow(failureLabel, table, id, () =>
+    reconcilePulledRow(conn, {
+      table,
+      id,
+      operation: row.deleted_at ? 'delete' : 'upsert',
+      current: () => hostedChangeMachineRow(conn, table, id),
+      apply: () => apply(conn, row as never),
+      remove: () => deleteHostedChangeRow(conn, table, id),
+    }),
+  )
 }
 
 const hostedTaskChangeTables = {
@@ -444,6 +456,23 @@ const hostedTaskChangeTables = {
 } as const
 
 export type HostedTaskChangeTable = keyof typeof hostedTaskChangeTables
+
+export function applyHostedTaskSnapshotRow(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  row: HostedChangeRow,
+): boolean {
+  return (
+    applySnapshotRow(
+      conn,
+      'hosted task change',
+      table,
+      row.id,
+      row,
+      hostedTaskChangeTables[table].apply as (conn: Database, row: never) => void,
+    ).kind !== 'skipped'
+  )
+}
 
 export const HOSTED_TASK_CHANGE_TABLE_QUERY = (
   Object.keys(hostedTaskChangeTables) as HostedTaskChangeTable[]

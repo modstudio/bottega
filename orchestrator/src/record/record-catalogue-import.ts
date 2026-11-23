@@ -1,6 +1,7 @@
 // concern: record-catalogue-import
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
@@ -299,6 +300,10 @@ async function insertWorkflowVersion(
   ownerId: string,
   row: WorkflowVersionRow,
 ): Promise<void> {
+  row = maskHostedTableWrite(
+    kind === 'workflow' ? 'workflow_version' : 'step_catalogue_version',
+    row,
+  )
   if (kind === 'workflow')
     await tx`INSERT INTO workflow_version (id,space_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${ownerId}::uuid,${row.n},${row.status},${row.definition},${row.author},${row.reason},${row.createdAt}::timestamptz,${row.promotedAt}::timestamptz,${row.retiredAt}::timestamptz,now())`
   else
@@ -359,6 +364,10 @@ export async function importRecordWorkflowCatalogue(input: Tenant & RecordWorkfl
         versionTable = `${kind}_version` as 'workflow_version' | 'step_catalogue_version'
       const eventTable = `${kind}_event` as 'workflow_event' | 'step_catalogue_event'
       await forEachAsync(input[eventTable], async (row) => {
+        row = maskHostedTableWrite(
+          kind === 'workflow' ? 'workflow_event' : 'step_catalogue_event',
+          row,
+        )
         if (keptVersions.has(row.ownerVersionId)) return
         const versionId = versions.get(row.ownerVersionId)
         if (!versionId) {

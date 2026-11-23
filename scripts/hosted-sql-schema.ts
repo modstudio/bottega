@@ -86,7 +86,12 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   // Builds hosted document-import HTTP payloads and intentionally owns no SQL.
   'orchestrator/test/fixtures/doc-import.ts',
   'orchestrator/test/fixtures/record-api.ts',
+  // Matches in-memory hosted document fixture rows and intentionally owns no SQL.
+  'orchestrator/test/fixtures/record-api-docs.ts',
+  'orchestrator/test/fixtures/record-api-context-items.ts',
+  'orchestrator/test/fixtures/record-api-idle-catalogues.ts',
   'orchestrator/test/fixtures/record-api-question.ts',
+  'orchestrator/test/fixtures/record-api-space-agents.ts',
   // Serves an in-memory hosted task-flow store and intentionally owns no SQL.
   'orchestrator/test/fixtures/record-api-task-flow.ts',
   'orchestrator/test/fixtures/record-session.ts',

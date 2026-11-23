@@ -165,6 +165,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     ),
   },
   script('scripts/check-machine-state.ts', run),
+  script('scripts/check-doc-local-sql-authority.ts', run),
   script(
     'scripts/check-cascade-preservation.ts',
     omit('slow: 2.7s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
@@ -188,6 +189,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-record-request-headers.ts', run),
   script('scripts/check-task-single-read.ts', run),
   script('scripts/check-record-route-contracts.ts', run),
+  script('scripts/check-hosted-secret-writers.ts', run),
   script('scripts/check-hosted-local-sql.ts', run),
   script('scripts/check-outbox-payload-contracts.ts', run),
   script(
@@ -233,6 +235,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-gitleaks.ts', run),
   script('scripts/check-write-transaction-site.ts', run),
   script('scripts/check-branch-ref-mutation-site.ts', run),
+  script('scripts/check-git-clean-site.ts', run),
   script('scripts/check-command-descriptions.ts', run),
   script('scripts/reference.ts', run),
   script('scripts/check-file-ceiling.ts', run, {

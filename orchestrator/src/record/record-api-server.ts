@@ -75,7 +75,12 @@ import {
   revokeMachineKey,
   withdrawSpaceConfigAccess,
 } from './record-config.ts'
-import { deleteRecordContextItem, upsertRecordContextItem } from './record-context-items.ts'
+import {
+  deleteRecordContextItem,
+  readRecordContextHolders,
+  readRecordContextItems,
+  upsertRecordContextItem,
+} from './record-context-items.ts'
 import {
   deleteCredentialPreference,
   listCredentialPreferences,
@@ -86,6 +91,7 @@ import {
   countRecordDocs,
   deleteRecordDoc,
   getRecordDoc,
+  getRecordDocRevision,
   importRecordDoc,
   listRecordDocEntries,
   listRecordDocRevisions,
@@ -144,6 +150,11 @@ import { listRecordRoutingEvidence } from './record-routing-evidence.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsAutoMode, applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import {
+  deleteRecordSpaceAgent,
+  readRecordSpaceAgents,
+  upsertRecordSpaceAgent,
+} from './record-space-agents.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import { readRecordStorage } from './record-storage.ts'
 import {
@@ -162,6 +173,7 @@ import {
   readRecordTaskFlowPresence,
   readRecordTaskFlowProjectReferenceCounts,
   readRecordTaskFlowStage,
+  readRecordTaskFlowStageSummaries,
   readRecordTaskFlowText,
 } from './record-task-flow.ts'
 import { writeRecordTaskFlow } from './record-task-flow-write.ts'
@@ -318,6 +330,7 @@ function recordDocDependencies() {
     searchPublicDocs: searchPublicRecordDocs,
     searchDocs: searchRecordDocs,
     readDoc: getRecordDoc,
+    readDocRevision: getRecordDocRevision,
     listDocRevisions: listRecordDocRevisions,
     upsertDoc: upsertRecordDoc,
     reorderDocs: reorderRecordDocs,
@@ -434,6 +447,7 @@ function recordProjectDependencies() {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
     readTaskFlowStage: readRecordTaskFlowStage,
+    readTaskFlowStageSummaries: readRecordTaskFlowStageSummaries,
     readTaskFlowText: readRecordTaskFlowText,
     readTaskFlowObligation: readRecordTaskFlowObligation,
     listTaskFlowStages: listRecordTaskFlowStages,
@@ -485,6 +499,14 @@ function recordBoardDependencies() {
   }
 }
 
+function recordSpaceAgentDependencies() {
+  return {
+    readSpaceAgents: readRecordSpaceAgents,
+    upsertSpaceAgent: upsertRecordSpaceAgent,
+    deleteSpaceAgent: deleteRecordSpaceAgent,
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -496,7 +518,6 @@ async function serveRecordApiWithAuth(
   const recordRetention = startRecordRetention({
     prune: () => pruneRecordRetention(config.recordUrl),
   })
-  const migrations = recordMigrationCount()
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
@@ -504,7 +525,7 @@ async function serveRecordApiWithAuth(
     noDestinationWriteDatabase: () => recordPool(config.recordUrl),
     ...recordChangeDependencies(config, recordChangeWakeSource),
     allowedOrigins: config.allowedOrigins,
-    ...recordApiAccessDependencies(config, auth, migrations),
+    ...recordApiAccessDependencies(config, auth, recordMigrationCount()),
     ...recordRunDependencies(),
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,
@@ -517,8 +538,11 @@ async function serveRecordApiWithAuth(
     defineSubject: defineRecordSubject,
     reorderSubjects: reorderRecordSubjects,
     retireSubject: retireRecordSubject,
+    readContextItems: readRecordContextItems,
+    readContextHolders: readRecordContextHolders,
     upsertContextItem: upsertRecordContextItem,
     deleteContextItem: deleteRecordContextItem,
+    ...recordSpaceAgentDependencies(),
     ...recordDocDependencies(),
     ...recordSettingsDependencies(),
     ...recordScoreDependencies(),

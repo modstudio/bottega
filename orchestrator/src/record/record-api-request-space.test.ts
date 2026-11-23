@@ -399,10 +399,13 @@ const recordWriteExemptions = new Map([
   ],
   ['POST /v1/sync', 'sync resolves every row destination through its S5 write-space seam'],
   ['POST /v1/task-flow/presence', 'bounded batch query is read-only despite using POST'],
+  ['POST /v1/task-flow/stage-summaries', 'bounded batch query is read-only despite using POST'],
 ])
 const recordTenantRoutes = new Set(
   `
 PUT /v1/subjects
+PUT /v1/space-agents
+DELETE /v1/space-agents
 POST /v1/subjects/:id/rename
 POST /v1/subjects/:id/define
 POST /v1/subjects/reorder

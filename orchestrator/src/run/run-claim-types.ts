@@ -13,6 +13,7 @@ export type ClaimResult = {
   schemaPath: string | undefined
   started: number
   launchKey: string | null
+  runProjectRecordId: string | null
   runToken: string
   claim: { id: string; recordId: string; number: number; parentRunRecordId: string | null }
   keepTree: KeepTreeExemption | undefined

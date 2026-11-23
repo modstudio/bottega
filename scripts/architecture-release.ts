@@ -1,7 +1,41 @@
 export const releaseModules = [
   {
+    file: 'orchestrator/src/release/release-check.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/bun-version.ts',
+      'shared/install-root.ts',
+      'shared/refusal.ts',
+      'orchestrator/src/release/release-binary-autoload-check.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-rungs.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/release/release-rungs.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/brand.ts',
+      'shared/install-root.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
+    typeOnlyAllowed: [
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/release/release-decision.ts',
-    allowed: ['shared/refusal.ts', 'shared/release-tag.ts', 'shared/secret-shaped.ts'],
+    allowed: [
+      'shared/brand.ts',
+      'shared/refusal.ts',
+      'shared/release-tag.ts',
+      'shared/secret-shaped.ts',
+    ],
   },
   {
     file: 'orchestrator/src/release/release-service.ts',
@@ -22,10 +56,31 @@ export const releaseModules = [
       'shared/secret-shaped.ts',
       'shared/record/schema.ts',
       'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-checkout.ts',
       'orchestrator/src/release/live-reading.ts',
       'orchestrator/src/release/release-ledger.ts',
       'orchestrator/src/release/release-binary-autoload-check.ts',
       'shared/bounded-process.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/release/release-at-commit.ts',
+    allowed: [
+      'node:crypto',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-service.ts',
+      'orchestrator/src/worktree/worktree-create.ts',
+      'orchestrator/src/worktree/worktree-remove.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/release/release-checkout.ts',
+    allowed: [
+      'shared/bounded-process.ts',
+      'orchestrator/src/git/fetch-retry.ts',
+      'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/project/main-checkout-invariant.ts',
+      'orchestrator/src/release/release-decision.ts',
     ],
   },
   {
@@ -63,8 +118,33 @@ export const releaseModules = [
       'orchestrator/src/review/review-declared-globs.ts',
       'orchestrator/src/release/release-entry-closure.ts',
       'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-at-commit.ts',
       'orchestrator/src/release/release-service.ts',
       'orchestrator/src/release/ship-to-reach.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
+  },
+  {
+    file: 'orchestrator/src/release/release-preflight.ts',
+    allowed: [
+      'shared/brand.ts',
+      'shared/refusal.ts',
+      'orchestrator/src/release/release-entry-closure.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-required.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/release/release-entry-closure.ts'],
+  },
+  {
+    file: 'orchestrator/src/release/release-preflight-adapter.ts',
+    allowed: [
+      'shared/git-path-list.ts',
+      'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/release/release-decision.ts',
+      'orchestrator/src/release/release-entry-closure.ts',
+      'orchestrator/src/release/live-reading.ts',
+      'orchestrator/src/release/release-preflight.ts',
     ],
     typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
   },

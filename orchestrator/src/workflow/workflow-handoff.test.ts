@@ -163,7 +163,7 @@ function handoffCall(
 test('handoff refuses an unmet source floor before writing and succeeds with its evidence', async () => {
   const fixture = await refusalFixture()
   const remedy =
-    'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>'
+    'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>'
   await expectRefusalUnchanged(fixture, handoffCall(fixture), remedy, true)
 
   const result = await handoffCall(fixture, {
@@ -355,6 +355,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       project: 'fixture',
       bindingPresent:
         resolveWorkflowCursorSuccessor(runBinding.cursor_record_id, links) === successor.record_id,
+      writesRepo: false,
       harnessSession: fixture.context.session,
       heldCursors: [],
       overrideReason: undefined,
@@ -412,6 +413,11 @@ test('brief lineage lists a carried run under the real handoff successor', async
     evidence: { artifacts: [await attachWorkflowFloorArtifact(fixture.row, context, fixture.d)] },
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
+  const handoffLinks = await workflowCursorHandoffLinks([fixture.row, successor], fixture.d)
+  expect(handoffLinks.map(({ record_id }) => record_id)).toEqual([
+    fixture.row.record_id,
+    successor.record_id,
+  ])
   const selected = selectBriefInFlight(
     [
       {
@@ -424,7 +430,7 @@ test('brief lineage lists a carried run under the real handoff successor', async
     ],
     [successor],
     [],
-    await workflowCursorHandoffLinks([successor], fixture.d),
+    handoffLinks,
   )
 
   expect(selected.runs).toEqual([])

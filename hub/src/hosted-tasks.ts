@@ -1,5 +1,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
@@ -15,11 +17,16 @@ import type {
 } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
+import type { HostedTaskLookupRow } from './task-types.ts'
+
+export type { HostedTaskLookupRow } from './task-types.ts'
 
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument
 export type HostedStatusEvent = PushedStatusEvent
+
+export const TASK_LOOKUP_KEY_LIMIT = 100
 
 export const hostedTaskPullSerializers = {
   hub_task: (row: HostedTask) => row,
@@ -55,6 +62,37 @@ export async function getHostedTask(client: SQL, identity: TaskIdentity, taskIde
   })
 }
 
+export async function lookupHostedTasks(
+  client: SQL,
+  identity: TaskIdentity,
+  project: string,
+  keys: string[],
+): Promise<{ tasks: HostedTaskLookupRow[] }> {
+  return withHostedTenant(client, identity, async (tx) => {
+    const tasks = rows<HostedTaskLookupRow>(
+      await tx`
+      WITH RECURSIVE selected AS (
+        SELECT t.* FROM hub_task t
+        WHERE t.space_id=${identity.spaceId}::uuid AND t.project_name=${project}
+          AND t.key IN (SELECT jsonb_array_elements_text(${bindJsonb(tx, keys)}))
+          AND t.deleted_at IS NULL
+        UNION
+        SELECT parent.* FROM hub_task parent JOIN selected child ON child.parent_id=parent.id
+        WHERE parent.space_id=${identity.spaceId}::uuid AND parent.project_name=${project}
+          AND parent.deleted_at IS NULL
+      )
+      SELECT selected.id::text record_id,selected.key,selected.project_name project,
+        selected.title,selected.parent_key,selected.status,selected.status_category,
+        selected.opened_at::text,selected.last_seen::text,
+        EXISTS(SELECT 1 FROM hub_task child
+          WHERE child.space_id=${identity.spaceId}::uuid AND child.parent_id=selected.id
+            AND child.deleted_at IS NULL) has_children
+      FROM selected ORDER BY selected.key`,
+    )
+    return { tasks }
+  })
+}
+
 export async function createHostedTask(
   client: SQL,
   identity: TaskIdentity,
@@ -80,6 +118,7 @@ export async function createHostedTaskInTransaction(
   identity: TaskIdentity,
   input: Parameters<typeof createHostedTask>[2],
 ) {
+  input = maskHostedTableWrite('hub_task', input)
   if (!input.projectId)
     throw new Error(
       `project-scoped hosted task write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
@@ -138,6 +177,7 @@ export async function createHostedDocument(
   key: string,
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
+  input = maskHostedTableWrite('hub_task_document', input)
   return withHostedTenant(client, identity, async (tx) => {
     const project = rows<{
       id: string
@@ -311,6 +351,7 @@ export async function mirrorTaskRow(
   identity: TaskIdentity,
   row: HostedTask,
 ): Promise<MirrorAdoption | null> {
+  row = maskHostedTableWrite('hub_task', row)
   const existing = rows<{
     id: string
     space_id: string
@@ -420,6 +461,7 @@ export async function mirrorCommentRow(
   identity: TaskIdentity,
   row: HostedComment,
 ): Promise<void> {
+  row = maskHostedTableWrite('hub_task_comment', row)
   const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string }>(
     await tx`SELECT id,space_id FROM hub_task_comment WHERE id=${row.id}::uuid`,
@@ -454,6 +496,7 @@ export async function mirrorDocumentRow(
   identity: TaskIdentity,
   row: HostedDocument,
 ): Promise<void> {
+  row = maskHostedTableWrite('hub_task_document', row)
   const number = row.number
   if (!row.deleted_at && number === null)
     throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)

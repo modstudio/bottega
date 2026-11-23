@@ -22,7 +22,11 @@ import {
   withWorktreeLease,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
-import { settleClaims } from '../resources/resource-claims.ts'
+import {
+  claimedWorktreeRefusal,
+  claimSettlement,
+  settleClaims,
+} from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -53,6 +57,10 @@ type ReclaimWorktreeOptions = {
   clock?: number
   allowDirty?: boolean
   beforeLockedProof?: () => void
+}
+
+function reclaimSettlement(detail: string) {
+  return claimSettlement(detail, 'reclaim', sessionId())
 }
 
 function prepareExactBranchDeletion(repoRoot: string, branch: string): void {
@@ -196,7 +204,10 @@ function proveRunOwners(
   return null
 }
 
-function sharedWorktreeRefusal(path: string, runId: string): ReclaimResult | null {
+export function sharedWorktreeRefusal(path: string, runId?: string): ReclaimResult | null {
+  const claimRefusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, runId)
+  if (claimRefusal) return refuse(claimRefusal)
+  if (!runId) return null
   const sharers = otherConversationWorktreeSharers(db(), {
     record_id: runId,
     worktree: path,
@@ -368,7 +379,7 @@ export function reclaimWorktree(
   const preview = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
   if (!preview.result.ok) return preview.result
   const previewOwner = preview.rows?.[0]
-  const previewClaim = previewOwner ? sharedWorktreeRefusal(path, previewOwner.record_id) : null
+  const previewClaim = sharedWorktreeRefusal(path, previewOwner?.record_id)
   if (previewClaim) return previewClaim
   if (options.dryRun) return preview.result
   const project = preview.project!
@@ -386,7 +397,7 @@ export function reclaimWorktree(
           if (!proof.result.ok) return proof.result
           const lockedRows = proof.rows ?? []
           const lockedRow = lockedRows[0]
-          const lockedClaim = lockedRow ? sharedWorktreeRefusal(path, lockedRow.record_id) : null
+          const lockedClaim = sharedWorktreeRefusal(path, lockedRow?.record_id)
           if (lockedClaim) return lockedClaim
           writableDb()
           const headRef = existsSync(path)
@@ -411,10 +422,8 @@ export function reclaimWorktree(
             lockedRow?.record_id,
           )
           if (!removed.removed) return refuse(removed.detail)
-          if (lockedRow) {
-            const sharersAfter = sharedWorktreeRefusal(path, lockedRow.record_id)
-            if (sharersAfter) return sharersAfter
-          }
+          const sharersAfter = sharedWorktreeRefusal(path, lockedRow?.record_id)
+          if (sharersAfter) return sharersAfter
           if (keepBranch && minted && branchBefore) {
             const branchAfter = branchTip(project.path, minted)
             if (branchAfter === null) {
@@ -440,7 +449,7 @@ export function reclaimWorktree(
                   kind: 'worktree',
                   state: 'released',
                   settledAt: new Date().toISOString(),
-                  detail: removed.detail,
+                  ...reclaimSettlement(removed.detail),
                   allocationKey: path,
                 })
                 if (keepBranch && minted && branchBefore) {
@@ -449,7 +458,7 @@ export function reclaimWorktree(
                     kind: 'branch',
                     state: 'retained',
                     settledAt: new Date().toISOString(),
-                    detail: `branch retained at ${branchBefore}`,
+                    ...reclaimSettlement(`branch retained at ${branchBefore}`),
                     allocationKey: `refs/heads/${minted}`,
                   })
                 }

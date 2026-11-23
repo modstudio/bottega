@@ -9,6 +9,7 @@ import {
 } from '../settings/settings-machine-apply.ts'
 import {
   PRODUCT_HOOKS,
+  productHookDeclarations,
   SCRIPT_FILES,
   withMachineProductHooks,
 } from '../settings/settings-machine-hooks.ts'
@@ -16,7 +17,7 @@ import type { SetupInstallVerifyFacts } from './setup-install-verify.ts'
 import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 
 const current: MachineSettingsApplyResult[] = [
-  { target: 'settings user', outcome: 'current', changed: false },
+  { target: 'settings user', outcome: 'current', changed: false, subagentHooks: 'on' },
 ]
 
 function facts(): SetupInstallVerifyFacts {
@@ -33,6 +34,7 @@ function facts(): SetupInstallVerifyFacts {
         state: 'readable',
         settings: withMachineProductHooks(
           { permissions: {}, hooks: {} },
+          { subagentHooks: 'on' },
           '/state/orchestrator.db',
           'on',
           {
@@ -79,8 +81,30 @@ test('the rendered success fixture fails when one product hook is removed', asyn
   const input = facts()
   removeRenderedHook(input, 'git-guard.py')
   await expect(
-    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, {
+      applySettings: async () => current,
+      facts: () => input,
+    }),
   ).rejects.toThrow('hooks-present: failed')
+})
+
+test('an applied blocking choice requires block-agent hooks even without a session', async () => {
+  const input = facts()
+  removeRenderedHook(input, 'block-agent.py')
+  let gatheredChoice: MachineSettingsApplyResult['subagentHooks']
+  await expect(
+    applySetupInstallVerify(false, {
+      applySettings: async () => current,
+      facts: (subagentHooks) => {
+        gatheredChoice = subagentHooks
+        return {
+          ...input,
+          hooks: productHookDeclarations(subagentHooks ? { subagentHooks } : undefined),
+        }
+      },
+    }),
+  ).rejects.toThrow('missing: PreToolUse Agent|Task|Workflow block-agent.py')
+  expect(gatheredChoice).toBe('on')
 })
 
 test('a settings-row refusal names its target, condition, and row remedy', async () => {
@@ -166,7 +190,10 @@ test('an absent hook after render refuses naming hooks-present', async () => {
   const input = facts()
   removeRenderedHook(input, 'stop-summary.py')
   await expect(
-    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, {
+      applySettings: async () => current,
+      facts: () => input,
+    }),
   ).rejects.toThrow('hooks-present: failed')
 })
 

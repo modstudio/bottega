@@ -7,6 +7,11 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  installTaskReader,
+  type TaskLookupRow,
+  type TaskReadPort,
+} from '../workflow/task-read-port.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { installHostedWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
 import {
@@ -19,6 +24,8 @@ import {
   storedBriefHolders,
   workingKeysForBrief,
 } from './context-brief.ts'
+
+const BRIEF_RECORD_TASK_CALL_LIMIT = 4
 
 const item = (
   holder: string,
@@ -414,17 +421,89 @@ test('contextBrief uses the session cursor rows for holders and in flight', asyn
   expect(rendered).not.toContain('workflow abandon')
 })
 
+test('contextBrief drives lookup and filtered queue reads within its task-call budget', async () => {
+  const session = 'context-brief-task-read-guard'
+  const project = 'context-brief-task-read-project'
+  const calls: Array<{ operation: 'list' | 'lookup'; status?: string }> = []
+  const tasks: TaskLookupRow[] = Array.from({ length: 600 }, (_, index) => ({
+    key: `DEV-${index + 1}`,
+    record_id: `task-${index + 1}`,
+    project,
+    title: 'ordinary task',
+    parent_key: null,
+    status: 'open',
+    status_category: 'open',
+    last_seen: null,
+    opened_at: null,
+    has_children: false,
+  }))
+  const port: TaskReadPort = {
+    async list(filters = {}) {
+      calls.push({ operation: 'list', status: filters.status })
+      if (!filters.status) throw new Error('unfiltered project task scan on a hook path')
+      return []
+    },
+    async lookup(selectedProject, keys) {
+      calls.push({ operation: 'lookup' })
+      return tasks.filter((task) => task.project === selectedProject && keys.includes(task.key))
+    },
+    show: async () => {
+      throw new Error('not used')
+    },
+    duplicates: async () => [],
+    documents: async () => [],
+    document: async () => {
+      throw new Error('not used')
+    },
+  }
+  installTaskReader(port)
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/context-brief-task-read','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"}}')`,
+    )
+    .run(newRecordId(), project)
+  installHostedWorkflowTreeFixture(project, newRecordId(), resolve(process.cwd(), '..'))
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session },
+    undefined,
+    {},
+    {},
+  )
+  db()
+    .query('UPDATE workflow_cursor SET workflow_key=?,task_record_id=? WHERE number=?')
+    .run('DEV-1', 'task-1', opened.cursor!.id)
+
+  await contextBrief(session, '/context-brief-task-read')
+
+  expect(calls).toHaveLength(BRIEF_RECORD_TASK_CALL_LIMIT)
+  expect(calls.every((call) => call.operation !== 'list' || call.status !== undefined)).toBe(true)
+  installTaskReader(undefined as never)
+})
+
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
-  const task = (key: string, project: string, title: string, parentKey: string | null = null) => ({
+  const task = (
+    key: string,
+    project: string,
+    title: string,
+    parentKey: string | null = null,
+    hasChildren = false,
+  ) => ({
     key,
     project,
     title,
     parent_key: parentKey,
     record_id: `${project}:${key}`,
+    has_children: hasChildren,
   })
   const tasks = [
     task('DEV-1844/2', PLATFORM_SLUG, 'Build the brief', 'DEV-1844'),
-    task('DEV-1844', PLATFORM_SLUG, 'Architect context'),
+    task('DEV-1844', PLATFORM_SLUG, 'Architect context', null, true),
     task('APP-7', 'other', 'Other project task'),
     task('DEV-2000', PLATFORM_SLUG, 'Parentless childless task'),
     task('SHARED-1', PLATFORM_SLUG, 'Platform shared key'),
@@ -521,17 +600,7 @@ test('reads a working task brief from its record-id holder while retaining the t
 })
 
 test('renders an open keyless cursor item under its cursor header without an open line', async () => {
-  const database = new Database(':memory:')
-  database.exec(
-    `CREATE TABLE context_item (
-      record_id TEXT NOT NULL, holder_kind TEXT NOT NULL, holder_id TEXT NOT NULL,
-      slug TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
-      question_number INTEGER, target TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    ); CREATE TABLE question (
-      number INTEGER NOT NULL, workflow_task_record_id TEXT, question TEXT NOT NULL,
-      answered_at TEXT, closed_at TEXT
-    )`,
-  )
+  const database = migratedTestDatabase()
   const recordId = newRecordId()
   database
     .query(

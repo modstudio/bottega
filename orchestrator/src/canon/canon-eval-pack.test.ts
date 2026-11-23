@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { decideCanonEvalPack, EMPTY_CANON_SHA, resolveCanonEvalProject } from './canon-eval-pack.ts'
 
 describe('canon eval project selection', () => {
-  const project = { name: 'registered', path: '/projects/registered' }
+  const project = { recordId: 'registered-id', name: 'registered', path: '/projects/registered' }
 
   test('a registered cwd project is selected', () => {
     const selected = resolveCanonEvalProject({
@@ -23,7 +23,7 @@ describe('canon eval project selection', () => {
 })
 
 describe('canon eval pack gate', () => {
-  const project = { name: 'registered', path: '/projects/registered' }
+  const project = { recordId: 'registered-id', name: 'registered', path: '/projects/registered' }
 
   test('a registered project yields its compiled pack sha', () => {
     const selected = decideCanonEvalPack({

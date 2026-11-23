@@ -584,9 +584,11 @@ describe('record client', () => {
     const client = clientWith(fetch)
     await client.docs()
     await client.docs({ acrossReadableSpaces: true })
+    await client.docs({ slug: 'guide', owner: '01990000-0000-7000-8000-000000000001' })
     expect(urls).toEqual([
       'https://api.example.test/v1/docs',
       'https://api.example.test/v1/docs?acrossReadableSpaces=true',
+      'https://api.example.test/v1/docs?slug=guide&owner=01990000-0000-7000-8000-000000000001',
     ])
   })
 
@@ -614,6 +616,7 @@ describe('record client', () => {
       })
     const doc = await clientWith(fetch).doc('01990000-0000-7000-8000-0000000000d1')
     expect(doc).toMatchObject({ audiences: ['technical'], parentId: null, position: 0 })
+    expect(doc.latestRevisionId).toBeNull()
   })
 
   test('scores and voids hosted runs without sending a scorer identity', async () => {

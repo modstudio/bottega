@@ -2,10 +2,9 @@
 /** Applies hosted user settings and canon to this machine. Must not know CLI grammar or scheduling. */
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
-import { renderRefusal } from '../../../shared/refusal.ts'
 import {
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
@@ -23,7 +22,8 @@ import {
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
-import { getDoc, listDocs, readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
+import { getDocStore as getDoc, listDocsStore as listDocs } from '../doc/doc-read-store.ts'
+import { readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -41,13 +41,19 @@ import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
+  type SubagentHooksChoice,
+  subagentBlockingOn,
 } from './settings.ts'
 import {
   readSettingsEnv,
   selectedSettingsEnvironment,
   userSettingsEnvPath,
 } from './settings-env.ts'
-import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
+import {
+  claudeHomeFromEnvironment,
+  tryReadSettingsFile,
+  userSettingsPath,
+} from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
 import {
   readClaudeMcpPlacement,
@@ -59,8 +65,16 @@ import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import { renderedSettingsEnvironment, renderOwnedSettingsFile } from './settings-render.ts'
-import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
+import {
+  parseSettingsFile,
+  renderedSettingsEnvironment,
+  renderOwnedSettingsFile,
+} from './settings-render.ts'
+import {
+  applySettingsWrite,
+  planSettingsWrite,
+  writeNewSettingsFileAtomically,
+} from './settings-write.ts'
 
 export type MachineSettingsApplyResult = {
   target: string
@@ -69,6 +83,8 @@ export type MachineSettingsApplyResult = {
   detail?: string
   changed: boolean
   superseded?: SupersededProfileHook[]
+  subagentHooksRemoved?: boolean
+  subagentHooks?: SubagentHooksChoice
 }
 
 export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyResult): boolean {
@@ -169,33 +185,6 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
   }
 }
 
-function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
-  return {
-    target,
-    outcome: 'refused',
-    condition: 'no-settings-row',
-    detail: renderRefusal({
-      condition: 'refusing settings render: no settings row for user',
-      remedies: [
-        {
-          kind: 'command',
-          argv: [
-            PLATFORM_SLUG,
-            'doc',
-            'set',
-            '--scope',
-            'settings',
-            '--user',
-            '--slug',
-            'settings',
-          ],
-        },
-      ],
-    }),
-    changed: false,
-  }
-}
-
 function localUserSettingsDocuments(owner: string): UserSettingsDocuments {
   return {
     source: 'local',
@@ -229,71 +218,128 @@ function applyUserSettings(
   const path = userSettingsPath(home)
   const target = `settings ${path}`
   try {
-    if (!row) return missingUserSettingsResult(target)
-    const parsed = readSettingsFile(path)
+    const existing = tryReadSettingsFile(path)
+    const parsed = existing ?? parseSettingsFile('{}')
     const merged = mergeMachinePermissionOverlay(
-      parseStoredOwnedSettings(row.body),
+      row ? parseStoredOwnedSettings(row.body) : parsed.owned,
       readMachinePermissions(deps.environment),
     )
+    const settingsSourceDetail = row ? undefined : 'product hooks only; no user settings row'
+    const databasePath = resolveOrchestratorDatabase(deps.environment)
+    const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
+    const runtime = resolveMachineHookRuntime()
     const productHooks = withMachineProductHooks(
       merged.settings,
-      resolveOrchestratorDatabase(deps.environment),
-      readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
-      resolveMachineHookRuntime(),
+      row ? merged.settings.options : undefined,
+      databasePath,
+      globalUse,
+      runtime,
     )
+    const renderedBlockAgentPresent = withMachineProductHooks(
+      parsed.owned,
+      undefined,
+      databasePath,
+      globalUse,
+      runtime,
+    ).superseded.some((hook) => hook.script === 'block-agent.py')
     const owned = productHooks.settings
-    const secretsPath = userSettingsEnvPath(home)
-    const secrets = readSettingsEnv(secretsPath)
-    const names = new Set(ownedEnvironmentNames(owned))
-    const removed = parsed.envKeys.filter((name) => !names.has(name))
-    const unprotected = removed.filter((name) => !secrets.has(name))
-    if (unprotected.length) {
-      throw new Error(
-        `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
-          `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
+    const subagentHooks =
+      row && subagentBlockingOn(merged.settings.options)
+        ? merged.settings.options?.subagentHooks
+        : undefined
+    let environment: Record<string, string> | undefined
+    if (row) {
+      const secretsPath = userSettingsEnvPath(home)
+      const secrets = readSettingsEnv(secretsPath)
+      const names = new Set(ownedEnvironmentNames(owned))
+      const removed = parsed.envKeys.filter((name) => !names.has(name))
+      const unprotected = removed.filter((name) => !secrets.has(name))
+      if (unprotected.length) {
+        throw new Error(
+          `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
+            `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
+        )
+      }
+      environment = renderedSettingsEnvironment(
+        owned,
+        selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
       )
     }
-    const environment = renderedSettingsEnvironment(
-      owned,
-      selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
-    )
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-    const plan = planSettingsWrite(path, rendered)
-    if (plan.currentText === plan.renderedText) {
-      return {
-        target,
-        outcome: 'current',
-        detail: unmatchedDropDetail(merged.unmatchedDrops),
-        changed: false,
-        ...(!check && productHooks.superseded.length
-          ? { superseded: productHooks.superseded }
-          : {}),
-      }
-    }
-    if (check)
-      return {
-        target,
-        outcome: 'applied',
-        detail: ['would apply', unmatchedDropDetail(merged.unmatchedDrops)]
-          .filter(Boolean)
-          .join('; '),
-        changed: true,
-      }
-    const result = deps.applySettings(plan, deps.environment)
-    return {
+    return applyRenderedUserSettings({
+      path,
       target,
-      outcome: 'applied',
-      detail: [
-        result.backup ? `backup ${result.backup}` : 'created new file',
-        unmatchedDropDetail(merged.unmatchedDrops),
-      ]
-        .filter(Boolean)
-        .join('; '),
-      changed: true,
-      ...(!check && productHooks.superseded.length ? { superseded: productHooks.superseded } : {}),
-    }
+      rendered,
+      exists: existing !== null,
+      check,
+      settingsSourceDetail,
+      unmatchedDropDetail: unmatchedDropDetail(merged.unmatchedDrops),
+      superseded: productHooks.superseded,
+      subagentHooksRemoved:
+        !subagentBlockingOn(merged.settings.options) &&
+        (renderedBlockAgentPresent ||
+          productHooks.superseded.some((hook) => hook.script === 'block-agent.py')),
+      subagentHooks,
+      deps,
+    })
   } catch (error) {
     return refusal(target, error)
+  }
+}
+
+function applyRenderedUserSettings(input: {
+  path: string
+  target: string
+  rendered: string
+  exists: boolean
+  check: boolean
+  settingsSourceDetail?: string
+  unmatchedDropDetail?: string
+  superseded: SupersededProfileHook[]
+  subagentHooksRemoved: boolean
+  subagentHooks?: SubagentHooksChoice
+  deps: Dependencies
+}): MachineSettingsApplyResult {
+  const plan = input.exists ? planSettingsWrite(input.path, input.rendered) : null
+  const detail = [input.settingsSourceDetail, input.unmatchedDropDetail].filter(Boolean).join('; ')
+  if (plan && plan.currentText === plan.renderedText) {
+    return {
+      target: input.target,
+      outcome: 'current',
+      detail,
+      changed: false,
+      ...(!input.check && input.superseded.length ? { superseded: input.superseded } : {}),
+      ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+      subagentHooks: input.subagentHooks,
+    }
+  }
+  if (input.check) {
+    return {
+      target: input.target,
+      outcome: 'applied',
+      detail: ['would apply', detail].filter(Boolean).join('; '),
+      changed: true,
+      subagentHooks: input.subagentHooks,
+    }
+  }
+  let result: { backup: string | null }
+  if (plan) {
+    result = input.deps.applySettings(plan, input.deps.environment)
+  } else {
+    mkdirSync(dirname(input.path), { recursive: true, mode: 0o700 })
+    writeNewSettingsFileAtomically(input.path, input.rendered)
+    result = { backup: null }
+  }
+  return {
+    target: input.target,
+    outcome: 'applied',
+    detail: [result.backup ? `backup ${result.backup}` : 'created new file', detail]
+      .filter(Boolean)
+      .join('; '),
+    changed: true,
+    ...(input.superseded.length ? { superseded: input.superseded } : {}),
+    ...(input.subagentHooksRemoved ? { subagentHooksRemoved: true } : {}),
+    subagentHooks: input.subagentHooks,
   }
 }
 
@@ -489,7 +535,11 @@ export function printMachineSettingsApplyResults(
     const status = result.outcome === 'current' ? 'already current' : result.outcome
     const detail = result.detail?.replaceAll('\n', '; ')
     log(`${result.target}: ${status}${detail ? `; ${detail}` : ''}`)
+    if (result.subagentHooksRemoved) {
+      log('block-agent hooks removed: subagent blocking is off')
+    }
     for (const hook of result.superseded ?? []) {
+      if (result.subagentHooksRemoved && hook.script === 'block-agent.py') continue
       log(
         `profile hook ${hook.event} ${hook.matcher ?? '-'} ${hook.script} is superseded by the product hook and can be deleted from the profile`,
       )

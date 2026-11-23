@@ -10,8 +10,14 @@ export const pullRequestModuleSpecs = [
       '../database/db.ts',
       '../project/projects.ts',
       '../question-store/question-store-read.ts',
+      '../run/synthetic-lifecycle-job.ts',
+      '../workflow/workflow-step-action.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts'],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../workflow/workflow-step-action.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',
@@ -143,6 +149,7 @@ export const pullRequestModuleSpecs = [
       '../review-funnel/gather-funnel-facts.ts',
       '../review-funnel/review-funnel-admission-evidence.ts',
       '../review-funnel/review-funnel-decision-log.ts',
+      '../review-funnel/review-funnel-policy.ts',
       '../review-funnel/review-funnel-verdict-service.ts',
       '../review/review-group.ts',
       '../review/review-applicability.ts',

@@ -10,6 +10,12 @@ import { retireUnusedDefaultLocalProject } from '../project/default-local-projec
 import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { RefusalError } from '../refusal-error.ts'
+import {
+  applyMachineSettings,
+  type MachineSettingsApplyResult,
+  printMachineSettingsApplyResults,
+  settingsApplyLockSkipped,
+} from '../settings/settings-machine-apply.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import {
@@ -29,6 +35,14 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 import { recordMemberships } from './record-space.ts'
 
 type Presentation = { log(value: string): void }
+
+type SignedInMachineSetupDependencies = {
+  applySettings(): Promise<MachineSettingsApplyResult[]>
+}
+
+const signedInMachineSetupDependencies: SignedInMachineSetupDependencies = {
+  applySettings: () => applyMachineSettings({ check: false }),
+}
 
 type VerificationEmailAction =
   | { action: 'already-verified'; email: string }
@@ -78,6 +92,7 @@ export async function signUpCommand(
   readPassword: () => Promise<string>,
   presentation: Presentation,
   dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
+  machineDependencies: SignedInMachineSetupDependencies = signedInMachineSetupDependencies,
 ): Promise<void> {
   const password = await recordPassword(readPassword)
   dependencies.probeSessionStore()
@@ -88,6 +103,7 @@ export async function signUpCommand(
     existingAccountSignUpRefusal(error, email)
   }
   await completeRecordSessionCommand(result, presentation, 'signed up')
+  await applySignedInMachineSettings(presentation, machineDependencies.applySettings)
 }
 
 function existingAccountSignUpRefusal(error: unknown, email: string): never {
@@ -121,6 +137,7 @@ async function completeRecordSessionCommand(
 async function completeSignedInMachineSetup(
   presentation: Presentation,
   withDatabase: WithMaintenanceDatabase,
+  dependencies: SignedInMachineSetupDependencies,
 ): Promise<void> {
   try {
     await claimCurrentMachineKey()
@@ -142,6 +159,25 @@ async function completeSignedInMachineSetup(
   await uploadLocalWorkflowHistory(adoptions, presentation, { withDatabase })
   await pushDocsCommand({ dryRun: false }, presentation)
   await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
+  await applySignedInMachineSettings(presentation, dependencies.applySettings)
+}
+
+export async function applySignedInMachineSettings(
+  presentation: Presentation,
+  applySettings: SignedInMachineSetupDependencies['applySettings'],
+): Promise<void> {
+  const remedy = `run \`${PLATFORM_SLUG} machine settings apply\``
+  try {
+    const results = await applySettings()
+    printMachineSettingsApplyResults(results, (value) => presentation.log(String(value)))
+    if (results.some((result) => result.outcome === 'refused' || settingsApplyLockSkipped(result)))
+      presentation.log(remedy)
+  } catch (error) {
+    presentation.log(
+      `machine settings apply failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    presentation.log(remedy)
+  }
 }
 
 export async function signInCommand(
@@ -150,20 +186,22 @@ export async function signInCommand(
   presentation: Presentation,
   withDatabase: WithMaintenanceDatabase,
   dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
+  machineDependencies: SignedInMachineSetupDependencies = signedInMachineSetupDependencies,
 ): Promise<void> {
   const password = await recordPassword(readPassword)
   dependencies.probeSessionStore()
   const result = await dependencies.signIn(email, password)
-  await completeSignInCommand(result, presentation, withDatabase)
+  await completeSignInCommand(result, presentation, withDatabase, machineDependencies)
 }
 
 export async function completeSignInCommand(
   result: RecordSessionResult,
   presentation: Presentation,
   withDatabase: WithMaintenanceDatabase,
+  machineDependencies: SignedInMachineSetupDependencies = signedInMachineSetupDependencies,
 ): Promise<void> {
   await completeRecordSessionCommand(result, presentation, 'signed in')
-  await completeSignedInMachineSetup(presentation, withDatabase)
+  await completeSignedInMachineSetup(presentation, withDatabase, machineDependencies)
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {

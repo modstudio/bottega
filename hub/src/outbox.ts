@@ -3,6 +3,9 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
+import { hostedQueueRefusal } from './hosted-queue-decision.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
+import { hostedWriteMode } from './hosted-write-mode.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
@@ -15,6 +18,7 @@ import {
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -30,7 +34,7 @@ import {
   type RegisteredTaskSpace,
 } from './task-project-space.ts'
 
-const HOSTED_OUTBOX_BATCH_SIZE = 500
+export const HOSTED_OUTBOX_BATCH_SIZE = 500
 const HOSTED_OUTBOX_LEASE_MS = 60_000
 const HOSTED_OUTBOX_LEASE_RENEW_MS = 20_000
 const HOSTED_OUTBOX_LEASE_KEY = 'hosted-outbox.lease'
@@ -53,6 +57,12 @@ export type OutboxEntry = {
   fields: string | null
   kept_values: string | null
 }
+
+const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+  HOSTED_DOCUMENT_TABLE,
+  HOSTED_NOTE_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+])
 
 export function mergeQueuedHostedChange(
   prior: {
@@ -134,7 +144,12 @@ export function queueHostedChange(
   operation: 'upsert' | 'delete',
   queuedAt = nowIso(),
   fields: readonly string[] | null = null,
+  site?: string,
 ) {
+  if (DIRECT_RECORD_TABLES.has(table))
+    throw new Error(`${table} writes go through sendHostedChanges and cannot be queued`)
+  const refusal = hostedQueueRefusal({ table, mode: hostedWriteMode(resolveHostedUrl()), site })
+  if (refusal) throw new Error(refusal)
   const prior = conn
     .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
       `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,
@@ -165,6 +180,35 @@ export function queueHostedChange(
       queuedAt,
       merged.fields === null ? null : JSON.stringify(merged.fields),
     )
+}
+
+export function removeQueuedHostedChangeField(
+  conn: Database,
+  table: string,
+  rowId: string,
+  field: string,
+  fullRowFields: readonly string[],
+): void {
+  const entry = conn
+    .query<{ id: string; fields: string | null }, [string, string]>(
+      `SELECT id,fields FROM hosted_outbox
+       WHERE table_name=? AND row_id=? AND operation='upsert'`,
+    )
+    .get(table, rowId)
+  if (!entry) return
+  const fields = (entry.fields === null ? fullRowFields : JSON.parse(entry.fields)).filter(
+    (queued: string) => queued !== field,
+  )
+  if (!fields.length) {
+    conn.query(`DELETE FROM hosted_outbox WHERE id=?`).run(entry.id)
+    return
+  }
+  conn
+    .query(
+      `UPDATE hosted_outbox SET fields=?,generation=generation+1,attempts=0,last_error=NULL,
+       quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL WHERE id=?`,
+    )
+    .run(JSON.stringify(fields), entry.id)
 }
 
 export function adoptPendingHostedRow(
@@ -431,7 +475,7 @@ function recordRoutingWaits(
 
 const ROUTING_WAIT_PREFIX = 'waiting on routing:'
 
-export type HostedRoutingWait = { project: string; message: string }
+type HostedRoutingWait = { project: string; message: string }
 
 function routingWaitMessage(project: string, reason: string): string {
   if (reason === 'unregistered-project')
@@ -448,9 +492,7 @@ function routingWaitMessage(project: string, reason: string): string {
   return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
 }
 
-export function parseHostedRoutingWait(
-  message: string | null | undefined,
-): HostedRoutingWait | null {
+function parseHostedRoutingWait(message: string | null | undefined): HostedRoutingWait | null {
   if (!message?.startsWith(`${ROUTING_WAIT_PREFIX} project "`)) return null
   const project = /^waiting on routing: project "([^"]+)"/.exec(message)?.[1]
   return project ? { project, message } : null
@@ -736,29 +778,6 @@ async function routeOutboxRows(
     routed.destinations.set(row.acknowledgedSpaceId!, selected)
   }
   return routed
-}
-
-/** Classify selected rows without acquiring the drainer lease or changing the store. */
-export async function hostedRoutingWaitForEntries(
-  entries: OutboxEntry[],
-  dependencies: Pick<DrainDependencies, 'identity' | 'personalSpace' | 'registered'> = {},
-): Promise<HostedRoutingWait | null> {
-  let rows = prepareOutboxRows(entries).rows
-  if (!rows.length) return null
-  const identity = await (dependencies.identity ?? hostedTaskIdentity)()
-  const accepted = new Set(
-    identity.capabilities?.spacePushTables ?? [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE],
-  )
-  rows = rows.filter((row) => accepted.has(row.change.table))
-  const { refusals } = await routeOutboxRows(
-    rows,
-    (dependencies.registered ?? projects)(),
-    identity,
-    dependencies.personalSpace ?? personalRecordSpace,
-  )
-  for (const [project, refusal] of refusals)
-    return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
-  return null
 }
 
 async function drainHostedOutboxHeld(

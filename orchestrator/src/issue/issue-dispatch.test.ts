@@ -2,11 +2,52 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { installTaskReader } from '../workflow/task-read-port.ts'
 import {
   filedIssueClaimable,
+  filedIssueQueueState,
   filedIssueStateForProject,
   unscoredFiledIssueLoopRuns,
 } from './issue-dispatch.ts'
+
+const WAITING_RECORD_TASK_CALL_LIMIT = 3
+
+test('filed-issue queue reads only the three live status categories', async () => {
+  const calls: Array<{ project: string; status: string | undefined }> = []
+  const tasks = Array.from({ length: 600 }, (_, index) => ({
+    key: `DEV-${index}`,
+    record_id: `task-${index}`,
+    project: PLATFORM_SLUG,
+    title: 'ordinary task',
+    parent_key: null,
+    source: 'fixture',
+    status: 'Open',
+    body: null,
+    status_category: 'open',
+    last_seen: null,
+    opened_at: null,
+  }))
+  installTaskReader({
+    async list(filters = {}) {
+      calls.push({ project: filters.project ?? '', status: filters.status })
+      if (!filters.status) throw new Error('unfiltered project task scan on a hook path')
+      return tasks.filter((task) => task.status_category === filters.status)
+    },
+    lookup: async () => [],
+    show: async () => {
+      throw new Error('not used')
+    },
+    duplicates: async () => [],
+    documents: async () => [],
+    document: async () => {
+      throw new Error('not used')
+    },
+  })
+  await filedIssueQueueState(null)
+  expect(calls).toHaveLength(WAITING_RECORD_TASK_CALL_LIMIT)
+  expect(calls.every(({ status }) => status !== undefined)).toBe(true)
+  installTaskReader(undefined as never)
+})
 
 test('project-scoped filed issue state belongs wholly to the platform project', () => {
   const state = {

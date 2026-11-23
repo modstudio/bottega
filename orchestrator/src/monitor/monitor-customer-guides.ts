@@ -2,12 +2,12 @@
 /** Reports cached customer articles whose command mentions no longer resolve. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDocs } from '../doc/doc-authoritative-read.ts'
 import { checkCustomerGuideCommands } from '../doc/doc-command-check.ts'
-import { listDocs } from '../doc/doc-list.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-export function staleCustomerGuideCommandConditions(): MonitorCondition[] {
-  return listDocs({ kind: 'article', audience: 'customer', status: 'current' }).flatMap(
+export async function staleCustomerGuideCommandConditions(): Promise<MonitorCondition[]> {
+  return (await readDocs({ kind: 'article', audience: 'customer', status: 'current' })).flatMap(
     (doc): MonitorCondition[] => {
       const checked = checkCustomerGuideCommands(doc)
       if (!checked.findings.length) return []

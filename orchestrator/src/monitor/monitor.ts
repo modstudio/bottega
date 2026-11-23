@@ -80,6 +80,10 @@ import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { age, idleRunConditions, stalledRunConditions } from './monitor-run-idle-conditions.ts'
 import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
+import {
+  appendStandingConditionAnnouncementErrors,
+  type StandingConditionUnobservedKind,
+} from './monitor-standing-condition-announcement.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import {
   type AddressedMonitorCondition,
@@ -126,6 +130,7 @@ async function initialMonitorObservations(
   conditions: MonitorCondition[]
   errors: string[]
   hostPressure: MonitorResult['hostPressure']
+  unobservedStandingKinds: Set<StandingConditionUnobservedKind>
 }> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
@@ -138,13 +143,17 @@ async function initialMonitorObservations(
       ...hostedHealth.conditions,
       ...hostedPressure.conditions,
       ...hostPressure.conditions,
-      ...staleCustomerGuideCommandConditions(),
+      ...(await staleCustomerGuideCommandConditions()),
       ...diskPressure.conditions,
       ...collectLease.conditions,
       ...collectorLegs.conditions,
     ],
     errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
     hostPressure: hostPressure.report,
+    unobservedStandingKinds: new Set([
+      ...(diskPressure.errors.length ? (['disk-pressure'] as const) : []),
+      ...collectorLegs.unobservedKinds,
+    ]),
   }
 }
 
@@ -655,6 +664,21 @@ function appendRunConditions(
   errors.push(...readerTrees.errors)
 }
 
+function appendObserved(
+  conditions: MonitorCondition[],
+  errors: string[],
+  unobserved: Set<StandingConditionUnobservedKind>,
+  observation: {
+    conditions: MonitorCondition[]
+    errors: string[]
+    unobservedKinds: ReadonlySet<StandingConditionUnobservedKind>
+  },
+): void {
+  conditions.push(...observation.conditions)
+  errors.push(...observation.errors)
+  for (const kind of observation.unobservedKinds) unobserved.add(kind)
+}
+
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -665,8 +689,9 @@ export async function monitor(
     startedAt,
   )
   const load = sampleMonitorHostLoad(database, invocationRecordId)
-  const { conditions, errors, hostPressure } = await initialMonitorObservations(database, clock)
-  const canon = monitorCanonSummary()
+  const { conditions, errors, hostPressure, unobservedStandingKinds } =
+    await initialMonitorObservations(database, clock)
+  const canon = await monitorCanonSummary()
   type ConditionInput =
     | (Omit<AddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
     | (Omit<UnaddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
@@ -710,8 +735,7 @@ export async function monitor(
   conditions.push(...stalledRunConditions(clock))
   conditions.push(...completedRunConditions(database, clock))
   const recordTunnel = await observeRecordTunnel()
-  conditions.push(...recordTunnel.conditions)
-  errors.push(...recordTunnel.errors)
+  appendObserved(conditions, errors, unobservedStandingKinds, recordTunnel)
 
   const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts)
@@ -798,11 +822,10 @@ export async function monitor(
     })
 
   for (const project of projects().filter(isProjectRepository)) {
-    conditions.push(...observeProjectCanonDrift(project))
+    conditions.push(...(await observeProjectCanonDrift(project)))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
     const releaseLive = observeProjectReleaseLive(project)
-    conditions.push(...releaseLive.conditions)
-    errors.push(...releaseLive.errors)
+    appendObserved(conditions, errors, unobservedStandingKinds, releaseLive)
     const recipeDatabases = recipeDatabaseObservations(project, database)
     conditions.push(...recipeDatabases.conditions)
     errors.push(...recipeDatabases.errors)
@@ -952,7 +975,7 @@ export async function monitor(
   conditions.push(...refGuards.conditions)
   errors.push(...refGuards.errors)
 
-  for (const drift of storedPackDrift())
+  for (const drift of await storedPackDrift())
     add({
       kind: 'canon-pack-drift',
       subject: `${drift.job}/${drift.project ?? '_'}`,
@@ -964,14 +987,14 @@ export async function monitor(
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process
   // log has rotated away.
-  errors.forEach((detail, index) => {
-    add({
-      kind: 'observation-error',
-      subject: `invocation:${invocationNumber}:${index + 1}`,
-      since: startedAt,
-      detail,
-      action: 'reported; no state was inferred from the unavailable observation',
-    })
+  await appendStandingConditionAnnouncementErrors({
+    database,
+    conditions,
+    errors,
+    clock,
+    startedAt,
+    invocationNumber,
+    unobservedKinds: unobservedStandingKinds,
   })
 
   // Delivery inheritance is one atomic read/write unit. Two monitor passes may
@@ -1022,4 +1045,5 @@ export {
   displayConditions,
   monitorHistory,
   monitorHistoryReleasedBefore,
+  monitorWorktreeReleases,
 } from './monitor-history.ts'

@@ -136,7 +136,7 @@ async function handoffFromAuthor(
     const handoff = adoptionHandoff(author, report, command, options.machine ?? 'unknown')
     if (handoff.status !== 'moved') return handoff
     if (report.notMoved.some(({ currentOwner }) => currentOwner === author)) {
-      const context = keptSessionContext({ session: author, remedy: command, database })
+      const context = await keptSessionContext({ session: author, remedy: command, database })
       return { ...handoff, lines: [...context.lines, ...handoff.lines] }
     }
     const context = await consumeSessionContext({

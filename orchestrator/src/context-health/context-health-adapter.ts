@@ -114,17 +114,17 @@ function holderIdentity(
   return { task, session, project }
 }
 
-function holderItems(
+async function holderItems(
   tasks: readonly HubTaskReference[],
   cursorById: ReadonlyMap<string, CursorOwner>,
   sessionProject: ReadonlyMap<string, string | null>,
   options: ContextHealthOptions,
   registeredProjects: ReadonlySet<string>,
-): ContextHealthItem[] {
+): Promise<ContextHealthItem[]> {
   const taskById = new Map(tasks.map((task) => [task.record_id, task]))
   const items: ContextHealthItem[] = []
   for (const holderKind of CONTEXT_HOLDER_KINDS) {
-    for (const holder of scopeContextHolders(holderKind)) {
+    for (const holder of await scopeContextHolders(holderKind)) {
       const { task, session, project } = holderIdentity(
         holderKind,
         holder.holderId,
@@ -179,7 +179,7 @@ async function gatherContextHealthFacts(
   const cursorById = new Map(cursorRows.map((cursor) => [cursor.record_id, cursor]))
   const sessionProject = new Map(sessionProjectRows().map((row) => [row.sessionId, row.project]))
   const registeredProjects = new Set(projects().map((project) => project.name))
-  const items = holderItems(tasks, cursorById, sessionProject, options, registeredProjects)
+  const items = await holderItems(tasks, cursorById, sessionProject, options, registeredProjects)
   const { reviews, briefs } = recordedMeasurements(since, options.session)
   return {
     now: generatedAt,

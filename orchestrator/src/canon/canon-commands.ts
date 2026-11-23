@@ -9,8 +9,9 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
+import { readDocs as listDocs } from '../doc/doc-authoritative-read.ts'
 import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
-import { listDocs, signedInDocOwner } from '../doc/docs.ts'
+import { signedInDocOwner } from '../doc/docs.ts'
 import {
   isProjectRepository,
   projectAt,
@@ -153,7 +154,7 @@ function requestedRepositoryProject(flags: CanonFlags) {
   return project
 }
 
-function projectCanonImportPlan(
+async function projectCanonImportPlan(
   project: NonNullable<ReturnType<typeof projectByName>>,
   requestedCwd: string,
 ) {
@@ -165,7 +166,7 @@ function projectCanonImportPlan(
   if (renderedRows.length === 0) {
     throw new Error(`refusing canon import: no canon rows found under --cwd ${requestedCwd}`)
   }
-  const global = listDocs({ scope: 'canon', subject: null, status: 'current' })
+  const global = await listDocs({ scope: 'canon', subject: null, status: 'current' })
   const globalBySlug = new Map(global.map((row) => [row.slug, row]))
   for (const row of renderedRows) {
     const globalRow = globalBySlug.get(row.slug)
@@ -176,7 +177,7 @@ function projectCanonImportPlan(
     }
   }
   const rows = renderedRows.filter((row) => !globalBySlug.has(row.slug))
-  const allProjectRows = listDocs({ scope: 'canon', subject: project.name })
+  const allProjectRows = await listDocs({ scope: 'canon', subject: project.name })
   const collision = nonCurrentCanonCollisionRefusal({
     rows: allProjectRows,
     desiredSlugs: rows.map((row) => row.slug),
@@ -234,7 +235,7 @@ async function canonImportCommand(
   const reason = flags.flag('reason')
   if (!reason?.trim()) throw new Error('--reason is required')
   const requestedCwd = resolve(flags.flag('cwd') ?? project.path)
-  const { plan, rows } = projectCanonImportPlan(project, requestedCwd)
+  const { plan, rows } = await projectCanonImportPlan(project, requestedCwd)
   for (const row of rows) presentation.log(`write ${row.slug}`)
   for (const slug of plan.deletionSlugs) presentation.log(`delete ${slug}`)
   if (flags.has('dry-run')) {
@@ -301,7 +302,7 @@ async function canonHydrateCommand(
         'cleared by: pass --cwd for a worktree',
     )
   }
-  const rows = canonRows(project.name)
+  const rows = await canonRows(project.name)
   const plan = planHydration({
     rows,
     tree: collectCanonTree(root),
@@ -331,11 +332,11 @@ async function canonHydrateCommand(
 async function canonListCommand(flags: CanonFlags, presentation: CanonPresentation): Promise<void> {
   const rows = flags.has('user')
     ? composeCanonRows(
-        listDocs({ scope: 'canon', subject: null }),
-        listDocs({ scope: 'canon', subject: null, owner: await signedInDocOwner() }),
+        await listDocs({ scope: 'canon', subject: null }),
+        await listDocs({ scope: 'canon', subject: null, owner: await signedInDocOwner() }),
         [],
       )
-    : canonRows(requestedProject(flags).name)
+    : await canonRows(requestedProject(flags).name)
   for (const row of rows) {
     const tier = classifyCanonFile({ path: row.slug, text: row.body })
     presentation.log(
@@ -344,13 +345,16 @@ async function canonListCommand(flags: CanonFlags, presentation: CanonPresentati
   }
 }
 
-export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentation): void {
+export async function canonLintCommand(
+  flags: CanonFlags,
+  presentation: CanonPresentation,
+): Promise<void> {
   const requestedCwd = resolve(flags.flag('cwd') ?? presentation.cwd())
   const root = canonGitRoot(requestedCwd)
   const namedProject = flags.flag('project')
   const project = namedProject ? projectByName(namedProject) : projectAt(root)
   if (namedProject && !project) throw new Error(`unknown project ${JSON.stringify(namedProject)}`)
-  if (project) canonRows(project.name)
+  if (project) await canonRows(project.name)
   const result = lintCanon(collectCanonLintInput(root))
   const baselineFlag = flags.flag('baseline')
   if ((flags.has('strict') || flags.has('write-baseline')) && !baselineFlag) {
@@ -375,12 +379,12 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
   if (flags.has('strict') && refusingCanonFindings(displayed).length) presentation.exitCode(1)
 }
 
-function canonDiffCommand(
+async function canonDiffCommand(
   flags: CanonFlags,
   presentation: CanonPresentation,
   input: { job: string; cwd: string },
-): void {
-  const result = diffPack(input)
+): Promise<void> {
+  const result = await diffPack(input)
   if (flags.has('json')) presentation.log(JSON.stringify(result))
   else {
     presentation.log(
@@ -398,7 +402,7 @@ function canonDiffCommand(
       presentation.log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
   }
   if (!flags.has('accept')) return
-  const accepted = acceptPackDiff(result)
+  const accepted = await acceptPackDiff(result)
   if (accepted) {
     presentation.log(
       `accepted canon ${accepted.job}/${accepted.project ?? '_'}: stored ${accepted.docs.length} docs, ${accepted.bytes} bytes`,
@@ -453,8 +457,8 @@ async function canonCommand(
     return
   }
   if (sub === 'check') {
-    const pack = compilePack({ job: jobName, cwd })
-    const rows = has('all') ? allInjectChecks() : findingsForPack(pack)
+    const pack = await compilePack({ job: jobName, cwd })
+    const rows = has('all') ? await allInjectChecks() : await findingsForPack(pack)
     const findings = rows.flatMap((row) =>
       row.findings.map((finding) => ({ doc: row.doc, ...finding })),
     )
@@ -501,7 +505,7 @@ async function canonCommand(
     return
   }
   if (sub === 'diff') {
-    canonDiffCommand(flags, presentation, { job: jobName, cwd })
+    await canonDiffCommand(flags, presentation, { job: jobName, cwd })
     return
   }
   throw new Error(

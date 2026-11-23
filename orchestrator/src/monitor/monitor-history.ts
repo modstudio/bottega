@@ -8,6 +8,7 @@ import {
   type HumanMonitorCondition,
   MONITOR_HISTORY_DEFAULT_LIMIT,
   type MonitorHistoryRow,
+  type MonitorWorktreeRelease,
 } from './monitor-types.ts'
 
 export function monitorHistory(limit = MONITOR_HISTORY_DEFAULT_LIMIT): MonitorHistoryRow[] {
@@ -32,6 +33,20 @@ export function monitorHistory(limit = MONITOR_HISTORY_DEFAULT_LIMIT): MonitorHi
     conditions: JSON.parse(row.conditions ?? '[]') as unknown[],
     host_load: row.host_load ? JSON.parse(row.host_load) : null,
   }))
+}
+
+export function monitorWorktreeReleases(
+  limit = MONITOR_HISTORY_DEFAULT_LIMIT,
+): MonitorWorktreeRelease[] {
+  return db()
+    .query(
+      `SELECT allocation_key path,run_record_id run,root_run_record_id root_run,state,
+              settled_at,settled_verb verb,settled_session session,settled_detail
+       FROM resource_claim
+       WHERE kind='worktree' AND state IN ('released','retained','forgotten','absent')
+       ORDER BY settled_at DESC,record_id DESC LIMIT ?`,
+    )
+    .all(limit) as MonitorWorktreeRelease[]
 }
 
 export function monitorHistoryReleasedBefore(): string | null {

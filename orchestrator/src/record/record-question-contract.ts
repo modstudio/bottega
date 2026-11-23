@@ -62,6 +62,8 @@ export const questionAuditSchema = z.object({
   reason: nullableText,
 })
 
+// Question text stays permissive here because imports, restores, and mutations carry stored rows;
+// writeRecordQuestionTransaction applies the intent-aware refusal before a hosted write.
 const questionSnapshotSchema = z.object({
   id,
   number: z.number().int().positive().nullable().default(null),
@@ -266,6 +268,21 @@ export const questionReadSchema = z.discriminatedUnion('read', [
   }),
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
+export type MembershipQuestionReadInput =
+  | (Extract<QuestionReadInput, { read: 'inbox' }> & {
+      limit?: undefined
+      changedAfter?: undefined
+    })
+  | Extract<QuestionReadInput, { read: 'open-for-tasks' }>
+
+export function isMembershipQuestionRead(
+  input: QuestionReadInput,
+): input is MembershipQuestionReadInput {
+  return (
+    (input.read === 'inbox' && input.limit === undefined && input.changedAfter === undefined) ||
+    input.read === 'open-for-tasks'
+  )
+}
 type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>
 export const QUESTION_RULINGS_PAGE_SIZE = 100
 export type RulingPageCursor = {

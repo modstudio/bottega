@@ -1,14 +1,8 @@
 // concern: hosted-document-history
 /** Reads and presents hosted revisions without copying them into the local revision store. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import {
-  type DocHistoryPresentation,
-  decideHostedRevisionRead,
-  docDiffPair,
-} from './doc-history-source.ts'
+import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { diffDocRevisionValues } from './doc-revision-store.ts'
 
@@ -128,24 +122,4 @@ export function hostedDocRevisionRead(
       return diffDocRevisionValues(left, right)
     },
   }
-}
-
-export async function readHostedDocRevisions(input: {
-  address: string
-  listRevisions(): Promise<HostedDocRevision[]>
-}): Promise<HostedDocRevisionRead | null> {
-  let revisions: HostedDocRevision[]
-  try {
-    revisions = await input.listRevisions()
-  } catch (error) {
-    const outcome =
-      error instanceof RecordApiRequestError && error.status === 404 ? 'not-found' : 'failed'
-    const decision = decideHostedRevisionRead(outcome)
-    if (decision === 'read-local') return null
-    const cause = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `could not read hosted revisions for ${input.address}: ${cause}; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry when the hosted record is reachable`,
-    )
-  }
-  return hostedDocRevisionRead(revisions)
 }

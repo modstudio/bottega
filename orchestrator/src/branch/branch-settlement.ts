@@ -2,7 +2,7 @@
 /** Settles run records and claims after a run-minted branch has been deleted. */
 
 import type { Database } from 'bun:sqlite'
-import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
 
@@ -66,6 +66,7 @@ function settleDeletedBranchWrites(project: string, branch: string, database: Da
       state: 'released',
       settledAt: new Date().toISOString(),
       detail: `deleted refs/heads/${branch}`,
+      by: { verb: 'branch-settlement:settleDeletedBranch', session: sessionId() },
       allocationKey: `refs/heads/${branch}`,
     })
   }

@@ -22,10 +22,13 @@ import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummaries,
   isClosedStageState,
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
   TASK_FLOW_STAGE_STATES,
+  TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
 } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -43,6 +46,7 @@ import type {
   TaskFlowOpenObligationRow,
   TaskFlowOpenStageWorktreeRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -96,6 +100,29 @@ async function listAllTaskFlowStages(
   selector: StageListSelector,
   destination?: RecordRequestDestination,
 ): Promise<ListedItem[]> {
+  if (selector.workflowKeys?.length === 0) return []
+  if ((selector.workflowKeys?.length ?? 0) > TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX) {
+    const chunks: ListedItem[][] = []
+    for (
+      let offset = 0;
+      offset < selector.workflowKeys!.length;
+      offset += TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX
+    )
+      chunks.push(
+        await listAllTaskFlowStages(
+          client,
+          {
+            ...selector,
+            workflowKeys: selector.workflowKeys!.slice(
+              offset,
+              offset + TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
+            ),
+          },
+          destination,
+        ),
+      )
+    return chunks.flat()
+  }
   const items: ListedItem[] = []
   let cursor: string | undefined
   let page = 1
@@ -216,6 +243,33 @@ class RecordTaskFlowReadStore {
     return read(id)
   }
 
+  private openObligationRows(stage: HostedStage): TaskFlowOpenObligationRow[] {
+    return (stage.obligations ?? [])
+      .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
+      .map((obligation) =>
+        openObligationRow(obligation, stage.number, this.projectName(stage.projectId)),
+      )
+  }
+
+  async stageSummaries(recordIds: readonly string[]) {
+    const read = this.client.readTaskFlowStageSummaries
+    if (!read)
+      throw new Error(
+        'record API predates task-flow stage summaries; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+      )
+    const items: HostedTaskFlowStageSummaries['items'] = []
+    for (let offset = 0; offset < recordIds.length; offset += TASK_FLOW_STAGE_SUMMARY_BATCH_MAX) {
+      const result = await read({
+        stageIds: recordIds.slice(offset, offset + TASK_FLOW_STAGE_SUMMARY_BATCH_MAX),
+      })
+      items.push(...result.items)
+    }
+    return items.map((item) => ({
+      stage: stageRow(item, false),
+      obligations: this.openObligationRows(item.stage),
+    }))
+  }
+
   private async flow(selector: {
     taskId?: string
     flowRecordId?: string
@@ -314,11 +368,7 @@ class RecordTaskFlowReadStore {
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
   }
-  async listStages(input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-  }) {
+  async listStages(input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>) {
     return this.questions.listStages(input)
   }
   async keyedStageHistory(input: { since: string }) {
@@ -441,7 +491,8 @@ class RecordTaskFlowReadStore {
   }
   async textAttachmentByRecordId(recordId: string) {
     const result = await this.readText(recordId)
-    return result?.text ? textRow(result.text) : null
+    if (!result?.text) return null
+    return { ...textRow(result.text), created_at: result.text.createdAt }
   }
   async textRecordIdsForStage(stageRecordId: string) {
     return (await this.textsForStage(stageRecordId)).map(({ id }) => id)
@@ -488,10 +539,7 @@ class RecordTaskFlowReadStore {
   async openObligations(stageRecordId: string) {
     const result = await this.byId(stageRecordId)
     if (!result) return []
-    const number = result.stage.number
-    return (result.stage.obligations ?? [])
-      .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
-      .map((row) => openObligationRow(row, number, this.projectName(result.stage.projectId)))
+    return this.openObligationRows(result.stage)
   }
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
     const read = this.client.readTaskFlowObligation

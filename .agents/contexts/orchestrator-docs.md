@@ -16,7 +16,7 @@ paths:
 
 # Docs
 
-Operator docs are markdown facts about an installation, stored in `orchestrator.db` rather than baked into code. Scopes are `DOC_SCOPES` in `shared/docs.ts`: `global` applies everywhere; `project`, `agent`, and `job` each name a registered subject; `stack` names a register stack, and its documents serve every project on that stack; `resume` names a project as its subject (the epic is the slug); `machine` and `global` have no subject.
+Operator docs are markdown facts about an installation, held in the document store rather than baked into code. Scopes are `DOC_SCOPES` in `shared/docs.ts`: `global` applies everywhere; `project`, `agent`, and `job` each name a registered subject; `stack` names a register stack, and its documents serve every project on that stack; `resume` names a project as its subject (the epic is the slug); `machine` and `global` have no subject.
 
 **Canon rows are scope `canon` and hydrate into the tree.** Canon is stored in `orchestrator.db`, edited through `bottega doc` under write-time gates, and hydrated by script into each project's committed files. Estate facts stay in the doc store and are never hydrated. Worker prompts receive canon through the pack (global always-on rows, then the project's, then a context index) and job documents whose delivery is `inject`. `setDoc` refuses `inject` for project and global documents: an instruction is canon, and anything else is fetched on demand. Agent, machine and resume documents never enter a worker prompt.
 
@@ -83,17 +83,19 @@ The test is whether the fact varies **by project**; if it does not, it does not 
 
 # The subagent gate
 
-A `PreToolUse` hook (`hooks/block-agent.py`) denies Claude-subagent spawns for work an external agent could do. **Web work is allowed, but it declares itself** — `NEEDS-WEB` in the opening of the prompt or description. Only that opening is checked so a quoted repository excerpt deep in a prompt does not become a declaration.
+Claude-subagent blocking is opt-in per user and off by default. Set it with `bottega machine settings subagents`. While on, `hooks/block-agent.py` gates and logs spawns; while off, it does neither.
 
-**A URL is not a declaration.** A prompt can quote a docs link or stack trace without anyone deciding it needs the network. A URL is noted in the log and nothing more.
+**Web work is allowed while blocking is on, but it declares itself** — `NEEDS-WEB` in the opening of the prompt or description. A quoted excerpt deeper in the prompt does not count.
+
+**A URL is not a declaration.** Quoting a link decides nothing about the network; it is noted in the log and nothing more.
 
 **Denial happens on `PreToolUse` only.** `SubagentStart` carries no prompt to judge and its schema rejects a permission decision outright. It is audit-only. Everything the gate does not deny is recorded too, including `Workflow`.
 
 The declaration is not a lock. Anyone can write `NEEDS-WEB`, and preventing that is not the point: writing it is deliberate and recorded, so a habit of declaring web work that is not web work shows up in `bottega run spawns`. There is no rewording path — one deliberate act is auditable, three rewordings are not.
 
-**A denial has to name a route that exists.** The refusal names the path, rather than forbidding the only available one.
+**A denial has to name a route that exists,** never forbid the only one.
 
-**Every spawn is logged, allowed and denied alike.** A gate that cannot report what it let through cannot be tuned.
+**While the gate is on, every spawn is logged, allowed and denied alike.** A gate that cannot report what it let through cannot be tuned.
 
 For this Claude adapter, the architect's web-capable path for the required pre-spec research is a Claude subagent whose prompt begins `NEEDS-WEB`. The root canon states the harness-neutral requirement and puts the resulting ruling in the spec; this is the adapter-specific mechanism that performs it here.
 

@@ -10,6 +10,8 @@ releases and rungs
 - [bottega release run](#bottega-release-run)
 - [bottega release run check](#bottega-release-run-check)
 - [bottega release run log](#bottega-release-run-log)
+- [bottega release run rungs](#bottega-release-run-rungs)
+- [bottega release rungs](#bottega-release-rungs)
 
 ## bottega release
 
@@ -22,12 +24,13 @@ releases and rungs
 - [bottega release check](./release.md#bottega-release-check)
 - [bottega release log](./release.md#bottega-release-log)
 - [bottega release run](./release.md#bottega-release-run)
+- [bottega release rungs](./release.md#bottega-release-rungs)
 
 ## bottega release check
 
 **Synopsis:** `bottega release check <tag>`
 
-validate the release tag and prove release binaries ignore working-directory config
+validate the tag, tracked rungs, and release binary working-directory isolation
 
 ### Related
 
@@ -50,13 +53,14 @@ list recorded releases for a project
 
 ## bottega release run
 
-**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--behind-trunk <reason>] [--redeploy <reason>] [--json]`
+**Synopsis:** `bottega release run [project] [--rung <name>] [--at <commit>] [--rollback <reason>] [--behind-trunk <reason>] [--redeploy <reason>] [--json]`
 
 run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback; for a rung CI deploys, wait for its live probe to contain the branch tip and record the proof
 
 ### Options
 
 - `--rung <name>`: release rung to run
+- `--at <commit>`: deploy from a release tree provisioned at this commit
 - `--rollback <reason>`: reason for deploying the prior live commit
 - `--behind-trunk <reason>`: reason for deploying a branch behind the project trunk
 - `--redeploy <reason>`: deploy again even when this commit is already live
@@ -67,12 +71,13 @@ run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, an
 - [bottega release](./release.md#bottega-release)
 - [bottega release run check](./release.md#bottega-release-run-check)
 - [bottega release run log](./release.md#bottega-release-run-log)
+- [bottega release run rungs](./release.md#bottega-release-run-rungs)
 
 ## bottega release run check
 
 **Synopsis:** `bottega release run check <tag>`
 
-validate the release tag and prove release binaries ignore working-directory config
+validate the tag, tracked rungs, and release binary working-directory isolation
 
 ### Related
 
@@ -92,3 +97,31 @@ list recorded releases for a project
 ### Related
 
 - [bottega release run](./release.md#bottega-release-run)
+
+## bottega release run rungs
+
+**Synopsis:** `bottega release run rungs [--write]`
+
+generate the tracked release-rung snapshot from the project register
+
+### Options
+
+- `--write`: write the tracked release-rung snapshot
+
+### Related
+
+- [bottega release run](./release.md#bottega-release-run)
+
+## bottega release rungs
+
+**Synopsis:** `bottega release rungs [--write]`
+
+generate the tracked release-rung snapshot from the project register
+
+### Options
+
+- `--write`: write the tracked release-rung snapshot
+
+### Related
+
+- [bottega release](./release.md#bottega-release)

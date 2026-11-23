@@ -21,7 +21,7 @@ import {
   unresolvedHubTaskKeyRefusal,
   workflowCursorTakeoverRemedy,
 } from './workflow-cursor-format.ts'
-import { workflowCursorProjectUsesHubTracker } from './workflow-cursor-project.ts'
+import { hubTrackerKeyNamesNoTask } from './workflow-cursor-project.ts'
 import {
   findWorkflowCursor,
   type SelectableCursorRow,
@@ -99,10 +99,7 @@ export async function selectWorkflowCursorForKeyAdoption(input: {
     )
   }
   if (!row) return { row: null, adopted: false }
-  if (
-    workflowCursorProjectUsesHubTracker(input.project, input.database) &&
-    input.context.taskRecordId === null
-  )
+  if (hubTrackerKeyNamesNoTask(input.project, input.context.taskRecordId, input.database))
     throw new Error(unresolvedHubTaskKeyRefusal(key))
   await adoptWorkflowTask(
     row,

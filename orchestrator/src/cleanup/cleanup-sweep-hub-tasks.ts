@@ -12,11 +12,12 @@ import { decideTaskContextReap } from './task-context-reap-decision.ts'
 
 function sharedTaskReader(reader: ProjectTaskListReader): ProjectTaskListReader {
   const reads = new Map<string, Promise<HubTaskReference[]>>()
-  return (project) => {
-    let read = reads.get(project)
+  return (project, filters) => {
+    const key = `${project}\0${filters?.status ?? ''}\0${filters?.parent ?? ''}`
+    let read = reads.get(key)
     if (!read) {
-      read = reader(project)
-      reads.set(project, read)
+      read = reader(project, filters)
+      reads.set(key, read)
     }
     return read
   }
@@ -55,7 +56,7 @@ export async function sweepHubTasks(
     return true
   }
   const decision = decideTaskContextReap(
-    listContextHolders('task').map((holder) => ({
+    (await listContextHolders('task')).map((holder) => ({
       holderId: holder.holderId,
       itemCount: holder.items.length,
     })),

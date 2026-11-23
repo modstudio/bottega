@@ -1,5 +1,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -43,6 +45,7 @@ export type HostedNote = {
   hidden_at?: string | null
   hidden_by_user_id?: string | null
   hidden_reason?: string | null
+  revision?: number | string
 }
 export type HostedAcknowledgement = {
   id: string
@@ -73,7 +76,7 @@ export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: 
     identity,
     async (tx) =>
       rows<HostedNote>(
-        await tx`SELECT hub_note.*,number::int number FROM hub_note
+        await tx`SELECT hub_note.*,number::int number,revision::int revision FROM hub_note
     WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid AND deleted_at IS NULL`,
       )[0] ?? null,
   )
@@ -135,25 +138,34 @@ export async function createHostedNote(
   },
 ) {
   return withHostedTenant(url, identity, async (tx) => {
+    const masked = maskHostedTableWrite('hub_note', {
+      text: input.text,
+      area: input.area,
+      anchors: [JSON.parse(input.anchor)],
+    })
     if (!input.projectId)
       throw new Error(
         `project-scoped hosted note write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
       )
     if (input.sameAs) {
       const current = rows<HostedNote>(
-        await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number
+        await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number,revision::int revision
         FROM hub_note WHERE space_id=${identity.spaceId}::uuid
         AND id=${input.sameAs}::uuid AND deleted_at IS NULL FOR UPDATE`,
       )[0]
       if (!current) return null
       if (current.projectId !== input.projectId)
         throw new Error('the matching note belongs to another project')
-      const anchors = JSON.stringify([...JSON.parse(current.anchors), JSON.parse(input.anchor)])
+      const anchors = JSON.stringify(
+        maskHostedTableWrite('hub_note', {
+          anchors: [...JSON.parse(current.anchors), JSON.parse(input.anchor)],
+        }).anchors,
+      )
       return rows<HostedNote>(
         await tx`UPDATE hub_note SET anchors=${anchors},sightings=sightings+1,
         last_seen_at=now(),stale_at=NULL,stale_reason=NULL,updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND project_id=${input.projectId}::uuid
-        AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
+        AND id=${input.sameAs}::uuid RETURNING *,number::int number,revision::int revision`,
       )[0]!
     }
     const project = rows<{ id: string }>(
@@ -177,7 +189,7 @@ export async function createHostedNote(
       await tx`INSERT INTO hub_note
       (id,space_id,project_name,project_id,author_user_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${identity.userId}::uuid,${number},${input.project},
-      ${input.text},${input.area ?? null},${`[${input.anchor}]`},1,now(),now(),now()) RETURNING *,number::int number`,
+      ${masked.text},${masked.area ?? null},${bindJsonb(tx, masked.anchors)},1,now(),now(),now()) RETURNING *,number::int number,revision::int revision`,
     )[0]!
   })
 }
@@ -191,7 +203,7 @@ export async function promoteHostedNote(
 ): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
   return withHostedTenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
-      await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+      await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number,revision::int revision FROM hub_note WHERE space_id=${identity.spaceId}::uuid
       AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!note) return null
@@ -237,21 +249,26 @@ export async function promoteHostedNote(
     const { task } = selected
     let comment: HostedComment | null = null
     if (input.task !== undefined && task && !projectHasRemoteTracker(promotionProject?.tracker)) {
+      const maskedComment = maskHostedTableWrite('hub_task_comment', { body })
       comment = rows<HostedComment>(
         await tx`INSERT INTO hub_task_comment
           (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
           VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${note.project},${noteProjectId}::uuid,
-          ${task.key},${task.id}::uuid,${body},${identity.userId}::uuid,now(),now())
+          ${task.key},${task.id}::uuid,${maskedComment.body},${identity.userId}::uuid,now(),now())
           RETURNING *,task_id::text task_id`,
       )[0]!
+      const taskTouch = maskHostedTableWrite('hub_task', {
+        updated_at: comment.updated_at,
+        last_seen: comment.updated_at,
+      })
       await tx`UPDATE hub_task
-        SET updated_at=GREATEST(updated_at,${comment.updated_at}::timestamptz),
-          last_seen=GREATEST(last_seen,${comment.updated_at}::timestamptz)
+        SET updated_at=GREATEST(updated_at,${taskTouch.updated_at}::timestamptz),
+          last_seen=GREATEST(last_seen,${taskTouch.last_seen}::timestamptz)
         WHERE space_id=${identity.spaceId}::uuid AND id=${task.id}::uuid`
     }
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number,revision::int revision`,
     )[0]!
     return { note: promoted, task, comment }
   })
@@ -312,24 +329,27 @@ export async function reapHostedNotes(
     const annotatedIds: string[] = []
     const restoredIds: string[] = []
     for (const row of input.stale) {
+      const masked = maskHostedTableWrite('hub_note', { stale_reason: row.reason })
       const updated = rows<{ id: string }>(
         await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
-      stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
+      stale_reason=${masked.stale_reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
       AND stale_at IS NULL AND deleted_at IS NULL RETURNING id`,
       )
       staleIds.push(...updated.map((item) => item.id))
     }
     for (const row of input.annotated) {
+      const masked = maskHostedTableWrite('hub_note', { stale_reason: row.reason })
       const updated = rows<{ id: string }>(
-        await tx`UPDATE hub_note SET stale_reason=${row.reason},updated_at=now()
+        await tx`UPDATE hub_note SET stale_reason=${masked.stale_reason},updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
       AND stale_at IS NULL AND deleted_at IS NULL RETURNING id`,
       )
       annotatedIds.push(...updated.map((item) => item.id))
     }
     for (const row of input.restored) {
+      const masked = maskHostedTableWrite('hub_note', { stale_reason: row.reason })
       const updated = rows<{ id: string }>(
-        await tx`UPDATE hub_note SET stale_at=NULL,stale_reason=${row.reason},updated_at=now()
+        await tx`UPDATE hub_note SET stale_at=NULL,stale_reason=${masked.stale_reason},updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
       AND COALESCE(stale_reason, '') NOT LIKE 'dropped:%' AND deleted_at IS NULL RETURNING id`,
       )
@@ -383,6 +403,7 @@ export async function reapHostedNotes(
 }
 
 async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedNote) {
+  row = maskHostedTableWrite('hub_note', row)
   const projectId = await storedHubProjectId(tx, identity.spaceId, {
     projectId: row.projectId,
     projectName: row.project_name,

@@ -22,6 +22,7 @@ export type MemoryTaskFlowInput = {
     flowsById: number
     stageLists: number
     stagesById: number
+    stageSummaries?: number
     textsById: number
     obligationsById: number
   }
@@ -57,6 +58,8 @@ function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): 
     selector.workflow === undefined || stage.workflow === selector.workflow,
     selector.mode === undefined || stage.mode === selector.mode,
     selector.workflowKey === undefined || stage.workflowKey === selector.workflowKey,
+    selector.workflowKeys === undefined ||
+      (typeof stage.workflowKey === 'string' && selector.workflowKeys.includes(stage.workflowKey)),
     !selector.keyless || !stage.workflowKey,
     !selector.primaryInstance || stage.instanceId === '',
     selector.taskId === undefined || flow.taskId === selector.taskId,
@@ -281,7 +284,11 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         selector.limit ?? 200,
         input.taskFlowPageSize ?? Number.MAX_SAFE_INTEGER,
       )
-      const items = rows.slice(offset, offset + size)
+      const items = rows.slice(offset, offset + size).map((item) => {
+        if (selector.view !== 'summary') return item
+        const { closedStepNotes: _closedStepNotes, autonomy: _autonomy, ...stage } = item.stage
+        return { ...item, stage }
+      })
       const next = offset + items.length
       const last = items.at(-1)
       return {
@@ -312,6 +319,22 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       return found
         ? { ...found, space_id: input.taskFlowProjectSpaces?.[found.stage.projectId] }
         : null
+    },
+    async readTaskFlowStageSummaries({ stageIds }, destination) {
+      if (input.taskFlowReadCounts)
+        input.taskFlowReadCounts.stageSummaries = (input.taskFlowReadCounts.stageSummaries ?? 0) + 1
+      return {
+        items: stages
+          .filter(
+            (row) =>
+              stageIds.includes(row.stage.id) &&
+              inDestination(row, input, destination, '/v1/task-flow/stage-summaries'),
+          )
+          .map(({ stage, flow }) => {
+            const { stepTexts: _stepTexts, textCopies: _textCopies, ...summary } = stage
+            return { stage: { ...summary, obligations: stage.obligations ?? [] }, flow }
+          }),
+      }
     },
     async readTaskFlowText(id, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.textsById++

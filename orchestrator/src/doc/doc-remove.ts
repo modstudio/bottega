@@ -5,7 +5,7 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
-import type { Doc } from './doc-read-store.ts'
+import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
@@ -57,7 +57,7 @@ export async function removeStoredDoc(
         contextTaskOwner(context.contextTask),
       )
       let recordId = doc.record_id
-      let hostedExpected = context.expectedRevision
+      let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined
       if (!recordId) {
         const created = await client.upsertDoc({
           scope: doc.scope,
@@ -85,6 +85,7 @@ export async function removeStoredDoc(
         expectedRevision: hostedExpected,
         generator: context.generator,
       })
+      if (!getDocStore(scope, subject, slug, owner)) return true
       return commitDocRemove({
         scope,
         subject,

@@ -9,7 +9,11 @@ import {
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_STATES,
 } from '../record/record-task-flow-contract.ts'
-import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
+import {
+  type ListedItem,
+  stageRow,
+  summaryStageRow,
+} from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
@@ -19,6 +23,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
@@ -76,15 +81,15 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listStages(input: {
-      project?: string
-      sessionId?: string
-      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-    }): Promise<TaskFlowListedStageRow[]> {
+    async listStages(
+      input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>,
+    ): Promise<TaskFlowListedStageRow[]> {
       const selector = {
         states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
+        ...(input.workflowKeys ? { workflowKeys: input.workflowKeys } : {}),
+        ...(input.view ? { view: input.view } : {}),
       }
       const items = input.project
         ? await read.list(selector, input.project)
@@ -95,7 +100,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
       )
       return items
         .map((item) => {
-          const row = stageRow(item)
+          const row = input.view === 'summary' ? summaryStageRow(item) : stageRow(item)
           const question = open.get(item.stage.id)
           const questionNumber = field(question ?? {}, 'number')
           return {

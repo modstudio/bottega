@@ -10,11 +10,7 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import {
-  type HostedRequestSafety,
-  RECORD_SIGN_IN_REMEDY,
-  recordUnreachableRefusal,
-} from '../../../shared/record-remedies.ts'
+import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -22,11 +18,16 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
 import {
-  classifyBoardStreamResponse,
-  releaseUnopenedStream,
-} from './record-api-client-board-stream.ts'
+  type RecordBoardClaimClient,
+  recordBoardClaimClient,
+} from './record-api-client-board-claims.ts'
+import { openBoardStream } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
+import {
+  type RecordContextItemClient,
+  recordContextItemClient,
+} from './record-api-client-context-items.ts'
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
   recordApiUnreachable as classifyRecordApiUnreachable,
@@ -58,7 +59,11 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
-import type { RecordContextItemInput } from './record-context-items.ts'
+import {
+  type RecordSpaceAgentClient,
+  recordSpaceAgentClient,
+} from './record-api-client-space-agents.ts'
+import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -77,12 +82,11 @@ import {
   recordSessionClient,
 } from './record-api-client-session.ts'
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
-import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
+import { recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
-  HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
   HostedBoardMessage,
@@ -94,7 +98,6 @@ import type {
   HostedBoardStatus,
   HostedBoardSuccessorInput,
   HostedBoardSuccessorResult,
-  HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
 import {
@@ -248,16 +251,10 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordCountsClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
-  ReturnType<typeof recordConfigAccessClient> & {
-    upsertContextItem(
-      input: RecordContextItemInput,
-      destination: RecordWriteDestination,
-    ): Promise<{ id: string; createdAt: string; updatedAt: string }>
-    deleteContextItem(
-      id: string,
-      input: { expectedRevision?: string },
-      destination: RecordWriteDestination,
-    ): Promise<{ removed: boolean }>
+  ReturnType<typeof recordConfigAccessClient> &
+  RecordContextItemClient &
+  RecordSpaceAgentClient &
+  RecordBoardClaimClient & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -306,8 +303,11 @@ export type RecordApiClient = ProjectIdentityClient &
       query: {
         scope?: string
         subject?: string | null
+        slug?: string
+        owner?: string | null
         audience?: DocAudience
         status?: DocStatus
+        delivery?: DocDelivery
         updatedSince?: string
         limit?: number
         cursor?: string | null
@@ -323,6 +323,7 @@ export type RecordApiClient = ProjectIdentityClient &
       endCursor?: string | null
     }>
     getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
+    getDocRevision(id: string, destination?: RecordRequestDestination): Promise<RecordDocRevision>
     listRevisions(
       id: string,
       destination?: RecordRequestDestination,
@@ -461,32 +462,6 @@ export type RecordApiClient = ProjectIdentityClient &
       input: HostedBoardSuccessorInput,
       destination: RecordWriteDestination,
     ): Promise<HostedBoardSuccessorResult>
-    takeBoardClaim(
-      input: HostedBoardTakeClaimInput,
-      destination: RecordWriteDestination,
-    ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
-    renewBoardClaim(
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ): Promise<HostedBoardClaim>
-    releaseBoardClaim(
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ): Promise<HostedBoardClaim>
-    listBoardClaims(
-      project: string,
-      projectId?: string | null,
-    ): Promise<{ claims: HostedBoardClaim[] }>
-    releaseBoardTaskClaims(
-      input: {
-        project: string
-        projectId?: string | null
-        key: string
-      },
-      destination: RecordWriteDestination,
-    ): Promise<{ released: number }>
     openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
   }
 
@@ -571,8 +546,11 @@ export async function recordApiRequest<T>(
   } = {},
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = apiFetch,
+  preflight: () => void = throwIfRecordApiRequestRefused,
+  origin?: string,
 ): Promise<T> {
-  throwIfRecordApiRequestRefused()
+  preflight()
+  const resolvedOrigin = origin ?? recordApiBaseUrl()
   const readToken = async () =>
     init.signal
       ? await (authentication
@@ -581,18 +559,17 @@ export async function recordApiRequest<T>(
       : authentication
         ? authentication.token()
         : storedRecordToken()
-  const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
     const { destinationSpaceId: s, headers: h } = init
     const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
     try {
-      return await recordTransport(origin, path, { ...init, headers }, transport)
+      return await recordTransport(resolvedOrigin, path, { ...init, headers }, transport)
     } catch (error) {
       const method = init.method?.toUpperCase() ?? 'GET'
       throw classifyRecordApiUnreachable(
         error,
-        origin,
+        resolvedOrigin,
         method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
       )
     }
@@ -622,14 +599,23 @@ function throwIfRecordApiRequestRefused(): void {
   }
 }
 
-async function publicRequest<T>(path: string): Promise<T> {
+async function publicRequest<T>(
+  path: string,
+  transport: typeof fetch = apiFetch,
+  origin: () => string = recordApiBaseUrl,
+): Promise<T> {
   let response: Response
   try {
-    response = await recordTransport(recordApiBaseUrl(), path, {
-      method: 'GET',
-      credentials: 'omit',
-      headers: new Headers(),
-    })
+    response = await recordTransport(
+      origin(),
+      path,
+      {
+        method: 'GET',
+        credentials: 'omit',
+        headers: new Headers(),
+      },
+      transport,
+    )
   } catch (error) {
     throw recordApiUnreachable(error, 'probe')
   }
@@ -729,21 +715,42 @@ async function listDocRevisionsRequest(
 
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
+  transport?: typeof fetch,
 ): RecordApiClient {
-  return recordApiClient((path, init) => recordApiRequest(path, init, authentication))
+  return recordApiClient(
+    (path, init) => recordApiRequest(path, init, authentication, transport ?? apiFetch),
+    transport,
+  )
 }
 
-export function recordApiClient(request = recordApiRequest, transport = apiFetch): RecordApiClient {
+export function recordApiClient(
+  request = recordApiRequest,
+  transport?: typeof fetch,
+): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
-    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport),
+    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch),
+    { transport: transport ?? apiFetch, streamTransport: transport },
   )
 }
 
-export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
+type RecordApiClientSeams = {
+  transport?: typeof fetch
+  origin?: () => string
+  streamToken?: () => string | null
+  streamTransport?: typeof fetch
+  preflight?: () => void
+}
+
+export function recordApiClientOver(
+  request: RecordClientRequest,
+  seams: RecordApiClientSeams = {},
+): RecordApiClient {
+  const transport = seams.transport ?? apiFetch
+  const origin = seams.origin ?? recordApiBaseUrl
   const client: RecordApiClient = {
     storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
     ...recordChangesClient(request),
@@ -753,21 +760,12 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...recordOutsideClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
-    ...recordSnapshotAndPublicDocClient(request),
+    ...recordSnapshotAndPublicDocClient(request, transport, origin),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
-    upsertContextItem: (input, destination) =>
-      request('/v1/context-items', {
-        method: 'PUT',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
-    deleteContextItem: (id, input, destination) =>
-      request(`/v1/context-items/${id}`, {
-        method: 'DELETE',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
+    ...recordContextItemClient(request),
+    ...recordSpaceAgentClient(request),
+    ...recordBoardClaimClient(request),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),
@@ -784,13 +782,20 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     ...recordBoardClient(request),
-    ...recordApiBoardWatchClient(request),
+    ...recordApiBoardWatchClient(
+      seams.streamTransport,
+      seams.streamToken ?? storedRecordToken,
+      seams.preflight ?? throwIfRecordApiRequestRefused,
+      origin,
+    ),
   }
   return client
 }
 
 const recordSnapshotAndPublicDocClient = (
   request = recordApiRequest,
+  transport: typeof fetch = apiFetch,
+  origin: () => string = recordApiBaseUrl,
 ): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
   putSnapshot: (kind, input, destination) =>
     request(`/v1/snapshots/${kind}`, {
@@ -799,10 +804,10 @@ const recordSnapshotAndPublicDocClient = (
       ...destination,
     }),
   listSnapshots: () => request('/v1/snapshots'),
-  listPublicDocs: () => publicRequest('/public/v1/docs'),
-  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
+  listPublicDocs: () => publicRequest('/public/v1/docs', transport, origin),
+  getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`, transport, origin),
   searchPublicDocs: (query) =>
-    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
+    publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`, transport, origin),
 })
 
 const recordDocReadClient = (
@@ -813,8 +818,11 @@ const recordDocReadClient = (
     const search = new URLSearchParams()
     if (query.scope) search.set('scope', query.scope)
     if (query.subject !== undefined) search.set('subject', query.subject ?? '')
+    if (query.slug !== undefined) search.set('slug', query.slug)
+    if (query.owner !== undefined) search.set('owner', query.owner ?? '')
     if (query.audience) search.set('audience', query.audience)
     if (query.status) search.set('status', query.status)
+    if (query.delivery) search.set('delivery', query.delivery)
     if (query.kind) search.set('kind', query.kind)
     if (query.updatedSince) search.set('updatedSince', query.updatedSince)
     if (query.limit) search.set('limit', String(query.limit))
@@ -825,6 +833,7 @@ const recordDocReadClient = (
     return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
   },
   getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
+  getDocRevision: (id, destination) => request(`/v1/doc-revisions/${id}`, destination),
   listRevisions: (id, destination) => listDocRevisionsRequest(id, destination, request),
 })
 
@@ -982,60 +991,20 @@ function recordIdentityAndSpaceClient(
 }
 
 function recordApiBoardWatchClient(
-  request: RecordClientRequest = recordApiRequest,
+  transport?: typeof fetch,
+  readToken: () => string | null = storedRecordToken,
+  preflight: () => void = throwIfRecordApiRequestRefused,
+  origin: () => string = recordApiBaseUrl,
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
+  const selectedTransport = transport ?? (((url, init) => fetch(url, init)) as typeof fetch)
   return {
-    releaseBoardTaskClaims: (input, destination) =>
-      request('/v1/board/claims/release-task', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
+    openBoardStream: (signal) =>
+      openBoardStream({
+        signal,
+        transport: selectedTransport,
+        readToken,
+        preflight,
+        origin,
       }),
-    openBoardStream: (signal) => fetchBoardStream(signal),
-  }
-}
-
-async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
-  if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-  const token = storedRecordToken()
-  if (!token) return { kind: 'unauthorized' }
-  const connection = new AbortController()
-  const stop = () => connection.abort()
-  signal?.addEventListener('abort', stop)
-  const drop = () => signal?.removeEventListener('abort', stop)
-  const close = () => {
-    drop()
-    connection.abort()
-  }
-  let origin: string | null = null
-  try {
-    throwIfRecordApiRequestRefused()
-    origin = recordApiBaseUrl()
-    // The stream is unbounded until a streaming budget exists.
-    const response = await recordTransport(
-      origin,
-      '/v1/board/stream',
-      {
-        method: 'GET',
-        headers: boardStreamHeaders(token),
-        signal: connection.signal,
-      },
-      ((url, init) => fetch(url, init)) as typeof fetch,
-    )
-    const opened = classifyBoardStreamResponse(response.status, response.body, close)
-    if (opened.kind !== 'stream') {
-      releaseUnopenedStream(response, connection)
-      drop()
-    }
-    return opened
-  } catch (error) {
-    connection.abort()
-    drop()
-    if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      kind: 'error',
-      reason: origin ? recordUnreachableRefusal(origin, detail, 'probe') : detail,
-    }
   }
 }

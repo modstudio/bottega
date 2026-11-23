@@ -5,12 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { db } from '../database/db.ts'
-import { contextBrief } from '../doc/context-brief.ts'
+import { contextBriefWithCursors } from '../doc/context-brief.ts'
 import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
-import { readProjectTaskList } from '../workflow/project-task-list.ts'
-import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
+import { lookupProjectTasks } from '../workflow/project-task-lookup.ts'
+import type { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
   type ContextReviewFacts,
@@ -23,6 +23,35 @@ type ReviewHolder = {
   key: string
   holder: string
   kind: 'session' | 'cursor' | 'task'
+}
+
+const CONTEXT_REVIEW_TASK_KEY_PATTERN =
+  /(?:^|[^A-Z0-9])([A-Z][A-Z0-9]+-[0-9]+(?:\/[0-9]+)?)(?=$|[^A-Z0-9/])/gi
+
+export function contextReviewTaskKeys(value: string): string[] {
+  return [...value.matchAll(CONTEXT_REVIEW_TASK_KEY_PATTERN)].map((match) =>
+    match[1]!.toUpperCase(),
+  )
+}
+
+async function reviewTasks(
+  cursors: Awaited<ReturnType<typeof listWorkflowCursors>>,
+  bodies: readonly string[],
+) {
+  const projects = [...new Set(cursors.map((cursor) => cursor.project))]
+  const itemKeys = [...new Set(bodies.flatMap(contextReviewTaskKeys))]
+  return (
+    await Promise.all(
+      projects.map((project) =>
+        lookupProjectTasks(project, [
+          ...cursors.flatMap((cursor) =>
+            cursor.project === project && cursor.workflow_key ? [cursor.workflow_key] : [],
+          ),
+          ...itemKeys,
+        ]),
+      ),
+    )
+  ).flat()
 }
 
 export type ContextReviewResult =
@@ -126,12 +155,11 @@ export async function reviewContext(
 ): Promise<ContextReviewResult> {
   const database = dependencies.database ?? db(true)
   const now = (dependencies.now ?? Date.now)()
-  const [brief, cursors] = await Promise.all([
-    contextBrief(session, process.cwd(), database),
-    listWorkflowCursors({ session }, database),
-  ])
-  const projects = [...new Set(cursors.map((cursor) => cursor.project))]
-  const tasks = (await Promise.all(projects.map(readProjectTaskList))).flat()
+  const { brief, cursors } = await contextBriefWithCursors(session, process.cwd(), database)
+  const tasks = await reviewTasks(
+    cursors,
+    brief.holders.flatMap((holder) => holder.items.map((item) => item.body)),
+  )
   const holders: ReviewHolder[] = brief.holders.flatMap((holder) => {
     const address = holder.items[0]?.holder
     if (!address) return []
@@ -198,6 +226,7 @@ export async function reviewContext(
       items: decision.items.length,
       flagged,
       itemIds: decision.items.map((item) => item.recordId),
+      itemHolders: decision.items.map((item) => item.holder),
     },
     { database },
   )

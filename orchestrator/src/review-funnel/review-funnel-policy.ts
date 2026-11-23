@@ -3,7 +3,11 @@
 
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
+import {
+  readDoc as getDoc,
+  readDocRevision as getDocRevision,
+} from '../doc/doc-authoritative-read.ts'
+import { setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {
   REVIEW_FILE_COUNT_BUMP,
@@ -78,10 +82,10 @@ export function parseReviewFunnelPolicy(value: unknown): ReviewFunnelPolicy {
   return parsed.data
 }
 
-export function reviewFunnelPolicyAt(version: string): VersionedReviewFunnelPolicy {
+export async function reviewFunnelPolicyAt(version: string): Promise<VersionedReviewFunnelPolicy> {
   if (version === 'builtin')
     return { policy: DEFAULT_REVIEW_FUNNEL_POLICY, policyVersion: 'builtin' }
-  const revision = getDocRevision(version)
+  const revision = await getDocRevision(version)
   if (
     revision?.scope !== 'global' ||
     revision.subject !== null ||
@@ -114,8 +118,8 @@ export async function setReviewFunnelPolicy(policy: ReviewFunnelPolicy) {
 }
 
 /** The policy document is optional so empty and freshly-created stores retain today's behavior. */
-export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
-  const doc = getDoc('global', null, 'review-funnel-policy')
+export async function activeReviewFunnelPolicy(): Promise<VersionedReviewFunnelPolicy> {
+  const doc = await getDoc('global', null, 'review-funnel-policy')
   if (!doc) return { policy: DEFAULT_REVIEW_FUNNEL_POLICY, policyVersion: 'builtin' }
   let body: unknown
   try {

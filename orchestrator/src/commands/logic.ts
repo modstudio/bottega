@@ -90,6 +90,7 @@ import {
   log,
   productArgv,
   rawArgv,
+  values,
   write,
   writeStdout,
 } from './support.ts'
@@ -152,20 +153,35 @@ const runGateCommand = async (): Promise<void> => {
   )
   presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
 }
-const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
+const reparsedArgs = (positionals: unknown[], options: OptionValues): string[] => [
+  ...productArgv('reparse', [], options).slice(1),
+  ...values(positionals),
+]
+const tellByIdentifier = (
+  id: string,
+  message: unknown[],
+  command: Command,
+  options: OptionValues,
+) =>
   tellCommand(
     localRunId(id),
-    rawArgv(command).slice(2),
-    ping,
+    reparsedArgs(message, options),
+    Boolean(options.ping),
     presentation,
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
-const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
+const answerByIdentifier = async (
+  id: string,
+  message: unknown[],
+  command: Command,
+  options: OptionValues,
+) => {
+  const argv = reparsedArgs(message, options)
   const target = await resolveAnswerTarget(db(), id, sessionId())
   if (target.kind === 'workflow-question') {
     await answerClosedWorkflowQuestionCommand(
       target,
-      rawArgv(command).slice(2),
+      argv,
       Boolean(options.recordOnly),
       Boolean(options.json),
       runFlags(options),
@@ -176,7 +192,7 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
   }
   await answerCommand(
     target.runRecordId,
-    rawArgv(command).slice(2),
+    argv,
     Boolean(options.recordOnly),
     Boolean(options.json),
     runFlags(options),
@@ -185,9 +201,13 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
     { output: { log, error: console.error } },
   )
 }
-const relayByIdentifier = async (id: string, command: Command, note: string) =>
-  relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
-    resolveQuestionIdentifier(db(), question),
+const relayByIdentifier = async (id: string, command: Command, options: OptionValues) =>
+  relayCommand(
+    localRunId(id),
+    reparsedArgs(command.args.slice(1), options),
+    options.note,
+    presentation,
+    (question) => resolveQuestionIdentifier(db(), question),
   )
 const resultByIdentifier = (id: string, options: OptionValues) =>
   resultCommand(
@@ -364,7 +384,7 @@ function registerMachineAttentionCommands(program: Command): void {
       '--skip-board-refresh',
       'claim notices without refreshing the board or observing hosted pressure',
     )
-    .option('--json', 'write the monitor result as JSON')
+    .option('--json', 'write the monitor result as JSON; --history emits {history, releases}')
     .allowExcessArguments(false)
     .action((options) =>
       monitorCommand(
@@ -460,6 +480,7 @@ function registerAgentCommands(
   runAgentCommand: typeof agentCommand = agentCommand,
 ): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
+    .option('--space <slug>', 'record space for share or unshare')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
     .option('--model <value>', 'set the model identifier')
@@ -602,6 +623,17 @@ function registerWaitingCommand(program: Command): void {
     )
 }
 
+function registerAgentCatalogueCommands(
+  program: Command,
+  runAgentCommand: typeof agentCommand | undefined,
+): void {
+  registerAgentCommands(program, runAgentCommand)
+  describedCommand(program, 'agents', 'list agents and their readiness')
+    .option('--json', 'write agent capabilities as JSON')
+    .allowExcessArguments(false)
+    .action((options) => agentsCommand(Boolean(options.json), presentation))
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -701,13 +733,11 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowUnknownOption(true)
     .option('--file <value>', 'read the message from this file')
     .option('--ping', 'print the run state after queuing the message')
-    .action((id, _message, options, command) =>
-      tellByIdentifier(id, command, Boolean(options.ping)),
-    )
+    .action((id, message, options, command) => tellByIdentifier(id, message, command, options))
   describedCommand(program, 'relay <id>', 'relay a worker question to a person for a ruling')
     .requiredOption('--note <why>', 'record why the question needs a person to rule')
     .allowUnknownOption(true)
-    .action((id, options, command) => relayByIdentifier(id, command, options.note))
+    .action((id, options, command) => relayByIdentifier(id, command, options))
   registerWaitingCommand(program)
   describedCommand(program, 'peek <id>', 'show a run summary and its recent events')
     .option('--events <value>', 'include this many recent events')
@@ -735,8 +765,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       keyedTurnOptions(options),
     ),
   )
-  answerCommandDefinition(program).action((id, _message, options, command) =>
-    answerByIdentifier(id, command, options),
+  answerCommandDefinition(program).action((id, message, options, command) =>
+    answerByIdentifier(id, message, command, options),
   )
   continueCommandDefinition(program).action((_id, _message, options, command) => {
     const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
@@ -807,9 +837,5 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  registerAgentCommands(program, dependencies.agentCommand)
-  describedCommand(program, 'agents', 'list agents and their readiness')
-    .option('--json', 'write agent capabilities as JSON')
-    .allowExcessArguments(false)
-    .action((options) => agentsCommand(Boolean(options.json), presentation))
+  registerAgentCatalogueCommands(program, dependencies.agentCommand)
 }

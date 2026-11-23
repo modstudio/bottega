@@ -15,6 +15,7 @@ import {
   duplicateCandidates,
   duplicateScore,
   listTasks,
+  lookupTasks,
   setTask,
   setTaskBody,
   showTask,
@@ -218,6 +219,24 @@ describe('hosted-authoritative existing-row edits', () => {
     await setTask('BET-70', { recordId: id }, { title: 'Local only' }, UNATTRIBUTED, {
       hosted: { baseUrl: '' },
     })
+    expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
+  })
+
+  test('an unreachable duplicate-reason comment refuses without queuing it', async () => {
+    const fetch = async (input: string, init?: RequestInit) => {
+      if (new URL(input).pathname === '/v1/changes') throw new Error('record unavailable')
+      return hosted.fetch(input, init)
+    }
+
+    await expect(
+      createTask(
+        { project: 'gamma', title: `Duplicate reason ${crypto.randomUUID()}` },
+        {
+          allowDuplicateReason: 'operator confirmed the tasks are distinct',
+          hosted: { ...hosted, fetch },
+        },
+      ),
+    ).rejects.toThrow(HOSTED_UNREACHABLE_REMEDY)
     expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   })
 })
@@ -499,6 +518,30 @@ describe('local-authoritative task writes', () => {
   afterAll(() => {
     if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
     else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
+  })
+
+  test('local lookup returns a deduplicated requested task with its ancestor chain', async () => {
+    const root = await createTask(
+      { project: 'beta', title: 'Lookup root' },
+      { skipDuplicateCheck: true },
+    )
+    const parent = await createTask(
+      { project: 'beta', title: 'Lookup parent', parent: root.key },
+      { skipDuplicateCheck: true },
+    )
+    const leaf = await createTask(
+      { project: 'beta', title: 'Lookup leaf', parent: parent.key },
+      { skipDuplicateCheck: true },
+    )
+
+    const found = await lookupTasks('beta', [leaf.key.toLowerCase(), leaf.key, 'BET-999999'])
+
+    expect(found.map(({ key }) => key).sort()).toEqual([root.key, parent.key, leaf.key].sort())
+    expect(found.find(({ key }) => key === root.key)?.has_children).toBe(true)
+    expect(found.find(({ key }) => key === parent.key)?.has_children).toBe(true)
+    expect(found.find(({ key }) => key === leaf.key)?.has_children).toBe(false)
+    expect(found.some(({ key }) => key === 'BET-999999')).toBe(false)
+    expect(found.every((row) => !('body' in row) && !('source' in row))).toBe(true)
   })
 
   test('mints the next key, then update close and comment write hub.db', async () => {

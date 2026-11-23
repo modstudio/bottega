@@ -1,6 +1,7 @@
 // concern: record-workflow-catalogue
 /** Owns tenant-bound hosted workflow catalogue reads and lifecycle writes. */
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
@@ -171,6 +172,14 @@ function unique(error: unknown): never {
 }
 
 export async function draftRecordWorkflow(input: Tenant & RecordWorkflowDraftInput) {
+  input = maskHostedTableWrite(
+    input.kind === 'workflow' ? 'workflow_version' : 'step_catalogue_version',
+    input,
+  )
+  input = maskHostedTableWrite(
+    input.kind === 'workflow' ? 'workflow_event' : 'step_catalogue_event',
+    input,
+  )
   try {
     return await tenant(input, async (tx) => {
       const owner = await identity(tx, input, true),
@@ -217,6 +226,10 @@ async function writeTransitionEvent(
   event: 'promote' | 'retire',
   now: string,
 ) {
+  input = maskHostedTableWrite(
+    input.kind === 'workflow' ? 'workflow_event' : 'step_catalogue_event',
+    input,
+  )
   const id = newRecordId()
   if (input.kind === 'workflow')
     await tx`INSERT INTO workflow_event (id,space_id,workflow_version_id,event,author,reason,session_id,at,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${versionId}::uuid,${event},${input.author},${input.reason},${input.sessionId ?? null},${now}::timestamptz,${now}::timestamptz)`

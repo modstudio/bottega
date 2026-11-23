@@ -57,6 +57,40 @@ export function readMergedBranchLandingTip(
   )
 }
 
+export type MergedBranchLandingPrNumber = {
+  projectRecordId: string
+  branch: string
+  prNumber: number
+}
+
+/** Read the latest merged pull request for each requested project branch. */
+export function readMergedBranchLandingPrNumbers(
+  database: Database,
+  branches: readonly { projectRecordId: string; branch: string }[],
+): MergedBranchLandingPrNumber[] {
+  if (!branches.length) return []
+  return database
+    .query<MergedBranchLandingPrNumber, [string]>(
+      `WITH requested AS (
+         SELECT json_extract(value,'$.projectRecordId') AS project_record_id,
+                json_extract(value,'$.branch') AS branch
+           FROM json_each(?)
+       )
+       SELECT requested.project_record_id projectRecordId,requested.branch,
+              landing.pr_number prNumber
+         FROM requested JOIN branch_landing_record landing
+           ON landing.record_id=(
+             SELECT candidate.record_id FROM branch_landing_record candidate
+              WHERE candidate.project_record_id=requested.project_record_id
+                AND candidate.branch=requested.branch
+                AND candidate.merged_at IS NOT NULL
+              ORDER BY candidate.merged_at DESC,candidate.recorded_at DESC
+              LIMIT 1
+           )`,
+    )
+    .all(JSON.stringify(branches))
+}
+
 export type BranchLandingTaskRow = {
   project: string
   branch: string

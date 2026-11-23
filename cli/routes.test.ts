@@ -142,7 +142,9 @@ test('every agent command verb has a public route to its owner entry', () => {
     set: ['agent', 'set'],
     remove: ['agent', 'remove'],
     probe: ['agent', 'probe'],
+    share: ['agent', 'share'],
     show: ['agent', 'show'],
+    unshare: ['agent', 'unshare'],
   } satisfies Record<(typeof AGENT_COMMAND_VERBS)[number], readonly string[]>
 
   for (const verb of AGENT_COMMAND_VERBS) {

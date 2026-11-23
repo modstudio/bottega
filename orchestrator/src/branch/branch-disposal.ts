@@ -5,6 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
@@ -20,9 +21,9 @@ import {
 } from './branch-disposal-decision.ts'
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
-import { isProbeOnlyMint } from './branch-state.ts'
 import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { taskKeyToken } from './other-branch-state.ts'
+import { taskBranchContentLanded } from './task-branch.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -125,6 +126,49 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
+export function observeDisposalContentLanded(
+  input: { cwd: string; trunk: string; branchTip: string },
+  observe: typeof taskBranchContentLanded = taskBranchContentLanded,
+): boolean {
+  return observe({
+    cwd: input.cwd,
+    trunkTip: `origin/${input.trunk}`,
+    branchTip: input.branchTip,
+  })
+}
+
+export function composeContentLandedProofRefusal(input: {
+  projectPath: string
+  trunk: string
+  detail: string
+}): string {
+  return `${renderRefusal(
+    refusal(`refusing branch disposal: content-landed proof could not run: ${input.detail}`, {
+      kind: 'edit',
+      text: `git -C ${input.projectPath} fetch origin ${input.trunk}`,
+    }),
+  )}, then retry`
+}
+
+function observeSystemJobContentLanded(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  row: { systemJobMinted: boolean; tip: string } | undefined,
+): boolean {
+  const trunk = project.settings.trunk?.trim() ?? ''
+  if (!row?.systemJobMinted || !trunk) return false
+  try {
+    return observeDisposalContentLanded({ cwd: project.path, trunk, branchTip: row.tip })
+  } catch (cause) {
+    throw new Error(
+      composeContentLandedProofRefusal({
+        projectPath: project.path,
+        trunk,
+        detail: cause instanceof Error ? cause.message : String(cause),
+      }),
+    )
+  }
+}
+
 export function composeBranchDisposalRefusal(input: {
   reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
   project: string
@@ -188,14 +232,15 @@ async function planBranchDisposal(input: {
   )
   const taskKey = keyGroup?.key === UNKEYED_BRANCH_GROUP ? null : (keyGroup?.key ?? null)
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
-  const mintingRuns = db()
-    .query('SELECT probe FROM run WHERE project_record_id=? AND minted_branch=?')
-    .all(project.recordId, branch) as { probe: number }[]
-  const runMinted = mintingRuns.length > 0
-  const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
+  const runMinted = row !== undefined
+  const probeOnly = row?.probeOnly ?? false
+  const systemJobMinted = row?.systemJobMinted ?? false
+  const contentLanded = observeSystemJobContentLanded(project, row)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
+    systemJobMinted,
+    contentLanded,
     refExists: true,
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,

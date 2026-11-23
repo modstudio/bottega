@@ -11,7 +11,9 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const identityModules = [
   module('orchestrator/src/identity/doc-revision-identity.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../record/record-read-authority.ts',
   ]),
   module('hub/src/identity/identity.ts', [
     'bun:sqlite',

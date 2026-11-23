@@ -15,11 +15,11 @@ const ports: FloorEvidencePorts = {
   readTask: (key: string) => ({
     recordId: `task-${key}`,
     key,
+    updatedAt: null,
     status: 'done' as const,
     statusCategory: 'done' as const,
     commentIds: [1],
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => {
     throw new Error('checkout evidence was not expected')
   },

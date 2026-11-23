@@ -13,6 +13,7 @@ import {
   listRecordTaskFlowStages,
   readRecordTaskFlow,
   readRecordTaskFlowStage,
+  readRecordTaskFlowStageSummaries,
   readRecordTaskFlowText,
 } from '../../src/record/record-task-flow.ts'
 import { writeRecordTaskFlow } from '../../src/record/record-task-flow-write.ts'
@@ -91,6 +92,7 @@ export async function createRecordContractFixture(
       writeQuestion: writeRecordQuestion,
       readTaskFlow: readRecordTaskFlow,
       readTaskFlowStage: readRecordTaskFlowStage,
+      readTaskFlowStageSummaries: readRecordTaskFlowStageSummaries,
       readTaskFlowText: readRecordTaskFlowText,
       listTaskFlowStages: listRecordTaskFlowStages,
       writeTaskFlow: writeRecordTaskFlow,

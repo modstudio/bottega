@@ -210,7 +210,10 @@ function removeCandidate(
     return { action: 'removed' }
   }
   if (candidate.kind === 'sandbox') {
-    const result = releaseSandboxDirectoryForConversation(candidate.runRecordId!, { dryRun })
+    const result = releaseSandboxDirectoryForConversation(candidate.runRecordId!, {
+      intent: 'sweep',
+      dryRun,
+    })
     if (result.outcome !== 'kept') return { action: 'removed' }
     if (result.detail.startsWith('sandbox directory removal failed:'))
       return { action: 'failed', detail: result.detail }

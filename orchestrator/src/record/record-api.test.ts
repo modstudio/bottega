@@ -10,6 +10,7 @@ import { SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { ConfigServiceError } from './record-config-error.ts'
+import type { RecordDoc } from './record-doc-mapping.ts'
 import { RecordDocError } from './record-docs.ts'
 import {
   applyRecordSettingsPermission,
@@ -22,6 +23,26 @@ const appWith = (session: RecordIdentity | null, overrides: Record<string, unkno
   recordApiTestApp(session, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, overrides)
 
 const id = '01990000-0000-7000-8000-000000000001'
+const settingsDoc = (body: string, latestRevisionId: string | null = null): RecordDoc => ({
+  id,
+  spaceId: 'space-a',
+  spaceName: 'Space A',
+  scope: 'settings',
+  subject: null,
+  owner: 'user-a',
+  slug: 'settings',
+  title: 'settings',
+  body,
+  delivery: 'demand',
+  audiences: ['technical'],
+  parentId: null,
+  position: 0,
+  projectName: null,
+  latestRevisionId,
+  createdAt: '2026-09-28T12:00:00.000Z',
+  updatedAt: '2026-09-28T12:00:00.000Z',
+  deletedAt: null,
+})
 describe('record API', () => {
   test('serves reconciled workflow import only on the v2 route', async () => {
     const imported = mock(async () => ({
@@ -312,25 +333,10 @@ describe('record API', () => {
       applySettingsPermission: (input: RecordSettingsPermissionInput) =>
         applyRecordSettingsPermission(input, {
           listDocs: async () => [
-            {
-              id,
-              spaceId: 'space-a',
-              spaceName: 'Space A',
-              scope: 'settings',
-              subject: null,
-              owner: 'user-a',
-              slug: 'settings',
-              title: 'settings',
-              body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
-              delivery: 'demand',
-              audiences: ['technical'],
-              parentId: null,
-              position: 0,
-              projectName: null,
-              createdAt: '2026-09-28T12:00:00.000Z',
-              updatedAt: '2026-09-28T12:00:00.000Z',
-              deletedAt: null,
-            },
+            settingsDoc(
+              JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+              expectedRevision,
+            ),
           ],
           listRevisions: async () => {
             const readRevision = currentRevision
@@ -564,7 +570,14 @@ describe('record API', () => {
   })
 
   test('doc lists opt into readable spaces while the default stays active-space scoped', async () => {
-    const seen: Array<{ spaceId: string; spaceIds: string[]; acrossReadableSpaces: boolean }> = []
+    const seen: Array<{
+      spaceId: string
+      spaceIds: string[]
+      acrossReadableSpaces: boolean
+      slug?: string
+      owner?: string | null
+      delivery?: 'inject' | 'demand'
+    }> = []
     const personal = {
       ...identity,
       memberships: [
@@ -583,13 +596,28 @@ describe('record API', () => {
       },
     })
 
-    expect((await app.request('/v1/docs')).status).toBe(200)
+    expect((await app.request('/v1/docs?slug=guide&owner=&delivery=inject')).status).toBe(200)
+    const invalidOwner = await app.request('/v1/docs?owner=not-a-uuid')
+    expect(invalidOwner.status).toBe(400)
+    expect(await invalidOwner.json()).toEqual({ error: 'invalid doc list query' })
+    expect((await app.request('/v1/docs?owner=not-a-uuid')).status).toBe(400)
     expect((await app.request('/v1/docs?acrossReadableSpaces=true')).status).toBe(200)
+    const destinationCrossSpace = await app.request('/v1/docs?acrossReadableSpaces=true', {
+      headers: { 'x-record-space': 'space-a' },
+    })
+    expect(destinationCrossSpace.status).toBe(400)
+    expect(await destinationCrossSpace.json()).toEqual({
+      error: 'cross-space read includes a destination',
+      remedy: 'send the cross-space read without a destination',
+    })
     expect(seen).toEqual([
       expect.objectContaining({
         spaceId: 'space-a',
         spaceIds: ['space-a', 'space-b'],
         acrossReadableSpaces: false,
+        slug: 'guide',
+        owner: null,
+        delivery: 'inject',
       }),
       expect.objectContaining({
         spaceId: 'space-a',

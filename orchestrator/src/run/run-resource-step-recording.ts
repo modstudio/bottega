@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { Agent } from '../agent/agents.ts'
-import { nowIso, writeTransaction } from '../database/db.ts'
+import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import type { Project } from '../project/projects.ts'
 import {
@@ -142,6 +142,7 @@ export function recordRunLeaseStep<T extends { release(): void }>(
           state: 'released',
           settledAt: nowIso(),
           detail: 'run lease released',
+          by: { verb: 'run-resource-step-recording:recordRunLeaseStep', session: sessionId() },
           allocationKey: input.path,
         })
       }

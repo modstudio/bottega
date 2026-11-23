@@ -25,7 +25,7 @@ export const setDoc = async (input: TestDocWriteInput): ReturnType<typeof writeD
       body: legacy.body,
       expectedRevision: input.expectedRevision,
     })
-    const stored = getContextItem(holder, input.slug)!
+    const stored = (await getContextItem(holder, input.slug))!
     return {
       ...written,
       record_id: stored.recordId,

@@ -4,7 +4,11 @@
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
@@ -17,6 +21,7 @@ type BindWriteDestination<Method> = Method extends (
 type HostedDocMethod =
   | 'listDocs'
   | 'getDoc'
+  | 'getDocRevision'
   | 'listRevisions'
   | 'upsertDoc'
   | 'reorderDocs'
@@ -49,8 +54,10 @@ export async function hostedDocClient(
   const owner = suppliedOwner ?? docOwner(projectName)
   const destination = await recordWriteDestination(client, owner)
   return {
-    listDocs: (query) => client.listDocs(query, destination),
+    listDocs: (query) =>
+      client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),
     getDoc: (id) => client.getDoc(id, destination),
+    getDocRevision: (id) => client.getDocRevision(id),
     listRevisions: (id) => client.listRevisions(id, destination),
     upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
     reorderDocs: (input) => client.reorderDocs(input, destination),
@@ -65,7 +72,7 @@ export async function hostedDocClient(
   }
 }
 
-async function listAllHostedDocs(
+export async function listAllHostedDocs(
   list: HostedDocClient['listDocs'],
   query: HostedPersonalDocQuery,
 ): Promise<HostedDocListResult> {
@@ -110,6 +117,10 @@ export async function readHostedDocReference(address: string): Promise<Record<st
     throw new Error(`invalid document address ${JSON.stringify(address)}`)
   const subject = rawSubject === '_' ? null : rawSubject
   return (await hostedDocClient(scope, subject)).getDoc(encodeURIComponent(slug))
+}
+
+export function isMissingHostedDoc(cause: unknown): boolean {
+  return cause instanceof RecordApiRequestError && cause.status === 404
 }
 
 function docOwner(projectName: string | null): RecordWriteOwner {

@@ -157,6 +157,18 @@ export function withBranchStoreScratch<T>(name: string, fn: (dir: string) => T):
 export type GateFactsSnapshot = { path: string; elapsedMs: number }
 
 function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
+  const supplied = process.env[GATE_FACTS_ENV]
+  if (supplied) {
+    const started = performance.now()
+    try {
+      assertGateFactsFormat(readFileSync(supplied, 'utf8'))
+      return { path: supplied, elapsedMs: performance.now() - started }
+    } catch (cause) {
+      throw new Error(
+        `the supplied gate-facts snapshot ${supplied} is unreadable or invalid: ${String((cause as Error).message ?? cause)}; remedy: retry the run so the dispatcher writes a fresh snapshot`,
+      )
+    }
+  }
   const main = process.env[FROZEN_ENV_NAMES.mainCheckout]
   if (!main) {
     throw new Error(

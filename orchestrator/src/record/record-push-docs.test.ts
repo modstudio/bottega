@@ -6,6 +6,7 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
+import { memorySpaceAgentClient } from '../../test/fixtures/record-api-space-agents.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
@@ -120,6 +121,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
+    ...memorySpaceAgentClient(),
     listChanges: async () => ({ reset: { cursor: 'push-docs-test', tables: [] } }),
     applySettingsPermission: unused,
     applySettingsAutoMode: unused,
@@ -136,6 +138,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       if (!doc) throw new Error('doc not found')
       return doc
     },
+    getDocRevision: unused,
     listRevisions: async (id) =>
       imports
         .filter((row) => row.doc.id === id)

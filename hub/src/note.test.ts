@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
+import {
+  noteHostedChanges,
+  noteHostedFetch,
+  resetNoteHostedChanges,
+} from '../test/note-hosted-fetch.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -13,10 +18,6 @@ import {
   createNote,
   deriveNoteAnchor,
   dropNote,
-  getNote,
-  listActionableNotes,
-  listNotes,
-  listProjectNotes,
   mergeNote,
   type NoteAnchor,
   promoteNote,
@@ -25,106 +26,18 @@ import {
   staleNotes,
 } from './note.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
+import { getNote, listActionableNotes, listNotes, listProjectSlimNotes } from './note-read.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
+beforeEach(resetNoteHostedChanges)
 const workshop = declareFixtureProjectSpace('workshop', 'workshop')
 afterAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
-const hosted = {
-  baseUrl: 'https://hub.example.test',
-  token: 'test',
-  fetch: async (input: string, init?: RequestInit) => {
-    const url = new URL(input),
-      body = init?.body ? JSON.parse(String(init.body)) : {},
-      at = new Date().toISOString()
-    if (url.pathname === '/v1/tasks/identity')
-      return Response.json({
-        userId: 'user-1',
-        activeSpaceId: 'space-a',
-        memberships: [
-          { spaceId: 'space-a', slug: 'workshop', permission: 'write' },
-          { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
-        ],
-        capabilities: {
-          projectNoteCounters: true,
-          noteTriageStaleness: true,
-          spacePush: true,
-          targetSpaceNotes: true,
-          spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
-        },
-      })
-    if (url.pathname === '/v1/changes') {
-      const changes = body as Array<{ id: string }>
-      return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
-    }
-    const shape = (note: ReturnType<typeof getNote>) => ({
-      id: note.record_id,
-      number: note.number,
-      project: note.project,
-      project_name: note.project,
-      text: note.text,
-      area: note.area,
-      anchors: JSON.stringify(note.anchors),
-      sightings: note.sightings,
-      created_at: note.created_at,
-      last_seen_at: note.last_seen_at,
-      stale_at: note.stale_at,
-      stale_reason: note.stale_reason,
-      promoted_task: note.promoted_task,
-      updated_at: at,
-      deleted_at: null,
-    })
-    if (url.pathname === '/v1/notes' && init?.method === 'POST') {
-      if (body.sameAs) {
-        const old = getNote(resolveNoteReference(String(body.sameAs), 'workshop'))
-        return Response.json({
-          ...shape(old),
-          anchors: JSON.stringify([...old.anchors, JSON.parse(body.anchor)]),
-          sightings: old.sightings + 1,
-          last_seen_at: at,
-          stale_at: null,
-          stale_reason: null,
-        })
-      }
-      const next =
-        (db().query<{ max: number | null }, []>('SELECT max(number) max FROM note').get()?.max ??
-          0) + 1
-      return Response.json({
-        id: crypto.randomUUID(),
-        number: next,
-        project: body.project,
-        project_name: body.project,
-        text: body.text,
-        area: body.area ?? null,
-        anchors: `[${body.anchor}]`,
-        sightings: 1,
-        created_at: at,
-        last_seen_at: at,
-        stale_at: null,
-        stale_reason: null,
-        promoted_task: null,
-        updated_at: at,
-        deleted_at: null,
-      })
-    }
-    if (url.pathname === '/v1/notes/reap')
-      return Response.json({
-        marked: body.stale.length,
-        annotated: body.annotated.length,
-        restored: body.restored.length,
-        deleted: body.deleted.length,
-        staleIds: body.stale.map((row: { recordId: string }) => row.recordId),
-        annotatedIds: body.annotated.map((row: { recordId: string }) => row.recordId),
-        restoredIds: body.restored.map((row: { recordId: string }) => row.recordId),
-        deletedIds: body.deleted,
-      })
-    return Response.json({ error: 'unexpected route' }, { status: 500 })
-  },
-}
+const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch: noteHostedFetch }
 const fileNote = (input: Parameters<typeof createNote>[0]) => createNote(input, { hosted })
 const recordId = (number: number) => resolveNoteReference(String(number), 'workshop')
 const merge = (target: number, source: number) =>
@@ -135,7 +48,7 @@ const acknowledge = (id: number, session: string) =>
 
 describe('suggestion notes', () => {
   test('an unregistered project files and lists outside without touching the local cache', async () => {
-    const before = listNotes().length
+    const before = (await listNotes({}, { baseUrl: '' })).length
     const paths: string[] = []
     const outsideHosted = {
       baseUrl: 'https://hub.example.test',
@@ -171,7 +84,7 @@ describe('suggestion notes', () => {
       { hosted: outsideHosted },
     )
     expect('outside' in created && created.outside).toBeTrue()
-    expect(listNotes()).toHaveLength(before)
+    expect(await listNotes({}, { baseUrl: '' })).toHaveLength(before)
     expect((await listOutsideProjectNotes('outside-project', outsideHosted))[0]?.label).toBe(
       'outside-project#7',
     )
@@ -179,7 +92,7 @@ describe('suggestion notes', () => {
   })
 
   test('an outside project list supports only text filtering', async () => {
-    await expect(listProjectNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
+    await expect(listProjectSlimNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
       "outside project 'outside-project' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable",
     )
   })
@@ -213,6 +126,8 @@ describe('suggestion notes', () => {
             ],
             capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
           })
+        if (url.pathname === '/v1/notes' && init?.method === 'GET')
+          return Response.json({ notes: [], acknowledgements: [], cursor: 'done', more: false })
         requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
         const body = JSON.parse(String(init?.body))
         writes.push(body)
@@ -286,7 +201,7 @@ describe('suggestion notes', () => {
           const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
           return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
         }
-        const current = getNote(id)
+        const current = await getNote(id, { baseUrl: '' })
         const note = {
           id,
           number: current.number,
@@ -325,7 +240,7 @@ describe('suggestion notes', () => {
     }
     await acknowledgeNote(id, 'session-1', { hosted: dispositionHosted })
     await dropNote(id, 'done', { hosted: dispositionHosted })
-    expect(spaces).toEqual(['space-gamma', 'space-gamma'])
+    expect(spaces).toEqual(['space-a', 'space-gamma', 'space-a', 'space-gamma'])
   })
 
   test('a hosted-first create reports its reference when the local cache is locked', async () => {
@@ -534,7 +449,7 @@ describe('suggestion notes', () => {
       expect(
         db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count,
       ).toBe(before)
-      expect(getNote(note.record_id).promoted_task).toBeNull()
+      expect((await getNote(note.record_id, { baseUrl: '' })).promoted_task).toBeNull()
     })
 
     test('a hub-protocol note promotion mints or links an existing local task with evidence', async () => {
@@ -677,7 +592,9 @@ describe('suggestion notes', () => {
       const merged = await mergeNote(one.record_id, two.record_id)
       expect(merged.sightings).toBe(2)
       expect(merged.anchors).toHaveLength(2)
-      expect(() => getNote(two.record_id)).toThrow(`no note ${two.record_id}`)
+      await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(
+        `no note ${two.record_id}`,
+      )
 
       const dropped = await dropNote(one.record_id, 'superseded')
       expect(dropped.stale_reason).toBe('dropped: superseded')
@@ -697,7 +614,10 @@ describe('suggestion notes', () => {
         now: () => new Date('2026-09-07T12:00:00.000Z'),
       })
       expect(result.restored).toBeGreaterThanOrEqual(1)
-      expect(getNote(doomed)).toMatchObject({ stale_at: null, stale_reason: null })
+      expect(await getNote(doomed, { baseUrl: '' })).toMatchObject({
+        stale_at: null,
+        stale_reason: null,
+      })
     })
 
     test('a hosted-bound install with BOTTEGA_HOSTED_URL unset refuses note writes', async () => {
@@ -738,13 +658,13 @@ describe('suggestion notes', () => {
         forceNew: true,
       })
     ).note
-    const before = listNotes().length
+    const before = (await listNotes({}, { baseUrl: '' })).length
     const offered = await fileNote({
       text: `Collector ${unique} loses the active run interval`,
       cwd: '/fixtures/repos/workshop',
     })
     expect(offered.candidates[0]?.record_id).toBe(first.record_id)
-    expect(listNotes()).toHaveLength(before)
+    expect(await listNotes({}, { baseUrl: '' })).toHaveLength(before)
   })
 
   test('create derives cwd, run and session anchors but skips files outside the checkout', () => {
@@ -779,6 +699,31 @@ describe('suggestion notes', () => {
     expect(offered.candidates[0]?.record_id).toBe(first.record_id)
   })
 
+  test('same sends the fixture revision as a number', async () => {
+    const note = (
+      await fileNote({
+        text: `Same revision ${crypto.randomUUID()}`,
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
+    resetNoteHostedChanges()
+
+    await fileNote({
+      text: 'A repeat sighting',
+      cwd: '/fixtures/repos/workshop',
+      sameAs: note.record_id,
+    })
+
+    expect(noteHostedChanges).toHaveLength(1)
+    expect(noteHostedChanges[0]).toMatchObject({
+      table: 'hub_note',
+      op: 'upsert',
+      expected_revision: 1,
+    })
+    expect(typeof noteHostedChanges[0]?.expected_revision).toBe('number')
+  })
+
   test('same preserves sightings and drop records why', async () => {
     const one = (
       await fileNote({
@@ -794,10 +739,26 @@ describe('suggestion notes', () => {
         forceNew: true,
       })
     ).note
+    resetNoteHostedChanges()
     expect((await merge(one.number, two.number)).sightings).toBe(2)
-    expect(() => getNote(two.record_id)).toThrow(`no note ${two.record_id}`)
+    expect(noteHostedChanges).toHaveLength(2)
+    expect(noteHostedChanges.map((change) => change.expected_revision)).toEqual([1, 1])
+    expect(noteHostedChanges.every((change) => typeof change.expected_revision === 'number')).toBe(
+      true,
+    )
+    await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(
+      `no note ${two.record_id}`,
+    )
 
+    resetNoteHostedChanges()
     expect((await drop(one.number, 'superseded')).stale_reason).toBe('dropped: superseded')
+    expect(noteHostedChanges).toHaveLength(1)
+    expect(noteHostedChanges[0]).toMatchObject({
+      table: 'hub_note',
+      op: 'upsert',
+      expected_revision: 1,
+    })
+    expect(typeof noteHostedChanges[0]?.expected_revision).toBe('number')
   })
 
   test('actionable notes exclude promoted and dropped rows', async () => {
@@ -823,7 +784,9 @@ describe('suggestion notes', () => {
         .run(promoted.record_id)
     })
     await drop(dropped.number, 'resolved')
-    expect(listActionableNotes({ session }).map((note) => note.record_id)).toEqual([open.record_id])
+    expect(
+      (await listActionableNotes({ session }, { baseUrl: '' })).map((note) => note.record_id),
+    ).toEqual([open.record_id])
   })
 
   test('text search matches a case-insensitive substring and combines with project', async () => {
@@ -842,18 +805,24 @@ describe('suggestion notes', () => {
         forceNew: true,
       })
     ).note
-    const matched = listNotes({ text: token.toLowerCase(), stale: false }).map(
-      (row) => row.record_id,
-    )
+    const matched = (
+      await listNotes({ text: token.toLowerCase(), stale: false }, { baseUrl: '' })
+    ).map((row) => row.record_id)
     expect(matched).toContain(workshop.record_id)
     expect(matched).toContain(gamma.record_id)
     expect(
-      listNotes({ text: token.toUpperCase(), stale: false }).map((row) => row.record_id),
+      (await listNotes({ text: token.toUpperCase(), stale: false }, { baseUrl: '' })).map(
+        (row) => row.record_id,
+      ),
     ).toContain(workshop.record_id)
     expect(
-      listNotes({ text: token, project: 'workshop', stale: false }).map((row) => row.record_id),
+      (await listNotes({ text: token, project: 'workshop', stale: false }, { baseUrl: '' })).map(
+        (row) => row.record_id,
+      ),
     ).toEqual([workshop.record_id])
-    expect(listNotes({ text: `absent-${crypto.randomUUID()}`, stale: false })).toEqual([])
+    expect(
+      await listNotes({ text: `absent-${crypto.randomUUID()}`, stale: false }, { baseUrl: '' }),
+    ).toEqual([])
   })
 
   test('keep acknowledges one session idempotently and a further sighting clears it', async () => {
@@ -876,14 +845,20 @@ describe('suggestion notes', () => {
 
     expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(false)
     expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(true)
-    expect(listNotes({ session }).map((row) => row.record_id)).not.toContain(note.record_id)
-    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(
-      note.record_id,
-    )
     expect(
-      listNotes({ session: [otherSession, session] }).map((row) => row.record_id),
+      (await listNotes({ session }, { baseUrl: '' })).map((row) => row.record_id),
     ).not.toContain(note.record_id)
-    expect(listNotes({ session, kept: true }).map((row) => row.record_id)).toContain(note.record_id)
+    expect(
+      (await listNotes({ session: otherSession }, { baseUrl: '' })).map((row) => row.record_id),
+    ).toContain(note.record_id)
+    expect(
+      (await listNotes({ session: [otherSession, session] }, { baseUrl: '' })).map(
+        (row) => row.record_id,
+      ),
+    ).not.toContain(note.record_id)
+    expect(
+      (await listNotes({ session, kept: true }, { baseUrl: '' })).map((row) => row.record_id),
+    ).toContain(note.record_id)
 
     writeTransaction((conn) =>
       conn
@@ -894,13 +869,15 @@ describe('suggestion notes', () => {
           note.record_id,
         ),
     )
-    expect(listNotes({ session }).map((row) => row.record_id)).toContain(note.record_id)
-    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(
+    expect((await listNotes({ session }, { baseUrl: '' })).map((row) => row.record_id)).toContain(
       note.record_id,
     )
-    expect(listNotes({ session, kept: true }).map((row) => row.record_id)).not.toContain(
-      note.record_id,
-    )
+    expect(
+      (await listNotes({ session: otherSession }, { baseUrl: '' })).map((row) => row.record_id),
+    ).toContain(note.record_id)
+    expect(
+      (await listNotes({ session, kept: true }, { baseUrl: '' })).map((row) => row.record_id),
+    ).not.toContain(note.record_id)
   })
 
   test('stale maintenance recognizes file, run, branch and commit anchors', async () => {
@@ -961,7 +938,7 @@ describe('suggestion notes', () => {
       'branch deleted-branch was deleted',
       undefined,
     ])
-    expect(ids.slice(0, 3).map((id) => getNote(id))).toEqual([
+    expect(await Promise.all(ids.slice(0, 3).map((id) => getNote(id, { baseUrl: '' })))).toEqual([
       expect.objectContaining({
         stale_at: null,
         stale_reason: `${file}:1 no longer has its anchored content`,
@@ -975,7 +952,9 @@ describe('suggestion notes', () => {
         stale_reason: 'branch deleted-branch was deleted',
       }),
     ])
-    const openIds = listNotes({ stale: false }).map((note) => note.record_id)
+    const openIds = (await listNotes({ stale: false }, { baseUrl: '' })).map(
+      (note) => note.record_id,
+    )
     expect(ids.every((id) => openIds.includes(id))).toBe(true)
   })
 
@@ -1025,9 +1004,11 @@ describe('suggestion notes', () => {
       hosted,
     })
     expect(result.deleted).toBeGreaterThanOrEqual(1)
-    expect(() => getNote(doomed.recordId)).toThrow(`no note ${doomed.recordId}`)
-    expect(getNote(untriaged.recordId).number).toBe(untriaged.number)
-    expect(getNote(repeated.recordId).number).toBe(repeated.number)
-    expect(getNote(recent.recordId).number).toBe(recent.number)
+    await expect(getNote(doomed.recordId, { baseUrl: '' })).rejects.toThrow(
+      `no note ${doomed.recordId}`,
+    )
+    expect((await getNote(untriaged.recordId, { baseUrl: '' })).number).toBe(untriaged.number)
+    expect((await getNote(repeated.recordId, { baseUrl: '' })).number).toBe(repeated.number)
+    expect((await getNote(recent.recordId, { baseUrl: '' })).number).toBe(recent.number)
   })
 })

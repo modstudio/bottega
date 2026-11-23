@@ -22,6 +22,7 @@ const RUNTIME = {
 function facts(): SetupInstallVerifyFacts {
   const settings = withMachineProductHooks(
     { permissions: {}, hooks: {} },
+    { subagentHooks: 'on' },
     '/state/orchestrator.db',
     'on',
     RUNTIME,

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -56,12 +56,29 @@ const task = {
 }
 
 const taskPort: TaskReadPort = {
+  lookup: async () => [],
   list: async () => [task],
   show: async () => ({ task }),
   duplicates: async () => [],
   documents: async () => [],
-  document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+  document: async () => ({
+    id: 'none',
+    label: 'none',
+    task_record_id: 'task-none',
+    title: 'none',
+    body: '',
+    version: '1',
+    updated_at: '2026-11-19T00:00:00.000Z',
+  }),
 }
+
+let previousTaskReader: TaskReadPort | undefined
+beforeEach(() => {
+  previousTaskReader = installTaskReader(taskPort)
+})
+afterEach(() => {
+  installTaskReader(previousTaskReader)
+})
 
 test('descendant facts use parent-filtered reads and visit each node once', async () => {
   const reads: Array<{ project?: string; parent?: string }> = []
@@ -230,6 +247,7 @@ test('plan-task start refuses zero dispatches without creating review debt', asy
     {
       readTask: (key) => ({
         key,
+        updatedAt: null,
         status: 'Active',
         statusCategory: 'active',
         commentIds: [],
@@ -246,6 +264,71 @@ test('plan-task start refuses zero dispatches without creating review debt', asy
   if (result.action === 'refuse')
     expect(result.message).toContain('no implement run was dispatched from this cursor')
   expect(reviewOwedCalls).toBe(0)
+})
+
+test('apply-findings receives an earlier-step chain and names its confirmation turn', async () => {
+  installTaskReader(taskPort)
+  const d = floorDatabase()
+  const cursorRecordId = newRecordId()
+  const runRecordId = newRecordId()
+  d.query(
+    `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,
+        status,probe,turn,model,transport,project_record_id,cursor_record_id,step_slug)
+     VALUES (?,987654,'2026-11-19T00:30:00.000Z','codex','implement','sha','spec',10,'head',
+             'ok',0,1,'fixture-model','cli',
+             (SELECT record_id FROM project WHERE name='fixture'),?,?)`,
+  ).run(runRecordId, cursorRecordId, 'blast-radius')
+
+  const result = await applyFloorDecision(
+    {
+      id: 1214,
+      record_id: cursorRecordId,
+      project: 'fixture',
+      workflow_slug: 'fix-defect',
+      mode_slug: 'default',
+      workflow_key: 'DEV-1',
+      task_record_id: null,
+      args: '{"key":"DEV-1"}',
+      session_id: 'session-a',
+      created_at: '2026-11-19T00:00:00.000Z',
+      ordinal: 1,
+      step_slug: 'apply-findings',
+      state: 'running',
+      closed: '[{"n":1,"slug":"triage-findings","note":"triaged","at":"2026-11-19T01:00:00.000Z"}]',
+      enforcement: 'floors',
+    },
+    [floor('tracker-transition')],
+    {
+      slug: 'apply-findings',
+      jobs: ['implement'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    { task: 'DEV-1' },
+    {
+      readTask: (key) => ({
+        key,
+        updatedAt: null,
+        status: 'Active',
+        statusCategory: 'active',
+        commentIds: [],
+      }),
+      noAcceptedFindings: () => ({ action: 'allow', facts: [] }),
+    },
+    false,
+    d,
+  )
+
+  expect(result).toMatchObject({ action: 'refuse' })
+  if (result.action === 'refuse') {
+    expect(result.message).toMatch(/\b987654\b/)
+    expect(result.message).toContain('blast-radius')
+    expect(result.message).toContain(
+      `${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`,
+    )
+    expect(result.message).toContain(`${PLATFORM_SLUG} score 987654 ...`)
+  }
 })
 
 test.each([

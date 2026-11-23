@@ -20,8 +20,16 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import {
+  type DispatchWaiverFact,
+  isApplyFindingsStep,
+  type StepRunObligation,
+} from './workflow-run-obligation.ts'
+import {
+  gatherEarlierStepWorkflowRunChains,
+  gatherLandedEarlierStepWorkflowRunChains,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 import { readHubTaskChildren } from './workflow-task-reference.ts'
 
 type FloorCursor = Pick<
@@ -50,19 +58,22 @@ export function refuseForeignKeylessCursor(row: FloorCursor, callerSession?: str
     )
 }
 
-function gatherDispatchWaiverFacts(
+async function gatherDispatchWaiverFacts(
   row: FloorCursor,
   floors: Floor[],
   step: StepRunObligation,
   ports: FloorEvidencePorts,
   args: Record<string, string>,
   database: Database,
-): { facts: DispatchWaiverFact[]; refusal?: Extract<FloorDecision, { action: 'refuse' }> } {
+): Promise<{
+  facts: DispatchWaiverFact[]
+  refusal?: Extract<FloorDecision, { action: 'refuse' }>
+}> {
   const facts: DispatchWaiverFact[] = []
   const checksReviewOwed = floors.some(({ kind }) => kind === 'review-owed')
   const gathersNoLensOwed = step.dispatchWaivedBy?.includes('no-lens-owed') ?? false
   if (row.enforcement === 'floors' && (checksReviewOwed || gathersNoLensOwed)) {
-    const reviewOwed = invokeFloorEvidencePort(
+    const reviewOwed = await invokeFloorEvidencePort(
       ports,
       'reviewOwed',
       () => {
@@ -74,7 +85,7 @@ function gatherDispatchWaiverFacts(
     if (checksReviewOwed && reviewOwed.action === 'refuse') return { facts, refusal: reviewOwed }
     if (reviewOwed.noLensOwed) facts.push('no-lens-owed')
   }
-  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+  if (row.enforcement === 'floors' && isApplyFindingsStep(step)) {
     const gathered = invokeFloorEvidencePort(
       ports,
       'noAcceptedFindings',
@@ -113,8 +124,12 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
-  const waiver = gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
+  const waiver = await gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
   if (waiver.refusal) return waiver.refusal
+  const stepActivatedAt = currentStepActivatedAt(
+    row,
+    cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
+  )
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     cursorState: row.state,
@@ -126,10 +141,7 @@ export async function applyFloorDecision(
       worktree: args.worktree?.trim() || null,
       session: row.session_id,
       createdAt: row.created_at,
-      stepActivatedAt: currentStepActivatedAt(
-        row,
-        cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
-      ),
+      stepActivatedAt,
     },
     stepOrdinal: row.ordinal + 1,
     stepSlug: row.step_slug,
@@ -141,7 +153,7 @@ export async function applyFloorDecision(
   })
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
-  attachRunObligationEvidence(validated, row, step, database)
+  attachRunObligationEvidence(validated, row, step, stepActivatedAt, database)
   validated.metDispatchWaiverFacts = waiver.facts
   if (selfRulingId !== undefined)
     validated.ruling = {
@@ -159,6 +171,7 @@ export async function applyFloorDecision(
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
     workflowKey: row.workflow_key,
+    cursorNumber: row.id,
     step,
     ...(foreignOwner
       ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
@@ -209,15 +222,37 @@ function attachRunObligationEvidence(
   evidence: Parameters<typeof decideFloorSatisfaction>[0]['evidence'],
   row: FloorCursor,
   step: StepRunObligation,
+  stepActivatedAt: string,
   database: Database,
 ): void {
-  if (step.dispatch === 'required')
+  if (step.dispatch === 'required') {
     evidence.dispatchRuns = gatherWorkflowRunChains(
       row.record_id,
       step.jobs,
       database,
+      'binding',
       row.step_slug,
+      stepActivatedAt,
     )
+    if (isApplyFindingsStep(step)) {
+      evidence.earlierStepRuns = gatherEarlierStepWorkflowRunChains(
+        row.record_id,
+        step.jobs,
+        row.step_slug,
+        stepActivatedAt,
+        database,
+      )
+      evidence.landedEarlierStepRuns = gatherLandedEarlierStepWorkflowRunChains(
+        evidence.earlierStepRuns,
+        database,
+      )
+    }
+  }
   if (step.judges?.length)
-    evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
+    evidence.judgedRuns = gatherWorkflowRunChains(
+      row.record_id,
+      step.judges,
+      database,
+      'declared-job',
+    )
 }

@@ -51,6 +51,11 @@ export const hubTableLifecycles: readonly TableLifecycle[] = [
   ),
   ...entries(['note'], 'cache', 'hub/src/note-staleness-store.ts#applyLocalStaleness'),
   ...entries(['hosted_outbox'], 'journal', 'hub/src/outbox.ts#drainHostedOutbox'),
+  ...entries(
+    ['hosted_change_quarantine'],
+    'machine',
+    'hub/src/hosted-change-quarantine.ts#clearHostedChangeQuarantine',
+  ),
   {
     store: 'hub',
     table: 'hosted_outbox_trace',

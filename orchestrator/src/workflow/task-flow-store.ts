@@ -2,7 +2,10 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
-import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_STAGE_STATES,
+  type TaskFlowStageState,
+} from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
@@ -39,6 +42,8 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
+  TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -58,6 +63,21 @@ export type {
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
 export { isKeylessExplore } from './task-flow-store-types.ts'
+
+/** Reads machine-local cursor/task links with their already-known project owners. */
+export async function localTaskReferencesForSession(
+  database: Database,
+  sessionId: string,
+): Promise<Array<{ recordId: string; project: string }>> {
+  return (
+    await sqliteTaskFlowReadStore(database).listStages({
+      sessionId,
+      states: TASK_FLOW_STAGE_STATES,
+    })
+  ).flatMap((row) =>
+    row.task_record_id ? [{ recordId: row.task_record_id, project: row.project }] : [],
+  )
+}
 
 /**
  * Names the task-flow questions and write intents used by the workflow engine.
@@ -91,6 +111,7 @@ interface TaskFlowQueries {
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
   stageByHandle(project: string | undefined, cursor: number): TaskFlowStageCursorRow | null
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
+  stageSummaries(recordIds: readonly string[]): TaskFlowStageSummaryRow[]
   latestStageForTask(input: {
     project: string
     workflow: string
@@ -112,11 +133,7 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
-  listStages(input: {
-    project?: string
-    sessionId?: string
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }): TaskFlowListedStageRow[]
+  listStages(input: TaskFlowStageListInput<TaskFlowStageState>): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   /** Reads open cursor worktree rows ordered by project, then cursor number. */
   openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]
@@ -239,18 +256,19 @@ export async function taskFlowHandoffLinks(
 ): Promise<WorkflowCursorHandoffLink[]> {
   const links: WorkflowCursorHandoffLink[] = []
   const visited = new Set<string>()
-  const pending = [...terminalRecordIds]
+  let pending = [...terminalRecordIds]
   while (pending.length) {
-    const recordId = pending.pop()!
-    if (visited.has(recordId)) continue
-    visited.add(recordId)
-    const row = await store.stageByRecordId(recordId)
-    if (!row) continue
-    links.push({
-      record_id: row.record_id,
-      handed_off_from_record_id: row.handed_off_from_record_id,
-    })
-    if (row.handed_off_from_record_id) pending.push(row.handed_off_from_record_id)
+    const ids = [...new Set(pending.filter((recordId) => !visited.has(recordId)))]
+    pending = []
+    for (const recordId of ids) visited.add(recordId)
+    for (const { stage: row } of await store.stageSummaries(ids)) {
+      links.push({
+        record_id: row.record_id,
+        handed_off_from_record_id: row.handed_off_from_record_id,
+      })
+      if (row.handed_off_from_record_id && !visited.has(row.handed_off_from_record_id))
+        pending.push(row.handed_off_from_record_id)
+    }
   }
   return links
 }

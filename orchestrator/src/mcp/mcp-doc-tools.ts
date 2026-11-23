@@ -21,14 +21,16 @@ import {
   getContext,
   setContextItem,
 } from '../doc/context-service.ts'
+import {
+  readDoc as authoritativeDoc,
+  readDocForAudience as authoritativeDocForAudience,
+  readDocMetadata as authoritativeDocMetadata,
+  readDocRevision as getDocRevision,
+  readDocRevisions,
+} from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
-  getDoc,
-  getDocForAudience,
-  getDocRevision,
-  listDocMetadata,
-  listDocRevisions,
   removeDoc,
   setDoc,
   setDocStatus,
@@ -143,8 +145,8 @@ function registerDocRevisionTool(server: McpServer): void {
       }),
     },
     async ({ id, user }) => {
-      const revision = getDocRevision(
-        resolveDocRevisionIdentifier(db(), id),
+      const revision = await getDocRevision(
+        await resolveDocRevisionIdentifier(db(), id),
         user ? await signedInDocOwner() : null,
       )
       if (!revision) throw new Error(`no doc revision ${id}`)
@@ -201,7 +203,7 @@ function registerReadDocTools(server: McpServer): void {
     }) => {
       const owner = await docToolOwner(user, subject)
       return text(
-        listDocMetadata({
+        await authoritativeDocMetadata({
           scope: user ? 'canon' : scope,
           subject: user ? null : subject,
           scopes,
@@ -234,8 +236,14 @@ function registerReadDocTools(server: McpServer): void {
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
       const doc = audience
-        ? getDocForAudience(resolvedScope, user ? null : subject, slug, audience, owner)
-        : getDoc(resolvedScope, user ? null : subject, slug, owner)
+        ? await authoritativeDocForAudience(
+            resolvedScope,
+            user ? null : subject,
+            slug,
+            audience,
+            owner,
+          )
+        : await authoritativeDoc(resolvedScope, user ? null : subject, slug, owner)
       if (!doc) throw new Error(`no ${resolvedScope} doc "${slug}"`)
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
@@ -435,7 +443,7 @@ function registerConsumeAndRevisionTools(server: McpServer): void {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       if (!user && !scope) throw new Error('scope is required unless user is true')
       return text(
-        listDocRevisions(
+        await readDocRevisions(
           user ? 'canon' : scope!,
           user ? null : (subject ?? null),
           slug,

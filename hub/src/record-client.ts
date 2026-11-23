@@ -359,6 +359,7 @@ const docSchema = DocSchema.extend({
   subject: z.string().nullable(),
   owner: z.string().uuid().nullable(),
   delivery: z.enum(['inject', 'demand']),
+  latestRevisionId: z.string().uuid().nullable().default(null),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
@@ -429,6 +430,8 @@ const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 type RecordDocListInput = {
   scope?: string
   subject?: string
+  slug?: string
+  owner?: string | null
   audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
@@ -861,6 +864,8 @@ function recordDocReadClient(options: RecordClientOptions) {
         query('/v1/docs', {
           scope: input.scope,
           subject: input.subject,
+          slug: input.slug,
+          owner: input.owner === null ? '' : input.owner,
           audience: input.audience,
           status: input.status,
           kind: input.kind,

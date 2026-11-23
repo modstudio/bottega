@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { TRPCError } from '@trpc/server'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { configureRecordApiUrl } from '../../../test/record-api-config.ts'
 import type { RecordClient, RecordDoc } from '../../record-client.ts'
 import { createHostedContextRouter, hostedContextRouter } from './hosted-context.ts'
@@ -23,6 +24,7 @@ const canonDoc: RecordDoc = {
   title: 'Preferences',
   body: 'Use concise prose.',
   delivery: 'inject',
+  latestRevisionId: revisionId,
   audiences: ['technical'],
   parentId: null,
   position: 0,
@@ -171,9 +173,15 @@ describe('hosted context router', () => {
   })
 
   test('userCanon.list returns only the signed-in owner with a revision', async () => {
-    const rows = await caller(fakeClient()).userCanon.list()
+    const client = fakeClient({
+      docRevisions: mock(async () => ({
+        items: [{ id: nextRevisionId, at: '2099-01-01T00:00:00.000Z' } as never],
+      })),
+    })
+    const rows = await caller(client).userCanon.list()
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ slug: 'preferences', revision: revisionId, updated_at: at })
+    expect(client.docRevisions).not.toHaveBeenCalled()
   })
 
   test.each([personalSpaceId, organizationSpaceId])(
@@ -185,7 +193,7 @@ describe('hosted context router', () => {
         expect.objectContaining({ scope: 'canon' }),
         personalSpaceId,
       )
-      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.docRevisions).not.toHaveBeenCalled()
     },
   )
 
@@ -525,15 +533,16 @@ describe('hosted context router', () => {
         expect.objectContaining({ scope: 'settings', subject: '' }),
         personalSpaceId,
       )
-      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.docRevisions).not.toHaveBeenCalled()
     },
   )
 
-  test('settings.get accepts the owned settings shape but refuses undeclared keys', async () => {
+  test('settings.get accepts options and ignores undeclared top-level keys', async () => {
     const ownedSettings = {
       permissions: { allow: ['Bash(git status)'] },
       hooks: {},
       autoMode: { allow: ['Bash(git status)'], environment: ['development'] },
+      options: { subagentHooks: 'on' as const, futureOption: 1 },
       env: { PUBLIC_SETTING: 'visible only to the server' },
       envKeys: ['API_TOKEN'],
     }
@@ -548,10 +557,12 @@ describe('hosted context router', () => {
     expect(result.settings).toMatchObject({
       permissions: { allow: ['Bash(git status)'] },
       hooks: [],
+      options: { subagentHooks: 'on' },
       envKeys: ['API_TOKEN'],
     })
     expect(JSON.stringify(result)).not.toContain('PUBLIC_SETTING')
     expect(JSON.stringify(result)).not.toContain('visible only to the server')
+    expect(JSON.stringify(result)).not.toContain('futureOption')
 
     const extraKeyClient = fakeClient({
       docs: mock(async () => ({
@@ -559,10 +570,27 @@ describe('hosted context router', () => {
         nextCursor: null,
       })) as never,
     })
-    await expect(caller(extraKeyClient).settings.get({ user: true })).rejects.toMatchObject({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: expect.stringContaining('stored settings row has an invalid shape at "undeclared"'),
+    await expect(caller(extraKeyClient).settings.get({ user: true })).resolves.toMatchObject({
+      settings: { options: { subagentHooks: 'on' } },
     })
+
+    const unknownValueClient = fakeClient({
+      docs: mock(async () => ({
+        items: [
+          {
+            ...settingsDoc,
+            body: JSON.stringify({
+              ...ownedSettings,
+              options: { subagentHooks: 'warn' },
+            }),
+          },
+        ],
+        nextCursor: null,
+      })) as never,
+    })
+    await expect(caller(unknownValueClient).settings.get({ user: true })).rejects.toThrow(
+      new RegExp(`options\\.subagentHooks.*upgrade ${PLATFORM_NAME}`, 's'),
+    )
   })
 
   test('settings.get withholds a secret-shaped hook matcher from stored rows', async () => {

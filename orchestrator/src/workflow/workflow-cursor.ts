@@ -817,7 +817,9 @@ async function nextWorkflowStepImpl(
     throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
   }
   return {
-    text: [takeover.notice, rendered, claimWarning].filter(Boolean).join('\n'),
+    text: [takeover.notice, rendered, ...(close.floor.notices ?? []), claimWarning]
+      .filter(Boolean)
+      .join('\n'),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
     cursorNumber: row.id,
     cursorRecordId: row.record_id,

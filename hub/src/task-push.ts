@@ -1,7 +1,15 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, writeTransaction } from './db.ts'
+import { sendHostedChanges } from './hosted-change-sender.ts'
+import { chunks } from './ingest/batches.ts'
 import { rememberHostedInstall } from './install-binding.ts'
-import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
+import {
+  drainHostedOutbox,
+  HOSTED_OUTBOX_BATCH_SIZE,
+  type HostedOutboxReport,
+  queueHostedChange,
+} from './outbox.ts'
+import { loadOutboxChange } from './outbox-row.ts'
 import { memoizedPersonalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
@@ -15,7 +23,9 @@ import {
   HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
+  SYNCED_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
+import { orderHostedPushChanges } from './push-order.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -58,6 +68,10 @@ type Options = {
 
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
+
+const DIRECT_REPAIR_TABLES: ReadonlySet<string> = new Set(
+  PUSHABLE_HUB_CHANGE_TABLES.filter((table) => !SYNCED_HUB_CHANGE_TABLES.has(table)),
+)
 
 export type TaskPushReport = {
   spaces: SpaceAudit[]
@@ -223,13 +237,57 @@ async function hostedTableIds(
 
 function queueRepairs(candidates: readonly RepairCandidate[]) {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
-    const rows = candidates.filter((candidate) => candidate.table === table)
+    const rows = candidates.filter(
+      (candidate) => candidate.table === table && !DIRECT_REPAIR_TABLES.has(candidate.table),
+    )
     if (!rows.length) continue
     writeTransaction((conn) => {
       for (const row of rows)
         queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
     })
   }
+}
+
+async function sendDirectRepairs(
+  candidates: readonly RepairCandidate[],
+  spaces: readonly SpaceAudit[],
+  requestOptions: RequestOptions,
+): Promise<number> {
+  const directCandidates = new Map(
+    candidates
+      .filter((candidate) => DIRECT_REPAIR_TABLES.has(candidate.table))
+      .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
+  )
+  let sent = 0
+  for (const space of spaces) {
+    const changes = space.tables.flatMap((table) =>
+      table.machineOnly.flatMap((id) => {
+        const candidate = directCandidates.get(`${table.table}:${id}`)
+        if (!candidate) return []
+        const loaded = loadOutboxChange(db(), {
+          table_name: candidate.table,
+          row_id: candidate.id,
+          operation: 'upsert',
+          fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
+        })
+        if (!loaded) return []
+        return [
+          loaded.change.op === 'upsert' && candidate.fields !== null
+            ? { ...loaded.change, fields: candidate.fields }
+            : loaded.change,
+        ]
+      }),
+    )
+    if (!changes.length) continue
+    const ordered = orderHostedPushChanges(changes)
+    await sendHostedChanges('record repair', [...chunks(ordered, HOSTED_OUTBOX_BATCH_SIZE)], {
+      ...requestOptions,
+      recordSpace: space.spaceId,
+      conflictRemedy: `${PLATFORM_SLUG} task push`,
+    })
+    sent += changes.length
+  }
+  return sent
 }
 
 function drainAudit(drain: HostedOutboxReport): DrainAudit {
@@ -284,12 +342,16 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       ok: taskPushVerdict(plan, null),
     }
   queueRepairs(plan.repair)
-  const drain = await (options.drain ?? drainHostedOutbox)({
+  const deliveryOffReason = hostedDeliveryRefusal()
+  if (deliveryOffReason) throw new Error(deliveryOffReason)
+  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
+  const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,
     push: (changes, pushOptions) =>
       hostedPushChanges(changes, { ...requestOptions, ...pushOptions }),
   })
+  const drain = { ...drained, sent: drained.sent + directlySent }
   return {
     spaces: plan.spaces,
     unroutable: plan.unroutable,

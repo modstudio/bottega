@@ -2,6 +2,7 @@
 /** Decides dispatch and judging obligations from already gathered run-chain facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorNumberOption } from './workflow-cursor-format.ts'
 
 export type WorkflowRunChainEvidence = {
   number: number
@@ -9,6 +10,9 @@ export type WorkflowRunChainEvidence = {
   terminal: boolean
   needsVerdict: boolean
 }
+
+export type EarlierStepRunEvidence = { number: number; stepSlug: string }
+export type LandedEarlierStepRunEvidence = EarlierStepRunEvidence & { prNumber: number }
 
 export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
 export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
@@ -21,16 +25,23 @@ export type StepRunObligation = {
   judges?: string[]
 }
 
+export function isApplyFindingsStep(step: StepRunObligation): boolean {
+  return step.dispatchWaivedBy?.includes('no-accepted-findings') ?? false
+}
+
 export type WorkflowRunObligationInput = {
   workflowKey?: string
+  cursorNumber?: number
   selectedFloors: string[]
   metWaiverFacts: DispatchWaiverFact[]
   step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
+  earlierStepRuns?: EarlierStepRunEvidence[]
+  landedEarlierStepRuns?: LandedEarlierStepRunEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
 }
 
-function scoreRemedy(runs: readonly WorkflowRunChainEvidence[]): string {
+function scoreRemedy(runs: readonly Pick<WorkflowRunChainEvidence, 'number'>[]): string {
   return runs.map((run) => `\`${PLATFORM_SLUG} score ${run.number} ...\``).join(', ')
 }
 
@@ -41,7 +52,26 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   if ((step.dispatchWaivedBy ?? []).some((fact) => input.metWaiverFacts.includes(fact))) return null
   const runs = input.dispatchRuns ?? []
   if (!runs.length) {
+    if (isApplyFindingsStep(step) && (input.landedEarlierStepRuns?.length ?? 0) > 0) return null
     const job = step.jobs[0] ?? '<job>'
+    const earlier = input.earlierStepRuns ?? []
+    if (isApplyFindingsStep(step) && earlier.length) {
+      const cursor = workflowCursorNumberOption(input.cursorNumber ?? '<n>')
+      const chainSummary = earlier
+        .map(
+          (run) =>
+            `chain ${run.number} was bound at step ${run.stepSlug} before this step activated, so it is not credited here`,
+        )
+        .join('; ')
+      return (
+        `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run is bound ` +
+        `to this cursor at step ${step.slug}; ${chainSummary}. ` +
+        `A finding applied before triage needs a confirmation turn at this step; ` +
+        `run \`${PLATFORM_SLUG} run continue --findings${cursor} ${earlier[0]!.number} "<message>"\`; ` +
+        `once the continuation finishes and its chain is scored with ${scoreRemedy([earlier[0]!])}, ` +
+        `the obligation is met`
+      )
+    }
     return (
       `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
       `from this cursor at step ${step.slug}; dispatch one with ` +

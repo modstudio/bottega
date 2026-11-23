@@ -22,7 +22,10 @@ import {
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import {
+  productHookDeclarationsForSubagentChoice,
+  SCRIPT_FILES,
+} from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -31,7 +34,7 @@ import {
 
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
-  facts?: () => SetupInstallVerifyFacts
+  facts?: (subagentHooks: MachineSettingsApplyResult['subagentHooks']) => SetupInstallVerifyFacts
   prepareRuntime?: () => void
 }
 
@@ -59,6 +62,7 @@ function readSettingsFact(
 
 function gatherSetupInstallVerifyFacts(
   environment: NodeJS.ProcessEnv = process.env,
+  subagentHooks: MachineSettingsApplyResult['subagentHooks'],
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
@@ -91,14 +95,15 @@ function gatherSetupInstallVerifyFacts(
     environment,
     resolveRunsDirectory(environment),
   ).filter((home) => home.installed)
+  const settingsFiles = [
+    readSettingsFact(userSettingsPath(claudeHome), 'user', true),
+    readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
+    ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
+  ]
   return {
     installRoot,
-    hooks: PRODUCT_HOOKS,
-    settingsFiles: [
-      readSettingsFact(userSettingsPath(claudeHome), 'user', true),
-      readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
-      ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
-    ],
+    hooks: productHookDeclarationsForSubagentChoice(subagentHooks),
+    settingsFiles,
     scripts: scriptFacts,
     canonEntries: homes.map((home) => {
       const path = join(home.path, home.mapping.entry.home)
@@ -146,7 +151,14 @@ export async function applySetupInstallVerify(
       condition: 'waiting-for-sign-in',
     }
   }
-  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
+  const subagentHooks = results.find((result) =>
+    result.target.startsWith('settings '),
+  )?.subagentHooks
+  const checks = verifySetupInstall(
+    adapters.facts
+      ? adapters.facts(subagentHooks)
+      : gatherSetupInstallVerifyFacts(process.env, subagentHooks),
+  )
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))
   return {
     status: results.some((result) => result.changed) ? 'applied' : 'unchanged',

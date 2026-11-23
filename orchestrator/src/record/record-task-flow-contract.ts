@@ -6,8 +6,10 @@ import { decodeTaskFlowStageListCursor, type TaskFlowStageListCursor } from './r
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
+export const TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX = 100
 export const TASK_FLOW_PRESENCE_BATCH_MAX = 500
-export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
+export const TASK_FLOW_STAGE_SUMMARY_BATCH_MAX = 200
+export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, workflowKeys, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; workflowKeys accepts at most ${TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX} values and limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
@@ -125,6 +127,15 @@ const hostedTaskFlowStageSummarySchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 })
+export type HostedTaskFlowStageSummary = z.infer<typeof hostedTaskFlowStageSummarySchema>
+
+const hostedTaskFlowStageListItemSchema = hostedTaskFlowStageSummarySchema.extend({
+  closedStepNotes: z.array(z.unknown()).optional(),
+})
+
+const hostedTaskFlowStageBatchSummarySchema = hostedTaskFlowStageSummarySchema.extend({
+  obligations: z.array(hostedTaskFlowObligationSchema),
+})
 
 const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
   obligations: z.array(hostedTaskFlowObligationSchema).optional(),
@@ -186,7 +197,7 @@ export type HostedTaskFlowObligationById = z.infer<typeof hostedTaskFlowObligati
 export const hostedTaskFlowStageListSchema = z
   .object({
     items: z.array(
-      z.object({ stage: hostedTaskFlowStageSummarySchema, flow: hostedTaskFlowSummarySchema }),
+      z.object({ stage: hostedTaskFlowStageListItemSchema, flow: hostedTaskFlowSummarySchema }),
     ),
     truncated: z.boolean(),
     nextCursor: z.string().nullable(),
@@ -195,6 +206,17 @@ export const hostedTaskFlowStageListSchema = z
     message: 'nextCursor must be present exactly when the stage list is truncated',
   })
 export type HostedTaskFlowStageList = z.infer<typeof hostedTaskFlowStageListSchema>
+
+export const taskFlowStageSummariesInputSchema = z
+  .object({ stageIds: z.array(z.string().uuid()).max(TASK_FLOW_STAGE_SUMMARY_BATCH_MAX) })
+  .strict()
+export type TaskFlowStageSummariesInput = z.output<typeof taskFlowStageSummariesInputSchema>
+export const hostedTaskFlowStageSummariesSchema = z.object({
+  items: z.array(
+    z.object({ stage: hostedTaskFlowStageBatchSummarySchema, flow: hostedTaskFlowSummarySchema }),
+  ),
+})
+export type HostedTaskFlowStageSummaries = z.infer<typeof hostedTaskFlowStageSummariesSchema>
 
 export const hostedTaskFlowProjectReferenceCountsSchema = z.object({
   stages: z.number().int().nonnegative(),
@@ -280,12 +302,14 @@ export const taskFlowStageListQuerySchema = z
     workflow: z.string().min(1).optional(),
     mode: z.string().min(1).optional(),
     workflowKey: z.string().min(1).optional(),
+    workflowKeys: z.array(z.string().min(1)).max(TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX).optional(),
     keyless: trueFlag,
     primaryInstance: trueFlag,
     taskId: z.string().uuid().optional(),
     unlinked: trueFlag,
     linked: trueFlag,
     openedMachineId: z.string().uuid().optional(),
+    view: z.enum(['summary']).optional(),
     order: z.enum(['project', 'newest']).default('project'),
     cursor: taskFlowStageListCursor.optional(),
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
@@ -312,6 +336,7 @@ export const taskFlowStageListQuerySchema = z
       value.workflow === undefined &&
       value.mode === undefined &&
       value.workflowKey === undefined &&
+      value.workflowKeys === undefined &&
       value.keyless === undefined &&
       value.primaryInstance === undefined &&
       value.taskId === undefined &&

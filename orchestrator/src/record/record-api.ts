@@ -10,7 +10,11 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
-import { RECORD_SIGN_IN_REMEDY, recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_SIGN_IN_REMEDY,
+  recordCrossSpaceDestinationRefusal,
+  recordWriteSpaceRefusal,
+} from '../../../shared/record-remedies.ts'
 import { recordRequestNature } from '../../../shared/record-space-request.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
@@ -27,6 +31,7 @@ import {
 } from './record-api-credential-routes.ts'
 import { recordDocListPage } from './record-api-doc-list.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
+import { registerRecordDocReadRoutes } from './record-api-doc-read-routes.ts'
 import {
   docWriteContextSchema,
   recordCanonImportSchema,
@@ -36,6 +41,7 @@ import {
 import { recordDocumentScopes } from './record-api-doc-tenant.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { registerRecordMaskWarnings } from './record-api-mask-warnings.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import {
@@ -50,6 +56,7 @@ import {
   registerRecordSessionRoutes,
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
+import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 import type { RecordSubjectRouteDeps } from './record-api-subjects.ts'
 import { requestTenant } from './record-api-tenant.ts'
 import {
@@ -76,7 +83,12 @@ import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
-import type { RecordContextItemInput } from './record-context-items.ts'
+import type {
+  RecordContextHolderKind,
+  RecordContextItem,
+  RecordContextItemHolderGroup,
+  RecordContextItemInput,
+} from './record-context-items.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -108,10 +120,14 @@ import type {
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
+import type { RecordSpaceAgent } from './record-space-agents.ts'
 import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
-const RECORD_API_POST_READ_ROUTES = new Set(['/v1/task-flow/presence'])
+const RECORD_API_POST_READ_ROUTES = new Set([
+  '/v1/task-flow/presence',
+  '/v1/task-flow/stage-summaries',
+])
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[]; uuidKeyedRead?: true }
@@ -128,10 +144,22 @@ type Deps = RecordSubjectRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
+    readContextItems(
+      input: Tenant & {
+        holders: Array<{ holderKind: RecordContextHolderKind; holderId: string }>
+        slug?: string
+      },
+    ): Promise<RecordContextItem[]>
+    readContextHolders(
+      input: Tenant & { holderKind: RecordContextHolderKind },
+    ): Promise<RecordContextItemHolderGroup[]>
     upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },
     ): Promise<{ removed: boolean }>
+    readSpaceAgents(input: Tenant): Promise<RecordSpaceAgent[]>
+    upsertSpaceAgent(input: Tenant & RecordSpaceAgent): Promise<RecordSpaceAgent>
+    deleteSpaceAgent(input: Tenant & { name: string }): Promise<{ removed: boolean }>
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
@@ -174,6 +202,9 @@ type RecordApiDeps = RecordSessionRouteDeps &
     searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
     searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
     readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
+    readDocRevision(
+      input: Tenant & { id: string; audience?: DocAudience },
+    ): Promise<RecordDocRevision | null>
     listDocRevisions(
       input: Tenant & { id: string; audience?: DocAudience },
     ): Promise<RecordDocRevision[] | null>
@@ -284,6 +315,27 @@ const configAddress = z.object({
   projectId: idSchema.optional(),
 })
 const configList = z.object({ environment: z.string().min(1).optional() })
+const docListQuery = z.object({
+  scope: filterSchema,
+  subject: z.string().optional(),
+  slug: z.string().optional(),
+  owner: z.union([z.literal(''), idSchema]).optional(),
+  audience: z.enum(DOC_AUDIENCES).optional(),
+  status: z.enum(DOC_STATUSES).optional(),
+  delivery: z.enum(['inject', 'demand']).optional(),
+  kind: z.enum(DOC_KINDS).optional(),
+  updatedSince: z.string().datetime({ offset: true }).optional(),
+  limit: limitSchema,
+  cursor: z.string().optional(),
+  includeDeleted: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+  acrossReadableSpaces: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+})
 const docTarget = (scope: string, subject: string | null, ownerUserId: string | null) =>
   ({ kind: 'document', scope, subject, ownerUserId }) as const
 const personalListTarget = (
@@ -320,7 +372,11 @@ function writeTelemetryDeps(deps: Deps) {
   }
 }
 
-function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
+function refusingRequestTenant(
+  context: Context<ApiEnvironment>,
+  recordUrl: string,
+  acrossReadableSpaces = false,
+): Tenant | null {
   const route = context.req.path
   const nature =
     context.req.method === 'POST' && RECORD_API_POST_READ_ROUTES.has(route)
@@ -335,10 +391,14 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
     recordUrl,
     route,
     readKind,
+    acrossReadableSpaces,
   )
   if (tenant && 'refused' in tenant) {
-    const refusal = recordWriteSpaceRefusal()
-    throw new HTTPException(409, {
+    const refusal =
+      tenant.refused === 'cross-space-destination'
+        ? recordCrossSpaceDestinationRefusal()
+        : recordWriteSpaceRefusal()
+    throw new HTTPException(refusal.status, {
       res: Response.json(refusal.body, { status: refusal.status }),
     })
   }
@@ -348,16 +408,26 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
 function registerRecordCoreRoutes(
   app: Hono<ApiEnvironment>,
   deps: Deps,
-  ports: { scope(context: Context<ApiEnvironment>): Tenant | null; noSpace: typeof noSpace },
+  ports: {
+    scope(context: Context<ApiEnvironment>, acrossReadableSpaces?: boolean): Tenant | null
+    noSpace: typeof noSpace
+  },
 ): void {
   registerRecordContextItemRoutes(app, deps, ports)
+  registerRecordSpaceAgentRoutes(app, deps, ports)
   registerSignedDocSearchRoute(app, deps, ports)
   registerRecordReadRoutes(app, deps, ports)
   registerRecordQuestionRoutes(app, deps, ports)
 }
 
-export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+function maskedRecordApiApp(): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
+  registerRecordMaskWarnings(app)
+  return app
+}
+
+export function recordApi(deps: Deps): Hono<ApiEnvironment> {
+  const app = maskedRecordApiApp()
   app.onError((error, context) => {
     const refusal = renderRecordApiRefusal(context, error)
     if (refusal) return refusal
@@ -391,8 +461,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       throw error
     }
   })
-  const scope = (context: Context<ApiEnvironment>): Tenant | null =>
-    refusingRequestTenant(context, deps.recordUrl)
+  const scope = (context: Context<ApiEnvironment>, acrossReadableSpaces = false): Tenant | null =>
+    refusingRequestTenant(context, deps.recordUrl, acrossReadableSpaces)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerRecordCoreRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
@@ -485,8 +555,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
+  registerRecordDocReadRoutes(app, deps, { scope, docIdScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
-
   app.get('/v1/config/entries', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
@@ -704,34 +774,16 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return context.json({ deleted: true })
   })
   app.get('/v1/docs', async (context) => {
-    const query = z
-      .object({
-        scope: filterSchema,
-        subject: z.string().optional(),
-        audience: z.enum(DOC_AUDIENCES).optional(),
-        status: z.enum(DOC_STATUSES).optional(),
-        kind: z.enum(DOC_KINDS).optional(),
-        updatedSince: z.string().datetime({ offset: true }).optional(),
-        limit: limitSchema,
-        cursor: z.string().optional(),
-        includeDeleted: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-        acrossReadableSpaces: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-      })
-      .safeParse(context.req.query())
+    const query = docListQuery.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
-    const subject = query.data.subject === undefined ? undefined : query.data.subject || null
     const listTarget = personalListTarget(
       query.data.scope,
-      subject,
+      query.data.subject === undefined ? undefined : query.data.subject || null,
       context.get('identity').user.id,
     )
-    const tenant = listTarget ? docScope(context, listTarget) : scope(context)
+    const tenant = listTarget
+      ? docScope(context, listTarget)
+      : scope(context, Boolean(query.data.acrossReadableSpaces))
     if (!tenant) return noSpace(context)
     let cursor: RecordCursor | null = null
     try {
@@ -742,9 +794,12 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const entries = await deps.listDocs({
       ...tenant,
       scope: query.data.scope,
-      subject,
+      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
+      slug: query.data.slug,
+      owner: query.data.owner === undefined ? undefined : query.data.owner || null,
       audience: query.data.audience,
       status: query.data.status,
+      delivery: query.data.delivery,
       kind: query.data.kind,
       updatedSince: query.data.updatedSince,
       limit: query.data.limit,
@@ -753,34 +808,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
     return context.json(recordDocListPage(entries, query.data.limit))
-  })
-  app.get('/v1/docs/:id', async (context) => {
-    const id = idSchema.safeParse(context.req.param('id'))
-    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const tenant = await docIdScope(context, id.data)
-    if (!tenant) return noSpace(context)
-    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
-    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
-    const doc = await deps.readDoc({ ...tenant, id: id.data, audience: audience.data })
-    return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
-  })
-  app.get('/v1/docs/:id/revisions', async (context) => {
-    const id = idSchema.safeParse(context.req.param('id'))
-    if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const tenant = await docIdScope(context, id.data)
-    if (!tenant) return noSpace(context)
-    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
-    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
-    try {
-      const items = await deps.listDocRevisions({
-        ...tenant,
-        id: id.data,
-        audience: audience.data,
-      })
-      return items ? context.json({ items }) : context.json({ error: 'doc not found' }, 404)
-    } catch (error) {
-      return writeError(context, error)
-    }
   })
   app.put('/v1/docs', async (context) => {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))

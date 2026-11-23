@@ -1,20 +1,25 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { writeTransaction } from './db.ts'
+import { NON_INSTALLATION_STORE_DELIVERY_REASON, writeTransaction } from './db.ts'
 import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
+import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
+  HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_NOTE_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type ParsedHostedPushChange,
@@ -35,6 +40,10 @@ const hostedOnly = '01990000-0000-7000-8000-000000008514'
 const inFlightId = '01990000-0000-7000-8000-000000008515'
 const noteId = '01990000-0000-7000-8000-000000008517'
 const acknowledgementId = '01990000-0000-7000-8000-000000008518'
+const commentId = '01990000-0000-7000-8000-000000008526'
+const intervalId = '01990000-0000-7000-8000-000000008527'
+const documentId = '01990000-0000-7000-8000-000000008528'
+const statusEventId = '01990000-0000-7000-8000-000000008529'
 const projectA = '01990000-0000-7000-8000-000000008519'
 const projectB = '01990000-0000-7000-8000-000000008520'
 const pageIds = [
@@ -109,6 +118,52 @@ function insertMachineTask(id: string, key: string, project: string) {
          VALUES (?,?,?,?,?, 'open','open','local',?,?)`,
       )
       .run(id, key, project, projectId, key, at, at)
+  })
+}
+
+function insertMachineComment(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at,updated_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(id, taskKey, taskId, 'comment', at, at)
+  })
+}
+
+function insertMachineDocument(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(id, taskKey, taskId, 1, 'document', 'body', 'v1', at, at)
+  })
+}
+
+function insertMachineStatusEvent(id: string, taskId: string, taskKey: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(id, taskKey, taskId, at, 'open')
+  })
+}
+
+function insertMachineInterval(id: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO interval(record_id,project,project_record_id,source,start_at,end_at,ref)
+         VALUES (?,'workshop',?,'orch',?,?,'orch:repair')`,
+      )
+      .run(id, projectA, at, at)
+    conn.query(`DELETE FROM hosted_outbox WHERE row_id=?`).run(id)
   })
 }
 
@@ -228,9 +283,17 @@ afterAll(async () => {
   if (database) await database.close()
 })
 
-const runPush = (repair = false) =>
+const runPush = (repair = false, directPost?: (changes: HostedPushChange[]) => void) =>
   pushTasks({
     repair,
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    fetch: async (input, init) => {
+      expect(new URL(input).pathname).toBe('/v1/changes')
+      const changes = JSON.parse(String(init?.body)) as HostedPushChange[]
+      directPost?.(changes)
+      return Response.json(await applyOn(spaceA, changes))
+    },
     personalSpace: async () => spaceA,
     identity: async () => identity,
     listIds,
@@ -341,11 +404,21 @@ test('a machine-only note is reported as unrepairable and repair queues nothing 
   expect(report.ok).toBeFalse()
 })
 
-test('a machine-only acknowledgement is queued and restored by repair', async () => {
+test('a machine-only acknowledgement posts directly and leaves no outbox row', async () => {
   insertMachineNote(noteId)
   insertMachineAcknowledgement(acknowledgementId)
   await insertHostedNote(noteId)
-  const report = await runPush(true)
+  const posts: HostedPushChange[][] = []
+  const report = await runPush(true, (changes) => posts.push(changes))
+  expect(posts).toEqual([
+    [
+      expect.objectContaining({
+        table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+        id: acknowledgementId,
+        op: 'upsert',
+      }),
+    ],
+  ])
   expect(report.drain?.sent).toBe(1)
   expect(report.unrepairable).toEqual([])
   expect(listHostedOutbox()).toEqual([])
@@ -353,7 +426,7 @@ test('a machine-only acknowledgement is queued and restored by repair', async ()
   expect(report.ok).toBeTrue()
 })
 
-test('a hosted delete is only-on-machine and --repair restores it through the outbox', async () => {
+test('a hosted delete is only-on-machine and --repair restores it directly', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   const before = await runPush()
   const tasks = before.spaces
@@ -361,11 +434,54 @@ test('a hosted delete is only-on-machine and --repair restores it through the ou
     ?.tables.find((table) => table.table === HOSTED_TASK_TABLE)
   expect(tasks?.machineOnly).toEqual([missingHosted])
   expect(listHostedOutbox()).toEqual([])
-  const repaired = await runPush(true)
+  const posts: HostedPushChange[][] = []
+  const repaired = await runPush(true, (changes) => posts.push(changes))
+  expect(posts).toEqual([
+    [
+      expect.objectContaining({
+        table: HOSTED_TASK_TABLE,
+        id: missingHosted,
+        op: 'upsert',
+        fields: [],
+      }),
+    ],
+  ])
   expect(listHostedOutbox()).toEqual([])
   expect(repaired.drain?.sent).toBe(1)
   const after = await listIds(HOSTED_TASK_TABLE, { recordSpace: spaceA })
   expect(after.ids).toContain(missingHosted)
+})
+
+test('repair posts a machine-only task before its children and writes no outbox row', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+  insertMachineComment(commentId, missingHosted, 'DEV-miss')
+  insertMachineDocument(documentId, missingHosted, 'DEV-miss')
+  insertMachineStatusEvent(statusEventId, missingHosted, 'DEV-miss')
+  const posts: HostedPushChange[][] = []
+
+  const repaired = await runPush(true, (changes) => posts.push(changes))
+
+  expect(posts).toHaveLength(1)
+  expect(posts[0]?.map((change) => change.table)).toEqual([
+    HOSTED_TASK_TABLE,
+    HOSTED_COMMENT_TABLE,
+    HOSTED_DOCUMENT_TABLE,
+    HOSTED_STATUS_EVENT_TABLE,
+  ])
+  expect(posts[0]?.map((change) => change.id)).toEqual([
+    missingHosted,
+    commentId,
+    documentId,
+    statusEventId,
+  ])
+  expect(listHostedOutbox()).toEqual([])
+  expect(repaired.drain?.sent).toBe(4)
+  expect((await listIds(HOSTED_TASK_TABLE, { recordSpace: spaceA })).ids).toContain(missingHosted)
+  expect((await listIds(HOSTED_COMMENT_TABLE, { recordSpace: spaceA })).ids).toContain(commentId)
+  expect((await listIds(HOSTED_DOCUMENT_TABLE, { recordSpace: spaceA })).ids).toContain(documentId)
+  expect((await listIds(HOSTED_STATUS_EVENT_TABLE, { recordSpace: spaceA })).ids).toContain(
+    statusEventId,
+  )
 })
 
 test('a row only on the hosted record is reported and not touched', async () => {
@@ -520,36 +636,59 @@ test('hosted-only interval rows are a count, not a failure, and are not listed b
   expect(text).not.toContain(`    ${hostedOnly}`)
 })
 
+test('a machine-only interval is still queued and drained', async () => {
+  insertMachineInterval(intervalId)
+  const directPosts: HostedPushChange[][] = []
+
+  const repaired = await runPush(true, (changes) => directPosts.push(changes))
+
+  expect(directPosts).toEqual([])
+  expect(repaired.drain?.sent).toBe(1)
+  expect(listHostedOutbox()).toEqual([])
+  expect((await listIds(HOSTED_INTERVAL_TABLE, { recordSpace: spaceA })).ids).toContain(intervalId)
+})
+
 test('repair insert-if-absent keeps a hosted title written after the audit', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   const outcomes: Array<{ id: string; status: string }> = []
+  let insertedAfterAudit = false
   const repaired = await pushTasks({
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
     personalSpace: async () => spaceA,
     repair: true,
     identity: async () => identity,
     listIds,
     registered: () => registered,
-    drain: async (dependencies) => {
-      await applyOn(spaceA, [
-        {
-          table: HOSTED_TASK_TABLE,
-          id: missingHosted,
-          op: 'upsert',
-          row: { ...hostedTaskRow(missingHosted, 'DEV-miss', 'workshop'), title: 'Hosted title' },
-        },
-      ])
-      const { drainHostedOutbox } = await import('./outbox.ts')
-      return drainHostedOutbox({
-        ...dependencies,
-        identity: async () => identity,
-        registered: () => registered,
-        push: async (changes, options) => {
-          const result = await applyOn(options.recordSpace ?? spaceA, changes)
-          outcomes.push(...result)
-          return result
-        },
-      })
+    fetch: async (_input, init) => {
+      if (!insertedAfterAudit) {
+        insertedAfterAudit = true
+        await applyOn(spaceA, [
+          {
+            table: HOSTED_TASK_TABLE,
+            id: missingHosted,
+            op: 'upsert',
+            row: {
+              ...hostedTaskRow(missingHosted, 'DEV-miss', 'workshop'),
+              title: 'Hosted title',
+            },
+          },
+        ])
+      }
+      const result = await applyOn(spaceA, JSON.parse(String(init?.body)) as HostedPushChange[])
+      outcomes.push(...result)
+      return Response.json(result)
     },
+    drain: async () => ({
+      queued: 0,
+      sent: 0,
+      rejected: 0,
+      quarantined: 0,
+      dropped: 0,
+      waitingOnRouting: {},
+      waitingOnHostedHub: {},
+      skippedCapability: false,
+    }),
   })
   expect(outcomes).toEqual([{ id: missingHosted, status: 'duplicate' }])
   expect(repaired.ok).toBeTrue()
@@ -560,6 +699,26 @@ test('repair insert-if-absent keeps a hosted title written after the audit', asy
       ])
     ).rows[0]!.title,
   ).toBe('Hosted title')
+})
+
+test('an unreachable record refuses direct repair without writing an outbox row', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+
+  await expect(
+    pushTasks({
+      baseUrl: 'https://unreachable.example.test',
+      token: 'test',
+      fetch: async () => {
+        throw new Error('record unavailable')
+      },
+      personalSpace: async () => spaceA,
+      repair: true,
+      identity: async () => identity,
+      listIds,
+      registered: () => registered,
+    }),
+  ).rejects.toThrow(HOSTED_UNREACHABLE_REMEDY)
+  expect(listHostedOutbox()).toEqual([])
 })
 
 test('a quarantined outbox entry is stuck, not in flight, and fails', async () => {
@@ -582,7 +741,7 @@ test('a quarantined outbox entry is stuck, not in flight, and fails', async () =
 })
 
 test('repair fails when the drain rejects a queued row', async () => {
-  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+  insertMachineInterval(intervalId)
   const report = await pushTasks({
     personalSpace: async () => spaceA,
     repair: true,
@@ -603,29 +762,43 @@ test('repair fails when the drain rejects a queued row', async () => {
   expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
 })
 
-test('repair fails and names a delivery-off drain', async () => {
-  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
-  const report = await pushTasks({
-    personalSpace: async () => spaceA,
-    repair: true,
-    identity: async () => identity,
-    listIds,
-    registered: () => registered,
-    drain: async () => ({
-      queued: 1,
-      sent: 0,
-      rejected: 0,
-      quarantined: 0,
-      dropped: 0,
-      waitingOnRouting: {},
-      skippedCapability: false,
-      deliveryOffReason: 'hosted delivery is off for this store',
-    }),
+describe('from a non-installation store', () => {
+  let installationStateHome: string | undefined
+
+  beforeEach(() => {
+    installationStateHome = process.env[STATE_HOME_ENV]
+    process.env[STATE_HOME_ENV] = `/tmp/${PLATFORM_SLUG}-non-installation-task-push-test`
   })
-  expect(report.ok).toBeFalse()
-  expect(formatTaskPushReport(report)).toContain(
-    'repair drain refused: hosted delivery is off for this store',
-  )
+
+  afterEach(() => {
+    if (installationStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = installationStateHome
+  })
+
+  test('repair refuses a direct task send after queuing synced rows', async () => {
+    insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+    insertMachineInterval(intervalId)
+    let posts = 0
+    await expect(
+      pushTasks({
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async () => {
+          posts += 1
+          return Response.json([])
+        },
+        personalSpace: async () => spaceA,
+        repair: true,
+        identity: async () => identity,
+        listIds,
+        registered: () => registered,
+      }),
+    ).rejects.toThrow(NON_INSTALLATION_STORE_DELIVERY_REASON)
+    expect(posts).toBe(0)
+    expect(listHostedOutbox()).toEqual([
+      expect.objectContaining({ table_name: HOSTED_INTERVAL_TABLE, row_id: intervalId }),
+    ])
+  })
 })
 
 test('--repair with an unroutable project reports the refusal and queues nothing', async () => {

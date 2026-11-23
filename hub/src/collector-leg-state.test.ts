@@ -73,6 +73,7 @@ describe('collector leg state', () => {
         state({ source: 'transcripts', lastSuccessAt: '2026-11-20T11:59:50.000Z' }),
       ],
       Date.parse('2026-11-20T12:00:00.000Z'),
+      { count: 0, oldest: null },
     )
     expect(view.collectedAt).toBe('2026-11-20T11:00:00.000Z')
     expect(view.collectorLegs).toEqual([
@@ -154,7 +155,12 @@ describe('collector leg state', () => {
 
     const observations = collectorLegStates()
     expect(observations).toEqual([{ unreadable: true, key: 'collect.leg.hosted%20outbox' }])
-    expect(collectorLegView(observations, Date.parse('2026-11-20T12:00:00.000Z'))).toEqual({
+    expect(
+      collectorLegView(observations, Date.parse('2026-11-20T12:00:00.000Z'), {
+        count: 0,
+        oldest: null,
+      }),
+    ).toEqual({
       collectedAt: null,
       collectorLegs: [
         {
@@ -167,6 +173,39 @@ describe('collector leg state', () => {
           ageMs: null,
         },
       ],
+    })
+  })
+
+  test('the hosted changes leg carries the local quarantine count and oldest row', () => {
+    const states = [
+      {
+        source: 'hosted changes',
+        lastSuccessAt: '2026-11-20T11:59:00.000Z',
+        lastError: null,
+        lastErrorAt: null,
+        failingSince: null,
+      },
+    ]
+    const view = collectorLegView(states, Date.parse('2026-11-20T12:00:00.000Z'), {
+      count: 2,
+      oldest: {
+        feed: 'task',
+        spaceId: 'space-one',
+        table: 'hub_task',
+        rowId: 'row-one',
+        constraintError: 'CHECK constraint failed',
+        firstQuarantinedAt: '2026-11-20T11:30:00.000Z',
+      },
+    })
+
+    expect(view.collectorLegs[0]).toMatchObject({
+      source: 'hosted changes',
+      quarantinedRows: 2,
+      oldestQuarantinedRow: {
+        table: 'hub_task',
+        constraintError: 'CHECK constraint failed',
+        firstQuarantinedAt: '2026-11-20T11:30:00.000Z',
+      },
     })
   })
 

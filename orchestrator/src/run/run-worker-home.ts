@@ -21,7 +21,7 @@ import {
   RequiredMcpProbeRefusalError,
   requiredMcpProbeDecision,
 } from '../sandbox/project-mcp-preflight.ts'
-import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
+import type { HeaderMismatchDiagnostic, ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
@@ -109,6 +109,7 @@ export type WorkerMcpLaunch = {
   codex: CodexMcpScope | null
   grok: Record<string, ProjectMcpServerEntry> | null
   projectSelection: ProjectMcpSelection | null
+  headerMismatches: HeaderMismatchDiagnostic[]
 }
 
 /**
@@ -122,6 +123,7 @@ async function refuseRequiredProjectMcpLaunch(input: {
   runNumber: number
   mcpMode: McpMode | null
   projectSelection: ProjectMcpSelection | null
+  headerMismatches: readonly HeaderMismatchDiagnostic[]
   project: Project | null
   environment: Record<string, string>
 }): Promise<void> {
@@ -140,6 +142,7 @@ async function refuseRequiredProjectMcpLaunch(input: {
     requiredServer,
     selectedServers: Object.keys(input.projectSelection?.servers ?? {}),
     withheld: input.projectSelection?.withheld ?? [],
+    headerMismatches: input.headerMismatches,
   }
   const decision = requiredMcpProbeDecision(facts)
   if (decision.refusal) throw new RequiredMcpProbeRefusalError(decision.refusal)
@@ -254,6 +257,7 @@ export async function prepareWorkerHomeLaunch(input: {
     runNumber: input.runNumber,
     mcpMode: input.mcpMode,
     projectSelection: input.mcpLaunch.projectSelection,
+    headerMismatches: input.mcpLaunch.headerMismatches,
     project: input.project,
     environment,
   })

@@ -4,6 +4,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { hostedStoredDoc } from '../../test/fixtures/record-api-docs.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -136,6 +137,8 @@ test('next by cursor alone reads the authoritative row and links the hosted task
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   const cursor = 1
+  const artifact = workflowRecordedArtifact(project)
+  const artifactId = artifact[1].slice('doc:'.length)
   const secondClient = createMemoryRecordApiClient({
     taskFlowStages: [{ flow: { ...hosted(2, 1).flow, taskId: null }, stage: hosted(2, 1).stage! }],
   })
@@ -150,6 +153,24 @@ test('next by cursor alone reads the authoritative row and links the hosted task
       ],
     }),
     readTaskFlow: async () => hosted(2, 1),
+    getDoc: async () =>
+      hostedStoredDoc({
+        id: artifactId,
+        scope: 'project',
+        subject: project,
+        owner: null,
+        slug: 'floor-artifact',
+        title: 't',
+        body: 'b',
+        delivery: 'inject',
+        status: 'current',
+        kind: 'working',
+        projectName: project,
+        createdAt: '2026-11-07T11:00:00.000Z',
+        updatedAt: '2026-11-07T11:00:00.000Z',
+        deletedAt: null,
+        latestRevisionId: null,
+      }),
     adoptTaskFlow: secondClient.adoptTaskFlow,
     advanceTaskFlow: secondClient.advanceTaskFlow,
   })
@@ -157,15 +178,7 @@ test('next by cursor alone reads the authoritative row and links the hosted task
   const lines: string[] = []
   let taskLookups = 0
   await workflowCommand(
-    [
-      'workflow',
-      'next',
-      '--cursor',
-      String(cursor),
-      '--note',
-      'closed hosted step',
-      ...workflowRecordedArtifact(project),
-    ],
+    ['workflow', 'next', '--cursor', String(cursor), '--note', 'closed hosted step', ...artifact],
     presentation(lines),
     {
       json: true,

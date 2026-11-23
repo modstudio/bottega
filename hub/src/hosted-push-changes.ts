@@ -1,4 +1,5 @@
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
@@ -155,6 +156,7 @@ async function applyTaskPatch(
   values: Partial<PushedTask>,
   resolveParent?: { key: string | null; preferred: string | null },
 ) {
+  values = maskHostedTableWrite('hub_task', values)
   const has = (field: keyof PushedTask) => Object.hasOwn(values, field)
   const parentId = resolveParent
     ? await taskIdFor(tx, identity.spaceId, resolveParent.key, resolveParent.preferred)
@@ -270,9 +272,10 @@ async function upsertHostedNoteFromPush(
   if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' as const }
   if (decision.kind !== 'patch') throw new Error('an existing note must produce a patch')
   const values = decision.values
-  await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
+  const masked = maskHostedTableWrite('hub_note', values)
+  await tx`UPDATE hub_note SET anchors=${masked.anchors!},sightings=${values.sightings!},
     last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
-    stale_reason=${values.stale_reason ?? null},promoted_task=${values.promoted_task ?? null},
+    stale_reason=${masked.stale_reason ?? null},promoted_task=${masked.promoted_task ?? null},
     promoted_task_id=${values.promoted_task_id ?? null}::uuid,updated_at=now()
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return { id: input.id, status: 'applied' as const }
@@ -350,7 +353,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
       if (decision.kind === 'patch') {
-        const values = decision.values
+        const values = maskHostedTableWrite('hub_task_document', decision.values)
         const has = (field: keyof PushedDocument) => Object.hasOwn(values, field)
         await tx`UPDATE hub_task_document SET
           role=CASE WHEN ${has('role')} THEN ${values.role ?? null} ELSE role END,

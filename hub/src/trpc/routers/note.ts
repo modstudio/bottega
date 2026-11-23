@@ -1,7 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { listNotes, promoteNote } from '../../note.ts'
+import { promoteNote } from '../../note.ts'
 import { PROMOTED_TASK_TITLE_REFUSAL } from '../../note-promotion-body.ts'
+import { listNotes } from '../../note-read.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()

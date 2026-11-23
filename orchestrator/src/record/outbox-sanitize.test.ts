@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
@@ -194,6 +195,27 @@ test('a bare 64-hex evidence word stays readable', () => {
     withheldFields: [],
   })
   expect(firstOutboxEvidenceRule('score', { note: evidence })).toBeNull()
+})
+
+test('task-key assignment evidence stays byte-identical while credential assignments mask', () => {
+  for (const task of [
+    '--arg key=DEV-1007',
+    `${PLATFORM_NAME.toLowerCase()} workflow compose fix-defect --arg key=DEV-1007 --arg branch=x`,
+    'key=STO-1349 and more',
+    'remedy: --arg key=DEV-2568 --arg worktree=/tmp/x',
+  ])
+    expect(sanitizeOutboxPayload('run', { error: task })).toMatchObject({
+      error: task,
+      withheldFields: [],
+    })
+  expect(sanitizeOutboxPayload('run', { error: `api_key=${SECRET}` })).toMatchObject({
+    error: '[withheld: assignment]',
+    withheldFields: ['error'],
+  })
+  expect(sanitizeOutboxPayload('run', { error: `--arg token=${SECRET} --arg x=y` })).toMatchObject({
+    error: '--arg [withheld: assignment]',
+    withheldFields: ['error'],
+  })
 })
 
 test('replaces unstorable code points in nested values and keys but preserves literal escape text', () => {

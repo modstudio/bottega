@@ -5,13 +5,10 @@ import { join } from 'node:path'
 import { categorizeFile } from '../../../shared/file-kind.ts'
 import { classifyReviewTier } from '../review/review-tier-classifier.ts'
 import { applyHydration } from './canon-apply.ts'
-import {
-  canonMirrorCommitBody,
-  canonMirrorLintDecision,
-  canonMirrorMergeArgs,
-  decideCanonMirrorMerge,
-  screenCanonMirrorError,
-} from './canon-mirror.ts'
+import { screenCanonMirrorError } from './canon-mirror.ts'
+import { canonMirrorLintDecision } from './canon-mirror-lint-decision.ts'
+import { canonMirrorMergeArgs, decideCanonMirrorMerge } from './canon-mirror-merge-decision.ts'
+import { canonMirrorCommitBody } from './canon-mirror-revisions.ts'
 
 const lintFinding = (rule: string, message: string) => ({
   file: 'AGENTS.md',

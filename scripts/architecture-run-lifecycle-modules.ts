@@ -16,6 +16,7 @@ const module = (
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/run/run-gate-facts.ts', ['node:path', '../gate/gate-facts.ts']),
   module('orchestrator/src/run/run-task-claim-renewal.ts', ['bun:sqlite']),
   module('orchestrator/src/run/run-inherited-dispatch.ts', [
     './run-artifacts.ts',
@@ -26,11 +27,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/dispatch/keyed-run-cursor-admission.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../workflow/workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/dispatch/keyed-run-cursor-admission-adapter.ts', [
     '../caller-classification.ts',
     '../database/db.ts',
     '../events.ts',
+    '../jobs/jobs.ts',
     '../project/project-read.ts',
     '../question-store/question-store-read.ts',
     '../run/run-claim-inheritance.ts',
@@ -536,6 +539,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-carried-attachments.ts',
   ]),
   module('orchestrator/src/run/run-project-context.ts', ['../project/projects.ts']),
+  module('orchestrator/src/run/run-project-attribution.ts', ['../project/projects.ts']),
   module('orchestrator/src/run/run-mcp-main-stack.ts', [
     '../mcp/mcp-preflight.ts',
     '../project/projects.ts',

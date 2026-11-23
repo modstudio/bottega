@@ -55,7 +55,6 @@ import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { runTempDir as tempDir } from '../run-owned-paths.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
-import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
 import {
   isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
@@ -88,6 +87,7 @@ import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
+import { installRunGateFacts } from './run-gate-facts.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { inheritedRunDispatch } from './run-inherited-dispatch.ts'
@@ -98,8 +98,8 @@ import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import {
+  mergeLaunchMcpScopeLines,
   projectSelectionForLaunch,
-  withheldScopeLine,
   workerMcpLaunchScope,
 } from './run-mcp-launch-scope.ts'
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
@@ -116,6 +116,7 @@ import {
   reportProbeOverrides,
 } from './run-probe-launch.ts'
 import { completeRunStartup } from './run-process.ts'
+import { runProjectAttribution } from './run-project-attribution.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import {
@@ -275,20 +276,19 @@ export async function run(
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
-  let pack: ReturnType<typeof compilePack> | null = null
+  const attribution = runProjectAttribution(runProjectName, opts.projectRecordId)
+  let pack: Awaited<ReturnType<typeof compilePack>> | null = null
   if (resume.isFirstTurn) {
     try {
-      pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
-      recordPack(pack)
+      pack = opts.canonPack ?? (await compilePack({ job: opts.job, cwd: callerCwd }))
+      await recordPack(pack)
     } catch (cause) {
-      const message = (cause as Error).message
-      const failedId = opts.reserveId ?? newRecordId()
+      const [message, failedId] = [(cause as Error).message, opts.reserveId ?? newRecordId()]
       if (opts.reserveId) recordRunStartupFailure(failedId, cause)
       else {
         const links = await admitNewRunReference({
           projectName: runProjectName,
-          projectRecordId: runProjectId,
+          projectRecordId: attribution.namedProjectRecordId,
           key: opts.key ?? null,
           cwd: callerCwd,
           launchCwd: callerCwd,
@@ -299,7 +299,7 @@ export async function run(
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: links.projectRecordId,
+          projectRecordId: attribution.rowProjectId(links.projectRecordId),
           taskRecordId: links.taskRecordId,
           probe: Boolean(opts.probe),
           cwd: callerCwd,
@@ -325,7 +325,7 @@ export async function run(
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
-    projectRecordId: runProjectId,
+    projectRecordId: attribution.namedProjectRecordId,
     key: rt.attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd }),
     repoJob,
     callerCwd,
@@ -515,7 +515,8 @@ export async function run(
     writesJob,
     repoJob,
     runProjectName,
-    runProjectId,
+    namedProjectRecordId: attribution.namedProjectRecordId,
+    rowProjectId: attribution.rowProjectId,
     reason,
     vendorSession,
     pack,
@@ -571,9 +572,10 @@ export async function run(
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
+    runProjectRecordId: projectId,
   } = claimedRun
   const localMachineId = machineId()
-  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
@@ -645,6 +647,7 @@ export async function run(
         project: runProject,
       })
       ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
+      await installRunGateFacts(scratchDir, mcpEnvironment, sandboxEnvironment)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
@@ -658,13 +661,11 @@ export async function run(
       throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
     }
     mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, mcpLaunch.codex, codexMcpCatalogues)
-    mcpSetupHeader = mergeMcpSetupHeader(
+    mcpSetupHeader = mergeLaunchMcpScopeLines(
       mcpSetupHeader,
-      withheldScopeLine(transportName, workerHarnessName(a), mcpLaunch.projectSelection),
-    )
-    mcpSetupHeader = mcpLaunch.credentialLines.reduce<string | null>(
-      (header, line) => mergeMcpSetupHeader(header, line),
-      mcpSetupHeader,
+      transportName,
+      workerHarnessName(a),
+      mcpLaunch,
     )
     writeTransaction(() => {
       recordRunSandboxSelection(db(), claim.id, {

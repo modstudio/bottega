@@ -36,6 +36,21 @@ test('nested epics flatten to queueable leaves in filing order', () => {
   expect(state.queue).toEqual([])
 })
 
+test('a parent whose only children are done stays non-queueable from child presence', () => {
+  const state = childQueueState('DEV-1', 'mine', [
+    task({ key: 'DEV-2', number: 2, hasChildren: true }),
+  ])
+  expect(state.open).toEqual([])
+})
+
+test('an open grandchild remains queueable through a done intermediate ancestor', () => {
+  const state = childQueueState('DEV-1', 'mine', [
+    task({ key: 'DEV-2', number: 2, statusCategory: 'done', hasChildren: true }),
+    task({ key: 'DEV-3', number: 3, parentKey: 'DEV-2', hasChildren: false }),
+  ])
+  expect(state.open.map(({ key }) => key)).toEqual(['DEV-3'])
+})
+
 test('start-child picks this session queue before Open', () => {
   const queued = task({
     key: 'DEV-4',

@@ -6,9 +6,16 @@ function unusedContextItem(): Promise<never> {
 
 export function unusedContextItemClientMethods(): Pick<
   RecordApiClient,
-  'upsertContextItem' | 'deleteContextItem'
+  | 'listContextItems'
+  | 'getContextItem'
+  | 'listContextHolders'
+  | 'upsertContextItem'
+  | 'deleteContextItem'
 > {
   return {
+    listContextItems: unusedContextItem,
+    getContextItem: unusedContextItem,
+    listContextHolders: unusedContextItem,
     upsertContextItem: unusedContextItem,
     deleteContextItem: unusedContextItem,
   }

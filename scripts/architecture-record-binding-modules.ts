@@ -14,6 +14,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 export const recordBindingModules: RecordModule[] = [
   module('orchestrator/src/record/record-context-items.ts', [
     'bun',
+    '../../../shared/hosted-secret-mask.ts',
     '../../../shared/context-item-vocabulary.ts',
     '../../../shared/record/tenant.ts',
     '../../../shared/record-id.ts',
@@ -29,10 +30,17 @@ export const recordBindingModules: RecordModule[] = [
     'hono',
     'zod',
     '../../../shared/context-item-vocabulary.ts',
+    '../../../shared/hosted-secret-mask.ts',
+    './record-api-client-paths.ts',
     './record-auth.ts',
     './record-context-items.ts',
   ]),
   module('orchestrator/src/record/record-api-context-items.fixture.ts', ['./record-api-client.ts']),
+  module('orchestrator/src/record/record-api-client-context-items.ts', [
+    '../../../shared/context-item-vocabulary.ts',
+    './record-api-client-paths.ts',
+    './record-context-items.ts',
+  ]),
   module('orchestrator/src/record/record-api-identity.fixture.ts', ['./record-auth.ts']),
   module('orchestrator/src/record/record-machine-join-policy.ts', [
     '../../../shared/pairing-code.ts',
@@ -125,6 +133,15 @@ export const recordBindingModules: RecordModule[] = [
     './record-auth.ts',
     './record-cache-counts-contract.ts',
   ]),
+  module('orchestrator/src/record/record-api-doc-read-routes.ts', [
+    '../../../shared/docs.ts',
+    'hono',
+    'zod',
+    './record-api-wire.ts',
+    './record-api-write-telemetry.ts',
+    './record-config.ts',
+    './record-docs.ts',
+  ]),
   module('orchestrator/src/record/record-api-doc-tenant.ts', [
     '../../../shared/personal-item-space.ts',
     './record-auth.ts',
@@ -170,6 +187,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/refusal.ts',
     '../../../shared/state-directory.ts',
   ]),
+  module('orchestrator/src/record/record-read-decision.ts', ['./record-write-decision.ts']),
   module('orchestrator/src/record/record-local-command.ts', [
     'bun:sqlite',
     '../../../shared/refusal.ts',
@@ -193,5 +211,16 @@ export const recordBindingModules: RecordModule[] = [
     './record-local-mark.ts',
     './record-session.ts',
     './record-write-decision.ts',
+  ]),
+  module('orchestrator/src/record/record-read-authority.ts', [
+    'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-session.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+    './install-binding.ts',
+    './record-local-mark.ts',
+    './record-read-decision.ts',
+    './record-write-authority.ts',
   ]),
 ]

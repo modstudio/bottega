@@ -18,7 +18,7 @@ afterEach(() => {
   delete globals[CONTEXT_FACTS_PORTS_KEY]
 })
 
-test('a project-addressed document client binds every call to the declared space', async () => {
+test('a project-addressed document client omits the destination only for cross-space lists', async () => {
   upsertProject({
     recordId: newRecordId(),
     name: 'routed-docs',
@@ -48,6 +48,10 @@ test('a project-addressed document client binds every call to the declared space
     getDoc: async (_id, destination) => {
       capture(destination)
       return {}
+    },
+    getDocRevision: async (_id, destination) => {
+      capture(destination)
+      return {} as never
     },
     listRevisions: async (_id, destination) => {
       capture(destination)
@@ -95,7 +99,9 @@ test('a project-addressed document client binds every call to the declared space
   })
   const client = await hostedDocClient('project', 'routed-docs')
   await client.listDocs({})
+  await client.listDocs({ acrossReadableSpaces: true })
   await client.getDoc('doc')
+  await client.getDocRevision('revision')
   await client.listRevisions('doc')
   await client.upsertDoc({
     scope: 'project',
@@ -161,7 +167,13 @@ test('a project-addressed document client binds every call to the declared space
     reason: 'test',
     expectedRevision: 'rev',
   })
-  expect(destinations).toEqual(Array.from({ length: 12 }, () => 'docs-space'))
+  expect(destinations).toEqual([
+    'docs-space',
+    undefined,
+    'docs-space',
+    undefined,
+    ...Array.from({ length: 10 }, () => 'docs-space'),
+  ])
 })
 
 test('a non-project document client binds every call to the personal space', async () => {

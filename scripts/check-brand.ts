@@ -47,6 +47,8 @@ const ALLOWED = new Set([
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.
   'scripts/architecture-release.ts',
+  // The generated release-rung snapshot preserves externally registered probe URLs verbatim.
+  'scripts/quality/release-rungs.json',
   // The binary smoke locks the externally persisted worker MCP identity to its ruled literal.
   'scripts/smoke-binary.ts',
   // The UI architecture manifest names workspace packages to enforce their boundaries.

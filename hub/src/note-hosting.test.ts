@@ -6,11 +6,12 @@ import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
 import { HostedOutsideNoteError } from './hosted-outside-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
-import { createNote, getNote, promoteNote } from './note.ts'
+import { createNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
 import { applyHostedNoteRows } from './note-cache.ts'
 import { hostedNoteChanges, hostedReapNotes } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
+import { getNote } from './note-read.ts'
 import { showTask } from './task.ts'
 
 const applyHostedNoteChanges = (changes: Awaited<ReturnType<typeof hostedNoteChanges>>) =>
@@ -88,10 +89,71 @@ describe('hosted-only note safety', () => {
     expect(promotedInput).toEqual({ task: undefined, title: 'The point of the note' })
   })
 
+  test('the slim list route forwards every query filter', async () => {
+    let captured: unknown
+    const response = await noteApi(
+      new Request(
+        'https://hub.example.test/v1/notes/list?project=gamma&stale=false&kept=true&session=a&session=b&text=x&limit=3',
+        {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        },
+      ),
+      hostedRouteTestConfig,
+      {
+        fetch: (async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+          })) as unknown as typeof fetch,
+        listSlim: async (...args: unknown[]) => {
+          captured = args[2]
+          return { notes: [], total: 0 }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(captured).toEqual({
+      project: 'gamma',
+      stale: false,
+      actionable: false,
+      sessions: ['a', 'b'],
+      kept: true,
+      text: 'x',
+      limit: 3,
+    })
+  })
+
+  test('the slim list route refuses an invalid limit as caller input', async () => {
+    for (const limit of ['abc', '0', '-1', '']) {
+      const response = await noteApi(
+        new Request(`https://hub.example.test/v1/notes/list?limit=${limit}`, {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        }),
+        hostedRouteTestConfig,
+        {
+          fetch: (async () =>
+            Response.json({
+              user: { id: 'user-1' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+            })) as unknown as typeof fetch,
+        },
+      )
+
+      expect(response?.status, `limit=${limit}`).toBe(400)
+      expect(await response?.json()).toEqual({
+        error: 'limit must be a positive integer; omit it to list every matching note',
+      })
+    }
+  })
+
   test('every note route refuses a requested space outside the caller memberships', async () => {
     const id = '01990000-0000-7000-8000-000000000001'
     const routes = [
       ['GET', '/v1/notes'],
+      ['GET', '/v1/notes/list'],
       ['GET', '/v1/notes/counts'],
       ['GET', `/v1/notes/${id}`],
       ['POST', '/v1/notes'],
@@ -260,10 +322,10 @@ describe('hosted-only note safety', () => {
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count).toBe(
       before,
     )
-    expect(getNote(id).promoted_task).toBeNull()
+    expect((await getNote(id, { baseUrl: '' })).promoted_task).toBeNull()
   })
 
-  test('cache pull applies an update and a soft delete', () => {
+  test('cache pull applies an update and a soft delete', async () => {
     const at = '2026-09-17T12:00:00.000Z'
     const ids = new Map<number, string>()
     const row = (number: number, text: string, deletedAt: string | null) => ({
@@ -313,7 +375,7 @@ describe('hosted-only note safety', () => {
       projectCounters: [{ project: 'workshop', next: 900 }],
       cursor: at,
     })
-    expect(getNote(ids.get(990)!).text).toBe('new')
+    expect((await getNote(ids.get(990)!, { baseUrl: '' })).text).toBe('new')
     expect(
       db()
         .query<{ note_record_id: string }, []>(
@@ -321,7 +383,9 @@ describe('hosted-only note safety', () => {
         )
         .get(),
     ).toEqual({ note_record_id: ids.get(990)! })
-    expect(() => getNote(ids.get(991)!)).toThrow(`no note ${ids.get(991)!}`)
+    await expect(getNote(ids.get(991)!, { baseUrl: '' })).rejects.toThrow(
+      `no note ${ids.get(991)!}`,
+    )
     expect(
       db()
         .query<{ next: number }, []>("SELECT next FROM note_counter WHERE project='workshop'")
@@ -449,6 +513,25 @@ describe('hosted promotion title', () => {
           body,
         })
         if (url.pathname === '/v1/tasks/identity') return identity()
+        if (url.pathname === `/v1/notes/${note.id}`)
+          return Response.json({
+            id: note.id,
+            number: note.number,
+            project: 'gamma',
+            project_name: 'gamma',
+            text: note.text,
+            area: null,
+            anchors: '[]',
+            sightings: 1,
+            created_at: at,
+            last_seen_at: at,
+            stale_at: null,
+            stale_reason: null,
+            promoted_task: null,
+            updated_at: at,
+            deleted_at: null,
+            revision: 1,
+          })
         if (url.pathname.endsWith('/promote')) return promoted()
         return Response.json({ error: 'unexpected route' }, { status: 500 })
       }) as unknown as typeof fetch,

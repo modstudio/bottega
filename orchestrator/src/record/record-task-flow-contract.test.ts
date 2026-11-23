@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { encodeTaskFlowStageListCursor } from './record-cursor.ts'
 import {
+  hostedTaskFlowStageByIdSchema,
   hostedTaskFlowTextByIdSchema,
   TASK_FLOW_CLOSED_STAGE_STATES_SQL,
   TASK_FLOW_OPEN_STAGE_STATES_SQL,
@@ -75,4 +76,51 @@ test('task-flow text client schema accepts a durable copy after live text remova
       },
     }),
   ).toMatchObject({ text: null, copy: { taskDocumentReference: 'task:DEV-2416/guard' } })
+})
+
+test('task-flow stage-by-id schema refuses a stage without closed-step notes', () => {
+  const parsed = hostedTaskFlowStageByIdSchema.safeParse({
+    stage: {
+      id: ID,
+      flowRecordId: ID,
+      projectId: ID,
+      projectName: 'fixture',
+      number: 1,
+      workflow: 'flow',
+      mode: 'default',
+      workflowVersionId: ID,
+      workflowVersionNumber: 1,
+      catalogueVersionId: ID,
+      catalogueVersionNumber: 1,
+      arguments: {},
+      activeOrdinal: 0,
+      activeSlug: 'implementation',
+      state: 'running',
+      totalSteps: 1,
+      openedMachineId: ID,
+      takenOverFromMachineId: null,
+      lastAdvancedMachineId: ID,
+      revision: 1,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      updatedAt: '2026-11-17T00:00:00.000Z',
+    },
+    flow: {
+      id: ID,
+      projectId: ID,
+      taskId: null,
+      taskKey: null,
+      state: 'open',
+      openStageRecordId: ID,
+      openStageCount: 1,
+      openingMachineId: ID,
+      updatedMachineId: ID,
+      revision: 1,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      updatedAt: '2026-11-17T00:00:00.000Z',
+    },
+  })
+  expect(parsed.success).toBeFalse()
+  expect(parsed.error?.issues).toContainEqual(
+    expect.objectContaining({ path: ['stage', 'closedStepNotes'] }),
+  )
 })

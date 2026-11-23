@@ -147,7 +147,7 @@ export async function runDetail(
     .query(
       `SELECT r.number AS id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
-            r.reply_head, r.reply_tree,
+            r.reply_head, r.reply_tree, r.close_out_outcome, r.session_id,
             r.credential_id, r.credential_payer, r.credential_binding,
             r.changed_paths, r.tests_ran, r.tests_passed, r.tests_claim_disagrees,
             r.review_ref, r.doc_revisions, r.canon_sha, r.cursor_record_id, r.step_slug,

@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { inboxRunQuestions, inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
+import { inboxQuestionGroups } from '../question-store/question-store-read.ts'
 import type { QueriedInboxQuestion } from '../question-store/question-store-types.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
@@ -101,6 +101,7 @@ function inboxSessionCanAnswer(
 
 async function workflowInboxQuestions(
   input: InboxQuery,
+  rows: Awaited<ReturnType<typeof inboxQuestionGroups>>['workflow'],
   database: Database = db(),
   sid: string | null = sessionId(),
 ): Promise<WorkflowInboxQuestion[]> {
@@ -108,7 +109,6 @@ async function workflowInboxQuestions(
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = await inboxWorkflowQuestions(database)
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true
@@ -175,7 +175,8 @@ export async function queryInbox(
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
-  const queriedRows = (await inboxRunQuestions(database)) as QueriedInboxQuestion[]
+  const inbox = await inboxQuestionGroups(database)
+  const queriedRows = inbox.run as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },
@@ -235,7 +236,7 @@ export async function queryInbox(
           filed_at: q.filed_at,
         }),
       ),
-      ...(await workflowInboxQuestions(input, database, sid)),
+      ...(await workflowInboxQuestions(input, inbox.workflow, database, sid)),
     ],
   }
 }
@@ -410,7 +411,8 @@ export async function runInboxCommand(
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
   const header = await rulingsHeader(project)
-  const queriedRows = (await inboxRunQuestions(db())) as QueriedInboxQuestion[]
+  const inbox = await inboxQuestionGroups(db())
+  const queriedRows = inbox.run as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       {
@@ -424,12 +426,10 @@ export async function runInboxCommand(
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
   const rows = rowsForInboxView(allRows, scopedFilter, project, mine, sid)
-  const workflowRows = await workflowInboxQuestions({
-    scope: 'cli-default',
-    all: has('all'),
-    activeOnly,
-    requestedCwd,
-  })
+  const workflowRows = await workflowInboxQuestions(
+    { scope: 'cli-default', all: has('all'), activeOnly, requestedCwd },
+    inbox.workflow,
+  )
   const canAnswer = (owner: string | null) => inboxSessionCanAnswer(owner, sid)
   const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))

@@ -15,6 +15,7 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
+import { runReleasePreflight } from '../release/release-preflight-adapter.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -81,6 +82,7 @@ export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
   taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
+  releasePreflight?(input: Parameters<typeof runReleasePreflight>[0]): Promise<void>
   checks(cwd: string, number: number): PullRequestCheck[]
   landingState(
     cwd: string,
@@ -93,7 +95,12 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): { change: PullRequestChange; decision: PullRequestAdmission }
+  ):
+    | Promise<{ change: PullRequestChange; decision: PullRequestAdmission }>
+    | {
+        change: PullRequestChange
+        decision: PullRequestAdmission
+      }
   recordAdmission(
     change: PullRequestChange,
     decision: AdmissionWithTriage,
@@ -250,6 +257,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       database,
     })
   },
+  releasePreflight: runReleasePreflight,
   checks(cwd, number) {
     const result = run(cwd, [
       'gh',
@@ -301,9 +309,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   hasCommit(cwd, headCommit) {
     return run(cwd, ['git', 'cat-file', '-e', `${headCommit}^{commit}`]).exitCode === 0
   },
-  admission(cwd, headCommit, headBranch, database) {
+  async admission(cwd, headCommit, headBranch, database) {
     const change = resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
-    const evaluated = admissionDecision(change, database)
+    const evaluated = await admissionDecision(change, database)
     return { change, decision: evaluated }
   },
   recordAdmission(change, decision, prNumber, database) {
@@ -379,6 +387,12 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   shipCleanup(project, branch, _prNumber, database) {
     return shipCleanup(branch, { project, confirmedLanded: true, database })
   },
+}
+
+export function cliPullRequestMergeAdapterWithPostLanding(
+  postLanding: PullRequestPostLandingAdapter,
+): PullRequestMergeAdapter {
+  return { ...cliPullRequestMergeAdapter, postLanding }
 }
 
 function mergedChangeNeedsWorkflowPromotion(paths: readonly string[]): boolean {
@@ -726,12 +740,12 @@ function enqueueForMergeQueue(
 
 type CheckedMergeAdmission = { change: PullRequestChange; decision: EvaluatedAdmission }
 
-function collectMergeAdmission(
+async function collectMergeAdmission(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   adapter: PullRequestMergeAdapter,
   database: Database,
-): { decision: MergeDecision; checked: CheckedMergeAdmission | null } {
+): Promise<{ decision: MergeDecision; checked: CheckedMergeAdmission | null }> {
   if (!adapter.hasCommit(cwd, pullRequest.headCommit)) {
     return {
       checked: null,
@@ -743,7 +757,12 @@ function collectMergeAdmission(
       }),
     }
   }
-  const checked = adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
+  const checked = await adapter.admission(
+    cwd,
+    pullRequest.headCommit,
+    pullRequest.headBranch,
+    database,
+  )
   if (checked.decision.kind === 'empty') {
     throw new Error(
       renderRefusal(
@@ -788,7 +807,7 @@ function refuseUnlessAdmitted(decision: MergeDecision): void {
   if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
 }
 
-function admitViewedPullRequest(
+async function admitViewedPullRequest(
   pullRequest: PullRequestMergeFacts,
   input: {
     cwd: string
@@ -798,7 +817,7 @@ function admitViewedPullRequest(
     requiredChecks: readonly string[]
     mergeQueue: boolean
   },
-): PullRequestChange {
+): Promise<PullRequestChange> {
   const mergeabilityFacts: MergeabilityFacts = {
     mergeStateStatus: pullRequest.mergeStateStatus,
     url: pullRequest.url,
@@ -817,7 +836,12 @@ function admitViewedPullRequest(
       landingBranch: input.landingBranch,
     }),
   )
-  const admission = collectMergeAdmission(pullRequest, input.cwd, input.adapter, input.database)
+  const admission = await collectMergeAdmission(
+    pullRequest,
+    input.cwd,
+    input.adapter,
+    input.database,
+  )
   refuseUnlessAdmitted(admission.decision)
   refuseUnlessAdmitted(
     decideMergeProof(
@@ -883,7 +907,14 @@ async function completeMerge(input: {
         input.database,
       )
     } else {
-      admittedChange = admitViewedPullRequest(pullRequest, input)
+      admittedChange = await admitViewedPullRequest(pullRequest, input)
+      if (input.releaseRequired)
+        await input.adapter.releasePreflight?.({
+          project: input.project,
+          headCommit: pullRequest.headCommit,
+          changedPaths: admittedChange.group.pathSet,
+          target: input.target,
+        })
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {

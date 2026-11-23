@@ -36,7 +36,10 @@ import {
   ContextWriteRefusalError,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
-import { contextTaskOwner } from './doc-hosted-client.ts'
+import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
+import { listDocsStore } from './doc-read-store.ts'
+import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
+import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 
@@ -143,10 +146,26 @@ async function taskCursorWarning(task: ContextTaskIdentity): Promise<string | nu
 export async function getContext(selection: ContextHolderSelection) {
   const { holder, task, children } = await resolveContextHolder(selection)
   const profile = task ? taskProfile(task.key, children) : 'session'
-  const items = listContextItems(holder)
-  const cursorHolders = selection.session
-    ? await listOpenCursorContextHolders(selection.session)
+  const cursors = selection.session
+    ? await openKeylessCursorsForSession(selection.session, db())
     : []
+  const addresses = [
+    task ? { holder, owner: { kind: 'task' as const, projectName: task.project } } : holder,
+    ...cursors.map((cursor) => cursorContextHolder(cursor.record_id)),
+  ]
+  const batchedItems = await listContextItems(addresses)
+  const items = batchedItems.filter((item) => item.holder === holder)
+  const cursorHolders = cursors.map((cursor) => {
+    const cursorHolder = cursorContextHolder(cursor.record_id)
+    return {
+      cursor: cursor.number,
+      project: cursor.project,
+      workflow: cursor.workflow_slug,
+      mode: cursor.mode_slug,
+      holder: cursorHolder,
+      items: batchedItems.filter((item) => item.holder === cursorHolder),
+    }
+  })
   return {
     holder,
     task: task?.key ?? null,
@@ -156,36 +175,23 @@ export async function getContext(selection: ContextHolderSelection) {
   }
 }
 
-async function listOpenCursorContextHolders(session: string, database: Database = db()) {
-  return (await openKeylessCursorsForSession(session, database)).map((cursor) => {
-    const holder = cursorContextHolder(cursor.record_id)
-    return {
-      cursor: cursor.number,
-      project: cursor.project,
-      workflow: cursor.workflow_slug,
-      mode: cursor.mode_slug,
-      holder,
-      items: listContextItems(holder, database),
-    }
-  })
-}
-
 /** Reads one item's current revision on a resolved holder for compare-and-set writes. */
 export async function contextItemRevision(
   selection: ContextHolderSelection & { id: string },
 ): Promise<string | undefined> {
-  const { holder } = await resolveContextHolder(selection)
-  return getContextItem(holder, selection.id)?.revision
+  const { holder, task } = await resolveContextHolder(selection)
+  return (
+    await getContextItem(
+      holder,
+      selection.id,
+      db(),
+      task ? contextTaskOwner({ project: task.project }) : undefined,
+    )
+  )?.revision
 }
 
-export function sessionContextItems(session: string, database: Database) {
+export async function sessionContextItems(session: string, database: Database) {
   const holder = `session:${session}`
-  return listContextItems(holder, database)
-}
-
-/** Read one task's context items through the document-store owner. */
-export function taskContextItems(task: ContextTaskIdentity, database: Database) {
-  const holder = taskContextHolder(task.record_id)
   return listContextItems(holder, database)
 }
 
@@ -215,7 +221,10 @@ export async function clearTaskHolderForLifecycle(input: {
 }) {
   assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
   const holder = taskContextHolder(input.holderId)
-  const items = listContextItems(holder)
+  const items = await listContextItems({
+    holder,
+    owner: { kind: 'task', projectName: input.project },
+  })
   if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()
   const result = await applyRecordWriteAuthority({
@@ -228,8 +237,7 @@ export async function clearTaskHolderForLifecycle(input: {
       let removed = 0
       let alreadyAbsent = 0
       for (const item of items) {
-        const hosted = await client.remove(item.recordId, {})
-        if (!removeLocalContextItem(holder, item.id)) continue
+        const hosted = await client.remove(item.recordId, { expectedRevision: item.revision })
         if (hosted.removed) removed++
         else alreadyAbsent++
       }
@@ -240,25 +248,98 @@ export async function clearTaskHolderForLifecycle(input: {
 }
 
 /** Lists one scope of stored context through the context service read boundary. */
-export function scopeContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
-  return listContextHolders(holderKind, database).map(({ holder, holderId, updatedAt, items }) => ({
-    holder,
-    holderId,
-    updatedAt,
-    items,
-  }))
+export async function scopeContextHolders(
+  holderKind: ContextHolderKind,
+  database: Database = db(),
+) {
+  return (await listContextHolders(holderKind, database)).map(
+    ({ holder, holderId, updatedAt, items }) => ({
+      holder,
+      holderId,
+      updatedAt,
+      items,
+    }),
+  )
 }
 
-export function sessionContextHolders(database: Database) {
-  return scopeContextHolders('session', database).map(({ holder, holderId, updatedAt, items }) => ({
-    holder,
-    session: holderId,
-    updatedAt,
-    items,
-  }))
+export async function sessionContextHolders(database: Database) {
+  return (await scopeContextHolders('session', database)).map(
+    ({ holder, holderId, updatedAt, items }) => ({
+      holder,
+      session: holderId,
+      updatedAt,
+      items,
+    }),
+  )
 }
 
-/** Hosted lifecycle removal is unconditional like task clearing; the local snapshot revision guards against selecting a changed item. */
+export type ResumeBriefState = 'open' | 'absent' | 'unreadable'
+
+function localSessionHasOpenResumeBrief(database: Database, session: string): boolean {
+  return listDocsStore({ scope: 'resume' }, database).some((doc) => {
+    if (parseResumeFrontmatter(doc.body)?.status !== 'open') return false
+    return latestStoredDocAuthorSession(doc.record_id, database) === session
+  })
+}
+
+function sessionResumeProjects(database: Database, session: string): string[] {
+  return database
+    .query<{ project: string }, [string, string]>(
+      `SELECT DISTINCT project FROM presence WHERE session_id=? AND project IS NOT NULL
+       UNION
+       SELECT DISTINCT project.name AS project
+       FROM run JOIN project ON project.record_id=run.project_record_id
+       WHERE run.session_id=?`,
+    )
+    .all(session, session)
+    .map((row) => row.project.trim())
+    .filter(Boolean)
+}
+
+async function hostedProjectHasOpenResumeBrief(project: string, session: string): Promise<boolean> {
+  const client = await hostedDocClient('resume', project)
+  let cursor: string | null = null
+  do {
+    const page = await client.listDocs({ scope: 'resume', subject: project, limit: 100, cursor })
+    for (const row of page.items) {
+      if (typeof row.body !== 'string' || parseResumeFrontmatter(row.body)?.status !== 'open')
+        continue
+      if (typeof row.id !== 'string') continue
+      const revisions = (await client.listRevisions(row.id)) as Array<{
+        op: string
+        sessionId: string | null
+        at: string
+      }>
+      const author = revisions
+        .filter((revision) => revision.op !== 'consume')
+        .sort((left, right) => right.at.localeCompare(left.at))[0]?.sessionId
+      if (author === session) return true
+    }
+    cursor = page.nextCursor
+  } while (cursor)
+  return false
+}
+
+/** Reads resume-brief liveness from the same authority as the context-holder sweep. */
+export async function sessionResumeBriefState(
+  readSource: 'local' | 'hosted',
+  database: Database,
+  session: string,
+): Promise<ResumeBriefState> {
+  if (readSource === 'local')
+    return localSessionHasOpenResumeBrief(database, session) ? 'open' : 'absent'
+  const projects = sessionResumeProjects(database, session)
+  if (projects.length === 0) return 'unreadable'
+  try {
+    for (const project of projects)
+      if (await hostedProjectHasOpenResumeBrief(project, session)) return 'open'
+    return 'absent'
+  } catch {
+    return 'unreadable'
+  }
+}
+
+/** Hosted lifecycle removal is unconditional like task clearing; the selected record revision guards against a changed item. */
 async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string
@@ -268,7 +349,7 @@ async function dropSessionContextItemForLifecycle(input: {
   assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
   const holder = `session:${input.session}`
   writableDb()
-  const item = getContextItem(holder, input.id)
+  const item = await getContextItem(holder, input.id)
   if (!item) return { holder, id: input.id, outcome: 'already-absent' as const }
   const result = await applyRecordWriteAuthority({
     local: () =>
@@ -286,7 +367,16 @@ async function dropSessionContextItemForLifecycle(input: {
           'SELECT project FROM presence WHERE session_id=?',
         )
         .get(input.session)
-      const project = sessionOwner?.project?.trim()
+      const runOwner = sessionOwner?.project?.trim()
+        ? null
+        : db()
+            .query<{ project: string | null }, [string]>(
+              `SELECT project.name AS project
+               FROM run JOIN project ON project.record_id=run.project_record_id
+               WHERE run.session_id=? ORDER BY run.number DESC LIMIT 1`,
+            )
+            .get(input.session)
+      const project = sessionOwner?.project?.trim() || runOwner?.project?.trim()
       if (!project)
         throw new Error(
           `session ${input.session} has no recorded owning project\n` +
@@ -296,9 +386,7 @@ async function dropSessionContextItemForLifecycle(input: {
         kind: 'session',
         checkoutProject: project,
       })
-      const hosted = await client.remove(item.recordId, {})
-      const dropped = removeLocalContextItem(holder, input.id, input.localExpectedRevision)
-      if (!dropped) return 'already-absent' as const
+      const hosted = await client.remove(item.recordId, { expectedRevision: item.revision })
       return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
   })
@@ -308,7 +396,7 @@ async function dropSessionContextItemForLifecycle(input: {
 type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
 
 export type SessionContextDropResult = {
-  item: ReturnType<typeof sessionContextItems>[number]
+  item: Awaited<ReturnType<typeof sessionContextItems>>[number]
   outcome: SessionContextDropOutcome
   error: string | null
 }
@@ -316,7 +404,7 @@ export type SessionContextDropResult = {
 /** The single lifecycle loop for dropping selected items from one session holder. */
 export async function dropSessionContextItemsForLifecycle(input: {
   session: string
-  items: ReturnType<typeof sessionContextItems>
+  items: Awaited<ReturnType<typeof sessionContextItems>>
   reason: string
   dryRun?: boolean
 }): Promise<SessionContextDropResult[]> {
@@ -393,6 +481,7 @@ export async function setContextItem(
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
   await assertContextSetAllowed(
     task ? { holder, item, contextTask: task, contextTaskChildren: children } : { holder, item },
+    listContextItems,
   )
   const localInput = {
     holder,
@@ -407,7 +496,12 @@ export async function setContextItem(
   const written = await applyRecordWriteAuthority({
     local: () => setLocalContextItem(localInput),
     hosted: async () => {
-      const current = getContextItem(holder, input.id)
+      const current = await getContextItem(
+        holder,
+        input.id,
+        db(),
+        contextTaskOwner(task ?? undefined),
+      )
       const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
       const address = splitContextHolder(holder)
       const result = await client.upsert({
@@ -422,12 +516,13 @@ export async function setContextItem(
         target: item.target,
         expectedRevision: input.expectedRevision,
       })
-      return setLocalContextItem({
-        ...localInput,
+      return {
+        ...item,
         recordId: result.id,
+        revision: result.updatedAt,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
-      })
+      }
     },
   })
   const warning = task ? await taskCursorWarning(task) : null
@@ -452,7 +547,7 @@ export async function dropContextItem(
   assertWorkerDocStoreWriteAllowed('dropContextItem')
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
-  const item = getContextItem(holder, input.id)
+  const item = await getContextItem(holder, input.id)
   if (!item)
     return {
       holder,
@@ -472,10 +567,9 @@ export async function dropContextItem(
       const result = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      const removed = removeLocalContextItem(holder, input.id, item.revision)
       return {
-        removed: result.removed && removed,
-        alreadyAbsent: !result.removed && removed,
+        removed: result.removed,
+        alreadyAbsent: !result.removed,
       }
     },
   })

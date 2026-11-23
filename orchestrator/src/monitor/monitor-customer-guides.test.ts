@@ -23,7 +23,7 @@ test('reports a cached customer article made stale by a command removal', async 
   } as const
   const stale = commitDocSet({ ...input, revisionId: newRecordId() })
 
-  expect(staleCustomerGuideCommandConditions()).toContainEqual(
+  expect(await staleCustomerGuideCommandConditions()).toContainEqual(
     expect.objectContaining({
       kind: 'stale-customer-guide-command',
       subject: 'global/_/stale-command-guide',
@@ -40,7 +40,7 @@ test('reports a cached customer article made stale by a command removal', async 
     revisionId: newRecordId(),
   })
   expect(
-    staleCustomerGuideCommandConditions().filter(
+    (await staleCustomerGuideCommandConditions()).filter(
       ({ subject }) => subject === 'global/_/stale-command-guide',
     ),
   ).toEqual([])

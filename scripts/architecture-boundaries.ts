@@ -1,6 +1,7 @@
 import { builtinModules } from 'node:module'
 import { dirname, normalize } from 'node:path'
 import { LOCAL_SQLITE_ADAPTER_PATH } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { agentCommandBoundarySpecs } from './architecture-agent-command-boundaries.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
@@ -71,8 +72,8 @@ export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOp
 
 export const sqliteAdapterAllowedImporters = [
   {
-    path: '^orchestrator/src/question-store/question-store\\.ts$',
-    reason: 'question-store.ts is the question adapter selector',
+    path: '^orchestrator/src/(?:doc/context-item-store|question-store/question-store)\\.ts$',
+    reason: 'context-item-store.ts and question-store.ts are adapter selectors',
   },
   {
     path: '^orchestrator/src/workflow/task-flow-store\\.ts$',
@@ -175,21 +176,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../../shared/brand.ts', '../project/projects.ts', './code-search.ts'],
     'Keep code search commands independent of stores, transports, and retrieval internals.',
   ),
-  boundary(
-    'agent-commands-boundary',
-    'orchestrator/src/agent/agent-commands.ts',
-    [
-      '../../../shared/brand.ts',
-      './agent-probe.ts',
-      './agent-registry.ts',
-      '../cli/args.ts',
-      '../database/db.ts',
-      './model-host.ts',
-      './agent-set-capacity.ts',
-      './goose-provider.ts',
-    ],
-    'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
-  ),
+  ...boundaries(agentCommandBoundarySpecs),
   boundary(
     'canon-budget-boundary',
     'orchestrator/src/canon/canon-budget.ts',
@@ -290,6 +277,7 @@ export const importBoundaries: ImportBoundary[] = [
       './close-out-preparation.ts',
       './close-out-report.ts',
       './close-out-tree-naming.ts',
+      './path-inside.ts',
       './conversation-liveness.ts',
       './close-out-release-holds.ts',
       './reader-scratch-close-out.ts',
@@ -622,6 +610,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../canon/evals.ts',
       './monitor.ts',
+      './monitor-standing-condition-announcement.ts',
       './monitor-notices.ts',
       './monitor-store-write-lock.ts',
       './monitor-types.ts',
@@ -999,6 +988,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-id.ts',
       '../database/db.ts',
       '../review/review-vocabulary.ts',
+      '../record/install-binding.ts',
       './step-catalogue.ts',
       './workflow-step-sequences.ts',
       './workflow-built-ins.ts',

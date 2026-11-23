@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 
 export function lensPortReferenceOrphanCounts(d: Database): string[] {
   const checks = [
@@ -42,7 +43,7 @@ export function lensPortReferenceOrphanCounts(d: Database): string[] {
 }
 
 export function portStaleCopyConflicts(d: Database): string[] {
-  if (!d.query('SELECT 1 FROM record_install_binding WHERE id=1').get()) return []
+  if (!storeHasAttachedToHostedRecord(d)) return []
   const checks = [
     [
       'port_pair',

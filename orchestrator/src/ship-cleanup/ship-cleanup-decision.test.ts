@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { disposalTaskState } from '../branch/branch-disposal-decision.ts'
 import {
   type BranchStateDecision,
   decidePruneEligibility,
   isProbeOnlyMint,
+  type MintedBranchVerdict,
 } from '../branch/branch-state.ts'
+import type { TaskStatusObservation } from '../branch/task-status-observation.ts'
 import {
   decideShipCleanup,
   decideShipCleanupKeptItem,
@@ -31,6 +34,10 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   worktree: '/trees/1',
   ...overrides,
 })
+
+type TaskBranchKeepReason =
+  | 'throwaway'
+  | Extract<MintedBranchVerdict, { verdict: 'keep' }>['reason']
 
 describe('ship cleanup decision', () => {
   const decide = (
@@ -238,6 +245,70 @@ test('kept-item ownership requires the holding path to match the caller landing 
   expect(
     decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/sibling' }, '/trees/landing'),
   ).toEqual({ ...fact, owner: 'other' })
+})
+
+function decideTaskSibling(reason: TaskBranchKeepReason, taskState: 'open' | 'closed') {
+  return decideShipCleanupKeptItem(
+    {
+      item: 'branch DEV-1392-c2',
+      branch: 'DEV-1392-c2',
+      reason,
+      reasonKind: 'landing-not-proved',
+      holdingPath: null,
+    },
+    null,
+    { shippedBranch: 'DEV-1392-c3', taskKey: 'DEV-1392', taskState },
+  )
+}
+
+test.each([
+  ['superseded', 'done'],
+  ['superseded', 'dropped'],
+  ['unlanded', 'done'],
+  ['unlanded', 'dropped'],
+] as const)('a %s task sibling is residue after its task is %s', (reason, category) => {
+  const observation: TaskStatusObservation = {
+    raw: category,
+    category,
+    lastSeen: null,
+    verified: true,
+    detail: category,
+  }
+  const kept = decideTaskSibling(reason, disposalTaskState(observation))
+
+  expect(kept.owner).toBe('other')
+  expect(decideShipCleanupVerdict({ kept: [kept], errors: [] })).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [kept],
+  })
+})
+
+test.each(['superseded', 'unlanded'] as const)(
+  'a %s sibling of an open task is reported without residue',
+  (reason) => {
+    const observation: TaskStatusObservation = {
+      raw: 'in progress',
+      category: 'moving',
+      lastSeen: null,
+      verified: true,
+      detail: 'in progress',
+    }
+    const kept = decideTaskSibling(reason, disposalTaskState(observation))
+
+    expect(kept).toMatchObject({ owner: 'task-sibling', taskKey: 'DEV-1392' })
+    expect(decideShipCleanupVerdict({ kept: [kept], errors: [] })).toEqual({
+      clean: true,
+      residue: [],
+    })
+  },
+)
+
+test('an open task does not exempt an unknown kept branch', () => {
+  const kept = decideTaskSibling('unknown', 'open')
+
+  expect(kept.owner).toBe('other')
+  expect(decideShipCleanupVerdict({ kept: [kept], errors: [] }).clean).toBe(false)
 })
 
 test('caller-group holders are caller-owned while foreign holders remain residue', () => {

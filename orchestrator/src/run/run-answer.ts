@@ -70,6 +70,7 @@ import {
   type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
+  reportsBeforeFollow,
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
@@ -605,6 +606,27 @@ async function recordedRulingsForRetry(rootId: string): Promise<RecordedRuling[]
     .sort((a, b) => Number(a.number) - Number(b.number)) as RecordedRuling[]
 }
 
+async function continueWritingRetry(
+  id: string,
+  retryAuthority: RootAuthority,
+  flags: RunFlags,
+  helpers: RunAnswerHelpers,
+): Promise<string> {
+  const reportDetached = reportsBeforeFollow(flags)
+    ? (childId: string, jobName: string) =>
+        reportContinuedRun(childId, jobName, flags, helpers.presentation)
+    : undefined
+  const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, {
+    ...helpers,
+    reportDetached,
+  })
+  const detail = `continued as run ${resumed.childId}`
+  auditRunMutation(retryAuthority, 'retry', detail, db(), resumed.childId)
+  if (!resumed.reported)
+    await reportContinuedRun(resumed.childId, resumed.job, flags, helpers.presentation)
+  return resumed.childId
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -639,18 +661,8 @@ export async function retryRun(
     row.agent,
     neverStarted,
   )
-  if (preliminaryPath?.action === 'continue') {
-    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, helpers)
-    auditRunMutation(
-      retryAuthority,
-      'retry',
-      `continued as run ${resumed.childId}`,
-      db(),
-      resumed.childId,
-    )
-    await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
-    return resumed.childId
-  }
+  if (preliminaryPath?.action === 'continue')
+    return continueWritingRetry(id, retryAuthority, options.flags, helpers)
   if (!row.prompt_path || !existsSync(row.prompt_path)) {
     throw new Error(
       `run ${id} has no prompt on disk — it predates prompt capture, or the file has aged out ` +

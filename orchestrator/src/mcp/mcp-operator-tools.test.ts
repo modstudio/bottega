@@ -55,6 +55,12 @@ function addQuestion(runId: string, question: string, waiting = false): number {
   ).number
 }
 
+function bindRunToCursor(runId: string): void {
+  db()
+    .query("UPDATE run SET cursor_record_id=?,step_slug='test-step' WHERE record_id=?")
+    .run(newRecordId(), runId)
+}
+
 describe('operator MCP tools', () => {
   test('list_open_questions returns session questions and operator-waiting items', async () => {
     const runId = addRun({
@@ -281,6 +287,7 @@ describe('operator MCP tools', () => {
           status: 'running',
           session: SESSION,
         })
+        bindRunToCursor(runId)
         db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
         const questionId = addQuestion(runId, `Literal ${index}?`)
         const fromOperator = index === literals.length - 1
@@ -315,6 +322,7 @@ describe('operator MCP tools', () => {
       status: 'running',
       session: SESSION,
     })
+    bindRunToCursor(runId)
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
     const agent = addQuestion(runId, 'Agent question?')
     const operator = addQuestion(runId, 'Operator question?')
@@ -383,6 +391,7 @@ describe('operator MCP tools', () => {
       status: 'asking',
       session: SESSION,
     })
+    bindRunToCursor(runId)
     const first = addQuestion(runId, 'First question?')
     addQuestion(runId, 'Second question?')
 

@@ -1,4 +1,5 @@
 import type { SQL } from 'bun'
+import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import type { TenantPrincipal } from '../../shared/record/tenant.ts'
 import { hostedTaskRelationships } from './hosted-task-reference.ts'
 import { confirmCount } from './hosted-tasks.ts'
@@ -91,6 +92,7 @@ export async function softDeleteHostedTasks(
     const keys = found.map((row) => row.key)
     const children = await softDeleteChildren(tx, identity, ids, keys)
     await clearIncomingTaskLinks(tx, identity, ids)
+    maskHostedTableWrite('hub_task', { deleted_at: 'now', updated_at: 'now' })
     const tasks = rows<{ id: string }>(
       await tx`UPDATE hub_task SET deleted_at=now(),updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND id IN ${tx(ids)} RETURNING id`,

@@ -9,7 +9,7 @@ import {
   observeBranchRef,
   observeBranchRefMutation,
 } from '../branch/branch-ref-guard.ts'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import {
   borrowedCheckoutOf,
   git,
@@ -104,6 +104,7 @@ function teardownBuiltInRecipe(
         detail: databaseDropped
           ? `${provider} teardown released ${dbName}`
           : `${provider} teardown failed; ${dbName} retained`,
+        by: { verb: 'worktree-remove:removeFor', session: sessionId() },
       })
     }
     if (!firstFailure) setRecordedResourceTeardownDone(runId)

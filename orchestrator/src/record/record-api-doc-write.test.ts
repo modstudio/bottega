@@ -148,6 +148,85 @@ test('an explicit create against an existing document returns the typed 409 reme
 })
 
 const id = '01990000-0000-7000-8000-000000000001'
+
+test('server doc route forwards a fixture credential to the masked writer', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  const generic = 'a key=value line with bearer prose and VGhpcyBpcyBhIGdlbmVyaWMgcHJvc2Ugc2FtcGxl'
+  let storedBody = ''
+  const app = appWith(identity, {
+    upsertDoc: async (input: { body: string }) => {
+      storedBody = input.body
+      return { id, revisionId: id }
+    },
+  })
+  const response = await app.request('/v1/docs', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
+    body: JSON.stringify({
+      scope: 'global',
+      subject: null,
+      slug: 'secret-reproduction',
+      title: 'Secret reproduction',
+      body: `${generic} quoted ${secret}`,
+      delivery: 'demand',
+      reason: 'reproduce server masking',
+      author: 'tester',
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('warning')).toBeNull()
+  expect(storedBody).toBe(`${generic} quoted ${secret}`)
+})
+
+test('document and canon imports forward free text to their masked writers', async () => {
+  const secret = 'ghp_123456789012345678901234567890123456'
+  let docBody = ''
+  let canonBody = ''
+  const app = appWith(identity, {
+    importDoc: async (input: { doc: { body: string } }) => {
+      docBody = input.doc.body
+      return { id, revisionIds: [] }
+    },
+    importCanon: async (input: { rows: Array<{ body: string }> }) => {
+      canonBody = input.rows[0]!.body
+      return { rows: [], deletions: [], findings: [], bootstrap: false }
+    },
+  })
+  const headers = { 'content-type': 'application/json', 'x-record-space': 'space-a' }
+  const stamp = '2026-11-21T12:00:00.000Z'
+  const imported = await app.request('/v1/docs/import', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      doc: {
+        scope: 'global',
+        subject: null,
+        slug: 'import-mask',
+        title: 'Import mask',
+        body: secret,
+        delivery: 'demand',
+        audiences: ['technical'],
+        createdAt: stamp,
+        updatedAt: stamp,
+        deletedAt: null,
+      },
+      revisions: [],
+    }),
+  })
+  const canon = await app.request('/v1/docs/canon/import', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      rows: [{ slug: 'import-mask', title: 'Import mask', body: secret }],
+      expectedRevisions: {},
+      reason: 'route fixture',
+      author: 'tester',
+      address: { kind: 'project', subject: PLATFORM_NAME, projectId: id },
+    }),
+  })
+  expect([imported.status, canon.status]).toEqual([200, 200])
+  expect([docBody, canonBody]).toEqual([secret, secret])
+})
 const personalIdentity: RecordIdentity = {
   ...identity,
   user: { ...identity.user, id: '01990000-0000-7000-8000-0000000000aa' },
@@ -274,6 +353,7 @@ describe('record API doc write refusals', () => {
                 parentId: null,
                 position: 0,
                 projectName: null,
+                latestRevisionId: revision,
                 createdAt: '2026-09-28T12:00:00.000Z',
                 updatedAt: '2026-09-28T12:00:00.000Z',
                 deletedAt: null,

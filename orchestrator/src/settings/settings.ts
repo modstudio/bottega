@@ -11,10 +11,12 @@ import {
   type AutoModeList,
   ENV_NAME,
   OWNED_AUTO_MODE_SCHEMA,
+  OWNED_SETTINGS_OPTIONS_ACCEPTED,
   OWNED_SETTINGS_SCHEMA,
   type OwnedAutoMode,
   type OwnedSettings,
   parseStoredSettingsRow,
+  STORED_SETTINGS_REMEDY,
   StoredSettingsRowError,
 } from '../../../shared/stored-settings.ts'
 
@@ -26,6 +28,25 @@ export const PERMISSION_LISTS = SETTINGS_PERMISSION_LISTS
 export type PermissionList = SettingsPermissionList
 export type { AutoModeList, OwnedAutoMode, OwnedSettings }
 export { AUTO_MODE_LISTS, ENV_NAME }
+
+export type SubagentHooksChoice = NonNullable<OwnedSettings['options']>['subagentHooks']
+
+export function subagentBlockingOn(options: OwnedSettings['options']): boolean {
+  return options?.subagentHooks === 'on'
+}
+
+export function subagentHooksOptions(choice: SubagentHooksChoice): OwnedSettings['options'] {
+  return choice ? { subagentHooks: choice } : undefined
+}
+
+export function subagentBlockingState(options: OwnedSettings['options']): {
+  blocking: 'on' | 'off'
+  source: 'user' | 'default'
+} {
+  return subagentBlockingOn(options)
+    ? { blocking: 'on', source: 'user' }
+    : { blocking: 'off', source: 'default' }
+}
 
 export type SettingsEnvOperation = 'set' | 'unset'
 
@@ -61,6 +82,7 @@ export function serializeOwnedSettings(owned: OwnedSettings): string {
       permissions: owned.permissions,
       hooks: owned.hooks,
       ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
+      ...(owned.options === undefined ? {} : { options: owned.options }),
       env: owned.env ?? {},
       envKeys: owned.envKeys ?? [],
     },
@@ -74,15 +96,15 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
   try {
     parsed = JSON.parse(body) as unknown
   } catch {
-    throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, env, and envKeys',
-    )
+    throw new Error(`refusing settings body: cannot parse JSON\n${STORED_SETTINGS_REMEDY}`)
   }
   const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
   if (!result.success) {
+    if (result.error.issues.some((issue) => issue.path[0] === 'options')) {
+      throw new Error(`refusing settings body: invalid options; ${OWNED_SETTINGS_OPTIONS_ACCEPTED}`)
+    }
     throw new Error(
-      'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names',
+      `refusing settings body: unknown or missing top-level keys\n${STORED_SETTINGS_REMEDY}`,
     )
   }
   assertValidEnvironment(result.data, 'settings body')
@@ -99,10 +121,26 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
       throw new Error('refusing stored settings row: cannot parse JSON')
     }
     if (error instanceof StoredSettingsRowError && error.reason === 'shape') {
-      throw new Error('refusing stored settings row: invalid owned settings shape')
+      throw new Error(
+        `refusing stored settings row: invalid owned settings shape\n${error.message}`,
+      )
     }
     throw error
   }
+}
+
+export function unknownStoredSettingsKeyPath(body: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
+  const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
+  if (result.success) return null
+  const issue = result.error.issues.find((candidate) => candidate.code === 'unrecognized_keys')
+  if (!issue || issue.code !== 'unrecognized_keys') return null
+  return [...issue.path.map(String), issue.keys[0] ?? '(root)'].join('.')
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -223,6 +261,7 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
   return [
     ...permissionSecretPaths(owned.permissions),
     ...autoModeSecretPaths(owned.autoMode ?? {}),
+    ...optionSecretPaths(owned.options ?? {}),
     ...hookSecretPaths(owned.hooks),
   ]
 }
@@ -245,6 +284,12 @@ function autoModeSecretPaths(autoMode: OwnedAutoMode): string[] {
     }
   }
   return paths
+}
+
+function optionSecretPaths(options: Record<string, unknown>): string[] {
+  return Object.entries(options).flatMap(([key, value]) =>
+    typeof value === 'string' && containsSecretShaped(value) ? [`options.${key}`] : [],
+  )
 }
 
 function permissionSecretPaths(permissions: unknown): string[] {

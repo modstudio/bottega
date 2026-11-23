@@ -17,10 +17,22 @@ export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
+  return decideRecordWrite(currentRecordAuthorityFacts(database, environment))
+}
+
+/** Does the hosted record own this store's hosted tables now? */
+export function hostedRecordOwnsHostedTables(database: Database = db()): boolean {
+  return currentRecordWriteDecision(database).verdict === 'hosted'
+}
+
+export function currentRecordAuthorityFacts(
+  database: Database = db(),
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): Parameters<typeof decideRecordWrite>[0] {
   const binding = readRecordInstallBinding(database)
   const resolvedOrigin = resolvedRecordOrigin(environment)
   const stamp = readRecordSessionStamp(environment)
-  return decideRecordWrite({
+  return {
     recordApiConfigured: recordApiConfigured(environment),
     installBound: binding.bound,
     boundOrigin: binding.recordOrigin,
@@ -29,7 +41,7 @@ export function currentRecordWriteDecision(
     localByDesign: readRecordLocalByDesign(database),
     discardStore: isDiscardStorePath(database.filename),
     storeOverride: environment[ORCHESTRATOR_DATABASE_ENV] !== undefined,
-  })
+  }
 }
 
 export function throwIfRecordRefused(

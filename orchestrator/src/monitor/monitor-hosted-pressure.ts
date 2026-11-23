@@ -218,13 +218,17 @@ export async function announceHostedPressureActions(
   decide: (messages: HostedBoardOverview['messages']) => HostedPressureAnnouncementAction[],
   dependencies: HostedPressureAnnouncementDependencies,
   clock: number,
+  options: { prefix: string; audience: string } = {
+    prefix: HOSTED_PRESSURE_NOTICE_PREFIX,
+    audience: 'architects:all',
+  },
 ): Promise<void> {
   const env = dependencies.env ?? process.env
   if (!recordApiConfigured(env)) return
   const client = dependencies.boardClient ?? recordApiClient()
   await withinHostedBoardRefreshBudget(async (signal) => {
     const overview = await client.listBoardMessages(
-      { kind: 'notice', ownTitlePrefix: HOSTED_PRESSURE_NOTICE_PREFIX },
+      { kind: 'notice', ownTitlePrefix: options.prefix },
       signal,
     )
     const actions = decide(overview.messages)
@@ -243,7 +247,7 @@ export async function announceHostedPressureActions(
       const input = hostedBoardPostInput(
         'notice',
         {
-          audience: 'architects:all',
+          audience: options.audience,
           purpose: 'request',
           title: action.notice.title,
           body: action.notice.body,

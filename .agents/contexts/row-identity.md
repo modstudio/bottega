@@ -17,7 +17,7 @@ Every table's primary key is a UUID minted when its row is created, and every re
 An auto-incrementing integer may stand beside the key as a label a person reads, such as a note or cursor number, or as a local ordering sequence. It is never a primary key or a foreign key, and it never leaves the machine as a reference.
 
 A readable natural key may stand beside a UUID reference as a display label when `scripts/identity-key-manifest.ts` declares it with its sibling; nothing may resolve the row through the label.
-A label a person types, such as `q<n>`, `<project>#q<n>` or `r<n>`, resolves to its UUID once, at the command edge, through `orchestrator/src/identity/`. Code past that edge carries the UUID.
+A label a person types, such as `q<n>`, `<project>#q<n>` or `r<n>`, resolves to its UUID once, at the command edge, through `orchestrator/src/identity/`. Code past that edge carries the UUID. A label that only the local store numbers, such as a document revision number, resolves only on a local install; on a hosted install the identity door refuses it and names the command that lists the UUIDs, because the hosted record keeps no such number.
 
 A reference may keep a key that is not a UUID only by operator ruling, when the key is identical on every machine, such as a fingerprint derived from content. The reference must be a declared foreign key, and `scripts/identity-key-manifest.ts` lists it among its ruled references with its reason and ruling.
 

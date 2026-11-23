@@ -166,6 +166,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
         freshness?.trackerRead
           ? {
               ...shown,
+              tracker_updated_at: freshness.trackerUpdatedAt,
               tracker_comments_verifiable: freshness.commentsVerifiable,
               tracker_comment_ids: freshness.commentIds,
             }
@@ -466,8 +467,11 @@ function registerTaskLifecycleCommands(task: Command): void {
     })
   task
     .command('push')
-    .description('audit hosted identity sets; --repair queues missing machine rows')
-    .option('--repair', 'queue machine task rows missing from the hosted record')
+    .description('audit hosted identity sets; --repair writes missing machine rows to the record')
+    .option(
+      '--repair',
+      'write machine rows missing from the hosted record (hosted task tables directly, synced tables through the outbox)',
+    )
     .option('--json', 'write the audit report as JSON')
     .action(async (_options, command) => {
       open()
@@ -514,10 +518,10 @@ function registerTaskDocumentReadCommands(document: Command): void {
     .description('list documents attached to a task')
     .option('--project <X>', 'resolve the task in this project')
     .option('--json', 'write the document summaries as JSON')
-    .action((key, _options, command) => {
+    .action(async (key, _options, command) => {
       open()
       const options = taskOptions(command)
-      const documents = listTaskDocuments(key, { project: options.project })
+      const documents = await listTaskDocuments(key, { project: options.project })
       if (options.json) console.log(JSON.stringify(documents))
       else if (!documents.length) console.log('no documents')
       else
@@ -529,10 +533,10 @@ function registerTaskDocumentReadCommands(document: Command): void {
     .description('show a task document')
     .option('--project <X>', 'resolve the document in this project')
     .option('--json', 'write the document as JSON')
-    .action((reference, _options, command) => {
+    .action(async (reference, _options, command) => {
       open()
       const options = taskOptions(command)
-      const item = getTaskDocument(reference, { project: options.project })
+      const item = await getTaskDocument(reference, { project: options.project })
       if (options.json) console.log(JSON.stringify(item))
       else {
         console.log(

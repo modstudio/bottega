@@ -3,7 +3,8 @@ import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { createNote, getNote, promoteNote, relinkNote } from './note.ts'
+import { createNote, promoteNote, relinkNote, resolveNoteReference } from './note.ts'
+import { getNote } from './note-read.ts'
 import type { HostedPushChange } from './push-contract.ts'
 import { createLocalTaskInTransaction } from './task.ts'
 
@@ -20,7 +21,6 @@ beforeEach(() => {
   workshop().settings.tracker = { protocol: 'hub' }
 })
 afterAll(() => {
-  workshop().settings.space = 'workshop'
   workshop().settings.tracker = previousTracker
   if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
   else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
@@ -48,32 +48,6 @@ test('relink rolls back the attachment when its history comment cannot be writte
     ),
   ])
   await promoteNote(note.record_id, { existingTaskKey: previous.key })
-  workshop().settings.space = 'workshop'
-  writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
-  const pushed: HostedPushChange[] = []
-  const hosted = {
-    baseUrl: 'https://hub.example.test',
-    token: 'test',
-    fetch: async (input: string, init?: RequestInit) => {
-      const url = new URL(input)
-      if (url.pathname === '/v1/tasks/identity')
-        return Response.json({
-          userId: 'user-1',
-          activeSpaceId: 'space-a',
-          memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
-          capabilities: {
-            spacePush: true,
-            spacePushTables: ['hub_note', 'hub_task_comment'],
-          },
-        })
-      if (url.pathname === '/v1/changes') {
-        const changes = JSON.parse(String(init?.body)) as HostedPushChange[]
-        pushed.push(...changes)
-        return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
-      }
-      return Response.json({ error: 'unexpected route' }, { status: 500 })
-    },
-  }
   writeTransaction((conn) =>
     conn.exec(`
       CREATE TEMP TRIGGER fail_relink_comment
@@ -84,14 +58,14 @@ test('relink rolls back the attachment when its history comment cannot be writte
     `),
   )
   try {
-    await expect(
-      relinkNote(note.record_id, target.key, 'must remain atomic', { hosted }),
-    ).rejects.toThrow('forced comment failure')
+    await expect(relinkNote(note.record_id, target.key, 'must remain atomic')).rejects.toThrow(
+      'forced comment failure',
+    )
   } finally {
     writeTransaction((conn) => conn.exec('DROP TRIGGER fail_relink_comment'))
   }
 
-  expect(getNote(note.record_id).promoted_task).toBe(previous.key)
+  expect((await getNote(note.record_id, { baseUrl: '' })).promoted_task).toBe(previous.key)
   expect(
     db()
       .query<{ promoted_task_record_id: string }, [string]>(
@@ -100,7 +74,6 @@ test('relink rolls back the attachment when its history comment cannot be writte
       .get(note.record_id),
   ).toEqual({ promoted_task_record_id: previous.record_id })
   expect(db().query('SELECT 1 FROM hosted_outbox').all()).toHaveLength(0)
-  expect(pushed).toHaveLength(0)
 })
 
 test('hosted relink queues the attachment fields and both history comments', async () => {
@@ -125,7 +98,7 @@ test('hosted relink queues the attachment fields and both history comments', asy
   ])
   await promoteNote(note.record_id, { existingTaskKey: previous.key })
   workshop().settings.space = 'workshop'
-  writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
+  writeTransaction((conn) => persistInstallBinding(conn, 'space-active'))
   const pushed: HostedPushChange[] = []
   const hosted = {
     baseUrl: 'https://hub.example.test',
@@ -135,13 +108,30 @@ test('hosted relink queues the attachment fields and both history comments', asy
       if (url.pathname === '/v1/tasks/identity')
         return Response.json({
           userId: 'user-1',
-          activeSpaceId: 'space-a',
-          memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
+          activeSpaceId: 'space-active',
+          memberships: [
+            { spaceId: 'space-active', slug: 'active', permission: 'write' },
+            { spaceId: 'space-workshop', slug: 'workshop', permission: 'write' },
+          ],
           capabilities: {
             spacePush: true,
             spacePushTables: ['hub_note', 'hub_task_comment'],
+            targetSpaceNotes: true,
           },
         })
+      if (url.pathname === `/v1/notes/${note.record_id}`) {
+        if (new Headers(init?.headers).get('x-record-space') !== 'space-workshop')
+          return Response.json({ error: 'note not found' }, { status: 404 })
+        const row = db()
+          .query<Record<string, unknown>, [string]>(
+            `SELECT record_id id,number,project,project project_name,project_record_id projectId,
+             text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,
+             promoted_task,promoted_task_record_id promoted_task_id,last_seen_at updated_at,
+             NULL deleted_at,1 revision FROM note WHERE record_id=?`,
+          )
+          .get(note.record_id)
+        return Response.json(row)
+      }
       if (url.pathname === '/v1/changes') {
         const changes = JSON.parse(String(init?.body)) as HostedPushChange[]
         pushed.push(...changes)
@@ -151,7 +141,8 @@ test('hosted relink queues the attachment fields and both history comments', asy
     },
   }
 
-  await relinkNote(note.record_id, target.key, 'hosted trail', { hosted })
+  const numberedReference = resolveNoteReference(note.label, 'workshop')
+  await relinkNote(numberedReference, target.key, 'hosted trail', { hosted })
 
   expect(pushed).toHaveLength(3)
   expect(pushed.find((change) => change.table === 'hub_note')).toMatchObject({
@@ -194,5 +185,5 @@ test('relink refuses a tracker-owned project with the task-comment cause', async
   await expect(relinkNote(note.record_id, target.key, 'tracker trail')).rejects.toThrow(
     'tasks are tracker-owned, and relink records its trail as task comments in the hub',
   )
-  expect(getNote(note.record_id).promoted_task).toBe(previous.key)
+  expect((await getNote(note.record_id, { baseUrl: '' })).promoted_task).toBe(previous.key)
 })

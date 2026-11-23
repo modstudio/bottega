@@ -3,6 +3,7 @@ import {
   installProjectRegisterReader,
   projectRegisterReader,
 } from '../hub/src/project-register-reader.ts'
+import type { lookupTasks as lookupTaskRows } from '../hub/src/task.ts'
 import {
   type ConfinementProbeTaskInput,
   installConfinementProbeTaskCreator,
@@ -19,7 +20,7 @@ import {
 
 type HubTaskReads = {
   db: typeof import('../hub/src/db.ts')
-  task: typeof import('../hub/src/task.ts')
+  task: typeof import('../hub/src/task.ts') & { lookupTasks: typeof lookupTaskRows }
   document: typeof import('../hub/src/task-document.ts')
   projects: typeof import('../hub/src/projects.ts')
 }
@@ -100,6 +101,9 @@ function cliTaskReadAdapter(): TaskReadPort {
     list(filters) {
       return hubTaskReads().task.listTasks(filters)
     },
+    lookup(project, keys) {
+      return hubTaskReads().task.lookupTasks(project, keys)
+    },
     async duplicates(project, title) {
       const { duplicateCandidates, listTasks } = hubTaskReads().task
       return duplicateCandidates(await listTasks({ project }), title)
@@ -116,17 +120,24 @@ function cliTaskReadAdapter(): TaskReadPort {
   }
 }
 
+/** Install the lazy in-process project register reader for a CLI entry. */
+export function installCliProjectRegisterReader(): void {
+  loadedProjectRegisterReads = undefined
+  installProjectRegisterReader((options) => {
+    const { database, project, presentation, contract } = projectRegisterReads()
+    return database.withReadOnlyDatabaseAccess(() =>
+      contract.OrchProjectListSchema.parse(
+        project.projects(options).map(presentation.listedProjectJson),
+      ),
+    )
+  })
+}
+
 /** Install the lazy CLI-owned adapter into the orchestrator process. */
 export function installCliTaskReader(): void {
   loadedHubTaskReads = undefined
-  loadedProjectRegisterReads = undefined
   installTaskReader(cliTaskReadAdapter())
-  installProjectRegisterReader((options) => {
-    const { project, presentation, contract } = projectRegisterReads()
-    return contract.OrchProjectListSchema.parse(
-      project.projects(options).map(presentation.listedProjectJson),
-    )
-  })
+  installCliProjectRegisterReader()
   installConfinementProbeTaskCreator((connection, input) => {
     const hub = hubTaskReads()
     const fixtureProject = registerConfinementProbeProject(input)

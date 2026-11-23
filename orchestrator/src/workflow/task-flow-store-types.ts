@@ -26,6 +26,16 @@ type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = RecordTaskFlowIntentInput<K> &
   CursorOwnerIntentShape<K>
 
+export type TaskFlowStageListInput<State extends string> = {
+  project?: string
+  sessionId?: string
+  /** An empty list matches no stages. */
+  workflowKeys?: readonly string[]
+  states: readonly [State, ...State[]]
+  /** Summary rows carry closed as '[]' and autonomy as null; do not read those fields. */
+  view?: 'summary'
+}
+
 export type TaskFlowStageCursorRow = {
   id: number
   record_id: string
@@ -122,6 +132,7 @@ export type TaskFlowTextRow = {
   step_ordinal: number
   step_slug: string
   body: string
+  created_at?: string
 }
 export type TaskFlowTextBodyRow = Omit<TaskFlowTextRow, 'id'>
 export type TaskFlowUncopiedTextRow = {
@@ -145,6 +156,10 @@ type TaskFlowObligationFloorRow = {
 export type TaskFlowOpenObligationRow = TaskFlowObligationFloorRow & {
   stepOrdinal: number
   stepSlug: string
+}
+export type TaskFlowStageSummaryRow = {
+  stage: TaskFlowStageCursorRow
+  obligations: TaskFlowOpenObligationRow[]
 }
 export type TaskFlowObligationRow = TaskFlowObligationFloorRow & {
   cursor_record_id: string
@@ -191,6 +206,7 @@ export type TaskFlowOpenSessionStageRow = {
   mode_slug: string
   workflow_key: string
   step_slug: string
+  step_actions: string[]
   state: string
   updated_at: string
   open_question_record_id: string | null

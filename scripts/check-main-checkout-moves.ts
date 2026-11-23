@@ -33,19 +33,19 @@ const ADMITTED_NON_MAIN_MOVES: readonly AdmittedMove[] = [
     reason: `moves a registered main checkout that is not the running ${PLATFORM_NAME} installation, which has no store to migrate`,
   },
   {
-    file: 'orchestrator/src/release/release-service.ts',
+    file: 'orchestrator/src/release/release-checkout.ts',
     functionName: 'fastForwardReleaseBranch',
     command: 'merge --ff-only',
     reason: `runs under the release lock only when the rung differs from settings.trunk, and the restore wrapper returns the checkout to trunk; the running ${PLATFORM_NAME} installation has no different-branch rung`,
   },
   {
-    file: 'orchestrator/src/release/release-service.ts',
+    file: 'orchestrator/src/release/release-checkout.ts',
     functionName: 'withReleaseCheckout',
     command: 'switch',
     reason: `switches to a different-branch rung under the release lock only when the rung differs from settings.trunk; the restore wrapper returns the checkout to trunk, and the running ${PLATFORM_NAME} installation has no different-branch rung`,
   },
   {
-    file: 'orchestrator/src/release/release-service.ts',
+    file: 'orchestrator/src/release/release-checkout.ts',
     functionName: 'withReleaseCheckout',
     command: 'switch',
     reason: `restores the checkout to settings.trunk under the release lock after a different-branch rung; the running ${PLATFORM_NAME} installation has no different-branch rung`,

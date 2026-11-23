@@ -39,6 +39,14 @@ export const HOSTED_WRITE_ROUTES: readonly HostedWriteRoute[] = [
     destination: 'required',
   },
   {
+    method: 'POST',
+    pattern: /^\/v1\/tasks\/lookup$/,
+    path: '/v1/tasks/lookup',
+    example: '/v1/tasks/lookup',
+    owner: 'tasks',
+    destination: 'required',
+  },
+  {
     method: 'DELETE',
     pattern: /^\/v1\/tasks$/,
     path: '/v1/tasks',

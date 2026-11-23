@@ -1,4 +1,7 @@
-import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+import {
+  FUTURE_CLOCK_GUARDED_TESTS,
+  ORCHESTRATOR_GATE_TEST_SELECTION,
+} from '../orchestrator/test/gate-test-selection.ts'
 
 export const DEPENDENCY_AUDIT_SCRIPT = 'scripts/check-dependency-audit.ts'
 
@@ -37,6 +40,30 @@ export const CHECK_LEGS = [
     typecheckConfigs: ['orchestrator/tsconfig.json'],
     worker: { run: true },
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
+  },
+  {
+    name: 'orchestrator/future-clock',
+    directory: 'orchestrator',
+    ciJob: 'orchestrator-future-clock',
+    testDirectories: [],
+    testPatterns: FUTURE_CLOCK_GUARDED_TESTS.map(({ reach }) => reach),
+    excludedTestDirectories: [],
+    excludedTestPatterns: [],
+    typecheck: null,
+    typecheckConfigs: [],
+    worker: { run: true },
+    suite: [
+      {
+        argv: [
+          'bun',
+          'test',
+          '--preload',
+          './test/future-clock-preload.ts',
+          ...FUTURE_CLOCK_GUARDED_TESTS.map(({ selector }) => selector),
+        ],
+        unitTests: true,
+      },
+    ],
   },
   {
     name: 'orchestrator/hooks',
@@ -126,6 +153,7 @@ export const CHECK_LEGS = [
     },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
+      { argv: ['bun', 'run', '--cwd', '../ui', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
     ],
   },
@@ -262,6 +290,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-task-flow-stage-state-literals.test.ts',
   'scripts/check-active-space-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
+  'scripts/check-git-clean-site.test.ts',
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',
   'scripts/check-cognitive-ceiling.test.ts',
@@ -278,7 +307,11 @@ export const ROOT_TEST_FILES = [
   'scripts/check-record-request-headers.test.ts',
   'scripts/check-task-single-read.test.ts',
   'scripts/check-record-route-contracts.test.ts',
+  'scripts/record-client-contract.test.ts',
+  'scripts/check-release-client-contract.test.ts',
+  'scripts/check-hosted-secret-writers.test.ts',
   'scripts/check-hosted-local-sql.test.ts',
+  'scripts/check-doc-local-sql-authority.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',

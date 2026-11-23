@@ -20,6 +20,7 @@ import {
   taskFlowPresenceInputSchema,
   taskFlowReadQuerySchema,
   taskFlowStageListQuerySchema,
+  taskFlowStageSummariesInputSchema,
 } from './record-task-flow-contract.ts'
 import {
   type TaskFlowIntent,
@@ -57,6 +58,9 @@ export type RecordWorkflowRouteDeps = {
   readTaskFlowProjectReferenceCounts?(input: Tenant & { projectId: string }): Promise<unknown>
   readTaskFlowPresence?(
     input: Tenant & z.infer<typeof taskFlowPresenceInputSchema>,
+  ): Promise<unknown>
+  readTaskFlowStageSummaries?(
+    input: Tenant & z.infer<typeof taskFlowStageSummariesInputSchema>,
   ): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
@@ -178,12 +182,14 @@ function registerTaskFlowListRoute(
       workflow: context.req.query('workflow'),
       mode: context.req.query('mode'),
       workflowKey: context.req.query('workflowKey'),
+      workflowKeys: context.req.queries('workflowKeys'),
       keyless: context.req.query('keyless'),
       primaryInstance: context.req.query('primaryInstance'),
       taskId: context.req.query('taskId'),
       unlinked: context.req.query('unlinked'),
       linked: context.req.query('linked'),
       openedMachineId: context.req.query('openedMachineId'),
+      view: context.req.query('view'),
       order: context.req.query('order'),
       cursor: context.req.query('cursor'),
       limit: context.req.query('limit'),
@@ -273,6 +279,18 @@ function registerTaskFlowReadRoutes(
     const body = taskFlowPresenceInputSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid task-flow presence request' }, 400)
     return context.json(await deps.readTaskFlowPresence({ ...active, ...body.data }))
+  })
+  app.post('/v1/task-flow/stage-summaries', async (context) => {
+    if (!deps.readTaskFlowStageSummaries)
+      return context.json({ error: 'hosted task-flow stage summary read is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = taskFlowStageSummariesInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success)
+      return context.json({ error: 'invalid task-flow stage summaries request' }, 400)
+    return context.json(await deps.readTaskFlowStageSummaries({ ...active, ...body.data }))
   })
 }
 

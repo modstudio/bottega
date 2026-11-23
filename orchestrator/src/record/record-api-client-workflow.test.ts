@@ -95,7 +95,9 @@ test('task-flow stage lists carry combined filters and the destination space', a
       projectId: '00000000-0000-4000-8000-000000000001',
       number: 4,
       states: [...TASK_FLOW_OPEN_STAGE_STATES],
+      workflowKeys: ['DEV-1', 'DEV-2'],
       linked: true,
+      view: 'summary',
       openedMachineId: '00000000-0000-4000-8000-000000000003',
       limit: 50,
     },
@@ -103,7 +105,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
   )
   expect(requests).toEqual([
     {
-      path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&openedMachineId=00000000-0000-4000-8000-000000000003&number=4&state=running&state=awaiting-ruling&linked=true&limit=50',
+      path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&openedMachineId=00000000-0000-4000-8000-000000000003&view=summary&number=4&state=running&state=awaiting-ruling&workflowKeys=DEV-1&workflowKeys=DEV-2&linked=true&limit=50',
       destinationSpaceId: '00000000-0000-4000-8000-000000000002',
     },
   ])
@@ -155,6 +157,24 @@ test('task-flow presence posts every id batch without requiring a destination sp
       destinationSpaceId: undefined,
     },
   ])
+})
+
+test('task-flow stage summaries refuse an old server and preserve other refusals', async () => {
+  const oldServer = recordApiError({ error: 'route not found' }, 404)
+  const oldClient = recordTaskFlowClient(async () => {
+    throw oldServer
+  })
+  await expect(oldClient.readTaskFlowStageSummaries!({ stageIds: [ID] })).rejects.toThrow(
+    'route not found; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+  )
+
+  const badRequest = recordApiError({ error: 'invalid stage ids' }, 400)
+  const currentClient = recordTaskFlowClient(async () => {
+    throw badRequest
+  })
+  await expect(currentClient.readTaskFlowStageSummaries!({ stageIds: [ID] })).rejects.toBe(
+    badRequest,
+  )
 })
 
 const ID = '00000000-0000-4000-8000-000000000010'

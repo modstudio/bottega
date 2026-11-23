@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { getDoc, listDocRevisions } from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseResumeFrontmatter, resumeAge } from './doc-resume-frontmatter.ts'
-import { getDoc, listDocRevisions, listOpenResumes, restoreDoc } from './docs.ts'
+import { readOpenResumes, restoreDoc } from './docs.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const knownRepository = repositoryRoot
@@ -120,7 +121,7 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('listOpenResumes lists only open briefs for the cwd project, newest first', async () => {
+  test('readOpenResumes lists only open briefs for the cwd project, newest first', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -190,8 +191,8 @@ describe('scoped operator docs', () => {
     db()
       .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
       .run('2026-09-03T11:40:00.000Z', 'resume', 'known', 'newer')
-    expect(listOpenResumes('/nowhere', now)).toEqual({ open: [], unreadable: [] })
-    expect(listOpenResumes(`${knownRepository}/src`, now)).toEqual({
+    expect(await readOpenResumes('/nowhere', now)).toEqual({ open: [], unreadable: [] })
+    expect(await readOpenResumes(`${knownRepository}/src`, now)).toEqual({
       open: [
         {
           slug: 'newer',
@@ -210,7 +211,7 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('listOpenResumes measures an open brief from its store write time', async () => {
+  test('readOpenResumes measures an open brief from its store write time', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -231,7 +232,7 @@ describe('scoped operator docs', () => {
       .run('2026-10-07T13:00:40.000Z', 'resume', 'known', 'store-time')
     const now = Date.parse('2026-10-07T13:01:40.000Z')
 
-    expect(listOpenResumes(knownRepository, now).open).toEqual([
+    expect((await readOpenResumes(knownRepository, now)).open).toEqual([
       {
         slug: 'store-time',
         title: 'Store time',
@@ -241,7 +242,7 @@ describe('scoped operator docs', () => {
     ])
   })
 
-  test('listOpenResumes orders briefs by store write time instead of written frontmatter', async () => {
+  test('readOpenResumes orders briefs by store write time instead of written frontmatter', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -271,7 +272,9 @@ describe('scoped operator docs', () => {
       .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
       .run('2026-10-07T12:30:00.000Z', 'resume', 'known', 'later-store-write')
 
-    expect(listOpenResumes(knownRepository).open.map(({ slug, at }) => ({ slug, at }))).toEqual([
+    expect(
+      (await readOpenResumes(knownRepository)).open.map(({ slug, at }) => ({ slug, at })),
+    ).toEqual([
       { slug: 'later-store-write', at: Date.parse('2026-10-07T12:30:00.000Z') },
       { slug: 'earlier-store-write', at: Date.parse('2026-10-07T12:00:00.000Z') },
     ])
@@ -331,9 +334,7 @@ describe('scoped operator docs', () => {
       .run(topWins, 'resume', 'known', 'top-wins')
 
     expect(
-      listOpenResumes(knownRepository)
-        .open.map((resume) => resume.slug)
-        .sort(),
+      (await readOpenResumes(knownRepository)).open.map((resume) => resume.slug).sort(),
     ).toEqual(['case-a', 'case-b', 'case-c', 'case-d'])
   })
 
@@ -384,7 +385,7 @@ describe('scoped operator docs', () => {
       .run(duplicate, 'resume', 'known', 'legacy-duplicate')
 
     expect(parseResumeFrontmatter(duplicate)?.status).toBe('open')
-    expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).toContain(
+    expect((await readOpenResumes(knownRepository)).open.map((resume) => resume.slug)).toContain(
       'legacy-duplicate',
     )
 
@@ -392,9 +393,9 @@ describe('scoped operator docs', () => {
     expect(consumed.already_consumed).toBe(false)
     expect(consumed.body).toContain('status: consumed\nstatus: consumed\n')
     expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
-    expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).not.toContain(
-      'legacy-duplicate',
-    )
+    expect(
+      (await readOpenResumes(knownRepository)).open.map((resume) => resume.slug),
+    ).not.toContain('legacy-duplicate')
   })
 
   test('the last nested status controls parsing, listing, and consumption', async () => {
@@ -443,18 +444,16 @@ describe('scoped operator docs', () => {
 
       expect(parseResumeFrontmatter(body)?.status).toBe(status)
       expect(
-        listOpenResumes(knownRepository)
-          .open.map((resume) => resume.slug)
-          .includes(slug),
+        (await readOpenResumes(knownRepository)).open.map((resume) => resume.slug).includes(slug),
       ).toBe(status === 'open')
 
       const consumed = await consumeDoc('resume', 'known', slug)
       expect(consumed.already_consumed).toBe(status === 'consumed')
       if (status === 'open') {
         expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
-        expect(listOpenResumes(knownRepository).open.map((resume) => resume.slug)).not.toContain(
-          slug,
-        )
+        expect(
+          (await readOpenResumes(knownRepository)).open.map((resume) => resume.slug),
+        ).not.toContain(slug)
       } else {
         expect(consumed.body).toBe(body)
         expect(consumed.body).not.toContain('consumed_by:')
@@ -601,7 +600,7 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('listOpenResumes reports a stored unrecognized status as unreadable rather than dropping it', async () => {
+  test('readOpenResumes reports a stored unrecognized status as unreadable rather than dropping it', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -621,7 +620,7 @@ describe('scoped operator docs', () => {
       .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
       .run(resumeBody('pending'), 'resume', 'known', 'pending-brief')
 
-    expect(listOpenResumes(knownRepository)).toEqual({
+    expect(await readOpenResumes(knownRepository)).toEqual({
       open: [],
       unreadable: [{ slug: 'pending-brief', reason: 'unrecognized-status' }],
     })
@@ -636,8 +635,8 @@ describe('scoped operator docs', () => {
       canon: true,
       settings: {},
     })
-    expect(listOpenResumes(knownRepository)).toEqual({ open: [], unreadable: [] })
-    expect(listOpenResumes('/nowhere')).toEqual({ open: [], unreadable: [] })
+    expect(await readOpenResumes(knownRepository)).toEqual({ open: [], unreadable: [] })
+    expect(await readOpenResumes('/nowhere')).toEqual({ open: [], unreadable: [] })
     const now = Date.now()
     await setDoc({
       scope: 'resume',
@@ -649,7 +648,7 @@ describe('scoped operator docs', () => {
     db()
       .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=? AND slug=?')
       .run(new Date(now).toISOString(), 'resume', 'known', 'epic-name')
-    expect(listOpenResumes(knownRepository, now)).toEqual({
+    expect(await readOpenResumes(knownRepository, now)).toEqual({
       open: [{ slug: 'epic-name', title: 'Title here', age: '0s', at: now }],
       unreadable: [],
     })
@@ -681,7 +680,7 @@ describe('scoped operator docs', () => {
         .query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
         .run(body, 'resume', 'known', slug)
     }
-    expect(listOpenResumes(knownRepository)).toEqual({
+    expect(await readOpenResumes(knownRepository)).toEqual({
       open: [],
       unreadable: [
         { slug: 'no-frontmatter', reason: 'no-frontmatter' },

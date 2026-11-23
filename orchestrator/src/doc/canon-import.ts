@@ -7,6 +7,7 @@ import type { RecordCanonImportResult } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
+import { readDocs } from './doc-authoritative-read.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { getDocStore, listDocsStore } from './doc-read-store.ts'
@@ -112,7 +113,7 @@ export async function importCanon(input: {
   const owner = input.address.kind === 'user' ? input.address.owner : null
   const projectId = input.address.kind === 'project' ? input.address.projectId : null
   const projectRecordId = projectId === null ? null : hostedProjectId(projectId)
-  const allRows = listDocsStore({ scope: 'canon', subject, owner })
+  const allRows = await readDocs({ scope: 'canon', subject, owner })
   const collision = nonCurrentCanonCollisionRefusal({
     rows: allRows,
     desiredSlugs: input.rows.map((row) => row.slug),
@@ -151,7 +152,7 @@ export async function importCanon(input: {
     const liveBySlug = new Map(live.map((row) => [row.slug, row]))
     for (const row of current) {
       const existing = liveBySlug.get(row.slug)
-      assertCurrentCanonRevision(row, existing?.revision ?? null, existing === undefined)
+      if (existing) assertCurrentCanonRevision(row, existing.revision, false)
     }
     const at = nowIso()
     for (const result of hosted.rows) {
@@ -177,7 +178,7 @@ export async function importCanon(input: {
     }
     for (const result of hosted.deletions) {
       const existing = liveBySlug.get(result.slug)
-      if (!existing) throw new Error(`no canon doc "${result.slug}"`)
+      if (!existing) continue
       insertLocalRevision(existing, 'delete', identity, at, result.revisionId)
       db().query('DELETE FROM doc WHERE record_id=?').run(existing.record_id)
     }

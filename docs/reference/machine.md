@@ -72,6 +72,7 @@ set up and maintain this machine
 - [bottega machine settings permission undrop](#bottega-machine-settings-permission-undrop)
 - [bottega machine settings render](#bottega-machine-settings-render)
 - [bottega machine settings restore](#bottega-machine-settings-restore)
+- [bottega machine settings subagents](#bottega-machine-settings-subagents)
 - [bottega machine setup](#bottega-machine-setup)
 - [bottega machine setup apply](#bottega-machine-setup-apply)
 - [bottega machine setup facts](#bottega-machine-setup-facts)
@@ -631,7 +632,7 @@ inspect machine conditions that need attention
 - `--lock-holder`: show the process holding the orchestrator store write lock
 - `--notices`: claim undelivered monitor notices for this session
 - `--skip-board-refresh`: claim notices without refreshing the board or observing hosted pressure
-- `--json`: write the monitor result as JSON
+- `--json`: write the monitor result as JSON; --history emits {history, releases}
 
 ### Related
 
@@ -772,6 +773,7 @@ manage canonical Claude settings
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
 - [bottega machine settings render](./machine.md#bottega-machine-settings-render)
 - [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
+- [bottega machine settings subagents](./machine.md#bottega-machine-settings-subagents)
 
 ## bottega machine settings adopt
 
@@ -1096,6 +1098,16 @@ restore user settings from a rendered backup
 - `--user`: target the user settings file
 - `--project <name>`: project target, which restore refuses
 - `--force`: restore despite later settings writes
+
+### Related
+
+- [bottega machine settings](./machine.md#bottega-machine-settings)
+
+## bottega machine settings subagents
+
+**Synopsis:** `bottega machine settings subagents [choice]`
+
+allow or block Claude subagents for the signed-in user
 
 ### Related
 

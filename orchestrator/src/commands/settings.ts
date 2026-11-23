@@ -24,12 +24,21 @@ import {
   editMachineSettingsPermission,
   listMachineSettingsPermissions,
 } from '../settings/settings-machine-permissions.ts'
+import { settingsSubagentsCommand } from '../settings/settings-subagents.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
 function registerSettingsSources(settings: Command): void {
+  settings
+    .command('subagents')
+    .description('allow or block Claude subagents for the signed-in user')
+    .argument('[choice]')
+    .action(async (choice?: string) => {
+      const result = await settingsSubagentsCommand(choice)
+      log(`subagent blocking: ${result.blocking} (source: ${result.source})`)
+    })
   settings
     .command('apply')
     .description('apply managed settings and canon to installed harnesses')

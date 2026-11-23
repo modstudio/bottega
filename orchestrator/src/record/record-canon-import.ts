@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
+import { maskHostedTableWrite } from '../../../shared/hosted-secret-mask.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -80,7 +81,8 @@ async function writeCanonRows(
   at: string,
 ): Promise<RecordCanonImportResult['rows']> {
   const results: RecordCanonImportResult['rows'] = []
-  for (const row of input.rows) {
+  for (const sourceRow of input.rows) {
+    const row = maskHostedTableWrite('doc', sourceRow)
     const prior = existing.get(row.slug)
     const id = prior ? String(prior.id) : newRecordId()
     assertWrite(
