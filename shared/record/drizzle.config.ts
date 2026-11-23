@@ -14,6 +14,7 @@ export default defineConfig({
     './shared/record/schema-session.ts',
     './shared/record/schema-docs.ts',
     './shared/record/schema-context-items.ts',
+    './shared/record/schema-space-agents.ts',
     './shared/record/schema-subjects.ts',
     './shared/record/schema-hub.ts',
     './shared/record/schema-snapshots.ts',

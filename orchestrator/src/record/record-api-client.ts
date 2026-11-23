@@ -55,6 +55,10 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
+import {
+  type RecordSpaceAgentClient,
+  recordSpaceAgentClient,
+} from './record-api-client-space-agents.ts'
 import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
@@ -246,7 +250,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> &
-  RecordContextItemClient & {
+  RecordContextItemClient &
+  RecordSpaceAgentClient & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -783,6 +788,7 @@ export function recordApiClientOver(
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordContextItemClient(request),
+    ...recordSpaceAgentClient(request),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),

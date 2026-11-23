@@ -17,6 +17,7 @@ const cases = [
   ['hub_task_comment', 'body', 'taskKey'],
   ['hub_task_document', 'title', 'version'],
   ['context_item', 'body', 'slug'],
+  ['space_agent', 'requestSettings', 'apiKeySecret'],
   ['question', 'question', 'workflowKey'],
   ['workflow_step_text', 'body', 'stepSlug'],
   ['workflow_version', 'definition', 'status'],

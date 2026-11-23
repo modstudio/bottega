@@ -16,6 +16,7 @@ import {
   removeAgent,
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
+import { shareAgent, unshareAgent } from './agent-share.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
@@ -26,7 +27,7 @@ import {
 } from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
-type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show'
+type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show' | 'share' | 'unshare'
 type AgentCommandHandler = (
   name: string,
   argv: string[],
@@ -47,6 +48,24 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   probe: (name, argv, presentation, dependencies) =>
     probeCommand(name, argv, presentation, dependencies),
   show: (name, _argv, presentation) => showCommand(name, presentation),
+  share: async (name, argv, presentation) => {
+    const space = requiredSpace(argv, 'share')
+    presentation.log(JSON.stringify(await shareAgent(name, space)))
+  },
+  unshare: async (name, argv, presentation) => {
+    const space = requiredSpace(argv, 'unshare')
+    await unshareAgent(name, space)
+    presentation.log(`unshared ${name} from ${space}`)
+  },
+}
+
+function requiredSpace(argv: string[], verb: 'share' | 'unshare'): string {
+  const space = flagValue(argv, 'space')
+  if (!space)
+    throw new Error(
+      `error: required option '--space <space>' not specified\nusage: ${PLATFORM_SLUG} agent ${verb} <name> --space <space>`,
+    )
+  return space
 }
 
 function setCommand(name: string, argv: string[], presentation: Presentation): void {

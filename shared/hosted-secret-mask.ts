@@ -9,6 +9,7 @@ import { contextItem } from './record/schema-context-items.ts'
 import { doc, docRevision } from './record/schema-docs.ts'
 import { hubNote, hubTask, hubTaskComment, hubTaskDocument } from './record/schema-hub.ts'
 import { question } from './record/schema-question.ts'
+import { spaceAgent } from './record/schema-space-agents.ts'
 import { workflowStepText, workflowTextCopy } from './record/schema-task-flow.ts'
 import {
   stepCatalogueEvent,
@@ -72,6 +73,19 @@ export const HOSTED_SECRET_EXCLUSIONS = {
       'holder_id',
       'slug',
       'kind',
+    ),
+    space_agent: fields(
+      'agent declaration identity or secret name',
+      'name',
+      'harness',
+      'backend',
+      'model',
+      'base_url',
+      'transport',
+      'provider',
+      'api_key_secret',
+      'operated_by',
+      'billing',
     ),
     question: fields(
       'workflow identity or question state enum',
@@ -144,6 +158,7 @@ export const HOSTED_SECRET_TABLES = [
   { table: hubTaskComment, timestamp: hubTaskComment.createdAt, mask: true },
   { table: hubTaskDocument, timestamp: hubTaskDocument.createdAt, mask: true },
   { table: contextItem, timestamp: contextItem.createdAt, mask: true },
+  { table: spaceAgent, timestamp: null, mask: true },
   { table: question, timestamp: question.createdAt, mask: true },
   { table: workflowStepText, timestamp: workflowStepText.createdAt, mask: true },
   { table: workflowTextCopy, timestamp: null, mask: true },

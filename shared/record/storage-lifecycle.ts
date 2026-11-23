@@ -83,6 +83,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'seq',
       'session',
       'space',
+      'space_agent',
       'space_outside_intake',
       'space_outside_write',
       'space_posting_block',

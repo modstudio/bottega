@@ -748,6 +748,17 @@
     "status": 200
   },
   {
+    "sample": "record.deleteSpaceAgent",
+    "method": "DELETE",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": {
+      "name": "contract-agent"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
     "sample": "record.deleteTaskFlowText",
     "method": "POST",
     "path": "/v1/task-flow/delete-text",
@@ -1285,6 +1296,15 @@
     "query": [],
     "body": null,
     "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listSpaceAgents",
+    "method": "GET",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
     "status": 200
   },
   {
@@ -2101,6 +2121,32 @@
     },
     "recordSpace": false,
     "status": 409
+  },
+  {
+    "sample": "record.upsertSpaceAgent",
+    "method": "PUT",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": {
+      "name": "contract-agent",
+      "harness": "codex",
+      "backend": null,
+      "model": "contract-model",
+      "baseUrl": null,
+      "transport": "acp",
+      "provider": null,
+      "apiKeySecret": "CONTRACT_SECRET_NAME",
+      "requestSettings": null,
+      "jobs": null,
+      "preferredJobs": null,
+      "maxConcurrent": 1,
+      "routeMetered": false,
+      "trainsOnInputs": false,
+      "operatedBy": "vendor",
+      "billing": "subscription"
+    },
+    "recordSpace": true,
+    "status": 200
   },
   {
     "sample": "record.whoami",

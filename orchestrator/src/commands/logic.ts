@@ -480,6 +480,7 @@ function registerAgentCommands(
   runAgentCommand: typeof agentCommand = agentCommand,
 ): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
+    .option('--space <slug>', 'record space for share or unshare')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
     .option('--model <value>', 'set the model identifier')
@@ -620,6 +621,17 @@ function registerWaitingCommand(program: Command): void {
           presentation,
         ),
     )
+}
+
+function registerAgentCatalogueCommands(
+  program: Command,
+  runAgentCommand: typeof agentCommand | undefined,
+): void {
+  registerAgentCommands(program, runAgentCommand)
+  describedCommand(program, 'agents', 'list agents and their readiness')
+    .option('--json', 'write agent capabilities as JSON')
+    .allowExcessArguments(false)
+    .action((options) => agentsCommand(Boolean(options.json), presentation))
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
@@ -825,9 +837,5 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  registerAgentCommands(program, dependencies.agentCommand)
-  describedCommand(program, 'agents', 'list agents and their readiness')
-    .option('--json', 'write agent capabilities as JSON')
-    .allowExcessArguments(false)
-    .action((options) => agentsCommand(Boolean(options.json), presentation))
+  registerAgentCatalogueCommands(program, dependencies.agentCommand)
 }
