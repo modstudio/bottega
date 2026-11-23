@@ -3,7 +3,7 @@
 import { posix } from 'node:path'
 import GithubSlugger from 'github-slugger'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
+import { CANON_CONTEXT_SLUG_PREFIX, canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 import { CANON_REFERENCE_EXEMPTIONS } from '../../../shared/canon-references.ts'
 import { lintProse } from '../../../shared/prose/prose-lint.ts'
 import { proseLines } from '../../../shared/prose/prose-mask.ts'
@@ -89,7 +89,11 @@ function resolvedTarget(file: CanonFile): string | null {
 export function classifyCanonFile(file: CanonFile): CanonKind | null {
   if (file.path === 'AGENTS.md') return 'entry'
   if (/^\.agents\/rules\/[^/]+\.md$/.test(file.path)) return 'rule'
-  if (/^\.agents\/contexts\/[^/]+\.md$/.test(file.path)) return 'context'
+  if (
+    file.path.startsWith(CANON_CONTEXT_SLUG_PREFIX) &&
+    /^[^/]+\.md$/.test(file.path.slice(CANON_CONTEXT_SLUG_PREFIX.length))
+  )
+    return 'context'
   if (/^\.agents\/reference\/[^/]+\.md$/.test(file.path)) return 'reference'
   if (posix.basename(file.path) === 'CLAUDE.md') return 'alias'
   if (posix.basename(file.path) !== 'AGENTS.md') return null

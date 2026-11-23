@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { $ } from 'bun'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { CONCERNS, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CANON_CONTEXT_SLUG_PREFIX } from '../../../shared/canon-frontmatter.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
@@ -297,8 +298,18 @@ export class CanonBudgetError extends Error {
 
 async function packedCanonMarkdown(projectName: string | null) {
   const [globalRows, projectRows] = await Promise.all([
-    readDocs({ scope: 'canon', subject: null, status: 'current' }),
-    readDocs({ scope: 'canon', subject: projectName, status: 'current' }),
+    readDocs({
+      scope: 'canon',
+      subject: null,
+      status: 'current',
+      frontmatterOnly: [CANON_CONTEXT_SLUG_PREFIX],
+    }),
+    readDocs({
+      scope: 'canon',
+      subject: projectName,
+      status: 'current',
+      frontmatterOnly: [CANON_CONTEXT_SLUG_PREFIX],
+    }),
   ])
   return packedCanonMarkdownFromRows(projectName, globalRows, projectRows)
 }

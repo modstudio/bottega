@@ -273,7 +273,9 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-hosted-client.ts', [
     '../../../shared/record-id.ts',
     '../../../shared/record-write-space.ts',
+    '../database/db.ts',
     '../project/projects.ts',
+    '../project-space-cache.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',

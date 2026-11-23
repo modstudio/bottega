@@ -5,6 +5,7 @@ import {
   hostedDocBodyForAudience,
   recordDocListEntries,
   recordDocRevisionHistoryForAudience,
+  recordDocWithFrontmatterOnly,
 } from './record-doc-read.ts'
 
 const readableId = newRecordId()
@@ -50,6 +51,40 @@ test('a document list keeps readable rows and names a malformed row separately',
       cursor: { at: '2026-11-07T12:00:00.000000Z', id: unreadableId },
     },
   ])
+})
+
+test('frontmatter-only projection trims only matching rows with frontmatter', () => {
+  const doc = recordDocListEntries([row(readableId, [])])[0]!
+  if (!('readable' in doc)) throw new Error('fixture row must be readable')
+  const context = {
+    ...doc.readable,
+    slug: '.agents/contexts/api.md',
+    body: '---\ndescription: API context\npaths:\n  - api/**\n---\nFull instructions.\n',
+  }
+  expect(recordDocWithFrontmatterOnly(context, ['.agents/contexts/'])).toMatchObject({
+    body: '---\ndescription: API context\npaths:\n  - api/**\n---',
+    bodyTrimmed: true,
+  })
+  expect(
+    recordDocWithFrontmatterOnly({ ...context, slug: '.agents/rules/api.md' }, [
+      '.agents/contexts/',
+      '.agents/reference/',
+    ]),
+  ).toMatchObject({ body: context.body, bodyTrimmed: false })
+  expect(
+    recordDocWithFrontmatterOnly({ ...context, slug: '.agents/reference/api.md' }, [
+      '.agents/contexts/',
+      '.agents/reference/',
+    ]),
+  ).toMatchObject({
+    body: '---\ndescription: API context\npaths:\n  - api/**\n---',
+    bodyTrimmed: true,
+  })
+  expect(
+    recordDocWithFrontmatterOnly({ ...context, body: 'Instructions without frontmatter.\n' }, [
+      '.agents/contexts/',
+    ]),
+  ).toMatchObject({ body: 'Instructions without frontmatter.\n', bodyTrimmed: false })
 })
 
 const revision: RecordDocRevision = {

@@ -3,6 +3,21 @@
 import { encodeRecordCursor, recordCursorOf } from './record-cursor.ts'
 import type { RecordDocListEntry } from './record-docs.ts'
 
+export const DOC_FRONTMATTER_ONLY_MAX_PREFIXES = 8
+export const DOC_FRONTMATTER_ONLY_MAX_PREFIX_CHARACTERS = 200
+
+export function frontmatterOnlyRefusal(prefixes: readonly string[]): string | null {
+  if (prefixes.length > DOC_FRONTMATTER_ONLY_MAX_PREFIXES)
+    return `frontmatterOnly accepts at most ${DOC_FRONTMATTER_ONLY_MAX_PREFIXES} prefixes`
+  if (
+    prefixes.some(
+      (prefix) => prefix.length === 0 || prefix.length > DOC_FRONTMATTER_ONLY_MAX_PREFIX_CHARACTERS,
+    )
+  )
+    return `frontmatterOnly prefix length limit is 1-${DOC_FRONTMATTER_ONLY_MAX_PREFIX_CHARACTERS} characters`
+  return null
+}
+
 export function recordDocListPage(entries: RecordDocListEntry[], limit: number) {
   const hasMore = entries.length > limit
   const page = entries.slice(0, limit)

@@ -3,6 +3,8 @@
 
 import { type Doc, readDocs } from './doc-authoritative-read.ts'
 
+const PACK_CONTEXT_SLUG_PREFIX = '.agents/contexts/'
+
 export type PackBudgetProjection = {
   globalDocs: Doc[]
   jobDocs: Map<string, Doc[]>
@@ -17,7 +19,12 @@ export async function authoritativePackBudgetProjection(
 ): Promise<PackBudgetProjection> {
   const [globalDocs, globalCanon, jobRows, projectRows, projectCanonRows] = await Promise.all([
     readDocs({ scope: 'global', subject: null, status: 'current', delivery: 'inject' }),
-    readDocs({ scope: 'canon', subject: null, status: 'current' }),
+    readDocs({
+      scope: 'canon',
+      subject: null,
+      status: 'current',
+      frontmatterOnly: [PACK_CONTEXT_SLUG_PREFIX],
+    }),
     Promise.all(
       jobNames.map(
         async (job) =>
@@ -51,7 +58,12 @@ export async function authoritativePackBudgetProjection(
         async (project) =>
           [
             project,
-            await readDocs({ scope: 'canon', subject: project, status: 'current' }),
+            await readDocs({
+              scope: 'canon',
+              subject: project,
+              status: 'current',
+              frontmatterOnly: [PACK_CONTEXT_SLUG_PREFIX],
+            }),
           ] as const,
       ),
     ),
