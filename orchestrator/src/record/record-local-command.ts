@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
-import { readRecordInstallBinding } from './install-binding.ts'
+import { storeHasAttachedToHostedRecord } from './install-binding.ts'
 import { setRecordLocalByDesign } from './record-local-mark.ts'
 
 export function recordLocalCommand(
@@ -13,7 +13,7 @@ export function recordLocalCommand(
   presentation: { log(value: string): void },
   database: Database = db(),
 ): void {
-  if (enabled && readRecordInstallBinding(database).bound) {
+  if (enabled && storeHasAttachedToHostedRecord(database)) {
     throw new Error(
       renderRefusal(
         refusal('this store is bound to a hosted record, so it cannot be local by design', {

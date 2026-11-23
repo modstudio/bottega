@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
 import { activeRecordSpace } from '../project-space.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
-import { readRecordInstallBinding } from '../record/install-binding.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 
 function composingSpaces(d: Database): string[] {
   const values = new Set<string>()
@@ -258,7 +258,7 @@ function routedVersionConflict(
 }
 
 function workflowCursorResolutionConflicts(d: Database): string[] {
-  if (!readRecordInstallBinding(d).bound) return []
+  if (!storeHasAttachedToHostedRecord(d)) return []
   const routes = cachedProjectSpaces(d)
   return d
     .query<
@@ -316,7 +316,7 @@ function preflightVersion(
 }
 
 export function workflowStaleCopyPreflight(d: Database): StaleCopyPreflight {
-  if (!readRecordInstallBinding(d).bound) return { conflicts: [], supersededEvents: [] }
+  if (!storeHasAttachedToHostedRecord(d)) return { conflicts: [], supersededEvents: [] }
   const spaces = composingSpaces(d)
   const conflicts: string[] = []
   const supersededEvents: string[] = []

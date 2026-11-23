@@ -24,6 +24,27 @@ import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-clas
 type AllowedFile = { pattern: RegExp; reason: string; expectedSites?: number }
 type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'fingerprint'> & { count: number }
 
+const HOSTED_TABLE_ATTACHMENT_PREDICATES = [
+  'readRecordInstallBinding',
+  'record_install_binding',
+  'storeHasAttachedToHostedRecord',
+] as const
+
+export function hostedLocalSqlExemptionReasonFailures(
+  allowedFiles: readonly AllowedFile[],
+): string[] {
+  return allowedFiles.flatMap((allowed) => {
+    const attachmentPredicate = HOSTED_TABLE_ATTACHMENT_PREDICATES.find((name) =>
+      allowed.reason.includes(name),
+    )
+    return attachmentPredicate
+      ? [
+          `${allowed.pattern}: hosted-only SQL exemption cites attachment predicate ${attachmentPredicate}; select local SQL with hostedRecordOwnsHostedTables instead`,
+        ]
+      : []
+  })
+}
+
 // These dynamic table positions cannot be compared with the hosted-table list statically. This
 // baseline is shrink-only and position-independent: a new occurrence and a listed occurrence that
 // disappears both fail the check, while unrelated line movement does not.
@@ -310,7 +331,7 @@ function allowedFileBudgetFailures(
   allowedFiles: readonly AllowedFile[],
   uses: ReadonlyMap<number, number>,
 ): string[] {
-  const failures: string[] = []
+  const failures = hostedLocalSqlExemptionReasonFailures(allowedFiles)
   allowedFiles.forEach((allowed, index) => {
     const actual = uses.get(index) ?? 0
     if (allowed.expectedSites !== undefined && actual !== allowed.expectedSites)

@@ -3,6 +3,7 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { validateStepCatalogue } from './step-catalogue.ts'
 import {
@@ -274,7 +275,7 @@ function seedWorkflow(d: Database, seed: (typeof seeds)[number], now: string): v
 export function seedWorkflows(d: Database): void {
   // A bound store caches the hosted catalogue. Built-ins are authored only by
   // an unbound machine; seeding a bound store would recreate stale local rows.
-  if (d.query('SELECT 1 FROM record_install_binding WHERE id=1').get()) return
+  if (storeHasAttachedToHostedRecord(d)) return
   const now = nowIso()
   writeTransaction(() => {
     seedCatalogue(d, now)

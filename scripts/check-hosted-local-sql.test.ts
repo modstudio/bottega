@@ -6,6 +6,7 @@ import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hos
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
 import {
   checkHostedLocalSql,
+  hostedLocalSqlExemptionReasonFailures,
   hostedLocalRenderedSqlRisk,
   hostedLocalSqlViolations,
 } from './check-hosted-local-sql.ts'
@@ -20,6 +21,10 @@ const temporaryRoots: string[] = []
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+test('project hosted-only SQL exemptions do not cite attachment state', () => {
+  expect(hostedLocalSqlExemptionReasonFailures(HOSTED_LOCAL_SQL_ALLOWED_FILES)).toEqual([])
 })
 
 function temporaryProductionFile(file: string, sourceText: string): string {
@@ -74,6 +79,21 @@ test('hosted-only SQL in a declared local file passes', () => {
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([])
+})
+
+test.each([
+  'readRecordInstallBinding(database).bound is false',
+  'record_install_binding has no row',
+  'storeHasAttachedToHostedRecord(database) is false',
+])('a hosted-only SQL exemption cannot cite attachment state: %s', (reason) => {
+  expect(
+    hostedLocalSqlViolations({
+      sites: [site('orchestrator/src/run/unsafe.ts')],
+      tables: ['question'],
+      allowedFiles: [{ pattern: /unsafe\.ts$/, reason }],
+      stateClasses: [hostedQuestion],
+    }),
+  ).toEqual([expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead')])
 })
 
 test('a guarded table not declared hosted fails', () => {

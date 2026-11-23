@@ -3,12 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { tolerantDelete } from '../database/tolerant-delete.ts'
-import { readRecordInstallBinding } from './install-binding.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import type { RecordWorkflowKind, RecordWorkflowWriteResponse } from './record-workflow-contract.ts'
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
+import { hostedRecordOwnsHostedTables } from './record-write-authority.ts'
 
 const CURSOR = 'record_workflow_cursor'
 
@@ -242,7 +242,7 @@ function setAsideOrDeleteVersion(
 ): void {
   const cursorForeign =
     n.version === 'workflow_version' ? 'workflow_version_record_id' : 'catalogue_version_record_id'
-  const hosted = readRecordInstallBinding(local).bound
+  const hosted = hostedRecordOwnsHostedTables(local)
   const pinned = hosted
     ? null
     : local.query(`SELECT 1 FROM workflow_cursor WHERE ${cursorForeign}=? LIMIT 1`).get(recordId)
@@ -260,7 +260,7 @@ function setAsideOrDeleteVersion(
 }
 
 function releaseSupersededVersions(local: Database): void {
-  const hosted = readRecordInstallBinding(local).bound
+  const hosted = hostedRecordOwnsHostedTables(local)
   for (const table of ['workflow', 'step_catalogue'] as const) {
     const n = names(table)
     const cursorForeign =

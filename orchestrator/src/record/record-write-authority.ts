@@ -20,6 +20,11 @@ export function currentRecordWriteDecision(
   return decideRecordWrite(currentRecordAuthorityFacts(database, environment))
 }
 
+/** Does the hosted record own this store's hosted tables now? */
+export function hostedRecordOwnsHostedTables(database: Database = db()): boolean {
+  return currentRecordWriteDecision(database).verdict === 'hosted'
+}
+
 export function currentRecordAuthorityFacts(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,

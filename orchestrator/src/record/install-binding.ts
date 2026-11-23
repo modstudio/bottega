@@ -35,3 +35,8 @@ export function readRecordInstallBinding(database: Database): RecordInstallBindi
     .get()
   return row ? { bound: true, boundAt: row.bound_at, recordOrigin: row.record_origin } : NEVER_BOUND
 }
+
+/** Has this store ever attached to a hosted record? */
+export function storeHasAttachedToHostedRecord(database: Database): boolean {
+  return readRecordInstallBinding(database).bound
+}
