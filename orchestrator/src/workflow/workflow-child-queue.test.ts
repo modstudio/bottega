@@ -5,6 +5,7 @@ import {
   childQueueState,
   selectChildToStart,
   sessionWorksUnderEpic,
+  taskKeysWithChildren,
 } from './workflow-child-queue.ts'
 
 const task = (
@@ -41,6 +42,16 @@ test('a parent whose only children are done stays non-queueable from child prese
     task({ key: 'DEV-2', number: 2, hasChildren: true }),
   ])
   expect(state.open).toEqual([])
+})
+
+test('child presence is the fallback when the parent fact or its hasChildren value is absent', () => {
+  expect(
+    taskKeysWithChildren([
+      task({ key: 'DEV-1', number: 1, parentKey: null }),
+      task({ key: 'DEV-2', number: 2, parentKey: 'DEV-1' }),
+      task({ key: 'DEV-3', number: 3, parentKey: 'DEV-9' }),
+    ]),
+  ).toEqual(new Set(['DEV-1', 'DEV-9']))
 })
 
 test('an open grandchild remains queueable through a done intermediate ancestor', () => {

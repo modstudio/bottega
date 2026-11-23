@@ -51,7 +51,12 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
-import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
+import {
+  closeStaleChainQuestions,
+  RUN_FOLLOW_TIMEOUT_MS,
+  reapStale,
+  repairAskingTurns,
+} from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
@@ -300,6 +305,8 @@ export async function follow(
       )
       process.exit(2)
     }
+    const repairedAt = new Date().toISOString()
+    repairAskingTurns(db(), repairedAt)
     const observed = reapStale(db(), terminalSharedGitConfigForRecordedRun)
     await closeStaleChainQuestions(db(), { throttled: true })
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {

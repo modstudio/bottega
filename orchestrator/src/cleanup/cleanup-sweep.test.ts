@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
@@ -10,6 +11,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { register as registerCleanupCommands } from '../commands/cleanup.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
 import { sessionResumeBriefState } from '../doc/context-service.ts'
@@ -506,6 +508,126 @@ function presentation(lines: string[], setExitCode: (code: number) => void): Cle
     keptBranchLine: () => '',
   }
 }
+
+const runNumber = (recordId: string): number =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
+    .number
+
+async function runAskingRepairSweep(projectName: string): Promise<string[]> {
+  const lines: string[] = []
+  spyOn(console, 'log').mockImplementation((...values) => lines.push(values.join(' ')))
+  const actualSpawnSync = Bun.spawnSync.bind(Bun)
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ')) return result('')
+    return actualSpawnSync(args, options)
+  }) as typeof Bun.spawnSync)
+  const program = new Command().exitOverride()
+  registerCleanupCommands(program)
+  await program.parseAsync(['sweep', '--project', projectName], { from: 'user' })
+  process.exitCode = 0
+  return lines
+}
+
+test('sweep repairs a superseded asking turn with its audit reason and outbox row', async () => {
+  const projectName = `asking-sweep-${newRecordId()}`
+  const projectPath = mkdtempSync(join(tmpdir(), `${projectName}-`))
+  const projectRecordId = newRecordId()
+  upsertProject({
+    recordId: projectRecordId,
+    name: projectName,
+    path: projectPath,
+    settings: { trunk: 'main', worktree: { branch: 'orch-{id}' } },
+  })
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok', projectRecordId })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+    projectRecordId,
+  })
+  const latest = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'ok',
+    parent: root,
+    turn: 3,
+    projectRecordId,
+  })
+
+  try {
+    await runAskingRepairSweep(projectName)
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+      status: 'ok',
+    })
+    expect(
+      db().query('SELECT action,reason FROM run_mutation_audit WHERE run_record_id=?').get(asking),
+    ).toEqual({ action: 'reap', reason: `superseded by run ${runNumber(latest)}` })
+    expect(
+      db().query("SELECT row_id FROM outbox WHERE kind='run' AND row_id=?").get(asking),
+    ).toEqual({ row_id: asking })
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('sweep restores an overwritten architect abandon verdict and rolls up its root', async () => {
+  const projectName = `abandon-sweep-${newRecordId()}`
+  const projectPath = mkdtempSync(join(tmpdir(), `${projectName}-`))
+  const projectRecordId = newRecordId()
+  upsertProject({
+    recordId: projectRecordId,
+    name: projectName,
+    path: projectPath,
+    settings: { trunk: 'main', worktree: { branch: 'orch-{id}' } },
+  })
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok', projectRecordId })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+    projectRecordId,
+  })
+  db()
+    .query(
+      `INSERT INTO run_mutation_audit
+         (record_id,run_record_id,root_run_record_id,action,at,reason)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .run(newRecordId(), root, root, 'abandon', new Date().toISOString(), 'late worker')
+
+  try {
+    await runAskingRepairSweep(projectName)
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(asking)).toEqual(
+      {
+        status: 'stale',
+        failure_kind: 'abandoned',
+      },
+    )
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'stale',
+    })
+    expect(
+      db()
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
+        .get(asking),
+    ).toEqual({
+      action: 'reap',
+      reason: 'architect abandon verdict restored after late terminal write',
+    })
+    expect(
+      db().query("SELECT row_id FROM outbox WHERE kind='run' AND row_id=?").get(asking),
+    ).toEqual({ row_id: asking })
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
 
 function result(stdout: string, exitCode = 0, stderr = ''): ReturnType<typeof Bun.spawnSync> {
   return {

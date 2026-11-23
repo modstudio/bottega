@@ -126,3 +126,26 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
   expect(surfaces).toEqual([expect.objectContaining({ epic: 'DEV-1', open: ['DEV-3'], queue: [] })])
   installTaskReader(undefined as never)
 })
+
+test('sessionEpicWork lists only cursors proven to have children by the shared rule', async () => {
+  async function epicWorkFor(tasks: Array<TaskReadRow & { has_children: boolean }>) {
+    const d = database()
+    const session = 'epic-classification-session'
+    installGuardReader(tasks)
+    await openEpicAtStart(d, session)
+    const sessionStages = await taskFlowReadStore(d).listOpenStages({ sessionId: session })
+    return sessionEpicWork(session, sessionStages, d)
+  }
+
+  try {
+    expect(await epicWorkFor([task('DEV-1', null, 'open', false)])).toEqual([])
+    expect(
+      await epicWorkFor([task('DEV-1', null, 'open', true), task('DEV-2', 'DEV-1', 'open', false)]),
+    ).toEqual([expect.objectContaining({ epic: 'DEV-1' })])
+    expect(await epicWorkFor([task('DEV-2', 'DEV-1', 'open', false)])).toEqual([
+      expect.objectContaining({ epic: 'DEV-1' }),
+    ])
+  } finally {
+    installTaskReader(undefined as never)
+  }
+})

@@ -104,11 +104,12 @@ function cursorLine(cursor: StopSummaryCursor): string {
 }
 
 function epicWorkLines(work: NonNullable<StopSummaryFacts['epicWork']>[number]): string[] {
+  if (!work.queue.length && !work.open.length) return []
   return [
     `Epic: ${work.epic}`,
-    `Queue: ${work.queue.join(', ') || 'none'}`,
-    `Open: ${work.open.join(', ') || 'none'}`,
-  ]
+    work.queue.length ? `Queue: ${work.queue.join(', ')}` : null,
+    work.open.length ? `Open: ${work.open.join(', ')}` : null,
+  ].filter((line): line is string => line !== null)
 }
 
 function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {

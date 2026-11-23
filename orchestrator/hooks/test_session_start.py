@@ -50,6 +50,20 @@ class SessionStartHook(unittest.TestCase):
             output["hookSpecificOutput"]["additionalContext"], "cursor 7 explore"
         )
 
+    def test_passes_harness_pid_and_every_session_start_source(self):
+        result = session_start.subprocess.CompletedProcess([], 0, "cursor 7 explore\n", "")
+        for source in ("startup", "resume", "clear", "compact"):
+            with self.subTest(source=source), mock.patch.object(
+                session_start.os, "getppid", return_value=27721
+            ), mock.patch.object(
+                session_start.subprocess, "run", return_value=result
+            ) as run:
+                self.run_hook({"cwd": "/tmp/project", "session_id": f"session-{source}", "source": source})
+                self.assertEqual(run.call_args.args[0], [
+                    session_start.bottega_bin(), "session", "start",
+                    "--harness-pid", "27721", "--source", source,
+                ])
+
     def test_missing_session_is_a_nonblocking_remedied_line(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             code, output = self.run_hook({"cwd": "/tmp/project"})

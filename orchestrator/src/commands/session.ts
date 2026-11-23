@@ -17,6 +17,13 @@ function stopSummaryBlockKey(value: string): string {
   return value
 }
 
+function positivePid(value: string): number {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 1)
+    throw new InvalidArgumentError('harness pid must be a positive process id')
+  return parsed
+}
+
 function registerStatus(session: Command): void {
   session
     .command('status')
@@ -91,9 +98,16 @@ export function register(program: Command): void {
     .description(
       'open explore for a session that holds no open cursor, name the explore it holds, or name its open task cursor and open none',
     )
+    .addOption(
+      new Option('--harness-pid <pid>', 'publish the harness process session').argParser(
+        positivePid,
+      ),
+    )
+    .option('--source <source>', 'name the SessionStart source')
     .allowExcessArguments(false)
-    .action(async () => {
-      log((await (await import('../session/session-start.ts')).safeStartSession()).line)
+    .action(async (options) => {
+      const { safeStartSession } = await import('../session/session-start.ts')
+      log((await safeStartSession({ harnessPid: options.harnessPid, source: options.source })).line)
     })
   session
     .command('losses')
