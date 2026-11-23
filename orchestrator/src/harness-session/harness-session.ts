@@ -3,13 +3,12 @@
 
 import { randomUUID } from 'node:crypto'
 import {
-  chmodSync,
   existsSync,
-  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -18,14 +17,23 @@ import {
   pidRecordIdentity,
   processStartTime,
 } from '../../../shared/process-identity.ts'
-import { harnessSessionDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  ensureHarnessSessionDirectory,
+  harnessSessionDirectory,
+  type StateEnvironment,
+} from '../../../shared/state-directory.ts'
 import type {
   HarnessProcessIdentity,
   HarnessSessionPublication,
 } from './harness-session-decision.ts'
+import { harnessSessionDisposition } from './harness-session-decision.ts'
 
 type StoredPublication = Omit<HarnessSessionPublication, 'identity'>
 type Identity = (pid: number, startTime: string) => PidRecordIdentity
+
+export const HARNESS_SESSION_TEMP_GRACE_MS = 60_000
+const TEMPORARY_PUBLICATION =
+  /^\.\d+-.+\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i
 
 function publicationPath(directory: string, identity: HarnessProcessIdentity): string {
   return join(directory, `${identity.pid}-${identity.startTime}.json`)
@@ -88,9 +96,7 @@ export function publishHarnessSession(input: {
     source: input.source,
     published_at: (input.now ?? new Date()).toISOString(),
   }
-  const directory = harnessSessionDirectory(input.env ?? process.env)
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  chmodSync(directory, 0o700)
+  const directory = ensureHarnessSessionDirectory(input.env ?? process.env)
   const destination = publicationPath(directory, identity)
   const temporary = join(directory, `.${basename(destination)}.${randomUUID()}.tmp`)
   const { identity: _identity, ...stored } = publication
@@ -103,35 +109,33 @@ export function publishHarnessSession(input: {
   return publication
 }
 
-export function readHarnessSession(
-  pid: number,
-  options: { env?: StateEnvironment; identity?: Identity } = {},
-): HarnessSessionPublication | null {
-  const identity = options.identity ?? pidRecordIdentity
-  return (
-    storedPublications(options.env ?? process.env).find(
-      (publication) =>
-        publication.identity.pid === pid &&
-        identity(publication.identity.pid, publication.identity.startTime) === 'live',
-    ) ?? null
-  )
-}
-
 export function reapHarnessSessions(
-  options: { env?: StateEnvironment; dryRun?: boolean; identity?: Identity } = {},
+  options: { env?: StateEnvironment; dryRun?: boolean; identity?: Identity; now?: Date } = {},
 ): { reaped: number; publications: HarnessSessionPublication[] } {
   const env = options.env ?? process.env
+  const candidateDirectory = harnessSessionDirectory(env)
+  if (!existsSync(candidateDirectory)) return { reaped: 0, publications: [] }
+  const directory = ensureHarnessSessionDirectory(env)
   const identity = options.identity ?? pidRecordIdentity
   const publications = storedPublications(env)
   let reaped = 0
   const kept: HarnessSessionPublication[] = []
   for (const publication of publications) {
-    const state = identity(publication.identity.pid, publication.identity.startTime)
-    if (state === 'dead' || state === 'reused') {
+    const disposition = harnessSessionDisposition(
+      identity(publication.identity.pid, publication.identity.startTime),
+    )
+    if (disposition === 'reap') {
       reaped++
-      if (!options.dryRun)
-        rmSync(publicationPath(harnessSessionDirectory(env), publication.identity), { force: true })
-    } else if (state === 'live') kept.push(publication)
+      if (!options.dryRun) rmSync(publicationPath(directory, publication.identity), { force: true })
+    } else kept.push(publication)
+  }
+  const expiredBefore = (options.now ?? new Date()).getTime() - HARNESS_SESSION_TEMP_GRACE_MS
+  for (const name of readdirSync(directory)) {
+    if (!TEMPORARY_PUBLICATION.test(name)) continue
+    const temporary = join(directory, name)
+    if (statSync(temporary).mtimeMs >= expiredBefore) continue
+    reaped++
+    if (!options.dryRun) rmSync(temporary, { force: true })
   }
   return { reaped, publications: kept }
 }

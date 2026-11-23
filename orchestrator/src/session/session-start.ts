@@ -25,23 +25,47 @@ type SessionStartDependencies = {
   session?: string | null
   harnessPid?: number
   source?: string
+  observeHarnessStartTime?: (pid: number) => string | null
 }
 
 const cursorLine = (cursor: number, workflow = 'explore') => `cursor ${cursor} ${workflow}`
 const remediedLine = (condition: string, remedy: string) =>
   renderRefusal(refusal(condition, { kind: 'edit', text: remedy })).replace(/\s+/g, ' ')
 
-export async function startSession(
-  dependencies: SessionStartDependencies = {},
-): Promise<SessionStartResult> {
-  const session = dependencies.session === undefined ? sessionId() : dependencies.session
-  if (session && dependencies.harnessPid !== undefined)
+function publishHarnessSessionFailure(
+  dependencies: SessionStartDependencies,
+  session: string | null,
+): string | null {
+  if (!session || dependencies.harnessPid === undefined) return null
+  try {
     publishHarnessSession({
       pid: dependencies.harnessPid,
       session,
       source: dependencies.source ?? 'startup',
+      observeStartTime: dependencies.observeHarnessStartTime,
     })
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
+export async function startSession(
+  dependencies: SessionStartDependencies = {},
+): Promise<SessionStartResult> {
   const database = dependencies.database ?? db()
+  const session = dependencies.session === undefined ? sessionId(database) : dependencies.session
+  const publicationFailure = publishHarnessSessionFailure(dependencies, session)
+  const withPublicationFailure = (result: SessionStartResult): SessionStartResult =>
+    publicationFailure
+      ? {
+          ...result,
+          line: `${result.line}; ${remediedLine(
+            `harness session publication failed: ${publicationFailure}`,
+            `run ${PLATFORM_SLUG} session start again`,
+          )}`,
+        }
+      : result
   const cwd = resolve(dependencies.cwd ?? process.cwd())
   const project = projectAt(cwd, database)
   const openCursors = session
@@ -61,13 +85,13 @@ export async function startSession(
     openCursors: cursors,
   })
   if (decision.kind === 'refuse-session')
-    return {
+    return withPublicationFailure({
       cursor: null,
       line: `session start could not establish the current harness session id; ${callerIdentityRefusal(callerIdentity(database), 'start a session')}`,
-    }
+    })
   if (decision.kind === 'refuse-project') {
     const retired = retiredProjectAt(cwd, database)
-    return {
+    return withPublicationFailure({
       cursor: null,
       line: retired
         ? retiredProjectRefusal(retired.name)
@@ -75,15 +99,18 @@ export async function startSession(
             `no registered project contains ${cwd}`,
             `${PLATFORM_SLUG} project add ${cwd}, or start the session in a registered checkout`,
           ),
-    }
+    })
   }
   if (decision.kind === 'reuse')
-    return { cursor: decision.cursor, line: cursorLine(decision.cursor, decision.workflow) }
+    return withPublicationFailure({
+      cursor: decision.cursor,
+      line: cursorLine(decision.cursor, decision.workflow),
+    })
   if (decision.kind === 'none')
-    return {
+    return withPublicationFailure({
       cursor: null,
       line: `${cursorLine(decision.cursor, decision.workflow)} ${decision.key} is open; session start composed no explore cursor`,
-    }
+    })
 
   const context = { session }
   const live = await resolveWorkflowLiveAutonomy(
@@ -101,14 +128,17 @@ export async function startSession(
     live,
   )
   if (!composed.cursor)
-    return {
+    return withPublicationFailure({
       cursor: null,
       line: remediedLine(
         `project ${project!.name} has no explore default mode that opens without arguments in its workflow catalogue`,
         `${PLATFORM_SLUG} workflow import a workflow tree that defines explore, then run ${PLATFORM_SLUG} session start again`,
       ),
-    }
-  return { cursor: composed.cursor.id, line: cursorLine(composed.cursor.id) }
+    })
+  return withPublicationFailure({
+    cursor: composed.cursor.id,
+    line: cursorLine(composed.cursor.id),
+  })
 }
 
 export async function safeStartSession(

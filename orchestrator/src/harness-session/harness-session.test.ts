@@ -1,11 +1,22 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
 import {
+  HARNESS_SESSION_TEMP_GRACE_MS,
   publishHarnessSession,
-  readHarnessSession,
   reapHarnessSessions,
 } from './harness-session.ts'
 
@@ -20,7 +31,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-test('publish and read round trip atomically replaces the current harness session', () => {
+test('publish atomically replaces the current harness session', () => {
   const env = state()
   const observeStartTime = () => 'Mon Nov 23 10:00:00 2026'
   publishHarnessSession({
@@ -32,7 +43,9 @@ test('publish and read round trip atomically replaces the current harness sessio
   })
   publishHarnessSession({ pid: 42, session: 'after-clear', source: 'clear', env, observeStartTime })
 
-  expect(readHarnessSession(42, { env, identity: () => 'live' })?.session).toBe('after-clear')
+  expect(reapHarnessSessions({ env, identity: () => 'live', dryRun: true }).publications).toEqual([
+    expect.objectContaining({ session: 'after-clear' }),
+  ])
   const directory = harnessSessionDirectory(env)
   expect(readdirSync(directory)).toHaveLength(1)
   const path = join(directory, readdirSync(directory)[0]!)
@@ -42,18 +55,6 @@ test('publish and read round trip atomically replaces the current harness sessio
     harness: 'claude-code',
     source: 'clear',
   })
-})
-
-test('read rejects a publication for a reused pid', () => {
-  const env = state()
-  publishHarnessSession({
-    pid: 42,
-    session: 'old-session',
-    source: 'startup',
-    env,
-    observeStartTime: () => 'old-start',
-  })
-  expect(readHarnessSession(42, { env, identity: () => 'reused' })).toBeNull()
 })
 
 test('reaper removes dead and reused publications and keeps a live publication', () => {
@@ -73,4 +74,67 @@ test('reaper removes dead and reused publications and keeps a live publication',
   expect(result.reaped).toBe(2)
   expect(result.publications.map(({ identity }) => identity.pid)).toEqual([44])
   expect(readdirSync(harnessSessionDirectory(env))).toHaveLength(1)
+})
+
+test('reaper removes expired temporary publications and preserves in-flight ones', () => {
+  const env = state()
+  publishHarnessSession({
+    pid: 42,
+    session: 'live-session',
+    source: 'startup',
+    env,
+    observeStartTime: () => 'live-start',
+  })
+  const directory = harnessSessionDirectory(env)
+  const oldTemporary = join(directory, '.42-old.json.00000000-0000-4000-8000-000000000001.tmp')
+  const youngTemporary = join(directory, '.42-young.json.00000000-0000-4000-8000-000000000002.tmp')
+  writeFileSync(oldTemporary, 'old')
+  writeFileSync(youngTemporary, 'young')
+  const now = new Date('2026-11-23T12:00:00.000Z')
+  const old = new Date(now.getTime() - HARNESS_SESSION_TEMP_GRACE_MS - 1)
+  const young = new Date(now.getTime() - HARNESS_SESSION_TEMP_GRACE_MS + 1)
+  utimesSync(oldTemporary, old, old)
+  utimesSync(youngTemporary, young, young)
+
+  const result = reapHarnessSessions({ env, identity: () => 'live', now })
+
+  expect(result.reaped).toBe(1)
+  expect(result.publications).toHaveLength(1)
+  expect(existsSync(oldTemporary)).toBe(false)
+  expect(existsSync(youngTemporary)).toBe(true)
+})
+
+test('reaper retains a publication when process identity is unknown', () => {
+  const env = state()
+  publishHarnessSession({
+    pid: 42,
+    session: 'unknown-session',
+    source: 'startup',
+    env,
+    observeStartTime: () => 'unknown-start',
+  })
+
+  const result = reapHarnessSessions({ env, identity: () => 'unknown' })
+
+  expect(result.reaped).toBe(0)
+  expect(result.publications.map(({ session }) => session)).toEqual(['unknown-session'])
+})
+
+test('publish refuses a symlinked harness-session directory', () => {
+  const env = state()
+  const target = join(env.BOTTEGA_STATE_HOME, 'outside')
+  mkdirSync(join(env.BOTTEGA_STATE_HOME, 'orchestrator'), { recursive: true })
+  mkdirSync(target)
+  symlinkSync(target, harnessSessionDirectory(env))
+
+  expect(() =>
+    publishHarnessSession({
+      pid: 42,
+      session: 'outside-session',
+      source: 'startup',
+      env,
+      observeStartTime: () => 'outside-start',
+    }),
+  ).toThrow('harness session path is not a directory')
+  expect(readdirSync(target)).toEqual([])
 })
