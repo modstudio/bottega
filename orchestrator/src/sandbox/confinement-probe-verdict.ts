@@ -12,13 +12,7 @@ export type AccessTarget = {
 }
 
 type ProbeVerdict = {
-  status:
-    | FilesystemProbeAccess
-    | CommandProbeStatus
-    | 'committed'
-    | 'refused'
-    | 'ok'
-    | 'slow'
+  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
   reason?: string
 }
 
