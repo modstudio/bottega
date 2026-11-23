@@ -3,7 +3,11 @@
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
-import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
+import {
+  hostedJsonFailureMessage,
+  hostedStatusMessage,
+  jsonBody,
+} from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
@@ -65,8 +69,8 @@ export function workerRecordBaseUrl(
 
 function errorMessage(value: unknown, status: number, url: string): string {
   if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string')
-    return `${hostedJsonFailureMessage({ ok: false, url, status, contentType: 'missing' })}: ${value.error}`
-  return hostedJsonFailureMessage({ ok: false, url, status, contentType: 'missing' })
+    return `${hostedStatusMessage(url, status)}: ${value.error}`
+  return hostedStatusMessage(url, status)
 }
 
 export function createWorkerRecordClient(

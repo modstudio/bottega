@@ -18,7 +18,11 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
-import { hostedJsonFailureMessage, type JsonBodyFailure, jsonBody } from '../../shared/http-json.ts'
+import {
+  hostedJsonFailureMessage,
+  type JsonBodyResult,
+  jsonBody,
+} from '../../shared/http-json.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
@@ -30,7 +34,10 @@ import {
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
-import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
+import {
+  hostedRequestSafety,
+  hostedRequestSafetyStatement,
+} from '../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
@@ -505,16 +512,16 @@ export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
 function mappedError(
   status: number,
-  body: unknown,
+  result: JsonBodyResult,
   path: string,
-  bodyFailure: JsonBodyFailure | null,
 ): TRPCError {
+  const body = result.ok ? result.value : null
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   const error =
     typeof record.error === 'string'
       ? record.error
-      : bodyFailure
-        ? hostedJsonFailureMessage(bodyFailure)
+      : !result.ok
+        ? hostedJsonFailureMessage(result)
         : `record API ${status}`
   const remedy = typeof record.remedy === 'string' ? record.remedy : undefined
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
@@ -525,7 +532,7 @@ function mappedError(
     return new TRPCError({
       code: 'NOT_FOUND',
       message:
-        bodyFailure && path.startsWith('/v1/board/')
+        !result.ok && path.startsWith('/v1/board/')
           ? 'the hosted record does not serve the message board yet'
           : error,
     })
@@ -559,7 +566,7 @@ async function request<T>(
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
-  const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
+  const safety = hostedRequestSafety(init.method)
   const retry = safety === 'probe' ? '; retry,' : ','
   const retryStatement = `${hostedRequestSafetyStatement(safety)}${retry} and if it stalls again`
   const timeoutError = () =>
@@ -584,7 +591,7 @@ async function request<T>(
         )
         const result = await jsonBody(response, url)
         const body = result.ok ? result.value : null
-        if (!response.ok) throw mappedError(response.status, body, path, result.ok ? null : result)
+        if (!response.ok) throw mappedError(response.status, result, path)
         if (!result.ok)
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',

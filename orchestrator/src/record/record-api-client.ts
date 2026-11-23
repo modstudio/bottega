@@ -11,7 +11,11 @@ import type {
 } from '../../../shared/docs.ts'
 import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  hostedRequestSafety,
+  type HostedRequestSafety,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -36,7 +40,7 @@ import {
   recordAuthRefusal,
   recordAuthToken,
 } from './record-api-client-error.ts'
-import { hostedErrorBody, hostedRequestSafety } from './record-api-client-hosted-response.ts'
+import { hostedErrorBody } from './record-api-client-hosted-response.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import { recordModerationClient } from './record-api-client-moderation.ts'
@@ -513,7 +517,7 @@ async function recordEmailAuthRequest(
   if (!response.ok)
     throw recordAuthRefusal(
       response.status,
-      hostedErrorBody(payload, result, `${origin}${path}`, response.status),
+      hostedErrorBody(result, `${origin}${path}`, response.status),
       response.headers,
     )
   if (!result.ok) throw new Error(hostedJsonFailureMessage(result))
@@ -595,7 +599,7 @@ export async function recordApiRequest<T>(
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
     throw recordApiError(
-      hostedErrorBody(body, result, `${resolvedOrigin}${path}`, response.status),
+      hostedErrorBody(result, `${resolvedOrigin}${path}`, response.status),
       response.status,
       response.headers,
     )
@@ -641,7 +645,7 @@ async function publicRequest<T>(
   const body = result.ok ? result.value : null
   if (!response.ok)
     throw recordApiError(
-      hostedErrorBody(body, result, `${resolvedOrigin}${path}`, response.status),
+      hostedErrorBody(result, `${resolvedOrigin}${path}`, response.status),
       response.status,
     )
   if (!result.ok)
