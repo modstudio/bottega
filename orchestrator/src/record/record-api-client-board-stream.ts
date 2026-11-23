@@ -1,5 +1,5 @@
 // concern: record-api-client
-/** Classifies board stream responses without depending on the board transport implementation. */
+/** Opens and classifies board stream responses through the record transport choke point. */
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import type { RecordBoardStreamOpen, RecordBoardStreamSource } from './record-api-client-paths.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'

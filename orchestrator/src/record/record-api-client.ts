@@ -564,9 +564,10 @@ export async function recordApiRequest<T>(
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = apiFetch,
   preflight: () => void = throwIfRecordApiRequestRefused,
-  origin: string = recordApiBaseUrl(),
+  origin?: string,
 ): Promise<T> {
   preflight()
+  const resolvedOrigin = origin ?? recordApiBaseUrl()
   const readToken = async () =>
     init.signal
       ? await (authentication
@@ -580,12 +581,12 @@ export async function recordApiRequest<T>(
     const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
     try {
-      return await recordTransport(origin, path, { ...init, headers }, transport)
+      return await recordTransport(resolvedOrigin, path, { ...init, headers }, transport)
     } catch (error) {
       const method = init.method?.toUpperCase() ?? 'GET'
       throw classifyRecordApiUnreachable(
         error,
-        origin,
+        resolvedOrigin,
         method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
       )
     }

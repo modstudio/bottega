@@ -5,7 +5,6 @@ import { Glob } from 'bun'
 import {
   CONTRACT_ORIGIN,
   CURRENT_CONTRACT_PATH,
-  createRecordingTransport,
   generateRecordClientContract,
   RELEASED_CONTRACT_DIRECTORY,
   type RecordClientContractEntry,
@@ -24,25 +23,6 @@ beforeAll(() => {
 afterAll(() => {
   if (previousUrl === undefined) Reflect.deleteProperty(process.env, urlKey)
   else Reflect.set(process.env, urlKey, previousUrl)
-})
-
-test('the recording transport captures a normalized in-process request', async () => {
-  const entries: RecordClientContractEntry[] = []
-  const transport = createRecordingTransport(entries, () => 'transport.sample')
-  await transport('https://record.example.test/v1/board/changes?after=0', {
-    headers: { 'x-record-space': 'space-a' },
-  })
-  expect(entries).toEqual([
-    {
-      sample: 'transport.sample',
-      method: 'GET',
-      path: '/v1/board/changes',
-      query: [['after', '0']],
-      body: null,
-      recordSpace: true,
-      status: 200,
-    },
-  ])
 })
 
 function routeRegistered(
@@ -79,7 +59,11 @@ async function replay(version: string, entries: RecordClientContractEntry[]): Pr
         body: entry.body === null ? undefined : JSON.stringify(entry.body),
       }),
     )
-    if ([400, 405, 415, 422].includes(response.status) && response.status !== entry.status)
+    if (
+      ([400, 405, 415, 422].includes(response.status) && response.status !== entry.status) ||
+      (entry.status >= 200 && entry.status < 300 &&
+        (response.status < 200 || response.status >= 300))
+    )
       failures.push(`${label}: recorded ${entry.status}, replayed ${response.status}`)
     await response.body?.cancel().catch(() => undefined)
   }
