@@ -103,7 +103,7 @@ export function missingJsonbStringChecks(
     .filter((column) => {
       const name = jsonbStringCheckName(column)
       const expression = `jsonb_typeof("${column.column}") <> 'string'`
-      return !migrationSql.includes(`CONSTRAINT "${name}" CHECK (${expression})`)
+      return !migrationSql.includes(`CONSTRAINT "${name}" CHECK (${expression}) NOT VALID`)
     })
     .map((column) => `${column.table}.${column.column}`)
     .sort()
@@ -116,12 +116,6 @@ function columnKey(column: JsonbColumn): string {
 function hasValidation(migrationSql: string, column: JsonbColumn): boolean {
   const name = jsonbStringCheckName(column)
   return migrationSql.includes(`ALTER TABLE "${column.table}" VALIDATE CONSTRAINT "${name}"`)
-}
-
-function hasNotValidCheck(migrationSql: string, column: JsonbColumn): boolean {
-  const name = jsonbStringCheckName(column)
-  const expression = `jsonb_typeof("${column.column}") <> 'string'`
-  return migrationSql.includes(`CONSTRAINT "${name}" CHECK (${expression}) NOT VALID`)
 }
 
 export function jsonbStringValidationFailures(
@@ -141,7 +135,7 @@ export function jsonbStringValidationFailures(
 
   for (const column of columns) {
     const key = columnKey(column)
-    const validated = !hasNotValidCheck(migrationSql, column) || hasValidation(migrationSql, column)
+    const validated = hasValidation(migrationSql, column)
     if (excluded.has(key) && validated) {
       failures.push(
         `${key}: NEVER_VALIDATED_JSONB_CHECKS columns must not have a VALIDATE statement`,
@@ -180,7 +174,7 @@ function run(): number {
   }
   if (missing.length > 0) {
     console.error(
-      'record jsonb string checks: every hosted jsonb column needs its named string-refusing CHECK',
+      'record jsonb string checks: every hosted jsonb column needs its named NOT VALID string-refusing CHECK',
     )
     for (const column of missing) console.error(`- ${column}`)
   }
