@@ -51,6 +51,7 @@ import {
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
+import { registerRecordSpaceAgentRoutes } from './record-api-space-agents.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,
@@ -120,6 +121,7 @@ import type {
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
+import type { RecordSpaceAgent } from './record-space-agents.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 const RECORD_API_POST_READ_ROUTES = new Set([
@@ -155,6 +157,9 @@ type RecordApiDeps = RecordSessionRouteDeps &
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },
     ): Promise<{ removed: boolean }>
+    readSpaceAgents(input: Tenant): Promise<RecordSpaceAgent[]>
+    upsertSpaceAgent(input: Tenant & RecordSpaceAgent): Promise<RecordSpaceAgent>
+    deleteSpaceAgent(input: Tenant & { name: string }): Promise<{ removed: boolean }>
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
@@ -409,6 +414,7 @@ function registerRecordCoreRoutes(
   },
 ): void {
   registerRecordContextItemRoutes(app, deps, ports)
+  registerRecordSpaceAgentRoutes(app, deps, ports)
   registerSignedDocSearchRoute(app, deps, ports)
   registerRecordReadRoutes(app, deps, ports)
   registerRecordQuestionRoutes(app, deps, ports)

@@ -9,6 +9,7 @@ import {
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
 export const RECORD_CONTEXT_ITEMS_ROUTE = '/v1/context-items'
+export const RECORD_SPACE_AGENTS_ROUTE = '/v1/space-agents'
 export const RECORD_CONTEXT_ITEM_HOLDERS_ROUTE = '/v1/context-items/holders'
 export const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
 

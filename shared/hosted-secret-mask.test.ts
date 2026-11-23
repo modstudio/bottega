@@ -17,6 +17,7 @@ const cases = [
   ['hub_task_comment', 'body', 'taskKey'],
   ['hub_task_document', 'title', 'version'],
   ['context_item', 'body', 'slug'],
+  ['space_agent', 'requestSettings', 'apiKeySecret'],
   ['question', 'question', 'workflowKey'],
   ['workflow_step_text', 'body', 'stepSlug'],
   ['workflow_version', 'definition', 'status'],
@@ -44,6 +45,12 @@ test('jsonb masks undeclared free-text leaves while preserving structured names'
     maskHostedTableWrite('hub_note', { anchors: [{ addedLater: token, projectId: token }] }),
   ).toEqual({
     anchors: [{ addedLater: masked, projectId: token }],
+  })
+})
+
+test('space agent masking preserves a secret name without resolving a value', () => {
+  expect(maskHostedTableWrite('space_agent', { apiKeySecret: 'OPENROUTER_API_KEY' })).toEqual({
+    apiKeySecret: 'OPENROUTER_API_KEY',
   })
 })
 

@@ -480,6 +480,7 @@ function registerAgentCommands(
   runAgentCommand: typeof agentCommand = agentCommand,
 ): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
+    .option('--space <slug>', 'record space for share or unshare')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
     .option('--model <value>', 'set the model identifier')

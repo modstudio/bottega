@@ -365,6 +365,14 @@ test('agent add persists job, concurrency, and metered-routing flags', async () 
   }
 })
 
+test('agent share and unshare require an explicit space', async () => {
+  for (const verb of ['share', 'unshare']) {
+    await expect(
+      agentCommand(['agent', verb, 'codex'], { log: () => {}, setExitCode: () => {} }),
+    ).rejects.toThrow("required option '--space <space>' not specified")
+  }
+})
+
 test('agent commands store and clear only an endpoint secret name', async () => {
   const output: string[] = []
   try {

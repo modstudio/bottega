@@ -26,6 +26,10 @@ import {
 } from './record-api-client-context-items.ts'
 import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
+  type RecordSpaceAgentClient,
+  recordSpaceAgentClient,
+} from './record-api-client-space-agents.ts'
+import {
   recordApiUnreachable as classifyRecordApiUnreachable,
   recordApiError,
   recordAuthRefusal,
@@ -246,7 +250,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> &
-  RecordContextItemClient & {
+  RecordContextItemClient &
+  RecordSpaceAgentClient & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -782,6 +787,7 @@ export function recordApiClientOver(
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
     ...recordContextItemClient(request),
+    ...recordSpaceAgentClient(request),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),

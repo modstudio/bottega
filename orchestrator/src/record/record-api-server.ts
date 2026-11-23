@@ -82,6 +82,11 @@ import {
   upsertRecordContextItem,
 } from './record-context-items.ts'
 import {
+  deleteRecordSpaceAgent,
+  readRecordSpaceAgents,
+  upsertRecordSpaceAgent,
+} from './record-space-agents.ts'
+import {
   deleteCredentialPreference,
   listCredentialPreferences,
   putCredentialPreference,
@@ -530,6 +535,9 @@ async function serveRecordApiWithAuth(
     readContextHolders: readRecordContextHolders,
     upsertContextItem: upsertRecordContextItem,
     deleteContextItem: deleteRecordContextItem,
+    readSpaceAgents: readRecordSpaceAgents,
+    upsertSpaceAgent: upsertRecordSpaceAgent,
+    deleteSpaceAgent: deleteRecordSpaceAgent,
     ...recordDocDependencies(),
     ...recordSettingsDependencies(),
     ...recordScoreDependencies(),
