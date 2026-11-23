@@ -5,7 +5,9 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
@@ -212,6 +214,134 @@ test('a non-project document client binds every call to the personal space', asy
     author: 'user-a',
   })
   expect(destinations).toEqual(['personal-space', 'personal-space'])
+})
+
+test('a hosted write refuses a frontmatter-only document row', async () => {
+  let writes = 0
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [],
+    }),
+    upsertDoc: async () => {
+      writes += 1
+      return { id: 'doc', revisionId: 'rev' }
+    },
+  })
+  const client = await hostedDocClient('settings', null)
+  await expect(
+    client.upsertDoc({
+      scope: 'settings',
+      subject: null,
+      owner: 'user-a',
+      slug: 'settings',
+      title: 'Settings',
+      body: '---\ndescription: partial\n---',
+      bodyTrimmed: true,
+      delivery: 'demand',
+      audiences: ['technical'],
+      position: 0,
+      reason: 'test',
+      author: 'user-a',
+    }),
+  ).rejects.toThrow('read the full document body, then retry')
+  expect(writes).toBe(0)
+})
+
+test('a mismatched project route discards the speculative page and reads the confirmed space', async () => {
+  const project = 'mismatched-routed-docs'
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/repo/${project}`,
+    settings: { space: 'confirmed-team' },
+  })
+  rememberProjectSpace(db(), project, 'seeded-space')
+  const destinations: string[] = []
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'confirmed-space',
+      personalSpaceId: 'personal-space',
+      memberships: [{ space_id: 'confirmed-space', slug: 'confirmed-team', permission: 'write' }],
+    }),
+    listDocs: async (_query, destination) => {
+      const space = destination?.destinationSpaceId ?? 'unbound'
+      destinations.push(space)
+      return { items: [{ space }], nextCursor: null }
+    },
+  })
+
+  const page = await (await hostedDocClient('project', project)).listDocs({})
+  expect(destinations).toEqual(['seeded-space', 'confirmed-space'])
+  expect(page.items).toEqual([{ space: 'confirmed-space' }])
+})
+
+test('a missing project route waits for the confirmed space before reading', async () => {
+  const project = 'uncached-routed-docs'
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/repo/${project}`,
+    settings: { space: 'confirmed-team' },
+  })
+  const events: string[] = []
+  const destinations: string[] = []
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => {
+      events.push('destination')
+      return {
+        user: { id: 'user-a' },
+        activeSpaceId: 'confirmed-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'confirmed-space', slug: 'confirmed-team', permission: 'write' }],
+      }
+    },
+    listDocs: async (_query, destination) => {
+      events.push('read')
+      destinations.push(destination?.destinationSpaceId ?? 'unbound')
+      return { items: [], nextCursor: null }
+    },
+  })
+
+  const client = await hostedDocClient('project', project)
+  expect(events).toEqual(['destination'])
+  await client.listDocs({})
+  expect(events).toEqual(['destination', 'read'])
+  expect(destinations).toEqual(['confirmed-space'])
+})
+
+test('a refused confirmed destination refuses a successful speculative read', async () => {
+  const project = 'refused-routed-docs'
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/repo/${project}`,
+    settings: { space: 'missing-team' },
+  })
+  rememberProjectSpace(db(), project, 'seeded-space')
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [],
+    }),
+    listDocs: async () => ({ items: [{ space: 'seeded-space' }], nextCursor: null }),
+  })
+
+  const client = await hostedDocClient('project', project)
+  await expect(client.listDocs({})).rejects.toMatchObject({ status: 409 })
 })
 
 const contextInput = (holderKind: 'task' | 'session', holderId: string) => ({

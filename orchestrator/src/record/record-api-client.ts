@@ -124,6 +124,7 @@ export type RecordDocUpsertInput = {
   slug: string
   title: string
   body: string
+  bodyTrimmed?: boolean
   delivery: DocDelivery
   audiences: DocAudiences
   parentRecordId?: string | null
@@ -168,6 +169,7 @@ export type RecordDocImportInput = {
     slug: string
     title: string
     body: string
+    bodyTrimmed?: boolean
     delivery: DocDelivery
     audiences?: DocAudiences
     parentId?: string | null
@@ -314,6 +316,7 @@ export type RecordApiClient = ProjectIdentityClient &
         includeDeleted?: boolean
         kind?: DocKind
         acrossReadableSpaces?: boolean
+        frontmatterOnly?: string[]
       },
       destination?: RecordRequestDestination,
     ): Promise<{
@@ -829,6 +832,7 @@ const recordDocReadClient = (
     if (query.cursor) search.set('cursor', query.cursor)
     if (query.includeDeleted) search.set('includeDeleted', 'true')
     if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
+    for (const prefix of query.frontmatterOnly ?? []) search.append('frontmatterOnly', prefix)
     const suffix = search.toString()
     return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
   },

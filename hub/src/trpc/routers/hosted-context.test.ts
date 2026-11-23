@@ -23,6 +23,7 @@ const canonDoc: RecordDoc = {
   slug: 'preferences',
   title: 'Preferences',
   body: 'Use concise prose.',
+  bodyTrimmed: false,
   delivery: 'inject',
   latestRevisionId: revisionId,
   audiences: ['technical'],

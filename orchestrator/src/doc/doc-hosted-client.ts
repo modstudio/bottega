@@ -3,7 +3,9 @@
 
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
+import { db } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
+import { cachedProjectSpace } from '../project-space-cache.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -43,6 +45,25 @@ type HostedDocListResult = {
   unreadable: Array<{ id: string; reason: string }>
 }
 
+function assertFullBodyWrite(value: unknown): void {
+  if (!value || typeof value !== 'object') return
+  const input = value as Record<string, unknown>
+  const rows = Array.isArray(input.rows) ? input.rows : []
+  const candidates = [input, input.doc, ...rows]
+  if (
+    candidates.some(
+      (candidate) =>
+        candidate !== null &&
+        typeof candidate === 'object' &&
+        (candidate as Record<string, unknown>).bodyTrimmed === true,
+    )
+  ) {
+    throw new Error(
+      'refusing to write a frontmatter-only document row; read the full document body, then retry',
+    )
+  }
+}
+
 export async function hostedDocClient(
   scope: string,
   subject: string | null,
@@ -52,23 +73,69 @@ export async function hostedDocClient(
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
   const owner = suppliedOwner ?? docOwner(projectName)
-  const destination = await recordWriteDestination(client, owner)
-  return {
+  const seededSpaceId = cachedProjectSpace(db(), projectName)
+  const bindDestination = (destination: { destinationSpaceId: string }): HostedDocClient => ({
     listDocs: (query) =>
       client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),
     getDoc: (id) => client.getDoc(id, destination),
     getDocRevision: (id) => client.getDocRevision(id),
     listRevisions: (id) => client.listRevisions(id, destination),
-    upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
+    upsertDoc: async (input) => {
+      assertFullBodyWrite(input)
+      return client.upsertDoc({ ...input, projectId }, destination)
+    },
     reorderDocs: (input) => client.reorderDocs(input, destination),
-    importDoc: (input) =>
-      client.importDoc({ ...input, doc: { ...input.doc, projectId } }, destination),
-    importCanon: (input) => client.importCanon(input, destination),
+    importDoc: async (input) => {
+      assertFullBodyWrite(input)
+      return client.importDoc({ ...input, doc: { ...input.doc, projectId } }, destination)
+    },
+    importCanon: async (input) => {
+      assertFullBodyWrite(input)
+      return client.importCanon(input, destination)
+    },
     deleteDoc: (id, input) => client.deleteDoc(id, input, destination),
     consumeDoc: (id, input) => client.consumeDoc(id, input, destination),
     restoreDoc: (id, input) => client.restoreDoc(id, input, destination),
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
+  })
+  if (!seededSpaceId) return bindDestination(await recordWriteDestination(client, owner))
+
+  let destinationRead: ReturnType<typeof recordWriteDestination> | undefined
+  const confirmedDestination = () => (destinationRead ??= recordWriteDestination(client, owner))
+  const confirmedClient = async () => bindDestination(await confirmedDestination())
+  return {
+    listDocs: async (query) => {
+      if (query.acrossReadableSpaces || query.cursor) {
+        return (await confirmedClient()).listDocs(query)
+      }
+      const speculativePage = client.listDocs(query, { destinationSpaceId: seededSpaceId }).then(
+        (page) => ({ status: 'fulfilled' as const, page }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      )
+      const [destination, speculative] = await Promise.all([
+        confirmedDestination(),
+        speculativePage,
+      ])
+      if (destination.destinationSpaceId !== seededSpaceId) {
+        return client.listDocs(query, destination)
+      }
+      if (speculative.status === 'rejected') throw speculative.error
+      return speculative.page
+    },
+    getDoc: async (id) => (await confirmedClient()).getDoc(id),
+    getDocRevision: async (id) => (await confirmedClient()).getDocRevision(id),
+    listRevisions: async (id) => (await confirmedClient()).listRevisions(id),
+    upsertDoc: async (input) => (await confirmedClient()).upsertDoc(input),
+    reorderDocs: async (input) => (await confirmedClient()).reorderDocs(input),
+    importDoc: async (input) => (await confirmedClient()).importDoc(input),
+    importCanon: async (input) => (await confirmedClient()).importCanon(input),
+    deleteDoc: async (id, input) => (await confirmedClient()).deleteDoc(id, input),
+    consumeDoc: async (id, input) => (await confirmedClient()).consumeDoc(id, input),
+    restoreDoc: async (id, input) => (await confirmedClient()).restoreDoc(id, input),
+    applySettingsPermission: async (input) =>
+      (await confirmedClient()).applySettingsPermission(input),
+    applySettingsAutoMode: async (input) => (await confirmedClient()).applySettingsAutoMode(input),
   }
 }
 

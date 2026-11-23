@@ -28,6 +28,7 @@ export type Doc = {
   slug: string
   title: string
   body: string
+  bodyTrimmed?: boolean
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
   featured: boolean
@@ -86,6 +87,7 @@ export type DocListFilters = {
   delivery?: 'inject' | 'demand'
   kind?: string
   articleSubject?: string
+  frontmatterOnly?: string[]
 }
 
 export type DocRevision = {

@@ -1,5 +1,7 @@
 /** Pure reader for the canon frontmatter fields shared across concerns. */
 
+export const CANON_CONTEXT_SLUG_PREFIX = '.agents/contexts/'
+
 function frontmatterBoolean(value: string | undefined): boolean | null {
   if (value === 'true') return true
   if (value === 'false') return false

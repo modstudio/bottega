@@ -29,7 +29,7 @@ import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
 } from './record-api-credential-routes.ts'
-import { recordDocListPage } from './record-api-doc-list.ts'
+import { frontmatterOnlyRefusal, recordDocListPage } from './record-api-doc-list.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import { registerRecordDocReadRoutes } from './record-api-doc-read-routes.ts'
 import {
@@ -426,6 +426,52 @@ function maskedRecordApiApp(): Hono<ApiEnvironment> {
   return app
 }
 
+async function listDocsResponse(
+  context: Context<ApiEnvironment>,
+  deps: Deps,
+  scope: (context: Context<ApiEnvironment>, acrossReadableSpaces?: boolean) => Tenant | null,
+) {
+  const { docScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
+  const query = docListQuery.safeParse(context.req.query())
+  if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
+  const frontmatterOnly = context.req.queries('frontmatterOnly') ?? []
+  const frontmatterRefusal = frontmatterOnlyRefusal(frontmatterOnly)
+  if (frontmatterRefusal) return context.json({ error: frontmatterRefusal }, 400)
+  const listTarget = personalListTarget(
+    query.data.scope,
+    query.data.subject === undefined ? undefined : query.data.subject || null,
+    context.get('identity').user.id,
+  )
+  const tenant = listTarget
+    ? docScope(context, listTarget)
+    : scope(context, Boolean(query.data.acrossReadableSpaces))
+  if (!tenant) return noSpace(context)
+  let cursor: RecordCursor | null = null
+  try {
+    cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
+  } catch {
+    return context.json({ error: 'invalid cursor' }, 400)
+  }
+  const entries = await deps.listDocs({
+    ...tenant,
+    scope: query.data.scope,
+    subject: query.data.subject === undefined ? undefined : query.data.subject || null,
+    slug: query.data.slug,
+    owner: query.data.owner === undefined ? undefined : query.data.owner || null,
+    audience: query.data.audience,
+    status: query.data.status,
+    delivery: query.data.delivery,
+    kind: query.data.kind,
+    updatedSince: query.data.updatedSince,
+    limit: query.data.limit,
+    cursor,
+    includeDeleted: Boolean(query.data.includeDeleted),
+    acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
+    frontmatterOnly,
+  })
+  return context.json(recordDocListPage(entries, query.data.limit))
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = maskedRecordApiApp()
   app.onError((error, context) => {
@@ -773,42 +819,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     })
     return context.json({ deleted: true })
   })
-  app.get('/v1/docs', async (context) => {
-    const query = docListQuery.safeParse(context.req.query())
-    if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
-    const listTarget = personalListTarget(
-      query.data.scope,
-      query.data.subject === undefined ? undefined : query.data.subject || null,
-      context.get('identity').user.id,
-    )
-    const tenant = listTarget
-      ? docScope(context, listTarget)
-      : scope(context, Boolean(query.data.acrossReadableSpaces))
-    if (!tenant) return noSpace(context)
-    let cursor: RecordCursor | null = null
-    try {
-      cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
-    } catch {
-      return context.json({ error: 'invalid cursor' }, 400)
-    }
-    const entries = await deps.listDocs({
-      ...tenant,
-      scope: query.data.scope,
-      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
-      slug: query.data.slug,
-      owner: query.data.owner === undefined ? undefined : query.data.owner || null,
-      audience: query.data.audience,
-      status: query.data.status,
-      delivery: query.data.delivery,
-      kind: query.data.kind,
-      updatedSince: query.data.updatedSince,
-      limit: query.data.limit,
-      cursor,
-      includeDeleted: Boolean(query.data.includeDeleted),
-      acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
-    })
-    return context.json(recordDocListPage(entries, query.data.limit))
-  })
+  app.get('/v1/docs', (context) => listDocsResponse(context, deps, scope))
   app.put('/v1/docs', async (context) => {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)

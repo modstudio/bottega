@@ -1,6 +1,7 @@
 // concern: authoritative-document-read
 /** Prefetches each authoritative document slice used by write-time pack projection. */
 
+import { CANON_CONTEXT_SLUG_PREFIX } from '../../../shared/canon-frontmatter.ts'
 import { type Doc, readDocs } from './doc-authoritative-read.ts'
 
 export type PackBudgetProjection = {
@@ -17,7 +18,12 @@ export async function authoritativePackBudgetProjection(
 ): Promise<PackBudgetProjection> {
   const [globalDocs, globalCanon, jobRows, projectRows, projectCanonRows] = await Promise.all([
     readDocs({ scope: 'global', subject: null, status: 'current', delivery: 'inject' }),
-    readDocs({ scope: 'canon', subject: null, status: 'current' }),
+    readDocs({
+      scope: 'canon',
+      subject: null,
+      status: 'current',
+      frontmatterOnly: [CANON_CONTEXT_SLUG_PREFIX],
+    }),
     Promise.all(
       jobNames.map(
         async (job) =>
@@ -51,7 +57,12 @@ export async function authoritativePackBudgetProjection(
         async (project) =>
           [
             project,
-            await readDocs({ scope: 'canon', subject: project, status: 'current' }),
+            await readDocs({
+              scope: 'canon',
+              subject: project,
+              status: 'current',
+              frontmatterOnly: [CANON_CONTEXT_SLUG_PREFIX],
+            }),
           ] as const,
       ),
     ),

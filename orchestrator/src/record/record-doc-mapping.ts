@@ -34,6 +34,7 @@ export type RecordDoc = {
   slug: string
   title: string
   body: string
+  bodyTrimmed?: boolean
   delivery: DocDelivery
   audiences: DocAudiences
   parentId: string | null

@@ -122,6 +122,7 @@ function docFromHosted(row: HostedRow): Doc {
     slug: String(row.slug),
     title: String(row.title),
     body,
+    bodyTrimmed: row.bodyTrimmed === true,
     delivery: String(row.delivery) as Doc['delivery'],
     audiences: (row.audiences ?? ['technical']) as Doc['audiences'],
     featured: Boolean(row.featured),
@@ -158,6 +159,7 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     kind: filters.kind as Doc['kind'] | undefined,
     acrossReadableSpaces:
       filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
+    frontmatterOnly: filters.frontmatterOnly,
   })
   if (page.unreadable.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
@@ -250,8 +252,9 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
 }
 
 export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
+  const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
   return applyRecordReadAuthority({
-    local: () => listDocsStore(resolvedFilters(filters)),
+    local: () => listDocsStore(resolvedFilters(localFilters)),
     hosted: () => withReadRemedy(() => hostedRows(filters)),
   })
 }

@@ -39,21 +39,36 @@ export type RecordDocListEntry =
   | { readable: RecordDoc }
   | { unreadable: UnreadableRecordDoc; cursor: RecordCursor }
 
+export function recordDocWithFrontmatterOnly(
+  doc: RecordDoc,
+  prefixes: readonly string[],
+): RecordDoc {
+  if (!prefixes.some((prefix) => doc.slug.startsWith(prefix))) {
+    return { ...doc, bodyTrimmed: false }
+  }
+  const frontmatter = doc.body.match(/^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/)?.[0]
+  return frontmatter
+    ? { ...doc, body: frontmatter, bodyTrimmed: true }
+    : { ...doc, bodyTrimmed: false }
+}
+
 export function recordDocListEntries(
   rows: Record<string, unknown>[],
   audience?: DocAudience,
+  frontmatterOnly: readonly string[] = [],
 ): RecordDocListEntry[] {
   return rows.map((row) => {
     try {
       const doc = recordDocRow(row)
       const body = audience ? docBodyForAudience(doc.body, audience) : doc.body
+      const readable = {
+        ...doc,
+        body,
+        ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
+        [recordCursorAt]: String(row.cursor_at),
+      }
       return {
-        readable: {
-          ...doc,
-          body,
-          ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
-          [recordCursorAt]: String(row.cursor_at),
-        },
+        readable: recordDocWithFrontmatterOnly(readable, frontmatterOnly),
       }
     } catch (error) {
       return {
@@ -81,6 +96,7 @@ export type RecordDocListInput = {
   cursor: RecordCursor | null
   includeDeleted: boolean
   acrossReadableSpaces: boolean
+  frontmatterOnly?: string[]
 }
 
 type RecordDocRowSelection =
@@ -161,7 +177,7 @@ export async function listRecordDocEntries(
       ...input,
       spaceIds: input.spaceIds?.length ? input.spaceIds : [input.spaceId],
     })
-    return recordDocListEntries(rows, input.audience)
+    return recordDocListEntries(rows, input.audience, input.frontmatterOnly)
   })
 }
 

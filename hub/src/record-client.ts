@@ -351,6 +351,7 @@ const hostedDocSearchSchema = z.object({
 })
 
 const docSchema = DocSchema.extend({
+  bodyTrimmed: z.boolean().default(false),
   audiences: hostedDocAudiencesSchema,
   id: z.string().uuid(),
   spaceId: z.string().uuid(),
