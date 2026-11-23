@@ -72,7 +72,7 @@ import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
 import {
   questionTextRefusal,
-  requiredTextReachingHandler,
+  requiredHandlerText,
 } from '../question-store/question-text.ts'
 import {
   isRunQuestionOwnerNotLive,
@@ -469,7 +469,10 @@ export async function ask(
   ),
 ): Promise<AskResult> {
   writableDb()
-  const typed = WorkerQuestionSchema.parse(o)
+  const parsed = WorkerQuestionSchema.safeParse(o)
+  if (!parsed.success)
+    return { answered: false, reason: parsed.error.issues[0]?.message ?? 'question was refused' }
+  const typed = parsed.data
   const prose = await orchestratorProseGate([
     { field: 'question text', text: typed.question, prior: null },
   ])
@@ -667,10 +670,10 @@ function missingRequiredText(field: 'question' | 'body'): string {
 function requiredTextRetry(value: string, field: string, call: string): string | null {
   const refusal = questionTextRefusal(value, field)
   if (!refusal) return null
-  if (!value.replace(/\p{Cf}/gu, '').trim())
+  if (refusal.kind === 'empty')
     return missingRequiredText(field === 'question' ? 'question' : 'body')
   const instruction = field === 'question' ? ' Do not decide the matter yourself.' : ''
-  return `${refusal} Call ${call} again.${instruction}`
+  return `${refusal.message} Call ${call} again.${instruction}`
 }
 
 export function createAskMcpServer(
@@ -711,7 +714,6 @@ export function createAskMcpServer(
   // required) while ensuring an omitted value reaches the handler. Otherwise
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
-  const handlerText = z.preprocess(requiredTextReachingHandler, z.string())
   registerAskBoardTools({ server, runId, authorized, unauthorized, text })
 
   registerTool(
@@ -788,7 +790,7 @@ export function createAskMcpServer(
         'your own task in your final reply. The orchestrator derives the project and run anchors; ' +
         'you may optionally anchor the observation to a relative path and line.',
       inputSchema: z.object({
-        text: handlerText.describe('One non-empty line describing the defect.'),
+        text: requiredHandlerText.describe('One non-empty line describing the defect.'),
         project: z
           .string()
           .trim()
@@ -810,7 +812,7 @@ export function createAskMcpServer(
     },
     async ({ text: noteText, project, file, same_as }) => {
       const refusal = questionTextRefusal(noteText, 'text')
-      if (refusal) return text(`${refusal} Call note again.`)
+      if (refusal?.kind === 'malformed') return text(`${refusal.message} Call note again.`)
       try {
         if (!authorized()) throw new Error(unauthorized())
         const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
@@ -842,7 +844,7 @@ export function createAskMcpServer(
         'Send the architect a non-blocking progress or context message and keep working. ' +
         'This is not a question and does not request or wait for a ruling.',
       inputSchema: z.object({
-        body: handlerText.describe('The context to put on this run.'),
+        body: requiredHandlerText.describe('The context to put on this run.'),
       }),
     },
     async ({ body }) => {

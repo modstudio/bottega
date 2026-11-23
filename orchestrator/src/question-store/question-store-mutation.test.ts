@@ -429,6 +429,48 @@ test("an open question still links when its project's space is undeclared", asyn
   database.close()
 })
 
+test('a link mutation refuses object coercion text before writing', async () => {
+  const database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(PROJECT_ID, 'question-mutation-fixture', '/fixture', 'bun', '{}')
+  const openQuestion = row({
+    record_id: ID,
+    question_record_id: ID,
+    workflow_cursor_record_id: CURSOR_ID,
+    workflow_key: 'DEV-2515',
+    project_record_id: PROJECT_ID,
+    awaiting_operator_at: STAMP,
+    closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  const writtenSpaces: string[] = []
+  const intents: QuestionIntent[] = []
+  installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+
+  await expect(
+    upsertWorkflowQuestion(
+      {
+        cursorId: CURSOR_ID,
+        projectId: PROJECT_ID,
+        workflowKey: 'DEV-2515',
+        workflowTaskRecordId: null,
+        cursorOrdinal: 0,
+        stepSlug: 'implement',
+        question: '[object Object]',
+        at: STAMP,
+      },
+      database,
+    ),
+  ).rejects.toThrow('The question text must be a non-empty string; fix the caller that built it')
+
+  expect(intents).toEqual([])
+  expect(writtenSpaces).toEqual([])
+  database.close()
+})
+
 test('an unexpected destination identity failure refuses without writing', async () => {
   const database = migratedTestDatabase()
   seedProject(database)

@@ -50,9 +50,9 @@ describe('worker question finalization regression', () => {
 
   test('a mixed reply keeps the good question and reports the malformed one as dropped', () => {
     const malformed = {
-      question: { kind: 'choice', question: 'Nested?', options: ['one', 'two'] },
-      why: 'Nested incorrectly.',
-    } as unknown as WorkerQuestionInput
+      question: '[object Object]',
+      why: 'Coerced incorrectly.',
+    } satisfies WorkerQuestionInput
     const result = finalizeWorkerReply({
       reply: {
         status: 'asking',
@@ -70,7 +70,7 @@ describe('worker question finalization regression', () => {
 
     expect(result.acceptedQuestions.map(({ question }) => question)).toEqual(['Which path?'])
     expect(result.droppedQuestions).toEqual([malformed])
-    expect(result.error).toContain('question was an object')
+    expect(result.error).toContain('question was the text [object Object]')
   })
 })
 

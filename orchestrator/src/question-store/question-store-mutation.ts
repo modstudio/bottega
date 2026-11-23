@@ -35,6 +35,23 @@ const json = (value: unknown): unknown => {
   }
 }
 
+function refuseMalformedQuestionText(value: unknown): void {
+  const refusal = questionTextRefusal(value)
+  if (!refusal) return
+  throw new Error(
+    `${refusal.message} The question text must be a non-empty string; fix the caller that built it.`,
+  )
+}
+
+async function writeQuestion(
+  database: Database,
+  intent: QuestionLiveIntent,
+  input: QuestionWriteBody,
+) {
+  refuseMalformedQuestionText(input.question.question)
+  return questionStore(database).write(intent, input)
+}
+
 export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
   const askedAt = timestamp('askedAt', row.asked_at)
   return {
@@ -117,7 +134,7 @@ export async function mutateQuestion(
   const current = questionSnapshotFromRow(row)
   if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
     throw new Error(`question ${input.id} changed before the mutation was stored`)
-  const result = await questionStore(database).write(input.intent, {
+  const result = await writeQuestion(database, input.intent, {
     requestId: newRecordId(),
     question: {
       ...current,
@@ -143,14 +160,6 @@ export function requireQuestionMutationApplied(
   throw new Error(`question ${String(question.number)} changed; rerun the command`)
 }
 
-function refuseMalformedQuestionText(value: unknown): void {
-  const refusal = questionTextRefusal(value)
-  if (!refusal) return
-  throw new Error(
-    `${refusal} The question text must be a non-empty string; fix the caller that built it.`,
-  )
-}
-
 export async function askQuestion(
   database: Database,
   input: {
@@ -173,7 +182,6 @@ export async function askQuestion(
     levels?: unknown
   },
 ) {
-  refuseMalformedQuestionText(input.question)
   const id = input.id ?? newRecordId()
   let projectId = input.projectId ?? null
   if (!projectId && input.runId) {
@@ -249,7 +257,7 @@ export async function askQuestion(
     createdAt: input.askedAt,
     updatedAt: input.askedAt,
   }
-  const result = await questionStore(database).write('ask', {
+  const result = await writeQuestion(database, 'ask', {
     requestId: newRecordId(),
     question,
     audit: { action: 'ask', actorSession: null, at: input.askedAt, reason: null },

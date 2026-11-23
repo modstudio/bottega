@@ -160,7 +160,7 @@ export const recordQuestionModules: RecordModule[] = [
     './question-store.ts',
     './question-text.ts',
   ]),
-  module('orchestrator/src/question-store/question-text.ts', []),
+  module('orchestrator/src/question-store/question-text.ts', ['zod']),
   module('orchestrator/src/question-store/question-store-read.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
