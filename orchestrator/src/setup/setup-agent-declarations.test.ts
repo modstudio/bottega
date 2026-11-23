@@ -30,6 +30,7 @@ const declared = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent =
 
 const local = (overrides: Partial<LocalAgentDeclaration> = {}): LocalAgentDeclaration => ({
   ...declared(),
+  enabled: true,
   probedAt: null,
   ...overrides,
 })
@@ -58,15 +59,20 @@ test('drift table names declared fields and ignores probe state', () => {
   ])
 })
 
+test('drift table ignores request settings object key order', () => {
+  expect(
+    declarationDrift(
+      declared({ requestSettings: { alpha: 1, beta: 2 } }),
+      local({ requestSettings: { beta: 2, alpha: 1 } }),
+    ),
+  ).toEqual([])
+})
+
 test('probe tables include only never-probed rows and pending registrations', () => {
-  const rows = [local(), local({ name: 'failed', probedAt: 'now' })]
   const registrations = [{ name: 'new', mutation: { harness: 'codex' as const } }]
-  expect(probesWithProject({ local: rows, registrations, projectPath: '/project' })).toEqual([
-    'new',
-    'worker',
-  ])
-  expect(probesWithoutProject({ local: rows, registrations, projectPath: null })).toEqual([
-    'new',
-    'worker',
-  ])
+  const existingProbeNames = ['worker']
+  expect(probesWithProject({ existingProbeNames, registrations, projectPath: '/project' })).toEqual(
+    ['new', 'worker'],
+  )
+  expect(probesWithoutProject({ existingProbeNames, registrations })).toEqual(['new', 'worker'])
 })

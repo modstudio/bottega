@@ -6,12 +6,15 @@ import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-confi
 import type { ProjectSettings } from '../project/projects.ts'
 import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
 import {
+  PROBE_AGENTS_QUESTION_ID,
+  REGISTER_AGENTS_QUESTION_ID,
   MACHINE_GLOBAL_USE_QUESTION_ID,
   MACHINE_LEVEL_QUESTION_ID,
   type SetupPlan,
   type SetupProposal,
   type SetupQuestion,
 } from './setup-engine.ts'
+import { probesWithProject } from './setup-agent-declarations.ts'
 import type {
   HarnessInstallRoute,
   HarnessName,
@@ -282,11 +285,15 @@ function plannedHarnessInstalls(plan: SetupPlan, answers: SetupAnswers): SetupAc
 function plannedAgentActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
   const declarationPlan = plan.agentDeclarations
   const registrations =
-    declarationPlan && answers['register-agents'] === 'register'
+    declarationPlan && answers[REGISTER_AGENTS_QUESTION_ID] === 'register'
       ? declarationPlan.registrations
       : []
   const probeNames = declarationPlan
-    ? [...declarationPlan.existingProbeNames, ...registrations.map(({ name }) => name)].sort()
+    ? probesWithProject({
+        existingProbeNames: declarationPlan.existingProbeNames,
+        registrations,
+        projectPath: declarationPlan.projectPath,
+      })
     : []
   return [
     ...(registrations.length && declarationPlan
@@ -298,7 +305,9 @@ function plannedAgentActions(plan: SetupPlan, answers: SetupAnswers): SetupActio
           },
         ]
       : []),
-    ...(declarationPlan?.projectPath && answers['probe-agents'] === 'probe' && probeNames.length
+    ...(declarationPlan?.projectPath &&
+    answers[PROBE_AGENTS_QUESTION_ID] === 'probe' &&
+    probeNames.length
       ? [
           {
             kind: 'probe-agents' as const,

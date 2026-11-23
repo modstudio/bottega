@@ -121,6 +121,8 @@ export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
 
 export const MACHINE_LEVEL_QUESTION_ID = 'machine:level'
 export const MACHINE_GLOBAL_USE_QUESTION_ID = 'machine:global-use'
+export const REGISTER_AGENTS_QUESTION_ID = 'register-agents'
+export const PROBE_AGENTS_QUESTION_ID = 'probe-agents'
 
 function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
   return {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
+import type { LocalAgentDeclaration } from './setup-agent-declarations.ts'
 import type { SetupPlan } from './setup-engine.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
@@ -92,6 +93,28 @@ test('declared agents are offered for registration and get probe remedies withou
       fix: `${PLATFORM_SLUG} project add <path>, then ${PLATFORM_SLUG} agent probe codex-team`,
     }),
   )
+})
+
+test('a disabled unprobed declared agent is not offered for probing', async () => {
+  const plan = emptyPlan()
+  const local: LocalAgentDeclaration = {
+    ...declaration(),
+    enabled: false,
+    probedAt: null,
+  }
+  await addDeclaredAgentsToPlan(
+    plan,
+    [local],
+    [{ path: '/project' }] as Parameters<typeof addDeclaredAgentsToPlan>[2],
+    async () => ({
+      kind: 'read',
+      space: { id: 'space-a', slug: 'team' },
+      agents: [declaration()],
+    }),
+  )
+
+  expect(plan.agentDeclarations?.existingProbeNames).toEqual([])
+  expect(plan.questions).not.toContainEqual(expect.objectContaining({ id: 'probe-agents' }))
 })
 
 test('an unreadable declaration read becomes a non-blocking sign-in notice', async () => {

@@ -11,9 +11,11 @@ import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
+import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
-const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
+export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
+export const TRANSPORTS = ['cli', 'acp'] as const
 export type Harness = (typeof HARNESSES)[number]
 export function harnessIdentity(value: string | undefined): Harness | null {
   return HARNESSES.includes(value as Harness) ? (value as Harness) : null
@@ -369,11 +371,11 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
     throw new Error(`unknown harness "${input.harness}"`)
   if (input.backend && !BACKENDS.includes(input.backend))
     throw new Error(`unknown backend "${input.backend}"`)
-  if (input.transport && !['cli', 'acp'].includes(input.transport))
+  if (input.transport && !TRANSPORTS.includes(input.transport))
     throw new Error(`unknown transport "${input.transport}"`)
   if (
     input.billing &&
-    !['subscription', 'free', 'metered', 'none', 'unknown'].includes(input.billing)
+    !AGENT_BILLINGS.includes(input.billing)
   ) {
     throw new Error(`unknown billing "${input.billing}"`)
   }

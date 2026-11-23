@@ -198,8 +198,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-agent-declarations-boundary',
     file: 'orchestrator/src/setup/setup-agent-declarations.ts',
-    allowed: [],
-    typeOnlyAllowed: ['../agent/agent-registry.ts', '../record/record-space-agents.ts'],
+    allowed: [
+      '../../../shared/canonical-json.ts',
+      '../agent/agent-registry.ts',
+      '../transport/vendor-usage.ts',
+    ],
+    typeOnlyAllowed: ['../record/record-space-agents.ts'],
     reason:
       'Keep hosted agent declaration registration, drift, and probe decisions independent of stores and adapters.',
   },

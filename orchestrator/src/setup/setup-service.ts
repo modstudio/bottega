@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { probeAgent } from '../agent/agent-probe.ts'
 import { type AgentRow, addAgent } from '../agent/agent-registry.ts'
+import { sharedAgentDeclaration } from '../agent/agent-share.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectAmong, projectByName, projects } from '../project/projects.ts'
@@ -31,7 +32,13 @@ import {
   type SetupAgentService,
   type SetupProjectService,
 } from './setup-apply.ts'
-import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
+import {
+  PROBE_AGENTS_QUESTION_ID,
+  proposeSetup,
+  REGISTER_AGENTS_QUESTION_ID,
+  type SetupAgent,
+  type SetupPlan,
+} from './setup-engine.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import {
   prepareSetupStateFileMigration,
@@ -193,34 +200,14 @@ function readSetupState(): {
         provider: row.provider,
         probePassed: row.probe_result ? Number(JSON.parse(row.probe_result).ok === true) : 0,
       })),
-      declarationAgents: rows.map(localAgentDeclaration),
+      declarationAgents: rows.map((row) => ({
+        ...sharedAgentDeclaration(row),
+        enabled: Boolean(row.enabled),
+        probedAt: row.probed_at,
+      })),
     }
   } finally {
     database.close()
-  }
-}
-
-const parsed = (value: string | null): unknown | null => (value === null ? null : JSON.parse(value))
-
-function localAgentDeclaration(row: AgentRow): LocalAgentDeclaration {
-  return {
-    name: row.name,
-    harness: row.harness,
-    backend: row.backend,
-    model: row.model,
-    baseUrl: row.base_url,
-    transport: row.transport,
-    provider: row.provider,
-    apiKeySecret: row.api_key_secret,
-    requestSettings: parsed(row.request_settings),
-    jobs: parsed(row.jobs),
-    preferredJobs: parsed(row.preferred_jobs),
-    maxConcurrent: row.max_concurrent,
-    routeMetered: Boolean(row.route_metered),
-    trainsOnInputs: Boolean(row.trains_on_inputs),
-    operatedBy: row.operated_by,
-    billing: row.billing,
-    probedAt: row.probed_at,
   }
 }
 
@@ -243,7 +230,7 @@ export async function addDeclaredAgentsToPlan(
   const current = projectAmong(process.cwd(), registeredProjects)
   const projectPath = (current ?? registeredProjects[0])?.path ?? null
   const existingProbeNames = declaredLocal
-    .filter(({ probedAt }) => probedAt === null)
+    .filter(({ enabled, probedAt }) => enabled && probedAt === null)
     .map(({ name }) => name)
   plan.agentDeclarations = {
     registrations,
@@ -253,7 +240,7 @@ export async function addDeclaredAgentsToPlan(
   }
   if (registrations.length) {
     plan.questions.push({
-      id: 'register-agents',
+      id: REGISTER_AGENTS_QUESTION_ID,
       question: `Register ${registrations.length} agents the space declares?`,
       options: [
         { id: 'register', label: 'Register', why: 'Add the declared agents to this machine.' },
@@ -264,11 +251,11 @@ export async function addDeclaredAgentsToPlan(
     })
   }
   const probeNames = projectPath
-    ? probesWithProject({ local: declaredLocal, registrations, projectPath })
-    : probesWithoutProject({ local: declaredLocal, registrations, projectPath })
+    ? probesWithProject({ existingProbeNames, registrations, projectPath })
+    : probesWithoutProject({ existingProbeNames, registrations })
   if (projectPath && probeNames.length) {
     plan.questions.push({
-      id: 'probe-agents',
+      id: PROBE_AGENTS_QUESTION_ID,
       question: `Probe ${probeNames.length} agents now?`,
       options: [
         { id: 'probe', label: 'Probe', why: 'Prove each agent before routing can use it.' },

@@ -1,20 +1,20 @@
 // concern: setup-agent-declarations
 /** Decides how hosted agent declarations appear in setup. Pure: no store, process, or network. */
 
-import type { AgentMutation } from '../agent/agent-registry.ts'
+import { BACKENDS, HARNESSES, TRANSPORTS, type AgentMutation } from '../agent/agent-registry.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
-
-const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
-const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
-const TRANSPORTS = ['cli', 'acp'] as const
-const BILLING = ['subscription', 'free', 'metered', 'none', 'unknown'] as const
+import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
+import { canonicalJson } from '../../../shared/canonical-json.ts'
 
 export type DeclaredAgentRegistration = {
   name: string
   mutation: AgentMutation
 }
 
-export type LocalAgentDeclaration = RecordSpaceAgent & { probedAt: string | null }
+export type LocalAgentDeclaration = RecordSpaceAgent & {
+  enabled: boolean
+  probedAt: string | null
+}
 
 export type MissingDeclarationDecision =
   | { kind: 'register'; registration: DeclaredAgentRegistration }
@@ -29,7 +29,7 @@ function unregistrableField(declaration: RecordSpaceAgent): string | null {
   if (!enumField(declaration.harness, HARNESSES)) return 'harness'
   if (!enumField(declaration.backend, BACKENDS)) return 'backend'
   if (!enumField(declaration.transport, TRANSPORTS)) return 'transport'
-  if (!enumField(declaration.billing, BILLING)) return 'billing'
+  if (!enumField(declaration.billing, AGENT_BILLINGS)) return 'billing'
   const operatedBy = declaration.backend === 'vendor' ? 'vendor' : 'self'
   if (declaration.operatedBy !== operatedBy) return 'operatedBy'
   return null
@@ -95,28 +95,31 @@ export function declarationDrift(
 ): string[] {
   if (!local) return []
   return DECLARED_FIELDS.filter(
-    (field) => JSON.stringify(local[field]) !== JSON.stringify(declaration[field]),
+    (field) => canonicalJson(local[field]) !== canonicalJson(declaration[field]),
   )
 }
 
-/** Probe-with-project table: unprobed local rows and accepted registrations are offered together. */
-export function probesWithProject(input: {
-  local: readonly LocalAgentDeclaration[]
+type ProbeCandidates = {
+  existingProbeNames: readonly string[]
   registrations: readonly DeclaredAgentRegistration[]
-  projectPath: string | null
-}): string[] {
-  if (!input.projectPath) return []
+}
+
+function probeNames(input: ProbeCandidates): string[] {
   return [
-    ...input.local.filter((agent) => agent.probedAt === null).map((agent) => agent.name),
+    ...input.existingProbeNames,
     ...input.registrations.map((agent) => agent.name),
   ].sort()
 }
 
-/** Probe-without-project table: the same rows become individual notices. */
-export function probesWithoutProject(input: {
-  local: readonly LocalAgentDeclaration[]
-  registrations: readonly DeclaredAgentRegistration[]
+/** Probe-with-project table: unprobed local rows and accepted registrations are offered together. */
+export function probesWithProject(input: ProbeCandidates & {
   projectPath: string | null
 }): string[] {
-  return input.projectPath ? [] : probesWithProject({ ...input, projectPath: 'pending-project' })
+  if (!input.projectPath) return []
+  return probeNames(input)
+}
+
+/** Probe-without-project table: the same rows become individual notices. */
+export function probesWithoutProject(input: ProbeCandidates): string[] {
+  return probeNames(input)
 }

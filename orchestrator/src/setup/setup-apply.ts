@@ -432,9 +432,7 @@ function applyAgentRegistrations(
       lines.push(`${declaration.name}: registered`)
     } catch (error) {
       failed = true
-      lines.push(
-        `${declaration.name}: failed (${error instanceof Error ? error.message : String(error)}); fix: ${PLATFORM_SLUG} agent share ${declaration.name} --space ${action.spaceSlug}`,
-      )
+      lines.push(`${declaration.name}: failed; fix: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
   return { status: failed ? 'follow-up' : 'applied', message: lines.join('; ') }
