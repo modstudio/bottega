@@ -473,11 +473,7 @@ export type RecordApiClient = ProjectIdentityClient &
       destination: RecordWriteDestination,
       input?: { holderSession?: string | null },
     ): Promise<HostedBoardClaim>
-    listBoardClaims(
-      project: string,
-      projectId?: string | null,
-      options?: { openOnly?: boolean },
-    ): Promise<{ claims: HostedBoardClaim[] }>
+    listBoardClaims: ReturnType<typeof recordBoardClient>['listBoardClaims']
     releaseBoardTaskClaims(
       input: {
         project: string

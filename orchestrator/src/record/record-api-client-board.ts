@@ -3,6 +3,7 @@
 
 import {
   boardClaimListPath,
+  type BoardClaimListOptions,
   type RecordClientRequest,
   type RecordRequestDestination,
   type RecordWriteDestination,
@@ -207,7 +208,7 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
     listBoardClaims: (
       project: string,
       projectId?: string | null,
-      options?: { openOnly?: boolean },
+      options?: BoardClaimListOptions,
     ) => request<{ claims: HostedBoardClaim[] }>(boardClaimListPath(project, projectId, options)),
   }
 }
