@@ -657,11 +657,17 @@ export async function listHostedBoardClaims(
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
     const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
-    const openOnly = input.openOnly ? tx.unsafe(' AND closed_at IS NULL') : tx.unsafe('')
-    const rows = (await tx`
-      SELECT * FROM board_claim WHERE project_id=${projectId}::uuid${openOnly}
-      ORDER BY taken_at, id
-    `) as ClaimRow[]
+    const rows = (
+      input.openOnly
+        ? await tx`
+          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+          ORDER BY taken_at, id
+        `
+        : await tx`
+          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid
+          ORDER BY taken_at, id
+        `
+    ) as ClaimRow[]
     return { claims: await claimViews(tx, rows, clock, input.project) }
   })
 }
