@@ -22,6 +22,10 @@ import {
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
+import {
+  type CheckoutCliFreshnessDecision,
+  checkoutCliBinaryEnvironment,
+} from '../sandbox/checkout-cli-freshness.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import {
@@ -94,8 +98,11 @@ function finishRecord(recorded: RecordedArtifact, ran: ProbeRunResult): ProbeRec
   return { ...recorded, exitCode: ran.exitCode, signal: ran.signal ?? null }
 }
 
-function probeEnv(scratch: string): NodeJS.ProcessEnv {
-  return {
+export function probeEnv(
+  scratch: string,
+  cliFreshnessDecision?: CheckoutCliFreshnessDecision,
+): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? '/usr/bin:/bin',
     HOME: process.env.HOME ?? homedir(),
     LANG: process.env.LANG ?? 'C.UTF-8',
@@ -103,6 +110,8 @@ function probeEnv(scratch: string): NodeJS.ProcessEnv {
     ...workerSandboxEnvironment(),
     ...workerStateEnvironment(process.env),
   }
+  Object.assign(environment, checkoutCliBinaryEnvironment(process.env, cliFreshnessDecision))
+  return environment
 }
 
 async function sandboxedRunner(

@@ -1,15 +1,38 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  CHECKOUT_CLI_BINARY_ENV,
+  runningInstallationIdentity,
+} from '../../../shared/install-root.ts'
+import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
-import { appendWorkflowOutput, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import {
+  appendWorkflowOutput,
+  probeEnv,
+  recordWorkflowExec,
+  recordWorkflowProbe,
+} from './workflow-probe.ts'
 
 const probeRepository = mkdtempSync(join(tmpdir(), 'workflow-probe-project-'))
 afterAll(() => rmSync(probeRepository, { recursive: true, force: true }))
+let previousStateHome: string | undefined
+let stateHome: string
+beforeEach(() => {
+  previousStateHome = process.env[STATE_HOME_ENV]
+  stateHome = mkdtempSync(join(tmpdir(), 'workflow-probe-state-'))
+  process.env[STATE_HOME_ENV] = stateHome
+})
+afterEach(() => {
+  if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+  else process.env[STATE_HOME_ENV] = previousStateHome
+  rmSync(stateHome, { recursive: true, force: true })
+})
 let probeRepositoryInitialized = false
 
 function initializeProbeRepository(): void {
@@ -27,6 +50,20 @@ const database = testDatabaseFixture((d) => {
   d.query(
     "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'probe-project',?,'{}')",
   ).run(probeRepository)
+})
+
+test('a probe uses the checkout CLI selected from the host state environment', () => {
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
+  if (identity.kind !== 'checkout') throw new Error('expected a checkout install')
+  const expectedBinary = join(
+    stateHome,
+    'runtime',
+    identity.version,
+    WORKER_RUNTIME_ASSETS.checkoutCli,
+  )
+
+  expect(probeEnv('/probe-scratch', () => true)[CHECKOUT_CLI_BINARY_ENV]).toBe(expectedBinary)
+  expect(probeEnv('/probe-scratch', () => false)).not.toHaveProperty(CHECKOUT_CLI_BINARY_ENV)
 })
 
 test('records command, cwd, commit, exit and a bounded tail', async () => {

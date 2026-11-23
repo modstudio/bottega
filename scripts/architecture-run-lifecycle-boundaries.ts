@@ -334,7 +334,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../agent/agent-registry.ts',
       '../agent/worker-launch-env.ts',
       '../sandbox/record-connection-env.ts',
-      './checkout-cli-freshness.ts',
+      '../sandbox/checkout-cli-freshness.ts',
       './run-test-workers.ts',
     ],
     'Keep run process control independent of routing, contracts, reviews, and transports.',
