@@ -8,7 +8,7 @@ import { machineId } from '../record/machine-identity.ts'
 import type { QuestionLiveIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
-import { questionTextRefusal } from './question-text.ts'
+import { questionTextWriteRefusal, type RequiredTextRefusal } from './question-text-refusal.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)
@@ -35,12 +35,13 @@ const json = (value: unknown): unknown => {
   }
 }
 
-function refuseMalformedQuestionText(value: unknown): void {
-  const refusal = questionTextRefusal(value)
-  if (!refusal) return
-  throw new Error(
-    `${refusal.message} The question text must be a non-empty string; fix the caller that built it.`,
-  )
+function refuseQuestionText(refusal: RequiredTextRefusal | null): void {
+  if (refusal === null) return
+  const malformedRemedy =
+    refusal.kind === 'changed'
+      ? ''
+      : ' The question text must be a non-empty string; fix the caller that built it.'
+  throw new Error(`${refusal.message}${malformedRemedy}`)
 }
 
 async function writeQuestion(
@@ -48,7 +49,6 @@ async function writeQuestion(
   intent: QuestionLiveIntent,
   input: QuestionWriteBody,
 ) {
-  refuseMalformedQuestionText(input.question.question)
   return questionStore(database).write(intent, input)
 }
 
@@ -134,6 +134,10 @@ export async function mutateQuestion(
   const current = questionSnapshotFromRow(row)
   if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
     throw new Error(`question ${input.id} changed before the mutation was stored`)
+  if ('question' in input.changes)
+    refuseQuestionText(
+      questionTextWriteRefusal(input.intent, current.question, input.changes.question),
+    )
   const result = await writeQuestion(database, input.intent, {
     requestId: newRecordId(),
     question: {
@@ -182,6 +186,7 @@ export async function askQuestion(
     levels?: unknown
   },
 ) {
+  refuseQuestionText(questionTextWriteRefusal('ask', null, input.question))
   const id = input.id ?? newRecordId()
   let projectId = input.projectId ?? null
   if (!projectId && input.runId) {

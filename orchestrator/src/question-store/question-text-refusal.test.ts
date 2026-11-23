@@ -2,8 +2,9 @@ import { expect, test } from 'bun:test'
 import {
   MALFORMED_REQUIRED_TEXT_PREFIX,
   questionTextRefusal,
+  questionTextWriteRefusal,
   requiredTextReachingHandler,
-} from './question-text.ts'
+} from './question-text-refusal.ts'
 
 test.each([
   ['object', {}, 'question was an object'],
@@ -40,4 +41,16 @@ test('field remedies name the note and message without repeating text', () => {
     '`body` must be the message as a string.',
   )
   expect(questionTextRefusal({}, 'text')?.message).not.toContain('text text')
+})
+
+test('one write policy covers fresh, historical, amended, changed, and unchanged wording', () => {
+  expect(questionTextWriteRefusal('ask', null, '[object Object]')?.kind).toBe('malformed')
+  expect(questionTextWriteRefusal('import', null, '[object Object]')).toBeNull()
+  expect(questionTextWriteRefusal('restore', 'Original?', 'Changed?')).toBeNull()
+  expect(questionTextWriteRefusal('answer', '[object Object]', '[object Object]')).toBeNull()
+  expect(questionTextWriteRefusal('link', '[object Object]', 'Clear question?')).toBeNull()
+  expect(questionTextWriteRefusal('link', 'Clear question?', '[object Object]')?.kind).toBe(
+    'malformed',
+  )
+  expect(questionTextWriteRefusal('answer', 'Clear question?', 'Changed?')?.kind).toBe('changed')
 })
