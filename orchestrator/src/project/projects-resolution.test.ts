@@ -11,8 +11,8 @@ import { removeProjectCommand } from './project-commands.ts'
 import { PROJECT_REFERENCE_REPORT } from './project-reference-counts.ts'
 import {
   type Project,
-  projectAmong,
   type ProjectReferenceCounts,
+  projectAmong,
   projectAt,
   projectByName,
   projectRemovalRefusal,

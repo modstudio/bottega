@@ -68,6 +68,7 @@
         "scripts/audit-hot-store-statements.ts!",
         "scripts/measure-review-rebase-carries.ts!",
         "scripts/probe-bounded-calls.ts!",
+        "scripts/probe-startup-phases.ts!",
         "scripts/test-focused.ts!",
         "!scripts/**/*.fixtures.ts",
         "!scripts/**/*.test.ts",

@@ -1,6 +1,9 @@
 // Report-only startup phase timer for doc canon check.
 // Usage: bun --no-env-file scripts/probe-startup-phases.ts <checkout-root> <working-directory> [--rounds <count>]
 
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { refusal, renderRefusal } from '../shared/refusal.ts'
+
 type PhaseSample = Record<string, number>
 
 const args = process.argv.slice(2)
@@ -90,21 +93,24 @@ function rounded(value: number): number {
 
 const samples: PhaseSample[] = []
 for (let round = 1; round <= rounds; round += 1) {
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     [process.execPath, '--no-env-file', '-e', roundScript, root, workingDirectory],
     {
+      budget: 'hosted-api',
       env: { ...process.env, BOTTEGA_RECORD_TRACE: 'calls' },
-      stdout: 'pipe',
-      stderr: 'pipe',
     },
   )
-  const line = result.stdout
-    .toString()
-    .split('\n')
-    .find((output) => output.startsWith('{'))
+  const line = result.stdout.split('\n').find((output) => output.startsWith('{'))
   if (result.exitCode !== 0 || !line) {
-    const stderr = result.stderr.toString().trim()
-    throw new Error(`round ${round} failed${stderr ? `: ${stderr}` : ''}`)
+    const stderr = result.stderr.trim()
+    throw new Error(
+      renderRefusal(
+        refusal(`startup phase round ${round} failed${stderr ? `: ${stderr}` : ''}`, {
+          kind: 'edit',
+          text: 'restore record access and rerun the startup phase probe',
+        }),
+      ),
+    )
   }
   const sample = JSON.parse(line) as PhaseSample
   samples.push(sample)
