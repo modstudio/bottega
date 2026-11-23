@@ -785,6 +785,10 @@ describe('record API client test safety', () => {
           { destinationSpaceId: 'project-space' },
         ),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
+      await expect(client.listBoardClaims('bottega', id)).rejects.toThrow(/nope/)
+      await expect(
+        client.listBoardClaims('bottega', id, { openOnly: true }),
+      ).rejects.toThrow(/nope/)
       boardController.abort()
       expect(calls[0]?.signal?.aborted).toBeTrue()
       expect(calls[0]).toMatchObject({
@@ -816,6 +820,14 @@ describe('record API client test safety', () => {
         url: `https://api.example.test/v1/board/messages/${id}/replies`,
         method: 'POST',
         body: { body: 'Directed reply', audience: 'session:in-reach' },
+      })
+      expect(calls[6]).toMatchObject({
+        url: `https://api.example.test/v1/board/claims?project=bottega&projectId=${id}`,
+        method: 'GET',
+      })
+      expect(calls[7]).toMatchObject({
+        url: `https://api.example.test/v1/board/claims?project=bottega&projectId=${id}&openOnly=true`,
+        method: 'GET',
       })
     } finally {
       globalThis.fetch = originalFetch

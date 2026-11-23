@@ -210,7 +210,7 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
       options?: { openOnly?: boolean },
     ) =>
       request<{ claims: HostedBoardClaim[] }>(
-        `${boardClaimListPath(project, projectId)}${options?.openOnly ? '&openOnly=true' : ''}`,
+        boardClaimListPath(project, projectId, options),
       ),
   }
 }

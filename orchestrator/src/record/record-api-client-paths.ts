@@ -114,9 +114,14 @@ export function subjectMutationBody(
   return JSON.stringify({ project: input.project, projectId: input.projectId, ...change })
 }
 
-export function boardClaimListPath(project: string, projectId?: string | null): string {
+export function boardClaimListPath(
+  project: string,
+  projectId?: string | null,
+  options?: { openOnly?: boolean },
+): string {
   const search = new URLSearchParams({ project })
   if (projectId) search.set('projectId', projectId)
+  if (options?.openOnly) search.set('openOnly', 'true')
   return `/v1/board/claims?${search}`
 }
 

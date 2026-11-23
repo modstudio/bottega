@@ -27,12 +27,26 @@ type ExplainNode = {
 let database: PGlite
 let restorePool: (() => void) | undefined
 let statementCount = 0
+type CapturedQuery = { statement: string; parameters: unknown[] }
+let capturedQueries: CapturedQuery[] = []
 
 function countedSql(base: SQL): SQL {
   return new Proxy(base, {
     apply(target, thisArg, args: Parameters<SQL>) {
       statementCount += 1
-      return Reflect.apply(target, thisArg, args)
+      const result = Reflect.apply(target, thisArg, args)
+      if (
+        typeof result === 'object' &&
+        result !== null &&
+        'sql' in result &&
+        'parameters' in result
+      ) {
+        capturedQueries.push({
+          statement: String(result.sql),
+          parameters: [...(result.parameters as unknown[])],
+        })
+      }
+      return result
     },
     get(target, property, receiver) {
       if (property === 'begin') {
@@ -145,15 +159,25 @@ function expectBoardClaimIndexCondition(plan: ExplainNode, column: string): void
 }
 
 test('open and predecessor reads use board_claim index conditions under RLS', async () => {
-  const open = await explain(
-    'SELECT * FROM board_claim WHERE project_id=$1::uuid AND closed_at IS NULL ORDER BY taken_at, id',
-    [projectId],
+  capturedQueries = []
+  await listHostedBoardClaims({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    project: 'claim-read-indexes',
+    projectId,
+    openOnly: true,
+  })
+  const openQuery = capturedQueries.find(
+    ({ statement }) => statement.includes('SELECT * FROM board_claim') && statement.includes('project_id='),
   )
-  const previous = await explain(
-    `SELECT id, superseded_by_claim_id FROM board_claim
-     WHERE superseded_by_claim_id = ANY($1::uuid[]) ORDER BY taken_at, id`,
-    [[openId, secondOpenId, lapsedId]],
+  const previousQuery = capturedQueries.find(({ statement }) =>
+    statement.includes('WHERE superseded_by_claim_id = ANY('),
   )
+  expect(openQuery, 'captured production open-only list query').toBeDefined()
+  expect(previousQuery, 'captured production predecessor query').toBeDefined()
+  const open = await explain(openQuery!.statement, openQuery!.parameters)
+  const previous = await explain(previousQuery!.statement, previousQuery!.parameters)
   expectBoardClaimIndexCondition(open, 'project_id')
   expectBoardClaimIndexCondition(previous, 'superseded_by_claim_id')
 })
