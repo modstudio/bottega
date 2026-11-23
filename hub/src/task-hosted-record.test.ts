@@ -51,7 +51,7 @@ test('a raw hosted task row keeps its database project id without reading the re
     first_seen: current.first_seen,
     last_seen: current.last_seen,
     created_at: current.first_seen,
-    updated_at: current.updated_at,
+    updated_at: current.updated_at!,
     deleted_at: null,
     next_document_number: current.next_document_number,
     retired_reason: current.retired_reason,
