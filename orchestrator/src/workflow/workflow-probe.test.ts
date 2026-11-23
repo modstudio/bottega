@@ -1,15 +1,30 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
+import { checkoutCliBinaryEnvironment } from '../run/checkout-cli-freshness.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
-import { appendWorkflowOutput, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import {
+  appendWorkflowOutput,
+  probeEnv,
+  recordWorkflowExec,
+  recordWorkflowProbe,
+} from './workflow-probe.ts'
 
 const probeRepository = mkdtempSync(join(tmpdir(), 'workflow-probe-project-'))
 afterAll(() => rmSync(probeRepository, { recursive: true, force: true }))
+let inheritedCheckoutCliBinary: string | undefined
+beforeEach(() => {
+  inheritedCheckoutCliBinary = process.env[CHECKOUT_CLI_BINARY_ENV]
+})
+afterEach(() => {
+  if (inheritedCheckoutCliBinary === undefined) delete process.env[CHECKOUT_CLI_BINARY_ENV]
+  else process.env[CHECKOUT_CLI_BINARY_ENV] = inheritedCheckoutCliBinary
+})
 let probeRepositoryInitialized = false
 
 function initializeProbeRepository(): void {
@@ -27,6 +42,17 @@ const database = testDatabaseFixture((d) => {
   d.query(
     "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'probe-project',?,'{}')",
   ).run(probeRepository)
+})
+
+test('a probe replaces an inherited checkout CLI binary when the host selects one', () => {
+  process.env[CHECKOUT_CLI_BINARY_ENV] = '/foreign/checkout-cli'
+
+  const environment = probeEnv('/probe-scratch', () => true)
+
+  expect(environment[CHECKOUT_CLI_BINARY_ENV]).toBe(
+    checkoutCliBinaryEnvironment(environment, () => true)[CHECKOUT_CLI_BINARY_ENV],
+  )
+  expect(environment[CHECKOUT_CLI_BINARY_ENV]).not.toBe('/foreign/checkout-cli')
 })
 
 test('records command, cwd, commit, exit and a bounded tail', async () => {
