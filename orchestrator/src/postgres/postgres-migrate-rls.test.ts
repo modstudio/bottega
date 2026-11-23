@@ -873,6 +873,7 @@ realPostgres('RLS proof against real Postgres', () => {
     spaceA: ids.SPACE_A,
     spaceB: ids.SPACE_B,
     userId: ids.USER_A,
+    otherUserId: ids.USER_B,
   })
 
   test('same-space SELECT remains visible', () => {

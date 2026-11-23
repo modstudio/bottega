@@ -1,10 +1,20 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { Hono } from 'hono'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
+import { registerRecordRequestSpace } from '../record/record-api-request-space.ts'
+import type { RecordIdentity } from '../record/record-auth.ts'
 import type { AgentRow } from './agent-registry.ts'
 import { shareAgent, sharedAgentDeclaration, unshareAgent } from './agent-share.ts'
 
 const hostedSpaceId = '01990000-0000-7000-8000-000000000248'
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+
+afterEach(() => {
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+})
 
 function spaceAgentClient(removed: boolean): RecordApiClient {
   return {
@@ -100,4 +110,51 @@ test('unshare refusal names the space, agent, and restoration remedy', async () 
       `agent "not-a-local-agent" is not declared in space "shared-agents"; run \`${PLATFORM_SLUG} agent share 'not-a-local-agent' --space 'shared-agents'\` to declare it, or the declaration may already be absent`,
     )
   })
+})
+
+test('space-agent route refuses a non-member space with the membership remedy', async () => {
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      user: { id: 'user-a', email: 'a@example.test' },
+      activeSpaceId: hostedSpaceId,
+      personalSpaceId: null,
+      memberships: [
+        {
+          space_id: hostedSpaceId,
+          name: 'Shared Agents',
+          slug: 'shared-agents',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  app.put('/v1/space-agents', (context) => context.json({ ok: true }))
+
+  const response = await app.request('/v1/space-agents', {
+    method: 'PUT',
+    headers: { 'x-record-space': 'outside-space' },
+  })
+  expect(response.status).toBe(403)
+  expect(await response.json()).toEqual({
+    error: 'signed-in user is not a member of record space outside-space',
+    remedy: recordSpaceMembershipRefusal('outside-space'),
+  })
+})
+
+test('share and unshare refuse on a local-only install with the hosted-record remedy', async () => {
+  delete process.env.BOTTEGA_RECORD_API_URL
+  const client = spaceAgentClient(true)
+
+  await expect(shareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
+    `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent share\``,
+  )
+  await expect(unshareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
+    `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent unshare\``,
+  )
 })

@@ -74,6 +74,7 @@ export function registerSpaceAgentServiceProof(input: {
   spaceA: string
   spaceB: string
   userId: string
+  otherUserId: string
 }): void {
   const tenant = (spaceId: string) => ({
     url: input.actorUrl,
@@ -148,6 +149,11 @@ export function registerSpaceAgentServiceProof(input: {
     expect((await readRecordSpaceAgents(spaceA)).find(({ name }) => name === initial.name)).toEqual(
       initial,
     )
+    expect(
+      (await readRecordSpaceAgents({ ...spaceA, userId: input.otherUserId })).find(
+        ({ name }) => name === initial.name,
+      ),
+    ).toEqual(initial)
 
     expect(await upsertRecordSpaceAgent({ ...spaceA, ...changed })).toEqual(changed)
     expect(
