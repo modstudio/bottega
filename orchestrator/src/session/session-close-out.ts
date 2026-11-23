@@ -14,13 +14,22 @@ import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
-import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  sessionId as callingSessionId,
+  db,
+  storeWritesRefused,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
+import { repairAskingTurns } from '../run/run-liveness.ts'
+import { rootRunRecordId } from '../run/run-root-record.ts'
+import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import {
@@ -864,6 +873,11 @@ export async function releaseSessionResources(
   const dryRun = options.dryRun ?? false
   const resume = options.resume ?? false
   const database = dryRun ? db() : writableDb()
+  if (!storeWritesRefused()) {
+    const repairedAt = new Date().toISOString()
+    const repaired = repairAskingTurns(database, repairedAt)
+    rollUpChangedTurnRoots(repaired.repairedAbandoned.map(rootRunRecordId), repairedAt)
+  }
   const initial = await gather(database, session, dryRun)
   const context = await closeOutSessionContext({ session, dryRun, resume, database })
   const report: SessionCloseOutReport = {

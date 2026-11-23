@@ -405,12 +405,7 @@ export function reapStale(
     }
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
-  return (
-    dead.length +
-    abandonedBootstraps.length +
-    setupDeaths.length +
-    recordedCauseDeaths.length
-  )
+  return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
 
 /**

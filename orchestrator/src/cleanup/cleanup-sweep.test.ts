@@ -610,10 +610,12 @@ test('sweep restores an overwritten architect abandon verdict and rolls up its r
   try {
     const lines = await runAskingRepairSweep(projectName)
     expect(lines).toContain('asking-turn repair repaired 1 rows')
-    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(asking)).toEqual({
-      status: 'stale',
-      failure_kind: 'abandoned',
-    })
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(asking)).toEqual(
+      {
+        status: 'stale',
+        failure_kind: 'abandoned',
+      },
+    )
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stale',
     })

@@ -721,7 +721,9 @@ test('answer repairs an orphaned asking turn before reading its superseded quest
   await expect(
     answerRun(root, { argv: ['obsolete answer'], recordOnly: false, flags }, helpers),
   ).rejects.toThrow('invariant: a ruling resumes a live chain')
-  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({ status: 'ok' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+    status: 'ok',
+  })
   expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(asking)).toEqual({
     answer: null,
   })

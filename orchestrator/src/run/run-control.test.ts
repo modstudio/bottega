@@ -321,7 +321,9 @@ describe('run continuation', () => {
       return 'continue from latest'
     })
 
-    expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({ status: 'ok' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+      status: 'ok',
+    })
     expect(
       db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
     ).toEqual({ action: 'reap' })

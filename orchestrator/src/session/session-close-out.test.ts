@@ -152,6 +152,32 @@ test('close-out closes an idle explore as answered and reports the session clean
   )
 })
 
+test('close-out repairs an orphaned asking turn before it classifies live session work', async () => {
+  const session = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'craft', status: 'ok', session })
+  const asking = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'asking',
+    parent: root,
+    turn: 2,
+    session,
+  })
+  addRun({ agent: 'codex', job: 'craft', status: 'ok', parent: root, turn: 3, session })
+
+  const report = await closeOutSession({ session, dryRun: true })
+
+  expect(report.process).not.toContainEqual(
+    expect.objectContaining({ item: expect.stringMatching(/^run /) }),
+  )
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
+    status: 'ok',
+  })
+  expect(
+    db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
+  ).toEqual({ action: 'reap' })
+})
+
 test('close-out parks only an awaiting cursor with a recorded open question', async () => {
   const session = newRecordId()
   const parked = addCursor(session, 'awaiting-ruling')
