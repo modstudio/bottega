@@ -143,6 +143,7 @@ test('CLI slim list budgets calls and bytes for human and JSON output', async ()
   expect(humanResult.total).toBe(75)
   expect(human.calls.filter((path) => path === '/v1/notes/list')).toHaveLength(1)
   expect(human.calls).not.toContain('/v1/notes')
+  expect(human.bytes()).toBeGreaterThan(10 * 1024)
   expect(human.bytes()).toBeLessThan(NOTE_LIST_RESPONSE_BYTE_BUDGET)
 
   const json = countingFetch()
@@ -162,7 +163,15 @@ test('CLI slim list budgets calls and bytes for human and JSON output', async ()
 
 test('local and hosted slim lists have filter and order parity', async () => {
   seedSlimListNotes()
-  const filters = { project: 'gamma', text: 'budget NOTE 2', limit: 8 }
+  const filters = {
+    project: 'gamma',
+    stale: false,
+    actionable: true,
+    session: 'session-a',
+    kept: false,
+    text: 'budget NOTE 2',
+    limit: 8,
+  }
   const local = await listSlimNotes(filters, { baseUrl: '' })
   const hosted = await listSlimNotes(filters, {
     baseUrl: 'https://hub.example.test',
