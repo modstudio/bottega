@@ -56,9 +56,9 @@ test('read rejects a publication for a reused pid', () => {
   expect(readHarnessSession(42, { env, identity: () => 'reused' })).toBeNull()
 })
 
-test('reaper removes a dead publication and keeps a live publication', () => {
+test('reaper removes dead and reused publications and keeps a live publication', () => {
   const env = state()
-  for (const pid of [42, 43])
+  for (const pid of [42, 43, 44])
     publishHarnessSession({
       pid,
       session: `session-${pid}`,
@@ -68,9 +68,9 @@ test('reaper removes a dead publication and keeps a live publication', () => {
     })
   const result = reapHarnessSessions({
     env,
-    identity: (pid) => (pid === 42 ? 'dead' : 'live'),
+    identity: (pid) => (pid === 42 ? 'dead' : pid === 43 ? 'reused' : 'live'),
   })
-  expect(result.reaped).toBe(1)
-  expect(result.publications.map(({ identity }) => identity.pid)).toEqual([43])
+  expect(result.reaped).toBe(2)
+  expect(result.publications.map(({ identity }) => identity.pid)).toEqual([44])
   expect(readdirSync(harnessSessionDirectory(env))).toHaveLength(1)
 })
