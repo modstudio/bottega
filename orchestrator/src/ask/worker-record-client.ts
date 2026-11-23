@@ -69,15 +69,16 @@ export function createWorkerRecordClient(
   ): Promise<T> => {
     const token = await readCredential()
     if (!token) throw new Error('record session is missing or expired on the ask host')
+    const headers = new Headers(init.headers)
+    for (const [name, value] of recordRequestHeaders({
+      bearerToken: token,
+      destinationSpaceId: init.destinationSpaceId,
+    })) {
+      headers.set(name, value)
+    }
     const response = await (dependencies.fetch ?? hostedApiFetch)(`${baseUrl}${path}`, {
       ...init,
-      headers: {
-        ...Object.fromEntries(new Headers(init.headers).entries()),
-        ...recordRequestHeaders({
-          bearerToken: token,
-          destinationSpaceId: init.destinationSpaceId,
-        }),
-      },
+      headers,
     })
     const value: unknown = await response.json().catch(() => null)
     if (!response.ok)

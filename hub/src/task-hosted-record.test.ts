@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'bun:test'
-import { hostedTaskBatch } from './task-hosted-record.ts'
+import { describe, expect, spyOn, test } from 'bun:test'
+import type { HostedTask } from './hosted-tasks.ts'
+import { projectList } from './orch-project-register.ts'
+import { installProjectRegisterReader } from './project-register-reader.ts'
+import { refreshProjects } from './projects.ts'
+import { hostedTaskBatch, hostedTaskRow } from './task-hosted-record.ts'
 import type { TaskRow } from './task-row.ts'
 
 const current: TaskRow = {
@@ -25,6 +29,46 @@ const current: TaskRow = {
   retired_reason: null,
   revision: 7,
 }
+
+test('a raw hosted task row keeps its database project id without reading the register', () => {
+  const spawn = spyOn(Bun, 'spawnSync')
+  const hosted: HostedTask = {
+    id: current.record_id,
+    key: current.key,
+    project: 'absent-from-register',
+    project_name: 'absent-from-register',
+    project_id: '01990000-0000-7000-8000-000000002613',
+    title: current.title,
+    status: current.status,
+    status_category: current.status_category,
+    parent_key: current.parent_key,
+    parent_id: current.parent_record_id,
+    body: current.body,
+    assignee: current.assignee,
+    opened_at: current.opened_at,
+    closed_at: current.closed_at,
+    source: current.source,
+    first_seen: current.first_seen,
+    last_seen: current.last_seen,
+    created_at: current.first_seen,
+    updated_at: current.updated_at,
+    deleted_at: null,
+    next_document_number: current.next_document_number,
+    retired_reason: current.retired_reason,
+    revision: current.revision,
+  }
+  try {
+    installProjectRegisterReader(() => [])
+    refreshProjects()
+
+    expect(hostedTaskRow(hosted).project_record_id).toBe(hosted.project_id)
+    expect(spawn).not.toHaveBeenCalled()
+  } finally {
+    installProjectRegisterReader(projectList)
+    refreshProjects()
+    spawn.mockRestore()
+  }
+})
 
 describe('hosted task patch payload', () => {
   test('carries the command read values only for patched scalar fields', () => {

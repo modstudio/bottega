@@ -32,7 +32,7 @@ export function hostedTaskRow(row: import('./hosted-tasks.ts').HostedTask): Task
     external_id: null,
     key: row.key,
     project: row.project,
-    project_record_id: row.projectId ?? projectRecordIdFor(row.project),
+    project_record_id: row.projectId ?? row.project_id ?? projectRecordIdFor(row.project),
     title: row.title,
     status: row.status,
     status_category: row.status_category,

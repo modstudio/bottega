@@ -339,7 +339,7 @@ function taskFixtureServer() {
           key: 'DEV-2585',
           project: 'confinement-fixture',
           project_name: 'confinement-fixture',
-          projectId: FIXTURE_PROJECT_ID,
+          project_id: FIXTURE_PROJECT_ID,
           title: 'Confined worker fixture task',
           status: 'active',
           status_category: 'active',

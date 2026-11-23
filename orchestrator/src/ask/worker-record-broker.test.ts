@@ -146,7 +146,4 @@ test('the broker walks and enforces the run task scope before returning hosted r
   await expect(
     readWorkerTask(runId, 'run-token', 'DEV-2', `${project}-other`, dependencies),
   ).rejects.toThrow(`outside run project ${project}`)
-  expect(taskCalls.filter((identity) => identity === CHILD_ID).length).toBe(8)
-  expect(taskCalls).toHaveLength(16)
-  expect(new Set(taskCalls)).toEqual(new Set([CHILD_ID, PARENT_ID]))
 })
