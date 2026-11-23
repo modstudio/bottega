@@ -54,13 +54,13 @@ describe('tracker task text readers', () => {
     const read = await readCursorTaskText(
       caller((name, args) => {
         calls.push([name, args])
-        return name === 'task.getByKey'
+        return name === 'task_getByKey'
           ? { success: true, data: { id: 'cursor-id', title: 'Cursor title', description: 'Body' } }
           : { success: true, data: [{ body: ' note ' }, { body: '' }] }
       }),
       'STOP-3',
-      'task.getByKey',
-      'comment.list',
+      'task_getByKey',
+      'comment_list',
     )
     expect(read).toEqual({
       externalId: 'cursor-id',
@@ -69,7 +69,7 @@ describe('tracker task text readers', () => {
       body: 'Body',
       comments: ['note'],
     })
-    expect(calls[1]).toEqual(['comment.list', { entityType: 'task', entityId: 'cursor-id' }])
+    expect(calls[1]).toEqual(['comment_list', { entityType: 'task', entityId: 'cursor-id' }])
   })
 
   test('array selects the case-insensitive matching row', async () => {
