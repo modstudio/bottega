@@ -360,11 +360,11 @@ function evalProject(input: { project?: string; cwd: string }): CanonEvalProject
   })
 }
 
-function evalPack(
+async function evalPack(
   ev: CanonEval,
   project: CanonEvalProject,
-): { pack: ReturnType<typeof compilePack>; canonSha: string } {
-  const pack = compilePack({ job: ev.job, cwd: project.path })
+): Promise<{ pack: Awaited<ReturnType<typeof compilePack>>; canonSha: string }> {
+  const pack = await compilePack({ job: ev.job, cwd: project.path })
   const decision = decideCanonEvalPack({ project, pack })
   return { pack, canonSha: decision.canonSha }
 }
@@ -391,12 +391,12 @@ export function canonEvalProbeRunOptions(input: {
 }
 
 /** Compile the pack an eval would receive without creating or running its scratch repository. */
-export function currentCanonEvalSha(
+export async function currentCanonEvalSha(
   ev: CanonEval,
   opts: { project?: string; cwd?: string } = {},
-): string {
+): Promise<string> {
   const project = evalProject({ project: opts.project, cwd: opts.cwd ?? process.cwd() })
-  return evalPack(ev, project).canonSha
+  return (await evalPack(ev, project)).canonSha
 }
 
 function parseEvalReply(
@@ -604,7 +604,7 @@ export async function runCanonEvals(opts: {
   return withHermeticGitEnv(async () => {
     const results: CanonEvalRecord[] = []
     for (const ev of selected) {
-      const { pack, canonSha } = evalPack(ev, project)
+      const { pack, canonSha } = await evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
       let runId: string | null = null
       try {

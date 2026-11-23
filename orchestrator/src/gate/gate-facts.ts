@@ -7,7 +7,7 @@ import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import { DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import { isDocInjectedForRun } from '../doc/doc-injection.ts'
-import { listDocsStore } from '../doc/doc-read-store.ts'
+import { readDocs } from '../doc/doc-authoritative-read.ts'
 import { type Project, projectAmong, projects } from '../project/projects.ts'
 import { assertGateFactsFormat, GATE_FACTS_FORMAT_VERSION } from './gate-facts-contract.ts'
 
@@ -35,10 +35,10 @@ function migrationVersion(database: Database): number {
   return (database.query('PRAGMA user_version').get() as { user_version: number }).user_version
 }
 
-function collectGateFacts(database: Database = db()): GateFacts {
+async function collectGateFacts(database: Database = db()): Promise<GateFacts> {
   const activeProjects = projects(undefined, database)
   const projectNames = new Set(activeProjects.map(({ name }) => name))
-  const docs = listDocsStore({ status: 'current' }, database)
+  const docs = (await readDocs({ status: 'current' }))
     .filter(
       (doc) =>
         (doc.scope === 'canon' && (doc.subject === null || projectNames.has(doc.subject))) ||
@@ -70,9 +70,9 @@ function collectGateFacts(database: Database = db()): GateFacts {
   }
 }
 
-export function writeGateFacts(path: string, database: Database = db()): void {
+export async function writeGateFacts(path: string, database: Database = db()): Promise<void> {
   const temporary = join(dirname(path), `.gate-facts-${process.pid}.json`)
-  writeFileSync(temporary, `${JSON.stringify(collectGateFacts(database))}\n`, { mode: 0o600 })
+  writeFileSync(temporary, `${JSON.stringify(await collectGateFacts(database))}\n`, { mode: 0o600 })
   renameSync(temporary, path)
 }
 

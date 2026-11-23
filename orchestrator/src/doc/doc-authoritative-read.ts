@@ -6,7 +6,8 @@ import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
-import { hostedDocClient, listAllHostedDocs } from './doc-hosted-client.ts'
+import { hostedDocClient, listAllHostedDocs, readHostedDocReference } from './doc-hosted-client.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import {
   type HostedDocRevision,
   hostedDocRevisionRead,
@@ -35,6 +36,57 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+
+export type ResolvedDocReference = {
+  recordId: string
+  scope: string
+  subject: string | null
+  slug: string
+  projectName: string | null
+  address: string
+  updatedAt: string
+}
+
+function resolvedReference(row: Doc | HostedRow): ResolvedDocReference {
+  const hosted = 'id' in row
+  const scope = String(row.scope)
+  const subject = row.subject == null ? null : String(row.subject)
+  const slug = String(row.slug)
+  return {
+    recordId: String(hosted ? row.id : row.record_id),
+    scope,
+    subject,
+    slug,
+    projectName: hosted
+      ? row.projectName == null
+        ? null
+        : String(row.projectName)
+      : null,
+    address: `${scope}/${subject ?? '_'}/${slug}`,
+    updatedAt: String(hosted ? row.updatedAt : row.updated_at),
+  }
+}
+
+export function readDocReference(value: string): Promise<ResolvedDocReference | null> {
+  return applyRecordReadAuthority({
+    local: () => {
+      const rows = listDocsStore()
+      const row = hasRecordIdShape(value)
+        ? rows.find(({ record_id }) => record_id === value)
+        : rows.find(({ scope, subject, slug }) => `${scope}/${subject ?? '_'}/${slug}` === value)
+      return row ? resolvedReference(row) : null
+    },
+    hosted: () =>
+      withReadRemedy(async () => {
+        try {
+          return resolvedReference(await readHostedDocReference(value))
+        } catch (cause) {
+          if (String((cause as Error).message ?? cause).includes('404')) return null
+          throw cause
+        }
+      }),
+  })
+}
 
 function resolvedFilters(filters: DocListFilters): DocListFilters {
   if (filters.articleSubject === undefined) return filters
@@ -89,6 +141,7 @@ async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
     owner: filters.owner,
     audience: filters.audience as DocAudience | undefined,
     status: filters.status as Doc['status'] | undefined,
+    delivery: filters.delivery,
     kind: filters.kind as Doc['kind'] | undefined,
     acrossReadableSpaces:
       filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),

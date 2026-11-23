@@ -25,10 +25,10 @@ import {
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
+  readDocRevision as getDocRevision,
   readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
-import { getStoredDocRevision as getDocRevision } from '../doc/doc-revision-store.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   removeDoc,
@@ -145,7 +145,7 @@ function registerDocRevisionTool(server: McpServer): void {
       }),
     },
     async ({ id, user }) => {
-      const revision = getDocRevision(
+      const revision = await getDocRevision(
         await resolveDocRevisionIdentifier(db(), id),
         user ? await signedInDocOwner() : null,
       )

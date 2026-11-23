@@ -748,14 +748,17 @@ export async function doctorCommand(
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { readDocs } = await import('../doc/doc-authoritative-read.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')
-  let doctorPack: ReturnType<typeof compilePack>
+  let doctorPack: Awaited<ReturnType<typeof compilePack>>
   try {
-    doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
+    doctorPack = await compilePack({ job: 'understand', cwd: process.cwd() })
   } catch (error) {
     if (!(error instanceof CanonBudgetError)) throw error
     doctorPack = error.pack
   }
-  const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
+  const doctorFindings = (await findingsForPack(doctorPack)).reduce(
+    (n, row) => n + row.findings.length,
+    0,
+  )
   const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()
@@ -784,7 +787,7 @@ export async function doctorCommand(
     let currentSha: string | null = null
     let currentCanonError: string | null = null
     try {
-      currentSha = currentCanonEvalSha(ev, { project: PLATFORM_SLUG })
+      currentSha = await currentCanonEvalSha(ev, { project: PLATFORM_SLUG })
     } catch (error) {
       currentCanonError = error instanceof Error ? error.message : String(error)
     }

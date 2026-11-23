@@ -53,7 +53,7 @@ import {
 import { listContextItems } from './context-item-store.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
-import { listOpenResumes } from './docs.ts'
+import { readOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
   key: string
@@ -464,8 +464,7 @@ export async function contextBriefWithCursors(
       boardRequests,
       questions: questionCounts,
       filedIssues: filedIssues.waiting.length,
-      // PR 2: resume count reads the local mirror
-      resumeBriefs: listOpenResumes(cwd).open.length,
+      resumeBriefs: (await readOpenResumes(cwd)).open.length,
     },
     autonomy: autonomyLine(autonomy),
   }

@@ -138,6 +138,23 @@ function injectedDocsForPack(job: string, projectName: string | null): Doc[] {
   ].filter((doc) => isDocInjectedForRun(doc, job, projectName))
 }
 
+async function authoritativeInjectedDocsForPack(
+  job: string,
+  projectName: string | null,
+): Promise<Doc[]> {
+  const rows = await Promise.all([
+    readDocs({ scope: 'global', subject: null, status: 'current', delivery: 'inject' }),
+    readDocs({ scope: 'job', subject: job, status: 'current', delivery: 'inject' }),
+    readDocs({
+      scope: 'project',
+      subject: projectName ?? '__no_project__',
+      status: 'current',
+      delivery: 'inject',
+    }),
+  ])
+  return rows.flat().filter((doc) => isDocInjectedForRun(doc, job, projectName))
+}
+
 type PackSizeInput = {
   scope: string
   subject: string | null
@@ -722,14 +739,11 @@ export async function consumeDoc(
 
 export type InjectedDoc = Doc & { revision_id: string }
 
-export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
+export async function docsForRun(input: { job: string; cwd: string }): Promise<InjectedDoc[]> {
   const project = projectAt(input.cwd)
-  const docs = injectedDocsForPack(input.job, project?.name ?? null)
-  const latest = db().query(
-    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
-  )
+  const docs = await authoritativeInjectedDocsForPack(input.job, project?.name ?? null)
   return docs.map((doc) => {
-    const revisionId = (latest.get(doc.record_id) as { record_id: string } | null)?.record_id
+    const revisionId = doc.revision
     if (!revisionId) {
       throw new Error(
         `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`,

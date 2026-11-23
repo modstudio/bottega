@@ -13,13 +13,13 @@ export type ReviewFunnelVerdictForChange =
       verdict: ReturnType<typeof decideReviewFunnel>
     }
 
-export function reviewFunnelVerdictForChange(
+export async function reviewFunnelVerdictForChange(
   change: Omit<ReviewFunnelChange, 'selectionWindow'>,
-): ReviewFunnelVerdictForChange {
+): Promise<ReviewFunnelVerdictForChange> {
   if (change.head === change.base) {
     return { kind: 'empty', commit: change.head, base: change.base }
   }
-  const active = activeReviewFunnelPolicy()
+  const active = await activeReviewFunnelPolicy()
   const facts = gatherFunnelFacts({
     ...change,
     selectionWindow: active.policy.selection.window,

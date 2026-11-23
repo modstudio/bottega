@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -39,6 +39,7 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
+import { GATE_FACTS_ENV, writeGateFacts } from '../gate/gate-facts.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, projectsIncludingRetired, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -276,11 +277,11 @@ export async function run(
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const attribution = runProjectAttribution(runProjectName, opts.projectRecordId)
-  let pack: ReturnType<typeof compilePack> | null = null
+  let pack: Awaited<ReturnType<typeof compilePack>> | null = null
   if (resume.isFirstTurn) {
     try {
-      pack = opts.canonPack ?? compilePack({ job: opts.job, cwd: callerCwd })
-      recordPack(pack)
+      pack = opts.canonPack ?? (await compilePack({ job: opts.job, cwd: callerCwd }))
+      await recordPack(pack)
     } catch (cause) {
       const message = (cause as Error).message
       const failedId = opts.reserveId ?? newRecordId()
@@ -648,6 +649,16 @@ export async function run(
         project: runProject,
       })
       ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
+      const gateFactsPath = join(scratchDir, 'gate-facts.json')
+      try {
+        await writeGateFacts(gateFactsPath)
+      } catch (cause) {
+        throw new Error(
+          `refusing dispatch: authoritative gate facts could not be written: ${String((cause as Error).message ?? cause)}; remedy: verify record access and retry the run`,
+        )
+      }
+      mcpEnvironment[GATE_FACTS_ENV] = gateFactsPath
+      sandboxEnvironment[GATE_FACTS_ENV] = gateFactsPath
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)

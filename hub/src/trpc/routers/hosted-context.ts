@@ -82,12 +82,7 @@ async function allPersonalDocs(client: RecordClient, input: { scope: string; sub
   return { personal, rows }
 }
 
-async function currentRevision(client: RecordClient, id: string, destinationSpaceId?: string) {
-  const revisions = await client.docRevisions(id, undefined, destinationSpaceId)
-  return revisions.items[0]?.id ?? null
-}
-
-async function canonRow(client: RecordClient, row: RecordDoc, destinationSpaceId?: string) {
+async function canonRow(_client: RecordClient, row: RecordDoc, _destinationSpaceId?: string) {
   return {
     id: row.id,
     scope: row.scope,
@@ -96,7 +91,7 @@ async function canonRow(client: RecordClient, row: RecordDoc, destinationSpaceId
     title: row.title,
     body: row.body,
     delivery: row.delivery,
-    revision: await currentRevision(client, row.id, destinationSpaceId),
+    revision: row.latestRevisionId,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   }
