@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { checkoutCliBinaryEnvironment } from '../run/checkout-cli-freshness.ts'
+import { checkoutCliBinaryEnvironment } from '../sandbox/checkout-cli-freshness.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
 import {
   appendWorkflowOutput,

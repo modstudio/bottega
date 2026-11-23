@@ -11,7 +11,7 @@ import {
 import { db } from '../database/db.ts'
 import { probeContextLimitEnvironment } from '../dispatch/probe-launch-overrides.ts'
 import { job, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
-import { checkoutCliBinaryEnvironment } from './checkout-cli-freshness.ts'
+import { checkoutCliBinaryEnvironment } from '../sandbox/checkout-cli-freshness.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
 afterEach(() => mock.restore())

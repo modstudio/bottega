@@ -16,12 +16,12 @@ import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.t
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
-import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import {
   CHECKOUT_CLI_BINARY_ENV,
   type CheckoutCliFreshnessDecision,
   checkoutCliBinaryEnvironment,
-} from './checkout-cli-freshness.ts'
+} from '../sandbox/checkout-cli-freshness.ts'
+import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import {
   type CheckpointContainment,
   checkpointRun,

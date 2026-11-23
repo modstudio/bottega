@@ -1,6 +1,6 @@
 export const runModuleSpecs = [
   {
-    file: 'orchestrator/src/run/checkout-cli-freshness.ts',
+    file: 'orchestrator/src/sandbox/checkout-cli-freshness.ts',
     allowed: [
       'node:fs',
       'node:path',

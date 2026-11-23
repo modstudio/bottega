@@ -26,7 +26,7 @@ import {
   CHECKOUT_CLI_BINARY_ENV,
   type CheckoutCliFreshnessDecision,
   checkoutCliBinaryEnvironment,
-} from '../run/checkout-cli-freshness.ts'
+} from '../sandbox/checkout-cli-freshness.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import {

@@ -547,6 +547,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     '../sandbox/sandbox.ts',
     '../sandbox/sandbox-runtime.ts',
+    '../sandbox/checkout-cli-freshness.ts',
     '../sandbox/worker-sandbox-environment.ts',
     '../secret-shaped-output.ts',
     './workflow-evidence-handoff.ts',
