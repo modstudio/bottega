@@ -105,6 +105,12 @@ import {
   WorkerQuestionInputSchema,
   WorkerQuestionSchema,
 } from './worker-question.ts'
+import {
+  readWorkerTask,
+  readWorkerTaskDocument,
+  readWorkerWorkflowText,
+} from './worker-record-broker.ts'
+import type { WorkerRecordClient } from './worker-record-client.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -569,6 +575,7 @@ type AskServerDependencies = {
   fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
+  workerRecordClient?: WorkerRecordClient
 }
 
 function workerNoteRun(runId: string): WorkerNoteRun {
@@ -674,6 +681,84 @@ function requiredTextRetry(value: string, field: string, call: string): string |
   return `${refusal.message} Call ${call} again.${instruction}`
 }
 
+type AskText = (
+  value: string,
+  isError?: true,
+) => { content: Array<{ type: 'text'; text: string }>; isError?: true }
+
+function registerWorkerRecordReadTools(input: {
+  registerTool: McpServer['registerTool']
+  runId: string
+  token: string
+  dependencies: AskServerDependencies
+  text: AskText
+}): void {
+  const readDependencies = input.dependencies.workerRecordClient
+    ? { client: input.dependencies.workerRecordClient }
+    : {}
+  const register = (
+    name: 'read_task' | 'read_task_document' | 'read_workflow_text',
+    description: string,
+    inputSchema: z.ZodObject,
+    read: (value: Record<string, string>) => Promise<unknown>,
+  ) =>
+    input.registerTool(name, { description, inputSchema }, async (value) => {
+      try {
+        return input.text(JSON.stringify(await read(value as Record<string, string>)))
+      } catch (error) {
+        return input.text(error instanceof Error ? error.message : String(error), true)
+      }
+    })
+  register(
+    'read_task',
+    "Read this run's task or one of its parent tasks from the hosted record. The run token and host-side scope decide access.",
+    z.object({ key: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
+    ({ key, project }) => readWorkerTask(input.runId, input.token, key!, project, readDependencies),
+  )
+  register(
+    'read_task_document',
+    "Read a task document attached to this run's task or one of its parent tasks from the hosted record.",
+    z.object({
+      reference: z.string().trim().min(1),
+      project: z.string().trim().min(1).optional(),
+    }),
+    ({ reference, project }) =>
+      readWorkerTaskDocument(input.runId, input.token, reference!, project, readDependencies),
+  )
+  register(
+    'read_workflow_text',
+    "Read workflow text attached to a cursor on this run's task or one of its parent tasks.",
+    z.object({ id: z.string().uuid(), project: z.string().trim().min(1).optional() }),
+    ({ id, project }) =>
+      readWorkerWorkflowText(input.runId, input.token, id!, project, readDependencies),
+  )
+}
+
+function registerGateResultTool(input: {
+  registerTool: McpServer['registerTool']
+  runId: string
+  token: string
+  text: AskText
+}): void {
+  if (!gateResultToolAvailable(input.runId, input.token)) return
+  input.registerTool(
+    'gate_result',
+    {
+      description:
+        'Read the most recent recorded gate result for the exact project commit under review. ' +
+        'This runs nothing and takes no input.',
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      try {
+        return input.text(formatRecordedGateResult(recordedGateResult(input.runId)))
+      } catch (error) {
+        return input.text(`The recorded gate result could not be read (${String(error)}).`, true)
+      }
+    },
+  )
+}
+
 export function createAskMcpServer(
   runId: string,
   token: string,
@@ -713,7 +798,7 @@ export function createAskMcpServer(
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
   registerAskBoardTools({ server, runId, authorized, unauthorized, text })
-
+  registerWorkerRecordReadTools({ registerTool, runId, token, dependencies, text })
   registerTool(
     'ask_orchestrator',
     {
@@ -761,24 +846,7 @@ export function createAskMcpServer(
     text,
   })
 
-  if (gateResultToolAvailable(runId, token)) {
-    registerTool(
-      'gate_result',
-      {
-        description:
-          'Read the most recent recorded gate result for the exact project commit under review. ' +
-          'This runs nothing and takes no input.',
-        annotations: { readOnlyHint: true },
-      },
-      async () => {
-        try {
-          return text(formatRecordedGateResult(recordedGateResult(runId)))
-        } catch (error) {
-          return text(`The recorded gate result could not be read (${String(error)}).`, true)
-        }
-      },
-    )
-  }
+  registerGateResultTool({ registerTool, runId, token, text })
 
   registerTool(
     'note',

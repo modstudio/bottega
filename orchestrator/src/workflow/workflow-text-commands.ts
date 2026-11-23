@@ -20,19 +20,22 @@ type WorkflowTextCommandOptions = {
   workflowTextDocuments?: WorkflowTextDocumentPorts
 }
 
+export type ShownWorkflowText = Awaited<ReturnType<typeof showWorkflowText>>
+
+export function workflowTextShowLine(shown: ShownWorkflowText): string {
+  if (shown.kind === 'live') return shown.body
+  return (
+    `${PLATFORM_SLUG} task document ${shown.documentReference} preserves ${workflowTextAttachmentToken(shown.id)}; ` +
+    `read it with: ${PLATFORM_SLUG} task doc show ${shown.documentReference}`
+  )
+}
+
 export async function showWorkflowTextCommand(
   argv: string[],
   print: WorkflowTextPrint,
 ): Promise<void> {
   const shown = await showWorkflowText(argv[3]!)
-  if (shown.kind === 'live') {
-    print(shown, shown.body)
-    return
-  }
-  const line =
-    `${PLATFORM_SLUG} task document ${shown.documentReference} preserves ${workflowTextAttachmentToken(shown.id)}; ` +
-    `read it with: ${PLATFORM_SLUG} task doc show ${shown.documentReference}`
-  print(shown, line)
+  print(shown, workflowTextShowLine(shown))
 }
 
 export async function copyWorkflowTextCommand(

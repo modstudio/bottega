@@ -14,11 +14,17 @@ import type { Attribution } from './task-attribution.ts'
 import { hostedGetTask, hostedListTasks, isMissingHostedTask } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { documentRole } from './task-document-role.ts'
-import type { TaskDocumentSummary } from './task-document-types.ts'
+import type { TaskDocument } from './task-document-types.ts'
 import { missingTaskError, type TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
 import { type HostedTaskWriteOptions, hostedTaskWriteOptions } from './task-write-destination.ts'
+
+export type HostedTaskDetail = {
+  task: import('./hosted-tasks.ts').HostedTask
+  comments: import('./hosted-tasks.ts').HostedComment[]
+  documents: import('./hosted-tasks.ts').HostedDocument[]
+}
 
 export function hostedTaskRow(row: import('./hosted-tasks.ts').HostedTask): TaskRow {
   return {
@@ -60,6 +66,24 @@ export function hostedComment(row: import('./hosted-tasks.ts').HostedComment): T
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
     revision: row.revision,
+  }
+}
+
+export function hostedTaskDocumentSummary(
+  row: import('./hosted-tasks.ts').HostedDocument,
+): TaskDocument {
+  return {
+    id: row.id,
+    number: row.number!,
+    label: formatTaskDocumentLabel(row.task_key, row.number!),
+    task_key: row.task_key,
+    task_record_id: row.task_id ?? '',
+    role: documentRole(row.role),
+    title: row.title,
+    updated_at: row.updated_at,
+    body: row.body,
+    version: row.version,
+    created_at: row.created_at,
   }
 }
 
@@ -121,21 +145,7 @@ export async function showHostedTask(
   return {
     task: hostedTaskRow(detail.task),
     comments: detail.comments.map(hostedComment),
-    documents: detail.documents.map(
-      (row): TaskDocumentSummary => ({
-        id: row.id,
-        number: row.number!,
-        label: formatTaskDocumentLabel(row.task_key, row.number!),
-        task_key: row.task_key,
-        task_record_id: row.task_id ?? '',
-        role: documentRole(row.role),
-        title: row.title,
-        updated_at: row.updated_at,
-        body: row.body,
-        version: row.version,
-        created_at: row.created_at,
-      }),
-    ),
+    documents: detail.documents.map(hostedTaskDocumentSummary),
   }
 }
 
