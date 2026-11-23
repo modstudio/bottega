@@ -120,17 +120,22 @@ function cliTaskReadAdapter(): TaskReadPort {
   }
 }
 
-/** Install the lazy CLI-owned adapter into the orchestrator process. */
-export function installCliTaskReader(): void {
-  loadedHubTaskReads = undefined
+/** Install the lazy in-process project register reader for a CLI entry. */
+export function installCliProjectRegisterReader(): void {
   loadedProjectRegisterReads = undefined
-  installTaskReader(cliTaskReadAdapter())
   installProjectRegisterReader((options) => {
     const { project, presentation, contract } = projectRegisterReads()
     return contract.OrchProjectListSchema.parse(
       project.projects(options).map(presentation.listedProjectJson),
     )
   })
+}
+
+/** Install the lazy CLI-owned adapter into the orchestrator process. */
+export function installCliTaskReader(): void {
+  loadedHubTaskReads = undefined
+  installTaskReader(cliTaskReadAdapter())
+  installCliProjectRegisterReader()
   installConfinementProbeTaskCreator((connection, input) => {
     const hub = hubTaskReads()
     const fixtureProject = registerConfinementProbeProject(input)

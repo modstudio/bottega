@@ -14,7 +14,7 @@ import { addProject } from '../orchestrator/test/fixtures/offline-branch-landing
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
 import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { captureTestHubDatabase, mintTestHubDatabase } from '../shared/test-hub-database.ts'
-import { installCliTaskReader } from './task-read-adapter.ts'
+import { installCliProjectRegisterReader, installCliTaskReader } from './task-read-adapter.ts'
 
 const lazyHubTaskModules = [
   require.resolve('../hub/src/task.ts'),
@@ -97,8 +97,8 @@ test('installing the CLI adapter leaves hub unloaded until the first read', asyn
   for (const module of lazyHubTaskModules) expect(require.cache[module]).toBeDefined()
 })
 
-test('the installed register reader returns schema-valid registered projects', () => {
-  installCliTaskReader()
+test('the standalone register reader returns schema-valid registered projects', () => {
+  installCliProjectRegisterReader()
 
   const rows = projectRegisterReader()?.()
 
