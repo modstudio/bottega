@@ -19,7 +19,7 @@ test('a hosted read reports an invalid revision with one remedy', async () => {
   const options = {
     baseUrl: 'https://hub.example.test',
     token: 'test',
-    fetch: async (input) =>
+    fetch: async (input: string) =>
       new URL(input).pathname === '/v1/tasks/identity'
         ? Response.json({
             userId: 'user-1',
