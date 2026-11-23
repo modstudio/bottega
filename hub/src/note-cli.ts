@@ -21,7 +21,7 @@ import {
 import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
-import { listProjectNotes } from './note-read.ts'
+import { listProjectSlimNotes } from './note-read.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -36,6 +36,7 @@ type NoteOptions = {
   enable?: boolean
   json?: boolean
   kept?: boolean
+  limit?: string
   new?: boolean
   project?: string
   reason?: string
@@ -47,6 +48,8 @@ type NoteOptions = {
   title?: string
   days?: string
 }
+
+const NOTE_LIST_DEFAULT_LIMIT = 50
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
 const open = () => requireDatabase()
@@ -61,24 +64,34 @@ async function listNoteCommand(text: string | undefined, options: NoteOptions): 
   const sessions = [...(options.session ?? [])]
   if (options.kept && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
   const session = sessions.length ? sessions : undefined
-  const rows = await noteListRows(text, options, session)
-  if (options.json) console.log(JSON.stringify(rows))
-  else if (!rows.length) console.log('no notes')
-  else for (const row of rows) console.log(noteListLine(row))
+  const result = await noteListRows(text, options, session)
+  if (options.json) console.log(JSON.stringify(result.notes))
+  else if (!result.notes.length) console.log('no notes')
+  else {
+    for (const row of result.notes) console.log(noteListLine(row))
+    if (result.total > result.notes.length)
+      console.log(
+        `showing ${result.notes.length} of ${result.total} notes; pass --limit <n> to see more`,
+      )
+  }
 }
 
-async function noteListRows(
+export async function noteListRows(
   text: string | undefined,
   options: NoteOptions,
   session: string[] | undefined,
+  hosted?: Parameters<typeof listProjectSlimNotes>[0]['hosted'],
 ) {
-  return listProjectNotes({
+  const explicitLimit = options.limit === undefined ? undefined : Number(options.limit)
+  return listProjectSlimNotes({
     project: options.project,
     stale: Boolean(options.stale),
     session,
     kept: Boolean(options.kept),
     actionable: Boolean(options.actionable),
     text,
+    limit: explicitLimit ?? (options.json ? undefined : NOTE_LIST_DEFAULT_LIMIT),
+    hosted,
   })
 }
 
@@ -376,6 +389,7 @@ export function registerNoteCommands(program: Command): void {
     )
     .option('--actionable', 'list notes ready for disposition')
     .option('--kept', 'list notes acknowledged by the selected sessions')
+    .option('--limit <n>', 'limit the number of notes shown')
     .option('--json', 'write the note rows as JSON')
     .option('--new', 'treat list as note text and show the filing remedy')
     .action(async (text: string | undefined, options: NoteOptions) => {

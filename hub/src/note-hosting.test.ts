@@ -89,10 +89,71 @@ describe('hosted-only note safety', () => {
     expect(promotedInput).toEqual({ task: undefined, title: 'The point of the note' })
   })
 
+  test('the slim list route forwards every query filter', async () => {
+    let captured: unknown
+    const response = await noteApi(
+      new Request(
+        'https://hub.example.test/v1/notes/list?project=gamma&stale=false&kept=true&session=a&session=b&text=x&limit=3',
+        {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        },
+      ),
+      hostedRouteTestConfig,
+      {
+        fetch: (async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+          })) as unknown as typeof fetch,
+        listSlim: async (...args: unknown[]) => {
+          captured = args[2]
+          return { notes: [], total: 0 }
+        },
+      },
+    )
+
+    expect(response?.status).toBe(200)
+    expect(captured).toEqual({
+      project: 'gamma',
+      stale: false,
+      actionable: false,
+      sessions: ['a', 'b'],
+      kept: true,
+      text: 'x',
+      limit: 3,
+    })
+  })
+
+  test('the slim list route refuses an invalid limit as caller input', async () => {
+    for (const limit of ['abc', '0', '-1', '']) {
+      const response = await noteApi(
+        new Request(`https://hub.example.test/v1/notes/list?limit=${limit}`, {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        }),
+        hostedRouteTestConfig,
+        {
+          fetch: (async () =>
+            Response.json({
+              user: { id: 'user-1' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+            })) as unknown as typeof fetch,
+        },
+      )
+
+      expect(response?.status, `limit=${limit}`).toBe(400)
+      expect(await response?.json()).toEqual({
+        error: 'limit must be a positive integer; omit it to list every matching note',
+      })
+    }
+  })
+
   test('every note route refuses a requested space outside the caller memberships', async () => {
     const id = '01990000-0000-7000-8000-000000000001'
     const routes = [
       ['GET', '/v1/notes'],
+      ['GET', '/v1/notes/list'],
       ['GET', '/v1/notes/counts'],
       ['GET', `/v1/notes/${id}`],
       ['POST', '/v1/notes'],

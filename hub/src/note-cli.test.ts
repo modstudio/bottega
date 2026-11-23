@@ -1,4 +1,7 @@
-import { expect, test } from 'bun:test'
+import { beforeEach, expect, test } from 'bun:test'
+import { noteHostedFetch } from '../test/note-hosted-fetch.ts'
+import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
+import { writeTransaction } from './db.ts'
 import { noteCuratorPrompt } from './note.ts'
 import {
   NOTE_DUPLICATE_PROMPT,
@@ -8,9 +11,60 @@ import {
   noteFiledOutput,
   noteKeepLine,
   noteListLine,
+  noteListRows,
   noteSameLine,
   noteStaleLine,
 } from './note-cli.ts'
+import { listProjectSlimNotes } from './note-read.ts'
+
+beforeEach(resetFixtureStore)
+
+const NOTE_LIST_RESPONSE_BYTE_BUDGET = 64 * 1024
+
+function seedSlimListNotes() {
+  const largeAnchor = JSON.stringify([{ session_id: 'session-a', context: 'x'.repeat(4_000) }])
+  writeTransaction((conn) => {
+    const insert = conn.prepare(
+      `INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+       VALUES (?,?,?,?,?,1,?,?)`,
+    )
+    for (let number = 1; number <= 75; number++) {
+      const at = new Date(Date.UTC(2026, 10, 20, 0, number)).toISOString()
+      insert.run(
+        fixtureRecordId(10_000 + number),
+        number,
+        'gamma',
+        `budget note ${number} ${'body'.repeat(40)}`,
+        largeAnchor,
+        at,
+        at,
+      )
+    }
+    insert.run(
+      fixtureRecordId(11_000),
+      1,
+      'workshop',
+      'budget note workshop',
+      largeAnchor,
+      '2026-11-20T03:00:00.000Z',
+      '2026-11-20T03:00:00.000Z',
+    )
+  })
+}
+
+function countingFetch() {
+  const calls: string[] = []
+  let bytes = 0
+  const fetch = async (input: string, init?: RequestInit) => {
+    const response = await noteHostedFetch(input, init)
+    const url = new URL(input)
+    calls.push(url.pathname)
+    if (url.pathname === '/v1/notes/list')
+      bytes += (await response.clone().arrayBuffer()).byteLength
+    return response
+  }
+  return { fetch, calls, bytes: () => bytes }
+}
 
 test('new note output preserves its first line and reports the record id', () => {
   expect(
@@ -78,4 +132,105 @@ test('new note JSON carries UUID, number, label, and candidate identities', () =
       },
     ],
   })
+})
+
+test('CLI slim list budgets calls and bytes for human and JSON output', async () => {
+  seedSlimListNotes()
+  const human = countingFetch()
+  const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch: human.fetch }
+  const humanResult = await noteListRows(undefined, { project: 'gamma' }, undefined, hosted)
+  expect(humanResult.notes).toHaveLength(50)
+  expect(humanResult.total).toBe(75)
+  expect(human.calls.filter((path) => path === '/v1/notes/list')).toHaveLength(1)
+  expect(human.calls).not.toContain('/v1/notes')
+  expect(human.bytes()).toBeGreaterThan(10 * 1024)
+  expect(human.bytes()).toBeLessThan(NOTE_LIST_RESPONSE_BYTE_BUDGET)
+
+  const json = countingFetch()
+  const jsonResult = await noteListRows(undefined, { project: 'gamma', json: true }, undefined, {
+    ...hosted,
+    fetch: json.fetch,
+  })
+  expect(jsonResult.notes).toHaveLength(75)
+  expect(json.calls.filter((path) => path === '/v1/notes/list')).toHaveLength(1)
+  expect(json.calls).not.toContain('/v1/notes')
+
+  const union = countingFetch()
+  const unionResult = await noteListRows(undefined, { json: true }, undefined, {
+    ...hosted,
+    fetch: union.fetch,
+  })
+  expect(union.calls.filter((path) => path === '/v1/notes/list')).toHaveLength(2)
+  expect(union.calls).not.toContain('/v1/notes')
+  expect(unionResult.notes.map((note) => note.record_id)).toEqual([
+    fixtureRecordId(11_000),
+    ...Array.from({ length: 75 }, (_, index) => fixtureRecordId(10_075 - index)),
+  ])
+  expect(unionResult.total).toBe(76)
+  expect(union.bytes()).toBeLessThan(NOTE_LIST_RESPONSE_BYTE_BUDGET)
+})
+
+test('CLI slim list refuses an invalid limit with its remedy', async () => {
+  await expect(noteListRows(undefined, { limit: 'abc' }, undefined)).rejects.toThrow(
+    'limit must be a positive integer; omit it to list every matching note',
+  )
+})
+
+test('local and hosted slim lists have filter and order parity', async () => {
+  seedSlimListNotes()
+  const filters = {
+    project: 'gamma',
+    stale: false,
+    actionable: true,
+    session: 'session-a',
+    kept: false,
+    text: 'budget NOTE 2',
+    limit: 8,
+  }
+  const local = await listProjectSlimNotes({ ...filters, hosted: { baseUrl: '' } })
+  const hosted = await listProjectSlimNotes({
+    ...filters,
+    hosted: {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: noteHostedFetch,
+    },
+  })
+  expect(hosted.notes.map((note) => note.record_id)).toEqual(
+    local.notes.map((note) => note.record_id),
+  )
+  expect(hosted.total).toBe(local.total)
+
+  const unicodeId = fixtureRecordId(12_000)
+  writeTransaction((conn) =>
+    conn
+      .prepare(
+        `INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+         VALUES (?,?,?,?,?,1,?,?)`,
+      )
+      .run(
+        unicodeId,
+        80,
+        'gamma',
+        'ÄRGER in the triage list',
+        '[]',
+        '2026-11-21T00:00:00.000Z',
+        '2026-11-21T00:00:00.000Z',
+      ),
+  )
+  const unicodeFilters = { project: 'gamma', text: 'ärger' }
+  const localUnicode = await listProjectSlimNotes({
+    ...unicodeFilters,
+    hosted: { baseUrl: '' },
+  })
+  const hostedUnicode = await listProjectSlimNotes({
+    ...unicodeFilters,
+    hosted: {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: noteHostedFetch,
+    },
+  })
+  expect(localUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
+  expect(hostedUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
 })

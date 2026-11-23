@@ -607,6 +607,16 @@ export const hubModuleSpecs = [
     ],
   },
   {
+    file: 'hub/src/hosted-note-slim-list.ts',
+    allowed: [
+      'bun',
+      '../../shared/note-label.ts',
+      './hosted-tenant.ts',
+      './note-slim-list-shape.ts',
+    ],
+  },
+  { file: 'hub/src/note-slim-list-shape.ts', allowed: [] },
+  {
     file: 'hub/src/note-outside.ts',
     allowed: [
       '../../shared/note-anchor.ts',
@@ -647,6 +657,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-read.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/note-label.ts',
       './db.ts',
       './hosted-notes.ts',
       './hosted-url.ts',
@@ -656,6 +667,7 @@ export const hubModuleSpecs = [
       './note-outside.ts',
       './note-project-space.ts',
       './note-row.ts',
+      './note-slim-list-shape.ts',
     ],
   },
   {

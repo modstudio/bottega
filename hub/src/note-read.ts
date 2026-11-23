@@ -2,6 +2,7 @@
 /** Owns canonical note reads, source selection, and filter normalization. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { formatNoteLabel } from '../../shared/note-label.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement } from './hosted-notes.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -9,6 +10,7 @@ import { hostedWriteMode } from './hosted-write-mode.ts'
 import {
   hostedGetNote,
   hostedListNotes,
+  hostedListSlimNotes,
   isMissingHostedNote,
   type NoteClientOptions,
 } from './note-client.ts'
@@ -16,6 +18,7 @@ import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
+import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type NoteFilters = {
   project?: string
@@ -65,7 +68,10 @@ function appendSessionClauses(
   values.push(...sessions)
 }
 
-function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
+function listLocalFilteredRows<Row extends { text: string }>(
+  filters: NormalizedNoteFilters,
+  projection: string,
+): Row[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
   if (filters.project) {
@@ -77,15 +83,68 @@ function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
   appendSessionClauses(filters, clauses, values)
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db()
-    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
-      `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+    .query<Row, (string | number)[]>(
+      `SELECT ${projection} FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY note.last_seen_at DESC, note.record_id DESC`,
     )
     .all(...values)
   const search = filters.text?.toLowerCase()
-  return (search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows).map(
-    decodeNoteRow,
+  return search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows
+}
+
+function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
+  return listLocalFilteredRows<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }>(
+    filters,
+    'note.*',
+  ).map(decodeNoteRow)
+}
+
+function slimNote(row: NoteRow): SlimNote {
+  const {
+    record_id,
+    label,
+    number,
+    project,
+    text,
+    sightings,
+    created_at,
+    last_seen_at,
+    stale_at,
+    stale_reason,
+    promoted_task,
+  } = row
+  return {
+    record_id,
+    label,
+    number,
+    project,
+    text,
+    sightings,
+    created_at,
+    last_seen_at,
+    stale_at,
+    stale_reason,
+    promoted_task,
+  }
+}
+
+function listLocalSlimNotes(
+  filters: NormalizedNoteFilters,
+  limit: number | undefined,
+): { notes: SlimNote[]; total: number } {
+  const matching = listLocalFilteredRows<Omit<SlimNote, 'label'>>(
+    filters,
+    `note.record_id,note.number,note.project,note.text,note.sightings,note.created_at,
+     note.last_seen_at,note.stale_at,note.stale_reason,note.promoted_task`,
   )
+  const selected = limit === undefined ? matching : matching.slice(0, limit)
+  return {
+    notes: selected.map((row) => ({
+      ...row,
+      label: formatNoteLabel(row.project, row.number),
+    })),
+    total: matching.length,
+  }
 }
 
 const readRemedy = `run \`${PLATFORM_SLUG} record doctor\`, then retry`
@@ -209,6 +268,70 @@ async function listHostedNoteRows(
   }
 }
 
+async function listHostedSlimNoteRows(
+  filters: NormalizedNoteFilters,
+  limit: number | undefined,
+  options: NoteClientOptions = {},
+): Promise<{ notes: SlimNote[]; total: number }> {
+  const spaces = await noteReadSpaces(filters.project, options)
+  try {
+    const results = await Promise.all(
+      spaces.map(async (recordSpace) => ({
+        recordSpace,
+        result: await hostedListSlimNotes(
+          {
+            project: filters.project,
+            stale: filters.stale,
+            actionable: filters.actionable,
+            sessions: filters.sessions,
+            kept: filters.sessions.length ? Boolean(filters.kept) : undefined,
+            text: filters.text,
+            limit,
+          },
+          { ...options, recordSpace },
+        ).catch((cause) => {
+          throw spaceReadFailure(recordSpace, filters.project, cause)
+        }),
+      })),
+    )
+    const notesById = new Map<string, { note: SlimNote; space: string }>()
+    let total = 0
+    for (const { recordSpace, result } of results) {
+      total += result.total
+      for (const note of result.notes) {
+        const existing = notesById.get(note.record_id)
+        if (existing)
+          throw new Error(
+            `note ${note.record_id} appears in record spaces ${existing.space} and ${recordSpace}`,
+          )
+        notesById.set(note.record_id, { note, space: recordSpace })
+      }
+    }
+    const notes = [...notesById.values()]
+      .map(({ note }) => note)
+      .sort(
+        (left, right) =>
+          right.last_seen_at.localeCompare(left.last_seen_at) ||
+          right.record_id.localeCompare(left.record_id),
+      )
+    return { notes: limit === undefined ? notes : notes.slice(0, limit), total }
+  } catch (cause) {
+    throw hostedReadFailure(cause)
+  }
+}
+
+async function listSlimNotes(
+  filters: NoteFilters & { limit?: number } = {},
+  hosted?: NoteClientOptions,
+): Promise<{ notes: SlimNote[]; total: number }> {
+  const { limit: requestedLimit, ...noteFilters } = filters
+  const limit = noteListLimit(requestedLimit)
+  const normalized = normalizeNoteFilters(noteFilters)
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
+    return listHostedSlimNoteRows(normalized, limit, hosted)
+  return listLocalSlimNotes(normalized, limit)
+}
+
 export async function listNotes(
   filters: NoteFilters = {},
   hosted?: NoteClientOptions,
@@ -226,17 +349,22 @@ export function listActionableNotes(
   return listNotes({ ...filters, actionable: true }, hosted)
 }
 
-export async function listProjectNotes(
-  filters: NoteFilters & { hosted?: NoteClientOptions },
-): Promise<NoteRow[]> {
+export async function listProjectSlimNotes(
+  filters: NoteFilters & { limit?: number; hosted?: NoteClientOptions },
+): Promise<{ notes: SlimNote[]; total: number }> {
+  const limit = noteListLimit(filters.limit)
   if (filters.project && !isRegisteredNoteProject(filters.project)) {
     if (filters.stale || filters.kept || filters.actionable)
       throw new Error(
         `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
       )
-    const notes = await listOutsideProjectNotes(filters.project, filters.hosted)
+    const rows = await listOutsideProjectNotes(filters.project, filters.hosted)
     const search = filters.text?.toLowerCase()
-    return search ? notes.filter((note) => note.text.toLowerCase().includes(search)) : notes
+    const matching = search ? rows.filter((note) => note.text.toLowerCase().includes(search)) : rows
+    return {
+      notes: (limit === undefined ? matching : matching.slice(0, limit)).map(slimNote),
+      total: matching.length,
+    }
   }
   if (filters.actionable && filters.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
@@ -245,8 +373,8 @@ export async function listProjectNotes(
       `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
     )
   const { hosted, ...localFilters } = filters
-  return listNotes(
-    { ...localFilters, stale: Boolean(filters.stale), kept: Boolean(filters.kept) },
+  return listSlimNotes(
+    { ...localFilters, stale: Boolean(filters.stale), kept: Boolean(filters.kept), limit },
     hosted,
   )
 }
