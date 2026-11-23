@@ -26,6 +26,7 @@ const REMEDY = MISSING_HOSTED_URL_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
 export type NoteWriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
+export type NoteReadOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
 type NoteIdentity = Awaited<ReturnType<typeof hostedTaskIdentity>>
 type NoteIdentityMemo = ReturnType<typeof processMemo<NoteIdentity>>
 const defaultIdentityMemos = new Map<string, NoteIdentityMemo>()
@@ -196,13 +197,13 @@ const normalizeHostedNote = (row: HostedNote & { project_id?: string | null }): 
   ...row,
   projectId: row.projectId ?? row.project_id ?? null,
 })
-export const hostedGetNote = (recordId: string, options?: Options) =>
+export const hostedGetNote = (recordId: string, options: NoteReadOptions) =>
   request<HostedNote & { project_id?: string | null }>(`/v1/notes/${recordId}`, options).then(
     normalizeHostedNote,
   )
 export async function hostedListNotes(
   filters: { project?: string; stale?: boolean; actionable?: boolean },
-  options?: Options,
+  options: NoteReadOptions,
 ) {
   await hostedNoteIdentity(options)
   const query = new URLSearchParams()

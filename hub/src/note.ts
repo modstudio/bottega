@@ -450,7 +450,7 @@ export async function createNote(
   )
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
-    const existing = await getNote(input.sameAs, options.hosted, targetProject)
+    const existing = await getNote(input.sameAs, options.hosted)
     if (existing.project !== targetProject)
       throw new Error('the matching note belongs to another project')
     if (mode === 'local-authoritative') {

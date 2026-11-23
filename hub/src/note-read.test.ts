@@ -215,6 +215,26 @@ test('an unfiltered hosted list refuses a note id duplicated across spaces', asy
   ).rejects.toThrow(`note ${id} appears in record spaces space-active and space-gamma`)
 })
 
+test('an unfiltered hosted list names the space whose request fails', async () => {
+  await expect(
+    listNotes(
+      {},
+      {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async (input, init) => {
+          if (new URL(input).pathname === '/v1/tasks/identity')
+            return Response.json(crossSpaceIdentity)
+          const space = new Headers(init?.headers).get('x-record-space')
+          return space === 'space-gamma'
+            ? Response.json({ error: 'space read failed' }, { status: 500 })
+            : Response.json({ notes: [], acknowledgements: [], cursor: '', more: false })
+        },
+      },
+    ),
+  ).rejects.toThrow('record space space-gamma:')
+})
+
 test('a hosted get does not fall back to a local-only note', async () => {
   const id = crypto.randomUUID()
   const at = '2026-11-21T10:00:00.000Z'

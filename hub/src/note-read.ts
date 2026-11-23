@@ -95,9 +95,16 @@ function hostedReadFailure(cause: unknown): Error {
   return new Error(message.endsWith(readRemedy) ? message : `${message}. ${readRemedy}`)
 }
 
-function untargetedReadOptions(options: NoteClientOptions): NoteClientOptions {
-  const { recordSpace: _recordSpace, ...untargeted } = options
-  return untargeted
+class NoteNotFoundError extends Error {
+  constructor(recordId: string) {
+    super(`no note ${recordId}`)
+  }
+}
+
+function spaceReadFailure(recordSpace: string, project: string | undefined, cause: unknown): Error {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  const owner = project ? `project ${project}` : `record space ${recordSpace}`
+  return new Error(`${owner}: ${message}`, { cause })
 }
 
 async function readHostedNote(
@@ -105,20 +112,19 @@ async function readHostedNote(
   options: NoteClientOptions = {},
   project?: string,
 ): Promise<NoteRow> {
-  const untargeted = untargetedReadOptions(options)
-  const spaces = await noteReadSpaces(project, untargeted)
+  const spaces = await noteReadSpaces(project, options)
   try {
     for (const recordSpace of spaces) {
       try {
-        return noteRowFromHosted(await hostedGetNote(recordId, { ...untargeted, recordSpace }))
+        return noteRowFromHosted(await hostedGetNote(recordId, { ...options, recordSpace }))
       } catch (cause) {
         if (isMissingHostedNote(cause)) continue
-        throw cause
+        throw spaceReadFailure(recordSpace, project, cause)
       }
     }
-    throw new Error(`no note ${recordId}`)
+    throw new NoteNotFoundError(recordId)
   } catch (cause) {
-    if (cause instanceof Error && cause.message === `no note ${recordId}`) throw cause
+    if (cause instanceof NoteNotFoundError) throw cause
     throw hostedReadFailure(cause)
   }
 }
@@ -140,8 +146,7 @@ async function listHostedNoteRows(
   filters: NormalizedNoteFilters,
   options: NoteClientOptions = {},
 ): Promise<NoteRow[]> {
-  const untargeted = untargetedReadOptions(options)
-  const spaces = await noteReadSpaces(filters.project, untargeted)
+  const spaces = await noteReadSpaces(filters.project, options)
   try {
     const notesById = new Map<
       string,
@@ -157,8 +162,10 @@ async function listHostedNoteRows(
             stale: filters.stale,
             actionable: filters.actionable,
           },
-          { ...untargeted, recordSpace },
-        ),
+          { ...options, recordSpace },
+        ).catch((cause) => {
+          throw spaceReadFailure(recordSpace, filters.project, cause)
+        }),
       })),
     )
     for (const { recordSpace, result } of results) {
@@ -254,6 +261,6 @@ export async function getNote(
       'SELECT * FROM note WHERE record_id = ?',
     )
     .get(recordId)
-  if (!row) throw new Error(`no note ${recordId}`)
+  if (!row) throw new NoteNotFoundError(recordId)
   return decodeNoteRow(row)
 }
