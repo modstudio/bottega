@@ -61,7 +61,8 @@ async function replay(version: string, entries: RecordClientContractEntry[]): Pr
     )
     if (
       ([400, 405, 415, 422].includes(response.status) && response.status !== entry.status) ||
-      (entry.status >= 200 && entry.status < 300 &&
+      (entry.status >= 200 &&
+        entry.status < 300 &&
         (response.status < 200 || response.status >= 300))
     )
       failures.push(`${label}: recorded ${entry.status}, replayed ${response.status}`)

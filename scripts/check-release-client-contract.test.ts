@@ -5,8 +5,6 @@ test('the release client contract decision refuses missing and differing content
   expect(releaseClientContractContentsRefusal('1.2.3', null, 'current')).toContain(
     '1.2.3 is missing',
   )
-  expect(releaseClientContractContentsRefusal('1.2.3', 'old', 'current')).toContain(
-    '1.2.3 differs',
-  )
+  expect(releaseClientContractContentsRefusal('1.2.3', 'old', 'current')).toContain('1.2.3 differs')
   expect(releaseClientContractContentsRefusal('1.2.3', 'current', 'current')).toBeNull()
 })

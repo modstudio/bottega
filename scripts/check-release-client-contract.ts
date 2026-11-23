@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { CURRENT_CONTRACT_PATH, RELEASED_CONTRACT_DIRECTORY } from './record-client-contract.ts'
 
-export function releaseClientContractRefusal(tag: string): string | null {
+function releaseClientContractRefusal(tag: string): string | null {
   const version = tag.startsWith('v') ? tag.slice(1) : tag
   const snapshot = resolve(RELEASED_CONTRACT_DIRECTORY, `${version}.json`)
   return releaseClientContractContentsRefusal(

@@ -89,6 +89,7 @@ const RECORD_SAMPLE_NAMES = [
   'getBoardThread',
   'getContextItem',
   'getDoc',
+  'getDocRevision',
   'getPublicDoc',
   'grantConfigAccess',
   'handoffTaskFlow',
@@ -287,7 +288,7 @@ function parsedBody(request: Request): Promise<unknown | null> {
   })
 }
 
-export function createRecordingTransport(
+function createRecordingTransport(
   entries: RecordClientContractEntry[],
   sampleName: () => string,
   app = recordClientContractApp(),
@@ -375,9 +376,7 @@ const SAMPLE_ARGUMENTS = {
     },
     SAMPLE_DESTINATION,
   ],
-  inviteMember: () => [
-    { email: 'a@example.test', role: 'member', organizationId: SAMPLE_ID },
-  ],
+  inviteMember: () => [{ email: 'a@example.test', role: 'member', organizationId: SAMPLE_ID }],
   listConfigAccess: () => ['space-a'],
   listCredentialPreferences: () => [SAMPLE_DESTINATION],
   listDataKeys: () => [SAMPLE_DESTINATION],
@@ -456,7 +455,11 @@ const SAMPLE_ARGUMENTS = {
     SAMPLE_DESTINATION,
   ],
   completeBoardFilingLease: () => [SAMPLE_ID, { noteId: SAMPLE_ID }, SAMPLE_DESTINATION],
-  consumeDoc: () => [SAMPLE_ID, { reason: 'contract sample', author: 'contract' }, SAMPLE_DESTINATION],
+  consumeDoc: () => [
+    SAMPLE_ID,
+    { reason: 'contract sample', author: 'contract' },
+    SAMPLE_DESTINATION,
+  ],
   deleteContextItem: () => [SAMPLE_ID, {}, SAMPLE_DESTINATION],
   deleteDoc: () => [
     SAMPLE_ID,
@@ -588,20 +591,13 @@ const SAMPLE_ARGUMENTS = {
   putSnapshot: () => ['state', { machineId: SAMPLE_ID, payload: {} }, SAMPLE_DESTINATION],
   readTaskFlow: () => [{ taskKey: 'DEV-1' }, SAMPLE_DESTINATION],
   releaseBoardClaim: () => [SAMPLE_ID, SAMPLE_DESTINATION],
-  renameSubject: () => [
-    { from: 'old', to: 'new', count: 1 },
-    SAMPLE_DESTINATION,
-  ],
+  renameSubject: () => [{ from: 'old', to: 'new', count: 1 }, SAMPLE_DESTINATION],
   renewBoardClaim: () => [SAMPLE_ID, SAMPLE_DESTINATION],
   reorderDocs: () => [
     { scope: 'project', subject: 'sample', parentId: null, orderedIds: [SAMPLE_ID] },
     SAMPLE_DESTINATION,
   ],
-  replyBoardMessage: () => [
-    SAMPLE_ID,
-    { id: SAMPLE_ID, body: 'sample' },
-    SAMPLE_DESTINATION,
-  ],
+  replyBoardMessage: () => [SAMPLE_ID, { id: SAMPLE_ID, body: 'sample' }, SAMPLE_DESTINATION],
   retireProject: () => [SAMPLE_ID],
   retireWorkflow: () => [
     {
@@ -737,11 +733,7 @@ const SAMPLE_ARGUMENTS = {
     },
     SAMPLE_DESTINATION,
   ],
-  failMachineJoinNameplate: () => [
-    '1',
-    '00000000000000000000000000000000',
-    SAMPLE_DESTINATION,
-  ],
+  failMachineJoinNameplate: () => ['1', '00000000000000000000000000000000', SAMPLE_DESTINATION],
   getEntry: () => ['key', 'user', 'default', SAMPLE_DESTINATION],
   getSecret: () => ['key', 'user', 'default', SAMPLE_DESTINATION],
   putCredentialPreference: () => [
@@ -773,17 +765,8 @@ const SAMPLE_ARGUMENTS = {
     },
     SAMPLE_DESTINATION,
   ],
-  readMachineJoinMessages: () => [
-    '1',
-    '00000000000000000000000000000000',
-    SAMPLE_DESTINATION,
-  ],
-  registerMachineKey: () => [
-    SAMPLE_KEY_ID,
-    SAMPLE_KEY_BYTES,
-    'label',
-    SAMPLE_DESTINATION,
-  ],
+  readMachineJoinMessages: () => ['1', '00000000000000000000000000000000', SAMPLE_DESTINATION],
+  registerMachineKey: () => [SAMPLE_KEY_ID, SAMPLE_KEY_BYTES, 'label', SAMPLE_DESTINATION],
   retireDataKey: () => [SAMPLE_ID, SAMPLE_DESTINATION],
   revokeMachineKey: () => [SAMPLE_KEY_ID, SAMPLE_DESTINATION],
 } satisfies Record<SampleMember, () => unknown[]>
