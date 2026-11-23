@@ -89,10 +89,7 @@ function registerReport(session: Command): void {
     })
 }
 
-export function register(program: Command): void {
-  const session = program.command('session').description('manage the calling architect session')
-  registerStatus(session)
-  registerReport(session)
+function registerStart(session: Command): void {
   session
     .command('start')
     .description(
@@ -109,6 +106,13 @@ export function register(program: Command): void {
       const { safeStartSession } = await import('../session/session-start.ts')
       log((await safeStartSession({ harnessPid: options.harnessPid, source: options.source })).line)
     })
+}
+
+export function register(program: Command): void {
+  const session = program.command('session').description('manage the calling architect session')
+  registerStatus(session)
+  registerReport(session)
+  registerStart(session)
   session
     .command('losses')
     .description('measure losses around Claude transcript compaction boundaries')
