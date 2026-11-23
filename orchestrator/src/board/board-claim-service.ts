@@ -19,6 +19,7 @@ import {
   parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,
@@ -470,6 +471,7 @@ export function listClaims(
   database: ReturnType<typeof db> = db(),
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { claims: ClaimView[] } {
+  requireLocalBoardRead(env, database)
   const name = claimProject(project, env, cwd, database, taskCursorAuthority)
   const rows = database
     .query(
@@ -486,6 +488,7 @@ export function liveClaimsOfSession(
   clock = Date.now(),
   database = db(),
 ): ClaimView[] {
+  requireLocalBoardRead(process.env, database)
   const rows = database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE holder_session=? AND closed_at IS NULL ORDER BY project,subject_kind,subject_value`,

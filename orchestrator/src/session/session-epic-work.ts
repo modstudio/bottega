@@ -21,7 +21,7 @@ export async function sessionEpicWork(
   sessionStages: readonly { project: string }[],
   database: Database = db(),
 ) {
-  const claimProjects = boardLiveClaimProjectsForSession(session, Date.now(), database)
+  const claimProjects = await boardLiveClaimProjectsForSession(session, Date.now(), database)
   const projects = new Set([...claimProjects, ...sessionStages.map(({ project }) => project)])
   const surfaces: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }> = []
   for (const project of projects) {

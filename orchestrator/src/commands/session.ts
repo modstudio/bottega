@@ -150,7 +150,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (options) => {
       const { formatSessionHold, sessionHold } = await import('../session/session-hold.ts')
-      log(formatSessionHold(sessionHold(options)))
+      log(formatSessionHold(await sessionHold(options)))
     })
   session
     .command('close-out')

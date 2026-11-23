@@ -8,6 +8,7 @@ import {
   renderedSqlRiskCandidates,
   renderSqlCallArgument,
   splitSqlStatements,
+  sqlCallArgument,
 } from './local-sql-call-classification.ts'
 import {
   productionTypeScriptFiles,
@@ -561,96 +562,130 @@ export function extractHostedSqlFromSource(
 
 const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
 
-function sqlCallSites(
-  node: ts.Node,
-  source: ts.SourceFile,
-  file: string,
+function renderedLocalSqlCall(
+  argument: ts.Expression,
   staticSymbols: () => StaticSymbols,
-  renderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
-  localConstants: () => Map<string, ts.Expression>,
-): {
+): RenderedSqlCallArgument | null {
+  const rendered = renderSqlCallArgument(argument, HOSTED_SQL_START)
+  if (rendered) return rendered
+  const value = resolveStaticValue(argument, staticSymbols())
+  if (typeof value === 'string')
+    return { statements: splitSqlStatements(value), unresolved: null, unresolvedSql: false }
+  if (!Array.isArray(value)) return null
+  return {
+    statements: value.flatMap(splitSqlStatements),
+    unresolved: null,
+    unresolvedSql: false,
+  }
+}
+
+type SqlCallSites = {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
+  gateUnresolved: HostedSqlUnresolvedSite[]
   cannotJudge: HostedSqlCannotJudgeSite[]
-} {
-  const empty = { sites: [], unresolved: [], cannotJudge: [] }
-  if (!ts.isCallExpression(node)) return empty
-  const target = unwrap(node.expression)
-  let method: string | null = null
-  if (ts.isIdentifier(target)) method = target.text
-  else if (ts.isPropertyAccessExpression(target)) method = target.name.text
-  const argument = node.arguments[0]
-  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return empty
-  const rendered =
-    renderSqlCallArgument(argument, HOSTED_SQL_START) ??
-    (() => {
-      const value = resolveStaticValue(argument, staticSymbols())
-      if (typeof value === 'string')
-        return { statements: splitSqlStatements(value), unresolved: null, unresolvedSql: false }
-      if (Array.isArray(value))
-        return {
-          statements: value.flatMap(splitSqlStatements),
-          unresolved: null,
-          unresolvedSql: false,
-        }
-      return null
-    })()
-  const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
+}
+
+function earlySqlCallSites(input: {
+  argument: ts.Expression
+  rendered: RenderedSqlCallArgument | null
+  file: string
+  line: number
+}): SqlCallSites | null {
+  const { argument, rendered, file, line } = input
   const dynamicTable = interpolatedTableExpression(argument)
   if (dynamicTable && rendered && (rendered.unresolved || rendered.statements.length === 0)) {
-    const sql = argument.getText(source)
+    const sql = argument.getText()
     return {
       sites: [],
       unresolved: [],
+      gateUnresolved: [],
       cannotJudge: [
         {
           file,
           line,
           sql,
-          expression: dynamicTable.getText(source),
+          expression: dynamicTable.getText(),
           fingerprint: hostedSqlFingerprint(sql),
           kind: 'interpolated-table',
         },
       ],
     }
   }
-  if (!rendered && couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START)) {
-    const expression = argument.getText(source)
-    return {
-      sites: [],
-      unresolved: [
-        {
-          file,
-          line,
-          sql: expression,
-          expression,
-          fingerprint: hostedSqlFingerprint(expression),
-        },
-      ],
-      cannotJudge: [],
-    }
+  if (rendered || !couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START)) return null
+  const expression = argument.getText()
+  const site = {
+    file,
+    line,
+    sql: expression,
+    expression,
+    fingerprint: hostedSqlFingerprint(expression),
   }
+  return { sites: [], unresolved: [site], gateUnresolved: [site], cannotJudge: [] }
+}
+
+function renderedUnresolvedSqlSites(input: {
+  argument: ts.Expression
+  rendered: RenderedSqlCallArgument
+  file: string
+  line: number
+  reportRisk: ((sql: string) => boolean) | undefined
+  gateRisk: ((sql: string) => boolean) | undefined
+  constants: () => Map<string, ts.Expression>
+}): SqlCallSites | null {
+  const { argument, rendered, file, line, reportRisk, gateRisk, constants } = input
+  const mayBeUnresolved =
+    rendered.unresolved ||
+    (rendered.statements.length === 0 && couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START))
+  if (!mayBeUnresolved || (!reportRisk && !gateRisk)) return null
+  const candidates = renderedSqlRiskCandidates(argument, constants())
+  const report = reportRisk ? candidates.some(reportRisk) : false
+  const gate = gateRisk ? candidates.some(gateRisk) : report
+  if (!report && !gate) return null
+  const expression = (rendered.unresolved ?? argument).getText()
+  const sql = argument.getText()
+  const site = { file, line, sql, expression, fingerprint: hostedSqlFingerprint(sql) }
+  return {
+    sites: [],
+    unresolved: report ? [site] : [],
+    gateUnresolved: gate ? [site] : [],
+    cannotJudge: [],
+  }
+}
+
+function sqlCallSites(
+  node: ts.Node,
+  source: ts.SourceFile,
+  file: string,
+  staticSymbols: () => StaticSymbols,
+  renderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
+  gateRenderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
+  localConstants: () => Map<string, ts.Expression>,
+): SqlCallSites {
+  const empty = { sites: [], unresolved: [], gateUnresolved: [], cannotJudge: [] }
+  const argument = sqlCallArgument(node, SQL_CALL_METHODS)
+  if (!argument) return empty
+  const rendered = renderedLocalSqlCall(argument, staticSymbols)
+  const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
+  const early = earlySqlCallSites({ argument, rendered, file, line })
+  if (early) return early
   if (!rendered) return empty
-  if (
-    renderedUnresolvedRisk &&
-    (rendered.unresolved ||
-      (rendered.statements.length === 0 &&
-        couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START))) &&
-    renderedSqlRiskCandidates(argument, localConstants()).some(renderedUnresolvedRisk)
-  ) {
-    const expression = (rendered.unresolved ?? argument).getText(source)
-    const sql = argument.getText(source)
-    return {
-      sites: [],
-      unresolved: [{ file, line, sql, expression, fingerprint: hostedSqlFingerprint(sql) }],
-      cannotJudge: [],
-    }
-  }
+  const unresolved = renderedUnresolvedSqlSites({
+    argument,
+    rendered,
+    file,
+    line,
+    reportRisk: renderedUnresolvedRisk,
+    gateRisk: gateRenderedUnresolvedRisk,
+    constants: localConstants,
+  })
+  if (unresolved) return unresolved
   return {
     sites: rendered.statements
       .filter((sql) => LOCAL_HANDLE_SQL_START.test(sql))
       .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) })),
     unresolved: [],
+    gateUnresolved: [],
     cannotJudge: [],
   }
 }
@@ -671,6 +706,8 @@ export function extractSqlFromSource(input: {
   sourceText: string
   file: string
   renderedUnresolvedRisk?: (sql: string) => boolean
+  gateRenderedUnresolvedRisk?: (sql: string) => boolean
+  gateUnresolvedSink?: HostedSqlUnresolvedSite[]
 }): {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
@@ -695,6 +732,7 @@ export function extractSqlFromSource(input: {
   const localConstants = (): Map<string, ts.Expression> => (constants ??= collectConstants(source))
   const sites = [...extracted.sites]
   const unresolved = [...extracted.unresolved]
+  input.gateUnresolvedSink?.push(...extracted.unresolved)
   const cannotJudge: HostedSqlCannotJudgeSite[] = []
   const visit = (node: ts.Node): void => {
     const calls = sqlCallSites(
@@ -703,10 +741,12 @@ export function extractSqlFromSource(input: {
       input.file,
       staticSymbols,
       input.renderedUnresolvedRisk,
+      input.gateRenderedUnresolvedRisk,
       localConstants,
     )
     sites.push(...calls.sites)
     unresolved.push(...calls.unresolved)
+    input.gateUnresolvedSink?.push(...calls.gateUnresolved)
     cannotJudge.push(...calls.cannotJudge)
     ts.forEachChild(node, visit)
   }

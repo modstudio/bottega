@@ -2,14 +2,14 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hosted-table-guard.ts'
-import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
 import {
-  checkHostedLocalSql,
-  hostedLocalRenderedSqlRisk,
-  hostedLocalSqlSelectorFailures,
-  hostedLocalSqlViolations,
-} from './check-hosted-local-sql.ts'
+  HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
+  hostedTableInSql,
+} from '../orchestrator/src/database/hosted-table-guard.ts'
+import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
+import { checkHostedLocalSql, hostedLocalSqlViolations } from './check-hosted-local-sql.ts'
+import { hostedLocalSqlSelectorFailures } from './hosted-local-read-report.ts'
 import {
   extractSqlFromSource,
   type HostedSqlSite,
@@ -18,6 +18,9 @@ import {
 import type { StateClassDeclaration } from './identity-state-classes.ts'
 
 const temporaryRoots: string[] = []
+const hostedLocalRenderedSqlRisk = (sql: string): boolean =>
+  hostedTableInSql(sql, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS) !== null ||
+  /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql)
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -71,7 +74,7 @@ test('hosted-only SQL in a declared local file passes', () => {
     hostedLocalSqlViolations({
       sites: [site('orchestrator/src/question-store/question-store-sqlite.ts')],
       tables: ['question'],
-      allowedFiles: [{ pattern: /question-store-sqlite\.ts$/, reason: 'local adapter' }],
+      allowedFiles: [{ pattern: /question-store-sqlite\.ts$/, reason: 'local-only' }],
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([])
@@ -86,7 +89,7 @@ test.each([
     hostedLocalSqlViolations({
       sites: [site('orchestrator/src/run/unsafe.ts')],
       tables: ['question'],
-      allowedFiles: [{ pattern: /unsafe\.ts$/, reason }],
+      allowedFiles: [{ pattern: /unsafe\.ts$/, reason: 'local-only', detail: reason }],
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead')])
@@ -116,7 +119,8 @@ test.each([
     const failures = hostedLocalSqlSelectorFailures(root, [
       {
         pattern: /^orchestrator\/src\/run\/selector\.ts$/,
-        reason: 'Local SQL runs when hostedRecordOwnsHostedTables(database) is false',
+        reason: 'local-only',
+        detail: 'Local SQL runs when hostedRecordOwnsHostedTables(database) is false',
       },
     ])
     expect(failures).toEqual(
@@ -324,10 +328,35 @@ test('an allowed file with no hosted-only or unresolved SQL is rejected as unuse
     hostedLocalSqlViolations({
       sites: [],
       tables: ['question'],
-      allowedFiles: [{ pattern: /unused\.ts$/, reason: 'fixture exemption' }],
+      allowedFiles: [{ pattern: /unused\.ts$/, reason: 'fixture' }],
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([expect.stringContaining('unused hosted-only SQL exemption /unused\\.ts$/')])
+})
+
+test.each(['hosted-record', 'passthrough'] as const)(
+  'the %s exclusion reason is accepted',
+  (reason) => {
+    expect(
+      hostedLocalSqlViolations({
+        sites: [site('orchestrator/src/run/allowed.ts')],
+        tables: ['question'],
+        allowedFiles: [{ pattern: /allowed\.ts$/, reason }],
+        stateClasses: [hostedQuestion],
+      }),
+    ).toEqual([])
+  },
+)
+
+test('an unreasoned exclusion is refused', () => {
+  expect(
+    hostedLocalSqlViolations({
+      sites: [site('orchestrator/src/run/allowed.ts')],
+      tables: ['question'],
+      allowedFiles: [{ pattern: /allowed\.ts$/ }],
+      stateClasses: [hostedQuestion],
+    }),
+  ).toContainEqual(expect.stringContaining('hosted-only SQL exemption has no reason'))
 })
 
 test('selector-gated SQLite adapter importers use the SQL check adapter pattern', () => {

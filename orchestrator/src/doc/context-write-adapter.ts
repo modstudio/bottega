@@ -11,7 +11,7 @@ import {
   referenceNotVisibleRefusal,
   referenceStoreUnreachableRefusal,
 } from '../../../shared/reference-refusal.ts'
-import { liveClaimsOfSession } from '../board/board-claim-service.ts'
+import { boardLiveClaimsOfSession } from '../board/board-operations.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { resolveParsedReference } from '../identity/identity.ts'
@@ -396,7 +396,7 @@ async function contextSetRefusal(
   )
   if (ownership) return ownership
   const claims = owner
-    ? liveClaimsOfSession(owner, Date.now(), database)
+    ? (await boardLiveClaimsOfSession(owner, Date.now(), database))
         .filter((claim) => claim.subject.kind === 'task')
         .map((claim) => ({ key: claim.subject.value, project: claim.project }))
     : []

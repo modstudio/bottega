@@ -122,7 +122,11 @@ test('only the final delivered local replacement reports its withdrawal', async 
     ).delivery,
   ).toEqual([])
   const pendingClock = clock + 5 + WITHDRAWAL_SUPERSESSION_GRACE_MS
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  const pending = await pendingBoardDelivery({
+    session: reader,
+    budgetMs: 0,
+    clock: pendingClock,
+  })
   expect(pending.delivery).toEqual([
     {
       id: `withdrawn:${replacement.number}`,
@@ -151,8 +155,13 @@ test('only the final delivered local replacement reports its withdrawal', async 
       .get(reader, replacement.recordId),
   ).toEqual({ source: 'local', delivered_at: new Date(pendingClock + 1).toISOString() })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
-      .delivery,
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: pendingClock + 2,
+      })
+    ).delivery,
   ).toEqual([])
 })
 
@@ -181,7 +190,11 @@ test('acknowledgement stamps the local withdrawal that was emitted before supers
     .run(newRecordId(), notice.recordId, reader, 1, new Date(clock + 1).toISOString())
   withdrawNotice(notice.recordId, {}, clock + 2)
   const pendingClock = pendingClockFor(clock + 2)
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  const pending = await pendingBoardDelivery({
+    session: reader,
+    budgetMs: 0,
+    clock: pendingClock,
+  })
   expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${notice.number}`])
 
   const replacement = postNotice(
@@ -211,6 +224,7 @@ test('acknowledgement stamps the local withdrawal that was emitted before supers
     session: reader,
     ids: pending.delivery.map((item) => item.id),
     clock: pendingClock + 1,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   })
   expect(
     db()
@@ -263,6 +277,8 @@ test('an adoption-retired local notice does not report an author withdrawal', as
 
 test('a withdrawn addressed hosted replacement still supersedes the prior withdrawal', async () => {
   const clock = Date.parse('2026-10-30T11:00:00.000Z')
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const refresh = async () => ({ status: 'success' as const, applied: 0 })
   const reader = 'hosted-withdrawal-reader'
   db()
     .query(
@@ -355,7 +371,12 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
   ).toBeNull()
   expect(
     (
-      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: originalPendingClock,
+        refresh,
+      })
     ).delivery.map((item) => item.id),
   ).toEqual([`withdrawn:${message.id}`])
   replacement.audience = `session:${reader}`
@@ -364,7 +385,12 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     .run(JSON.stringify(replacement), replacement.id)
   expect(
     (
-      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: originalPendingClock,
+        refresh,
+      })
     ).delivery.map((item) => item.id),
   ).toEqual([`withdrawn:${message.id}`, replacement.id])
   db()
@@ -384,6 +410,7 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
           session: reader,
           budgetMs: 0,
           clock: originalPendingClock,
+          refresh,
         })
       ).delivery.map((item) => item.id),
     ).toEqual([])
@@ -397,7 +424,12 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     .run(replacement.revision, JSON.stringify(replacement), replacement.id)
 
   const pendingClock = clock + 4 + WITHDRAWAL_SUPERSESSION_GRACE_MS
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  const pending = await pendingBoardDelivery({
+    session: reader,
+    budgetMs: 0,
+    clock: pendingClock,
+    refresh,
+  })
   expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${replacement.id}`])
   expect(pending.delivery[0]!.text).toBe(
     `WITHDRAWN: "Load gate: HOLD" (${replacement.id}) was withdrawn by its author at ${replacementWithdrawnAt}; anything you paused for it may resume.`,
@@ -406,6 +438,7 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     session: reader,
     ids: pending.delivery.map((item) => item.id),
     clock: pendingClock + 1,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   })
   expect(
     db()
@@ -415,8 +448,14 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
       .get(reader, replacement.id),
   ).toEqual({ source: 'hosted' })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
-      .delivery,
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: pendingClock + 2,
+        refresh,
+      })
+    ).delivery,
   ).toEqual([])
 })
 
@@ -427,6 +466,8 @@ test('acknowledgement stamps the hosted withdrawal that was emitted before super
   db()
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
     .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const refresh = async () => ({ status: 'success' as const, applied: 0 })
   const notice: HostedBoardMessage = {
     id: newRecordId(),
     kind: 'notice',
@@ -476,7 +517,12 @@ test('acknowledgement stamps the hosted withdrawal that was emitted before super
     .run(newRecordId(), notice.id, reader, new Date(clock + 1).toISOString())
 
   const pendingClock = pendingClockFor(clock + 2)
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  const pending = await pendingBoardDelivery({
+    session: reader,
+    budgetMs: 0,
+    clock: pendingClock,
+    refresh,
+  })
   expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${notice.id}`])
 
   const replacement: HostedBoardMessage = {
@@ -505,6 +551,7 @@ test('acknowledgement stamps the hosted withdrawal that was emitted before super
     session: reader,
     ids: pending.delivery.map((item) => item.id),
     clock: pendingClock + 1,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   })
   expect(
     db()
@@ -515,7 +562,12 @@ test('acknowledgement stamps the hosted withdrawal that was emitted before super
   ).toEqual({ source: 'hosted' })
   expect(
     (
-      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 })
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: pendingClock + 2,
+        refresh,
+      })
     ).delivery.map((item) => item.id),
   ).not.toContain(`withdrawn:${notice.id}`)
 })
@@ -534,6 +586,10 @@ test('hosted withdrawal resolution stays within the gate budget for a large sign
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
     .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const refresh = async () => ({ status: 'success' as const, applied: 0 })
   const putMessage = database.query(
     'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
   )
@@ -606,12 +662,13 @@ test('hosted withdrawal resolution stays within the gate budget for a large sign
         session: reader,
         budgetMs: 0,
         clock: clock + WITHDRAWAL_SUPERSESSION_GRACE_MS,
+        refresh,
       })
     ).delivery.map((item) => item.id),
   ).toEqual([`withdrawn:${withdrawn.id}`])
 })
 
-test('pending acknowledgement resolution combines local and hosted cache and excludes acknowledged or unaddressed notices', async () => {
+test('hosted pending acknowledgement resolution excludes local, acknowledged, and unaddressed notices', async () => {
   const clock = Date.parse('2026-10-07T12:00:00.000Z')
   db()
     .query(
@@ -672,6 +729,8 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
   )
   setMeta.run('board_hosted_cache_owner', 'user-1')
   setMeta.run('board_hosted_signed_in_user', 'user-1')
+  setMeta.run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const refresh = async () => ({ status: 'success' as const, applied: 0 })
   const hosted = {
     id: '01990000-0000-7000-8000-000000000111',
     kind: 'notice',
@@ -744,13 +803,11 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     session: 'push-reader',
     budgetMs: 1,
     clock: clock + 3,
+    refresh,
   })
-  expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.number), hosted.id].sort(),
-  )
-  expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.number), hosted.id].sort(),
-  )
+  expect(pending.delivery.map((notice) => notice.id)).toEqual([hosted.id])
+  expect(pending.pendingAcknowledgements.map((notice) => notice.id)).toEqual([hosted.id])
+  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(local.number))
   expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.number))
   expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
 
@@ -758,6 +815,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     session: 'push-reader',
     budgetMs: 0,
     clock: clock + 30_001,
+    refresh,
   })
   expect(afterDeadline.pendingAcknowledgements).toEqual([])
   expect(afterDeadline.delivery).toEqual([])
@@ -856,7 +914,12 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
   })
   for (const outcome of ['success', 'failed: hosted board refresh budget spent']) {
     setMeta.run('board_hosted_refresh_outcome', outcome)
-    const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 2 })
+    const pending = await pendingBoardDelivery({
+      session,
+      budgetMs: 0,
+      clock: clock + 2,
+      refresh: async () => ({ status: 'success', applied: 0 }),
+    })
     expect(pending.delivery).toEqual([])
     expect(pending.pendingAcknowledgements).toEqual([])
   }

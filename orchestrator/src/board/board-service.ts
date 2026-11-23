@@ -7,7 +7,14 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { reapHostedBoardCache } from './board-hosted-cache.ts'
+import {
+  BOARD_READ_REFRESH_BUDGET_MS,
+  cachedHostedBoardMessages,
+  claimCachedHosted,
+  reapHostedBoardCache,
+  refreshHostedBoard,
+} from './board-hosted-cache.ts'
+import { boardMode } from './board-mode.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -114,7 +121,9 @@ export function recordPresence(
       beganAt ?? at,
       at,
     )
-  renewLiveQueuedClaimsOfSession(identity.session, Date.parse(at), writableDb())
+  const database = writableDb()
+  if (boardMode('shared', env, database) === 'local')
+    renewLiveQueuedClaimsOfSession(identity.session, Date.parse(at), database)
   return true
 }
 
@@ -124,6 +133,7 @@ export function postNotice(
   clock = Date.now(),
   cwd = process.cwd(),
 ): PostNoticeResult {
+  boardMode('shared', env)
   const database = writableDb()
   return writeTransaction(() => postNoticeInTransaction(input, env, clock, cwd, database), database)
 }
@@ -531,6 +541,31 @@ export function readNotices(
   return notices
 }
 
+export async function boardRequestCountForSession(
+  session: string,
+  env: Environment = process.env,
+  database: Database = db(),
+  refresh: typeof refreshHostedBoard = refreshHostedBoard,
+): Promise<number> {
+  const boardEnv = { ...env, CLAUDE_CODE_SESSION_ID: session }
+  if (boardMode('shared', boardEnv, database) === 'local')
+    return claimNotices(true, boardEnv, Date.now(), database).filter(
+      (notice) => notice.purpose === 'request',
+    ).length
+  const refreshed = await refresh({
+    budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+    env: boardEnv,
+    database,
+  })
+  if (refreshed.status !== 'success')
+    throw new Error(
+      `hosted context brief board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
+  return claimCachedHosted(session, true, Date.now(), database).filter(
+    (notice) => notice.purpose === 'request',
+  ).length
+}
+
 export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
   const reader = boardReader(env)
   const row = messageRows().find((candidate) => candidate.record_id === id)
@@ -633,46 +668,127 @@ export function markSessionMessagesDelivered(session: string, ids: string[], at 
       .run(id, session, at, newRecordId())
 }
 
-export function boardEscalations(clock = Date.now()) {
-  const rows = db()
-    .query(
-      `SELECT m.number,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,r.reader_run_record_id,
+type BoardEscalationRow = {
+  id: string | number
+  ackRequired: boolean
+  ackDeadline: string | null
+  expiresAt: string | null
+  withdrawnAt: string | null
+  readerSession: string
+  readerRunRecordId: string | null
+  acknowledgedAt: string | null
+  audienceAtPosting: boolean
+}
+
+async function boardEscalationRows(
+  database: Database,
+  env: Environment,
+  refresh: typeof refreshHostedBoard,
+): Promise<BoardEscalationRow[]> {
+  if (boardMode('shared', env, database) === 'hosted') {
+    const refreshed = await refresh({
+      budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+      env,
+      database,
+    })
+    if (refreshed.status !== 'success')
+      throw new Error(
+        `hosted board acknowledgement read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      )
+    const messages = cachedHostedBoardMessages(database)
+    return messages.flatMap((message) =>
+      (
+        database
+          .query(
+            `SELECT reader_session,reader_run_record_id,audience_at_posting,acknowledged_at
+             FROM hosted_board_receipt_cache WHERE message_id=?`,
+          )
+          .all(message.id) as Array<{
+          reader_session: string
+          reader_run_record_id: string | null
+          audience_at_posting: number
+          acknowledged_at: string | null
+        }>
+      ).map((receipt) => ({
+        id: message.id,
+        ackRequired: message.ackRequired,
+        ackDeadline: message.ackDeadline,
+        expiresAt: message.expiresAt,
+        withdrawnAt: message.withdrawnAt,
+        readerSession: receipt.reader_session,
+        readerRunRecordId: receipt.reader_run_record_id,
+        acknowledgedAt: receipt.acknowledged_at,
+        audienceAtPosting: receipt.audience_at_posting === 1,
+      })),
+    )
+  }
+  return (
+    database
+      .query(
+        `SELECT m.number,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,r.reader_run_record_id,
               r.acknowledged_at,r.audience_at_posting
        FROM board_message m JOIN board_receipt r ON r.message_record_id=m.record_id
       `,
-    )
-    .all() as {
-    number: number
-    ack_required: number
-    ack_deadline: string | null
-    expires_at: string
-    withdrawn_at: string | null
-    reader_session: string
-    reader_run_record_id: string | null
-    acknowledged_at: string | null
-    audience_at_posting: number
-  }[]
+      )
+      .all() as {
+      number: number
+      ack_required: number
+      ack_deadline: string | null
+      expires_at: string
+      withdrawn_at: string | null
+      reader_session: string
+      reader_run_record_id: string | null
+      acknowledged_at: string | null
+      audience_at_posting: number
+    }[]
+  ).map((row) => ({
+    id: row.number,
+    ackRequired: row.ack_required === 1,
+    ackDeadline: row.ack_deadline,
+    expiresAt: row.expires_at,
+    withdrawnAt: row.withdrawn_at,
+    readerSession: row.reader_session,
+    readerRunRecordId: row.reader_run_record_id,
+    acknowledgedAt: row.acknowledged_at,
+    audienceAtPosting: row.audience_at_posting === 1,
+  }))
+}
+
+export async function boardEscalations(
+  clock = Date.now(),
+  options: {
+    env?: Environment
+    database?: Database
+    refresh?: typeof refreshHostedBoard
+  } = {},
+) {
+  const rows = await boardEscalationRows(
+    options.database ?? db(),
+    options.env ?? process.env,
+    options.refresh ?? refreshHostedBoard,
+  )
   return rows
     .filter(
       (row) =>
-        row.reader_run_record_id === null &&
+        row.readerRunRecordId === null &&
+        row.expiresAt !== null &&
         needsAckEscalation({
-          ackRequired: row.ack_required === 1,
-          deadline: row.ack_deadline ? Date.parse(row.ack_deadline) : null,
-          expiresAt: Date.parse(row.expires_at),
-          withdrawnAt: row.withdrawn_at ? Date.parse(row.withdrawn_at) : null,
-          acknowledgedAt: row.acknowledged_at ? Date.parse(row.acknowledged_at) : null,
-          audienceAtPosting: row.audience_at_posting === 1,
+          ackRequired: row.ackRequired,
+          deadline: row.ackDeadline ? Date.parse(row.ackDeadline) : null,
+          expiresAt: Date.parse(row.expiresAt),
+          withdrawnAt: row.withdrawnAt ? Date.parse(row.withdrawnAt) : null,
+          acknowledgedAt: row.acknowledgedAt ? Date.parse(row.acknowledgedAt) : null,
+          audienceAtPosting: row.audienceAtPosting,
           now: clock,
         }),
     )
     .map((row) => ({
       kind: 'board-ack-overdue',
-      subject: `board:${row.number}:${row.reader_session}`,
-      since: row.ack_deadline,
-      ageMs: row.ack_deadline ? clock - Date.parse(row.ack_deadline) : null,
-      detail: `Board notice ${row.number} is not acknowledged by ${row.reader_session}`,
-      action: `inspect with ${PLATFORM_SLUG} board status ${row.number}`,
+      subject: `board:${row.id}:${row.readerSession}`,
+      since: row.ackDeadline,
+      ageMs: row.ackDeadline ? clock - Date.parse(row.ackDeadline) : null,
+      detail: `Board notice ${row.id} is not acknowledged by ${row.readerSession}`,
+      action: `inspect with ${PLATFORM_SLUG} board status ${row.id}`,
     }))
 }
 
@@ -705,4 +821,14 @@ export function reapBoardMessages(clock = Date.now()): number {
   let reaped = 0
   for (const id of ids) reaped += remove.run(id).changes
   return reaped + reapHostedBoardCache(clock)
+}
+
+export function reapBoardMessagesForInstall(
+  env: Environment = process.env,
+  database: Database = db(),
+  clock = Date.now(),
+): number {
+  return boardMode('shared', env, database) === 'local'
+    ? reapBoardMessages(clock)
+    : reapHostedBoardCache(clock)
 }

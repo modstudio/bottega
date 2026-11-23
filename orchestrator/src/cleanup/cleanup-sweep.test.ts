@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
@@ -11,6 +12,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
+import { postNotice } from '../board/board-service.ts'
 import { register as registerCleanupCommands } from '../commands/cleanup.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
@@ -434,6 +437,11 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
     settings: { trunk: 'main', worktree: { branch: 'orch-{id}' } },
   })
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const retainedBoardMessage = postNotice(
+    { audience: 'operator', title: 'Hosted install local history', body: 'Keep this local row.' },
+    {},
+    Date.parse('2020-01-01T00:00:00.000Z'),
+  )
   const tree = join(projectPath, '.claude', 'worktrees', `orch-${run}`)
   db()
     .query('UPDATE run SET repo=?,project_record_id=?,worktree=?,cwd=? WHERE record_id=?')
@@ -449,6 +457,7 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
     return actualSpawnSync(args, options)
   }) as typeof Bun.spawnSync)
 
+  const endpoint = process.env.BOTTEGA_RECORD_API_URL
   try {
     const lines: string[] = []
     await sweepRuns(
@@ -459,7 +468,12 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
         presentation: presentation(lines, () => {}),
       },
       {
-        observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
+        observeGrokTrustHeadings: () => {
+          db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+          if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+          else process.env.BOTTEGA_RECORD_API_URL = endpoint
+          return { succeeded: true, headings: [] }
+        },
         grokTrustPathFromHeading: () => null,
         hubTaskReader: async () => [],
         outboxMaintenance: {
@@ -470,7 +484,11 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
             throw new Error('release busy')
           },
           releasePages: () => {
-            throw new Error('vacuum busy')
+            db()
+              .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+              .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+            process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+            return 'not-incremental'
           },
         },
         telemetryMaintenance: {
@@ -490,12 +508,22 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
       close_out_outcome: 'absent',
     })
     expect(lines).toContain('outbox prune failed: prune busy')
+    expect(
+      db()
+        .query('SELECT record_id FROM board_message WHERE record_id=?')
+        .get(retainedBoardMessage.recordId),
+    ).toEqual({ record_id: retainedBoardMessage.recordId })
     expect(lines).toContain('outbox release failed: release busy')
     expect(lines).toContain('contention rollup failed: rollup busy')
     expect(lines).toContain('contention prune failed: contention prune busy')
     expect(lines).toContain('monitor prune failed: monitor prune busy')
-    expect(lines).toContain('outbox space release failed: vacuum busy')
+    expect(lines).toContain(
+      `outbox space not returned: store is not yet incremental; run ${PLATFORM_SLUG} machine update`,
+    )
   } finally {
+    db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+    if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = endpoint
     rmSync(projectPath, { recursive: true, force: true })
   }
 })

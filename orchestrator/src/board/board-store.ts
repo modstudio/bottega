@@ -18,6 +18,7 @@ import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -768,6 +769,7 @@ function insertRootRow(
 }
 
 export function messageRows(database = db()): MessageRow[] {
+  requireLocalBoardRead(process.env, database)
   return database
     .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message ORDER BY number`)
     .all() as MessageRow[]

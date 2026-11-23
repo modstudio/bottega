@@ -727,7 +727,7 @@ export async function monitor(
     })
 
   conditions.push(...outboxConditions(database, clock))
-  conditions.push(...boardEscalations(clock))
+  conditions.push(...(await boardEscalations(clock)))
 
   conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))

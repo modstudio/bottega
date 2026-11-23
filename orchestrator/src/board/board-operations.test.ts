@@ -781,7 +781,7 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
   ).toBe(0)
 })
 
-test('machine audiences stay local after adoption and ids are validated for the selected mode', async () => {
+test('machine writes stay local after adoption while a shared read stops at the local-read guard', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const client = createMemoryRecordApiClient()
   const local = await boardPost(
@@ -790,7 +790,7 @@ test('machine audiences stay local after adoption and ids are validated for the 
   )
   expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
   await expect(boardThread(local.recordId, { env, client })).rejects.toThrow(
-    /not readable by this session/,
+    /requireLocalBoardRead stopped a local board read; a hosted install reads the board through the hosted reader/,
   )
 })
 

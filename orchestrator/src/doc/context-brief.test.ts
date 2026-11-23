@@ -4,7 +4,13 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
+import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
@@ -353,6 +359,43 @@ test('contextBrief carries question groups into the waiting segment', async () =
     expect.objectContaining({ job: 'implement', status: 'asking', label: 'Read the brief' }),
   ])
   expect(renderContextBrief(brief)).toContain('implement asking · Read the brief')
+})
+
+test('contextBrief counts hosted cached requests without reading a differing local request', async () => {
+  const session = 'context-brief-hosted-board'
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/hosted-context-brief','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), PLATFORM_SLUG)
+  new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
+  const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect(migration.exitCode, migration.stderr.toString()).toBe(0)
+  postNotice(
+    { audience: `session:${session}`, title: 'Local request', body: 'Do not count this.' },
+    {},
+  )
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  installRecordApiClient({
+    ...createMemoryRecordApiClient({ boardChanges: [] }),
+    listBoardClaims: async () => ({ claims: [] }),
+  })
+  const endpoint = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  try {
+    const brief = await contextBrief(session, '/hosted-context-brief', db(), async () => [])
+    expect(brief.waiting.boardRequests).toBe(0)
+  } finally {
+    installRecordApiClient(null)
+    if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = endpoint
+  }
 })
 
 test('contextBrief uses the session cursor rows for holders and in flight', async () => {

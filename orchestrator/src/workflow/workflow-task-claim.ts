@@ -105,7 +105,7 @@ export async function followTaskCursorClaim(
 export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
   if (!session) return
   const database = db()
-  boardQueuedClaimsRenew(session, Date.now(), database)
+  await boardQueuedClaimsRenew(session, Date.now(), database)
   if (!launchKey) return
   const project = await boardOpenTaskCursorProject(launchKey, session, database)
   if (!project) return

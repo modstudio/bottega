@@ -8,6 +8,13 @@ export type TableStateClassDeclaration = {
   reason: string
   counterpart?: string
   cache?: true
+  /**
+   * A hosted table's local read cache. `refresh` is `<repo path>:<exported symbol>` of the
+   * function that fills the local table from the record; `schedule` is a maintenance schedule
+   * label whose launchd and systemd intervals bound the cache's staleness. A local read of a
+   * hosted table without this declaration is refused by scripts/check-hosted-local-sql.ts.
+   */
+  readCache?: { refresh: string; schedule: string }
   task?: string
   ruling?: string
 }
@@ -50,7 +57,20 @@ const hosted = (
   table: string,
   counterpart: string,
   reason: string,
-): TableStateClassDeclaration => ({ store, table, class: 'hosted', reason, counterpart })
+  readCache?: TableStateClassDeclaration['readCache'],
+): TableStateClassDeclaration => ({
+  store,
+  table,
+  class: 'hosted',
+  reason,
+  counterpart,
+  ...(readCache ? { readCache } : {}),
+})
+
+const RECORD_READ_CACHE = {
+  refresh: 'orchestrator/src/record/record-cache.ts:pullRecordCache',
+  schedule: 'com.user.orch-record-sync',
+} as const
 
 const cache = (
   store: StateClassStore,
@@ -159,12 +179,13 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   synced('orchestrator', 'compared_pair', 'Compared routing evidence pairs', 'DEV-2234'),
   synced('orchestrator', 'contention', 'Outbox source for contention'),
   machine('orchestrator', 'contention_day', "This machine's contention rollup", PORTABLE_RULING),
-  hosted('orchestrator', 'doc', 'doc', 'Local document write source'),
+  hosted('orchestrator', 'doc', 'doc', 'Local document write source', RECORD_READ_CACHE),
   hosted(
     'orchestrator',
     'doc_related_subject',
     'doc_related_subject',
     'Local document subject link',
+    RECORD_READ_CACHE,
   ),
   hosted('orchestrator', 'doc_revision', 'doc_revision', 'Local document revision write source'),
   hosted('orchestrator', 'context_item', 'context_item', 'Local context item write source'),
@@ -207,15 +228,28 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   synced('orchestrator', 'landing_override', 'Outbox source for landing override'),
   synced('orchestrator', 'landing_review_carry', 'Outbox source for landing review carry'),
   synced('orchestrator', 'landing_triage_snapshot', 'Outbox source for landing triage snapshot'),
-  hosted('orchestrator', 'lens', 'lens', 'Local lens write source'),
-  hosted('orchestrator', 'lens_profile', 'lens_profile', 'Local lens profile write source'),
+  hosted('orchestrator', 'lens', 'lens', 'Local lens write source', RECORD_READ_CACHE),
+  hosted(
+    'orchestrator',
+    'lens_profile',
+    'lens_profile',
+    'Local lens profile write source',
+    RECORD_READ_CACHE,
+  ),
   hosted(
     'orchestrator',
     'lens_profile_revision',
     'lens_profile_revision',
     'Local lens profile revision',
+    RECORD_READ_CACHE,
   ),
-  hosted('orchestrator', 'lens_revision', 'lens_revision', 'Local lens revision write source'),
+  hosted(
+    'orchestrator',
+    'lens_revision',
+    'lens_revision',
+    'Local lens revision write source',
+    RECORD_READ_CACHE,
+  ),
   machine('orchestrator', 'main_stack_activity', "This machine's host telemetry", PORTABLE_RULING),
   machine('orchestrator', 'metric', "This machine's token metric", PORTABLE_RULING),
   machine('orchestrator', 'monitor_condition', "This machine's monitor condition", PORTABLE_RULING),
@@ -252,31 +286,70 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Local outbox redaction audit',
     PORTABLE_RULING,
   ),
-  hosted('orchestrator', 'port_baseline', 'port_baseline', 'Local port baseline write source'),
-  hosted('orchestrator', 'port_doctrine', 'port_doctrine', 'Local port doctrine write source'),
-  hosted('orchestrator', 'port_pair', 'port_pair', 'Local port pair write source'),
-  hosted('orchestrator', 'port_ref', 'port_ref', 'Local port reference write source'),
+  hosted(
+    'orchestrator',
+    'port_baseline',
+    'port_baseline',
+    'Local port baseline write source',
+    RECORD_READ_CACHE,
+  ),
+  hosted(
+    'orchestrator',
+    'port_doctrine',
+    'port_doctrine',
+    'Local port doctrine write source',
+    RECORD_READ_CACHE,
+  ),
+  hosted(
+    'orchestrator',
+    'port_pair',
+    'port_pair',
+    'Local port pair write source',
+    RECORD_READ_CACHE,
+  ),
+  hosted(
+    'orchestrator',
+    'port_ref',
+    'port_ref',
+    'Local port reference write source',
+    RECORD_READ_CACHE,
+  ),
   hosted(
     'orchestrator',
     'port_ref_source',
     'port_ref_source',
     'Local port reference source write source',
+    RECORD_READ_CACHE,
   ),
-  hosted('orchestrator', 'port_skip', 'port_skip', 'Local port skip write source'),
+  hosted(
+    'orchestrator',
+    'port_skip',
+    'port_skip',
+    'Local port skip write source',
+    RECORD_READ_CACHE,
+  ),
   machine('orchestrator', 'presence', "This machine's host telemetry", PORTABLE_RULING),
   synced('orchestrator', 'probe', 'Probe outcomes', 'DEV-2234'),
-  hosted('orchestrator', 'project', 'project', 'Local project write source'),
+  hosted(
+    'orchestrator',
+    'project',
+    'project',
+    'Local project write source; pullRecordCache refreshes hosted fields for projects registered on this machine',
+    RECORD_READ_CACHE,
+  ),
   hosted(
     'orchestrator',
     'project_lens_profile',
     'project_lens_profile',
     'Local project lens selection',
+    RECORD_READ_CACHE,
   ),
   hosted(
     'orchestrator',
     'project_lens_profile_revision',
     'project_lens_profile_revision',
     'Local project lens revision',
+    RECORD_READ_CACHE,
   ),
   synced('orchestrator', 'pull_request_ci', 'Outbox source for pull request checks'),
   IDENTITY_STATE_CLASSES.question,
@@ -360,20 +433,28 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Worker processes spawned on this machine',
     DEV_2234_MACHINE_RULING,
   ),
-  hosted('orchestrator', 'step_catalogue', 'step_catalogue', 'Local step catalogue write source'),
+  hosted(
+    'orchestrator',
+    'step_catalogue',
+    'step_catalogue',
+    'Local step catalogue write source',
+    RECORD_READ_CACHE,
+  ),
   hosted(
     'orchestrator',
     'step_catalogue_event',
     'step_catalogue_event',
     'Local step catalogue event',
+    RECORD_READ_CACHE,
   ),
   hosted(
     'orchestrator',
     'step_catalogue_version',
     'step_catalogue_version',
     'Local step catalogue version',
+    RECORD_READ_CACHE,
   ),
-  hosted('orchestrator', 'subject', 'subject', 'Local subject write source'),
+  hosted('orchestrator', 'subject', 'subject', 'Local subject write source', RECORD_READ_CACHE),
   synced('orchestrator', 'test_flake', 'Outbox source for test flakes'),
   machine(
     'orchestrator',
@@ -381,7 +462,13 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Requests queued to the local note broker',
     DEV_2234_MACHINE_RULING,
   ),
-  hosted('orchestrator', 'workflow', 'workflow', 'Local workflow catalogue write source'),
+  hosted(
+    'orchestrator',
+    'workflow',
+    'workflow',
+    'Local workflow catalogue write source',
+    RECORD_READ_CACHE,
+  ),
   hosted('orchestrator', 'task_flow', 'task_flow', 'Hosted workflow instances for tasks'),
   planned('orchestrator', 'typed_question_answer', 'DEV-2234', 'Typed-question answers'),
   planned('hub', 'typed_question_answer', 'DEV-2234', 'Typed-question answers'),
@@ -392,7 +479,13 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'task_flow_stage',
     'Hosted stages of workflow instances',
   ),
-  hosted('orchestrator', 'workflow_event', 'workflow_event', 'Local workflow event write source'),
+  hosted(
+    'orchestrator',
+    'workflow_event',
+    'workflow_event',
+    'Local workflow event write source',
+    RECORD_READ_CACHE,
+  ),
   hosted(
     'orchestrator',
     'workflow_obligation',
@@ -416,6 +509,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'workflow_version',
     'workflow_version',
     'Local workflow version write source',
+    RECORD_READ_CACHE,
   ),
   machine('hub', 'commit_key', 'Local Git ingestion', PORTABLE_RULING),
   synced('hub', 'day', 'Daily usage collected on this machine'),

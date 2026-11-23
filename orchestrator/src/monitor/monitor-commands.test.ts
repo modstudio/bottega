@@ -129,13 +129,13 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
     expect(changesCalls).toBe(0)
     expect(
       JSON.parse(output.pop()!).notices.map((notice: { noticeId: string }) => notice.noticeId),
-    ).toContain(`board:${posted.number}`)
+    ).not.toContain(`board:${posted.number}`)
 
     await monitorCommand(options(false), presentation)
     expect(changesCalls).toBe(1)
     expect(
       JSON.parse(output.pop()!).notices.map((notice: { noticeId: string }) => notice.noticeId),
-    ).toContain(`board:${posted.number}`)
+    ).not.toContain(`board:${posted.number}`)
   } finally {
     installRecordApiClient(null)
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID

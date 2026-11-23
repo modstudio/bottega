@@ -7,16 +7,12 @@ import {
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
-import {
-  type BoardWriteDropped,
-  boardWriteWarning,
-  hostedBoardWriteResult,
-} from '../../../shared/board-write-result.ts'
+import { boardWriteWarning, hostedBoardWriteResult } from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { DEFAULT_TASK_KEY_PATTERN } from '../project/project-settings.ts'
-import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
+import { projectAt, projectByName, projectRowByName, projects } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -25,7 +21,6 @@ import {
   recordApiClient,
 } from '../record/record-api-client.ts'
 import type {
-  HostedBoardClaim,
   HostedBoardMessage,
   HostedBoardReceipt,
   HostedBoardStatus,
@@ -45,7 +40,6 @@ import {
 import { BOARD_CLAIM_DEFAULT_MS, releaseTaskKey } from './board-claim-policy.ts'
 import {
   type BoardTaskCursorAuthority,
-  type ClaimView,
   claimProject,
   closeQueuedTaskClaim,
   listClaims,
@@ -64,6 +58,11 @@ import {
   resolveBoardMessageIdentifier,
 } from './board-message-identifier.ts'
 import { boardMode } from './board-mode.ts'
+import {
+  type BoardClaimResult,
+  type BoardPostResult,
+  claimResult,
+} from './board-operation-results.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -114,15 +113,7 @@ type Context = {
   database?: ReturnType<typeof db>
 }
 
-export type BoardPostResult = {
-  recordId: string
-  number: number | null
-  dropped: BoardWriteDropped
-  reached: number | null
-  warning: string | null
-}
-
-type BoardReplyResult = BoardPostResult & { rootId: string }
+export type { BoardPostResult } from './board-operation-results.ts'
 
 type BoardMessageResult = {
   recordId: string
@@ -185,25 +176,7 @@ export type BoardStatusResult = {
   unacknowledged: string[] | null
 }
 
-export type BoardClaimResult = {
-  recordId: string
-  project: string
-  subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
-  holder: string
-  holderUserId: string | null
-  holderSession: string | null
-  note: string | null
-  runId: string | null
-  run_record_id: string | null
-  takenAt: string
-  renewedAt: string
-  lapsesAt: string
-  live: boolean
-  closedAt: string | null
-  closeReason: string | null
-  previousClaimRecordIds: string[]
-  supersededByClaimRecordId: string | null
-}
+export type { BoardClaimResult } from './board-operation-results.ts'
 
 function context(input: Context = {}) {
   return {
@@ -332,35 +305,6 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
       recordId: id,
       number: null,
     })),
-  }
-}
-
-function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
-  const hosted = !('recordId' in value)
-  const recordId = 'recordId' in value ? value.recordId : value.id
-  const {
-    id: _id,
-    previousClaimIds: _previousClaimIds,
-    supersededByClaimId: _supersededByClaimId,
-    ...fields
-  } = value as HostedBoardClaim & ClaimView
-  return {
-    ...fields,
-    holderUserId: hosted ? value.holder : null,
-    holderSession: hosted
-      ? (value.holderSession ?? null)
-      : value.holder === 'operator'
-        ? null
-        : value.holder,
-    recordId,
-    runId: stringId(value.runId),
-    run_record_id: value.runId,
-    previousClaimRecordIds:
-      'previousClaimRecordIds' in value ? value.previousClaimRecordIds : value.previousClaimIds,
-    supersededByClaimRecordId:
-      'supersededByClaimRecordId' in value
-        ? value.supersededByClaimRecordId
-        : value.supersededByClaimId,
   }
 }
 
@@ -596,7 +540,7 @@ export async function boardReply(
         kind: 'reply',
         rootId: result.rootRecordId,
       }),
-    } satisfies BoardReplyResult
+    } satisfies BoardPostResult & { rootId: string }
   }
   const actor = authorFacts(c.env)
   const project = projectAt(c.cwd)
@@ -619,7 +563,7 @@ export async function boardReply(
   return {
     ...hostedPostResult(reply.id, row, { kind: 'reply', rootId: resolved.recordId }),
     rootId: id,
-  } satisfies BoardReplyResult
+  } satisfies BoardPostResult & { rootId: string }
 }
 
 export async function boardThread(id: string, inputContext?: Context) {
@@ -909,13 +853,26 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
         }),
       )
 }
-/** Workflow renewal routes through board operations so workflow code never imports board storage. */
-export function boardQueuedClaimsRenew(
+export async function boardQueuedClaimsRenew(
   session: string,
   clock = Date.now(),
   database: Database = db(),
 ) {
-  return renewLiveQueuedClaimsOfSession(session, clock, database)
+  const c = context({ clock, database })
+  if (boardMode('shared', c.env, c.database) === 'local')
+    return renewLiveQueuedClaimsOfSession(session, clock, database)
+  const claims = await boardLiveClaimsOfSession(session, clock, database)
+  let renewed = 0
+  for (const claim of claims) {
+    if (claim.subject.kind !== 'queued-task') continue
+    await hostedClient(c).renewBoardClaim(
+      claim.recordId,
+      await writeDestination(c, claim.project),
+      { holderSession: session },
+    )
+    renewed++
+  }
+  return renewed
 }
 export async function boardQueuedClaimClose(
   input: { project: string; key: string; session: string; reason: 'released' | 'started' },
@@ -949,13 +906,55 @@ export async function boardQueuedClaimClose(
   return { closed: 1, reason: input.reason }
 }
 
-/** Read projects where a session holds a live local claim through the board's liveness policy. */
-export function boardLiveClaimProjectsForSession(
+/** Read claims for a session through the selected board store. */
+export async function boardClaimsOfSession(
+  session: string,
+  all = false,
+  clock = Date.now(),
+  database: Database = db(),
+  inputContext?: Context,
+): Promise<BoardClaimResult[]> {
+  const c = context({ ...inputContext, clock, database })
+  if (boardMode('shared', c.env, c.database) === 'local') {
+    if (!all) return liveClaimsOfSession(session, clock, database).map(claimResult)
+    return projects({}, database)
+      .flatMap(
+        (project) =>
+          listClaims(project.name, true, c.env, clock, project.path, database, {
+            mode: 'coverage-read',
+            session: null,
+          }).claims,
+      )
+      .filter((claim) => claim.holder === session)
+      .map(claimResult)
+  }
+  const listed = await Promise.all(
+    projects({}, database).map((project) =>
+      hostedClient(c).listBoardClaims(project.name, project.recordId, { openOnly: !all }),
+    ),
+  )
+  return listed
+    .flatMap(({ claims }) => claims)
+    .filter((claim) => (all || claim.live) && claim.holderSession === session)
+    .map(claimResult)
+}
+
+export async function boardLiveClaimsOfSession(
   session: string,
   clock = Date.now(),
   database: Database = db(),
-): string[] {
-  return [...new Set(liveClaimsOfSession(session, clock, database).map(({ project }) => project))]
+  inputContext?: Context,
+): Promise<BoardClaimResult[]> {
+  return boardClaimsOfSession(session, false, clock, database, inputContext)
+}
+
+export async function boardLiveClaimProjectsForSession(
+  session: string,
+  clock = Date.now(),
+  database: Database = db(),
+): Promise<string[]> {
+  const claims = await boardLiveClaimsOfSession(session, clock, database)
+  return [...new Set(claims.map(({ project }) => project))]
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)
