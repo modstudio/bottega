@@ -142,6 +142,27 @@ function assertQuestionTextWriteAllowed(
   if (refusal) throw new RecordQuestionError(refusal.message, 409)
 }
 
+async function existingQuestionForWrite(
+  id: string,
+  tx: SQL,
+): Promise<ExistingQuestion | undefined> {
+  const rows = (await tx`
+    SELECT number,revision,last_request_id::text,project_id::text,question
+      FROM question WHERE id=${id}::uuid FOR UPDATE
+  `) as ExistingQuestion[]
+  return rows[0]
+}
+
+function replayedQuestionWrite(id: string, existing: ExistingQuestion): QuestionWriteResult {
+  return {
+    id,
+    number: Number(existing.number),
+    revision: Number(existing.revision),
+    applied: true,
+    replayed: true,
+  }
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -191,21 +212,12 @@ export async function writeRecordQuestionTransaction(
   requireRestoreNumber(intent, writeInput)
   if (intent === 'ask' && writeInput.question.runId)
     await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
-  const existing = (await tx`
-      SELECT number,revision,last_request_id::text,project_id::text,question
-        FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE
-    `) as ExistingQuestion[]
-  if (existing[0]?.last_request_id === writeInput.requestId)
-    return {
-      id: writeInput.question.id,
-      number: Number(existing[0].number),
-      revision: Number(existing[0].revision),
-      applied: true,
-      replayed: true,
-    }
-  if (existing[0])
-    assertQuestionTextWriteAllowed(intent, existing[0].question, writeInput.question.question)
-  const number = await questionNumberForWrite(intent, writeInput, existing[0], tx)
+  const existing = await existingQuestionForWrite(writeInput.question.id, tx)
+  if (existing?.last_request_id === writeInput.requestId)
+    return replayedQuestionWrite(writeInput.question.id, existing)
+  if (existing)
+    assertQuestionTextWriteAllowed(intent, existing.question, writeInput.question.question)
+  const number = await questionNumberForWrite(intent, writeInput, existing, tx)
   const payload = {
     ...writeInput.question,
     number,
@@ -216,7 +228,7 @@ export async function writeRecordQuestionTransaction(
     id: writeInput.question.workflowTaskId,
     key: writeInput.question.workflowKey,
   })
-  const projectId = await projectIdForQuestionWrite(intent, writeInput, existing[0], tx)
+  const projectId = await projectIdForQuestionWrite(intent, writeInput, existing, tx)
   const values = maskQuestionValues(
     await questionValuesForWrite(
       tx,
@@ -260,11 +272,11 @@ export async function writeRecordQuestionTransaction(
       revision: questionRecord.revision,
     })
   const result = written[0]
-  if (!result && existing[0] && existing[0].number !== null)
+  if (!result && existing && existing.number !== null)
     return {
       id: writeInput.question.id,
-      number: Number(existing[0].number),
-      revision: Number(existing[0].revision),
+      number: Number(existing.number),
+      revision: Number(existing.revision),
       applied: false,
     }
   if (!result || result.number == null)
