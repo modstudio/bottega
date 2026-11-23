@@ -28,7 +28,6 @@ import {
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { importTasks } from './task-import.ts'
 import { machineAttribution } from './task-machine-attribution.ts'
-import { printShownTask, printShownTaskDocument, printTaskRow } from './task-print.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 import {
@@ -94,6 +93,13 @@ function taskBody(options: TaskOptions): string | undefined {
     throw new Error('--body and --body-file are mutually exclusive')
   if (options.bodyFile !== undefined) return readFileSync(required(options, 'bodyFile'), 'utf8')
   return options.body === undefined ? undefined : required(options, 'body')
+}
+
+function printTaskRow(row: Awaited<ReturnType<typeof showTask>>['task']): void {
+  console.log(
+    `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
+      `${row.project.padEnd(12)} ${row.title ?? ''}`,
+  )
 }
 
 async function createTaskCommand(options: TaskOptions): Promise<void> {
@@ -170,6 +176,27 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     return
   }
   printShownTask(shown)
+}
+
+function printShownTask(shown: Awaited<ReturnType<typeof showTask>>): void {
+  printTaskRow(shown.task)
+  if (shown.task.revision !== undefined) console.log(`revision: ${shown.task.revision}`)
+  if (shown.task.retired_reason) console.log(`retired: ${shown.task.retired_reason}`)
+  if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
+  if (shown.task.body) console.log(`\n${shown.task.body}`)
+  if (shown.documents.length) {
+    console.log('\ndocuments:')
+    for (const document of shown.documents) {
+      const role = document.role ? ` [${document.role}]` : ''
+      console.log(
+        `  ${document.label}${role}  ${document.title} — ${PLATFORM_SLUG} task doc show ${document.label}`,
+      )
+    }
+  }
+  for (const comment of shown.comments)
+    console.log(
+      `\n${comment.id}  ${comment.created_at}  ${comment.actor_name ?? 'unknown'}${comment.revision === undefined ? '' : `  revision ${comment.revision}`}\n${comment.body}`,
+    )
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
@@ -511,7 +538,13 @@ function registerTaskDocumentReadCommands(document: Command): void {
       const options = taskOptions(command)
       const item = await getTaskDocument(reference, { project: options.project })
       if (options.json) console.log(JSON.stringify(item))
-      else printShownTaskDocument(item)
+      else {
+        console.log(
+          `${item.label}  ${item.task_key}${item.role ? ` [${item.role}]` : ''}  ${item.title}`,
+        )
+        console.log(`version: ${item.version}`)
+        if (item.body) console.log(`\n${item.body}`)
+      }
     })
 }
 

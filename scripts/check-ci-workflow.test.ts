@@ -45,7 +45,7 @@ test('refuses a workflow with a missing or extra job', () => {
           .filter((name) => name !== 'ci')
           .join(
             ', ',
-          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "checkout-cli-confinement" or .key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -160,7 +160,7 @@ test('refuses an aggregate that lets a path-gated job fail', () => {
         'or .key == "install-proof") and .value.result != "cancelled"',
       ),
     ),
-  ).toThrow('ci aggregate must accept only success, or skipped for path-gated jobs')
+  ).toThrow('ci aggregate must accept only success, or skipped for gated jobs')
 })
 
 test('pins the Python hook leg', () => {
@@ -466,7 +466,7 @@ function readWorkflowFixture() {
           .filter((name) => name !== 'ci')
           .join(
             ', ',
-          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "checkout-cli-confinement" or .key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
