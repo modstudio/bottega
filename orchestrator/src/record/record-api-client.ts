@@ -17,6 +17,10 @@ import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
+import {
+  type RecordBoardClaimClient,
+  recordBoardClaimClient,
+} from './record-api-client-board-claims.ts'
 import { openBoardStream } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
@@ -83,7 +87,6 @@ import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-cl
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
-  HostedBoardClaim,
   HostedBoardFilingCompleteInput,
   HostedBoardFilingFailInput,
   HostedBoardMessage,
@@ -95,7 +98,6 @@ import type {
   HostedBoardStatus,
   HostedBoardSuccessorInput,
   HostedBoardSuccessorResult,
-  HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
 import {
@@ -251,7 +253,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> &
   RecordContextItemClient &
-  RecordSpaceAgentClient & {
+  RecordSpaceAgentClient &
+  RecordBoardClaimClient & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -459,29 +462,6 @@ export type RecordApiClient = ProjectIdentityClient &
       input: HostedBoardSuccessorInput,
       destination: RecordWriteDestination,
     ): Promise<HostedBoardSuccessorResult>
-    takeBoardClaim(
-      input: HostedBoardTakeClaimInput,
-      destination: RecordWriteDestination,
-    ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
-    renewBoardClaim(
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ): Promise<HostedBoardClaim>
-    releaseBoardClaim(
-      id: string,
-      destination: RecordWriteDestination,
-      input?: { holderSession?: string | null },
-    ): Promise<HostedBoardClaim>
-    listBoardClaims: ReturnType<typeof recordBoardClient>['listBoardClaims']
-    releaseBoardTaskClaims(
-      input: {
-        project: string
-        projectId?: string | null
-        key: string
-      },
-      destination: RecordWriteDestination,
-    ): Promise<{ released: number }>
     openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
   }
 
@@ -785,6 +765,7 @@ export function recordApiClientOver(
     ...recordDocWriteClient(request),
     ...recordContextItemClient(request),
     ...recordSpaceAgentClient(request),
+    ...recordBoardClaimClient(request),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),
@@ -802,7 +783,6 @@ export function recordApiClientOver(
     },
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(
-      request,
       seams.streamTransport,
       seams.streamToken ?? storedRecordToken,
       seams.preflight ?? throwIfRecordApiRequestRefused,
@@ -1011,7 +991,6 @@ function recordIdentityAndSpaceClient(
 }
 
 function recordApiBoardWatchClient(
-  request: RecordClientRequest = recordApiRequest,
   transport?: typeof fetch,
   readToken: () => string | null = storedRecordToken,
   preflight: () => void = throwIfRecordApiRequestRefused,
@@ -1019,12 +998,6 @@ function recordApiBoardWatchClient(
 ): Pick<RecordApiClient, RecordBoardWatchMethod> {
   const selectedTransport = transport ?? (((url, init) => fetch(url, init)) as typeof fetch)
   return {
-    releaseBoardTaskClaims: (input, destination) =>
-      request('/v1/board/claims/release-task', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...destination,
-      }),
     openBoardStream: (signal) =>
       openBoardStream({
         signal,

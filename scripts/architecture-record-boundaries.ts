@@ -83,6 +83,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../../../shared/storage-lifecycle.ts',
       '../doc/doc-write-allowed.ts',
       './record-auth.ts',
+      './record-api-client-board-claims.ts',
       './record-api-client-board.ts',
       './record-api-client-board-stream.ts',
       './record-api-client-changes.ts',

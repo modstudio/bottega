@@ -72,7 +72,7 @@ export type RecordIdentityAndSpaceMethod =
   | 'acceptInvitation'
   | 'inviteMember'
   | 'removeMember'
-export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
+export type RecordBoardWatchMethod = 'openBoardStream'
 export type ProjectIdentityClient = {
   upsertProject(
     input: {
