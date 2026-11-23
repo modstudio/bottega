@@ -67,6 +67,7 @@ export async function observeRecordTunnel(
 ): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
+  unobservedKinds: Set<'record-tunnel-down'>
 }> {
   try {
     const app = readMachineValue('record.tunnel_app')
@@ -77,7 +78,7 @@ export async function observeRecordTunnel(
         port: 0,
         reachable: false,
       })
-      return { conditions: condition ? [condition] : [], errors: [] }
+      return { conditions: condition ? [condition] : [], errors: [], unobservedKinds: new Set() }
     }
     const port = readMachineValue('record.tunnel_local_port')
     const condition = recordTunnelCondition({
@@ -86,13 +87,14 @@ export async function observeRecordTunnel(
       port,
       reachable: await tcpEndpointReachable(port),
     })
-    return { conditions: condition ? [condition] : [], errors: [] }
+    return { conditions: condition ? [condition] : [], errors: [], unobservedKinds: new Set() }
   } catch (cause) {
     if (cause instanceof ConfigClientError && cause.reason === 'not-configured')
-      return { conditions: [], errors: [] }
+      return { conditions: [], errors: [], unobservedKinds: new Set() }
     return {
       conditions: [],
       errors: [`record tunnel observation: ${String((cause as Error).message ?? cause)}`],
+      unobservedKinds: new Set(['record-tunnel-down']),
     }
   }
 }

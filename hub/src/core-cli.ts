@@ -33,6 +33,10 @@ import {
 } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
+import {
+  hostedChangeQuarantineRows,
+  hostedChangeQuarantineSummary,
+} from './hosted-change-quarantine.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import {
   readQuestionIdentityMap,
@@ -248,10 +252,25 @@ function registerCollectionCommands(program: Command): void {
     .command('collector-legs')
     .description('show persisted collector-leg state')
     .option('--json', 'write the collector-leg state as JSON')
-    .action((options: { json?: boolean }) => {
+    .option('--quarantined', 'list hosted changes quarantined during local apply')
+    .action((options: { json?: boolean; quarantined?: boolean }) => {
       requireDatabase()
+      if (options.quarantined) {
+        const rows = hostedChangeQuarantineRows(db())
+        if (options.json) console.log(JSON.stringify(rows))
+        else
+          for (const row of rows)
+            console.log(
+              `${row.feed}/${row.spaceId} ${row.table} ${row.rowId}: ${row.constraintError} (${row.sightings} sightings)`,
+            )
+        return
+      }
       const states = collectorLegStates()
-      const { collectorLegs } = collectorLegView(states, Date.now())
+      const { collectorLegs } = collectorLegView(
+        states,
+        Date.now(),
+        hostedChangeQuarantineSummary(db()),
+      )
       if (options.json) console.log(JSON.stringify(collectorLegs))
       else {
         for (const leg of collectorLegs) {

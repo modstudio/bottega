@@ -427,7 +427,7 @@ function applySnapshotRow(
   row: HostedChangeRow,
   apply: (conn: Database, row: never) => void,
 ) {
-  applyHostedRow(failureLabel, table, id, () =>
+  return applyHostedRow(failureLabel, table, id, () =>
     reconcilePulledRow(conn, {
       table,
       id,
@@ -456,6 +456,23 @@ const hostedTaskChangeTables = {
 } as const
 
 export type HostedTaskChangeTable = keyof typeof hostedTaskChangeTables
+
+export function applyHostedTaskSnapshotRow(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  row: HostedChangeRow,
+): boolean {
+  return (
+    applySnapshotRow(
+      conn,
+      'hosted task change',
+      table,
+      row.id,
+      row,
+      hostedTaskChangeTables[table].apply as (conn: Database, row: never) => void,
+    ).kind !== 'skipped'
+  )
+}
 
 export const HOSTED_TASK_CHANGE_TABLE_QUERY = (
   Object.keys(hostedTaskChangeTables) as HostedTaskChangeTable[]

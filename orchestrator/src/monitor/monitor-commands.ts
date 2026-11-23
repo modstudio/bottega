@@ -21,7 +21,7 @@ import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-iden
 import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
-import { callerIdentity, sessionId } from '../database/db.ts'
+import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
   displayConditions,
   formatMonitorPass,
@@ -35,6 +35,7 @@ import {
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
+import { announceStoreWriteLockCondition } from './monitor-standing-condition-announcement.ts'
 import {
   formatStoreWriteLockReport,
   type StoreWriteLockReport,
@@ -44,6 +45,7 @@ import {
   boundedConditionDetail,
   MONITOR_HISTORY_DEFAULT_LIMIT,
   MONITOR_RAW_WINDOW_MS,
+  type MonitorCondition,
   type MonitorHostLoad,
   type MonitorHostPressure,
   type MonitorNotice,
@@ -182,7 +184,18 @@ async function showLockHolder(json: boolean, presentation: Presentation): Promis
   if (!report.supported) presentation.setExitCode(1)
 }
 
-function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }>) {
+type StoreWriteLockCondition = MonitorCondition & {
+  pid: number | null
+  command: string | null
+  runId: string | null
+  isRunSupervisor: boolean
+  classification: 'free' | 'contended' | 'held'
+  sampleCount: number
+}
+
+function lockCondition(
+  report: Extract<StoreWriteLockReport, { supported: true }>,
+): StoreWriteLockCondition {
   return {
     kind: 'store-write-lock-held',
     subject: report.store,
@@ -298,6 +311,11 @@ async function monitorResultOrReport(
       return null
     }
     const condition = lockCondition(report)
+    try {
+      await announceStoreWriteLockCondition(db(), condition, Date.now())
+    } catch {
+      // A store-busy fallback remains reportable when even the read path is unavailable.
+    }
     if (options.json) await presentation.write(`${JSON.stringify({ conditions: [condition] })}\n`)
     else await presentation.write(`${formatStoreWriteLockReport(report)}\n`)
     presentation.setExitCode(2)

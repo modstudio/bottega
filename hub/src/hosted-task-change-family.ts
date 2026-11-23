@@ -9,6 +9,7 @@ import { hostedTaskReference } from './hosted-task-reference.ts'
 import {
   applyHostedChangeUpsert,
   applyHostedTaskRows,
+  applyHostedTaskSnapshotRow,
   childTaskRecordId,
   deleteHostedChangeRow,
   HOSTED_TASK_CHANGE_TABLE_QUERY,
@@ -86,13 +87,22 @@ async function prepareTaskParents(
 ) {
   const pageParents = pageParentStates(page)
   const fetched = new Map<string, Awaited<ReturnType<typeof hostedGetTask>>['task']>()
+  const fetchedDependents = new Map<string, string[]>()
   const absent = new Set<string>()
   for (const change of page.changes) {
     const child = liveChildRow(change)
     if (!child) continue
     const cached = childTaskRecordId(db(), child.row) !== null
     const requirement = parentRequirement(child, pageParents, fetched, cached)
-    if (requirement.kind === 'ready') continue
+    if (requirement.kind === 'ready') {
+      const parentId = hostedTaskReference(child.table, child.row).id
+      if (parentId && fetched.has(parentId)) {
+        const dependents = fetchedDependents.get(parentId) ?? []
+        dependents.push(`${change.table}:${change.id}`)
+        fetchedDependents.set(parentId, dependents)
+      }
+      continue
+    }
     if (requirement.kind === 'absent') {
       absent.add(`${change.table}:${change.id}`)
       continue
@@ -101,23 +111,26 @@ async function prepareTaskParents(
     if (!parent) {
       pageParents.set(requirement.id, 'absent')
       absent.add(`${change.table}:${change.id}`)
-    } else fetched.set(requirement.id, parent)
+    } else {
+      fetched.set(requirement.id, parent)
+      const dependents = fetchedDependents.get(requirement.id) ?? []
+      dependents.push(`${change.table}:${change.id}`)
+      fetchedDependents.set(requirement.id, dependents)
+    }
   }
   return {
-    apply: [...fetched.values()].map(
-      (task) => (conn: Database) =>
+    apply: [...fetched.values()].map((task) => ({
+      change: { table: 'hub_task', id: task.id, op: 'upsert' as const, row: task },
+      apply: (conn: Database) => {
         applyHostedTaskRows(
           conn,
-          {
-            tasks: [task],
-            comments: [],
-            documents: [],
-            statusEvents: [],
-            cursor: '',
-          },
+          { tasks: [task], comments: [], documents: [], statusEvents: [], cursor: '' },
           TASK_CHANGE_FAILURE_LABEL,
-        ),
-    ),
+        )
+        return true
+      },
+      skipOnQuarantine: fetchedDependents.get(task.id) ?? [],
+    })),
     skippedForAbsentParent: absent,
   }
 }
@@ -135,7 +148,25 @@ export function createHostedTaskChangeFamily(
       return {
         cursor: snapshot.cursor,
         more: snapshot.more ?? false,
-        apply: (conn) => applyHostedTaskRows(conn, snapshot, TASK_CHANGE_FAILURE_LABEL),
+        apply: [
+          ...snapshot.tasks.map((row) => ({
+            change: { table: 'hub_task', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task', row),
+          })),
+          ...snapshot.comments.map((row) => ({
+            change: { table: 'hub_task_comment', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task_comment', row),
+          })),
+          ...snapshot.documents.map((row) => ({
+            change: { table: 'hub_task_document', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) => applyHostedTaskSnapshotRow(conn, 'hub_task_document', row),
+          })),
+          ...snapshot.statusEvents.map((row) => ({
+            change: { table: 'hub_task_status_event', id: row.id, op: 'upsert' as const, row },
+            apply: (conn: Database) =>
+              applyHostedTaskSnapshotRow(conn, 'hub_task_status_event', row),
+          })),
+        ],
       }
     },
     preparePage: prepareTaskParents,

@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedChanges } from './hosted-change-cache.ts'
+import { hostedChangeQuarantineRows } from './hosted-change-quarantine.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { queueHostedChange } from './outbox.ts'
 import { applyHostedTask } from './task-cache.ts'
@@ -95,6 +96,7 @@ const taskId = '01990000-0000-7000-8000-000000001240'
 const commentId = '01990000-0000-7000-8000-000000001241'
 const documentId = '01990000-0000-7000-8000-000000001242'
 const eventId = '01990000-0000-7000-8000-000000001243'
+const independentTaskId = '01990000-0000-7000-8000-000000001244'
 
 const hostedTask = (overrides: Partial<HostedTask> = {}): HostedTask => ({
   id: taskId,
@@ -316,32 +318,33 @@ for (const order of ['delete-upsert', 'upsert-delete'] as const) {
   })
 }
 
-test('a malformed record row leaves the feed cursor and cached task untouched', async () => {
+test('a malformed constraint-violating row is quarantined and leaves the cached task untouched', async () => {
   seedFeed()
   writeTransaction((conn) => applyHostedTask(conn, hostedTask()))
-  await expect(
-    pullHostedChanges({
-      ...options,
-      fetch: route({
-        feed: () =>
-          page('after', [
-            {
-              table: 'hub_task',
-              id: taskId,
-              space: 'space-one',
-              op: 'upsert',
-              row: { id: 'wrong' },
-            },
-          ]),
-      }),
-      registeredProjects: registered,
+  await pullHostedChanges({
+    ...options,
+    fetch: route({
+      feed: () =>
+        page('after', [
+          {
+            table: 'hub_task',
+            id: taskId,
+            space: 'space-one',
+            op: 'upsert',
+            row: { id: 'wrong' },
+          },
+        ]),
     }),
-  ).rejects.toThrow()
-  expect(stored('collect.hosted-record-changes.cursor')).toBe('before')
+    registeredProjects: registered,
+  })
+  expect(stored('collect.hosted-record-changes.cursor')).toBe('after')
   expect(
     db().query<{ title: string }, [string]>('SELECT title FROM task WHERE record_id=?').get(taskId)
       ?.title,
   ).toBe('log task')
+  expect(hostedChangeQuarantineRows(db())).toEqual([
+    expect.objectContaining({ table: 'hub_task', rowId: taskId, sightings: 1 }),
+  ])
 })
 
 const taskComment = () => ({
@@ -428,6 +431,46 @@ test('a child whose parent is on a later page fetches and applies the parent fir
     task_record_id: taskId,
   })
   expect(familyReport(report, 'task')).toMatchObject({ upsertsChanged: 1, upsertsNoop: 1 })
+})
+
+test('a constraint-violating fetched parent is quarantined while an independent row applies', async () => {
+  seedFeed()
+  await pullHostedChanges({
+    ...options,
+    fetch: route({
+      feed: () =>
+        page('after', [
+          {
+            table: 'hub_task_comment',
+            id: commentId,
+            space: 'space-one',
+            op: 'upsert',
+            row: taskComment(),
+          },
+          {
+            table: 'hub_task',
+            id: independentTaskId,
+            space: 'space-one',
+            op: 'upsert',
+            row: hostedTask({ id: independentTaskId, key: 'DEV-1244' }),
+          },
+        ]),
+      getTask: () =>
+        Response.json({
+          task: hostedTask({ status_category: 'not-a-category' as HostedTask['status_category'] }),
+          comments: [],
+          documents: [],
+        }),
+    }),
+    registeredProjects: registered,
+  })
+
+  expect(db().query('SELECT 1 FROM task WHERE record_id=?').get(independentTaskId)).not.toBeNull()
+  expect(hostedChangeQuarantineRows(db())).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ feed: 'task', table: 'hub_task', rowId: taskId }),
+    ]),
+  )
 })
 
 test('a child without a live hosted parent is skipped while the record cursor advances', async () => {

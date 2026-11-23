@@ -19,6 +19,12 @@ export type CollectorLegHealth = {
   failingSince: string | null
   status: 'current' | 'failing' | 'stale' | 'unreadable'
   ageMs: number | null
+  quarantinedRows?: number
+  oldestQuarantinedRow?: {
+    table: string
+    constraintError: string
+    firstQuarantinedAt: string
+  } | null
 }
 
 function truncatedError(error: string): string {
