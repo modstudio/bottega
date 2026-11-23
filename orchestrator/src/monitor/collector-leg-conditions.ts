@@ -17,6 +17,13 @@ type CollectorLegObservation = {
   ageMs: number | null
 }
 
+export type CollectorLegFailure = {
+  source: string
+  failingSince: string
+  lastError: string | null
+  ageMs: number
+}
+
 function observationError(detail: string): string {
   return `collector leg observation unreadable: ${detail}`
 }
@@ -64,12 +71,13 @@ function parsedObservations(value: unknown): {
 }
 
 /** Pure decision over the hub command's already-observed JSON value. */
-export function collectorLegFailureDecision(
+function collectorLegFailureAnalysis(
   value: unknown,
   now: number,
-): { conditions: MonitorCondition[]; errors: string[] } {
+): { conditions: MonitorCondition[]; errors: string[]; failures: CollectorLegFailure[] } {
   const { observations, errors } = parsedObservations(value)
   const conditions: MonitorCondition[] = []
+  const failures: CollectorLegFailure[] = []
   for (const leg of observations) {
     if (leg.failingSince === null) continue
     const since = Date.parse(leg.failingSince)
@@ -79,6 +87,12 @@ export function collectorLegFailureDecision(
     }
     const ageMs = Math.max(0, now - since)
     if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
+    failures.push({
+      source: leg.source,
+      failingSince: leg.failingSince,
+      lastError: leg.lastError,
+      ageMs,
+    })
     const ageMinutes = Math.floor(ageMs / 60_000)
     conditions.push({
       kind: 'collector-leg-failure',
@@ -89,24 +103,39 @@ export function collectorLegFailureDecision(
       action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
     })
   }
+  return { conditions, errors, failures }
+}
+
+/** Pure decision over the hub command's already-observed JSON value. */
+export function collectorLegFailureDecision(
+  value: unknown,
+  now: number,
+): { conditions: MonitorCondition[]; errors: string[] } {
+  const { conditions, errors } = collectorLegFailureAnalysis(value, now)
   return { conditions, errors }
 }
 
 export function observeCollectorLegFailures(
   now = Date.now(),
   spawn: typeof Bun.spawnSync = Bun.spawnSync,
-): { conditions: MonitorCondition[]; errors: string[] } {
+): { conditions: MonitorCondition[]; errors: string[]; failures: CollectorLegFailure[] } {
   const command = [...bottegaEntryArgv(PLATFORM_SLUG), 'record', 'collector-legs', '--json']
   try {
     const child = spawn(command, { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } })
     if (child.exitCode !== 0) {
       const detail = child.stderr.toString().trim() || `exit status ${child.exitCode}`
-      return { conditions: [], errors: [`collector leg observation unavailable: ${detail}`] }
+      return {
+        conditions: [],
+        errors: [`collector leg observation unavailable: ${detail}`],
+        failures: [],
+      }
     }
-    return collectorLegFailureDecision(JSON.parse(child.stdout.toString()), now)
+    const value: unknown = JSON.parse(child.stdout.toString())
+    return collectorLegFailureAnalysis(value, now)
   } catch (cause) {
     return {
       conditions: [],
+      failures: [],
       errors: [
         `collector leg observation unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
       ],

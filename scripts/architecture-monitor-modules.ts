@@ -225,6 +225,18 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/self-spawn.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/collector-leg-announcement.ts', [
+    '../../../shared/brand.ts',
+    '../record/record-board-contract.ts',
+    './collector-leg-conditions.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-collector-leg-announcement.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    './collector-leg-announcement.ts',
+    './collector-leg-conditions.ts',
+    './monitor-hosted-pressure.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-gate-tooling.ts', [
     'bun:sqlite',
     '../branch/offline-branch-landing.ts',
@@ -275,6 +287,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-canon-summary.ts',
     './monitor-collect-lease.ts',
     './collector-leg-conditions.ts',
+    './monitor-collector-leg-announcement.ts',
     './monitor-customer-guides.ts',
     './monitor-notices.ts',
     './monitor-outbox.ts',

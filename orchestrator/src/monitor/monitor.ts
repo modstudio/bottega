@@ -47,6 +47,7 @@ import { branchInventoryDecision, branchMonitorConditions } from './monitor-bran
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
+import { announceCollectorLegFailures } from './monitor-collector-leg-announcement.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -131,6 +132,11 @@ async function initialMonitorObservations(
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
   const collectorLegs = observeCollectorLegFailures(clock)
+  const collectorLegAnnouncements = await announceCollectorLegFailures(
+    database,
+    collectorLegs.failures,
+    clock,
+  )
   const hostedPressure = await checkHostedPressureCached({ database, clock })
   const hostedHealth = await checkHostedHealth(database, clock)
   return {
@@ -143,7 +149,12 @@ async function initialMonitorObservations(
       ...collectLease.conditions,
       ...collectorLegs.conditions,
     ],
-    errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
+    errors: [
+      ...diskPressure.errors,
+      ...collectLease.errors,
+      ...collectorLegs.errors,
+      ...collectorLegAnnouncements.errors,
+    ],
     hostPressure: hostPressure.report,
   }
 }
