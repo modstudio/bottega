@@ -22,7 +22,7 @@ const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const installProofPaths =
   'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/hooks/ orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ orchestrator/src/mcp/mcp-board-tools.ts hub/src/doctor.ts orchestrator/migrations hub/migrations shared/attribution-markers.json shared/embedded-assets.ts shared/heartbeat-guidance.ts shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts shared/runtime-assets.ts shared/secret-shaped-rules.json shared/self-spawn.ts shared/shell-quote.ts shared/store-write-lock.c shared/store-write-lock.ts orchestrator/src/record/record-session.ts'
 const aggregateAcceptance =
-  '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
+  '.value.result == "success" or ((.key == "checkout-cli-confinement" or .key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
 export const ORCHESTRATOR_JOB_TIMEOUT_MINUTES = 15
 const ciReleaseSmokeCondition =
@@ -165,7 +165,7 @@ function checkMigrationCompatibilityJobs(source: string): void {
   const aggregate = workflowJob(source, 'ci')
   if (!aggregate.includes(aggregateAcceptance))
     throw new Error(
-      `ci aggregate must accept only success, or skipped for path-gated jobs: ${aggregateAcceptance}`,
+      `ci aggregate must accept only success, or skipped for gated jobs: ${aggregateAcceptance}`,
     )
 }
 
