@@ -712,21 +712,25 @@ function registerWorkerRecordReadTools(input: {
   register(
     'read_task',
     "Read this run's task or one of its parent tasks from the hosted record. The run token and host-side scope decide access.",
-    z.object({ key: z.string().trim().min(1) }),
-    ({ key }) => readWorkerTask(input.runId, input.token, key!, readDependencies),
+    z.object({ key: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
+    ({ key, project }) => readWorkerTask(input.runId, input.token, key!, project, readDependencies),
   )
   register(
     'read_task_document',
     "Read a task document attached to this run's task or one of its parent tasks from the hosted record.",
-    z.object({ reference: z.string().trim().min(1) }),
-    ({ reference }) =>
-      readWorkerTaskDocument(input.runId, input.token, reference!, readDependencies),
+    z.object({
+      reference: z.string().trim().min(1),
+      project: z.string().trim().min(1).optional(),
+    }),
+    ({ reference, project }) =>
+      readWorkerTaskDocument(input.runId, input.token, reference!, project, readDependencies),
   )
   register(
     'read_workflow_text',
     "Read workflow text attached to a cursor on this run's task or one of its parent tasks.",
-    z.object({ id: z.string().uuid() }),
-    ({ id }) => readWorkerWorkflowText(input.runId, input.token, id!, readDependencies),
+    z.object({ id: z.string().uuid(), project: z.string().trim().min(1).optional() }),
+    ({ id, project }) =>
+      readWorkerWorkflowText(input.runId, input.token, id!, project, readDependencies),
   )
 }
 

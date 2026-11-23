@@ -1,76 +1,30 @@
 // concern: confined worker CLI record reads
 /** Routes the three run-scoped worker reads through the host ask server before stores load. */
 
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
+import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
+import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
 import { classifyCaller } from '../shared/caller-classification.ts'
-
-type JsonObject = Record<string, unknown>
 
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name)
-  return index < 0 ? undefined : argv[index + 1]
+  if (index < 0) return undefined
+  const value = argv[index + 1]
+  if (!value || value.startsWith('-')) throw new Error(`${name} requires a value`)
+  return value
 }
 
-function normalizedDocument(document: JsonObject): JsonObject {
-  const number = Number(document.number)
-  const key = String(document.task_key)
-  return {
-    id: document.id,
-    number,
-    label: `${key}/${number}`,
-    task_key: key,
-    task_record_id: document.task_id ?? '',
-    role: document.role ?? null,
-    title: document.title,
-    updated_at: document.updated_at,
-    body: document.body,
-    version: document.version,
-    created_at: document.created_at,
+function positionalReference(argv: readonly string[], start: number): string | undefined {
+  for (let index = start; index < argv.length; index += 1) {
+    const value = argv[index]!
+    if (value === '--project') {
+      index += 1
+      continue
+    }
+    if (value === '--json' || value === '--fresh') continue
+    if (!value.startsWith('-')) return value
   }
-}
-
-function normalizedTask(detail: JsonObject): JsonObject {
-  const task = detail.task as JsonObject
-  return {
-    task: {
-      record_id: task.id,
-      external_id: null,
-      key: task.key,
-      project: task.project,
-      project_record_id: task.projectId ?? null,
-      title: task.title,
-      status: task.status,
-      status_category: task.status_category,
-      parent_key: task.parent_key,
-      parent_record_id: task.parent_id ?? null,
-      body: task.body,
-      assignee: task.assignee,
-      opened_at: task.opened_at,
-      closed_at: task.closed_at,
-      updated_at: task.updated_at,
-      source: task.source,
-      first_seen: task.first_seen,
-      last_seen: task.last_seen,
-      next_document_number: task.next_document_number,
-      retired_reason: task.retired_reason ?? null,
-      ...(task.revision === undefined ? {} : { revision: task.revision }),
-    },
-    comments: (detail.comments as JsonObject[]).map((comment) => ({
-      id: comment.id,
-      task_key: comment.task_key,
-      task_record_id: comment.task_id ?? '',
-      body: comment.body,
-      created_at: comment.created_at,
-      actor_user_id: comment.actor_user_id ?? null,
-      actor_name: comment.actor_name ?? null,
-      agent: comment.agent ?? null,
-      run_id: comment.run_id ?? null,
-      updated_at: comment.updated_at,
-      deleted_at: comment.deleted_at,
-      ...(comment.revision === undefined ? {} : { revision: comment.revision }),
-    })),
-    documents: (detail.documents as JsonObject[]).map(normalizedDocument),
-  }
+  return undefined
 }
 
 function workerReadRoute(argv: readonly string[]): 'task' | 'document' | 'workflow' | null {
@@ -90,38 +44,54 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
   )
     return null
   try {
-    const [{ printShownTask, printShownTaskDocument }, { callWorkerRecordRead }] =
-      await Promise.all([
-        import('../hub/src/task-cli.ts'),
-        import('../orchestrator/src/ask/worker-record-read-client.ts'),
-      ])
     const json = argv.includes('--json')
-    const value = route === 'task' ? argv[2] : argv[3]
-    if (!value || value.startsWith('-')) throw new Error(`missing ${route} reference`)
+    const value = positionalReference(argv, route === 'task' ? 2 : 3)
+    if (!value) throw new Error(`missing ${route} reference`)
     if (argv.includes('--fresh'))
       throw new Error("worker record scope is read-only; '--fresh' is outside that scope")
-    if (option(argv, '--project') === '') throw new Error('--project requires a value')
+    const project = option(argv, '--project')
+    const [
+      { hostedTaskRow, hostedComment, hostedTaskDocumentSummary },
+      { printShownTask, printShownTaskDocument },
+      { callWorkerRecordRead },
+      { workflowTextAttachmentId },
+      { workflowTextShowLine },
+    ] = await Promise.all([
+      import('../hub/src/task-hosted-record.ts'),
+      import('../hub/src/task-print.ts'),
+      import('../orchestrator/src/ask/worker-record-read-client.ts'),
+      import('../orchestrator/src/workflow/workflow-text.ts'),
+      import('../orchestrator/src/workflow/workflow-text-commands.ts'),
+    ])
+    const readOptions = project ? { project } : {}
     if (route === 'task') {
-      const shown = normalizedTask(
-        (await callWorkerRecordRead('read_task', { key: value })) as JsonObject,
-      )
+      const detail = await callWorkerRecordRead<HostedTaskDetail>('read_task', {
+        key: value,
+        ...readOptions,
+      })
+      const shown = {
+        task: hostedTaskRow(detail.task),
+        comments: detail.comments.map(hostedComment),
+        documents: detail.documents.map(hostedTaskDocumentSummary),
+      }
       if (json) console.log(JSON.stringify(shown))
-      else printShownTask(shown as Parameters<typeof printShownTask>[0])
+      else printShownTask(shown)
     } else if (route === 'document') {
-      const document = normalizedDocument(
-        (await callWorkerRecordRead('read_task_document', { reference: value })) as JsonObject,
-      )
+      const hosted = await callWorkerRecordRead<HostedDocument>('read_task_document', {
+        reference: value,
+        ...readOptions,
+      })
+      const document = hostedTaskDocumentSummary(hosted)
       if (json) console.log(JSON.stringify(document))
-      else printShownTaskDocument(document as Parameters<typeof printShownTaskDocument>[0])
+      else printShownTaskDocument(document)
     } else {
-      const id = value.replace(/^attached-text:/, '')
-      const shown = (await callWorkerRecordRead('read_workflow_text', { id })) as JsonObject
+      const id = workflowTextAttachmentId(value)
+      const shown = await callWorkerRecordRead<ShownWorkflowText>('read_workflow_text', {
+        id,
+        ...readOptions,
+      })
       if (json) console.log(JSON.stringify(shown))
-      else if (shown.kind === 'live') console.log(String(shown.body))
-      else
-        console.log(
-          `${PLATFORM_SLUG} task document ${String(shown.documentReference)} preserves attached-text:${String(shown.id)}; read it with: ${PLATFORM_SLUG} task doc show ${String(shown.documentReference)}`,
-        )
+      else console.log(workflowTextShowLine(shown))
     }
     return 0
   } catch (error) {

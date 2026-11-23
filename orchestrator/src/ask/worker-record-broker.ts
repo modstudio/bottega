@@ -3,6 +3,7 @@
 
 import { db } from '../database/db.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
+import type { ShownWorkflowText } from '../workflow/workflow-text-commands.ts'
 import { strictlyAuthenticatedWorkerRun } from './worker-auth.ts'
 import {
   createWorkerRecordClient,
@@ -13,6 +14,7 @@ import {
   decideWorkerRecordReadScope,
   type WorkerRecordReadTarget,
   type WorkerRecordScopeFacts,
+  workerRecordScopeName,
 } from './worker-record-scope.ts'
 
 type RunScopeRow = {
@@ -51,7 +53,7 @@ async function allowedTaskChain(
   client: WorkerRecordClient,
 ): Promise<{ facts: WorkerRecordScopeFacts; details: Map<string, WorkerHostedTaskDetail> }> {
   const details = new Map<string, WorkerHostedTaskDetail>()
-  assertAllowed(facts, {
+  requireAllowed(facts, {
     kind: 'task',
     taskId: facts.runTaskId,
     taskKey: facts.runTaskKey,
@@ -75,45 +77,56 @@ async function allowedTaskChain(
   return { facts: { ...facts, allowedTaskIds: ids, allowedTaskKeys: keys }, details }
 }
 
-function assertAllowed(facts: WorkerRecordScopeFacts, target: WorkerRecordReadTarget): void {
+function requireAllowed(facts: WorkerRecordScopeFacts, target: WorkerRecordReadTarget): void {
   const decision = decideWorkerRecordReadScope(facts, target)
   if (!decision.allowed) throw new Error(decision.reason)
 }
 
-function taskTarget(
-  detail: WorkerHostedTaskDetail,
+function targetFor(
   facts: WorkerRecordScopeFacts,
   kind: WorkerRecordReadTarget['kind'],
+  detail?: WorkerHostedTaskDetail,
+  taskKey?: string | null,
 ): WorkerRecordReadTarget {
   return {
     kind,
-    taskId: detail.task.id,
-    taskKey: detail.task.key,
-    projectId: detail.task.projectId ?? facts.runProjectId,
+    taskId: detail?.task.id ?? null,
+    taskKey: detail?.task.key ?? taskKey ?? null,
+    projectId: detail?.task.projectId ?? facts.runProjectId,
     spaceId: facts.runSpaceId,
   }
+}
+
+function requireProject(
+  facts: WorkerRecordScopeFacts & { project: string },
+  project?: string,
+): void {
+  if (project !== undefined && project !== facts.project)
+    throw new Error(
+      `read refused: requested project ${project} is outside run project ${facts.project} and ${workerRecordScopeName(facts)}`,
+    )
+}
+
+function fixedWorkflowRefusal(facts: WorkerRecordScopeFacts, id: string): Error {
+  return new Error(
+    `read refused: workflow text ${id} was not found or is outside ${workerRecordScopeName(facts)}`,
+  )
 }
 
 export async function readWorkerTask(
   runId: string,
   token: string,
   key: string,
+  project?: string,
   dependencies: WorkerReadDependencies = {},
 ): Promise<WorkerHostedTaskDetail> {
+  const scope = runScopeFacts(runId, token)
+  requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
-  const chain = await allowedTaskChain(runScopeFacts(runId, token), client)
+  const chain = await allowedTaskChain(scope, client)
   const detail = chain.details.get(key.toUpperCase()) ?? chain.details.get(key)
-  if (!detail) {
-    assertAllowed(chain.facts, {
-      kind: 'task',
-      taskId: null,
-      taskKey: key,
-      projectId: chain.facts.runProjectId,
-      spaceId: chain.facts.runSpaceId,
-    })
-    throw new Error('unreachable worker task scope decision')
-  }
-  assertAllowed(chain.facts, taskTarget(detail, chain.facts, 'task'))
+  requireAllowed(chain.facts, targetFor(chain.facts, 'task', detail, key))
+  if (!detail) throw new Error(`no task ${key} in ${workerRecordScopeName(chain.facts)}`)
   return detail
 }
 
@@ -121,10 +134,13 @@ export async function readWorkerTaskDocument(
   runId: string,
   token: string,
   reference: string,
+  project?: string,
   dependencies: WorkerReadDependencies = {},
 ): Promise<Record<string, unknown>> {
+  const scope = runScopeFacts(runId, token)
+  requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
-  const chain = await allowedTaskChain(runScopeFacts(runId, token), client)
+  const chain = await allowedTaskChain(scope, client)
   const label = /^([^/]+)\/(\d+)$/.exec(reference)
   const documents = [...new Set(chain.details.values())].flatMap((detail) =>
     detail.documents.map((document) => ({ detail, document })),
@@ -135,18 +151,12 @@ export async function readWorkerTaskDocument(
         Number(document.number) === Number(label[2])
       : document.id.toLowerCase() === reference.toLowerCase(),
   )
-  if (!found) {
-    const requestedKey = label?.[1] ?? null
-    assertAllowed(chain.facts, {
-      kind: 'task-document',
-      taskId: null,
-      taskKey: requestedKey,
-      projectId: chain.facts.runProjectId,
-      spaceId: chain.facts.runSpaceId,
-    })
-    throw new Error(`no task document ${reference}`)
-  }
-  assertAllowed(chain.facts, taskTarget(found.detail, chain.facts, 'task-document'))
+  requireAllowed(
+    chain.facts,
+    targetFor(chain.facts, 'task-document', found?.detail, label?.[1] ?? null),
+  )
+  if (!found)
+    throw new Error(`no task document ${reference} in ${workerRecordScopeName(chain.facts)}`)
   return found.document
 }
 
@@ -154,12 +164,15 @@ export async function readWorkerWorkflowText(
   runId: string,
   token: string,
   id: string,
+  project?: string,
   dependencies: WorkerReadDependencies = {},
-): Promise<Record<string, unknown>> {
+): Promise<ShownWorkflowText> {
+  const scope = runScopeFacts(runId, token)
+  requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
-  const chain = await allowedTaskChain(runScopeFacts(runId, token), client)
+  const chain = await allowedTaskChain(scope, client)
   if (!chain.facts.runSpaceId) {
-    assertAllowed(chain.facts, {
+    requireAllowed(chain.facts, {
       kind: 'workflow-text',
       taskId: null,
       taskKey: null,
@@ -167,16 +180,32 @@ export async function readWorkerWorkflowText(
       spaceId: null,
     })
   }
-  const text = await client.workflowText(id, chain.facts.runSpaceId!)
-  const stage = await client.workflowStage(text.stage.id, chain.facts.runSpaceId!)
-  assertAllowed(chain.facts, {
-    kind: 'workflow-text',
-    taskId: stage.flow.taskId,
-    taskKey: stage.flow.taskKey,
-    projectId: stage.flow.projectId,
-    spaceId: text.space_id ?? stage.space_id ?? chain.facts.runSpaceId,
-  })
-  if (text.copy) return { kind: 'copied', id, documentReference: text.copy.taskDocumentReference }
-  if (!text.text) throw new Error(`no workflow text attached-text:${id}`)
-  return { kind: 'live', ...text.text }
+  try {
+    const text = await client.workflowText(id, chain.facts.runSpaceId!)
+    if (!text) throw fixedWorkflowRefusal(chain.facts, id)
+    const stage = await client.workflowStage(text.stage.id, chain.facts.runSpaceId!)
+    if (!stage) throw fixedWorkflowRefusal(chain.facts, id)
+    requireAllowed(chain.facts, {
+      kind: 'workflow-text',
+      taskId: stage.flow.taskId,
+      taskKey: stage.flow.taskKey,
+      projectId: stage.flow.projectId,
+      spaceId: text.space_id ?? stage.space_id ?? chain.facts.runSpaceId,
+    })
+    if (text.copy)
+      return { kind: 'redirect', id, documentReference: text.copy.taskDocumentReference }
+    if (!text.text) throw fixedWorkflowRefusal(chain.facts, id)
+    return {
+      kind: 'live',
+      id,
+      cursor: text.stage.number,
+      stepSlug: text.text.stepSlug,
+      body: text.text.body,
+    }
+  } catch (error) {
+    console.error(
+      `worker workflow text read ${id} failed on the ask host: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    throw fixedWorkflowRefusal(chain.facts, id)
+  }
 }

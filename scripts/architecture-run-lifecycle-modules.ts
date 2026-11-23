@@ -81,6 +81,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/env-values.ts',
     '../../../shared/record-request-headers.ts',
     '../../../shared/record-session.ts',
+    '../record/record-api-client-response.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/ask/worker-record-broker.ts', [
     '../database/db.ts',
@@ -88,6 +91,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './worker-auth.ts',
     './worker-record-client.ts',
     './worker-record-scope.ts',
+    '../workflow/workflow-text-commands.ts',
   ]),
   module('orchestrator/src/ask/jev-routing.ts', [
     '../../../shared/brand.ts',

@@ -16,10 +16,10 @@ function textContent(result: Awaited<ReturnType<Client['callTool']>>): string {
   return item.text
 }
 
-export async function callWorkerRecordRead(
+export async function callWorkerRecordRead<T = unknown>(
   name: string,
   args: Record<string, unknown>,
-): Promise<unknown> {
+): Promise<T> {
   const [command, ...commandArguments] = bottegaEntryArgv('ask-proxy')
   const transport = new StdioClientTransport({
     command: command!,
@@ -34,7 +34,7 @@ export async function callWorkerRecordRead(
   const client = new Client({ name: `${PLATFORM_SLUG}-worker-record-read`, version: '1' })
   try {
     await client.connect(transport)
-    return JSON.parse(textContent(await client.callTool({ name, arguments: args })))
+    return JSON.parse(textContent(await client.callTool({ name, arguments: args }))) as T
   } finally {
     await client.close()
   }
