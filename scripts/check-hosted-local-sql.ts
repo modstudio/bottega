@@ -13,6 +13,11 @@ import {
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import {
+  readRecordInstallBinding,
+  storeHasAttachedToHostedRecord,
+} from '../orchestrator/src/record/install-binding.ts'
+import { hostedRecordOwnsHostedTables } from '../orchestrator/src/record/record-write-authority.ts'
+import {
   extractSqlFromSource,
   type HostedSqlCannotJudgeSite,
   type HostedSqlSite,
@@ -25,14 +30,13 @@ type AllowedFile = { pattern: RegExp; reason: string; expectedSites?: number }
 type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'fingerprint'> & { count: number }
 
 const HOSTED_TABLE_ATTACHMENT_PREDICATES = [
-  'readRecordInstallBinding',
+  readRecordInstallBinding.name,
+  storeHasAttachedToHostedRecord.name,
   'record_install_binding',
-  'storeHasAttachedToHostedRecord',
 ] as const
+const HOSTED_TABLE_OWNERSHIP_PREDICATE = hostedRecordOwnsHostedTables.name
 
-export function hostedLocalSqlExemptionReasonFailures(
-  allowedFiles: readonly AllowedFile[],
-): string[] {
+function hostedLocalSqlExemptionReasonFailures(allowedFiles: readonly AllowedFile[]): string[] {
   return allowedFiles.flatMap((allowed) => {
     const attachmentPredicate = HOSTED_TABLE_ATTACHMENT_PREDICATES.find((name) =>
       allowed.reason.includes(name),
@@ -42,6 +46,35 @@ export function hostedLocalSqlExemptionReasonFailures(
           `${allowed.pattern}: hosted-only SQL exemption cites attachment predicate ${attachmentPredicate}; select local SQL with hostedRecordOwnsHostedTables instead`,
         ]
       : []
+  })
+}
+
+export function hostedLocalSqlSelectorFailures(
+  root: string,
+  allowedFiles: readonly AllowedFile[],
+): string[] {
+  const files = productionTypeScriptFiles(resolve(root, 'orchestrator'))
+  const calls = (source: string, name: string): boolean =>
+    new RegExp(`\\b${name}\\s*\\(`).test(source)
+  return allowedFiles.flatMap((allowed) => {
+    if (!allowed.reason.includes(HOSTED_TABLE_OWNERSHIP_PREDICATE)) return []
+    return files.flatMap((file) => {
+      const path = relative(root, file)
+      if (!allowed.pattern.test(path)) return []
+      const source = readFileSync(file, 'utf8')
+      const attachmentPredicate = HOSTED_TABLE_ATTACHMENT_PREDICATES.find((name) =>
+        name === 'record_install_binding' ? source.includes(name) : calls(source, name),
+      )
+      if (attachmentPredicate)
+        return [
+          `${path}: hosted-only SQL selector cites attachment predicate ${attachmentPredicate}; select local SQL with ${HOSTED_TABLE_OWNERSHIP_PREDICATE} instead`,
+        ]
+      if (!calls(source, HOSTED_TABLE_OWNERSHIP_PREDICATE))
+        return [
+          `${path}: hosted-only SQL exemption names ${HOSTED_TABLE_OWNERSHIP_PREDICATE} but the file does not call it; select local SQL with ${HOSTED_TABLE_OWNERSHIP_PREDICATE} instead`,
+        ]
+      return []
+    })
   })
 }
 
@@ -418,15 +451,18 @@ export function checkHostedLocalSql(root: string): {
   const unresolved = extracted.flatMap((value) => value.unresolved)
   const cannotJudge = extracted.flatMap((value) => value.cannotJudge)
   return {
-    failures: hostedLocalSqlViolations({
-      sites,
-      unresolved,
-      cannotJudge,
-      cannotJudgeBaseline: HOSTED_LOCAL_SQL_CANNOT_JUDGE,
-      tables: HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
-      allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
-      stateClasses: STATE_CLASSES,
-    }),
+    failures: [
+      ...hostedLocalSqlViolations({
+        sites,
+        unresolved,
+        cannotJudge,
+        cannotJudgeBaseline: HOSTED_LOCAL_SQL_CANNOT_JUDGE,
+        tables: HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
+        allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
+        stateClasses: STATE_CLASSES,
+      }),
+      ...hostedLocalSqlSelectorFailures(root, HOSTED_LOCAL_SQL_ALLOWED_FILES),
+    ],
     unresolved: unresolved.length,
     cannotJudge: cannotJudge.length,
   }

@@ -7,7 +7,7 @@ import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
 import {
   checkHostedLocalSql,
   hostedLocalRenderedSqlRisk,
-  hostedLocalSqlExemptionReasonFailures,
+  hostedLocalSqlSelectorFailures,
   hostedLocalSqlViolations,
 } from './check-hosted-local-sql.ts'
 import {
@@ -21,10 +21,6 @@ const temporaryRoots: string[] = []
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
-})
-
-test('project hosted-only SQL exemptions do not cite attachment state', () => {
-  expect(hostedLocalSqlExemptionReasonFailures(HOSTED_LOCAL_SQL_ALLOWED_FILES)).toEqual([])
 })
 
 function temporaryProductionFile(file: string, sourceText: string): string {
@@ -94,6 +90,37 @@ test.each([
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead')])
+})
+
+test.each([
+  {
+    name: 'an attachment predicate',
+    source: 'storeHasAttachedToHostedRecord(database)',
+    expected: [
+      expect.stringContaining('select local SQL with hostedRecordOwnsHostedTables instead'),
+    ],
+  },
+  {
+    name: 'no ownership predicate',
+    source: 'selectLocalWorkflowStore(database)',
+    expected: [expect.stringContaining('the file does not call it')],
+  },
+  {
+    name: 'the ownership predicate',
+    source: 'hostedRecordOwnsHostedTables(database)',
+    expected: [],
+  },
+])('an answer-A exemption with $name is checked against its source', ({ source, expected }) => {
+  const file = 'orchestrator/src/run/selector.ts'
+  const root = temporaryProductionFile(file, source)
+  expect(
+    hostedLocalSqlSelectorFailures(root, [
+      {
+        pattern: /^orchestrator\/src\/run\/selector\.ts$/,
+        reason: 'Local SQL runs when hostedRecordOwnsHostedTables(database) is false',
+      },
+    ]),
+  ).toEqual(expected)
 })
 
 test('a guarded table not declared hosted fails', () => {
