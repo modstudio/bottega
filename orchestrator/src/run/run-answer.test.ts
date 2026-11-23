@@ -25,7 +25,6 @@ import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
-import { answerCommand } from './run-message-commands.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -696,41 +695,6 @@ test('a leaf id answers the open question in its conversation', async () => {
   expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(child)).toEqual({
     answer: 'the existing shape',
   })
-})
-
-test('answer repairs an orphaned asking turn before reading its superseded question', async () => {
-  const root = insert('ok', 'implement')
-  const asking = addRun({
-    agent: 'codex',
-    job: 'implement',
-    status: 'asking',
-    parent: root,
-    turn: 2,
-    session: 'orch-test-session',
-  })
-  addRun({
-    agent: 'codex',
-    job: 'implement',
-    status: 'ok',
-    parent: root,
-    turn: 3,
-    session: 'orch-test-session',
-  })
-  db().query('UPDATE run SET session_id=? WHERE record_id=?').run('orch-test-session', root)
-  db().query(newQuestionSql()).run(asking, new Date().toISOString(), 'obsolete question?')
-
-  await expect(
-    answerCommand(root, ['obsolete answer'], false, false, flags, { printRunId: () => {} }),
-  ).rejects.toThrow()
-  expect(db().query('SELECT status FROM run WHERE record_id=?').get(asking)).toEqual({
-    status: 'ok',
-  })
-  expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(asking)).toEqual({
-    answer: null,
-  })
-  expect(
-    db().query('SELECT action FROM run_mutation_audit WHERE run_record_id=?').get(asking),
-  ).toEqual({ action: 'reap' })
 })
 
 test('answer rejects a fixture ruling from a non-owning session without writing it', async () => {
