@@ -718,6 +718,7 @@ function registerAgentCatalogueCommands(
     )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: The declaration order is the public help tree and stays explicit here.
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program

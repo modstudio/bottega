@@ -1,6 +1,6 @@
 // concern: architecture-manifest
 /** Small record token and password modules split from the record manifest at its file ceiling. */
-export const recordTokenModules = [
+export const recordTokenModules: Array<{ file: string; allowed: string[] }> = [
   {
     file: 'orchestrator/src/record/record-session.ts',
     allowed: [
@@ -30,4 +30,4 @@ export const recordTokenModules = [
     file: 'orchestrator/src/record/record-password.ts',
     allowed: ['shared/brand.ts'],
   },
-] as const
+]
