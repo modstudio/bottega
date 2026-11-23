@@ -362,7 +362,7 @@ function assemblePack(input: {
 async function buildPack(job: string, cwd: string, budgetBytes: number): Promise<Pack> {
   const project = projectAt(cwd)
   const [selected, canon] = await Promise.all([
-    docsForRun({ job, cwd }),
+    docsForRun({ job, cwd, project }),
     packedCanonMarkdown(project?.name ?? null),
   ])
   const withRevisions = selected.map((doc: Doc & { revision_id?: string }) => {

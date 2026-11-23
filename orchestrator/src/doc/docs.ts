@@ -24,7 +24,7 @@ import {
 } from '../canon/pack-content.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -759,8 +759,12 @@ export async function consumeDoc(
 
 export type InjectedDoc = Doc & { revision_id: string }
 
-export async function docsForRun(input: { job: string; cwd: string }): Promise<InjectedDoc[]> {
-  const project = projectAt(input.cwd)
+export async function docsForRun(input: {
+  job: string
+  cwd: string
+  project?: Project | null
+}): Promise<InjectedDoc[]> {
+  const project = input.project === undefined ? projectAt(input.cwd) : input.project
   const docs = await authoritativeInjectedDocsForPack(input.job, project?.name ?? null)
   return docs.map((doc) => {
     const revisionId = doc.revision
