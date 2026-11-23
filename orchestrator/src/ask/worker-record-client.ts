@@ -65,7 +65,7 @@ export function workerRecordBaseUrl(
 
 function errorMessage(value: unknown, status: number, url: string): string {
   if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string')
-    return value.error
+    return `${new URL(url).host} answered ${status}: ${value.error}`
   return `${new URL(url).host} answered ${status}`
 }
 
