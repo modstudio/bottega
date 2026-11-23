@@ -1,13 +1,12 @@
 // concern: project-space
 /** Owns local routing from a project to its complete cached hosted catalogues. */
 import type { Database } from 'bun:sqlite'
-import { cachedProjectSpaces } from './project-space-cache.ts'
+import { cachedProjectSpace } from './project-space-cache.ts'
 
 const ACTIVE_SPACE = 'record_active_space'
 
 export function effectiveProjectSpace(local: Database, project: string | null): string | null {
-  if (!project) return null
-  return cachedProjectSpaces(local)[project] ?? null
+  return cachedProjectSpace(local, project)
 }
 
 export function rememberActiveRecordSpace(local: Database, spaceId: string): void {

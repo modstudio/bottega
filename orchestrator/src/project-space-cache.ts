@@ -37,3 +37,8 @@ export function cachedProjectSpaces(local: Database): Record<string, string | nu
     return {}
   }
 }
+
+export function cachedProjectSpace(local: Database, project: string | null): string | null {
+  if (!project) return null
+  return cachedProjectSpaces(local)[project] ?? null
+}

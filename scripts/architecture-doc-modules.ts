@@ -275,7 +275,7 @@ export const docModules: DocModule[] = [
     '../../../shared/record-write-space.ts',
     '../database/db.ts',
     '../project/projects.ts',
-    '../project-space.ts',
+    '../project-space-cache.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
     './doc-write-allowed.ts',
