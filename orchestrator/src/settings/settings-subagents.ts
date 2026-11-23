@@ -8,6 +8,7 @@ import {
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
+  subagentBlockingOn,
   subagentBlockingState,
 } from './settings.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
@@ -30,7 +31,7 @@ function editSubagentChoice(
   owned: ReturnType<typeof parseStoredOwnedSettings>,
   choice: string | undefined,
 ): SubagentResult {
-  const current = owned.options?.subagentHooks === 'on'
+  const current = subagentBlockingOn(owned.options)
   if (choice === undefined) return subagentResult(owned.options, false)
   const next = choice === 'block'
   if (next === current) return subagentResult(owned.options, false)

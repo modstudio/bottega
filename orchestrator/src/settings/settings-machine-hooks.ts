@@ -16,9 +16,7 @@ import {
   CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS,
   CONTEXT_REVIEW_MIN_MS,
 } from '../session/context-review-decision.ts'
-import { isPlainObject, type OwnedSettings } from './settings.ts'
-
-export { subagentBlockingState } from './settings.ts'
+import { isPlainObject, subagentBlockingOn, type OwnedSettings } from './settings.ts'
 
 export const SCRIPT_FILES = [
   'block-agent.py',
@@ -195,7 +193,7 @@ export function productHookDeclarations(
   options: OwnedSettings['options'],
 ): readonly ProductHookDeclaration[] {
   return PRODUCT_HOOKS.filter(
-    (declaration) => declaration.option === undefined || options?.[declaration.option] === 'on',
+    (declaration) => declaration.option === undefined || subagentBlockingOn(options),
   )
 }
 

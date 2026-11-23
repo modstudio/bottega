@@ -2,7 +2,12 @@
 /** Reads the signed-in user's settings row through the active record authority. */
 import { readDoc } from '../doc/doc-authoritative-read.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
-import { parseStoredOwnedSettings, SETTINGS_SCOPE, SETTINGS_SLUG } from './settings.ts'
+import {
+  parseStoredOwnedSettings,
+  SETTINGS_SCOPE,
+  SETTINGS_SLUG,
+  type OwnedSettings,
+} from './settings.ts'
 
 type UserSettingsRow = { body: string; revision: string | null }
 
@@ -15,7 +20,7 @@ export async function readSignedInUserSettingsRow(): Promise<{
   return { owner, row }
 }
 
-export async function readSignedInSubagentHooks(): Promise<'on' | undefined> {
+export async function readSignedInSettingsOptions(): Promise<OwnedSettings['options']> {
   const { row } = await readSignedInUserSettingsRow()
-  return row ? parseStoredOwnedSettings(row.body).options?.subagentHooks : undefined
+  return row ? parseStoredOwnedSettings(row.body).options : undefined
 }

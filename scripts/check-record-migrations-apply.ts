@@ -23,6 +23,11 @@ import {
   seedDocJsonbArrayRepair,
 } from './record-doc-jsonb-repair-proof.ts'
 import {
+  proofSettingsSubagentHooksBackfill,
+  seedSettingsSubagentHooksBackfill,
+  settingsSubagentHooksBackfill,
+} from './record-settings-subagent-hooks-backfill-proof.ts'
+import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
@@ -771,6 +776,17 @@ async function proofDocumentMigration(
       userId: platformOperatorId,
     })
   }
+  if (migration.name === settingsSubagentHooksBackfill) {
+    await proofSettingsSubagentHooksBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
+    for (const chunk of migration.sql) await transaction.exec(chunk)
+    await proofSettingsSubagentHooksBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
+  }
 }
 
 async function proofIdentityMigration(transaction: Transaction, name: string): Promise<void> {
@@ -835,6 +851,11 @@ async function seedMigrationProof(
     await boardMigrationProof.seedBoardReaderRunBackfill(transaction)
   if (name === docJsonbArrayRepair)
     await seedDocJsonbArrayRepair(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
+  if (name === settingsSubagentHooksBackfill)
+    await seedSettingsSubagentHooksBackfill(transaction, {
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })

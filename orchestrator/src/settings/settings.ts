@@ -29,11 +29,21 @@ export type PermissionList = SettingsPermissionList
 export type { AutoModeList, OwnedAutoMode, OwnedSettings }
 export { AUTO_MODE_LISTS, ENV_NAME }
 
+export type SubagentHooksChoice = NonNullable<OwnedSettings['options']>['subagentHooks']
+
+export function subagentBlockingOn(options: OwnedSettings['options']): boolean {
+  return options?.subagentHooks === 'on'
+}
+
+export function subagentHooksOptions(choice: SubagentHooksChoice): OwnedSettings['options'] {
+  return choice ? { subagentHooks: choice } : undefined
+}
+
 export function subagentBlockingState(options: OwnedSettings['options']): {
   blocking: 'on' | 'off'
   source: 'user' | 'default'
 } {
-  return options?.subagentHooks === 'on'
+  return subagentBlockingOn(options)
     ? { blocking: 'on', source: 'user' }
     : { blocking: 'off', source: 'default' }
 }

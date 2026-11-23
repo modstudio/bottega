@@ -11,9 +11,9 @@ import {
 import {
   type ProductHookDeclaration,
   productHookDeclarations,
-  subagentBlockingState,
 } from '../settings/settings-machine-hooks.ts'
-import { readSignedInSubagentHooks } from '../settings/settings-user-row.ts'
+import { subagentBlockingState, type OwnedSettings } from '../settings/settings.ts'
+import { readSignedInSettingsOptions } from '../settings/settings-user-row.ts'
 import { classifySetupProductHooks, type SetupProductHookFact } from './setup-install-verify.ts'
 
 export type SetupSettingsFact = {
@@ -27,16 +27,15 @@ export async function gatherSetupSettingsFact(
   adapters: {
     sessionPresent?: () => boolean
     assetRoot?: () => string
-    subagentHooks?: () => Promise<'on' | undefined>
+    settingsOptions?: () => Promise<OwnedSettings['options']>
   } = {},
 ): Promise<SetupSettingsFact> {
   const settings = readSettingsJsonLenient(userSettingsPath(claudeHomeFromEnvironment(environment)))
   const assetRoot = (adapters.assetRoot ?? (() => runtimeAssetRoot(environment)))()
   const signedIn = (adapters.sessionPresent ?? recordSessionPresent)()
-  const subagentHooks = signedIn
-    ? await (adapters.subagentHooks ?? readSignedInSubagentHooks)()
+  const options = signedIn
+    ? await (adapters.settingsOptions ?? readSignedInSettingsOptions)()
     : undefined
-  const options = subagentHooks === 'on' ? { subagentHooks } : undefined
   const declarations: readonly ProductHookDeclaration[] = productHookDeclarations(options)
   return {
     state: signedIn ? 'signed-in' : 'waiting-for-sign-in',

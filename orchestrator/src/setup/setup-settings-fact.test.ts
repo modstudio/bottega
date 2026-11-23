@@ -45,7 +45,7 @@ test('setup settings fact reports matching hooks and the signed-in subagent choi
     {
       sessionPresent: () => true,
       assetRoot: () => assetRoot,
-      subagentHooks: async () => 'on',
+      settingsOptions: async () => ({ subagentHooks: 'on' }),
     },
   )
 

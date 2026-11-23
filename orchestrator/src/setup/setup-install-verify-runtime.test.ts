@@ -91,7 +91,7 @@ test('the rendered success fixture fails when one product hook is removed', asyn
 test('an applied blocking choice requires block-agent hooks even without a session', async () => {
   const input = facts()
   removeRenderedHook(input, 'block-agent.py')
-  let gatheredChoice: 'on' | undefined
+  let gatheredChoice: MachineSettingsApplyResult['subagentHooks']
   await expect(
     applySetupInstallVerify(false, {
       applySettings: async () => current,
@@ -99,7 +99,7 @@ test('an applied blocking choice requires block-agent hooks even without a sessi
         gatheredChoice = subagentHooks
         return {
           ...input,
-          hooks: productHookDeclarations(subagentHooks === 'on' ? { subagentHooks } : undefined),
+          hooks: productHookDeclarations(subagentHooks ? { subagentHooks } : undefined),
         }
       },
     }),

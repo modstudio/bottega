@@ -23,6 +23,7 @@ import {
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { productHookDeclarations, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import { subagentHooksOptions, type SubagentHooksChoice } from '../settings/settings.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -31,7 +32,7 @@ import {
 
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
-  facts?: (subagentHooks: 'on' | undefined) => SetupInstallVerifyFacts
+  facts?: (subagentHooks: SubagentHooksChoice) => SetupInstallVerifyFacts
   prepareRuntime?: () => void
 }
 
@@ -59,7 +60,7 @@ function readSettingsFact(
 
 function gatherSetupInstallVerifyFacts(
   environment: NodeJS.ProcessEnv = process.env,
-  subagentHooks: 'on' | undefined,
+  subagentHooks: SubagentHooksChoice,
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
@@ -97,10 +98,9 @@ function gatherSetupInstallVerifyFacts(
     readSettingsFact(userLocalSettingsPath(claudeHome), 'local-machine', false),
     ...managedSettingsPaths(environment).map((path) => readSettingsFact(path, 'managed', false)),
   ]
-  const settingsOptions = subagentHooks === 'on' ? { subagentHooks } : undefined
   return {
     installRoot,
-    hooks: productHookDeclarations(settingsOptions),
+    hooks: productHookDeclarations(subagentHooksOptions(subagentHooks)),
     settingsFiles,
     scripts: scriptFacts,
     canonEntries: homes.map((home) => {

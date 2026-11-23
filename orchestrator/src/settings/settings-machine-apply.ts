@@ -41,6 +41,8 @@ import {
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
+  subagentBlockingOn,
+  type SubagentHooksChoice,
 } from './settings.ts'
 import {
   readSettingsEnv,
@@ -82,7 +84,7 @@ export type MachineSettingsApplyResult = {
   changed: boolean
   superseded?: SupersededProfileHook[]
   subagentHooksRemoved?: boolean
-  subagentHooks?: 'on'
+  subagentHooks?: SubagentHooksChoice
 }
 
 export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyResult): boolean {
@@ -241,7 +243,9 @@ function applyUserSettings(
       runtime,
     ).superseded.some((hook) => hook.script === 'block-agent.py')
     const owned = productHooks.settings
-    const subagentHooks = row && merged.settings.options?.subagentHooks === 'on' ? 'on' : undefined
+    const subagentHooks = row && subagentBlockingOn(merged.settings.options)
+      ? merged.settings.options?.subagentHooks
+      : undefined
     let environment: Record<string, string> | undefined
     if (row) {
       const secretsPath = userSettingsEnvPath(home)
@@ -271,7 +275,7 @@ function applyUserSettings(
       unmatchedDropDetail: unmatchedDropDetail(merged.unmatchedDrops),
       superseded: productHooks.superseded,
       subagentHooksRemoved:
-        merged.settings.options?.subagentHooks !== 'on' &&
+        !subagentBlockingOn(merged.settings.options) &&
         (renderedBlockAgentPresent ||
           productHooks.superseded.some((hook) => hook.script === 'block-agent.py')),
       subagentHooks,
@@ -292,7 +296,7 @@ function applyRenderedUserSettings(input: {
   unmatchedDropDetail?: string
   superseded: SupersededProfileHook[]
   subagentHooksRemoved: boolean
-  subagentHooks?: 'on'
+  subagentHooks?: SubagentHooksChoice
   deps: Dependencies
 }): MachineSettingsApplyResult {
   const plan = input.exists ? planSettingsWrite(input.path, input.rendered) : null
