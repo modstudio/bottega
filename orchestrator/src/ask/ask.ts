@@ -681,6 +681,10 @@ function requiredTextRetry(value: string, field: string, call: string): string |
   return `${refusal.message} Call ${call} again.${instruction}`
 }
 
+/** The refusal a caller that is not a recognized orchestrator worker receives, wherever it is refused. */
+const unauthorized = () =>
+  'This process is not a recognized orchestrator worker. Return status "blocked" with your question in the final answer.'
+
 type AskText = (
   value: string,
   isError?: true,
@@ -790,9 +794,6 @@ export function createAskMcpServer(
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
   })
-  const unauthorized = () =>
-    'This process is not a recognized orchestrator worker. Return status "blocked" with your question in the final answer.'
-
   // Preprocessing keeps the wire schema honest (`question` and `body` remain
   // required) while ensuring an omitted value reaches the handler. Otherwise
   // the SDK returns a validation error before the escalation channel can tell
