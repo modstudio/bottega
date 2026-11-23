@@ -36,8 +36,7 @@ function countedSql(base: SQL): SQL {
     },
     get(target, property, receiver) {
       if (property === 'begin') {
-        return <T>(work: (tx: SQL) => Promise<T>) =>
-          target.begin((tx) => work(countedSql(tx)))
+        return <T>(work: (tx: SQL) => Promise<T>) => target.begin((tx) => work(countedSql(tx)))
       }
       const value = Reflect.get(target, property, receiver)
       return typeof value === 'function' ? value.bind(target) : value

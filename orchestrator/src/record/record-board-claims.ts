@@ -30,8 +30,8 @@ import { postHostedBoardNoticeInTransaction } from './record-board-messages.ts'
 import { resolveVisibleProjectId } from './record-board-project-resolution.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
 import {
-  boardUuidArray,
   type BoardTenant,
+  boardUuidArray,
   isBoardClaimSubjectUniqueViolation,
   withBoardTenant,
 } from './record-board-tx.ts'
