@@ -26,6 +26,7 @@
       "!!hub/web/src/routeTree.gen.ts",
       "!!**/migrations/meta",
       "!!**/migrations/*/snapshot.json",
+      "!!scripts/quality/release-rungs.json",
       "!!**/dist",
       "!!orchestrator/runs"
     ]

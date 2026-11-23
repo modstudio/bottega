@@ -4,13 +4,10 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
 import type { ReleaseAtCommitReport } from '../release/release-at-commit.ts'
+import { checkRelease } from '../release/release-check.ts'
 import { releaseProofDecision } from '../release/release-decision.ts'
-import {
-  checkRelease,
-  type ReleaseResult,
-  releaseLog,
-  releaseProject,
-} from '../release/release-service.ts'
+import { writeRegisteredReleaseRungs } from '../release/release-rungs.ts'
+import { type ReleaseResult, releaseLog, releaseProject } from '../release/release-service.ts'
 import { releaseAtCommitFromHookTree } from './release-tree.ts'
 import { log } from './support.ts'
 
@@ -151,14 +148,24 @@ export function register(program: Command): void {
 
   release
     .command('check <tag>')
-    .description(
-      'validate the release tag and prove release binaries ignore working-directory config',
-    )
+    .description('validate the tag, tracked rungs, and release binary working-directory isolation')
     .allowExcessArguments(false)
     .action(async (tag) => {
       const checked = await checkRelease(tag)
       if (checked.runtimeConfigGuardSkip) log(checked.runtimeConfigGuardSkip)
+      log(checked.rungsComparison)
       log(`reported version ${checked.reportedVersion} matches release tag ${checked.tag}`)
+    })
+
+  release
+    .command('rungs')
+    .description('generate the tracked release-rung snapshot from the project register')
+    .option('--write', 'write the tracked release-rung snapshot')
+    .allowExcessArguments(false)
+    .action((options: { write?: boolean }) => {
+      if (!options.write)
+        throw new Error(`refusing release rungs: pass --write to generate the file`)
+      log(`wrote ${writeRegisteredReleaseRungs()}`)
     })
 
   release

@@ -17,12 +17,97 @@ import {
   releaseReasonDecision,
   releaseRowProvesCandidate,
   releaseRungProofRefusal,
+  releaseRungsDriftDecision,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
   selectReleaseRung,
+  tagRungLiveDecision,
   trunkFreshnessDecision,
   unprovableReleaseRungMessage,
 } from './release-decision.ts'
+
+describe('release tag rung liveness', () => {
+  const base = {
+    rung: 'hosted-hub',
+    tagCommit: 'e35bebce5f9b',
+    probe: { commit: '19c5bce3d18c' },
+    liveContainsTag: false,
+    tagContainsLive: true,
+    requiringPaths: [] as string[],
+  }
+
+  test('passes when live contains the tag', () => {
+    expect(tagRungLiveDecision({ ...base, liveContainsTag: true })).toEqual({ ok: true })
+  })
+
+  test('passes when live is an ancestor with no requiring path', () => {
+    expect(tagRungLiveDecision(base)).toEqual({ ok: true })
+  })
+
+  test('reproduces the v0.5.13 refusal when an ancestor has a requiring path', () => {
+    const decision = tagRungLiveDecision({ ...base, requiringPaths: ['package.json'] })
+    if (decision.ok) throw new Error('expected a release-tag refusal')
+    expect(decision.message).toContain('hosted-hub')
+    expect(decision.message).toContain('19c5bce3d18c')
+    expect(decision.message).toContain('package.json')
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-hub`,
+    )
+    expect(decision.message).toContain(`${PLATFORM_SLUG} pr merge <number> --release-required`)
+  })
+
+  test('refuses a diverged live commit', () => {
+    const decision = tagRungLiveDecision({ ...base, tagContainsLive: false })
+    if (decision.ok) throw new Error('expected a diverged-live refusal')
+    expect(decision.message).toContain('unrelated to or diverged')
+  })
+
+  test.each([
+    ['probe failure', 'live command failed (exit 22): unavailable'],
+    ['non-commit output', 'live command did not print one full commit sha: "not-a-commit"'],
+  ])('refuses %s', (_case, error) => {
+    const decision = tagRungLiveDecision({ ...base, probe: { error } })
+    if (decision.ok) throw new Error('expected a live-probe refusal')
+    expect(decision.message).toContain(error)
+    expect(decision.message).toContain('live commit unknown')
+  })
+})
+
+describe('release rung snapshot drift', () => {
+  const tracked = {
+    rungs: [
+      {
+        name: 'hosted-api',
+        branch: 'main',
+        live: 'read hosted api',
+        requiredWhenChanged: ['orchestrator/deploy/api/**'],
+        entryPoints: ['orchestrator/src/record/record-api-server.ts'],
+        onDemand: true,
+      },
+    ],
+  }
+
+  test('accepts equal register and tracked rungs', () => {
+    expect(releaseRungsDriftDecision(tracked, { ok: true, rungs: tracked }).status).toBe('match')
+  })
+
+  test('refuses a differing field and names the generator', () => {
+    const edited = {
+      rungs: tracked.rungs.map((rung) => ({ ...rung, branch: 'release' })),
+    }
+    const decision = releaseRungsDriftDecision(edited, { ok: true, rungs: tracked })
+    expect(decision.status).toBe('different')
+    expect(decision.message).toContain(`${PLATFORM_SLUG} release rungs --write`)
+  })
+
+  test('reports that an unreadable register was not compared', () => {
+    expect(releaseRungsDriftDecision(tracked, { ok: false, error: 'store missing' })).toEqual({
+      status: 'unverified',
+      message:
+        'release rungs comparison was not run because the project register could not be read: store missing',
+    })
+  })
+})
 
 describe('release binary runtime-config guard', () => {
   test('runs with the pinned Bun whether or not the marker is set', () => {

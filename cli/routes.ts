@@ -208,9 +208,15 @@ export const ROUTES = (
       'release check',
       'orch',
       'release check',
-      'validate the release tag and prove release binaries ignore working-directory config',
+      'validate the tag, tracked rungs, and release binary working-directory isolation',
     ),
     route('release log', 'orch', 'release log'),
+    route(
+      'release rungs',
+      'orch',
+      'release rungs',
+      'generate the tracked release-rung snapshot from the project register',
+    ),
     {
       command: ['record', 'sync'],
       owner: 'composite',

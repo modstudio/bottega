@@ -1,6 +1,7 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -52,6 +53,100 @@ export function releaseProcessEnvironment(
   const environment = { ...base }
   for (const name of RELEASE_ENVIRONMENT_NAMES) delete environment[name]
   return { ...environment, ...release }
+}
+
+export type TagRungLiveDecisionInput = {
+  rung: string
+  tagCommit: string
+  probe: { commit: string } | { error: string }
+  liveContainsTag: boolean
+  tagContainsLive: boolean
+  requiringPaths: readonly string[]
+}
+
+export type ReleaseRungCoverageFacts = {
+  liveCommit: string | null
+  liveContainsTarget: boolean
+  targetContainsLive: boolean
+  requiredSinceLive: boolean
+}
+
+/** Decide whether a rung's live commit covers a target without requiring a newer deployment. */
+export function releaseRungCoversTarget(facts: ReleaseRungCoverageFacts): boolean {
+  return Boolean(
+    facts.liveCommit &&
+      (facts.liveContainsTarget || (facts.targetContainsLive && facts.requiredSinceLive === false)),
+  )
+}
+
+/** Decide whether one hosted rung is sufficiently live for a release tag. */
+export function tagRungLiveDecision(input: TagRungLiveDecisionInput): Decision {
+  const remedy =
+    `deploy the rung with ${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung ${input.rung} --at ${input.tagCommit}, ` +
+    `or land with ${PLATFORM_SLUG} pr merge <number> --release-required`
+  if ('error' in input.probe) {
+    return {
+      ok: false,
+      message:
+        `release tag refused for rung ${input.rung}: live commit unknown (${input.probe.error}); ` +
+        `requiring paths: unknown; ${remedy}`,
+    }
+  }
+  if (
+    releaseRungCoversTarget({
+      liveCommit: input.probe.commit,
+      liveContainsTarget: input.liveContainsTag,
+      targetContainsLive: input.tagContainsLive,
+      requiredSinceLive: input.requiringPaths.length > 0,
+    })
+  )
+    return { ok: true }
+  const paths = input.requiringPaths.length > 0 ? input.requiringPaths.join(', ') : '(none)'
+  const relationship = input.tagContainsLive
+    ? `does not contain tag commit ${input.tagCommit}`
+    : `is unrelated to or diverged from tag commit ${input.tagCommit}`
+  return {
+    ok: false,
+    message:
+      `release tag refused for rung ${input.rung}: live commit ${input.probe.commit} ${relationship}; ` +
+      `requiring paths: ${paths}; ${remedy}`,
+  }
+}
+
+export type TrackedReleaseRung = {
+  name: string
+  branch: string
+  live: string
+  requiredWhenChanged?: readonly string[]
+  entryPoints?: readonly string[]
+  onDemand?: boolean
+}
+
+export type TrackedReleaseRungs = { rungs: TrackedReleaseRung[] }
+
+export type ReleaseRungsDriftDecision =
+  | { status: 'match'; message: string }
+  | { status: 'different'; message: string }
+  | { status: 'unverified'; message: string }
+
+/** Compare plain snapshot values, retaining an unavailable register as a distinct outcome. */
+export function releaseRungsDriftDecision(
+  tracked: TrackedReleaseRungs,
+  register: { ok: true; rungs: TrackedReleaseRungs } | { ok: false; error: string },
+): ReleaseRungsDriftDecision {
+  if (!register.ok) {
+    return {
+      status: 'unverified',
+      message: `release rungs comparison was not run because the project register could not be read: ${register.error}`,
+    }
+  }
+  if (JSON.stringify(tracked) === JSON.stringify(register.rungs)) {
+    return { status: 'match', message: 'tracked release rungs match the project register' }
+  }
+  return {
+    status: 'different',
+    message: `tracked release rungs differ from the project register; run ${PLATFORM_SLUG} release rungs --write, then retry`,
+  }
 }
 
 /** Identify the release and checked candidate to the registered deploy command. */

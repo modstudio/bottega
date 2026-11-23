@@ -8,7 +8,11 @@ import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invar
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { canDeployRungFromReleaseTree } from './release-at-commit.ts'
-import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
+import {
+  releaseProofDecision,
+  releaseRungCoversTarget,
+  releaseRungProofRefusal,
+} from './release-decision.ts'
 import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
@@ -104,11 +108,13 @@ export function machineUpdateRungRefusal(input: {
 }): string | null {
   for (const rung of input.requiredRungs) {
     const proved = input.provedCommits.get(rung) ?? null
-    if (proved && input.liveContainsIncoming.get(rung)) continue
     if (
-      proved &&
-      input.liveIsAncestorOfIncoming.get(rung) &&
-      input.requiredSinceLive.get(rung) === false
+      releaseRungCoversTarget({
+        liveCommit: proved,
+        liveContainsTarget: input.liveContainsIncoming.get(rung) === true,
+        targetContainsLive: input.liveIsAncestorOfIncoming.get(rung) === true,
+        requiredSinceLive: input.requiredSinceLive.get(rung) !== false,
+      })
     )
       continue
     return (
