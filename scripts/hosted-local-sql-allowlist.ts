@@ -19,6 +19,7 @@ type HostedLocalSqlExclusionReason = (typeof HOSTED_LOCAL_SQL_EXCLUSION_REASONS)
 
 export type HostedLocalSqlAllowedFile = {
   pattern: RegExp
+  line?: number
   reason?: HostedLocalSqlExclusionReason | string
   detail?: string
   expectedSites?: number
@@ -154,6 +155,59 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     reason: 'local-only',
     detail: 'The local document read adapter builds SQL only for machine-local document tables',
     expectedSites: 1,
+  },
+  {
+    pattern: /^hub\/src\/task\.ts$/,
+    line: 164,
+    reason: 'local-only',
+    detail: 'mintLocalTaskKey is reached only by createLocalTaskInTransaction local callers',
+    expectedSites: 1,
+    reportOnly: true,
+  },
+  ...([248, 310] as const).map((line) => ({
+    pattern: /^hub\/src\/task\.ts$/,
+    line,
+    reason: 'local-only' as const,
+    detail:
+      'createLocalTaskInTransaction is called by createTask and promoteNote only in their local-authoritative arms',
+    expectedSites: 1,
+    reportOnly: true as const,
+  })),
+  {
+    pattern: /^hub\/src\/task\.ts$/,
+    line: 362,
+    reason: 'local-only',
+    detail:
+      'localTaskInTransaction callers attachLocalTaskEvidenceInTransaction and prepareNoteRelinkComments are reached only by promoteNote and relinkNote local arms',
+    expectedSites: 1,
+    reportOnly: true,
+  },
+  ...([657, 690] as const).map((line) => ({
+    pattern: /^hub\/src\/task\.ts$/,
+    line,
+    reason: 'local-only' as const,
+    detail:
+      'applyLocalTaskPatch is called by setTaskBody and updateTask only after their hosted paths return',
+    expectedSites: 1,
+    reportOnly: true as const,
+  })),
+  {
+    pattern: /^hub\/src\/task\.ts$/,
+    line: 890,
+    reason: 'local-only',
+    detail:
+      'editableComment is called by editTaskComment and removeTaskComment after hosted returns',
+    expectedSites: 1,
+    reportOnly: true,
+  },
+  {
+    pattern: /^hub\/src\/note-read\.ts$/,
+    line: 87,
+    reason: 'local-only',
+    detail:
+      'listLocalFilteredRows is called by listLocalSlimNotes and listLocalNotes only after hosted list paths return',
+    expectedSites: 1,
+    reportOnly: true,
   },
   ...REPORT_ONLY_ALLOWED_FILES.map(({ file, reason, expectedSites }) => ({
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),

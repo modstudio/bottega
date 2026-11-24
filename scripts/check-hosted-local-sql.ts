@@ -39,7 +39,13 @@ export function reportOnlyAllowedFileBudgetFailures(
   return allowedFiles.flatMap((allowed) => {
     if (!allowed.reportOnly || allowed.expectedSites === undefined) return []
     const actual = new Set(
-      hits.filter((hit) => allowed.pattern.test(hit.file)).map((hit) => `${hit.file}:${hit.line}`),
+      hits
+        .filter(
+          (hit) =>
+            allowed.pattern.test(hit.file) &&
+            (allowed.line === undefined || allowed.line === hit.line),
+        )
+        .map((hit) => `${hit.file}:${hit.line}`),
     ).size
     return actual === allowed.expectedSites
       ? []

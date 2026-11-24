@@ -34,22 +34,84 @@ function candidates(file: string, sourceText: string): HostedLocalReadCandidate[
   return [
     ...extracted.sites.map((site) => ({
       ...site,
+      sourceText,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
     ...extracted.unresolved.map((site) => ({
       ...site,
+      sourceText,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
     ...extracted.cannotJudge.map((site) => ({
       ...site,
+      sourceText,
       dynamicTable: true,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
   ]
 }
+
+test.each([
+  {
+    name: 'a read in the local arm',
+    source: `function read() {
+      if (writeMode(project) === 'local-authoritative') {
+        db.query(\`SELECT * FROM hosted_row\`)
+      }
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read after a returning hosted arm',
+    source: `function read() {
+      if (hostedWriteMode(url) === 'hosted-configured') return hostedRead()
+      db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read before the branch',
+    source: `function read() {
+      db.query(\`SELECT * FROM hosted_row\`)
+      if (hostedWriteMode(url) === 'hosted-configured') return hostedRead()
+    }`,
+    path: 'hosted-reachable',
+  },
+  {
+    name: 'a read inside the hosted arm',
+    source: `function read() {
+      if (writeMode(project) === 'hosted-configured') {
+        db.query(\`SELECT * FROM hosted_row\`)
+      }
+    }`,
+    path: 'hosted-reachable',
+  },
+  {
+    name: 'a helper reached only from local arms',
+    source: `function localRead() {
+      db.query(\`SELECT * FROM hosted_row\`)
+    }
+    function read() {
+      if (writeMode(project) === 'local-authoritative') {
+        localRead()
+      }
+    }`,
+    path: 'local-only',
+  },
+] as const)('classifies selector control flow for $name', ({ source, path }) => {
+  const hit = classifyHostedLocalReadSites({
+    candidates: candidates('hub/src/fixture.ts', source).map((candidate) => ({
+      ...candidate,
+      sourceSelector: hostedLocalReadSourceFacts(source).sourceSelector,
+    })),
+    tables,
+    allowedFiles: [],
+  })[0]
+  expect(hit?.path).toBe(path)
+})
 
 test.each([
   ['SELECT * FROM hosted_row', 'read'],
