@@ -218,6 +218,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-contract-boundary.ts', run),
   script('scripts/check-evidence-boundary.ts', run),
   script('scripts/check-raw-start.ts', run),
+  script('scripts/check-docker-inventory-spawns.ts', run),
   script('scripts/check-main-checkout-moves.ts', run),
   script('scripts/check-workflow-cursor-handles.ts', run),
   script('scripts/check-task-flow-stage-state-literals.ts', run),

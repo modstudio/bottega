@@ -14,6 +14,10 @@ import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
+  decideDockerInventoryAvailability,
+  runDockerInventoryCommand,
+} from './docker-inventory-command.ts'
+import {
   classifyServedWorktree,
   decideMainStackEnsure,
   decideMainStackIdleStop,
@@ -29,6 +33,9 @@ const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'BOTTEGA_MAIN_STACK_IDLE_STOP_AFTER_MS'
 const MAIN_STACK_COMMAND_TIMEOUT_MS = 120_000
 
 type CommandResult = { ok: true; output: string } | { ok: false; reason: string }
+type DockerInventoryResult =
+  | { ok: true; output: string; executableAbsent: false }
+  | { ok: false; reason: string; executableAbsent: boolean }
 
 function dockerCompose(cwd: string, args: string[]): CommandResult {
   const command = ['docker', 'compose', ...args]
@@ -249,30 +256,22 @@ export function ensureProjectMainStack(
   })
 }
 
-function runningMainStackPaths(): CommandResult {
-  let result: ReturnType<typeof Bun.spawnSync>
+function runningMainStackPaths(): DockerInventoryResult {
   const command = [
     'docker',
     'ps',
     '--format',
     '{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
-  } catch (error) {
-    return { ok: false, reason: `main stack inventory unavailable: ${(error as Error).message}` }
-  }
-  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
+  const result = runDockerInventoryCommand(command, MAIN_STACK_COMMAND_TIMEOUT_MS)
+  if (!result.ok) {
     return {
       ok: false,
-      reason: `main stack inventory unavailable: ${result.stderr?.toString().trim() || 'timed out'}`,
+      executableAbsent: result.executableAbsent,
+      reason: `main stack inventory unavailable: ${result.reason}`,
     }
   }
-  return { ok: true, output: result.stdout?.toString() ?? '' }
+  return { ok: true, output: result.stdout, executableAbsent: false }
 }
 
 /**
@@ -484,6 +483,7 @@ type MainStackSweepInput = {
   nowMs?: number
   log(message: string): void
   error(message: string): void
+  onDockerAbsent?(): void
 }
 
 function sweepIdleMainStack(
@@ -549,10 +549,16 @@ function sweepIdleMainStack(
 
 export function sweepIdleMainStacks(input: MainStackSweepInput): boolean {
   const inventory = runningMainStackPaths()
-  if (!inventory.ok) {
+  const availability = decideDockerInventoryAvailability(inventory)
+  if (availability === 'docker-absent') {
+    input.onDockerAbsent?.()
+    return false
+  }
+  if (availability === 'fail' && !inventory.ok) {
     input.error(inventory.reason)
     return true
   }
+  if (!inventory.ok) return true
   const runningPaths = new Set(
     inventory.output
       .split('\n')

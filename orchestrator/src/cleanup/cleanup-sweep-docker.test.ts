@@ -19,6 +19,49 @@ afterEach(() => {
 
 const runRecordId = (runId: string) => runId
 
+test('Docker sweep passes without reclamation when the executable is absent', () => {
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    const error = new Error('spawn failed') as NodeJS.ErrnoException
+    error.code = 'ENOENT'
+    throw error
+  }) as typeof Bun.spawnSync)
+  const inventoryErrors = new Set<string>()
+  let absent = 0
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: true,
+    selectedProject: null,
+    presentation: presentation([]),
+    inventoryErrors,
+    leaked: new Map(),
+    onDockerAbsent: () => absent++,
+  })
+
+  expect(failed).toBeFalse()
+  expect(absent).toBe(1)
+  expect(inventoryErrors).toEqual(new Set())
+  expect(commands).toHaveLength(1)
+})
+
+test('Docker sweep fails and records a nonzero inventory exit', () => {
+  spyOn(Bun, 'spawnSync').mockImplementation((() =>
+    result('', 1, 'daemon unavailable')) as typeof Bun.spawnSync)
+  const inventoryErrors = new Set<string>()
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: true,
+    selectedProject: null,
+    presentation: presentation([]),
+    inventoryErrors,
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect([...inventoryErrors]).toEqual(['docker ps -a inventory unavailable: daemon unavailable'])
+})
+
 test('a project-scoped sweep previews reclamation only for that project', () => {
   const alphaRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const bravoRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })

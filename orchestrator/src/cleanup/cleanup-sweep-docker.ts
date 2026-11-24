@@ -13,6 +13,7 @@ import {
   projects,
   resolvedWorktreeTool,
 } from '../project/projects.ts'
+import { decideDockerInventoryAvailability } from '../resources/docker-inventory-command.ts'
 import {
   classifiedDockerResources,
   type DockerInventory,
@@ -189,20 +190,6 @@ function reportLeakedDockerResources(
       presentation.error(
         `  ${dryRun ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`,
       )
-  }
-}
-
-function reportDockerInventoryErrors(
-  dryRun: boolean,
-  inventoryErrors: Set<string>,
-  presentation: CleanupPresentation,
-): void {
-  if (inventoryErrors.size) {
-    presentation.error(
-      `\n${dryRun ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`,
-    )
-    for (const error of inventoryErrors)
-      presentation.error(`  ${dryRun ? 'would report ' : ''}${error}`)
   }
 }
 
@@ -680,6 +667,7 @@ export function reclaimSweptDockerResources(input: {
   presentation: CleanupPresentation
   inventoryErrors: Set<string>
   leaked: Map<string, { resource: DockerResource; project: string; runId: string }>
+  onDockerAbsent?(): void
 }): boolean {
   const { dryRun, selectedProject, presentation, inventoryErrors, leaked } = input
   const inventory = dockerRunResources(
@@ -687,6 +675,14 @@ export function reclaimSweptDockerResources(input: {
       .filter(isProjectRepository)
       .map(({ path }) => path),
   )
+  const availability = decideDockerInventoryAvailability({
+    ok: inventory.ascertainable,
+    executableAbsent: inventory.ascertainable ? false : inventory.executableAbsent,
+  })
+  if (availability === 'docker-absent') {
+    input.onDockerAbsent?.()
+    return false
+  }
   if (!inventory.ascertainable) inventoryErrors.add(inventory.reason)
   let failed = !inventory.ascertainable
   const resources = inventory.ascertainable ? inventory.resources : []
@@ -739,6 +735,5 @@ export function reclaimSweptDockerResources(input: {
   failed ||= leaked.size > 0
   reportRetainedDockerResources(dryRun, retained, presentation)
   reportLeakedDockerResources(dryRun, leaked, presentation)
-  reportDockerInventoryErrors(dryRun, inventoryErrors, presentation)
   return failed
 }

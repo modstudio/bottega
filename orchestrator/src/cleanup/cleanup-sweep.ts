@@ -448,12 +448,24 @@ function printSweepKept(
 }
 
 /** Finishes task maintenance and fails the sweep when any part failed. */
+export function finishDockerInventory(
+  presentation: CleanupPresentation,
+  inventoryErrors: Set<string>,
+  dockerAbsent: boolean,
+): void {
+  if (dockerAbsent) presentation.log('docker: executable not found; Docker inventory steps skipped')
+  for (const error of inventoryErrors) presentation.error(error)
+}
+
 async function finishSweep(
   cleanupFailed: boolean,
   hubTaskReader: ProjectTaskListReader,
   options: SweepOptions,
+  inventoryErrors: Set<string>,
+  dockerAbsent: boolean,
 ): Promise<void> {
   const { dryRun: dry, project = null, presentation } = options
+  finishDockerInventory(presentation, inventoryErrors, dockerAbsent)
   const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, project, presentation)
   if (!dry) {
     const repaired = backfillRunRecordsForSweep()
@@ -849,12 +861,16 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
   })
   cleanupFailed ||= sessionCleanupFailed
+  let dockerAbsent = false
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,
     dryRun: dry,
     log: (message) => options.presentation.log(message),
     error: (message) => options.presentation.error(message),
+    onDockerAbsent: () => {
+      dockerAbsent = true
+    },
   })
   const unattended = sweepUnattendedResidue({
     dryRun: dry,
@@ -1052,6 +1068,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
     inventoryErrors,
     leaked,
+    onDockerAbsent: () => {
+      dockerAbsent = true
+    },
   })
 
   const branchCleanupFailed = pruneSweptProjectBranches({
@@ -1072,5 +1091,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  await finishSweep(cleanupFailed, helpers.hubTaskReader, options)
+  await finishSweep(cleanupFailed, helpers.hubTaskReader, options, inventoryErrors, dockerAbsent)
 }

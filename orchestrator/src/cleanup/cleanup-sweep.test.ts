@@ -23,7 +23,7 @@ import { upsertProject } from '../project/projects.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { sweepRuns } from './cleanup-sweep.ts'
+import { finishDockerInventory, sweepRuns } from './cleanup-sweep.ts'
 import {
   decideSessionContextSweep,
   sessionContextOwnershipLine,
@@ -34,6 +34,31 @@ import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.t
 afterEach(() => {
   mock.restore()
   installRecordApiClient(null)
+})
+
+test('sweep finish reports Docker absence once and each failure reason once', () => {
+  const info: string[] = []
+  const errors: string[] = []
+  let dockerAbsent = false
+  const observeDockerAbsent = () => {
+    dockerAbsent = true
+  }
+  observeDockerAbsent()
+  observeDockerAbsent()
+
+  finishDockerInventory(
+    {
+      log: (...values) => info.push(values.join(' ')),
+      error: (...values) => errors.push(values.join(' ')),
+      setExitCode: () => {},
+      keptBranchLine: () => '',
+    },
+    new Set(['docker ps -a inventory unavailable: daemon unavailable']),
+    dockerAbsent,
+  )
+
+  expect(info).toEqual(['docker: executable not found; Docker inventory steps skipped'])
+  expect(errors).toEqual(['docker ps -a inventory unavailable: daemon unavailable'])
 })
 
 test('hosted session context sweep keeps foreign holders and drops owned expired holders', () => {
