@@ -7,13 +7,12 @@
  */
 import { resolve } from 'node:path'
 import {
-  HOSTED_LOCAL_SQL_ALLOWED_FILES,
   HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
-  type HostedLocalSqlAllowedFile,
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import {
   hostedBoardLocalReadFailures,
+  type HostedLocalReadHit,
   hostedLocalReadScan,
   hostedLocalSqlAllowedFileFailures,
   hostedLocalSqlExemptionReasonFailures,
@@ -24,10 +23,33 @@ import type {
   HostedSqlSite,
   HostedSqlUnresolvedSite,
 } from './hosted-sql-schema.ts'
+import {
+  HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  type HostedLocalSqlAllowedFile,
+} from './hosted-local-sql-allowlist.ts'
 import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
 
 type AllowedFile = HostedLocalSqlAllowedFile
 type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'fingerprint'> & { count: number }
+
+export function reportOnlyAllowedFileBudgetFailures(
+  hits: readonly HostedLocalReadHit[],
+  allowedFiles: readonly AllowedFile[],
+): string[] {
+  return allowedFiles.flatMap((allowed) => {
+    if (!allowed.reportOnly || allowed.expectedSites === undefined) return []
+    const actual = new Set(
+      hits
+        .filter((hit) => allowed.pattern.test(hit.file))
+        .map((hit) => `${hit.file}:${hit.line}`),
+    ).size
+    return actual === allowed.expectedSites
+      ? []
+      : [
+          `${allowed.pattern}: report-only hosted SQL exemption expected ${allowed.expectedSites} sites but found ${actual}; inspect the file and update the exact-path budget only after verifying every site (${allowed.reason})`,
+        ]
+  })
+}
 
 // These dynamic table positions cannot be compared with the hosted-table list statically. This
 // baseline is shrink-only and position-independent: a new occurrence and a listed occurrence that
@@ -392,6 +414,7 @@ export function checkHostedLocalSql(root: string): {
   return {
     failures: [
       ...scan.configurationFailures,
+      ...reportOnlyAllowedFileBudgetFailures(scan.report.hits, HOSTED_LOCAL_SQL_ALLOWED_FILES),
       ...hostedBoardLocalReadFailures(scan.report.hits),
       ...hostedLocalSqlViolations({
         sites,

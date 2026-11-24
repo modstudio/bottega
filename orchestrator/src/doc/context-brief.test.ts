@@ -363,13 +363,23 @@ test('contextBrief carries question groups into the waiting segment', async () =
 
 test('contextBrief counts hosted cached requests without reading a differing local request', async () => {
   const session = 'context-brief-hosted-board'
+  const hostedRequestId = newRecordId()
+  const projectRecordId = newRecordId()
   db()
     .query(
       `INSERT INTO project (record_id,name,path,stack,settings)
        VALUES (?,?,'/hosted-context-brief','bun',
                '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
     )
-    .run(newRecordId(), PLATFORM_SLUG)
+    .run(projectRecordId, PLATFORM_SLUG)
+  const now = new Date().toISOString()
+  db()
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?, ?,?)`,
+    )
+    .run(session, PLATFORM_SLUG, projectRecordId, '/hosted-context-brief', now, now)
   new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
   const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
     env: { ...process.env, NODE_ENV: 'production' },
@@ -383,14 +393,56 @@ test('contextBrief counts hosted cached requests without reading a differing loc
   )
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   installRecordApiClient({
-    ...createMemoryRecordApiClient({ boardChanges: [] }),
+    ...createMemoryRecordApiClient({
+      boardChanges: [
+        {
+          message: {
+            id: hostedRequestId,
+            kind: 'notice',
+            purpose: 'request',
+            threadRootId: null,
+            title: 'Hosted request',
+            body: 'Count this request.',
+            audience: `session:${session}`,
+            origin: {
+              kind: 'architect',
+              session: 'hosted-author',
+              harness: 'codex',
+              project: PLATFORM_SLUG,
+              projectStored: true,
+              runId: null,
+            },
+            senderTags: [],
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            withdrawnAt: null,
+            state: 'open',
+            acceptedReplyId: null,
+            acceptedBy: null,
+            acceptedAt: null,
+            noteId: null,
+            notePendingError: null,
+            revision: '1',
+            scopeProjectIds: [],
+            recipientUserIds: [],
+            claimId: null,
+            authorUserId: newRecordId(),
+            authorSession: 'hosted-author',
+            ackRequired: false,
+            ackDeadline: null,
+          },
+          tags: [],
+          receipts: [],
+        },
+      ],
+    }),
     listBoardClaims: async () => ({ claims: [] }),
   })
   const endpoint = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   try {
     const brief = await contextBrief(session, '/hosted-context-brief', db(), async () => [])
-    expect(brief.waiting.boardRequests).toBe(0)
+    expect(brief.waiting.boardRequests).toBe(1)
   } finally {
     installRecordApiClient(null)
     if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL

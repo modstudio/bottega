@@ -442,6 +442,20 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
     {},
     Date.parse('2020-01-01T00:00:00.000Z'),
   )
+  const retainedClaim = newRecordId()
+  db()
+    .query(
+      `INSERT INTO board_claim
+       (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at)
+       VALUES (?,?,'task','DEV-HOSTED','architect','hosted-holder',60000,?,?,?)`,
+    )
+    .run(
+      retainedClaim,
+      name,
+      '2020-01-01T00:00:00.000Z',
+      '2020-01-01T00:00:00.000Z',
+      '2020-01-01T00:01:00.000Z',
+    )
   const tree = join(projectPath, '.claude', 'worktrees', `orch-${run}`)
   db()
     .query('UPDATE run SET repo=?,project_record_id=?,worktree=?,cwd=? WHERE record_id=?')
@@ -513,6 +527,9 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
         .query('SELECT record_id FROM board_message WHERE record_id=?')
         .get(retainedBoardMessage.recordId),
     ).toEqual({ record_id: retainedBoardMessage.recordId })
+    expect(
+      db().query('SELECT closed_at FROM board_claim WHERE record_id=?').get(retainedClaim),
+    ).toEqual({ closed_at: null })
     expect(lines).toContain('outbox release failed: release busy')
     expect(lines).toContain('contention rollup failed: rollup busy')
     expect(lines).toContain('contention prune failed: contention prune busy')

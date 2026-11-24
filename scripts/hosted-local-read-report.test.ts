@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadAllowedFile,
@@ -6,6 +9,7 @@ import {
   hostedBoardLocalReadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
+  hostedLocalReadScan,
   hostedLocalReadSourceFacts,
 } from './hosted-local-read-report.ts'
 import { extractSqlFromSource } from './hosted-sql-schema.ts'
@@ -53,6 +57,23 @@ test.each([
   ['WITH chosen AS (SELECT 1) UPDATE hosted_row SET value = 1', 'write'],
 ] as const)('classifies %s as %s', (sql, kind) => {
   expect(hostedLocalReadKind(sql)).toBe(kind)
+})
+
+test('the production scan excludes concern test directories', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'hosted-local-read-report-'))
+  try {
+    const production = resolve(root, 'orchestrator/src/read.ts')
+    const fixture = resolve(root, 'orchestrator/test/read.ts')
+    mkdirSync(resolve(production, '..'), { recursive: true })
+    mkdirSync(resolve(fixture, '..'), { recursive: true })
+    writeFileSync(production, "db.query('SELECT * FROM board_message')")
+    writeFileSync(fixture, "db.query('SELECT * FROM board_message')")
+    expect(hostedLocalReadScan(root).report.hits.map(({ file }) => file)).toEqual([
+      'orchestrator/src/read.ts',
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('refuses only hosted-reachable reads of B1 board tables', () => {

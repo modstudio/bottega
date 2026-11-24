@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
+import type { BoardClaimResult } from '../board/board-operation-results.ts'
 import {
-  type BoardClaimResult,
   boardClaimReleaseTask,
   boardClaimTake,
   boardOpenTaskCursorProject,

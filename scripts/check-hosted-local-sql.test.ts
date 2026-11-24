@@ -3,12 +3,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import {
-  HOSTED_LOCAL_SQL_ALLOWED_FILES,
   HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
-import { checkHostedLocalSql, hostedLocalSqlViolations } from './check-hosted-local-sql.ts'
+import {
+  checkHostedLocalSql,
+  hostedLocalSqlViolations,
+  reportOnlyAllowedFileBudgetFailures,
+} from './check-hosted-local-sql.ts'
 import { hostedLocalSqlSelectorFailures } from './hosted-local-read-report.ts'
 import {
   extractSqlFromSource,
@@ -16,6 +19,7 @@ import {
   type HostedSqlUnresolvedSite,
 } from './hosted-sql-schema.ts'
 import type { StateClassDeclaration } from './identity-state-classes.ts'
+import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 
 const temporaryRoots: string[] = []
 const hostedLocalRenderedSqlRisk = (sql: string): boolean =>
@@ -321,6 +325,28 @@ test('an exact-path exemption refuses a stale count above actual', () => {
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([expect.stringContaining('expected 2 sites but found 1')])
+})
+
+test('a report-only exemption refuses one extra hosted SQL site', () => {
+  const file = 'orchestrator/src/board/board-push-service.ts'
+  const hit = (line: number) => ({
+    file,
+    line,
+    table: 'board_message',
+    kind: 'read' as const,
+    path: 'excluded-by-design' as const,
+    reason: 'fixture',
+    module: 'orchestrator:board',
+  })
+  expect(
+    reportOnlyAllowedFileBudgetFailures([hit(10), hit(20)], [
+      { pattern: /board-push-service\.ts$/, reason: 'outbox', expectedSites: 1, reportOnly: true },
+    ]),
+  ).toEqual([
+    expect.stringContaining(
+      'board-push-service\\.ts$/: report-only hosted SQL exemption expected 1 sites but found 2',
+    ),
+  ])
 })
 
 test('an allowed file with no hosted-only or unresolved SQL is rejected as unused', () => {

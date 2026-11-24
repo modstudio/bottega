@@ -1,10 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import {
-  HOSTED_LOCAL_SQL_ALLOWED_FILES,
-  HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
   HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
-  type HostedLocalSqlAllowedFile,
   hostedTableInSql,
   LOCAL_SQLITE_ADAPTER_PATH,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
@@ -24,6 +21,11 @@ import {
   type HostedSqlUnresolvedSite,
   productionTypeScriptFiles,
 } from './hosted-sql-schema.ts'
+import {
+  HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
+  type HostedLocalSqlAllowedFile,
+} from './hosted-local-sql-allowlist.ts'
 import {
   STATE_CLASSES,
   type StateClassDeclaration,
@@ -420,8 +422,11 @@ function scanHostedLocalReadConcern(input: {
       : [],
   )
   const tableNames = tables.map(({ table }) => table)
+  const testDirectory = `${resolve(root, concern, 'test')}/`
   const files = productionTypeScriptFiles(resolve(root, concern)).filter(
-    (file) => concern !== 'hub' || !file.startsWith(resolve(root, 'hub/web/')),
+    (file) =>
+      !file.startsWith(testDirectory) &&
+      (concern !== 'hub' || !file.startsWith(resolve(root, 'hub/web/'))),
   )
   const candidates = files.flatMap((file): HostedLocalReadCandidate[] => {
     const sourceText = readFileSync(file, 'utf8')

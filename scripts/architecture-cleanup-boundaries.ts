@@ -534,6 +534,7 @@ export const cleanupBoundarySpecs = [
       '../close/tree-process-cwd-hold.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',
+      '../board/board-mode.ts',
       '../board/board-reach.ts',
       '../branch/branch-disposal.ts',
       '../database/database-commands.ts',

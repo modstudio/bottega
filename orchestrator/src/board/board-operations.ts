@@ -113,7 +113,6 @@ type Context = {
   database?: ReturnType<typeof db>
 }
 
-export type { BoardPostResult } from './board-operation-results.ts'
 
 type BoardMessageResult = {
   recordId: string
@@ -176,7 +175,6 @@ export type BoardStatusResult = {
   unacknowledged: string[] | null
 }
 
-export type { BoardClaimResult } from './board-operation-results.ts'
 
 function context(input: Context = {}) {
   return {

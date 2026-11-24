@@ -10,6 +10,7 @@ import { projectAt } from '../project/projects.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
+  cachedHostedBoardReceiptFacts,
   claimCachedHosted,
   reapHostedBoardCache,
   refreshHostedBoard,
@@ -697,28 +698,16 @@ async function boardEscalationRows(
       )
     const messages = cachedHostedBoardMessages(database)
     return messages.flatMap((message) =>
-      (
-        database
-          .query(
-            `SELECT reader_session,reader_run_record_id,audience_at_posting,acknowledged_at
-             FROM hosted_board_receipt_cache WHERE message_id=?`,
-          )
-          .all(message.id) as Array<{
-          reader_session: string
-          reader_run_record_id: string | null
-          audience_at_posting: number
-          acknowledged_at: string | null
-        }>
-      ).map((receipt) => ({
+      cachedHostedBoardReceiptFacts(message.id, database).map((receipt) => ({
         id: message.id,
         ackRequired: message.ackRequired,
         ackDeadline: message.ackDeadline,
         expiresAt: message.expiresAt,
         withdrawnAt: message.withdrawnAt,
-        readerSession: receipt.reader_session,
-        readerRunRecordId: receipt.reader_run_record_id,
-        acknowledgedAt: receipt.acknowledged_at,
-        audienceAtPosting: receipt.audience_at_posting === 1,
+        readerSession: receipt.readerSession,
+        readerRunRecordId: receipt.readerRunRecordId,
+        acknowledgedAt: receipt.acknowledgedAt,
+        audienceAtPosting: receipt.audienceAtPosting,
       })),
     )
   }
@@ -825,10 +814,9 @@ export function reapBoardMessages(clock = Date.now()): number {
 
 export function reapBoardMessagesForInstall(
   env: Environment = process.env,
-  database: Database = db(),
   clock = Date.now(),
 ): number {
-  return boardMode('shared', env, database) === 'local'
+  return boardMode('shared', env) === 'local'
     ? reapBoardMessages(clock)
     : reapHostedBoardCache(clock)
 }

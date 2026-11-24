@@ -27,14 +27,30 @@ test('recordPresence skips local queued-claim renewal after hosted adoption', ()
     CLAUDE_CODE_SESSION_ID: 'hosted-presence',
     BOTTEGA_RECORD_API_URL: 'https://record.test',
   }
+  const cwd = postingProjectPath()
+  const claim = newRecordId()
+  const renewedAt = '2026-10-05T11:00:00.000Z'
+  const lapsesAt = '2026-10-05T13:00:00.000Z'
+  db()
+    .query(
+      `INSERT INTO board_claim
+       (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at)
+       VALUES (?,'board-guard-fixture','queued-task','DEV-QUEUED','architect',?,3600000,?,?,?)`,
+    )
+    .run(claim, env.CLAUDE_CODE_SESSION_ID, renewedAt, renewedAt, lapsesAt)
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
 
-  expect(recordPresence(postingProjectPath(), env, '2026-10-05T12:00:00.000Z')).toBe(true)
+  expect(recordPresence(cwd, env, '2026-10-05T12:00:00.000Z')).toBe(true)
   expect(
     db()
       .query('SELECT session_id FROM presence WHERE session_id=?')
       .get(env.CLAUDE_CODE_SESSION_ID),
   ).toEqual({ session_id: env.CLAUDE_CODE_SESSION_ID })
+  expect(
+    db()
+      .query('SELECT renewed_at,lapses_at FROM board_claim WHERE record_id=?')
+      .get(claim),
+  ).toEqual({ renewed_at: renewedAt, lapses_at: lapsesAt })
 })
 
 test('the install sweep still prunes the hosted cache after adoption', () => {
@@ -53,7 +69,7 @@ test('the install sweep still prunes the hosted cache after adoption', () => {
     .run(expired.id, expired.kind, null, expired.revision, JSON.stringify(expired))
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const env = { BOTTEGA_RECORD_API_URL: 'https://record.test' }
-  expect(reapBoardMessagesForInstall(env, db(), Date.parse('2026-10-05T12:00:00.000Z'))).toBe(1)
+  expect(reapBoardMessagesForInstall(env, Date.parse('2026-10-05T12:00:00.000Z'))).toBe(1)
   expect(db().query('SELECT id FROM hosted_board_message_cache').all()).toEqual([])
 })
 
