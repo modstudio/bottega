@@ -7,9 +7,9 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
   hostedBoardVerificationWarning,
-  hostedMessageIsLive,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import { hostedMessageIsLive } from './board-hosted-cache-readers.ts'
 import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
 import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'

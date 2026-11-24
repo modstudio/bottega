@@ -54,11 +54,6 @@ import {
 } from './board-write-destination.ts'
 
 export type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
-export {
-  cachedHostedBoardMessageKind,
-  cachedHostedBoardReceiptFacts,
-  hostedMessageIsLive,
-} from './board-hosted-cache-readers.ts'
 
 export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'

@@ -46,6 +46,7 @@ export const boardModules: BoardModule[] = [
     'bun:sqlite',
     '../../../shared/record-id.ts',
     './board-hosted-cache.ts',
+    './board-hosted-cache-readers.ts',
     './board-mode.ts',
   ]),
   module('orchestrator/src/board/board-mode.ts', [
@@ -184,6 +185,7 @@ export const boardModules: BoardModule[] = [
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',
     './board-hosted-cache.ts',
+    './board-hosted-cache-readers.ts',
     './board-operations.ts',
     './board-store.ts',
     './board-thread-policy.ts',
@@ -298,6 +300,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './board-hosted-cache.ts',
+    './board-hosted-cache-readers.ts',
     './board-mode.ts',
     './board-queued-claim-renewal.ts',
     './board-policy.ts',

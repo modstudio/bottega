@@ -3,11 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import {
-  BOARD_READ_REFRESH_BUDGET_MS,
-  cachedHostedBoardMessageKind,
-  refreshHostedBoard,
-} from './board-hosted-cache.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
+import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
 import { boardModeForId } from './board-mode.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'

@@ -10,11 +10,11 @@ import { projectAt } from '../project/projects.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
-  cachedHostedBoardReceiptFacts,
   claimCachedHosted,
   reapHostedBoardCache,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import { cachedHostedBoardReceiptFacts } from './board-hosted-cache-readers.ts'
 import { boardMode } from './board-mode.ts'
 import {
   architectIdentity,
