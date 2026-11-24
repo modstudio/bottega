@@ -94,7 +94,12 @@ const decisionCases: Array<{
       findings: [
         {
           flag: '--artifact',
-          acceptingFloors: ['command-exit', 'recorded-artifact', 'task-open-with-notes'],
+          acceptingFloors: [
+            'command-exit',
+            'recorded-artifact',
+            'class-measured',
+            'task-open-with-notes',
+          ],
         },
       ],
     },

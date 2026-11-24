@@ -164,7 +164,10 @@ export async function assertPullRequestTaskCursorAdmission(
   if (!command || !Number.isInteger(count)) return
   const implementClosedAt = closed.findLast((step) => step.slug === 'implement-fix')?.at
   const rows = database
-    .query<{ command: string; output_tail: string; exit_code: number; created_at: string }, [string]>(
+    .query<
+      { command: string; output_tail: string; exit_code: number; created_at: string },
+      [string]
+    >(
       "SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
     )
     .all(harnessSession ?? '')
