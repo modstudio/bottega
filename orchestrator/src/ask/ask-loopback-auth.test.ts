@@ -41,6 +41,45 @@ async function connect(port: number): Promise<Socket> {
   return socket
 }
 
+function mcpMessages(): string {
+  const initialize = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'ask-auth-test', version: '1' },
+    },
+  })
+  const initialized = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
+  const toolsList = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  return `${initialize}\n${initialized}\n${toolsList}\n`
+}
+
+async function expectLoopbackRefusal(port: number, preamble = ''): Promise<void> {
+  const socket = await connect(port)
+  let received = ''
+  socket.on('data', (chunk) => {
+    received += chunk.toString()
+  })
+  try {
+    const didClose = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('refused connection did not close')), 500)
+      socket.once('close', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+    })
+    socket.write(`${preamble}${mcpMessages()}`)
+    await didClose
+    expect(received).toBe('')
+    expect(received).not.toContain('"id":2')
+  } finally {
+    socket.destroy()
+  }
+}
+
 async function refusal(payload: string | null, timeoutMs?: number): Promise<number> {
   const fixture = await authServer(timeoutMs)
   const socket = await connect(fixture.port)
@@ -68,6 +107,19 @@ test('oversized and timed-out preambles close before authentication', async () =
   expect(await refusal(null, 20)).toBe(0)
 })
 
+test('the real loopback refuses tokenless and wrong-token clients before tools/list', async () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const loopback = await startAskLoopback(run, TOKEN)
+  if (loopback.kind !== 'stdio-loopback') throw new Error('expected a stdio loopback')
+  const port = Number(new URL(loopback.url).port)
+  try {
+    await expectLoopbackRefusal(port)
+    await expectLoopbackRefusal(port, askAuthPreamble('wrong-token'))
+  } finally {
+    await loopback.close()
+  }
+})
+
 test('a valid preamble followed by MCP bytes in one write reaches tools/list', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const loopback = await startAskLoopback(run, TOKEN)
@@ -79,19 +131,7 @@ test('a valid preamble followed by MCP bytes in one write reaches tools/list', a
     received += chunk.toString()
   })
   try {
-    const initialize = JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'ask-auth-test', version: '1' },
-      },
-    })
-    const initialized = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
-    const toolsList = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
-    socket.write(`${askAuthPreamble(TOKEN)}${initialize}\n${initialized}\n${toolsList}\n`)
+    socket.write(`${askAuthPreamble(TOKEN)}${mcpMessages()}`)
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('tools/list response timed out')), 500)
       const poll = () => {
