@@ -19,7 +19,7 @@ import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
 import {
-  unresolvedWorkflowTextReport,
+  unresolvedWorkflowTextReportForStage,
   workflowTextDeletionIds,
   workflowTextLinkState,
 } from './workflow-text.ts'
@@ -48,13 +48,12 @@ export async function abandonWorkflowCursor(
   const store = taskFlowReadStore(d, context.taskFlowClient)
   const obligations = await store.openObligationRecordIds(row.record_id)
   const linkState = workflowTextLinkState(row)
-  const keptTextNotice = unresolvedWorkflowTextReport({
-    linkState,
-    textIds: await store.textRecordIdsForStage(row.record_id),
-    cursor: row.id,
-    workflowKey: row.workflow_key,
-    project: row.project,
-  })
+  const keptTextNotice = await unresolvedWorkflowTextReportForStage(
+    row,
+    true,
+    d,
+    context.taskFlowClient,
+  )
   const deleteTextIds = await workflowTextDeletionIds(
     row.record_id,
     linkState,

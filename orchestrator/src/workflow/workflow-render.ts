@@ -11,7 +11,7 @@ import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
   claimWarning?: string
-  taskLinkNotice?: string
+  taskLinkNotice?: string | null
   cursor?: CursorSummary | null
   graduated?: GraduatedExplore
 }

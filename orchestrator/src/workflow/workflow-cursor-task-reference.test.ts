@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { renderWorkflowComposition } from './workflow-render.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
@@ -10,6 +10,7 @@ import {
   database,
   selectAndNextWorkflowStep as nextWorkflowStep,
 } from './workflow-cursor-test.fixture.ts'
+import { renderWorkflowComposition } from './workflow-render.ts'
 import { attachWorkflowTextByHandle } from './workflow-text.ts'
 
 describe('workflow cursor task reference', () => {
@@ -122,7 +123,7 @@ describe('workflow cursor task reference', () => {
     expect(output).toContain(token)
     expect(output).toContain('workflow key DEV-822 in project fixture has an unresolved task link')
     expect(output).toContain(
-      `bottega workflow text copy --cursor ${composed.cursor!.id} --project fixture`,
+      `${PLATFORM_SLUG} workflow text copy --cursor ${composed.cursor!.id} --project fixture`,
     )
     expect(d.query('SELECT COUNT(*) AS count FROM workflow_step_text').get()).toEqual({ count: 1 })
   })

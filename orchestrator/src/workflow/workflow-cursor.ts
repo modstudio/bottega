@@ -39,11 +39,11 @@ import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
-  persistedAdvanceRenderFailure,
   refuseMissingAbandonReason,
   refuseMissingCloseNote,
   refuseTerminalCursor,
-  renderWorkflowAdvanceResult,
+  renderPersistedWorkflowAdvanceResult,
+  workflowAdvanceResultText,
 } from './workflow-cursor-result.ts'
 import {
   findWorkflowCursor,
@@ -83,13 +83,13 @@ import {
 } from './workflow-self-ruling-mutation.ts'
 import {
   followTaskCursorClaim,
+  followTaskCursorClaimWithWarning,
   type TaskCursorClaimPorts,
-  taskClaimFollowWarning,
   taskClaimReleaseWarning,
 } from './workflow-task-claim.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import {
-  unresolvedWorkflowTextReport,
+  unresolvedWorkflowTextReportForStage,
   workflowTextDeletionIds,
   workflowTextLinkState,
 } from './workflow-text.ts'
@@ -266,7 +266,7 @@ export async function composeWorkflowWithCursor(
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
-    ...(taskLinkNotice ? { taskLinkNotice } : {}),
+    taskLinkNotice,
     graduated,
   }
 }
@@ -633,25 +633,6 @@ async function advanceTextDeletionIds(
   return await workflowTextDeletionIds(row.record_id, workflowTextLinkState(row), database, client)
 }
 
-async function advanceKeptTextNotice(
-  row: CursorRow,
-  composition: ReturnType<typeof composeWorkflow>,
-  finishing: boolean,
-  database: Database,
-  client?: WorkflowCursorContext['taskFlowClient'],
-): Promise<string> {
-  if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return ''
-  const linkState = workflowTextLinkState(row)
-  if (linkState !== 'unresolved') return ''
-  return unresolvedWorkflowTextReport({
-    linkState,
-    textIds: await taskFlowReadStore(database, client).textRecordIdsForStage(row.record_id),
-    cursor: row.id,
-    workflowKey: row.workflow_key,
-    project: row.project,
-  })
-}
-
 function advanceRecordRows(
   row: CursorRow,
   flow: { record_id: string; revision: number } | null,
@@ -757,6 +738,22 @@ function workflowTakeoverForAdvance(
     : { notice: null, fromMachineId: null }
 }
 
+function prepareWorkflowAdvanceRow(
+  row: CursorRow,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  evidence: WorkflowEvidenceInput,
+  live: LiveCursorAutonomy | undefined,
+  database: Database,
+): void {
+  refuseTerminalCursor(row)
+  const resolvedArguments = resolveCursorArguments(row, args, database)
+  row.args = resolvedArguments.encoded
+  row.closed = resolvedArguments.closed
+  refuseKeylessStepClose(row, evidence.task, database, live)
+  refuseForeignKeylessCursor(row, context.session)
+}
+
 async function nextWorkflowStepImpl(
   row: CursorRow,
   args: Record<string, string>,
@@ -772,12 +769,7 @@ async function nextWorkflowStepImpl(
 ): Promise<WorkflowAdvanceResult> {
   const { workflow_slug: slug, project, mode_slug: mode } = row
   const takeover = workflowTakeoverForAdvance(row, context)
-  refuseTerminalCursor(row)
-  const resolvedArguments = resolveCursorArguments(row, args, d)
-  row.args = resolvedArguments.encoded
-  row.closed = resolvedArguments.closed
-  refuseKeylessStepClose(row, evidence.task, d, live)
-  refuseForeignKeylessCursor(row, context.session)
+  prepareWorkflowAdvanceRow(row, args, context, evidence, live, d)
   row = await adoptAndRefreshWorkflowTask(row, evidence.task, context, d)
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
@@ -794,10 +786,9 @@ async function nextWorkflowStepImpl(
     context.session,
   )
   refuseFinishWithLiveWriter(d, row, close.advance.ordinal === null, context.session)
-  const keptTextNotice = await advanceKeptTextNotice(
+  const keptTextNotice = await unresolvedWorkflowTextReportForStage(
     row,
-    composition,
-    close.advance.ordinal === null,
+    close.advance.ordinal === null || step.needs.includes('workflow-text'),
     d,
     context.taskFlowClient,
   )
@@ -816,58 +807,47 @@ async function nextWorkflowStepImpl(
     close.selfRulingPlan,
   )
   if (close.advance.ordinal !== null) {
-    try {
-      await followTaskCursorClaim({
+    claimWarning =
+      (await followTaskCursorClaimWithWarning({
         project: row.project,
         taskKey: row.workflow_key || null,
         session: context.session,
         verb: 'advance',
         database: d,
-      })
-    } catch (error) {
-      if (row.workflow_key) claimWarning = taskClaimFollowWarning(row.workflow_key, error)
-    }
+      })) ?? claimWarning
   }
-  let rendered: string
-  try {
-    rendered = await renderWorkflowAdvanceResult({
-      row,
-      composition,
-      closed: close.closed,
-      advance: close.advance,
-      slug,
-      project,
-      mode,
-      selfRuling,
-      d,
-      client: context.taskFlowClient,
-      live,
-    })
-  } catch (error) {
-    if (close.advance.ordinal === null) throw error
-    const active = composition.steps[close.advance.ordinal]!
-    throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
-  }
+  const rendered = await renderPersistedWorkflowAdvanceResult({
+    row,
+    composition,
+    closed: close.closed,
+    advance: close.advance,
+    closedStep: step,
+    slug,
+    project,
+    mode,
+    selfRuling,
+    d,
+    client: context.taskFlowClient,
+    live,
+  })
+  const activeStep =
+    close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]
   return {
-    text: [
-      takeover.notice,
+    text: workflowAdvanceResultText({
+      takeoverNotice: takeover.notice,
       rendered,
-      ...(close.floor.notices ?? []),
+      floorNotices: close.floor.notices ?? [],
       taskLinkNotice,
       keptTextNotice,
       claimWarning,
-    ]
-      .filter(Boolean)
-      .join('\n'),
+    }),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
     cursorNumber: row.id,
     cursorRecordId: row.record_id,
     workflowKey: row.workflow_key || null,
     finished: close.advance.ordinal === null,
-    stepSlug:
-      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.slug,
-    stepTitle:
-      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.title,
+    stepSlug: activeStep?.slug,
+    stepTitle: activeStep?.title,
   }
 }
 

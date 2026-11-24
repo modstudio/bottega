@@ -109,6 +109,26 @@ export function persistedAdvanceRenderFailure(input: {
   )
 }
 
+export function workflowAdvanceResultText(input: {
+  takeoverNotice: string | null
+  rendered: string
+  floorNotices: readonly string[]
+  taskLinkNotice?: string | null
+  keptTextNotice: string
+  claimWarning: string | null
+}): string {
+  return [
+    input.takeoverNotice,
+    input.rendered,
+    ...input.floorNotices,
+    input.taskLinkNotice,
+    input.keptTextNotice,
+    input.claimWarning,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 function renderWorkflowCursorRemedy(
   row: Pick<
     AdvanceRow,
@@ -178,4 +198,23 @@ export async function renderWorkflowAdvanceResult(input: {
     next: workflowCursorStepSuccessor(composition.steps, flow, advance.ordinal),
   })
   return withSelfRuling(rendered, selfRuling)
+}
+
+export async function renderPersistedWorkflowAdvanceResult(
+  input: Parameters<typeof renderWorkflowAdvanceResult>[0] & {
+    closedStep: { n: number; slug: string }
+  },
+): Promise<string> {
+  try {
+    return await renderWorkflowAdvanceResult(input)
+  } catch (error) {
+    if (input.advance.ordinal === null) throw error
+    const active = input.composition.steps[input.advance.ordinal]!
+    throw persistedAdvanceRenderFailure({
+      row: input.row,
+      closed: input.closedStep,
+      active,
+      error,
+    })
+  }
 }

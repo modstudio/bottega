@@ -1,7 +1,6 @@
 // concern: workflows
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ID_PATTERN_SOURCE } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
@@ -13,7 +12,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
-import { unresolvedHubTaskKeyRefusal, workflowCursorReference } from './workflow-cursor-format.ts'
+import { unresolvedHubTaskKeyRefusal, workflowTextCopyCommand } from './workflow-cursor-format.ts'
 import { hubTrackerKeyNamesNoTask } from './workflow-cursor-project.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
@@ -62,8 +61,32 @@ export function unresolvedWorkflowTextReport(input: {
   const tokens = input.textIds.map(workflowTextAttachmentToken).join(', ')
   return (
     `${tokens} stayed attached because workflow key ${input.workflowKey} in project ${input.project} has an unresolved task link; ` +
-    `resolve the task key, then copy these texts with ${PLATFORM_SLUG} workflow text copy${workflowCursorReference(input.cursor, input.project).cli}`
+    `resolve the task key, then copy these texts with ${workflowTextCopyCommand(input.cursor, input.project)}`
   )
+}
+
+export async function unresolvedWorkflowTextReportForStage(
+  row: {
+    record_id: string
+    id: number
+    workflow_key: string
+    task_record_id: string | null
+    project: string
+  },
+  closesText: boolean,
+  database: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
+): Promise<string> {
+  if (!closesText) return ''
+  const linkState = workflowTextLinkState(row)
+  if (linkState !== 'unresolved') return ''
+  return unresolvedWorkflowTextReport({
+    linkState,
+    textIds: await taskFlowReadStore(database, client).textRecordIdsForStage(row.record_id),
+    cursor: row.id,
+    workflowKey: row.workflow_key,
+    project: row.project,
+  })
 }
 
 export type WorkflowTextRow = {
