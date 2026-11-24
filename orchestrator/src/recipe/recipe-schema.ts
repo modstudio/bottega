@@ -194,6 +194,27 @@ type RecipeInput = z.infer<typeof recipeShape>
 type StepInput = z.infer<typeof stepSchema>
 type SharedInput = z.infer<typeof sharedSchema>
 
+export type PhasedRecipeStep = { phase: string; step: StepInput }
+
+/** Enumerate every structured step in lifecycle order with its owning phase. */
+export function phasedRecipeSteps(recipe: RecipeInput): PhasedRecipeStep[] {
+  return [
+    ...(recipe.pre ?? []).map((step) => ({ phase: 'pre', step })),
+    ...recipe.create.map((step) => ({ phase: 'create', step })),
+    ...(recipe.refresh ?? []).map((step) => ({ phase: 'refresh', step })),
+    ...(recipe.seeds?.reseed ? [{ phase: 'reseed', step: recipe.seeds.reseed }] : []),
+    ...Object.entries(recipe.serve ?? {}).flatMap(([mode, steps]) =>
+      steps.map((step) => ({ phase: `serve:${mode}`, step })),
+    ),
+    ...(recipe.destroy ?? []).map((step) => ({ phase: 'destroy', step })),
+    ...(recipe.verifyDown ?? []).map((step) => ({ phase: 'verifyDown', step })),
+  ]
+}
+
+export function creationRecipeSteps(recipe: RecipeInput): PhasedRecipeStep[] {
+  return phasedRecipeSteps(recipe).filter(({ phase }) => phase === 'pre' || phase === 'create')
+}
+
 const STATIC_PLACEHOLDERS = new Set([
   'branch',
   'name',
@@ -217,15 +238,7 @@ const DATABASE_URL_PLACEHOLDER = /^db\.([^{}.]+)\.url$/
 const DATABASE_URL_ENGINES = new Set(['postgres', 'mysql', 'mariadb'])
 
 function allSteps(recipe: RecipeInput): StepInput[] {
-  return [
-    ...(recipe.pre ?? []),
-    ...recipe.create,
-    ...(recipe.refresh ?? []),
-    ...(recipe.seeds?.reseed ? [recipe.seeds.reseed] : []),
-    ...Object.values(recipe.serve ?? {}).flat(),
-    ...(recipe.destroy ?? []),
-    ...(recipe.verifyDown ?? []),
-  ]
+  return phasedRecipeSteps(recipe).map(({ step }) => step)
 }
 
 function stringsIn(value: unknown): string[] {

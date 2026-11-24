@@ -97,6 +97,7 @@ import { type CredentialPayment, endpointKeyIdentityBindings } from './run-crede
 import { bindRecordedRunCursor } from './run-cursor-binding.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
+import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { errorTail } from './run-process.ts'
 import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
@@ -1021,7 +1022,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     try {
       // Setting a worktree up is orchestrator's job, so this shared harness failure
       // must publish the child and roll its outcome up to a continuation root.
-      recordRunStartupFailure(claim.id, why, started)
+      recordRunStartupFailure(claim.id, why, started, carriedRefusalFailure(e))
     } finally {
       teardownTerminalRunResources(db(), claim.id)
     }

@@ -1,5 +1,22 @@
 import type { ImportBoundary } from './architecture-boundaries.ts'
 
+const recipeExecutableDoctorAllowed = [
+  'node:fs',
+  'orchestrator/src/recipe/recipe-loader.ts',
+  'orchestrator/src/recipe/recipe-executable-preflight.ts',
+  'orchestrator/src/recipe/recipe-schema.ts',
+  'orchestrator/src/recipe/recipe-step.ts',
+  'orchestrator/src/worktree/worktree-lifecycle.ts',
+  'orchestrator/src/health/doctor-reporter.ts',
+]
+
+export const healthModules = [
+  {
+    file: 'orchestrator/src/health/recipe-executable-doctor.ts',
+    allowed: recipeExecutableDoctorAllowed,
+  },
+]
+
 export const healthBoundarySpecs: ImportBoundary[] = [
   {
     name: 'doctor-boundary',
@@ -51,10 +68,18 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/setup/developer-node.ts',
       'orchestrator/src/health/provider-credential-trust-doctor.ts',
       'orchestrator/src/health/retrieval-doctor.ts',
+      'orchestrator/src/health/recipe-executable-doctor.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
+  },
+  {
+    name: 'recipe-executable-doctor-boundary',
+    file: 'orchestrator/src/health/recipe-executable-doctor.ts',
+    allowed: recipeExecutableDoctorAllowed,
+    typeOnlyAllowed: [],
+    reason: 'Keep recipe prerequisite diagnosis independent of the rest of machine doctor.',
   },
   {
     name: 'doctor-reporter-boundary',

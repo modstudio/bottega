@@ -70,11 +70,11 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
-import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 import type { DoctorReporter } from './doctor-reporter.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
+import { reportProjectLifecycles } from './recipe-executable-doctor.ts'
 import { type RetrievalCheckResult, reportRetrieval } from './retrieval-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
@@ -215,26 +215,6 @@ function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
     failed ||= diagnosis.failed
   }
   return failed
-}
-
-function reportProjectLifecycles(
-  projects: ReadonlyArray<{
-    name: string
-    path: string
-    settings: { worktree?: Parameters<typeof lifecycleReportLines>[0][number]['worktree'] }
-  }>,
-  log: DoctorPresentation['log'],
-): void {
-  for (const line of lifecycleReportLines(
-    projects.map((project) => ({
-      name: project.name,
-      path: project.path,
-      worktree: project.settings.worktree,
-    })),
-    existsSync,
-  )) {
-    log(line)
-  }
 }
 
 export function reportCheckoutRegister<T extends RegisteredCheckout>(
@@ -990,7 +970,7 @@ export async function doctorCommand(
     '../project/main-checkout-invariant.ts'
   )
   const repositoryProjects = registeredProjects().filter(isProjectRepository)
-  reportProjectLifecycles(repositoryProjects, log)
+  reportProjectLifecycles(repositoryProjects, presentation)
   reportCheckoutRegister(
     repositoryProjects,
     presentation,

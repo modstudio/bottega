@@ -299,7 +299,7 @@ export function preflight(
         ? selectedCreate.command
         : 'sh'
     throw new Error(
-      `project ${project.name} worktree create command ${command} is absent or not executable`,
+      `project ${project.name} worktree create command ${command} is absent or not executable; install ${command} or make it executable, then retry`,
     )
   }
   if (writesJob && tool && !seedAlreadyValidated && project) {

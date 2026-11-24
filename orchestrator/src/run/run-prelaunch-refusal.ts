@@ -1,6 +1,7 @@
 // concern: run-prelaunch-refusal
 /** Records and tears down one run that was refused before its agent started. */
 import { db } from '../database/db.ts'
+import { RecipePrerequisiteError } from '../recipe/recipe-executable-preflight.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
@@ -17,9 +18,11 @@ const REFUSAL_FAILURE_KIND = 'mcp_unverified'
 export function carriedRefusalFailure(
   error: unknown,
 ): { failureKind: string; mcpError?: string } | undefined {
-  return error instanceof RequiredMcpProbeRefusalError
-    ? { failureKind: REFUSAL_FAILURE_KIND, mcpError: error.message }
-    : undefined
+  if (error instanceof RequiredMcpProbeRefusalError) {
+    return { failureKind: REFUSAL_FAILURE_KIND, mcpError: error.message }
+  }
+  if (error instanceof RecipePrerequisiteError) return { failureKind: 'prerequisite' }
+  return undefined
 }
 
 export async function refuseUnstartedRun(input: {

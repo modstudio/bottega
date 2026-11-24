@@ -1,6 +1,7 @@
 // concern: architecture-manifest
 /** Context health module allowlists kept outside the root manifest's file ceiling. */
 import { dirname, normalize } from 'node:path'
+import { healthModules } from './architecture-health-boundaries.ts'
 
 type ContextHealthModule = { file: string; allowed: string[] }
 const module = (file: string, allowed: string[]): ContextHealthModule => ({
@@ -11,6 +12,7 @@ const module = (file: string, allowed: string[]): ContextHealthModule => ({
 })
 
 export const contextHealthModules: ContextHealthModule[] = [
+  ...healthModules,
   module('orchestrator/src/context-health/context-health.ts', [
     '../../../shared/brand.ts',
     '../../../shared/context-item-vocabulary.ts',

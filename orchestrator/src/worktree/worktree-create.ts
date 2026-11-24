@@ -369,6 +369,7 @@ function createWithToolUnlocked(
       recordRecipeResource,
       claimRecipePort,
       requestedBranch,
+      projectName,
     )
   }
   // A base is a commit; the branch is cut there even without a {base} template slot.
@@ -544,6 +545,7 @@ function createWithoutCommand(
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
   requestedBranch?: string,
+  projectName = '(unregistered)',
 ): Worktree {
   if (tool.recipePath) {
     return createTrackedRecipe({
@@ -555,6 +557,7 @@ function createWithoutCommand(
       baseRef,
       detached,
       existingBranch,
+      projectName,
       ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch, requestedBranch),
       attribute: (worktree) => attributeWorktree(worktree, runId, record),
       verify: verifyFreshWorktree,

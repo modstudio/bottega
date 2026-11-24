@@ -17,10 +17,11 @@ import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invar
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { orchRunLabelForRun } from '../resources/docker-resources.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
+import { assertRecipeExecutables } from './recipe-executable-preflight.ts'
 import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
-import { stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
-import { runStep, type StepContext } from './recipe-step.ts'
+import { phasedRecipeSteps, stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
+import { hostExecutableOnPath, runStep, type StepContext } from './recipe-step.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
 
 export type TreeRefreshDecision =
@@ -315,6 +316,11 @@ function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): st
       `tracked recipe ${recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
     )
   }
+  assertRecipeExecutables(
+    project.name,
+    phasedRecipeSteps(loaded.recipe).filter(({ phase }) => phase === 'refresh'),
+    hostExecutableOnPath,
+  )
   const roots = recordedChainRootsForWorktree(treeRoot)
   if (roots.length > 1) {
     throw new Error(
