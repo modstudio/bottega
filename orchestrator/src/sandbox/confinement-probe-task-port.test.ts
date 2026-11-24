@@ -6,6 +6,7 @@ import { startAskLoopback } from '../ask/ask.ts'
 import {
   type ConfinementProbeTask,
   confinementProbeProject,
+  probeTaskReadCommands,
   probeWorkerRecordDependencies,
 } from './confinement-probe-task-port.ts'
 
@@ -46,16 +47,17 @@ function socketTransport(urlValue: string): Transport {
 }
 
 test("the probe's loopback reads its own fixture task", async () => {
+  const keyPrefix = 'DEV'
   const project = confinementProbeProject(
     '01990000-0000-7000-8000-000000000001',
     'probe-project',
     '/probe-project',
     [],
-    ['DEV'],
+    [keyPrefix],
   )
   const task: ConfinementProbeTask = {
     id: '01990000-0000-7000-8000-000000002623',
-    key: `${project.settings.keyPrefixes[0]}-${2623}`,
+    key: `${keyPrefix}-${2623}`,
     project: { name: project.name, recordId: project.recordId },
   }
   const runId = 'confinement-filesystem-probe'
@@ -87,6 +89,17 @@ test("the probe's loopback reads its own fixture task", async () => {
         projectId: task.project.recordId,
         title: 'Verify confined CLI access',
       },
+    })
+    const refusedKey = probeTaskReadCommands(task, [], 'probe').refused.argv.at(-1)
+    if (!refusedKey) throw new Error('probe task read command did not include an out-of-scope key')
+    const refused = await client.callTool({
+      name: WORKER_READ_TOOLS.task,
+      arguments: { key: refusedKey, project: task.project.name },
+    })
+    expect(refused.isError).toBe(true)
+    expect(refused.content).toContainEqual({
+      type: 'text',
+      text: expect.stringContaining('read refused: the requested task is outside run task'),
     })
   } finally {
     await client.close()
