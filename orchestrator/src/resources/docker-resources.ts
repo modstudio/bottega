@@ -4,8 +4,8 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
-import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import {
   runBoundedDockerInventoryCommand,
   runDockerInventoryCommand,

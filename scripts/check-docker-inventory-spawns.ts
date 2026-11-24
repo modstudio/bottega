@@ -12,7 +12,12 @@ export function dockerExecutableLiteralBypasses(source: string, fileName: string
   if (fileName === EXECUTABLE) return []
   if (!source.includes("'docker'") && !source.includes('"docker"') && !source.includes('`docker`'))
     return []
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, source)
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    true,
+    ts.LanguageVariant.Standard,
+    source,
+  )
   const failures: string[] = []
   for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
     if (

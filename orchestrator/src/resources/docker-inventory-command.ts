@@ -60,7 +60,7 @@ export function executableAbsentFrom(error: unknown): boolean {
 }
 
 /** Classify one thrown Docker inventory spawn, probing the host only after ENOENT. */
-export function classifyDockerInventorySpawnError(
+function classifyDockerInventorySpawnError(
   error: unknown,
   gatherEvidence: () => DockerHostEvidence,
 ): Exclude<DockerInventoryAvailability, { kind: 'proceed' }> {

@@ -1,8 +1,8 @@
 // concern: built-in Compose lifecycle decisions
 /** Plans Compose identity and commands from plain values. Must not inspect Docker or execute commands. */
 
-import type { TrackedRecipe } from './recipe-schema.ts'
 import { DOCKER_EXECUTABLE } from '../resources/docker-executable.ts'
+import type { TrackedRecipe } from './recipe-schema.ts'
 
 export type ComposeCommandPlan = {
   projectName: string

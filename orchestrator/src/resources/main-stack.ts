@@ -13,8 +13,8 @@ import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
-import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import { dockerInventoryArgv, runDockerInventoryCommand } from './docker-inventory-command.ts'
 import {
   classifyServedWorktree,
@@ -259,11 +259,7 @@ export function ensureProjectMainStack(
 }
 
 function runningMainStackPaths(): DockerInventoryResult {
-  const args = [
-    'ps',
-    '--format',
-    '{{.Label "com.docker.compose.project.working_dir"}}',
-  ]
+  const args = ['ps', '--format', '{{.Label "com.docker.compose.project.working_dir"}}']
   const result = runDockerInventoryCommand(
     args,
     MAIN_STACK_COMMAND_TIMEOUT_MS,
