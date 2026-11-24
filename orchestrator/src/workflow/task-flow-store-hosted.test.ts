@@ -345,7 +345,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     taskFlowClient,
   )
   expect(copied.copied).toHaveLength(1)
-  await deleteWorkflowText(hostedStage.id, true, database, taskFlowClient)
+  await deleteWorkflowText(hostedStage.id, 'linked', database, taskFlowClient)
   expect(
     await linkWorkflowTaskLabel(
       database,

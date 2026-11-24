@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ID_PATTERN_SOURCE } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
@@ -12,7 +13,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
-import { unresolvedHubTaskKeyRefusal } from './workflow-cursor-format.ts'
+import { unresolvedHubTaskKeyRefusal, workflowCursorReference } from './workflow-cursor-format.ts'
 import { hubTrackerKeyNamesNoTask } from './workflow-cursor-project.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
@@ -39,6 +40,31 @@ export const workflowTextAttachmentId = (reference: string): string =>
   reference.startsWith(WORKFLOW_TEXT_ATTACHMENT_PREFIX)
     ? reference.slice(WORKFLOW_TEXT_ATTACHMENT_PREFIX.length)
     : reference
+
+export type WorkflowTextLinkState = 'linked' | 'keyless' | 'unresolved'
+
+export function workflowTextLinkState(row: {
+  workflow_key?: string | null
+  task_record_id?: string | null
+}): WorkflowTextLinkState {
+  if (row.task_record_id) return 'linked'
+  return row.workflow_key?.trim() ? 'unresolved' : 'keyless'
+}
+
+export function unresolvedWorkflowTextReport(input: {
+  linkState: WorkflowTextLinkState
+  textIds: readonly string[]
+  cursor: number
+  workflowKey: string
+  project: string
+}): string {
+  if (input.linkState !== 'unresolved' || input.textIds.length === 0) return ''
+  const tokens = input.textIds.map(workflowTextAttachmentToken).join(', ')
+  return (
+    `${tokens} stayed attached because workflow key ${input.workflowKey} in project ${input.project} has an unresolved task link; ` +
+    `resolve the task key, then copy these texts with ${PLATFORM_SLUG} workflow text copy${workflowCursorReference(input.cursor, input.project).cli}`
+  )
+}
 
 export type WorkflowTextRow = {
   id: string
@@ -330,33 +356,36 @@ export async function attachWorkflowText(
 }
 
 export function workflowTextIdsToDelete(input: {
-  linked: boolean
+  linkState: WorkflowTextLinkState
   rowIds: readonly string[]
   copiedIds: ReadonlySet<string>
 }): string[] {
-  return input.linked ? input.rowIds.filter((id) => input.copiedIds.has(id)) : [...input.rowIds]
+  if (input.linkState === 'unresolved') return []
+  return input.linkState === 'linked'
+    ? input.rowIds.filter((id) => input.copiedIds.has(id))
+    : [...input.rowIds]
 }
 
 export async function workflowTextDeletionIds(
   cursorId: string,
-  linked: boolean,
+  linkState: WorkflowTextLinkState,
   d: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
   const store = taskFlowReadStore(d, client)
   const rowIds = await store.textRecordIdsForStage(cursorId)
   const copiedIds = new Set(await store.copiedTextRecordIdsForStage(cursorId))
-  const deletable = workflowTextIdsToDelete({ linked, rowIds, copiedIds })
+  const deletable = workflowTextIdsToDelete({ linkState, rowIds, copiedIds })
   return deletable
 }
 
 export async function deleteWorkflowText(
   cursorId: string,
-  linked: boolean,
+  linkState: WorkflowTextLinkState,
   d: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<void> {
-  const ids = await workflowTextDeletionIds(cursorId, linked, d, client)
+  const ids = await workflowTextDeletionIds(cursorId, linkState, d, client)
   if (!ids.length) return
   const project = await taskFlowReadStore(d, client).stageProject(cursorId)
   if (!project)

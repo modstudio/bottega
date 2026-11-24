@@ -237,7 +237,7 @@ export async function copyWorkflowTextForCursor(
       }
     }
     if (isClosedStageState(cursor.state))
-      await deleteWorkflowText(cursor.recordId, true, database, client)
+      await deleteWorkflowText(cursor.recordId, 'linked', database, client)
     return { cursor: cursor.number, project: cursor.project, copied, uncopied, unsupported: null }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)

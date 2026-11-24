@@ -88,7 +88,11 @@ import {
   taskClaimReleaseWarning,
 } from './workflow-task-claim.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
-import { workflowTextDeletionIds } from './workflow-text.ts'
+import {
+  unresolvedWorkflowTextReport,
+  workflowTextDeletionIds,
+  workflowTextLinkState,
+} from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
 type CursorRow = SelectableCursorRow
@@ -198,7 +202,7 @@ export async function composeWorkflowWithCursor(
     commitCount,
   )
   await readThroughWorkflowCursorContext(project, context, d)
-  await linkResolvedWorkflowTask(project, context, d)
+  const taskLinkNotice = await linkResolvedWorkflowTask(project, context, d)
   const selected = await selectWorkflowCursorForKeyAdoption({
     project: shape.project,
     workflow: shape.workflow.slug,
@@ -262,6 +266,7 @@ export async function composeWorkflowWithCursor(
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
+    ...(taskLinkNotice ? { taskLinkNotice } : {}),
     graduated,
   }
 }
@@ -625,7 +630,26 @@ async function advanceTextDeletionIds(
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
   if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return []
-  return await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database, client)
+  return await workflowTextDeletionIds(row.record_id, workflowTextLinkState(row), database, client)
+}
+
+async function advanceKeptTextNotice(
+  row: CursorRow,
+  composition: ReturnType<typeof composeWorkflow>,
+  finishing: boolean,
+  database: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
+): Promise<string> {
+  if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return ''
+  const linkState = workflowTextLinkState(row)
+  if (linkState !== 'unresolved') return ''
+  return unresolvedWorkflowTextReport({
+    linkState,
+    textIds: await taskFlowReadStore(database, client).textRecordIdsForStage(row.record_id),
+    cursor: row.id,
+    workflowKey: row.workflow_key,
+    project: row.project,
+  })
 }
 
 function advanceRecordRows(
@@ -744,6 +768,7 @@ async function nextWorkflowStepImpl(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
+  taskLinkNotice?: string | null,
 ): Promise<WorkflowAdvanceResult> {
   const { workflow_slug: slug, project, mode_slug: mode } = row
   const takeover = workflowTakeoverForAdvance(row, context)
@@ -769,6 +794,13 @@ async function nextWorkflowStepImpl(
     context.session,
   )
   refuseFinishWithLiveWriter(d, row, close.advance.ordinal === null, context.session)
+  const keptTextNotice = await advanceKeptTextNotice(
+    row,
+    composition,
+    close.advance.ordinal === null,
+    d,
+    context.taskFlowClient,
+  )
   let claimWarning = await persistWorkflowAdvance(
     row,
     composition,
@@ -817,7 +849,14 @@ async function nextWorkflowStepImpl(
     throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
   }
   return {
-    text: [takeover.notice, rendered, ...(close.floor.notices ?? []), claimWarning]
+    text: [
+      takeover.notice,
+      rendered,
+      ...(close.floor.notices ?? []),
+      taskLinkNotice,
+      keptTextNotice,
+      claimWarning,
+    ]
       .filter(Boolean)
       .join('\n'),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
@@ -856,7 +895,7 @@ export async function nextWorkflowStep(
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): Promise<WorkflowAdvanceResult> {
-  await linkResolvedWorkflowTask(project, context, d)
+  const taskLinkNotice = await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
     const row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
@@ -874,6 +913,7 @@ export async function nextWorkflowStep(
       selfRuling,
       outcome,
       live,
+      taskLinkNotice,
     )
   })
 }
