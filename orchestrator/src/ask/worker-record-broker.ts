@@ -38,10 +38,7 @@ export type RunScopeFacts = WorkerRecordScopeFacts & {
   keepsOwnTracker: boolean
 }
 
-export type WorkerRecordScopeFactsProvider = (
-  runId: string,
-  token: string,
-) => RunScopeFacts
+export type WorkerRecordScopeFactsProvider = (runId: string, token: string) => RunScopeFacts
 
 export type WorkerReadDependencies = {
   client?: WorkerRecordClient
