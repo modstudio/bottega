@@ -14,8 +14,10 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-cursor-claims.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../../../shared/session-liveness.ts',
     '../board/board-operations.ts',
+    '../project/projects.ts',
     '../record/record-task-flow-contract.ts',
     '../workflow/task-flow-store.ts',
     './monitor-types.ts',
