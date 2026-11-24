@@ -57,10 +57,10 @@ def main() -> int:
             or not os.path.exists(store_path())
         ):
             return 0
-        _delivery, _overflow, notices, warning = pending(
+        _delivery, _overflow, notices, _warning, stopped = pending(
             session, exclude_acknowledgements=True
         )
-        if warning:
+        if stopped:
             return 0
         path, count = stop_state(session)
         if count is None:

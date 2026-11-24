@@ -441,6 +441,7 @@ const unavailableBoardDelivery = (warning: string) => ({
   overflow: null,
   pendingAcknowledgements: [],
   warning,
+  stopped: warning,
 })
 
 export async function pendingBoardDelivery(input: DeliveryInput) {
@@ -514,6 +515,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
+    stopped: null,
     warning: deliveryWarning(
       localPush?.warning ?? null,
       hostedPush?.warning ?? null,

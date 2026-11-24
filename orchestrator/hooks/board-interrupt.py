@@ -371,11 +371,11 @@ def main() -> int:
             if now - injected < remind
         )
         try:
-            notices, overflow, _pending_acknowledgements, warning = pending(
+            notices, overflow, _pending_acknowledgements, _warning, stopped = pending(
                 session, recently_injected
             )
-            if warning:
-                raise RuntimeError(warning)
+            if stopped:
+                raise RuntimeError(stopped)
         except Exception:
             previous = marker or {
                 "candidate_ids": set(),

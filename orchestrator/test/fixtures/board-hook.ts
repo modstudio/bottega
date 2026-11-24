@@ -149,7 +149,7 @@ export function runHookRepeatedResult(
     'pending_values = json.loads(sys.argv[4])',
     'if pending_values is not None:',
     '    pending_iterator = iter(pending_values)',
-    '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]], None))(next(pending_iterator))',
+    '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]], None, None))(next(pending_iterator))',
     'delivered = []',
     'def mark_delivered(session, ids, delivery_point, emission_id, blocked_stop=False):',
     '    delivered.append([session, ids, emission_id])',

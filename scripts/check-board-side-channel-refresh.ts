@@ -7,6 +7,8 @@ import ts from 'typescript'
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
 const SIDE_CHANNELS = [
+  // These are the side channels named by the stability ruling. Product reads such as
+  // readBoardNotices intentionally remain outside this list because they must refuse.
   {
     file: 'orchestrator/src/board/board-delivery.ts',
     functions: ['claimRunBoardNotices'],

@@ -543,6 +543,7 @@ test('an incomplete hosted refresh delivers and marks nothing', async () => {
   expect(result.warning).toBe(
     'hosted board delivery stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
   )
+  expect(result.stopped).toBe(result.warning)
   expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
   expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
     count: 0,
@@ -797,22 +798,36 @@ test('PostToolUse fails open on malformed command output', () => {
   expect(broken.stdout.toString()).toBe('')
 })
 
-test('PostToolUse treats a pending warning like the former command failure', () => {
-  const warning = createHookFixture(
-    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped"}',
+test('PostToolUse treats a stopped pending read like the former command failure', () => {
+  const stopped = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":"hosted board delivery stopped"}',
   )
-  addCandidate(warning, 1)
-  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), warning)
+  addCandidate(stopped, 1)
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), stopped)
 
   expect(result.exitCode).toBe(0)
   expect(result.stdout.toString()).toBe('')
-  const markerRoot = join(warning.root, 'board-hook-state', 'interrupt')
+  const markerRoot = join(stopped.root, 'board-hook-state', 'interrupt')
   const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
   expect(JSON.parse(readFileSync(marker, 'utf8'))).toMatchObject({
     candidate_ids: [],
     ran_at: 0,
     injected_at: {},
   })
+})
+
+test('PostToolUse injects a successful delivery carrying a deferred-successor warning', () => {
+  const warning = createHookFixture(
+    '{"delivery":[{"id":"7","text":"reply successor","requiresAcknowledgement":false}],"overflow":null,"pendingAcknowledgements":[],"warning":"1 reply successor remains queued; run board pending again","stopped":null}',
+  )
+  addCandidate(warning, 1)
+
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), warning)
+
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(
+    'reply successor',
+  )
 })
 
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
@@ -969,20 +984,34 @@ test('Stop keeps its acknowledgement budget and never blocks or stamps for ordin
   expect(result.delivered).toEqual([])
 })
 
-test('Stop keeps its acknowledgement counter when pending carries a warning', () => {
-  const warning = createHookFixture(
-    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped"}',
+test('Stop keeps its acknowledgement counter when pending is stopped', () => {
+  const stopped = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":"hosted board delivery stopped"}',
   )
-  const markerRoot = join(warning.root, 'board-hook-state', 'stop')
+  const markerRoot = join(stopped.root, 'board-hook-state', 'stop')
   mkdirSync(markerRoot, { recursive: true })
   const marker = join(markerRoot, createHash('sha256').update('reader').digest('hex'))
   writeFileSync(marker, JSON.stringify({ blocks: 2 }))
 
-  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), warning)
+  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), stopped)
 
   expect(result.exitCode).toBe(0)
   expect(result.stdout.toString()).toBe('')
   expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ blocks: 2 })
+})
+
+test('Stop counts acknowledgements when a successful delivery carries a deferred-successor warning', () => {
+  const warning = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[{"id":"8","text":"acknowledge me","requiresAcknowledgement":true}],"warning":"1 reply successor remains queued; run board pending again","stopped":null}',
+  )
+
+  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), warning)
+
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+  const markerRoot = join(warning.root, 'board-hook-state', 'stop')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ blocks: 1 })
 })
 
 test('Stop with only ordinary messages does not block, stamps nothing, and preserves markers atomically', () => {
