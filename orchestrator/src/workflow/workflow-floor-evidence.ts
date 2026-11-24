@@ -13,8 +13,8 @@ import { db } from '../database/db.ts'
 import { readDocReference } from '../doc/doc-authoritative-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { projectByName } from '../project/projects.ts'
 import { projects } from '../project/project-read.ts'
+import { projectByName } from '../project/projects.ts'
 import {
   questionForWorkflowCursorByNumber,
   questionRuleAuditReasons,

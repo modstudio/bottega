@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import {
   decideClassMeasuredFloor,
@@ -89,7 +90,7 @@ describe('class-measured floor', () => {
 
   test.each([
     ['sibling prefix', ['bash', `${checkoutRoot}2/scripts/measure.ts`]],
-    ['executable', [`${checkoutRoot}/bin/bottega`, 'workflow', 'class-audit']],
+    ['executable', [`${checkoutRoot}/bin/${PLATFORM_SLUG}`, 'workflow', 'class-audit']],
     ['relative argument', ['bash', 'scripts/measure.sh', '.']],
   ])('allows a %s path', (_name, argv) => {
     expect(decide([artifact({ argv })], [checkoutRoot]).met).toBe(true)
