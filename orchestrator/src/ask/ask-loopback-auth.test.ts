@@ -97,9 +97,7 @@ test('a valid preamble followed by MCP bytes in one write reaches tools/list', a
       const poll = () => {
         const response = received
           .split('\n')
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as { id?: number })
-          .find((message) => message.id === 2)
+          .some((line) => line.includes('"id":2') && line.includes('"tools"'))
         if (response) {
           clearTimeout(timeout)
           resolve()
