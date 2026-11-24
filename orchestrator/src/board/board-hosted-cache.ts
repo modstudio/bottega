@@ -55,7 +55,6 @@ import {
 
 export type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
 export {
-  type CachedHostedBoardReceiptFacts,
   cachedHostedBoardMessageKind,
   cachedHostedBoardReceiptFacts,
   hostedMessageIsLive,
