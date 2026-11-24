@@ -12,7 +12,11 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
-import { unresolvedHubTaskKeyRefusal, workflowTextCopyCommand } from './workflow-cursor-format.ts'
+import {
+  shellWord,
+  unresolvedHubTaskKeyRefusal,
+  workflowTextCopyCommand,
+} from './workflow-cursor-format.ts'
 import { hubTrackerKeyNamesNoTask } from './workflow-cursor-project.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
@@ -61,7 +65,7 @@ function unresolvedWorkflowTextReport(input: {
   const tokens = input.textIds.map(workflowTextAttachmentToken).join(', ')
   return (
     `${tokens} stayed attached because workflow key ${input.workflowKey} in project ${input.project} has an unresolved task link; ` +
-    `resolve the task key, then copy these texts with ${workflowTextCopyCommand(input.cursor, input.project)}`
+    `resolve the task key, then copy these texts with ${workflowTextCopyCommand(input.cursor, input.project)} --task ${shellWord(input.workflowKey)}`
   )
 }
 

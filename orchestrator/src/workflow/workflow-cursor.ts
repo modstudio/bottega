@@ -438,6 +438,7 @@ async function closeFloorsForStep(
 async function persistWorkflowAdvance(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
+  closesText: boolean,
   closed: CursorTrailEntry[],
   note: string,
   outcome: string | undefined,
@@ -466,8 +467,7 @@ async function persistWorkflowAdvance(
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
   const deleteTextIds = await advanceTextDeletionIds(
     row,
-    composition,
-    finishing,
+    closesText,
     d,
     context.taskFlowClient,
   )
@@ -624,12 +624,11 @@ async function selectClosingTaskFlow(
 
 async function advanceTextDeletionIds(
   row: CursorRow,
-  composition: ReturnType<typeof composeWorkflow>,
-  finishing: boolean,
+  closesText: boolean,
   database: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
-  if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return []
+  if (!closesText) return []
   return await workflowTextDeletionIds(row.record_id, workflowTextLinkState(row), database, client)
 }
 
@@ -786,15 +785,17 @@ async function nextWorkflowStepImpl(
     context.session,
   )
   refuseFinishWithLiveWriter(d, row, close.advance.ordinal === null, context.session)
+  const closesText = close.advance.ordinal === null || step.needs.includes('workflow-text')
   const keptTextNotice = await unresolvedWorkflowTextReportForStage(
     row,
-    close.advance.ordinal === null || step.needs.includes('workflow-text'),
+    closesText,
     d,
     context.taskFlowClient,
   )
   let claimWarning = await persistWorkflowAdvance(
     row,
     composition,
+    closesText,
     close.closed,
     note.trim(),
     outcome,
@@ -816,20 +817,28 @@ async function nextWorkflowStepImpl(
         database: d,
       })) ?? claimWarning
   }
-  const rendered = await renderPersistedWorkflowAdvanceResult({
-    row,
-    composition,
-    closed: close.closed,
-    advance: close.advance,
-    closedStep: step,
-    slug,
-    project,
-    mode,
-    selfRuling,
-    d,
-    client: context.taskFlowClient,
-    live,
-  })
+  let rendered: string
+  try {
+    rendered = await renderPersistedWorkflowAdvanceResult({
+      row,
+      composition,
+      closed: close.closed,
+      advance: close.advance,
+      closedStep: step,
+      slug,
+      project,
+      mode,
+      selfRuling,
+      d,
+      client: context.taskFlowClient,
+      live,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error([message, taskLinkNotice, keptTextNotice].filter(Boolean).join('\n'), {
+      cause: error,
+    })
+  }
   const activeStep =
     close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]
   return {
