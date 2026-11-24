@@ -11,6 +11,7 @@ const base = {
   execs: [
     {
       command,
+      cwd: '/tree',
       output: '0\n',
       exitCode: 0,
       createdAt: '2026-11-24T10:01:00Z',
@@ -21,6 +22,24 @@ const base = {
 
 test('allows a matching class guard', () =>
   expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+test('refuses a post-implement measurement from the main checkout and names the worktree', () => {
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    execs: [{ ...base.execs[0]!, cwd: '/main' }],
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining('/tree'),
+  })
+})
+test('allows a post-implement measurement from the worktree', () =>
+  expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+test('refuses a cursor with no worktree', () => {
+  expect(decidePullRequestClassGuard({ ...base, worktree: undefined })).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining('--arg worktree'),
+  })
+})
 test('does not apply without a class measurement', () => {
   expect(decidePullRequestClassGuard({ ...base, measurement: undefined, body: '' }).kind).toBe(
     'allow',

@@ -2,6 +2,7 @@
 /** Requires harness pull-request work to run on the task cursor named by its branch. */
 
 import type { Database } from 'bun:sqlite'
+import { realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
@@ -29,6 +30,14 @@ type HeldTaskCursor = {
 }
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
+
+function realpathOrLexical(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
 
 export function decidePullRequestTaskCursorAdmission(input: {
   command: 'pr create' | 'pr merge'
@@ -159,12 +168,16 @@ export async function assertPullRequestTaskCursorAdmission(
   const measurement = classMeasurementFromClosedSteps(closed)
   if (!measurement) return
   const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
+  const worktree = args.worktree?.trim() || undefined
   const classGuard = decidePullRequestClassGuard({
     body: input.body ?? '',
     measurement,
     implementClosedAt: measurement.implementClosedAt,
-    execs: classMeasurementExecsForSession(database, harnessSession ?? ''),
-    worktree: args.worktree ?? '<worktree>',
+    execs: classMeasurementExecsForSession(database, harnessSession ?? '').map((entry) => ({
+      ...entry,
+      cwd: realpathOrLexical(entry.cwd),
+    })),
+    worktree: worktree ? realpathOrLexical(worktree) : undefined,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

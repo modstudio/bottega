@@ -32,9 +32,35 @@ export function renderClassMeasurementCommand(argv: readonly string[] | null): s
   return argv?.length ? argv.map(shellQuote).join(' ') : null
 }
 
+type NamedCheckoutPath = { path: string; relative: string }
+
+function checkoutPathInArgument(
+  argument: string,
+  checkoutRoots: readonly string[],
+): NamedCheckoutPath | null {
+  const roots = [
+    ...new Set(checkoutRoots.map((root) => root.replace(/\/+$/, '')).filter(Boolean)),
+  ].sort((left, right) => right.length - left.length)
+  for (const root of roots) {
+    let start = argument.indexOf(root)
+    while (start !== -1) {
+      const afterRoot = argument[start + root.length]
+      if (afterRoot === undefined || afterRoot === '/') {
+        let end = start + root.length
+        while (end < argument.length && !/[\s"'`;&|<>()]/.test(argument[end]!)) end += 1
+        const path = argument.slice(start, end)
+        return { path, relative: path === root ? '.' : path.slice(root.length + 1) }
+      }
+      start = argument.indexOf(root, start + 1)
+    }
+  }
+  return null
+}
+
 export function decideClassMeasuredFloor(input: {
   className?: string
   artifacts: readonly ValidatedArtifactEvidence[]
+  checkoutRoots: readonly string[]
 }): ClassMeasuredDecision {
   const className = input.className?.trim()
   if (!className)
@@ -65,6 +91,15 @@ export function decideClassMeasuredFloor(input: {
     return {
       met: false,
       message: `floor class-measured is unmet: exec:${exec.id} has no structured command; rerun the measurement through \`${PLATFORM_SLUG} workflow exec -- <command>\``,
+    }
+  const checkoutPath = exec.argv
+    ?.slice(1)
+    .map((argument) => checkoutPathInArgument(argument, input.checkoutRoots))
+    .find((path) => path !== null)
+  if (checkoutPath)
+    return {
+      met: false,
+      message: `floor class-measured is unmet: exec:${exec.id} names checkout path \`${checkoutPath.path}\`; use its tree-relative form \`${checkoutPath.relative}\` and rerun the command through \`${PLATFORM_SLUG} workflow exec -- <command>\``,
     }
   const count = measuredCountFromOutput(exec.output)
   if (count === null)

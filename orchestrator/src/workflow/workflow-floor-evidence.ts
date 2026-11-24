@@ -14,6 +14,7 @@ import { readDocReference } from '../doc/doc-authoritative-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
+import { projects } from '../project/project-read.ts'
 import {
   questionForWorkflowCursorByNumber,
   questionRuleAuditReasons,
@@ -988,6 +989,16 @@ export async function gatherValidatedEvidenceBase(
   const { d = db(), ports = {} } = input
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
+  if (input.floors.some((floor) => floor.kind === 'class-measured')) {
+    gathered.registeredCheckoutRoots = [
+      ...new Set(
+        projects(undefined, d).flatMap((project) => [
+          project.path,
+          realpathIfPresent(project.path) ?? project.path,
+        ]),
+      ),
+    ]
+  }
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review

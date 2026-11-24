@@ -3,6 +3,7 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/task-cursor-admission.ts',
     allowed: [
       'bun:sqlite',
+      'node:fs',
       '../../../shared/brand.ts',
       '../../../shared/refusal.ts',
       '../branch/other-branch-state.ts',

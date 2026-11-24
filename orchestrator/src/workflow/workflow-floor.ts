@@ -105,6 +105,7 @@ export type ValidatedEvidence = {
   artifacts?: ValidatedArtifactEvidence[]
   className?: string
   classMeasurement?: ClassMeasurement
+  registeredCheckoutRoots?: string[]
   strandedQuestionRemedy?: string
   stepQuestion?: {
     id: number
@@ -992,6 +993,7 @@ function classMeasuredFor(input: FloorSatisfactionInput): ClassMeasuredDecision 
   return decideClassMeasuredFloor({
     className: input.evidence.className,
     artifacts: input.evidence.artifacts ?? [],
+    checkoutRoots: input.evidence.registeredCheckoutRoots ?? [],
   })
 }
 
