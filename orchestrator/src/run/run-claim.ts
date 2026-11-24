@@ -62,6 +62,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { heldLandingTreeRefusal } from './held-branch-remedy.ts'
 import { sha } from './prompt-sha.ts'
+import { startupFailureKind } from './run-startup-failure-kind.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
@@ -1021,7 +1022,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     try {
       // Setting a worktree up is orchestrator's job, so this shared harness failure
       // must publish the child and roll its outcome up to a continuation root.
-      recordRunStartupFailure(claim.id, why, started)
+      recordRunStartupFailure(claim.id, why, started, { failureKind: startupFailureKind(e) })
     } finally {
       teardownTerminalRunResources(db(), claim.id)
     }

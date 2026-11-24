@@ -66,6 +66,8 @@ export const FAILURE_KINDS = [
   'sandbox_denied',
   /** A strict MCP run could not prove a successful tool call before launch. */
   'mcp_unverified',
+  /** A machine prerequisite required before a run can start is absent. */
+  'prerequisite',
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -477,6 +479,7 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'confinement_unverified',
   'sandbox_denied',
   'mcp_unverified',
+  'prerequisite',
   'harness',
   'abandoned',
 ]

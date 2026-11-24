@@ -306,12 +306,14 @@ describe('failure classification', () => {
       'confinement_unverified',
       'sandbox_denied',
       'mcp_unverified',
+      'prerequisite',
       'harness',
       'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
     }
+    expect(COOLS_DOWN).not.toContain('prerequisite')
   })
 
   test('a killed process tree is interrupted, not a verdict on the agent', () => {

@@ -16,11 +16,28 @@ import {
   doctorAcpStatus,
   doctorRegisterBranchProblems,
   registeredMainCheckoutDiagnosis,
+  recipeExecutableDoctorLines,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,
   sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+
+test('machine doctor reports missing tools from every tracked recipe phase', () => {
+  expect(
+    recipeExecutableDoctorLines(
+      'bottega',
+      {
+        create: [{ name: 'root-deps', run: { command: 'bun', args: [] } }],
+        refresh: [{ name: 'refresh-root-deps', run: { command: 'bun', args: [] } }],
+      },
+      () => false,
+    ),
+  ).toEqual([
+    'recipe tool    MISSING — project bottega worktree recipe step root-deps (create) needs bun, which is not on PATH; install bun, then retry',
+    'recipe tool    MISSING — project bottega worktree recipe step refresh-root-deps (refresh) needs bun, which is not on PATH; install bun, then retry',
+  ])
+})
 
 test('sandbox doctor prints each readiness fix on its own indented line', () => {
   expect(

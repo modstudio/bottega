@@ -19,6 +19,7 @@ import { orchRunLabelForRun } from '../resources/docker-resources.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
+import { assertRecipeExecutables } from './recipe-executable-preflight.ts'
 import { stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
 import { runStep, type StepContext } from './recipe-step.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
@@ -315,6 +316,11 @@ function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): st
       `tracked recipe ${recipePath} declares no worktree lifecycle; declare one in ${PLATFORM_SLUG}.jsonc`,
     )
   }
+  assertRecipeExecutables(
+    project.name,
+    (loaded.recipe.refresh ?? []).map((step) => ({ phase: 'refresh', step })),
+    (name) => Bun.which(name, { PATH: process.env.PATH }) !== null,
+  )
   const roots = recordedChainRootsForWorktree(treeRoot)
   if (roots.length > 1) {
     throw new Error(

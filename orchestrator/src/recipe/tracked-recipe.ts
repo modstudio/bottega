@@ -38,6 +38,7 @@ import {
   trackedTeardownFailure,
 } from './recipe-lifecycle.ts'
 import { loadRecipeAtBase } from './recipe-loader.ts'
+import { assertRecipeExecutables } from './recipe-executable-preflight.ts'
 import {
   allocationEnvironmentVariable,
   hookBranchName,
@@ -526,6 +527,7 @@ export type TrackedCreateInput = {
   branch: string
   name: string
   path: string
+  projectName?: string
   attribute(worktree: Worktree): void
   verify(worktree: Worktree): void
   remove(worktree: Worktree): { removed: boolean; detail: string }
@@ -548,6 +550,14 @@ function prepareTrackedCreate(
     repoRoot: input.repoRoot,
     baseRef: input.baseRef,
   })
+  assertRecipeExecutables(
+    input.projectName ?? '(unregistered)',
+    [
+      ...(loaded.recipe.pre ?? []).map((step) => ({ phase: 'pre', step })),
+      ...loaded.recipe.create.map((step) => ({ phase: 'create', step })),
+    ],
+    (name) => Bun.which(name, { PATH: process.env.PATH }) !== null,
+  )
   const staticVars = {
     branch: input.branch,
     name: input.name,
