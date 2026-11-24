@@ -113,7 +113,6 @@ type Context = {
   database?: ReturnType<typeof db>
 }
 
-
 type BoardMessageResult = {
   recordId: string
   number: number | null
@@ -174,7 +173,6 @@ export type BoardStatusResult = {
   acknowledged: number | null
   unacknowledged: string[] | null
 }
-
 
 function context(input: Context = {}) {
   return {

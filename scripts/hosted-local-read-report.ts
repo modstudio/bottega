@@ -15,17 +15,17 @@ import {
   SYSTEMD_UNITS,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import {
+  HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
+  type HostedLocalSqlAllowedFile,
+} from './hosted-local-sql-allowlist.ts'
+import {
   extractSqlFromSource,
   type HostedSqlCannotJudgeSite,
   type HostedSqlSite,
   type HostedSqlUnresolvedSite,
   productionTypeScriptFiles,
 } from './hosted-sql-schema.ts'
-import {
-  HOSTED_LOCAL_SQL_ALLOWED_FILES,
-  HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
-  type HostedLocalSqlAllowedFile,
-} from './hosted-local-sql-allowlist.ts'
 import {
   STATE_CLASSES,
   type StateClassDeclaration,

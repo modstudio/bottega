@@ -47,9 +47,7 @@ test('recordPresence skips local queued-claim renewal after hosted adoption', ()
       .get(env.CLAUDE_CODE_SESSION_ID),
   ).toEqual({ session_id: env.CLAUDE_CODE_SESSION_ID })
   expect(
-    db()
-      .query('SELECT renewed_at,lapses_at FROM board_claim WHERE record_id=?')
-      .get(claim),
+    db().query('SELECT renewed_at,lapses_at FROM board_claim WHERE record_id=?').get(claim),
   ).toEqual({ renewed_at: renewedAt, lapses_at: lapsesAt })
 })
 

@@ -11,22 +11,22 @@ import {
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import {
-  hostedBoardLocalReadFailures,
   type HostedLocalReadHit,
+  hostedBoardLocalReadFailures,
   hostedLocalReadScan,
   hostedLocalSqlAllowedFileFailures,
   hostedLocalSqlExemptionReasonFailures,
   hostedLocalSqlSelectorFailures,
 } from './hosted-local-read-report.ts'
+import {
+  HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  type HostedLocalSqlAllowedFile,
+} from './hosted-local-sql-allowlist.ts'
 import type {
   HostedSqlCannotJudgeSite,
   HostedSqlSite,
   HostedSqlUnresolvedSite,
 } from './hosted-sql-schema.ts'
-import {
-  HOSTED_LOCAL_SQL_ALLOWED_FILES,
-  type HostedLocalSqlAllowedFile,
-} from './hosted-local-sql-allowlist.ts'
 import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
 
 type AllowedFile = HostedLocalSqlAllowedFile
@@ -39,9 +39,7 @@ export function reportOnlyAllowedFileBudgetFailures(
   return allowedFiles.flatMap((allowed) => {
     if (!allowed.reportOnly || allowed.expectedSites === undefined) return []
     const actual = new Set(
-      hits
-        .filter((hit) => allowed.pattern.test(hit.file))
-        .map((hit) => `${hit.file}:${hit.line}`),
+      hits.filter((hit) => allowed.pattern.test(hit.file)).map((hit) => `${hit.file}:${hit.line}`),
     ).size
     return actual === allowed.expectedSites
       ? []

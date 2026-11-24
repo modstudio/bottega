@@ -100,8 +100,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 15,
   },
   {
-    pattern:
-      /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
+    pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
     reason: 'hosted-record',
     detail:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',

@@ -13,13 +13,13 @@ import {
   reportOnlyAllowedFileBudgetFailures,
 } from './check-hosted-local-sql.ts'
 import { hostedLocalSqlSelectorFailures } from './hosted-local-read-report.ts'
+import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 import {
   extractSqlFromSource,
   type HostedSqlSite,
   type HostedSqlUnresolvedSite,
 } from './hosted-sql-schema.ts'
 import type { StateClassDeclaration } from './identity-state-classes.ts'
-import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 
 const temporaryRoots: string[] = []
 const hostedLocalRenderedSqlRisk = (sql: string): boolean =>
@@ -339,9 +339,17 @@ test('a report-only exemption refuses one extra hosted SQL site', () => {
     module: 'orchestrator:board',
   })
   expect(
-    reportOnlyAllowedFileBudgetFailures([hit(10), hit(20)], [
-      { pattern: /board-push-service\.ts$/, reason: 'outbox', expectedSites: 1, reportOnly: true },
-    ]),
+    reportOnlyAllowedFileBudgetFailures(
+      [hit(10), hit(20)],
+      [
+        {
+          pattern: /board-push-service\.ts$/,
+          reason: 'outbox',
+          expectedSites: 1,
+          reportOnly: true,
+        },
+      ],
+    ),
   ).toEqual([
     expect.stringContaining(
       'board-push-service\\.ts$/: report-only hosted SQL exemption expected 1 sites but found 2',

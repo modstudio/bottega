@@ -39,7 +39,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-child-service.ts', [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
-    '../board/board-operation-results.ts',
     '../board/board-operations.ts',
     '../database/db.ts',
     './project-task-list.ts',
@@ -144,6 +143,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-task-claim.ts', [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
+    '../board/board-operation-results.ts',
     '../board/board-operations.ts',
     '../database/db.ts',
     '../project/projects.ts',

@@ -42,12 +42,11 @@ export function boardMessageKind(
   source: 'local' | 'hosted',
 ): 'root' | 'reply' | 'missing' {
   if (source === 'hosted') return cachedHostedBoardMessageKind(recordId, database)
-  const row =
-    database
-      .query<{ thread_root_record_id: string | null }, [string]>(
-        `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
-      )
-      .get(recordId)
+  const row = database
+    .query<{ thread_root_record_id: string | null }, [string]>(
+      `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
+    )
+    .get(recordId)
   if (!row) return 'missing'
   return row.thread_root_record_id === null ? 'root' : 'reply'
 }
