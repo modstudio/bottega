@@ -56,6 +56,7 @@ const task = {
 }
 
 const taskPort: TaskReadPort = {
+  listLocal: async () => [],
   lookup: async () => [],
   list: async () => [task],
   show: async () => ({ task }),

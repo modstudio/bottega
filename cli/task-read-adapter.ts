@@ -21,6 +21,7 @@ import {
 type HubTaskReads = {
   db: typeof import('../hub/src/db.ts')
   task: typeof import('../hub/src/task.ts') & { lookupTasks: typeof lookupTaskRows }
+  taskLocalRead: typeof import('../hub/src/task-local-read.ts')
   document: typeof import('../hub/src/task-document.ts')
   projects: typeof import('../hub/src/projects.ts')
 }
@@ -63,6 +64,8 @@ function hubTaskReads(): HubTaskReads {
   loadedHubTaskReads = {
     db: require('../hub/src/db.ts') as typeof import('../hub/src/db.ts'),
     task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
+    taskLocalRead:
+      require('../hub/src/task-local-read.ts') as typeof import('../hub/src/task-local-read.ts'),
     document:
       require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
     projects: require('../hub/src/projects.ts') as typeof import('../hub/src/projects.ts'),
@@ -100,6 +103,9 @@ function cliTaskReadAdapter(): TaskReadPort {
   return {
     list(filters) {
       return hubTaskReads().task.listTasks(filters)
+    },
+    listLocal(filters) {
+      return Promise.resolve(hubTaskReads().taskLocalRead.listLocalTasks(filters))
     },
     lookup(project, keys) {
       return hubTaskReads().task.lookupTasks(project, keys)

@@ -10,9 +10,11 @@ import {
   defaultLocalProjectPath,
   deleteProjectRegisterRow,
 } from '../database/project-register-store.ts'
-import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
+import type { ProjectTaskListReader } from '../workflow/project-task-list.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
+import { taskReference } from '../workflow/workflow-task-reference.ts'
 import { projectByName } from './project-read.ts'
-import { localProjectReferenceCounts } from './project-reference-counts.ts'
+import { projectReferenceCounts } from './project-reference-counts.ts'
 import type { StoredProjectSettings } from './project-settings.ts'
 
 type DefaultLocalProjectRetirementFacts = {
@@ -23,6 +25,9 @@ type DefaultLocalProjectRetirementFacts = {
   referenced: boolean
   taskCount: number
 }
+
+const readLocalProjectTasks: ProjectTaskListReader = async (project, filters = {}) =>
+  (await taskReader().listLocal({ project, ...filters })).map(taskReference)
 
 function shouldRetireDefaultLocalProject(facts: DefaultLocalProjectRetirementFacts): boolean {
   return (
@@ -50,11 +55,12 @@ function removeEmptyDirectory(path: string): void {
 export async function retireUnusedDefaultLocalProject(
   database: Database = db(),
   environment: Parameters<typeof defaultLocalProjectPath>[0] = process.env,
-  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
+  hubTaskReader: ProjectTaskListReader = readLocalProjectTasks,
+  referenceCounter: typeof projectReferenceCounts = projectReferenceCounts,
 ): Promise<boolean> {
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false
-  const counts = await localProjectReferenceCounts(database, project.recordId)
+  const counts = await referenceCounter(database, project.recordId)
   let taskCount: number
   try {
     taskCount = (await hubTaskReader(project.name)).length

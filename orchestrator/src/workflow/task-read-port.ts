@@ -49,6 +49,11 @@ type TaskReadDuplicateCandidate = {
 
 export type TaskReadPort = {
   list(filters?: { project?: string; status?: string; parent?: string }): Promise<TaskReadRow[]>
+  listLocal(filters?: {
+    project?: string
+    status?: string
+    parent?: string
+  }): Promise<TaskReadRow[]>
   lookup(project: string, keys: string[]): Promise<TaskLookupRow[]>
   duplicates(project: string, title: string): Promise<TaskReadDuplicateCandidate[]>
   show(key: string, scope?: { project?: string; recordId?: string }): Promise<TaskReadShow>

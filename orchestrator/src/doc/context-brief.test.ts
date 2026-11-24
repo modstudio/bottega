@@ -553,6 +553,7 @@ test('contextBrief drives lookup and filtered queue reads within its task-call b
     has_children: false,
   }))
   const port: TaskReadPort = {
+    listLocal: async () => [],
     async list(filters = {}) {
       calls.push({ operation: 'list', status: filters.status })
       if (!filters.status) throw new Error('unfiltered project task scan on a hook path')
