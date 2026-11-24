@@ -435,18 +435,19 @@ function pendingDeliveryCandidates(
     : [...unread, ...withdrawalDeliveries]
 }
 
+const unavailableBoardDelivery = (warning: string) => ({
+  delivery: [],
+  overflow: null,
+  pendingAcknowledgements: [],
+  warning,
+})
+
 export async function pendingBoardDelivery(input: DeliveryInput) {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
   const refresh = await refreshForPendingBoardDelivery(input, database)
-  if (refresh.warning)
-    return {
-      delivery: [],
-      overflow: null,
-      pendingAcknowledgements: [],
-      warning: refresh.warning,
-    }
+  if (refresh.warning) return unavailableBoardDelivery(refresh.warning)
   const localMode = refresh.localMode
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)

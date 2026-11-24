@@ -21,20 +21,10 @@ const SIDE_CHANNELS = [
   },
 ] as const
 
-export type BoardSideChannelRefreshViolation = {
+type BoardSideChannelRefreshViolation = {
   file: string
   functionName: string
   line: number
-}
-
-function functionName(node: ts.FunctionLikeDeclaration): string | null {
-  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node))
-    return node.name?.getText() ?? null
-  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-    const parent = node.parent
-    if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text
-  }
-  return null
 }
 
 function isRefreshStatusCondition(condition: ts.Expression, source: ts.SourceFile): boolean {
@@ -43,7 +33,7 @@ function isRefreshStatusCondition(condition: ts.Expression, source: ts.SourceFil
 
 function throwRejectsNonSuccess(
   statement: ts.ThrowStatement,
-  fn: ts.FunctionLikeDeclaration,
+  fn: ts.FunctionDeclaration,
   source: ts.SourceFile,
 ): boolean {
   let node: ts.Node = statement
@@ -54,7 +44,7 @@ function throwRejectsNonSuccess(
   return false
 }
 
-export function boardSideChannelRefreshViolations(
+function boardSideChannelRefreshViolations(
   sourceText: string,
   file: string,
   expectedFunctions: readonly string[],
@@ -65,9 +55,9 @@ export function boardSideChannelRefreshViolations(
   const violations: BoardSideChannelRefreshViolation[] = []
 
   const visit = (node: ts.Node): void => {
-    if (ts.isFunctionLike(node)) {
-      const name = functionName(node)
-      if (name && expected.has(name)) {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      const name = node.name.text
+      if (expected.has(name)) {
         found.add(name)
         const inspect = (child: ts.Node): void => {
           if (ts.isFunctionLike(child) && child !== node) return
@@ -77,7 +67,7 @@ export function boardSideChannelRefreshViolations(
           }
           ts.forEachChild(child, inspect)
         }
-        if (node.body) inspect(node.body)
+        inspect(node.body)
         return
       }
     }
