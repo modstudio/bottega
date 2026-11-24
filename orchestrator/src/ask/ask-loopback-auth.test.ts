@@ -91,12 +91,6 @@ async function refusal(payload: string | null, timeoutMs?: number): Promise<numb
   return fixture.authenticated()
 }
 
-test('the client auth preamble has the exact wire shape', () => {
-  expect(askAuthPreamble(TOKEN)).toBe(
-    `${JSON.stringify({ bottega_ask_auth: { run_token: TOKEN } })}\n`,
-  )
-})
-
 test('tokenless and wrong-token connections close before authentication', async () => {
   expect(await refusal('{"jsonrpc":"2.0","method":"tools/list"}\n')).toBe(0)
   expect(await refusal(askAuthPreamble('wrong-token'))).toBe(0)

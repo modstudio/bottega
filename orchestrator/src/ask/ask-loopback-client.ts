@@ -5,6 +5,8 @@ import { askAuthPreamble } from './ask-loopback-auth.ts'
 const ASK_URL_REFUSAL = 'BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint'
 const LINUX_DIRECT_REMEDY =
   "No HTTP proxy is set on Linux. Run the worker under SRT's network bridge."
+const NON_LOOPBACK_PROXY_REMEDY =
+  "HTTP proxy must be on 127.0.0.1, ::1, or localhost. Run the worker under SRT's network bridge."
 const HANDSHAKE_REMEDY = 'Re-dispatch the run from current main.'
 
 export type AskLoopbackConnection =
@@ -53,6 +55,10 @@ export function askProxyConnectOptions(
   }
   if (proxy.protocol !== 'http:' || !proxy.hostname) {
     throw new Error('HTTP proxy must be a valid http:// URL')
+  }
+  const hostname = proxy.hostname.toLowerCase()
+  if (!['127.0.0.1', '::1', '[::1]', 'localhost'].includes(hostname)) {
+    throw new Error(NON_LOOPBACK_PROXY_REMEDY)
   }
   const target = `${askHost}:${askPort}`
   const headers: Record<string, string> = { Host: target }

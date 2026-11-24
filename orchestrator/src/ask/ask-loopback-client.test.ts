@@ -57,25 +57,33 @@ test('the connection decision refuses a non-loopback or non-tcp ask URL', () => 
 })
 
 test('CONNECT options carry the target and optional proxy credentials', () => {
-  expect(askProxyConnectOptions('http://proxy.test:8080', '127.0.0.1', 43127)).toEqual({
-    host: 'proxy.test',
+  expect(askProxyConnectOptions('http://localhost:8080', '127.0.0.1', 43127)).toEqual({
+    host: 'localhost',
     port: 8080,
     method: 'CONNECT',
     path: '127.0.0.1:43127',
     headers: { Host: '127.0.0.1:43127' },
   })
-  expect(
-    askProxyConnectOptions('http://worker:secret@proxy.test:8080', '127.0.0.1', 43127),
-  ).toEqual({
-    host: 'proxy.test',
-    port: 8080,
-    method: 'CONNECT',
-    path: '127.0.0.1:43127',
-    headers: {
-      Host: '127.0.0.1:43127',
-      'Proxy-Authorization': `Basic ${Buffer.from('worker:secret').toString('base64')}`,
+  expect(askProxyConnectOptions('http://worker:secret@127.0.0.1:8080', '127.0.0.1', 43127)).toEqual(
+    {
+      host: '127.0.0.1',
+      port: 8080,
+      method: 'CONNECT',
+      path: '127.0.0.1:43127',
+      headers: {
+        Host: '127.0.0.1:43127',
+        'Proxy-Authorization': `Basic ${Buffer.from('worker:secret').toString('base64')}`,
+      },
     },
-  })
+  )
+  expect(() =>
+    askProxyConnectOptions('http://alice:hunter2@proxy.test:8080', '127.0.0.1', 43127),
+  ).toThrow("Run the worker under SRT's network bridge")
+  try {
+    askProxyConnectOptions('http://alice:hunter2@proxy.test:8080', '127.0.0.1', 43127)
+  } catch (error) {
+    expect(String(error)).not.toMatch(/alice|hunter2/)
+  }
 })
 
 test('a Linux direct failure names the SRT network bridge remedy', async () => {

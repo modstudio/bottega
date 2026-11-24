@@ -639,8 +639,9 @@ export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
 }
 
 function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
+  // Identity gates only the worker channel; registration probes still attach project servers.
   if (!opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN) return []
-  if (!(opts.writingAcp && opts.ask?.kind === 'endpoint')) return acpStdioWorkerChannel(opts)
+  if (!(opts.writingAcp && opts.ask?.kind === 'endpoint')) return acpStdioWorkerChannel(opts.env)
   return [
     {
       type: 'http',
