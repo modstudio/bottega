@@ -32,6 +32,8 @@ export const cliModules = [
     file: 'cli/worker-record-read.ts',
     allowed: [
       'hub/src/hosted-tasks.ts',
+      'hub/src/hosted-url.ts',
+      'hub/src/hosted-write-mode.ts',
       'hub/src/task-hosted-record.ts',
       'hub/src/task-print.ts',
       'orchestrator/src/ask/worker-record-read-client.ts',
