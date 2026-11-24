@@ -36,7 +36,9 @@ export const recordBindingModules: RecordModule[] = [
     './record-context-items.ts',
   ]),
   module('orchestrator/src/record/record-api-context-items.fixture.ts', ['./record-api-client.ts']),
-  module('orchestrator/src/record/record-api-client-hosted-response.ts', ['../../../shared/http-json.ts']),
+  module('orchestrator/src/record/record-api-client-hosted-response.ts', [
+    '../../../shared/http-json.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-context-items.ts', [
     '../../../shared/context-item-vocabulary.ts',
     './record-api-client-paths.ts',
