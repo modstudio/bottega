@@ -96,6 +96,13 @@ const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
       'acknowledgeNote calls localNoteAcknowledgementSightings only after its hosted write arm returns',
   },
   {
+    file: 'hub/src/ingest/trackers.ts',
+    functionName: 'localOpenTrackerTasks',
+    expectedSites: 1,
+    detail:
+      'fetchTrackerTasks returns through listHostedTasks on a hosted install before calling localOpenTrackerTasks',
+  },
+  {
     file: 'hub/src/task.ts',
     functionName: 'mintLocalTaskKey',
     expectedSites: 1,
@@ -182,13 +189,13 @@ const B2_PLANNED_LOCAL_READ_SITES: readonly B2ReasonedSite[] = [
     ['trackerLabelAfterCollisionCheck', 1],
     ['plannedTrackerLabel', 1],
     ['refreshTrackerClaim', 2],
-    ['fetchTrackerTasks', 1],
     ['recentIntervalsNeedingTracker', 1],
   ].map(([functionName, expectedSites]) => ({
     file: 'hub/src/ingest/trackers.ts',
     functionName: String(functionName),
     expectedSites: Number(expectedSites),
-    detail: `tracker ingestion reaches ${String(functionName)}`,
+    detail:
+      'tracker ingestion reaches synchronous connection helpers at trackers.ts:253, :280, :328, :499 and :874 under q7809(a)',
   })),
   ...[
     ['recordedSubjectRefs', 1],
@@ -211,14 +218,14 @@ const B2_PLANNED_LOCAL_READ_SITES: readonly B2ReasonedSite[] = [
     functionName: 'resolveNoteIdentity',
     expectedSites: 1,
     detail:
-      'note keep, same, promote, merge, and relink commands call note-cli reference, then resolveNoteReference, then resolveNoteIdentity',
+      'note keep, same, promote, merge, and relink commands call note-cli reference, which refreshes the hosted note cache once on a local miss before resolveNoteReference calls resolveNoteIdentity',
   },
   {
     file: 'hub/src/identity/identity.ts',
     functionName: 'noteIdentityByNumber',
     expectedSites: 1,
     detail:
-      'note keep, same, promote, merge, and relink commands call note-cli reference, then resolveNoteReference, resolveNoteIdentity, and noteIdentityByNumber',
+      'note keep, same, promote, merge, and relink commands call note-cli reference, which refreshes the hosted note cache once on a local miss before resolveNoteReference calls resolveNoteIdentity and noteIdentityByNumber',
   },
 ]
 

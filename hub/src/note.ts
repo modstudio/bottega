@@ -9,6 +9,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { pullHostedNoteChanges } from './hosted-change-cache.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
@@ -16,7 +17,7 @@ import {
   hostedWriteMode,
   projectWriteDecisionFor,
 } from './hosted-write-mode.ts'
-import { resolveNoteIdentity } from './identity/identity.ts'
+import { NoteReferenceNotVisibleError, resolveNoteIdentity } from './identity/identity.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
@@ -208,6 +209,28 @@ function identifiedAnchor(anchor: NoteAnchor): NoteAnchor {
 
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
   return resolveNoteIdentity(db(), value, sessionProject, isRegisteredNoteProject)
+}
+
+export function createHostedNoteReferenceResolver(
+  dependencies: { hostedUrl?: () => string | undefined; pullNotes?: () => Promise<unknown> } = {},
+) {
+  const hostedUrl = dependencies.hostedUrl ?? resolveHostedUrl
+  const pullNotes = dependencies.pullNotes ?? pullHostedNoteChanges
+  let refresh: Promise<unknown> | null = null
+  return async (value: string, sessionProject: string | null): Promise<string> => {
+    try {
+      return resolveNoteReference(value, sessionProject)
+    } catch (cause) {
+      if (
+        !(cause instanceof NoteReferenceNotVisibleError) ||
+        hostedWriteMode(hostedUrl()) !== 'hosted-configured'
+      )
+        throw cause
+      refresh ??= pullNotes()
+      await refresh
+      return resolveNoteReference(value, sessionProject)
+    }
+  }
 }
 
 export async function acknowledgeNote(

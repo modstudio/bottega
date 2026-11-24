@@ -19,12 +19,14 @@ import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
 import { reconcileParentRecordId, resolveParentRecordId } from '../task-cache.ts'
+import { hostedListTasks as listHostedTasks } from '../task-client.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import type { TaskRow } from '../task-row.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskChangeSendOptions,
+  hostedTaskWriteOptions,
 } from '../task-write-destination.ts'
 import { applyHostedCollectorPass, sendTrackerPlans } from './tracker-hosted-collector.ts'
 import { dropLocalTrackerRows, retireLocalTrackerRows } from './tracker-local-collector.ts'
@@ -682,6 +684,7 @@ export async function fetchTrackerTasks(
   mode: TrackerReadMode,
   since: string | null,
   prefixes: readonly string[],
+  hostedOptions?: HostedTaskWriteOptions,
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
@@ -690,13 +693,22 @@ export async function fetchTrackerTasks(
   const tasks = fetched.tasks
   if (mode === 'incremental') return fetched
   const seen = new Set([...tasks.map((task) => task.key), ...fetched.deletedKeys])
-  const vanished = db()
-    .query<{ key: string }, [string]>(
-      `SELECT key FROM task
-       WHERE project = ? AND source = 'mcp'
-         AND status_category IN ('open','active','review')`,
-    )
-    .all(source.project)
+  const hosted =
+    hostedWriteMode(hostedOptions?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
+  const candidates = hosted
+    ? (
+        await listHostedTasks(hostedTaskWriteOptions(source.project, hostedOptions), {
+          project: source.project,
+        })
+      ).tasks.filter(
+        (row) =>
+          row.source === 'mcp' &&
+          (row.status_category === 'open' ||
+            row.status_category === 'active' ||
+            row.status_category === 'review'),
+      )
+    : localOpenTrackerTasks(source.project)
+  const vanished = candidates
     .filter((row) => !seen.has(row.key))
     .filter((row) => trackerKeyInScope(row.key, prefixes))
   for (const { key } of vanished.slice(0, 200)) {
@@ -708,6 +720,16 @@ export async function fetchTrackerTasks(
     }
   }
   return { ...fetched, tasks }
+}
+
+function localOpenTrackerTasks(project: string): { key: string }[] {
+  return db()
+    .query<{ key: string }, [string]>(
+      `SELECT key FROM task
+       WHERE project = ? AND source = 'mcp'
+         AND status_category IN ('open','active','review')`,
+    )
+    .all(project)
 }
 
 async function lookupTrackerTask(
