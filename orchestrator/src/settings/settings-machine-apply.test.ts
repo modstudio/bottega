@@ -449,6 +449,86 @@ describe('settings apply', () => {
     expect(rendered).not.toContain('block-agent.py')
   })
 
+  test('missing per-machine env values refuse only env while owned settings apply', async () => {
+    const row = getDoc('settings', null, 'settings', OWNER)!
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run(
+        serializeOwnedSettings({
+          permissions: { allow: ['Bash(updated *)'] },
+          hooks: {},
+          env: { PLAIN: 'plain' },
+          envKeys: ['MISSING_A', 'MISSING_B'],
+        }),
+        row.record_id,
+      )
+    const settingsPath = join(root, '.claude', 'settings.json')
+    const envBlock = '"env": {"PLAIN":"keep",  "MISSING_A":"old"}'
+    writeFileSync(
+      settingsPath,
+      `{
+  "permissions": {},
+  "hooks": {},
+  ${envBlock}
+}\n`,
+    )
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    const envRefusal = results.find((result) => result.target === `settings ${settingsPath} env`)
+    const refusalText = JSON.stringify(envRefusal)
+    expect(envRefusal).toMatchObject({
+      target: `settings ${settingsPath} env`,
+      outcome: 'refused',
+      changed: false,
+    })
+    expect(refusalText).toContain('MISSING_A')
+    expect(refusalText).toContain('MISSING_B')
+    expect(refusalText).toContain(`${PLATFORM_SLUG} machine settings env set MISSING_A <value>`)
+    expect(refusalText).toContain(`${PLATFORM_SLUG} machine settings env set MISSING_B <value>`)
+    const rendered = readFileSync(settingsPath, 'utf8')
+    expect(rendered).toContain(envBlock)
+    expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(updated *)'] })
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined)) {
+      expect(rendered).toContain(hook.script)
+    }
+  })
+
+  test('missing per-machine env values on a fresh file still apply plain env and owned settings', async () => {
+    const row = getDoc('settings', null, 'settings', OWNER)!
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run(
+        serializeOwnedSettings({
+          permissions: { allow: ['Bash(updated *)'] },
+          hooks: {},
+          env: { PLAIN: 'plain' },
+          envKeys: ['MISSING_A', 'MISSING_B'],
+        }),
+        row.record_id,
+      )
+    const settingsPath = join(root, '.claude', 'settings.json')
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    const envRefusals = results.filter(
+      (result) => result.target === `settings ${settingsPath} env` && result.outcome === 'refused',
+    )
+    expect(envRefusals).toHaveLength(1)
+    const refusalText = JSON.stringify(envRefusals[0])
+    expect(refusalText).toContain('MISSING_A')
+    expect(refusalText).toContain('MISSING_B')
+    const rendered = readFileSync(settingsPath, 'utf8')
+    const parsed = JSON.parse(rendered)
+    expect(parsed.env).toEqual({ PLAIN: 'plain' })
+    expect(parsed.permissions).toEqual({ allow: ['Bash(updated *)'] })
+    for (const hook of PRODUCT_HOOKS.filter((declaration) => declaration.option === undefined)) {
+      expect(rendered).toContain(hook.script)
+    }
+  })
+
   test('an off choice removes both rendered block-agent hooks and reports it once', async () => {
     const settingsPath = join(root, '.claude', 'settings.json')
     const previouslyOn = withMachineProductHooks(

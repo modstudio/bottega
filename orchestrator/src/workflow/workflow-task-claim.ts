@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
+import type { BoardClaimResult } from '../board/board-operation-results.ts'
 import {
-  type BoardClaimResult,
   boardClaimReleaseTask,
   boardClaimTake,
   boardOpenTaskCursorProject,
@@ -120,7 +120,7 @@ export async function followTaskCursorClaimWithWarning(input: {
 export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
   if (!session) return
   const database = db()
-  boardQueuedClaimsRenew(session, Date.now(), database)
+  await boardQueuedClaimsRenew(session, Date.now(), database)
   if (!launchKey) return
   const project = await boardOpenTaskCursorProject(launchKey, session, database)
   if (!project) return

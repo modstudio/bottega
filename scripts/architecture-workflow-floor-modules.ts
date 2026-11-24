@@ -520,6 +520,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-note-evidence.ts', [
+    '../../../shared/brand.ts',
     './workflow-artifact-evidence.ts',
     './workflow-artifact-reference.ts',
     './workflow-floor-artifact-freshness.ts',

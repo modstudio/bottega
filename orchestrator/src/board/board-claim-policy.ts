@@ -22,11 +22,12 @@ export type ClaimLiveness = {
   lapsesAt: number
   runStatus: string | null
   now: number
+  boundToOpenCursor: boolean
 }
 
 export function claimCloseReason(input: ClaimLiveness): ClaimCloseReason | null {
   if (input.closed) return null
-  if (input.lapsesAt <= input.now) return 'lapsed'
+  if (!input.boundToOpenCursor && input.lapsesAt <= input.now) return 'lapsed'
   if (input.runStatus !== null && input.runStatus !== 'running' && input.runStatus !== 'asking')
     return 'run-ended'
   return null

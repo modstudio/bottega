@@ -62,6 +62,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-child-facts.ts',
     './workflow-child-queue.ts',
     './workflow-cursor-compose.ts',
+    './workflow-cursor-format.ts',
     './workflow-cursor-live-autonomy.ts',
     './workflow-cursor-mutation.ts',
     './workflow-cursor-selection.ts',
@@ -158,6 +159,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-task-claim.ts', [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
+    '../board/board-operation-results.ts',
     '../board/board-operations.ts',
     '../database/db.ts',
     '../project/projects.ts',

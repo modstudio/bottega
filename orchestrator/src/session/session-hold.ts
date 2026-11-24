@@ -4,7 +4,12 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { resolveBoardMessageIdentifier } from '../board/board-message-identifier.ts'
+import {
+  type BoardIdentifierRefresh,
+  boardMessageKind,
+  refreshHostedBoardIdentifier,
+  resolveBoardMessageIdentifier,
+} from '../board/board-message-identifier.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 
 type SessionHold = {
@@ -42,24 +47,8 @@ function holds(database: Database, session: string): SessionHold[] {
     }))
 }
 
-function messageKind(database: Database, id: string): 'root' | 'reply' | 'missing' {
-  const local = database
-    .query<{ thread_root_record_id: string | null }, [string]>(
-      `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
-    )
-    .get(id)
-  if (local) return local.thread_root_record_id === null ? 'root' : 'reply'
-  const hosted = database
-    .query<{ thread_root_id: string | null }, [string]>(
-      `SELECT thread_root_id FROM hosted_board_message_cache WHERE id=? LIMIT 1`,
-    )
-    .get(id)
-  if (hosted) return hosted.thread_root_id === null ? 'root' : 'reply'
-  return 'missing'
-}
-
-function assertThreadRoot(database: Database, id: string): void {
-  const kind = messageKind(database, id)
+function assertThreadRoot(database: Database, id: string, source: 'local' | 'hosted'): void {
+  const kind = boardMessageKind(database, id, source)
   if (kind === 'reply')
     throw new Error(
       `board message ${id} is a reply, not a thread root; hold its thread root (see ${PLATFORM_SLUG} board thread ${id})`,
@@ -70,15 +59,16 @@ function assertThreadRoot(database: Database, id: string): void {
     )
 }
 
-export function sessionHold(
+export async function sessionHold(
   input: { on?: string; release?: string; reason?: string },
   options: {
     database?: Database
     env?: Environment
     at?: string
     recordId?: () => string
+    refresh?: BoardIdentifierRefresh
   } = {},
-): SessionHoldResult {
+): Promise<SessionHoldResult> {
   const session = callingSession(options.env ?? process.env)
   const database = options.database ?? (input.on || input.release ? writableDb() : db())
   if (input.on && input.release)
@@ -92,15 +82,19 @@ export function sessionHold(
   if (!messageIdentifier) throw new Error('board message id must not be empty')
   // Release skips the board-mode check because a hold row already stores a record id.
   const validateHosted = input.release === undefined
-  const messageRecordId = resolveBoardMessageIdentifier(
+  const resolved = resolveBoardMessageIdentifier(
     database,
     messageIdentifier,
     options.env ?? process.env,
     validateHosted,
-  ).recordId
+  )
+  const messageRecordId = resolved.recordId
   if (input.on) {
-    assertThreadRoot(database, messageRecordId)
-    return writeTransaction(() => {
+    if (resolved.source === 'hosted') {
+      await refreshHostedBoardIdentifier(database, options.env ?? process.env, options.refresh)
+    }
+    assertThreadRoot(database, messageRecordId, resolved.source)
+    return writeTransaction((): SessionHoldResult => {
       const existing = holds(database, session).find(
         (hold) => hold.messageRecordId === messageRecordId,
       )

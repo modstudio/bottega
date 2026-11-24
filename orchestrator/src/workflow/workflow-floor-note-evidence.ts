@@ -1,6 +1,7 @@
 // concern: workflow-floor-note-evidence
 /** Resolves note artifacts through the injected hub-note reader. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import type { ArtifactRef } from './workflow-artifact-reference.ts'
 import { requireMutableArtifactFreshness } from './workflow-floor-artifact-freshness.ts'
@@ -36,8 +37,15 @@ export async function gatherNoteArtifactEvidence(
     staleAt: note?.staleAt ?? null,
     writtenAt: note?.writtenAt,
   }
-  if (evidence.recordId)
-    requireMutableArtifactFreshness('note', evidence.writtenAt, stepActivatedAt)
+  if (evidence.recordId) {
+    const sightingReference = evidence.label ?? parsed.reference
+    requireMutableArtifactFreshness(
+      'note',
+      evidence.writtenAt,
+      stepActivatedAt,
+      `record a sighting during this step with \`${PLATFORM_SLUG} note new --same-as ${sightingReference} --project ${project} "<sighting>"\`, then cite the note`,
+    )
+  }
   return {
     artifact: { ref: offeredArtifact, exists: evidence.recordId !== null },
     note: evidence,

@@ -68,6 +68,20 @@ export function workflowCursorComposeCommand(row: {
   )
 }
 
+export function workflowDefaultModeComposeCommand(
+  slug: string,
+  project: string,
+  args: Record<string, string>,
+): string {
+  const renderedArgs = Object.entries(args)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
+    .join('')
+  return (
+    `${PLATFORM_SLUG} workflow compose ${shellWord(slug)} ` +
+    `--project ${shellWord(project)}${renderedArgs}`
+  )
+}
+
 export function workflowComposeCommand(
   slug: string,
   project: string,

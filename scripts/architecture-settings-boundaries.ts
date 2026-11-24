@@ -9,6 +9,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'zod',
       'shared/brand.ts',
+      'shared/refusal.ts',
       'shared/secret-shaped.ts',
       'shared/settings-permission-lists.ts',
       'shared/stored-settings.ts',
@@ -57,6 +58,13 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     reason: 'Keep plain canonical environment edits independent of files, runs, and the CLI.',
   },
   {
+    name: 'settings-environment-selection-boundary',
+    file: `${source}settings-environment-selection.ts`,
+    allowed: ['shared/brand.ts', 'shared/refusal.ts', `${source}settings-render.ts`],
+    typeOnlyAllowed: [`${source}settings.ts`],
+    reason: 'Keep required per-machine environment selection independent of stores and commands.',
+  },
+  {
     name: 'settings-subagents-boundary',
     file: `${source}settings-subagents.ts`,
     allowed: [
@@ -94,6 +102,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'shared/brand.ts',
       'node:fs',
+      'node:path',
       'shared/git.ts',
       'shared/install-root.ts',
       'shared/machine-config.ts',
@@ -105,6 +114,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/run/run-process.ts',
       `${source}settings.ts`,
       `${source}settings-edit-refusal.ts`,
+      `${source}settings-environment-selection.ts`,
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
       `${source}settings-machine-hooks.ts`,
@@ -135,6 +145,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/project/projects.ts',
       `${source}settings.ts`,
       `${source}settings-edit-refusal.ts`,
+      `${source}settings-environment-selection.ts`,
       `${source}settings-auto-mode.ts`,
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
@@ -206,6 +217,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/run/run-process.ts',
       'orchestrator/src/setup/setup-mcp.ts',
       `${source}settings.ts`,
+      `${source}settings-environment-selection.ts`,
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
       `${source}settings-render.ts`,

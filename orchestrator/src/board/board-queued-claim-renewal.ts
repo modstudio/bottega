@@ -3,12 +3,14 @@
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 
 export function renewLiveQueuedClaimsOfSession(
   session: string,
   clock: number,
   database: Database,
 ): number {
+  requireLocalBoardRead(process.env, database)
   return writeTransaction(() => {
     const now = new Date(clock).toISOString()
     const rows = database

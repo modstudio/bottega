@@ -20,7 +20,10 @@ export function required<T>(value: T | null | undefined, field: string): T {
 export function stageRow(
   item: ListedItem,
   includeOpenStageCount = true,
-): TaskFlowStageCursorRow & { open_stage_count?: number } {
+): TaskFlowStageCursorRow & {
+  open_stage_count?: number
+  parent_flow_record_id?: string | null
+} {
   const { stage, flow } = item
   return {
     id: stage.number,
@@ -58,14 +61,18 @@ export function stageRow(
     handed_off_from_record_id: stage.handedOffFromRecordId ?? null,
     revision: stage.revision,
     ...(includeOpenStageCount
-      ? { open_stage_count: flow.taskId === null ? 0 : flow.openStageCount }
+      ? {
+          open_stage_count: flow.taskId === null ? 0 : flow.openStageCount,
+          parent_flow_record_id: flow.parentFlowRecordId ?? null,
+        }
       : {}),
   }
 }
 
-export function summaryStageRow(
-  item: ListedItem,
-): TaskFlowStageCursorRow & { open_stage_count?: number } {
+export function summaryStageRow(item: ListedItem): TaskFlowStageCursorRow & {
+  open_stage_count?: number
+  parent_flow_record_id?: string | null
+} {
   return stageRow({
     ...item,
     stage: { ...item.stage, closedStepNotes: [], autonomy: null },

@@ -57,20 +57,18 @@ export function readSettingsEnv(path: string): Map<string, string> {
   return parseDotenv(readRegular(path), path)
 }
 
-export function selectedSettingsEnvironment(path: string, names: string[]): Record<string, string> {
-  const values = readSettingsEnv(path)
+export function selectedSettingsEnvironment(
+  values: ReadonlyMap<string, string>,
+  names: readonly string[],
+): { selected: Record<string, string>; missing: string[] } {
   const selected: Record<string, string> = {}
+  const missing: string[] = []
   for (const name of names) {
     const value = values.get(name)
-    if (value === undefined) {
-      throw new Error(
-        `refusing settings render: ${name} is missing from ${path}\n` +
-          `cleared by: add ${name} to ${path} with mode 0600`,
-      )
-    }
-    selected[name] = value
+    if (value === undefined) missing.push(name)
+    else selected[name] = value
   }
-  return selected
+  return { selected, missing }
 }
 
 export function mergeSettingsEnv(

@@ -47,14 +47,17 @@ export function taskKeysWithChildren(
 export function sessionWorksUnderEpic(
   claims: readonly ChildClaimFact[],
   session: string,
-  rootKey: string,
   descendants: ReadonlySet<string>,
+  ownsOpenCursor: boolean,
 ): boolean {
-  return claims.some(
-    (claim) =>
-      claim.holderSession === session &&
-      ((claim.subject_kind === 'task' && claim.subject_value === rootKey) ||
-        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
+  return (
+    ownsOpenCursor ||
+    claims.some(
+      (claim) =>
+        claim.holderSession === session &&
+        claim.subject_kind === 'queued-task' &&
+        descendants.has(claim.subject_value),
+    )
   )
 }
 

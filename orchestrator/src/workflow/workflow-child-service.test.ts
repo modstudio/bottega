@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -9,6 +10,7 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { HostedBoardClaim } from '../record/record-board-contract.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { installTaskReader, type TaskReadPort, type TaskReadRow } from './task-read-port.ts'
@@ -100,13 +102,14 @@ async function openEpicAtStart(
   tasks: TaskReadRow[],
   session = 'epic-owner',
   epic = 'DEV-1',
+  mode = 'feature',
 ) {
   installTasks(tasks)
-  const composition = composeWorkflow('plan-task', 'fixture', 'feature', { key: epic }, d)
+  const composition = composeWorkflow('plan-task', 'fixture', mode, { key: epic }, d)
   const opened = await composeWorkflowWithCursor(
     'plan-task',
     'fixture',
-    'feature',
+    mode,
     { key: epic },
     { session, workflowKey: epic, taskRecordId: `task-${epic}`, taskStatusCategory: 'open' },
     d,
@@ -156,7 +159,79 @@ function hostedClaim(
   }
 }
 
-function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) {
+async function useHostedClaims(
+  d: Database,
+  claims: ReturnType<typeof hostedClaim>[],
+  duplicateEpic?: { session: string; mode: string },
+) {
+  const localStages = await taskFlowReadStore(d).listStages({
+    project: 'fixture',
+    states: [...TASK_FLOW_OPEN_STAGE_STATES],
+  })
+  const taskFlowStages = localStages.map((stage) => ({
+    stage: {
+      id: stage.record_id,
+      flowRecordId: stage.task_flow_record_id!,
+      projectId: d
+        .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+        .get()!.record_id,
+      projectName: 'fixture',
+      number: stage.id,
+      workflow: stage.workflow_slug,
+      mode: stage.mode_slug,
+      workflowKey: stage.workflow_key,
+      instanceId: stage.instance_id,
+      sessionId: stage.session_id,
+      workflowVersionId: stage.workflow_version_record_id,
+      workflowVersionNumber: stage.workflow_version,
+      catalogueVersionId: stage.catalogue_version_record_id,
+      catalogueVersionNumber: stage.catalogue_version,
+      arguments: JSON.parse(stage.args) as Record<string, string>,
+      activeOrdinal: stage.ordinal,
+      activeSlug: stage.step_slug,
+      state: stage.state,
+      closedStepNotes: JSON.parse(stage.closed) as unknown[],
+      question: stage.question,
+      autonomy: stage.autonomy,
+      enforcement: stage.enforcement,
+      totalSteps: stage.total_steps,
+      openedMachineId: stage.opened_machine_id!,
+      takenOverFromMachineId: stage.taken_over_from_machine_id,
+      lastAdvancedMachineId: stage.last_advanced_machine_id!,
+      revision: stage.revision,
+      createdAt: stage.created_at,
+      updatedAt: stage.updated_at,
+    },
+    flow: {
+      id: stage.task_flow_record_id!,
+      projectId: d
+        .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+        .get()!.record_id,
+      taskId: stage.task_record_id,
+      taskKey: stage.workflow_key,
+      state: 'open' as const,
+      openStageRecordId: stage.record_id,
+      openStageCount: 1,
+      openingMachineId: stage.opened_machine_id!,
+      updatedMachineId: stage.last_advanced_machine_id!,
+      revision: 1,
+      createdAt: stage.created_at,
+      updatedAt: stage.updated_at,
+    },
+  }))
+  if (duplicateEpic && taskFlowStages[0]) {
+    const duplicate = structuredClone(taskFlowStages[0])
+    duplicate.stage.id = newRecordId()
+    duplicate.stage.flowRecordId = newRecordId()
+    duplicate.stage.number += 1000
+    duplicate.stage.mode = duplicateEpic.mode
+    duplicate.stage.sessionId = duplicateEpic.session
+    duplicate.stage.updatedAt = '2099-01-01T00:00:00.000Z'
+    duplicate.flow.id = duplicate.stage.flowRecordId
+    duplicate.flow.openStageRecordId = duplicate.stage.id
+    duplicate.flow.updatedAt = duplicate.stage.updatedAt
+    taskFlowStages.push(duplicate)
+  }
   d.query('DELETE FROM board_claim').run()
   d.query(
     "UPDATE project SET settings=json_set(settings,'$.space','space-fixture') WHERE name='fixture'",
@@ -165,7 +240,7 @@ function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) 
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   let listCalls = 0
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createMemoryRecordApiClient({ taskFlowStages }),
     whoami: async () => ({
       user: { id: 'user-u', email: 'u@example.test' },
       activeSpaceId: 'space-fixture',
@@ -208,6 +283,7 @@ test('start-child opens at start with inherited closures and parent flow', async
   const d = database()
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
   const epic = await openEpicAtStart(d, tasks)
+  d.query("UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_value='DEV-1'").run()
   const started = await startWorkflowChild(
     { project: 'fixture', cursor: epic.cursor, task: 'DEV-2', callerSession: 'epic-owner' },
     d,
@@ -239,7 +315,7 @@ test('hosted child eligibility reads the record claim and compares its session i
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
   await openEpicAtStart(d, tasks)
   const queued = hostedClaim({ kind: 'queued-task', value: 'DEV-2' }, 'session-s')
-  const reads = useHostedClaims(d, [
+  const reads = await useHostedClaims(d, [
     hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s'),
     queued,
   ])
@@ -280,7 +356,7 @@ test('a hosted queued descendant claim authorizes its holder session', async () 
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
   await openEpicAtStart(d, tasks)
   const queued = hostedClaim({ kind: 'queued-task', value: 'DEV-2' }, 'session-s')
-  useHostedClaims(d, [queued])
+  await useHostedClaims(d, [queued])
   const released = await queueWorkflowChild(
     {
       project: 'fixture',
@@ -300,14 +376,14 @@ test('queue reads the hosted claim snapshot once before taking the child claim',
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
   await openEpicAtStart(d, tasks)
   const claims = [hostedClaim({ kind: 'task', value: 'DEV-1' }, 'session-s')]
-  const reads = useHostedClaims(d, claims)
+  const reads = await useHostedClaims(d, claims)
   await expect(
     queueWorkflowChild(
       {
         project: 'fixture',
         child: 'DEV-2',
         session: 'session-s',
-        callerSession: 'session-s',
+        callerSession: 'epic-owner',
         off: false,
       },
       d,
@@ -352,6 +428,95 @@ test('grandchild inherits from the nearest ancestor flow when its container has 
   )
   const rootFlow = await taskFlowReadStore(d).flowForTask('task-DEV-1')
   expect(started.parentFlowRecordId).toBe(rootFlow!.record_id)
+})
+
+test('queue uses the nearest open epic cursor instead of a grand-epic claim', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1'), row('DEV-3', 'DEV-2')]
+  await openEpicAtStart(d, tasks, 'grand-owner', 'DEV-1')
+  await openEpicAtStart(d, tasks, 'nested-owner', 'DEV-2')
+  d.query(
+    "UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_value IN ('DEV-1','DEV-2')",
+  ).run()
+
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-3',
+        session: 'nested-owner',
+        callerSession: 'nested-owner',
+        off: false,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-3' })
+})
+
+test('queue refuses with a compose remedy when no ancestor has an open epic cursor', async () => {
+  const d = database()
+  installTasks([row('DEV-1', null), row('DEV-2', 'DEV-1')])
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'owner',
+        callerSession: 'owner',
+        off: false,
+      },
+      d,
+    ),
+  ).rejects.toThrow(`${PLATFORM_SLUG} workflow compose plan-task --project fixture --arg key=DEV-1`)
+})
+
+test("queue prefers the caller's open cursor when another mode has a newer cursor on the epic", async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks, 'caller-owner', 'DEV-1', 'feature')
+  await useHostedClaims(d, [], { session: 'newer-owner', mode: 'fix' })
+
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'caller-owner',
+        callerSession: 'caller-owner',
+        off: false,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2', session: 'caller-owner' })
+})
+
+test('queue and start-child ownership refusals name the owner and runnable compose command', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  const epic = await openEpicAtStart(d, tasks)
+  const remedy =
+    'cursor ' +
+    epic.cursor +
+    ` is owned by session epic-owner; compose the epic cursor with ${PLATFORM_SLUG} workflow compose plan-task --project fixture --mode feature --arg key=DEV-1`
+
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'other',
+        callerSession: 'other',
+        off: false,
+      },
+      d,
+    ),
+  ).rejects.toThrow(remedy)
+  await expect(
+    startWorkflowChild(
+      { project: 'fixture', cursor: epic.cursor, task: 'DEV-2', callerSession: 'other' },
+      d,
+    ),
+  ).rejects.toThrow(remedy)
 })
 
 test('queued caller starts its child, closes the queue as started, and owns the task claim', async () => {

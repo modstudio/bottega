@@ -21,7 +21,10 @@ export const productionWorkflowFloorPorts = (): FloorEvidencePorts => ({
           label: note.label,
           promotedTask: note.promoted_task,
           staleAt: note.stale_at,
-          writtenAt: note.created_at,
+          writtenAt:
+            Date.parse(note.last_seen_at) > Date.parse(note.created_at)
+              ? note.last_seen_at
+              : note.created_at,
         }
       : null
   },

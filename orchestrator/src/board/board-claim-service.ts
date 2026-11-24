@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import {
   BOARD_CLAIM_DEFAULT_MS,
   type ClaimActor,
@@ -19,6 +20,7 @@ import {
   parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,
@@ -119,6 +121,7 @@ function rowLive(row: ClaimRow, clock: number, database = db()): boolean {
     lapsesAt: Date.parse(row.lapses_at),
     runStatus: latestRunStatus(row.run_record_id, database),
     now: clock,
+    boundToOpenCursor: claimBoundToOpenCursor(row, database),
   })
 }
 
@@ -277,10 +280,13 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
   const details = conflicts.map((conflict) => {
     const named =
       conflict.holder_kind === 'operator' ? 'operator' : `session ${conflict.holder_session}`
-    const remedy =
+    const ask =
       conflict.holder_kind === 'architect'
-        ? `ask with ${PLATFORM_SLUG} board ask --audience session:${conflict.holder_session}, or wait`
-        : 'wait for the operator claim to lapse'
+        ? `ask with ${PLATFORM_SLUG} board ask --audience session:${conflict.holder_session}`
+        : null
+    if (claimBoundToOpenCursor(conflict, context.database))
+      return `${named}'s claim follows that session's open workflow cursor on ${conflict.subject_value} (${ask}; the claim ends when the holder finishes or abandons that cursor)`
+    const remedy = ask ? `${ask}, or wait` : 'wait for the operator claim to lapse'
     return `${named} until ${conflict.lapses_at} (${remedy})`
   })
   return {
@@ -339,6 +345,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
       lapsesAt: Date.parse(conflict.lapses_at),
       runStatus: latestRunStatus(conflict.run_record_id, context.database),
       now: context.clock,
+      boundToOpenCursor: claimBoundToOpenCursor(conflict, context.database),
     })
     close.run(now, endedReason ?? 'taken-over', row.record_id, conflict.record_id)
     tellTakenOverHolder(conflict, context)
@@ -470,6 +477,7 @@ export function listClaims(
   database: ReturnType<typeof db> = db(),
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { claims: ClaimView[] } {
+  requireLocalBoardRead(env, database)
   const name = claimProject(project, env, cwd, database, taskCursorAuthority)
   const rows = database
     .query(
@@ -486,6 +494,7 @@ export function liveClaimsOfSession(
   clock = Date.now(),
   database = db(),
 ): ClaimView[] {
+  requireLocalBoardRead(process.env, database)
   const rows = database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE holder_session=? AND closed_at IS NULL ORDER BY project,subject_kind,subject_value`,
@@ -569,8 +578,7 @@ export function releaseTaskClaims(
   }, database)
 }
 
-export function stampEndedClaims(clock = Date.now()): number {
-  const database = writableDb()
+export function stampEndedClaims(clock = Date.now(), database = writableDb()): number {
   return writeTransaction(() => {
     const rows = database
       .query(`SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE closed_at IS NULL`)
@@ -585,6 +593,7 @@ export function stampEndedClaims(clock = Date.now()): number {
         lapsesAt: Date.parse(row.lapses_at),
         runStatus: latestRunStatus(row.run_record_id, database),
         now: clock,
+        boundToOpenCursor: claimBoundToOpenCursor(row, database),
       })
       if (!reason) continue
       close.run(new Date(clock).toISOString(), reason, row.record_id)

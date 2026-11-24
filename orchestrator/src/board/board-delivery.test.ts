@@ -86,7 +86,7 @@ afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
 })
 
-test('board read and read --claim deliver hosted beside local once and retain a failed-refresh warning', async () => {
+test('board read and read --claim use hosted cache instead of differing local rows', async () => {
   const env = {
     CLAUDE_CODE_SESSION_ID: 'delivery-reader',
     BOTTEGA_RECORD_API_URL: 'https://record.test',
@@ -104,24 +104,24 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   )
   const hostedClaim = hosted('session:delivery-reader')
   installFailedRefreshWithCached(hostedClaim)
-  const claimed = await claimBoardNotices(false, { env })
-  expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.number), hostedClaim.id])
-  expect(claimed.notices.map((row) => Object.keys(row).sort())).toEqual([
-    ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
-    ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
-  ])
-  expect(claimed.warning).toContain('offline for warning proof')
-  expect(claimed.warning).toContain('proof Forged-Warning: session-start')
-  expect(claimed.warning).not.toContain('\n')
+  const refreshed = async () => ({ status: 'success' as const, applied: 0 })
+  const claimed = await claimBoardNotices(false, { env, refresh: refreshed })
+  expect(claimed.notices.map((row) => row.id)).toEqual([hostedClaim.id])
+  expect(String(localClaim.number)).not.toBe(hostedClaim.id)
   await markBoardNoticesDelivered(
     claimed.notices.map((row) => row.id),
     env,
   )
-  expect((await claimBoardNotices(false, { env })).notices).toEqual([])
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=?')
+      .get(localClaim.recordId),
+  ).toBeNull()
+  expect((await claimBoardNotices(false, { env, refresh: refreshed })).notices).toEqual([])
 
   const localRead = postNotice(
     { audience: 'session:delivery-reader', title: 'Local read', body: 'local body' },
-    {},
+    env,
     Date.parse(createdAt) + 1,
   )
   const hostedRead = hosted('session:delivery-reader')
@@ -130,11 +130,10 @@ test('board read and read --claim deliver hosted beside local once and retain a 
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(hostedRead.id, hostedRead.kind, null, hostedRead.revision, JSON.stringify(hostedRead))
-  const read = await readBoardNotices(false, { env })
-  expect(read.notices.map((row) => row.id)).toEqual([String(localRead.number), hostedRead.id])
-  expect(read.warning).toContain('offline for warning proof')
-  expect(read.warning).not.toContain('\n')
-  expect((await readBoardNotices(false, { env })).notices).toEqual([])
+  const read = await readBoardNotices(false, { env, refresh: refreshed })
+  expect(read.notices.map((row) => row.id)).toEqual([hostedRead.id])
+  expect(String(localRead.number)).not.toBe(hostedRead.id)
+  expect((await readBoardNotices(false, { env, refresh: refreshed })).notices).toEqual([])
 })
 
 test('a second chain turn claims and marks hosted and local notices through its root reader', async () => {
@@ -160,14 +159,20 @@ test('a second chain turn claims and marks hosted and local notices through its 
   )
   const remote = hosted(`run:${recordId}`)
   installFailedRefreshWithCached(remote)
-  const delivery = await claimRunBoardNotices(turn.id)
-  expect(delivery.notices.map((row) => row.id)).toEqual([String(local.number), remote.id])
-  expect(delivery.warning).toContain('offline for warning proof')
+  const refreshed = async () => ({ status: 'success' as const, applied: 0 })
+  const delivery = await claimRunBoardNotices(turn.id, false, 500, false, refreshed)
+  expect(delivery.notices.map((row) => row.id)).toEqual([remote.id])
+  expect(String(local.number)).not.toBe(remote.id)
   await markRunBoardNoticesDelivered(
     turn.id,
     delivery.notices.map((row) => row.id),
   )
-  expect((await claimRunBoardNotices(turn.id)).notices).toEqual([])
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=?')
+      .get(local.recordId),
+  ).toEqual({ delivered_at: null })
+  expect((await claimRunBoardNotices(turn.id, false, 500, false, refreshed)).notices).toEqual([])
   expect(
     db()
       .query('SELECT reader_session FROM hosted_board_receipt_cache WHERE message_id=?')
@@ -175,7 +180,7 @@ test('a second chain turn claims and marks hosted and local notices through its 
   ).toEqual({ reader_session: `run:${root.id}` })
 })
 
-test('a spent refresh budget still surfaces the failed-refresh warning', async () => {
+test('a spent refresh budget stops the hosted read with a remedy', async () => {
   const env = {
     CLAUDE_CODE_SESSION_ID: 'delivery-reader',
     BOTTEGA_RECORD_API_URL: 'https://record.test',
@@ -212,9 +217,9 @@ test('a spent refresh budget still surfaces the failed-refresh warning', async (
         signal?.addEventListener('abort', () => reject(new Error('aborted')))
       }),
   })
-  const claimed = await claimBoardNotices(false, { env, budgetMs: 20 })
-  expect(claimed.notices.map((row) => row.id)).toEqual([hostedClaim.id])
-  expect(claimed.warning).toContain('hosted board refresh budget spent')
+  await expect(claimBoardNotices(false, { env, budgetMs: 20 })).rejects.toThrow(
+    'hosted board read stopped: refresh incomplete',
+  )
 })
 
 test('session start renders information and standing as one line but a request in full', async () => {

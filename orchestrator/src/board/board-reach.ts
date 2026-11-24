@@ -7,6 +7,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
+import { boardMode } from './board-mode.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
@@ -195,6 +197,11 @@ export function prepareBoardReach(
   input: BoardReachRecordingInput,
   database: Database,
 ): PreparedBoardReach {
+  const mode = boardMode('shared', process.env, database)
+  if (mode !== input.messageSource)
+    throw new Error(
+      `${input.messageSource} board reach is unavailable while the board is ${mode}; retry through the ${mode} board path`,
+    )
   const presence = database
     .query(
       'SELECT project,COALESCE(first_seen,last_seen) started_at FROM presence WHERE session_id=?',
@@ -494,11 +501,28 @@ function hostedReplyReachRows(windowStart: string, database: Database): BoardRep
     })
 }
 
-export function boardReachReport(
+export async function boardReachReport(
   hours = BOARD_REACH_DEFAULT_HOURS,
   clock = Date.now(),
   database = db(),
+  options: {
+    env?: Record<string, string | undefined>
+    refresh?: typeof refreshHostedBoard
+  } = {},
 ) {
+  const env = options.env ?? process.env
+  const mode = boardMode('shared', env, database)
+  if (mode === 'hosted') {
+    const refreshed = await (options.refresh ?? refreshHostedBoard)({
+      budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+      env,
+      database,
+    })
+    if (refreshed.status !== 'success')
+      throw new Error(
+        `hosted board reach read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      )
+  }
   const recording = database
     .query('SELECT started_at FROM board_reach_recording WHERE singleton=1')
     .get() as { started_at: string }
@@ -539,10 +563,10 @@ export function boardReachReport(
       .all(windowStart) as Record<string, unknown>[]
   ).map(reachRow)
   const totals = countBoardReach(rows)
-  const replyRows = [
-    ...localReplyReachRows(windowStart, database),
-    ...hostedReplyReachRows(windowStart, database),
-  ]
+  const replyRows =
+    mode === 'local'
+      ? localReplyReachRows(windowStart, database)
+      : hostedReplyReachRows(windowStart, database)
   return {
     windowHours: hours,
     windowStart,
@@ -566,7 +590,7 @@ export function boardReachReport(
   }
 }
 
-export function renderBoardReach(report: ReturnType<typeof boardReachReport>): string {
+export function renderBoardReach(report: Awaited<ReturnType<typeof boardReachReport>>): string {
   const coverage = `Covered ${report.coveredFrom} to ${report.coveredTo}${report.partial ? ' (partial window)' : ''}. Recording failures: ${report.recordingFailures}.`
   const totals = report.totals
   const lines = [coverage]

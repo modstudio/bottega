@@ -30,7 +30,12 @@ import {
 } from './settings.ts'
 import { editSettingsAutoMode, type SettingsAutoModeOperation } from './settings-auto-mode.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
-import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
+import {
+  readSettingsEnv,
+  selectedSettingsEnvironment,
+  userSettingsEnvPath,
+} from './settings-env.ts'
+import { missingSettingsEnvironmentRefusal } from './settings-environment-selection.ts'
 import {
   claudeHomeFromEnvironment,
   projectLocalSettingsPath,
@@ -305,13 +310,12 @@ export async function settingsRenderCheckCommand(
       'refusing settings render: env is user-only; remove project env and envKeys from the row',
     )
   }
-  const environment =
-    target.kind === 'user'
-      ? selectedSettingsEnvironment(
-          userSettingsEnvPath(claudeHomeFromEnvironment(process.env)),
-          storeOwned.envKeys ?? [],
-        )
-      : undefined
+  const secretsPath = userSettingsEnvPath(claudeHomeFromEnvironment(process.env))
+  const { environment, missingEnvironment } = checkSettingsEnvironment(
+    target,
+    storeOwned,
+    secretsPath,
+  )
   const renderedEnvironment =
     environment === undefined ? undefined : renderedSettingsEnvironment(storeOwned, environment)
   if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, renderedEnvironment)
@@ -330,6 +334,7 @@ export async function settingsRenderCheckCommand(
         file: { path, exists: parsed !== null },
         revision: existing?.revision ?? null,
         settings: summarizeSettings(storeOwned),
+        missingEnvironment,
         drifted,
         drift: redactedDrift(drift, fileOwned, storeOwned),
         findings: findings.map((finding) => ({
@@ -340,15 +345,34 @@ export async function settingsRenderCheckCommand(
         })),
       }),
     )
-    if (drifted || !existing) presentation.exitCode(1)
+    if (drifted || !existing || missingEnvironment.length > 0) presentation.exitCode(1)
     return
   }
   logDrift(fileOwned, storeOwned, drift, presentation.log)
   printFindings(findings, presentation.log)
+  if (missingEnvironment.length > 0) {
+    presentation.log(missingSettingsEnvironmentRefusal(secretsPath, missingEnvironment))
+  }
   if (!existing) {
     presentation.log(`no settings row for ${targetLabel(target)}`)
   }
-  if (drifted || !existing) presentation.exitCode(1)
+  if (drifted || !existing || missingEnvironment.length > 0) presentation.exitCode(1)
+}
+
+function checkSettingsEnvironment(
+  target: SettingsTargetKind,
+  storeOwned: OwnedSettings,
+  secretsPath: string,
+): { environment: Record<string, string> | undefined; missingEnvironment: string[] } {
+  if (target.kind === 'project') return { environment: undefined, missingEnvironment: [] }
+  const selection = selectedSettingsEnvironment(
+    readSettingsEnv(secretsPath),
+    storeOwned.envKeys ?? [],
+  )
+  return {
+    environment: selection.missing.length === 0 ? selection.selected : undefined,
+    missingEnvironment: selection.missing,
+  }
 }
 
 function effectiveStoredSettings(

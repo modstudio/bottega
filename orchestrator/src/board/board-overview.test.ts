@@ -137,7 +137,7 @@ test('listing an unadopted board leaves its printed root unread for the session'
   expect(pending.delivery.map((message) => message.id)).toEqual([String(posted.number)])
 })
 
-test('an adopted overview combines local and cached roots with null hosted reach and warning', async () => {
+test('an adopted overview returns cached roots instead of differing local roots', async () => {
   const local = postNotice(
     { audience: 'machine:this', title: 'Machine local', body: 'body' },
     {},
@@ -187,15 +187,10 @@ test('an adopted overview combines local and cached roots with null hosted reach
     {
       env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       clock,
-      client: {
-        ...createMemoryRecordApiClient(),
-        listBoardChanges: async () => {
-          throw new Error('overview refresh offline')
-        },
-      },
+      refresh: async () => ({ status: 'success', applied: 0 }),
     },
   )
-  expect(listed.messages.map((row) => row.recordId)).toEqual([hosted.id, String(local.recordId)])
+  expect(listed.messages.map((row) => row.recordId)).toEqual([hosted.id])
   expect(listed.messages[0]).toMatchObject({
     recordId: hosted.id,
     store: 'hosted',
@@ -204,11 +199,10 @@ test('an adopted overview combines local and cached roots with null hosted reach
     unacknowledged: [],
     replyCount: 0,
   })
-  expect(listed.messages[1]).toMatchObject({ recordId: local.recordId, store: 'local', reached: 0 })
-  expect(listed.warning).toContain('overview refresh offline')
+  expect(listed.messages.some((row) => row.recordId === local.recordId)).toBe(false)
 })
 
-test('a spent refresh budget keeps the failed store outcome for overview and push', async () => {
+test('a spent refresh budget stops overview and push hosted reads', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const userId = newRecordId()
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
@@ -222,16 +216,17 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
         signal?.addEventListener('abort', () => reject(new Error('aborted')))
       }),
   }
-  const listed = await listBoardOverview(
-    {},
-    {
-      env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-      clock,
-      budgetMs: 20,
-      client: hanging,
-    },
-  )
-  expect(listed.warning).toContain('hosted board refresh budget spent')
+  await expect(
+    listBoardOverview(
+      {},
+      {
+        env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+        clock,
+        budgetMs: 20,
+        client: hanging,
+      },
+    ),
+  ).rejects.toThrow('hosted board overview stopped: refresh incomplete')
   const session = 'overview-push'
   db()
     .query(
@@ -243,7 +238,9 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
   const previousUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   try {
-    await pendingBoardDelivery({ session, budgetMs: 20, clock: clock + 1 })
+    await expect(pendingBoardDelivery({ session, budgetMs: 20, clock: clock + 1 })).rejects.toThrow(
+      'hosted board delivery stopped: refresh incomplete',
+    )
     expect(
       (
         db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_OUTCOME_KEY) as {
