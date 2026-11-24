@@ -22,7 +22,7 @@ export function stageRow(
   includeOpenStageCount = true,
 ): TaskFlowStageCursorRow & {
   open_stage_count?: number
-  parent_flow_record_id: string | null
+  parent_flow_record_id?: string | null
 } {
   const { stage, flow } = item
   return {
@@ -35,7 +35,6 @@ export function stageRow(
     task_record_id: flow.taskId,
     // SQLite cannot persist a taskless flow, so preserve the port's existing taskless row shape.
     task_flow_record_id: flow.taskId === null ? null : stage.flowRecordId,
-    parent_flow_record_id: flow.parentFlowRecordId ?? null,
     instance_id: stage.instanceId ?? '',
     session_id: stage.sessionId ?? null,
     ordinal: stage.activeOrdinal,
@@ -62,16 +61,17 @@ export function stageRow(
     handed_off_from_record_id: stage.handedOffFromRecordId ?? null,
     revision: stage.revision,
     ...(includeOpenStageCount
-      ? { open_stage_count: flow.taskId === null ? 0 : flow.openStageCount }
+      ? {
+          open_stage_count: flow.taskId === null ? 0 : flow.openStageCount,
+          parent_flow_record_id: flow.parentFlowRecordId ?? null,
+        }
       : {}),
   }
 }
 
-export function summaryStageRow(
-  item: ListedItem,
-): TaskFlowStageCursorRow & {
+export function summaryStageRow(item: ListedItem): TaskFlowStageCursorRow & {
   open_stage_count?: number
-  parent_flow_record_id: string | null
+  parent_flow_record_id?: string | null
 } {
   return stageRow({
     ...item,

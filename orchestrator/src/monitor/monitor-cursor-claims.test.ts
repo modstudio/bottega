@@ -34,18 +34,15 @@ test('cursor claim health reports an unclaimed epic independently', () => {
 
 test('a plan-task cursor at start is non-epic when no child flow names its flow', () => {
   expect(
-    openKeyedCursorFacts(
-      'p',
-      [
-        {
-          id: 10,
-          workflow_key: 'DEV-10',
-          session_id: 'session',
-          task_flow_record_id: 'flow-10',
-          parent_flow_record_id: null,
-        },
-      ],
-    ),
+    openKeyedCursorFacts('p', [
+      {
+        id: 10,
+        workflow_key: 'DEV-10',
+        session_id: 'session',
+        task_flow_record_id: 'flow-10',
+        parent_flow_record_id: null,
+      },
+    ]),
   ).toEqual([
     {
       project: 'p',
