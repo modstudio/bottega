@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { missingRecipeExecutables, recipeExecutableRefusal } from './recipe-executable-preflight.ts'
 import type { Step } from './recipe-step.ts'
-import {
-  missingRecipeExecutables,
-  recipeExecutableRefusal,
-} from './recipe-executable-preflight.ts'
 
 const step = (command: string, exec?: Step['exec']): Step => ({
   name: 'root-deps',
@@ -15,8 +13,8 @@ describe('recipe executable prerequisites', () => {
   test('reports a missing host tool and formats the complete remedy', () => {
     const missing = missingRecipeExecutables([{ phase: 'create', step: step('bun') }], () => false)
     expect(missing).toEqual([{ phase: 'create', step: 'root-deps', tool: 'bun' }])
-    expect(recipeExecutableRefusal('bottega', missing[0]!)).toBe(
-      'project bottega worktree recipe step root-deps (create) needs bun, which is not on PATH; install bun, then retry',
+    expect(recipeExecutableRefusal(PLATFORM_SLUG, missing[0]!)).toBe(
+      `project ${PLATFORM_SLUG} worktree recipe step root-deps (create) needs bun, which is not on PATH; install bun, then retry`,
     )
   })
 

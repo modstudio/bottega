@@ -12,6 +12,10 @@ const module = (file: string, allowed: string[]): RecipeModule => ({
 })
 
 export const recipeModules: RecipeModule[] = [
+  module('orchestrator/src/recipe/recipe-executable-preflight.ts', [
+    './recipe-schema.ts',
+    './recipe-step.ts',
+  ]),
   module('orchestrator/src/recipe/env-file.ts', []),
   module('orchestrator/src/recipe/tracked-allocation-keys.ts', [
     '../resources/resource-claims.ts',

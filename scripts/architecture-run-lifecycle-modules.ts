@@ -347,6 +347,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-outbox.ts',
     './run-root-rollup.ts',
   ]),
+  module('orchestrator/src/run/run-startup-failure-kind.ts', [
+    '../failure/failure.ts',
+    '../recipe/recipe-executable-preflight.ts',
+  ]),
   module('orchestrator/src/run/run-sandbox-recording.ts', ['bun:sqlite', '../sandbox/sandbox.ts']),
   module('orchestrator/src/run/run-confinement-count.ts', [
     'bun:sqlite',

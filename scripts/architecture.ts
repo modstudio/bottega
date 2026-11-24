@@ -197,6 +197,14 @@ const declaredModules: ArchitectureModule[] = [
     '../setup/provider-credential-trust-notice.ts',
   ]),
   module('orchestrator/src/health/doctor-reporter.ts', []),
+  module('orchestrator/src/health/recipe-executable-doctor.ts', [
+    'node:fs',
+    '../recipe/recipe-loader.ts',
+    '../recipe/recipe-executable-preflight.ts',
+    '../recipe/recipe-schema.ts',
+    '../worktree/worktree-lifecycle.ts',
+    './doctor-reporter.ts',
+  ]),
   module('orchestrator/src/health/retrieval-doctor.ts', ['./doctor-reporter.ts']),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [

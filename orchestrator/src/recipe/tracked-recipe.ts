@@ -27,6 +27,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import { composeProjectName } from './compose-provision-plan.ts'
 import { createProvisionedDatabases, dropProvisionedDatabases } from './database-provision.ts'
+import { assertRecipeExecutables, creationRecipeSteps } from './recipe-executable-preflight.ts'
 import {
   compensationPlan,
   destroyPlan,
@@ -38,7 +39,6 @@ import {
   trackedTeardownFailure,
 } from './recipe-lifecycle.ts'
 import { loadRecipeAtBase } from './recipe-loader.ts'
-import { assertRecipeExecutables } from './recipe-executable-preflight.ts'
 import {
   allocationEnvironmentVariable,
   hookBranchName,
@@ -552,10 +552,7 @@ function prepareTrackedCreate(
   })
   assertRecipeExecutables(
     input.projectName ?? '(unregistered)',
-    [
-      ...(loaded.recipe.pre ?? []).map((step) => ({ phase: 'pre', step })),
-      ...loaded.recipe.create.map((step) => ({ phase: 'create', step })),
-    ],
+    creationRecipeSteps(loaded.recipe),
     (name) => Bun.which(name, { PATH: process.env.PATH }) !== null,
   )
   const staticVars = {

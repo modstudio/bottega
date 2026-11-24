@@ -1,9 +1,18 @@
 // concern: tracked recipe executable prerequisites
 /** Knows which structured recipe commands can be resolved on the host. Must not read process state or execute steps. */
+
+import type { TrackedRecipe } from './recipe-schema.ts'
 import type { Step } from './recipe-step.ts'
 
 export type PhasedRecipeStep = { phase: string; step: Step }
 export type MissingRecipeExecutable = { phase: string; step: string; tool: string }
+
+export function creationRecipeSteps(recipe: TrackedRecipe): PhasedRecipeStep[] {
+  return [
+    ...(recipe.pre ?? []).map((step) => ({ phase: 'pre', step })),
+    ...recipe.create.map((step) => ({ phase: 'create', step })),
+  ]
+}
 
 /** Report host commands whose executable cannot be found without guessing through another context. */
 export function missingRecipeExecutables(
