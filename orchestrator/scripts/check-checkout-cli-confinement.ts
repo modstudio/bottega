@@ -434,7 +434,7 @@ function packageResolutionFailure(error: string): string | null {
 }
 
 function fixtureEnvironment(operatorHome: string): Record<string, string> {
-  const environment = {
+  const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,
