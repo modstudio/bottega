@@ -6,8 +6,10 @@ test('Docker inventory spawn guard refuses covered direct spawn forms', () => {
     Bun.${'spawnSync'}(['docker', 'ps', '-a'])
     startBoundedSync(['docker', 'volume', 'ls'])
     spawn(['docker', 'network', 'ls'])
+    spawnSync(['docker', 'network', 'inspect', 'fixture'])
+    spawnSync(['docker', 'volume', 'inspect', 'fixture'])
   `
-  expect(dockerInventorySpawnBypasses(source, 'fixture.ts')).toHaveLength(3)
+  expect(dockerInventorySpawnBypasses(source, 'fixture.ts')).toHaveLength(5)
 })
 
 test('Docker inventory spawn guard permits the shared helper and unrelated commands', () => {
@@ -24,7 +26,12 @@ test('Docker inventory spawn guard permits bounded classified network inventory'
     try {
       startBoundedSync(['docker', 'network', 'ls'], { budget: 'docker' })
     } catch (error) {
-      executableAbsentFrom(error)
+      classifyDockerInventorySpawnError(error)
+    }
+    try {
+      startBoundedSync(['docker', 'network', 'inspect', 'fixture'], { budget: 'docker' })
+    } catch (error) {
+      classifyDockerInventorySpawnError(error)
     }
   `
   expect(
@@ -37,7 +44,7 @@ test('Docker inventory spawn guard refuses unclassified or incorrectly budgeted 
     try {
       startBoundedSync(['docker', 'network', 'ls'], { budget: 'git-plumbing' })
     } catch (error) {
-      executableAbsentFrom(error)
+      classifyDockerInventorySpawnError(error)
     }
     startBoundedSync(['docker', 'network', 'ls'], { budget: 'docker' })
   `

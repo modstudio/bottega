@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-inventory-command.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideOrphanDockerVolumeRemoval,
@@ -21,6 +22,10 @@ const runRecordId = (runId: string) => runId
 
 test('Docker sweep passes without reclamation when the executable is absent', () => {
   const commands: string[] = []
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
     const error = new Error('spawn failed') as NodeJS.ErrnoException
@@ -43,6 +48,27 @@ test('Docker sweep passes without reclamation when the executable is absent', ()
   expect(absent).toBe(1)
   expect(inventoryErrors).toEqual(new Set())
   expect(commands).toHaveLength(1)
+})
+
+test('removed-tree close-out replay adds no error when Docker is absent', () => {
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'docker') {
+      const error = new Error('spawn failed') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    }
+    return result('', 1, `unexpected command: ${args.join(' ')}`)
+  }) as unknown as typeof Bun.spawnSync)
+
+  expect(
+    reclaimRemovedTreeDockerResources([
+      { path: '/missing/run-tree', removedRunIds: new Set(['missing-run']) },
+    ]),
+  ).toEqual({ removed: [], kept: [], errors: [] })
 })
 
 test('Docker sweep fails and records a nonzero inventory exit', () => {

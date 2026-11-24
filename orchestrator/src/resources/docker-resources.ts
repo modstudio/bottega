@@ -5,7 +5,10 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
-import { executableAbsentFrom, runDockerInventoryCommand } from './docker-inventory-command.ts'
+import {
+  classifyDockerInventorySpawnError,
+  runDockerInventoryCommand,
+} from './docker-inventory-command.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
@@ -51,8 +54,9 @@ export type DockerInventory =
       unattributedComposeResources?: UnattributedComposeDockerResource[]
       composeContainerProjects?: string[]
       composeContainers?: ComposeContainerFact[]
+      dockerAbsent?: boolean
     }
-  | { ascertainable: false; reason: string; executableAbsent: boolean }
+  | { ascertainable: false; reason: string }
 
 type DockerNetwork = {
   name: string
@@ -63,15 +67,19 @@ type DockerNetwork = {
 }
 
 export type DockerNetworkInventory =
-  | { ascertainable: true; networks: DockerNetwork[] }
-  | { ascertainable: false; reason: string; executableAbsent: boolean }
+  | { ascertainable: true; networks: DockerNetwork[]; dockerAbsent?: boolean }
+  | { ascertainable: false; reason: string }
 
 function list(
   kind: 'container' | 'volume',
   timeout: number,
 ):
-  | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
-  | { ascertainable: false; reason: string; executableAbsent: boolean } {
+  | {
+      ascertainable: true
+      rows: { name: string; labels: Record<string, string> }[]
+      dockerAbsent?: boolean
+    }
+  | { ascertainable: false; reason: string } {
   const args =
     kind === 'container'
       ? [
@@ -90,9 +98,9 @@ function list(
         ]
   const p = runDockerInventoryCommand(args, timeout)
   if (!p.ok) {
+    if (p.kind === 'docker-absent') return { ascertainable: true, rows: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      executableAbsent: p.executableAbsent,
       reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${p.reason}`,
     }
   }
@@ -317,6 +325,17 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
       found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
     }
     if (!found.ascertainable) return found
+    if (found.dockerAbsent) {
+      return {
+        ascertainable: true,
+        resources: [],
+        unattributable: [],
+        unattributedComposeResources: [],
+        composeContainerProjects: [],
+        composeContainers: [],
+        dockerAbsent: true,
+      }
+    }
     const compose = listedComposeFacts(kind, found.rows)
     observed.push(...compose.observed)
     compose.containerProjects.forEach((project) => {
@@ -347,6 +366,17 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   }
   const networks = dockerNetworkInventory()
   if (!networks.ascertainable) return networks
+  if (networks.dockerAbsent) {
+    return {
+      ascertainable: true,
+      resources: [],
+      unattributable: [],
+      unattributedComposeResources: [],
+      composeContainerProjects: [],
+      composeContainers: [],
+      dockerAbsent: true,
+    }
+  }
   const networkRows = classifyNetworkRows(networks.networks)
   observed.push(...networks.networks)
   rows.push(...networkRows.resources)
@@ -390,16 +420,17 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       budget: 'docker',
     })
   } catch (error) {
+    const availability = classifyDockerInventorySpawnError(error)
+    if (availability.kind === 'docker-absent')
+      return { ascertainable: true, networks: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      executableAbsent: executableAbsentFrom(error),
-      reason: `docker network inventory unavailable: ${(error as Error).message}`,
+      reason: `docker network inventory unavailable: ${availability.reason}`,
     }
   }
   if (listed.exitCode !== 0) {
     return {
       ascertainable: false,
-      executableAbsent: false,
       reason: `docker network inventory unavailable: ${listed.stderr.trim() || `exit ${listed.exitCode}`}`,
     }
   }
@@ -415,16 +446,17 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       budget: 'docker',
     })
   } catch (error) {
+    const availability = classifyDockerInventorySpawnError(error)
+    if (availability.kind === 'docker-absent')
+      return { ascertainable: true, networks: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      executableAbsent: executableAbsentFrom(error),
-      reason: `docker network inspection unavailable: ${(error as Error).message}`,
+      reason: `docker network inspection unavailable: ${availability.reason}`,
     }
   }
   if (inspected.exitCode !== 0) {
     return {
       ascertainable: false,
-      executableAbsent: false,
       reason: `docker network inspection unavailable: ${inspected.stderr.trim() || `exit ${inspected.exitCode}`}`,
     }
   }
@@ -447,7 +479,6 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
   } catch (error) {
     return {
       ascertainable: false,
-      executableAbsent: false,
       reason: `docker network inspection unavailable: ${(error as Error).message}`,
     }
   }
@@ -466,6 +497,7 @@ export function resourcesForRuns(
   return {
     ascertainable: true,
     resources: inventory.resources.filter((resource) => owned.has(resource.runId)),
+    ...(inventory.dockerAbsent ? { dockerAbsent: true } : {}),
   }
 }
 

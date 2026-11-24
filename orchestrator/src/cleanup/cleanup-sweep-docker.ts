@@ -13,7 +13,6 @@ import {
   projects,
   resolvedWorktreeTool,
 } from '../project/projects.ts'
-import { decideDockerInventoryAvailability } from '../resources/docker-inventory-command.ts'
 import {
   classifiedDockerResources,
   type DockerInventory,
@@ -690,14 +689,7 @@ export function reclaimSweptDockerResources(input: {
       .filter(isProjectRepository)
       .map(({ path }) => path),
   )
-  const availability = decideDockerInventoryAvailability({
-    ok: inventory.ascertainable,
-    executableAbsent: inventory.ascertainable ? false : inventory.executableAbsent,
-  })
-  if (availability === 'docker-absent') {
-    input.onDockerAbsent?.()
-    return false
-  }
+  if (inventory.ascertainable && inventory.dockerAbsent) input.onDockerAbsent?.()
   if (!inventory.ascertainable) inventoryErrors.add(inventory.reason)
   let failed = !inventory.ascertainable
   const resources = inventory.ascertainable ? inventory.resources : []

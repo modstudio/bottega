@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { Project } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from './docker-inventory-command.ts'
 import {
   ensureMainStackStarted,
   MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT,
@@ -512,6 +513,10 @@ test('idle sweep keeps a stack while a declared prefix serves a worktree', () =>
 
 test('idle sweep passes without later Docker calls when the executable is absent', () => {
   const commands: string[] = []
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
     const error = new Error('spawn failed') as NodeJS.ErrnoException

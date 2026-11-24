@@ -31,8 +31,8 @@ function isInventoryCommand(values: readonly string[]): boolean {
   if (values[0] !== 'docker') return false
   if (values[1] === 'ps') return true
   return (
-    (values[1] === 'volume' && values[2] === 'ls') ||
-    (values[1] === 'network' && values[2] === 'ls')
+    (values[1] === 'volume' && (values[2] === 'ls' || values[2] === 'inspect')) ||
+    (values[1] === 'network' && (values[2] === 'ls' || values[2] === 'inspect'))
   )
 }
 
@@ -66,12 +66,14 @@ function catchUsesSharedClassifier(call: ts.CallExpression): boolean {
       if (!variable || !ts.isIdentifier(variable)) return false
       let classified = false
       const visit = (node: ts.Node): void => {
+        const argument = ts.isCallExpression(node) ? node.arguments[0] : undefined
         if (
           ts.isCallExpression(node) &&
           ts.isIdentifier(node.expression) &&
-          node.expression.text === 'executableAbsentFrom' &&
-          ts.isIdentifier(node.arguments[0]) &&
-          node.arguments[0].text === variable.text
+          node.expression.text === 'classifyDockerInventorySpawnError' &&
+          argument &&
+          ts.isIdentifier(argument) &&
+          argument.text === variable.text
         ) {
           classified = true
         }
@@ -85,7 +87,7 @@ function catchUsesSharedClassifier(call: ts.CallExpression): boolean {
   return false
 }
 
-function approvedBoundedNetworkList(
+function approvedBoundedNetworkInventory(
   call: ts.CallExpression,
   command: readonly string[],
   fileName: string,
@@ -95,7 +97,7 @@ function approvedBoundedNetworkList(
     spawnName(call) === 'startBoundedSync' &&
     command[0] === 'docker' &&
     command[1] === 'network' &&
-    command[2] === 'ls' &&
+    (command[2] === 'ls' || command[2] === 'inspect') &&
     dockerBudget(call.arguments[1]) &&
     catchUsesSharedClassifier(call)
   )
@@ -113,7 +115,7 @@ export function dockerInventorySpawnBypasses(source: string, fileName: string): 
         SPAWN_NAMES.has(name) &&
         command &&
         isInventoryCommand(command) &&
-        !approvedBoundedNetworkList(node, command, fileName)
+        !approvedBoundedNetworkInventory(node, command, fileName)
       ) {
         const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
         failures.push(

@@ -302,7 +302,6 @@ test('a timed-out Docker inventory is unascertainable and discards partial rows'
   try {
     expect(dockerRunResources()).toEqual({
       ascertainable: false,
-      executableAbsent: false,
       reason: 'docker volume ls inventory unavailable: timed out after 25ms',
     })
   } finally {

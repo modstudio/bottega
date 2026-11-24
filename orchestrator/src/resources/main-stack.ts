@@ -13,10 +13,7 @@ import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
-import {
-  decideDockerInventoryAvailability,
-  runDockerInventoryCommand,
-} from './docker-inventory-command.ts'
+import { runDockerInventoryCommand } from './docker-inventory-command.ts'
 import {
   classifyServedWorktree,
   decideMainStackEnsure,
@@ -34,8 +31,9 @@ const MAIN_STACK_COMMAND_TIMEOUT_MS = 120_000
 
 type CommandResult = { ok: true; output: string } | { ok: false; reason: string }
 type DockerInventoryResult =
-  | { ok: true; output: string; executableAbsent: false }
-  | { ok: false; reason: string; executableAbsent: boolean }
+  | { kind: 'proceed'; output: string }
+  | { kind: 'docker-absent' }
+  | { kind: 'fail'; reason: string }
 
 function dockerCompose(cwd: string, args: string[]): CommandResult {
   const command = ['docker', 'compose', ...args]
@@ -265,13 +263,11 @@ function runningMainStackPaths(): DockerInventoryResult {
   ]
   const result = runDockerInventoryCommand(command, MAIN_STACK_COMMAND_TIMEOUT_MS)
   if (!result.ok) {
-    return {
-      ok: false,
-      executableAbsent: result.executableAbsent,
-      reason: `main stack inventory unavailable: ${result.reason}`,
-    }
+    return result.kind === 'docker-absent'
+      ? { kind: 'docker-absent' }
+      : { kind: 'fail', reason: `main stack inventory unavailable: ${result.reason}` }
   }
-  return { ok: true, output: result.stdout, executableAbsent: false }
+  return { kind: 'proceed', output: result.stdout }
 }
 
 /**
@@ -549,16 +545,14 @@ function sweepIdleMainStack(
 
 export function sweepIdleMainStacks(input: MainStackSweepInput): boolean {
   const inventory = runningMainStackPaths()
-  const availability = decideDockerInventoryAvailability(inventory)
-  if (availability === 'docker-absent') {
+  if (inventory.kind === 'docker-absent') {
     input.onDockerAbsent?.()
     return false
   }
-  if (availability === 'fail' && !inventory.ok) {
+  if (inventory.kind === 'fail') {
     input.error(inventory.reason)
     return true
   }
-  if (!inventory.ok) return true
   const runningPaths = new Set(
     inventory.output
       .split('\n')
