@@ -203,6 +203,12 @@ export function editSettingsEnv(
   if (input.operation === 'set' && input.value === undefined) {
     throw new Error('refusing settings env set: value is required')
   }
+  if (input.operation === 'set' && containsSecretShaped(input.value!)) {
+    throw new Error(
+      `refusing settings env set: ${input.name} has a secret-shaped value\n` +
+        `cleared by: run \`${PLATFORM_SLUG} machine config secret set ${input.name}\``,
+    )
+  }
   const current = owned.env ?? {}
   if (input.operation === 'unset' && !Object.hasOwn(current, input.name)) {
     return {
@@ -220,13 +226,17 @@ export function editSettingsEnv(
     input.operation === 'set'
       ? Object.entries({ ...current, [input.name]: input.value! })
       : Object.entries(current).filter(([name]) => name !== input.name)
+  const moved = input.operation === 'set' && (owned.envKeys ?? []).includes(input.name)
   return {
     settings: {
       ...owned,
       env: Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))),
+      ...(moved ? { envKeys: owned.envKeys!.filter((name) => name !== input.name) } : {}),
     },
     changed: true,
-    message: `${input.operation === 'set' ? 'set' : 'unset'} ${input.name}`,
+    message: moved
+      ? `moved ${input.name} from envKeys to env`
+      : `${input.operation === 'set' ? 'set' : 'unset'} ${input.name}`,
   }
 }
 

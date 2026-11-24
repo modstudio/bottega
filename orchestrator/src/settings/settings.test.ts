@@ -313,6 +313,37 @@ describe('editSettingsEnv', () => {
       message: 'PRIVATE is a secrets-file name, not a plain value',
     })
   })
+
+  test('set moves a secrets-file name to a plain value', () => {
+    const owned = { permissions: {}, hooks: {}, env: { ALPHA: 'one' }, envKeys: ['PRIVATE'] }
+    expect(editSettingsEnv(owned, { operation: 'set', name: 'PRIVATE', value: 'plain' })).toEqual({
+      settings: {
+        permissions: {},
+        hooks: {},
+        env: { ALPHA: 'one', PRIVATE: 'plain' },
+        envKeys: [],
+      },
+      changed: true,
+      message: 'moved PRIVATE from envKeys to env',
+    })
+    expect(owned.envKeys).toEqual(['PRIVATE'])
+  })
+
+  test('set refuses a secret-shaped value without printing it', () => {
+    const value = jwtSentinel()
+    let message = ''
+    try {
+      editSettingsEnv(
+        { permissions: {}, hooks: {}, envKeys: ['PRIVATE'] },
+        { operation: 'set', name: 'PRIVATE', value },
+      )
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain('PRIVATE has a secret-shaped value')
+    expect(message).toContain('bottega machine config secret set PRIVATE')
+    expect(message).not.toContain(value)
+  })
 })
 
 function jwtSentinel() {

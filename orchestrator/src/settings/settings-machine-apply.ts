@@ -45,6 +45,7 @@ import {
   subagentBlockingOn,
 } from './settings.ts'
 import {
+  missingSettingsEnvironmentRefusal,
   readSettingsEnv,
   selectedSettingsEnvironment,
   userSettingsEnvPath,
@@ -213,7 +214,7 @@ function applyUserSettings(
   row: UserSettingsDocuments['settings'],
   check: boolean,
   deps: Dependencies,
-): MachineSettingsApplyResult {
+): MachineSettingsApplyResult[] {
   const home = claudeHomeFromEnvironment(deps.environment)
   const path = userSettingsPath(home)
   const target = `settings ${path}`
@@ -248,8 +249,10 @@ function applyUserSettings(
         ? merged.settings.options?.subagentHooks
         : undefined
     let environment: Record<string, string> | undefined
+    let missingEnvironment: string[] = []
+    let secretsPath = ''
     if (row) {
-      const secretsPath = userSettingsEnvPath(home)
+      secretsPath = userSettingsEnvPath(home)
       const secrets = readSettingsEnv(secretsPath)
       const names = new Set(ownedEnvironmentNames(owned))
       const removed = parsed.envKeys.filter((name) => !names.has(name))
@@ -260,13 +263,17 @@ function applyUserSettings(
             `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
         )
       }
-      environment = renderedSettingsEnvironment(
-        owned,
-        selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
-      )
+      const selection = selectedSettingsEnvironment(secrets, owned.envKeys ?? [])
+      missingEnvironment = selection.missing
+      environment =
+        selection.missing.length === 0
+          ? renderedSettingsEnvironment(owned, selection.selected)
+          : existing === null
+            ? { ...(owned.env ?? {}) }
+            : undefined
     }
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-    return applyRenderedUserSettings({
+    const settingsResult = applyRenderedUserSettings({
       path,
       target,
       rendered,
@@ -282,8 +289,16 @@ function applyUserSettings(
       subagentHooks,
       deps,
     })
+    if (missingEnvironment.length === 0) return [settingsResult]
+    return [
+      settingsResult,
+      refusal(
+        `${target} env`,
+        new Error(missingSettingsEnvironmentRefusal(secretsPath, missingEnvironment)),
+      ),
+    ]
   } catch (error) {
-    return refusal(target, error)
+    return [refusal(target, error)]
   }
 }
 
@@ -514,7 +529,7 @@ export async function applyMachineSettings(
       deps.local,
     )
     return [
-      applyUserSettings(documents.settings, input.check, deps),
+      ...applyUserSettings(documents.settings, input.check, deps),
       ...applyUserCanon(documents.canon, documents.source, input.check, deps),
       ...(await applyClaudeMcpPlacement(input.check, deps)),
     ]

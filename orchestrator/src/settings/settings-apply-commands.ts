@@ -24,6 +24,7 @@ import {
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import {
   mergeSettingsEnv,
+  missingSettingsEnvironmentRefusal,
   readSettingsEnv,
   selectedSettingsEnvironment,
   settingsEnvironmentFromJson,
@@ -260,13 +261,15 @@ export async function settingsRenderWriteCommand(
       )
     }
   }
-  const environment =
-    target.kind === 'user'
-      ? renderedSettingsEnvironment(
-          owned,
-          selectedSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? []),
-        )
-      : undefined
+  let environment: Record<string, string> | undefined
+  if (target.kind === 'user') {
+    const secretsPath = userSettingsEnvPath(root)
+    const selection = selectedSettingsEnvironment(readSettingsEnv(secretsPath), owned.envKeys ?? [])
+    if (selection.missing.length > 0) {
+      throw new Error(missingSettingsEnvironmentRefusal(secretsPath, selection.missing))
+    }
+    environment = renderedSettingsEnvironment(owned, selection.selected)
+  }
   const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
   const plan = planSettingsWrite(path, rendered)
   logWritePlan(
