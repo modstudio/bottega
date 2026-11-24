@@ -86,54 +86,68 @@ export const deliveryWarning = (...warnings: Array<string | null>): string | nul
 
 export async function claimBoardNotices(
   all = false,
-  input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},
+  input: {
+    env?: Record<string, string | undefined>
+    budgetMs?: number
+    refresh?: typeof refreshHostedBoard
+  } = {},
 ) {
   const env = input.env ?? process.env
-  const refreshed = await refreshHostedBoard({
+  const refreshed = await (input.refresh ?? refreshHostedBoard)({
     budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
     env,
   })
-  const local = claimPushNotices(all, env)
   const sessionStartNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
     ...notice,
     text:
       boardDeliveryForm(notice.purpose, 'session-start') === 'full' ? notice.text : notice.oneLine,
   })
-  if (refreshed.status === 'local')
+  if (refreshed.status === 'local') {
+    const local = claimPushNotices(all, env)
     return {
       notices: local.notices.map(deliveryNotice).map(sessionStartNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
+  }
+  if (refreshed.status !== 'success')
+    throw new Error(
+      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
   const hosted = await claimCachedHostedForPush(sessionReader(env), all)
   return {
-    notices: [
-      ...local.notices.map(deliveryNotice).map(sessionStartNotice),
-      ...hosted.notices.map(deliveryNotice).map(sessionStartNotice),
-    ],
-    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
-    withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
+    notices: hosted.notices.map(deliveryNotice).map(sessionStartNotice),
+    warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
+    withheldOlderCount: hosted.withheldOlderCount,
   }
 }
 
 export async function readBoardNotices(
   all = false,
-  input: { env?: Record<string, string | undefined>; budgetMs?: number } = {},
+  input: {
+    env?: Record<string, string | undefined>
+    budgetMs?: number
+    refresh?: typeof refreshHostedBoard
+  } = {},
 ) {
   const env = input.env ?? process.env
-  const refreshed = await refreshHostedBoard({
+  const refreshed = await (input.refresh ?? refreshHostedBoard)({
     budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
     env,
   })
-  const local = readNotices(all, env).map(deliveryNotice)
-  if (refreshed.status === 'local') return { notices: local, warning: null }
+  if (refreshed.status === 'local')
+    return { notices: readNotices(all, env).map(deliveryNotice), warning: null }
+  if (refreshed.status !== 'success')
+    throw new Error(
+      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
   const hosted = claimCachedHosted(sessionReader(env), all)
   await markCachedHostedDelivered(
     sessionReader(env),
     hosted.map((notice) => notice.id),
   )
   return {
-    notices: [...local, ...hosted.map(deliveryNotice)],
+    notices: hosted.map(deliveryNotice),
     warning: hostedBoardVerificationWarning(),
   }
 }
@@ -143,6 +157,7 @@ export async function claimRunBoardNotices(
   all = false,
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
   sessionStart = false,
+  refresh: typeof refreshHostedBoard = refreshHostedBoard,
 ) {
   const runNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
     ...notice,
@@ -151,15 +166,20 @@ export async function claimRunBoardNotices(
         ? notice.text
         : notice.oneLine,
   })
-  const refreshed = await refreshHostedBoard({ budgetMs })
+  const refreshed = await refresh({ budgetMs })
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
-  const local = claimRunPushNotices(runId, all)
-  if (refreshed.status === 'local')
+  if (refreshed.status === 'local') {
+    const local = claimRunPushNotices(runId, all)
     return {
       notices: local.notices.map(deliveryNotice).map(runNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
+  }
+  if (refreshed.status !== 'success')
+    throw new Error(
+      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
   const hosted = await claimCachedHostedForPush(
     reader,
     all,
@@ -169,11 +189,9 @@ export async function claimRunBoardNotices(
     readerRunRecordId,
   )
   return {
-    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)].map(
-      runNotice,
-    ),
-    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
-    withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
+    notices: hosted.notices.map(deliveryNotice).map(runNotice),
+    warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
+    withheldOlderCount: hosted.withheldOlderCount,
   }
 }
 
@@ -183,7 +201,7 @@ export async function markRunBoardNoticesDelivered(
 ): Promise<void> {
   const ids = splitBoardIds(sourceIds)
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
-  markRunNoticesDelivered(runId, ids.local)
+  if (ids.local.length) markRunNoticesDelivered(runId, ids.local)
   if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted, { readerRunRecordId })
 }
 
@@ -192,7 +210,7 @@ export async function markBoardNoticesDelivered(
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   const ids = splitBoardIds(sourceIds, env)
-  markNoticesDelivered(ids.local, env)
+  if (ids.local.length) markNoticesDelivered(ids.local, env)
   if (ids.hosted.length) await markCachedHostedDelivered(sessionReader(env), ids.hosted)
 }
 

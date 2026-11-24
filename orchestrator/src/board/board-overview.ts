@@ -7,9 +7,9 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
   hostedBoardVerificationWarning,
-  hostedMessageIsLive,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import { hostedMessageIsLive } from './board-hosted-cache-readers.ts'
 import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
 import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'
@@ -185,17 +185,23 @@ export async function listBoardOverview(
     clock?: number
     budgetMs?: number
     client?: RecordApiClient
+    refresh?: typeof refreshHostedBoard
   } = {},
 ): Promise<{ messages: BoardOverviewEntry[]; warning: string | null }> {
   const clock = input.clock ?? Date.now()
-  const refreshed = await refreshHostedBoard({
+  const refreshed = await (input.refresh ?? refreshHostedBoard)({
     budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
     env: input.env,
     client: input.client,
   })
-  const rows = await localEntries(clock)
-  if (refreshed.status !== 'local')
-    rows.push(...hostedEntries(cachedHostedBoardMessages(db()), clock))
+  if (refreshed.status !== 'local' && refreshed.status !== 'success')
+    throw new Error(
+      `hosted board overview stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
+  const rows =
+    refreshed.status === 'local'
+      ? await localEntries(clock)
+      : hostedEntries(cachedHostedBoardMessages(db()), clock)
   return {
     messages: boardOverview(rows, filters),
     warning: refreshed.status === 'local' ? null : hostedBoardVerificationWarning(),

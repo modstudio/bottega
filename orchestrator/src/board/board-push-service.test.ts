@@ -28,6 +28,7 @@ import {
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
@@ -278,6 +279,7 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
   const reader = 'hosted-delivery-reader'
   const signedInUser = newRecordId()
   const otherUser = newRecordId()
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
@@ -368,6 +370,7 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
     session: reader,
     budgetMs: 1,
     clock: clock + 4,
+    refresh: async () => ({ status: 'success', applied: 0 }),
   })
   expect(first.delivery.map((message) => message.id)).toEqual([
     messages[0]!.id,
@@ -387,11 +390,13 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
     session: reader,
     ids: first.delivery.map((message) => message.id),
     clock: clock + 4,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   })
   const second = await pendingBoardDelivery({
     session: reader,
     budgetMs: 1,
     clock: clock + 5,
+    refresh: async () => ({ status: 'success', applied: 0 }),
   })
   expect(second.delivery).toEqual([])
 })

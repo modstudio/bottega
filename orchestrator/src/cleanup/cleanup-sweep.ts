@@ -4,8 +4,9 @@ import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
+import { boardMode } from '../board/board-mode.ts'
 import { reapBoardReach } from '../board/board-reach.ts'
-import { reapBoardMessages } from '../board/board-service.ts'
+import { reapBoardMessagesForInstall } from '../board/board-service.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
@@ -104,8 +105,8 @@ import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
 
 function reapExpiredBoardMessages(dryRun: boolean): void {
   if (!dryRun) {
-    stampEndedClaims()
-    reapBoardMessages()
+    if (boardMode('shared') === 'local') stampEndedClaims()
+    reapBoardMessagesForInstall()
     reapBoardReach(Date.now(), writableDb())
   }
 }

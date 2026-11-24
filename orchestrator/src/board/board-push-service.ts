@@ -15,6 +15,7 @@ import {
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
+import { boardMode, boardModeForId } from './board-mode.ts'
 import { requireRealSession } from './board-policy.ts'
 import {
   boardPushDecision,
@@ -59,6 +60,8 @@ type DeliveryInput = {
   clock?: number
   database?: Database
   claimReplySuccessors?: boolean
+  refresh?: typeof refreshHostedBoard
+  env?: Record<string, string | undefined>
 }
 
 export { deliveryWarning }
@@ -168,43 +171,46 @@ function pendingWithdrawals(
   session: string,
   clock: number,
   database: Database,
+  source: 'local' | 'hosted',
 ): PendingWithdrawal[] {
-  const localRows = messageRows(database)
-  const localRoots = localSupersessionRoots(localRows)
-  const local = localRows.flatMap((row) => {
-    const deliveredAt = receiptAt(database, 'local', row.record_id, session).delivered_at
-    if (
-      !withdrawalPending({
-        isRoot: row.thread_root_record_id === null,
-        withdrawnReason: row.withdrawn_reason,
-        withdrawnAt: row.withdrawn_at,
-        deliveredAt,
-        authorSession: row.author_session,
-        readerSession: session,
-        alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
-        now: clock,
-      })
-    )
-      return []
-    if (
-      localRoots.some(
-        (root) =>
-          withdrawalSuperseded(supersessionFact(row.author_session, row.title, row.created_at), [
-            root.fact,
-          ]) && receiptProvesReach(database, 'local', root.row.record_id, session),
+  if (source === 'local') {
+    const localRows = messageRows(database)
+    const localRoots = localSupersessionRoots(localRows)
+    return localRows.flatMap((row) => {
+      const deliveredAt = receiptAt(database, 'local', row.record_id, session).delivered_at
+      if (
+        !withdrawalPending({
+          isRoot: row.thread_root_record_id === null,
+          withdrawnReason: row.withdrawn_reason,
+          withdrawnAt: row.withdrawn_at,
+          deliveredAt,
+          authorSession: row.author_session,
+          readerSession: session,
+          alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
+          now: clock,
+        })
       )
-    )
-      return []
-    return [
-      withdrawalDelivery({
-        id: String(row.number),
-        title: row.title ?? '',
-        withdrawnAt: row.withdrawn_at!,
-        messageRecordId: row.record_id,
-        source: 'local',
-      }),
-    ]
-  })
+        return []
+      if (
+        localRoots.some(
+          (root) =>
+            withdrawalSuperseded(supersessionFact(row.author_session, row.title, row.created_at), [
+              root.fact,
+            ]) && receiptProvesReach(database, 'local', root.row.record_id, session),
+        )
+      )
+        return []
+      return [
+        withdrawalDelivery({
+          id: String(row.number),
+          title: row.title ?? '',
+          withdrawnAt: row.withdrawn_at!,
+          messageRecordId: row.record_id,
+          source: 'local',
+        }),
+      ]
+    })
+  }
   const hostedRows = cachedRows(database)
   const hostedRoots = hostedRows
     .filter((row) => row.message.threadRootId === null)
@@ -212,7 +218,7 @@ function pendingWithdrawals(
       row,
       fact: supersessionFact(row.message.authorSession, row.message.title, row.message.createdAt),
     }))
-  const hosted = hostedRows.flatMap((row) => {
+  return hostedRows.flatMap((row) => {
     const { message } = row
     const deliveredAt = receiptAt(database, 'hosted', message.id, session).delivered_at
     if (
@@ -248,7 +254,6 @@ function pendingWithdrawals(
       }),
     ]
   })
-  return [...local, ...hosted]
 }
 
 function stampPendingWithdrawals(
@@ -262,7 +267,6 @@ function stampPendingWithdrawals(
     `INSERT OR IGNORE INTO board_withdrawal_delivery
      (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
-  const localRows = messageRows(database)
   const hostedRows = cachedRows(database)
   for (const requestedId of requestedIds) {
     const identifier = parseWithdrawalDeliveryId(requestedId)
@@ -271,7 +275,7 @@ function stampPendingWithdrawals(
     if (resolved === null) continue
     const isWithdrawnRoot =
       resolved.source === 'local'
-        ? localRows.some(
+        ? messageRows(database).some(
             (row) =>
               row.record_id === resolved.recordId &&
               row.thread_root_record_id === null &&
@@ -393,24 +397,59 @@ function hostedPendingAcknowledgements(
   )
 }
 
+async function refreshForPendingBoardDelivery(input: DeliveryInput, database: Database) {
+  const cachedMode = () =>
+    boardMode('shared', input.env ?? process.env, database) === 'local'
+      ? ({ status: 'local', applied: 0 } as const)
+      : ({ status: 'success', applied: 0 } as const)
+  const refreshed = input.refresh
+    ? await input.refresh({ budgetMs: input.budgetMs, database })
+    : input.budgetMs > 0
+      ? await refreshHostedBoard({ budgetMs: input.budgetMs, database })
+      : cachedMode()
+  if (refreshed.status !== 'local' && refreshed.status !== 'success')
+    throw new Error(
+      `hosted board delivery stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
+  return refreshed.status === 'local'
+}
+
+function pendingDeliveryCandidates(
+  input: DeliveryInput,
+  unread: BoardDelivery[],
+  withdrawalDeliveries: BoardDelivery[],
+  pendingAcknowledgements: BoardDelivery[],
+): BoardDelivery[] {
+  const recentlyInjected = new Set(input.recentlyInjectedIds ?? [])
+  return input.includeAcknowledgementReminders
+    ? [
+        ...unread,
+        ...withdrawalDeliveries,
+        ...pendingAcknowledgements.filter(
+          (pending) =>
+            !unread.some((message) => message.id === pending.id) &&
+            !(pending.deliveredAt && recentlyInjected.has(pending.id)),
+        ),
+      ]
+    : [...unread, ...withdrawalDeliveries]
+}
+
 export async function pendingBoardDelivery(input: DeliveryInput) {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
-  if (input.budgetMs > 0) await refreshHostedBoard({ budgetMs: input.budgetMs, database })
+  const localMode = await refreshForPendingBoardDelivery(input, database)
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
   const claimReplySuccessors = input.claimReplySuccessors ?? true
-  const localPush = claimPushNotices(false, env, clock, database, claimReplySuccessors)
-  const hostedPush = await claimCachedHostedForPush(
-    input.session,
-    false,
-    clock,
-    database,
-    claimReplySuccessors,
-  )
+  const localPush = localMode
+    ? claimPushNotices(false, env, clock, database, claimReplySuccessors)
+    : null
+  const hostedPush = localMode
+    ? null
+    : await claimCachedHostedForPush(input.session, false, clock, database, claimReplySuccessors)
   const unread: BoardDelivery[] = [
-    ...localPush.notices.map((message) => ({
+    ...(localPush?.notices ?? []).map((message) => ({
       id: String(message.number),
       text:
         boardDeliveryForm(message.purpose, 'running') === 'full' ? message.text : message.oneLine,
@@ -419,7 +458,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
       deliveredAt: null,
       purpose: message.purpose,
     })),
-    ...hostedPush.notices
+    ...(hostedPush?.notices ?? [])
       .filter((message) => message.text.length > 0)
       .map((message) => ({
         id: message.id,
@@ -432,10 +471,15 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
       })),
   ]
   const pendingAcknowledgements = [
-    ...localPendingAcknowledgements(input.session, beganAt, clock, database),
-    ...hostedPendingAcknowledgements(input.session, beganAt, clock, database),
+    ...(localMode ? localPendingAcknowledgements(input.session, beganAt, clock, database) : []),
+    ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
   ]
-  const withdrawals = pendingWithdrawals(input.session, clock, database)
+  const withdrawals = pendingWithdrawals(
+    input.session,
+    clock,
+    database,
+    localMode ? 'local' : 'hosted',
+  )
   const withdrawalDeliveries: BoardDelivery[] = withdrawals.map((item) => ({
     id: item.id,
     text: item.text,
@@ -444,18 +488,12 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     deliveredAt: item.deliveredAt,
     purpose: item.purpose,
   }))
-  const recentlyInjected = new Set(input.recentlyInjectedIds ?? [])
-  const candidates = input.includeAcknowledgementReminders
-    ? [
-        ...unread,
-        ...withdrawalDeliveries,
-        ...pendingAcknowledgements.filter(
-          (pending) =>
-            !unread.some((message) => message.id === pending.id) &&
-            !(pending.deliveredAt && recentlyInjected.has(pending.id)),
-        ),
-      ]
-    : [...unread, ...withdrawalDeliveries]
+  const candidates = pendingDeliveryCandidates(
+    input,
+    unread,
+    withdrawalDeliveries,
+    pendingAcknowledgements,
+  )
   const selected = boundedBoardDelivery(
     input.excludeAcknowledgementRequired
       ? candidates.filter((message) => !message.requiresAcknowledgement)
@@ -466,10 +504,13 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     overflow: selected.overflow,
     pendingAcknowledgements,
     warning: deliveryWarning(
-      localPush.warning,
-      hostedPush.warning,
+      localPush?.warning ?? null,
+      hostedPush?.warning ?? null,
       deferredReplySuccessorWarning(
-        [...localPush.deferredReplySuccessors, ...hostedPush.deferredReplySuccessors],
+        [
+          ...(localPush?.deferredReplySuccessors ?? []),
+          ...(hostedPush?.deferredReplySuccessors ?? []),
+        ],
         boardPendingCommand(input.session),
       ),
     ),
@@ -484,6 +525,7 @@ export async function markBoardDeliveryDelivered(input: {
   blockedStop?: boolean
   clock?: number
   database?: Database
+  env?: Record<string, string | undefined>
 }): Promise<void> {
   requireRealSession(input.session, 'board delivery acknowledgement')
   const database = input.database ?? writableDb()
@@ -491,10 +533,15 @@ export async function markBoardDeliveryDelivered(input: {
   const deliveredAt = new Date(clock).toISOString()
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
-  const messages = messageRows(database)
+  const mode = boardMode('shared', input.env ?? process.env, database)
+  const messages = mode === 'local' ? messageRows(database) : []
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
+    if (mode === 'hosted') {
+      boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
+      return [{ source: 'hosted' as const, recordId: id }]
+    }
     const identifier = resolveBoardDeliveryIdentifier(database, id)
     return identifier ? [identifier] : []
   })

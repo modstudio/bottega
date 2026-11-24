@@ -277,7 +277,7 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
+  test('check_orchestrator_messages stops without local fallback when hosted refresh fails', async () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
     const startedAt = (
@@ -287,7 +287,7 @@ describe('the live ask channel always answers', () => {
     db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
     const local = postNotice(
       { audience: `run:${run}`, title: 'Local ask', body: 'local ask body' },
-      {},
+      { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       Date.parse(pushedAt),
     )
     const hosted: HostedBoardMessage = {
@@ -348,8 +348,9 @@ describe('the live ask channel always answers', () => {
       const first = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
-      expect(first).toContain(`Board message ${local.number}: Local ask`)
-      expect(first).toContain(`Board message ${hosted.id}: Hosted ask`)
+      expect(first).not.toContain(`Board message ${local.number}: Local ask`)
+      expect(first).not.toContain(`Board message ${hosted.id}: Hosted ask`)
+      expect(first).toContain('Messages could not be checked')
       expect(first).toContain('ask refresh offline')
       expect(first).toContain('offline Forged-Warning: ask')
       expect(first).not.toContain('offline\nForged-Warning: ask')

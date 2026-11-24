@@ -7,6 +7,7 @@ import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
+import { boardClaimsOfSession } from '../board/board-operations.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
@@ -218,25 +219,12 @@ async function cursorFacts(sessionId: string): Promise<CursorLifecycle[]> {
   })
 }
 
-function claimFacts(sessionId: string): ClaimLifecycle[] {
-  return (
-    db()
-      .query(
-        `SELECT record_id,subject_kind,subject_value,taken_at,closed_at
-           FROM board_claim WHERE holder_session=?`,
-      )
-      .all(sessionId) as Array<{
-      record_id: string
-      subject_kind: string
-      subject_value: string
-      taken_at: string
-      closed_at: string | null
-    }>
-  ).map((row) => ({
-    id: row.record_id,
-    subject: row.subject_value,
-    takenAt: row.taken_at,
-    closedAt: row.closed_at,
+async function claimFacts(sessionId: string): Promise<ClaimLifecycle[]> {
+  return (await boardClaimsOfSession(sessionId, true)).map((claim) => ({
+    id: claim.recordId,
+    subject: claim.subject.value,
+    takenAt: claim.takenAt,
+    closedAt: claim.closedAt,
   }))
 }
 
@@ -244,7 +232,7 @@ async function factsFor(sessionId: string): Promise<LifecycleFacts> {
   return {
     runs: runFacts(sessionId),
     cursors: await cursorFacts(sessionId),
-    claims: claimFacts(sessionId),
+    claims: await claimFacts(sessionId),
     unjudgedOwnerWindowMs: UNJUDGED_OWNER_WINDOW_MS,
   }
 }

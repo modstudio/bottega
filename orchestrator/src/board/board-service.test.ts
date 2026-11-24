@@ -857,7 +857,7 @@ test('post content accepts exact size boundaries and refuses one character over'
   ).toThrow(`${BOARD_BODY_MAX_CHARS} characters`)
 })
 
-test('ack deadline cannot exceed expiry and expired notices do not escalate', () => {
+test('ack deadline cannot exceed expiry and expired notices do not escalate', async () => {
   const clock = Date.now() + 70_000
   expect(() =>
     postNotice(
@@ -888,7 +888,7 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
     clock + 1,
   )
   expect(
-    boardEscalations(clock + 1_002).some((row) =>
+    (await boardEscalations(clock + 1_002)).some((row) =>
       row.subject.startsWith(`board:${posted.recordId}:`),
     ),
   ).toBeFalse()
@@ -1007,7 +1007,7 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   expect(noticeStatus(posted.recordId, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
 })
 
-test('ack escalation keeps the posting-time audience snapshot across presence refreshes', () => {
+test('ack escalation keeps the posting-time audience snapshot across presence refreshes', async () => {
   const clock = Date.now() + 10_000
   const insertPresence = db().query(
     `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
@@ -1031,7 +1031,7 @@ test('ack escalation keeps the posting-time audience snapshot across presence re
   insertPresence.run('late-reader', new Date(clock + 500).toISOString())
   readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 500)
   expect(
-    boardEscalations(clock + 1_001)
+    (await boardEscalations(clock + 1_001))
       .filter((row) => row.subject.startsWith(`board:${posted.number}:`))
       .map((row) => row.subject),
   ).toEqual([`board:${posted.number}:posting-reader`])

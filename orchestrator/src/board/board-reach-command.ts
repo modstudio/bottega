@@ -30,8 +30,8 @@ export function registerBoardReachCommand(board: Command): void {
     )
     .description('measure board-message reach and acknowledgement')
     .option('--json', 'write the reach report as JSON')
-    .action((options) => {
-      const report = boardReachReport(options.hours)
+    .action(async (options) => {
+      const report = await boardReachReport(options.hours)
       console.log(options.json ? JSON.stringify(report) : renderBoardReach(report))
     })
 }

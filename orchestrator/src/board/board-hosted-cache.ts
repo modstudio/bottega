@@ -17,6 +17,7 @@ import {
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
 import type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
+import { hostedMessageIsLive } from './board-hosted-cache-readers.ts'
 import { hostedBoardRevisionIsStale } from './board-hosted-cache-revision.ts'
 import { hostedBoardPresence } from './board-hosted-presence.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
@@ -27,7 +28,6 @@ import { boardMode } from './board-mode.ts'
 import {
   boardHeaderValue,
   messageCanBeReaped,
-  messageIsLive,
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
@@ -404,15 +404,6 @@ export function cachedRows(database: Database) {
 export function cachedHostedBoardMessages(database: Database = db()): HostedBoardMessage[] {
   return cachedRows(database).map((row) => row.message)
 }
-
-export const hostedMessageIsLive = (message: HostedBoardMessage, clock: number): boolean =>
-  messageIsLive(
-    {
-      expiresAt: message.expiresAt ? Date.parse(message.expiresAt) : 0,
-      withdrawnAt: message.withdrawnAt ? Date.parse(message.withdrawnAt) : null,
-    },
-    clock,
-  )
 
 type HostedClaimContext = {
   database: Database

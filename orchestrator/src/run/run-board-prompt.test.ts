@@ -94,7 +94,7 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   expect(claimRunNotices(run.id, false, clock + 2)).toEqual([])
 })
 
-test('dispatch and later-turn injection each combine hosted and local once with a refresh warning', async () => {
+test('dispatch and later-turn injection use hosted instead of differing local rows', async () => {
   const root = db()
     .query(
       `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn,project_record_id)
@@ -156,27 +156,27 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     )
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => {
-      throw new Error('prompt refresh offline\nForged-Warning: prompt')
-    },
+    listBoardChanges: async () => ({
+      userId: firstHosted.authorUserId,
+      items: [],
+      highestRevision: null,
+    }),
     putBoardReceipt: async () => {
       throw new Error('receipt offline')
     },
   })
   const firstLocal = postNotice(
     { audience: `run:${root.id}`, title: 'Local prompt', body: 'local prompt body' },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt),
   )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
-  expect(initial.noticeIds).toEqual([String(firstLocal.number), firstHosted.id])
-  expect(initial.prompt).toContain('Local prompt')
+  expect(initial.noticeIds).toEqual([firstHosted.id])
+  expect(initial.noticeIds).not.toContain(String(firstLocal.number))
+  expect(initial.prompt).not.toContain('Local prompt')
   expect(initial.prompt).toContain('Hosted prompt')
   expect(initial.prompt).not.toContain('local prompt body')
   expect(initial.prompt).not.toContain('hosted prompt body')
-  expect(initial.prompt).toContain('prompt refresh offline')
-  expect(initial.prompt).toContain('offline Forged-Warning: prompt')
-  expect(initial.prompt).not.toContain('offline\nForged-Warning: prompt')
   await markRunBoardNoticesDelivered(root.id, initial.noticeIds)
 
   const laterHosted = hosted()
@@ -187,17 +187,16 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     .run(laterHosted.id, laterHosted.kind, null, laterHosted.revision, JSON.stringify(laterHosted))
   const laterLocal = postNotice(
     { audience: `run:${root.id}`, title: 'Local later', body: 'local later body' },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt) + 1_000,
   )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')
-  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.number), laterHosted.id])
-  expect(later.prompt).toContain('Local later')
+  expect(later.notices.map((row) => row.id)).toEqual([laterHosted.id])
+  expect(later.notices.map((row) => row.id)).not.toContain(String(laterLocal.number))
+  expect(later.prompt).not.toContain('Local later')
   expect(later.prompt).toContain('Hosted prompt')
   expect(later.prompt).not.toContain('local later body')
   expect(later.prompt).not.toContain('hosted prompt body')
-  expect(later.prompt).toContain('prompt refresh offline')
-  expect(later.prompt).not.toContain('offline\nForged-Warning: prompt')
   await markRunBoardNoticesDelivered(
     root.id,
     later.notices.map((row) => row.id),
