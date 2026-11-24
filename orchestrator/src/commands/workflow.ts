@@ -8,11 +8,11 @@ import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
+import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
 import type { WorkflowCommandOptions, WorkflowPresentation } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { cursorsCommand } from '../workflow/workflow-cursor-report.ts'
-import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { handoffCommand } from '../workflow/workflow-handoff-command.ts'
 import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
@@ -564,7 +564,9 @@ function registerWorkflowCursorAdmin({
       .requiredOption('--since <value>', 'include cursors created at or after this ISO date'),
   )
     .allowExcessArguments(false)
-    .action((options) => classAuditCommand(workflowArgv('class-audit', [], options), output(options)))
+    .action((options) =>
+      classAuditCommand(workflowArgv('class-audit', [], options), output(options)),
+    )
 }
 
 function registerWorkflowRepin({ workflow, output }: WorkflowRegistration): void {

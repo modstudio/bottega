@@ -10,9 +10,9 @@ import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
-import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { closedStepsFromTrail } from '../workflow/workflow-cursor-trail.ts'
+import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 import { decidePullRequestClassGuard } from './pr-class-guard.ts'
 
 type HeldTaskCursor = {
@@ -156,17 +156,18 @@ export async function assertPullRequestTaskCursorAdmission(
   const closed = closedStepsFromTrail(cursor.closed)
   const measured = closed.find((step) => step.slug === 'measure-class')
   if (!measured) return
-  const values = Object.fromEntries((measured.evidence ?? []).map((item) => [item.flag, item.value]))
+  const values = Object.fromEntries(
+    (measured.evidence ?? []).map((item) => [item.flag, item.value]),
+  )
   const command = values['--command']
   const count = Number(values['--count'])
   if (!command || !Number.isInteger(count)) return
   const implementClosedAt = closed.findLast((step) => step.slug === 'implement-fix')?.at
   const rows = database
-    .query<
-      { command: string; output_tail: string; exit_code: number; created_at: string },
-      []
-    >("SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec'")
-    .all()
+    .query<{ command: string; output_tail: string; exit_code: number; created_at: string }, [string]>(
+      "SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
+    )
+    .all(harnessSession ?? '')
     .map((row) => ({
       command: recordedCommand(row.command),
       output: row.output_tail,

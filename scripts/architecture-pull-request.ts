@@ -12,12 +12,19 @@ export const pullRequestModuleSpecs = [
       '../question-store/question-store-read.ts',
       '../run/synthetic-lifecycle-job.ts',
       '../workflow/workflow-step-action.ts',
+      '../workflow/task-flow-store.ts',
+      '../workflow/workflow-cursor-trail.ts',
+      './pr-class-guard.ts',
     ],
     typeOnlyAllowed: [
       'bun:sqlite',
       '../project/projects.ts',
       '../workflow/workflow-step-action.ts',
     ],
+  },
+  {
+    file: 'orchestrator/src/pull-request/pr-class-guard.ts',
+    allowed: ['../../../shared/brand.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',

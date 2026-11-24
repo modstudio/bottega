@@ -38,7 +38,7 @@ export async function classAuditCommand(argv: string[], print: WorkflowPrint): P
   const result = auditUnmeasuredDefectCursors({
     since: new Date(since).toISOString(),
     cursors: relevant.map((cursor) => ({
-      number: cursor.number,
+      number: cursor.id,
       recordId: cursor.record_id,
       project: cursor.project,
       workflow: cursor.workflow_slug,

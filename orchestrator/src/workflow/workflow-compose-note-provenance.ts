@@ -1,7 +1,9 @@
 // concern: workflows
 /** Pure plan-task compose refusal based only on note-promotion provenance. */
 
-export type PromotedNoteFact = { label: string; promotedTask: string | null }
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
+type PromotedNoteFact = { label: string; promotedTask: string | null }
 export type NoteProvenanceRead =
   | { kind: 'available'; notes: readonly PromotedNoteFact[] }
   | { kind: 'unavailable'; reason: string }
@@ -13,7 +15,7 @@ export function decidePlanTaskNoteProvenance(input: {
   read: NoteProvenanceRead
 }): { kind: 'allow' } | { kind: 'refuse'; message: string } {
   if (input.workflow !== 'plan-task' || !input.key) return { kind: 'allow' }
-  const remedy = `bottega workflow compose fix-defect --mode single --project ${input.project} --arg key=${input.key}`
+  const remedy = `${PLATFORM_SLUG} workflow compose fix-defect --mode single --project ${input.project} --arg key=${input.key}`
   if (input.read.kind === 'unavailable')
     return {
       kind: 'refuse',

@@ -10,6 +10,7 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -28,6 +29,7 @@ import { obligationUuid, positive, workflowArgs } from './workflow-command-argum
 import { workflowCommandProject } from './workflow-command-project.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
+import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 import {
   type WorkflowContextMoment,
   type WorkflowNextCommandMoment,
@@ -95,8 +97,6 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
-import { listHubNotes, type HubNote } from '../mcp/hub-notes.ts'
-import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void

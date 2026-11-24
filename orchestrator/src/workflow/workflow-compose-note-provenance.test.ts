@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 
 const input = { workflow: 'plan-task', project: 'fixture', key: 'DEV-7' }
@@ -11,8 +12,7 @@ test('refuses a note-promoted plan-task with the fix-defect remedy', () => {
     }),
   ).toEqual({
     kind: 'refuse',
-    message:
-      'task DEV-7 was promoted from note fixture#3; compose the defect workflow with `bottega workflow compose fix-defect --mode single --project fixture --arg key=DEV-7`',
+    message: `task DEV-7 was promoted from note fixture#3; compose the defect workflow with \`${PLATFORM_SLUG} workflow compose fix-defect --mode single --project fixture --arg key=DEV-7\``,
   })
 })
 

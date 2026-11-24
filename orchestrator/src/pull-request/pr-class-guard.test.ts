@@ -17,10 +17,13 @@ const base = {
   worktree: '/tree',
 }
 
-test('allows a matching class guard', () => expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+test('allows a matching class guard', () =>
+  expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
 test('does not apply without measure-class or outside fix-defect', () => {
   expect(decidePullRequestClassGuard({ ...base, applies: false, body: '' }).kind).toBe('allow')
-  expect(decidePullRequestClassGuard({ ...base, measurement: undefined, body: '' }).kind).toBe('allow')
+  expect(decidePullRequestClassGuard({ ...base, measurement: undefined, body: '' }).kind).toBe(
+    'allow',
+  )
 })
 test.each([
   ['no line', { body: '' }, 'missing'],

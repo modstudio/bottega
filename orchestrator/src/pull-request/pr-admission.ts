@@ -753,7 +753,6 @@ function createPullRequestAdmittedChange(
     createResult,
     created,
     branch: change.branch,
-    body: options.body,
     platformSlug: PLATFORM_SLUG,
   })
   if (outcome.refusal) throw new Error(renderRefusal(outcome.refusal))
@@ -817,6 +816,7 @@ export async function createPullRequest(
     command: 'pr create',
     project: change.project,
     branch: change.branch,
+    body: options.body,
   })
   return createPullRequestAdmittedChange(
     args,

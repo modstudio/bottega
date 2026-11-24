@@ -19,8 +19,20 @@ import type {
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   type ClassMeasurement,
+  classMeasurementForFloors,
   decideClassMeasuredFloor,
 } from './workflow-class-measured-floor.ts'
+import { ARTIFACT_FORMS, type FloorKind, isFloorKind } from './workflow-floor-kinds.ts'
+
+export {
+  evidenceGuidance,
+  type FloorKind,
+  floorGuidance,
+  floorKinds,
+  isFloorKind,
+  trackerTransitionTaskRemedy,
+} from './workflow-floor-kinds.ts'
+
 import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
@@ -41,17 +53,6 @@ import {
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
 
-export const floorKinds = [
-  'ruling',
-  'command-exit',
-  'recorded-artifact',
-  'class-measured',
-  'tracker-transition',
-  'task-open-with-notes',
-  'descendants-closed',
-  'review-owed',
-] as const
-export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
 export type CommandEvidence = 'gate' | 'pull-request'
 
@@ -62,50 +63,20 @@ export function hasGateFloor(
 }
 
 export function floorsAcceptCommandArtifact(floors: ReadonlyArray<{ kind: string }>): boolean {
-  return floors.some((floor) => floor.kind === 'command-exit' || floor.kind === 'recorded-artifact')
+  return floors.some(
+    (floor) =>
+      floor.kind === 'command-exit' ||
+      floor.kind === 'recorded-artifact' ||
+      floor.kind === 'class-measured',
+  )
 }
 
 export function floorsIncludeTrackerTransition(floors: ReadonlyArray<{ kind: string }>): boolean {
   return floors.some((floor) => floor.kind === 'tracker-transition')
 }
 
-const ARTIFACT_FORMS =
-  'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
-
-export const floorGuidance = {
-  ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
-  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`, pass \`--gate <gate execution id>\` for a gate floor, or pass \`--run <run id>\` for a run-backed command`,
-  'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
-  'class-measured': `run the class-wide command with \`${PLATFORM_SLUG} workflow exec -- <command>\`, then pass exactly one \`--artifact exec:<id>\` and \`--class "<class name>"\``,
-  'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
-  'task-open-with-notes':
-    'leave the task open, then pass `--task <KEY>` and at least one `--artifact note:<record-id|label>` for an open note attached to that task',
-  'descendants-closed':
-    'finish or drop every descendant, move the epic to done, and pass `--task <KEY>`',
-  'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
-} satisfies Record<FloorKind, string>
-
-export function trackerTransitionTaskRemedy(key: string): string {
-  return floorGuidance['tracker-transition'].replace('<KEY>', key)
-}
-
-export function evidenceGuidance(
-  kind: FloorKind,
-  operatorRuling: boolean,
-  hasOtherFloor = false,
-): string {
-  if (kind === 'ruling' && operatorRuling)
-    return `only the operator's answer closes this floor: ask with \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), have the operator answer, or relay the operator's answer with \`rule_workflow\` \`from_operator\` (or \`${PLATFORM_SLUG} workflow rule --from-operator\`), then pass \`--ruling <the returned question id>\`${hasOtherFloor ? "; another floor's evidence closes this step instead (any one floor is enough)" : ''}`
-  return floorGuidance[kind]
-}
-
 export const DEFAULT_EXPECTED_EXIT_CODE = 0
 export const DEFAULT_EXPECTED_STATUS = 'done'
-
-export function isFloorKind(value: string): value is FloorKind {
-  for (const kind of floorKinds) if (kind === value) return true
-  return false
-}
 
 export type Floor = {
   kind: FloorKind
@@ -715,6 +686,13 @@ function taskOpenWithNotesUnmetMessage(
 }
 
 function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {
+  if (floor.kind === 'class-measured') {
+    const decision = decideClassMeasuredFloor({
+      className: evidence.className,
+      artifacts: evidence.artifacts ?? [],
+    })
+    return decision.met ? null : decision.message
+  }
   if (floor.commandEvidence !== 'pull-request') return null
   if (floor.kind !== 'command-exit' && floor.kind !== 'recorded-artifact') return null
   const facts = (evidence.artifacts ?? [])
@@ -761,11 +739,6 @@ function floorUnmetMessage(
     )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
-  if (floor.kind === 'class-measured')
-    return decideClassMeasuredFloor({
-      className: evidence.className,
-      artifacts: evidence.artifacts ?? [],
-    }).message
   const existing =
     `floor ${floor.kind} is unmet; pass ${closingFlagsForFloor(floor)}` +
     (floor.kind === 'command-exit'
@@ -1043,13 +1016,8 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  const classDecision = input.floors.some((floor) => floor.kind === 'class-measured')
-    ? decideClassMeasuredFloor({
-        className: input.evidence.className,
-        artifacts: input.evidence.artifacts ?? [],
-      })
-    : null
-  if (classDecision?.met) input.evidence.classMeasurement = classDecision.measurement
+  input.evidence.classMeasurement =
+    classMeasurementForFloors(input.floors, input.evidence) ?? input.evidence.classMeasurement
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter, input.workflowKey),
   )

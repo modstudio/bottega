@@ -1,7 +1,7 @@
 // concern: workflows
 /** Pure class-audit decision over cursor, promotion, and implement-run facts. */
 
-export type ClassAuditClosedStep = {
+type ClassAuditClosedStep = {
   slug: string
   evidence?: Array<{ flag: string; value: string }>
 }
@@ -32,7 +32,7 @@ function carriesClassMeasurement(step: ClassAuditClosedStep): boolean {
 export function auditUnmeasuredDefectCursors(input: {
   since: string
   cursors: readonly ClassAuditCursor[]
-  promoted: readonly Array<{ project: string; key: string }>
+  promoted: ReadonlyArray<{ project: string; key: string }>
   implementRuns: readonly ClassAuditImplementRun[]
 }): { count: number; cursors: Array<{ number: number; workflow: string; key: string }> } {
   const promoted = new Set(input.promoted.map((entry) => promotionKey(entry.project, entry.key)))

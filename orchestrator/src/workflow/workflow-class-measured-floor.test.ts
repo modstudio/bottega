@@ -23,15 +23,17 @@ const artifact = (overrides: Record<string, unknown> = {}): ValidatedArtifactEvi
 
 describe('class-measured floor', () => {
   test('records the class, command, exec and count', () => {
-    expect(decideClassMeasuredFloor({ className: 'reader leak', artifacts: [artifact()] })).toEqual({
-      met: true,
-      measurement: {
-        className: 'reader leak',
-        command: 'rg defect | wc -l',
-        execId: 7,
-        count: 3,
+    expect(decideClassMeasuredFloor({ className: 'reader leak', artifacts: [artifact()] })).toEqual(
+      {
+        met: true,
+        measurement: {
+          className: 'reader leak',
+          command: 'rg defect | wc -l',
+          execId: 7,
+          count: 3,
+        },
       },
-    })
+    )
   })
 
   test.each([
@@ -42,6 +44,7 @@ describe('class-measured floor', () => {
     ['stale exec', 'reader leak', [artifact({ createdAfterStepActivation: false })], 'predates'],
     ['non-integer count', 'reader leak', [artifact({ output: 'many\n' })], 'non-negative integer'],
   ])('%s refuses', (_name, className, artifacts, message) => {
-    expect(decideClassMeasuredFloor({ className, artifacts }).message).toContain(message)
+    const decision = decideClassMeasuredFloor({ className, artifacts })
+    expect(decision.met ? '' : decision.message).toContain(message)
   })
 })

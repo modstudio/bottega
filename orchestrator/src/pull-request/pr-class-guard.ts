@@ -1,13 +1,20 @@
 // concern: pull-request
 /** Pure admission for the class guard declared by a measured defect fix. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export type ClassGuardMeasurement = { className: string; command: string; count: number }
-export type ClassGuardExec = { command: string; output: string; exitCode: number; createdAt: string }
+export type ClassGuardExec = {
+  command: string
+  output: string
+  exitCode: number
+  createdAt: string
+}
 
 export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
 const rerun = (worktree: string, command: string) =>
-  `bottega workflow exec --cwd ${worktree} -- ${command}`
+  `${PLATFORM_SLUG} workflow exec --cwd ${worktree} -- ${command}`
 
 export function decidePullRequestClassGuard(input: {
   applies: boolean
@@ -24,13 +31,15 @@ export function decidePullRequestClassGuard(input: {
   if (!line)
     return {
       kind: 'refuse',
-      message: 'fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
+      message:
+        'fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
     }
   const parsed = /^Class guard:\s*(.*?)\s*\(before (\d+), after (\d+)\)$/.exec(line)
   if (!parsed)
     return {
       kind: 'refuse',
-      message: 'the Class guard line must be exactly `Class guard: <guard name> (before <N>, after <M>)`',
+      message:
+        'the Class guard line must be exactly `Class guard: <guard name> (before <N>, after <M>)`',
     }
   if (!parsed[1]?.trim())
     return { kind: 'refuse', message: 'the Class guard line is missing the guard name' }

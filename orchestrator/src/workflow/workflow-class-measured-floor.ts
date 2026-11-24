@@ -1,6 +1,7 @@
 // concern: workflows
 /** Pure validation and persistence facts for a class-measured workflow floor. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {
@@ -14,8 +15,7 @@ export type ClassMeasuredDecision =
   | { met: true; measurement: ClassMeasurement }
   | { met: false; message: string }
 
-const remedy =
-  'run the class-wide command with `bottega workflow exec -- <command>`, print a non-negative integer as its last stdout line, then pass exactly one `--artifact exec:<id>` and `--class "<class name>"`'
+const remedy = `run the class-wide command with \`${PLATFORM_SLUG} workflow exec -- <command>\`, print a non-negative integer as its last stdout line, then pass exactly one \`--artifact exec:<id>\` and \`--class "<class name>"\``
 
 export function decideClassMeasuredFloor(input: {
   className?: string
@@ -54,4 +54,16 @@ export function decideClassMeasuredFloor(input: {
     met: true,
     measurement: { className, command: exec.command, execId: exec.id, count: Number(lastLine) },
   }
+}
+
+export function classMeasurementForFloors(
+  floors: ReadonlyArray<{ kind: string }>,
+  input: { className?: string; artifacts?: readonly ValidatedArtifactEvidence[] },
+): ClassMeasurement | undefined {
+  if (!floors.some((floor) => floor.kind === 'class-measured')) return undefined
+  const decision = decideClassMeasuredFloor({
+    className: input.className,
+    artifacts: input.artifacts ?? [],
+  })
+  return decision.met ? decision.measurement : undefined
 }
