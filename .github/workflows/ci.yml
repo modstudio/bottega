@@ -364,7 +364,11 @@ jobs:
 
   checkout-cli-confinement:
     if: github.event_name == 'pull_request'
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -375,6 +379,12 @@ jobs:
           bun-version-file: .bun-version
       - name: Install
         run: bun install --silent
+      - name: Allow unprivileged user namespaces for the sandbox
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install sandbox host packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap socat ripgrep
       - name: Prove confined checkout ask-server tools
         run: bun run --cwd orchestrator check:checkout-cli-confinement
       - name: Prove source-launch mutation fails
