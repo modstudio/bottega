@@ -37,6 +37,8 @@ async function openBoundCursor(d: Database) {
     {},
     undefined,
     claimPorts(d),
+    undefined,
+    async () => [],
   )
   return opened.cursor!.id
 }
