@@ -84,7 +84,7 @@ test.each([
   { argv: ['task', 'document', 'show', '1'], tool: WORKER_READ_TOOLS.document },
   { argv: ['workflow', 'text', 'show', 'attached-text:id'], tool: WORKER_READ_TOOLS.workflow },
 ])('dispatch refuses worker route $argv with $tool', async ({ argv, tool }) => {
-  expect(await dispatchWorkerRecordRead(argv)).toBe(1)
+  expect(await dispatchWorkerRecordRead([...argv])).toBe(1)
   expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(tool))
 })
 

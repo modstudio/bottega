@@ -3,6 +3,8 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 export const cliConcernEntries = [
   'hub/src/cli.ts',
   'hub/src/hosted-tasks.ts',
+  'hub/src/hosted-url.ts',
+  'hub/src/hosted-write-mode.ts',
   'hub/src/task-hosted-record.ts',
   'hub/src/task-print.ts',
   'orchestrator/src/ask/ask-proxy.ts',

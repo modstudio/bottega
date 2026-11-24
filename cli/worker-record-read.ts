@@ -33,11 +33,7 @@ function positionalReference(argv: readonly string[], start: number): string | u
 
 function workerReadRoute(argv: readonly string[]): 'task' | 'document' | 'workflow' | null {
   if (argv[0] === 'task' && argv[1] === 'show') return 'task'
-  if (
-    argv[0] === 'task' &&
-    (argv[1] === 'doc' || argv[1] === 'document') &&
-    argv[2] === 'show'
-  )
+  if (argv[0] === 'task' && (argv[1] === 'doc' || argv[1] === 'document') && argv[2] === 'show')
     return 'document'
   if (argv[0] === 'workflow' && argv[1] === 'text' && argv[2] === 'show') return 'workflow'
   return null
