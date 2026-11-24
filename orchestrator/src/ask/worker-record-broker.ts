@@ -4,8 +4,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectKeepsOwnTracker } from '../../../shared/trackers.ts'
 import { db } from '../database/db.ts'
-import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { projectByName } from '../project/projects.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import type { ShownWorkflowText } from '../workflow/workflow-text-commands.ts'
 import { strictlyAuthenticatedWorkerRun } from './worker-auth.ts'
 import {
@@ -170,10 +170,7 @@ export async function readWorkerTaskDocument(
   const chain = await allowedTaskChain(scope, client)
   const label = /^([^/]+)\/(\d+)$/.exec(reference)
   if (label && !chain.facts.allowedTaskKeys.includes(label[1]!.toUpperCase())) {
-    requireAllowed(
-      chain.facts,
-      targetFor(chain.facts, 'task-document', undefined, label[1]),
-    )
+    requireAllowed(chain.facts, targetFor(chain.facts, 'task-document', undefined, label[1]))
   }
   const documents = [...new Set(chain.details.values())].flatMap((detail) =>
     detail.documents.map((document) => ({ detail, document })),
@@ -185,9 +182,7 @@ export async function readWorkerTaskDocument(
       : document.id.toLowerCase() === reference.toLowerCase(),
   )
   if (!found)
-    throw new Error(
-      missingDocumentMessage(reference, { ...chain.facts, project: scope.project }),
-    )
+    throw new Error(missingDocumentMessage(reference, { ...chain.facts, project: scope.project }))
   requireAllowed(chain.facts, targetFor(chain.facts, 'task-document', found.detail))
   return found.document
 }

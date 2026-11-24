@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
@@ -52,6 +53,9 @@ test('the broker walks and enforces the run task scope before returning hosted r
   const project = db()
     .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
     .get(projectId)!.name
+  db()
+    .query('UPDATE project SET settings=? WHERE record_id=?')
+    .run(JSON.stringify({ tracker: { protocol: 'hub' } }), projectId)
   rememberProjectSpace(db(), project, SPACE_ID)
   const runId = addRun({
     agent: 'codex',
@@ -129,7 +133,9 @@ test('the broker walks and enforces the run task scope before returning hosted r
   ).toMatchObject({ task_key: 'DEV-2', number: 1 })
   await expect(
     readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
-  ).rejects.toThrow(`no task document ${MISSING_DOCUMENT_ID} in run task DEV-2 and its parent chain`)
+  ).rejects.toThrow(
+    `no task document ${MISSING_DOCUMENT_ID} in run task DEV-2 and its parent chain`,
+  )
   await expect(
     readWorkerTaskDocument(runId, 'run-token', 'DEV-2/2', undefined, dependencies),
   ).rejects.toThrow('no task document DEV-2/2 in run task DEV-2 and its parent chain')
@@ -188,7 +194,7 @@ test('the broker marks record gaps for a project that keeps its own tracker', as
 
   const shown = await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)
   expect(shown.tracker_notice).toContain(`project ${project}'s own tracker, not the record`)
-  expect(shown.tracker_notice).toContain('bottega workflow attach')
+  expect(shown.tracker_notice).toContain(`${PLATFORM_SLUG} workflow attach`)
   await expect(
     readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
   ).rejects.toThrow(
@@ -196,5 +202,5 @@ test('the broker marks record gaps for a project that keeps its own tracker', as
   )
   await expect(
     readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
-  ).rejects.toThrow('bottega workflow attach')
+  ).rejects.toThrow(`${PLATFORM_SLUG} workflow attach`)
 })
