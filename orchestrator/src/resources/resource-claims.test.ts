@@ -12,6 +12,7 @@ import {
   claimRecipePort,
   claimString,
   createdWorktreeClaimKinds,
+  databaseAllocationKey,
   fillStringAllocationTemplate,
   indexAllocation,
   lowestFreePort,
@@ -24,6 +25,7 @@ import {
   settledStateForCloseOut,
   settledStateForDatabaseTeardown,
   settledStateForWorktreeResource,
+  stringAllocationKey,
   stringClaimDecision,
 } from './resource-claims.ts'
 import { claimCreationDecision } from './resource-step-recorder.ts'
@@ -171,16 +173,19 @@ describe('resource claim decisions', () => {
 
   test('index allocation skips a rendered database value held by another root', () => {
     expect(
-      indexAllocation([], null, (index) => [`postgres:stopal_orch_${index}`], [
-        'postgres:stopal_orch_1',
-      ]),
+      indexAllocation(
+        [],
+        null,
+        (index) => [databaseAllocationKey('postgres', `stopal_orch_${index}`)],
+        [databaseAllocationKey('postgres', 'stopal_orch_1')],
+      ),
     ).toEqual({ action: 'claim', index: 2 })
   })
 
   test('index allocation skips a rendered string value held by another root', () => {
     expect(
-      indexAllocation([], null, (index) => [`string:project:net_${index}`], [
-        'string:project:net_1',
+      indexAllocation([], null, (index) => [stringAllocationKey('project', `net_${index}`)], [
+        stringAllocationKey('project', 'net_1'),
       ]),
     ).toEqual({ action: 'claim', index: 2 })
   })
@@ -328,6 +333,44 @@ describe('resource claim decisions', () => {
       )
       .run(first)
     expect(claim(third, projectOne)).toBe(1)
+  })
+
+  test('a retained database makes a new root skip its rendered index', () => {
+    const database = db()
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'retained-index','/retained-index',1) RETURNING record_id",
+      )
+      .get()!.record_id
+    const holder = resourceRun(projectId)
+    const requester = resourceRun(projectId)
+    claimDatabaseName(database, {
+      rootRunId: holder,
+      runId: holder,
+      projectId,
+      name: 'app',
+      engine: 'postgres',
+      value: 'stopal_orch_1',
+      claimedAt: nowIso(),
+      templateHasIndex: true,
+    })
+    database
+      .query(
+        "UPDATE resource_claim SET state='retained' WHERE root_run_record_id=? AND kind='database'",
+      )
+      .run(holder)
+
+    expect(
+      claimIndex(database, {
+        rootRunId: requester,
+        runId: requester,
+        projectId,
+        claimedAt: nowIso(),
+        renderAllocationKeys: (index) => [
+          databaseAllocationKey('postgres', `stopal_orch_${index}`),
+        ],
+      }),
+    ).toBe(2)
   })
 
   test('string claims reuse by root and name and refuse another root holding the value', () => {

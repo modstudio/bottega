@@ -250,7 +250,17 @@ export function indexAllocation(
     if (renderAllocationKeys(index).some((key) => held.has(key))) continue
     return { action: 'claim', index }
   }
-  throw new Error('index allocation renderer did not leave a free value within its finite bound')
+  throw new Error(
+    `index allocation renderer did not leave a free value within its finite bound; report this allocation defect with ${PLATFORM_SLUG} note new`,
+  )
+}
+
+export function stringAllocationKey(projectId: string, value: string): string {
+  return `string:${projectId}:${value}`
+}
+
+export function databaseAllocationKey(engine: string, value: string): string {
+  return `${engine}:${value}`
 }
 
 export function allocationCollisionMessage(input: {
@@ -467,8 +477,9 @@ export function claimIndex(
     database
       .query(
         `SELECT allocation_key FROM resource_claim
-         WHERE state='claimed' AND root_run_record_id<>?
-           AND (kind='database' OR (kind='string' AND project_record_id=?))`,
+         WHERE root_run_record_id<>?
+           AND ((kind='database' AND state IN ('claimed','retained'))
+             OR (kind='string' AND state='claimed' AND project_record_id=?))`,
       )
       .all(input.rootRunId, input.projectId) as { allocation_key: string }[]
   ).map((row) => row.allocation_key)
@@ -528,9 +539,9 @@ export function claimString(
     )
     .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
   const existingValue = existing
-    ? existing.allocation_key.slice(`string:${input.projectId}:`.length)
+    ? existing.allocation_key.slice(stringAllocationKey(input.projectId, '').length)
     : null
-  const allocationKey = `string:${input.projectId}:${input.value}`
+  const allocationKey = stringAllocationKey(input.projectId, input.value)
   const holder = database
     .query(
       `SELECT root_run_record_id FROM resource_claim
@@ -614,7 +625,7 @@ export function claimDatabaseName(
     .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
   const existingSeparator = existing?.allocation_key.indexOf(':') ?? -1
   const existingValue = existing ? existing.allocation_key.slice(existingSeparator + 1) : null
-  const allocationKey = `${input.engine}:${input.value}`
+  const allocationKey = databaseAllocationKey(input.engine, input.value)
   const holder = database
     .query(
       `SELECT root_run_record_id FROM resource_claim

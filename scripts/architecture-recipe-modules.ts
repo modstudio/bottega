@@ -21,6 +21,7 @@ export const recipeModules: RecipeModule[] = [
     '../resources/resource-claims.ts',
     '../resources/resource-step-recorder.ts',
     './recipe-schema.ts',
+    './tracked-allocation-keys.ts',
   ]),
   module('orchestrator/src/recipe/database-allocation-matcher.ts', []),
   module('orchestrator/src/recipe/database-connection-observation.ts', [

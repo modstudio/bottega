@@ -2,13 +2,10 @@
 /** Claims the indexed string and database values of one tracked recipe. */
 
 import type { Database } from 'bun:sqlite'
-import {
-  claimDatabaseName,
-  claimString,
-  fillStringAllocationTemplate,
-} from '../resources/resource-claims.ts'
+import { claimDatabaseName, claimString } from '../resources/resource-claims.ts'
 import type { ClaimOwner } from '../resources/resource-step-recorder.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
+import { renderTrackedNamedAllocations } from './tracked-allocation-keys.ts'
 
 export function claimTrackedNamedAllocations(
   database: Database,
@@ -19,26 +16,19 @@ export function claimTrackedNamedAllocations(
     index: number
   },
 ): { strings: Record<string, string>; databases: Record<string, string> } {
-  const vars = { ...input.staticVars, index: String(input.index) }
+  const rendered = renderTrackedNamedAllocations(input)
   const strings: Record<string, string> = {}
-  for (const [name, template] of Object.entries(input.recipe.allocate?.strings ?? {})) {
-    const value = fillStringAllocationTemplate(name, template, vars)
-    strings[name] = claimString(database, {
+  for (const allocation of rendered.strings) {
+    strings[allocation.name] = claimString(database, {
       ...input.identity,
-      name,
-      value,
-      templateHasIndex: template.includes('{index}'),
+      ...allocation,
     })
   }
   const databases: Record<string, string> = {}
-  for (const [name, allocation] of Object.entries(input.recipe.allocate?.databases ?? {})) {
-    const value = fillStringAllocationTemplate(name, allocation.name, vars)
-    databases[name] = claimDatabaseName(database, {
+  for (const allocation of rendered.databases) {
+    databases[allocation.name] = claimDatabaseName(database, {
       ...input.identity,
-      name,
-      engine: allocation.engine,
-      value,
-      templateHasIndex: allocation.name.includes('{index}'),
+      ...allocation,
     })
   }
   return { strings, databases }
