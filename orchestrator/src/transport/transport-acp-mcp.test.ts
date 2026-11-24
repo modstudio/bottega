@@ -47,6 +47,29 @@ test('MCP off gives exactly the worker channel', () => {
   })
 })
 
+test('the ask extension receives only proxy variables that are set', () => {
+  const [server] = acpMcpServers(
+    opts({
+      env: {
+        BOTTEGA_RUN_ID: 'run-1',
+        BOTTEGA_RUN_TOKEN: 'token-1',
+        HTTP_PROXY: 'http://127.0.0.1:8123',
+        http_proxy: 'http://127.0.0.1:8124',
+        NO_PROXY: 'example.test',
+      },
+    }),
+  )
+  const env = server && 'env' in server && Array.isArray(server.env) ? server.env : []
+  expect(server).toMatchObject({
+    env: expect.arrayContaining([
+      { name: 'HTTP_PROXY', value: 'http://127.0.0.1:8123' },
+      { name: 'http_proxy', value: 'http://127.0.0.1:8124' },
+      { name: 'NO_PROXY', value: 'example.test' },
+    ]),
+  })
+  expect(env.map((entry) => entry.name)).not.toContain('no_proxy')
+})
+
 test('the worker channel comes first, then the selected project servers in both shapes', () => {
   const servers = acpMcpServers(opts({ projectMcpSelection: direct }))
   expect(servers.map((entry) => entry.name)).toEqual([WORKER_MCP_SERVER_NAME, 'local', 'remote'])

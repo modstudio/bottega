@@ -669,6 +669,10 @@ function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
         'BOTTEGA_RUN_TOKEN',
         'BOTTEGA_ORCHESTRATOR_DB',
         CHECKOUT_CLI_BINARY_ENV,
+        'HTTP_PROXY',
+        'http_proxy',
+        'NO_PROXY',
+        'no_proxy',
       ].flatMap((name) => (opts.env[name] ? [{ name, value: opts.env[name]! }] : [])),
     },
   ]
