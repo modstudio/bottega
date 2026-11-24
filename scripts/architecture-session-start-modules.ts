@@ -6,7 +6,7 @@ export const sessionStartBoundarySpecs = [
     name: 'harness-session-decision-boundary',
     file: 'orchestrator/src/harness-session/harness-session-decision.ts',
     allowed: [],
-    typeOnlyAllowed: ['../../../shared/process-identity.ts'],
+    typeOnlyAllowed: ['../../../shared/harness-name.ts', '../../../shared/process-identity.ts'],
     reason: 'Keep harness publication measurement pure over process identities.',
   },
   {
@@ -16,6 +16,7 @@ export const sessionStartBoundarySpecs = [
       'node:crypto',
       'node:fs',
       'node:path',
+      '../../../shared/harness-name.ts',
       '../../../shared/process-identity.ts',
       '../../../shared/state-directory.ts',
       '../resources/process-inventory.ts',

@@ -176,13 +176,6 @@ export function boardActor(env: Environment = process.env): BoardActor {
   const caller = classifyCaller(env)
   if (caller.kind === 'worker')
     throw new Error('workers cannot use the architect notice board in this slice')
-  if (
-    env.CLAUDE_CODE_SESSION_ID?.trim() === OPERATOR_READER ||
-    env.CLAUDE_CODE_SESSION_ID?.trim().startsWith('run:')
-  )
-    throw new Error(
-      'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
-    )
   const identity = architectIdentity(env)
   if (identity) return { kind: 'architect', session: identity.session }
   if (caller.kind === 'unsupported-harness')
@@ -191,7 +184,7 @@ export function boardActor(env: Environment = process.env): BoardActor {
     )
   if (caller.kind === 'reserved-operator-session')
     throw new Error(
-      'operator: session ids are reserved; use a real architect session id or post from an operator terminal',
+      'operator and run:<id> session ids are reserved; use a real architect session id or post from an operator terminal',
     )
   return { kind: 'operator', session: null }
 }

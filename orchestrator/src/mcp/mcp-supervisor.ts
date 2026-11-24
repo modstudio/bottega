@@ -1,5 +1,6 @@
 import { startParentBound } from '../../../shared/bounded-process.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import type { HarnessProcessIdentity } from '../harness-session/harness-session-decision.ts'
 import {
   initialMcpSupervisorState,
   JsonLineDecoder,
@@ -11,7 +12,16 @@ import {
 
 const line = (message: JsonRpcMessage) => `${JSON.stringify(message)}\n`
 
-export async function serveMcpSupervisor(): Promise<void> {
+export async function serveMcpSupervisor(
+  harnessIdentity: HarnessProcessIdentity | null,
+): Promise<void> {
+  const childArgv = harnessIdentity
+    ? [
+        ...bottegaEntryArgv('mcp-serve-child'),
+        String(harnessIdentity.pid),
+        harnessIdentity.startTime,
+      ]
+    : bottegaEntryArgv('mcp-serve-child')
   let state = initialMcpSupervisorState()
   let child: ReturnType<typeof spawnChild> | null = null
   let resolveDone: (() => void) | null = null
@@ -26,7 +36,7 @@ export async function serveMcpSupervisor(): Promise<void> {
   }
 
   const spawnChild = () => {
-    const spawned = startParentBound(bottegaEntryArgv('mcp-serve-child'), {
+    const spawned = startParentBound(childArgv, {
       name: 'MCP server child',
     })
     const stdout = relayChildStdout(spawned.stdout, dispatch)

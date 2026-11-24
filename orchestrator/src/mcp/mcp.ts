@@ -14,6 +14,11 @@ import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { readDocs as authoritativeDocs } from '../doc/doc-authoritative-read.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown } from '../doc/docs.ts'
+import {
+  type HarnessSessionReadResult,
+  readHarnessSession,
+} from '../harness-session/harness-session.ts'
+import type { HarnessProcessIdentity } from '../harness-session/harness-session-decision.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -92,6 +97,10 @@ export type DocsMcpPorts = LandingBranchPorts & {
     onRefusal?: (reason: string) => void,
   ) => void
   exit?: (code: number) => void
+  requestSessions?: {
+    identity: HarnessProcessIdentity | null
+    read(identity: HarnessProcessIdentity): HarnessSessionReadResult
+  }
 }
 
 const portLedgerSources = (
@@ -536,7 +545,22 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       exit(MCP_SERVER_STALE_EXIT)
     },
   )
-  scopeMcpToolCallers(server)
+  const requestSessions = ports.requestSessions
+  scopeMcpToolCallers(
+    server,
+    requestSessions
+      ? {
+          requestSession: () => {
+            const identity = requestSessions.identity
+            if (!identity) return { kind: 'unavailable', reason: 'no-boot-identity' }
+            const result = requestSessions.read(identity)
+            if (result.kind !== 'published') return result
+            const { harness, session } = result.publication
+            return { kind: 'published', publication: { harness, session } }
+          },
+        }
+      : {},
+  )
   wrapMcpToolHandlers(server, (_name, handler) => async (...args) => {
     db()
     return handler(...args)
@@ -1032,6 +1056,6 @@ function registerNoteTool(server: McpServer): void {
   )
 }
 
-export async function serveDocsMcp(): Promise<void> {
-  serveStdio(() => createDocsMcpServer())
+export async function serveDocsMcp(identity: HarnessProcessIdentity | null): Promise<void> {
+  serveStdio(() => createDocsMcpServer({ requestSessions: { identity, read: readHarnessSession } }))
 }

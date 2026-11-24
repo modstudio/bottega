@@ -50,6 +50,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/mcp/mcp-commands.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/process-identity.ts',
       './mcp-compatibility-record.ts',
       './mcp-probe.ts',
       './mcp-supervisor.ts',
@@ -66,6 +67,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
       './mcp-supervisor-decision.ts',
     ],
     'Keep the stable MCP front independent of stores and tools: it only spawns the real server and relays framed messages.',
+    ['../harness-session/harness-session-decision.ts'],
   ),
   boundary(
     'mcp-compatibility-record-boundary',

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
+import { withRequestSession } from '../../shared/request-session.ts'
 import {
   callerIdentityRefusal,
   classifyCaller,
@@ -64,6 +65,19 @@ describe('caller classification', () => {
     ).toEqual({ kind: 'worker' })
   })
 
+  test('a request session replaces the harness environment after worker classification', () => {
+    expect(
+      withRequestSession({ harness: 'codex', session: 'request-session' }, () =>
+        classifyCaller({ CLAUDE_CODE_SESSION_ID: 'environment-session' }),
+      ),
+    ).toEqual({ kind: 'harness', harness: 'codex', session: 'request-session' })
+    expect(
+      withRequestSession({ harness: 'codex', session: 'request-session' }, () =>
+        classifyCaller({ BOTTEGA_DEPTH: '1', CLAUDE_CODE_SESSION_ID: 'environment-session' }),
+      ),
+    ).toEqual({ kind: 'worker' })
+  })
+
   test.each([...WORKER_ENVIRONMENT_MARKERS])('%s alone identifies a worker', (marker: string) => {
     expect(classifyCaller({ [marker]: 'set' })).toEqual({ kind: 'worker' })
   })
@@ -82,6 +96,12 @@ describe('caller classification', () => {
       kind: 'no-identity',
       reason: 'reserved-operator-prefix',
     })
+  })
+
+  test('a scoped run reader cannot become a harness identity', () => {
+    expect(
+      withRequestSession({ harness: 'codex', session: 'run:123' }, () => classifyCaller({})),
+    ).toEqual({ kind: 'reserved-operator-session' })
   })
 
   test('an operator without a stored machine id has a named no-identity reason', () => {

@@ -1,8 +1,14 @@
 // concern: mcp-caller
-/** Gives each MCP tool invocation its own hosted-record caller scope. */
+/** Scopes hosted-record callers and, when requested by the docs MCP, request sessions. */
 
 import type { McpServer } from '@modelcontextprotocol/server'
+import { isWorkerEnvironment } from '../../../shared/caller-classification.ts'
 import { withRecordCaller } from '../../../shared/record-caller.ts'
+import {
+  type RequestSessionPublicationLookup,
+  resolveRequestSession,
+  withRequestSession,
+} from '../../../shared/request-session.ts'
 
 type ToolHandler = (...args: never[]) => Promise<unknown>
 
@@ -24,13 +30,25 @@ export function wrapMcpToolHandlers(
 
 export function scopeMcpToolCallers(
   server: McpServer,
-  onRegister: (name: string) => void = () => undefined,
+  options: {
+    onRegister?: (name: string) => void
+    requestSession?: () => RequestSessionPublicationLookup
+  } = {},
 ): void {
   wrapMcpToolHandlers(
     server,
     (name, handler) =>
-      (...args) =>
-        withRecordCaller(`mcp:${name}`, () => handler(...args)),
-    onRegister,
+      (...args) => {
+        const invoke = () => withRecordCaller(`mcp:${name}`, () => handler(...args))
+        if (!options.requestSession || isWorkerEnvironment(process.env)) return invoke()
+        const context = args[1] as { mcpReq?: { _meta?: Record<string, unknown> } } | undefined
+        const resolved = resolveRequestSession({
+          meta: context?.mcpReq?._meta,
+          published: options.requestSession(),
+        })
+        if (resolved.kind === 'refusal') throw new Error(resolved.reason)
+        return withRequestSession(resolved.value, invoke)
+      },
+    options.onRegister,
   )
 }

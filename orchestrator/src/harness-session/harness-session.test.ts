@@ -14,7 +14,11 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
-import { publishHarnessSession, reapHarnessSessions } from './harness-session.ts'
+import {
+  publishHarnessSession,
+  readHarnessSession,
+  reapHarnessSessions,
+} from './harness-session.ts'
 import { HARNESS_SESSION_TEMP_GRACE_MS } from './harness-session-decision.ts'
 
 const roots: string[] = []
@@ -51,6 +55,39 @@ test('publish atomically replaces the current harness session', () => {
     session: 'after-clear',
     harness: 'claude-code',
     source: 'clear',
+  })
+})
+
+test('reader returns only the publication for the requested process identity', () => {
+  const env = state()
+  publishHarnessSession({
+    pid: 42,
+    session: 'published-session',
+    source: 'startup',
+    env,
+    observeStartTime: () => 'published-start',
+  })
+
+  expect(readHarnessSession({ pid: 42, startTime: 'published-start' }, env)).toEqual({
+    kind: 'published',
+    publication: expect.objectContaining({ session: 'published-session' }),
+  })
+  expect(readHarnessSession({ pid: 42, startTime: 'other-start' }, env)).toEqual({
+    kind: 'absent',
+  })
+})
+
+test('reader distinguishes an invalid publication from an absent one', () => {
+  const env = state()
+  const directory = harnessSessionDirectory(env)
+  mkdirSync(directory, { recursive: true })
+  const path = join(directory, '42-broken-start.json')
+  writeFileSync(path, '{broken')
+
+  expect(readHarnessSession({ pid: 42, startTime: 'broken-start' }, env)).toEqual({
+    kind: 'unreadable',
+    path,
+    reason: expect.stringContaining('invalid JSON'),
   })
 })
 

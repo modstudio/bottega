@@ -1,5 +1,6 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { HarnessName } from '../../../shared/harness-name.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { boardTextsSecretRefusal } from './board-text-secret.ts'
 
@@ -20,7 +21,7 @@ const RUN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 /** The local operator has no session id; this reserved reader keeps receipts non-null. */
 export const OPERATOR_READER = 'operator'
 
-export type ArchitectIdentity = { session: string; harness: 'claude-code' }
+export type ArchitectIdentity = { session: string; harness: HarnessName }
 export function architectIdentity(
   env: Record<string, string | undefined>,
 ): ArchitectIdentity | null {

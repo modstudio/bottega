@@ -219,6 +219,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-policy.ts', [
     '../../../shared/board-purpose.ts',
     '../../../shared/brand.ts',
+    '../../../shared/harness-name.ts',
     '../caller-classification.ts',
     './board-text-secret.ts',
   ]),

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { withRequestSession } from '../../../shared/request-session.ts'
 import { db } from '../database/db.ts'
 import {
   acknowledgementRefusal,
@@ -53,6 +54,12 @@ test('an unsupported board caller refusal names its triggering markers', () => {
   expect(() => boardActor({ CODEX_THREAD_ID: 'codex-1', OTHER_SESSION_ID: 'session-1' })).toThrow(
     '(CODEX_THREAD_ID, OTHER_SESSION_ID)',
   )
+})
+
+test('a scoped run reader cannot become a board architect', () => {
+  expect(() =>
+    withRequestSession({ harness: 'codex', session: 'run:123' }, () => boardActor({})),
+  ).toThrow('operator and run:<id> session ids are reserved')
 })
 
 test('a session whose presence is stale but whose session_seen is fresh is a reader', () => {
