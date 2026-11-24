@@ -4,7 +4,7 @@
 import { readMachineValue } from '../../shared/machine-config.ts'
 import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import {
   type HostedWriteDestinationOptions,
   hostedWriteDestination,
@@ -17,16 +17,8 @@ import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
 const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'
 
-export type WaitingEmailLedgerKey = Pick<
-  OperatorWaitingItem,
-  'kind' | 'id' | 'workflow_cursor_record_id' | 'question_record_id' | 'episode'
->
-
-const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
+const waitingItemRecordId = (item: OperatorWaitingItem) =>
   item.kind === 'question' ? item.question_record_id : item.workflow_cursor_record_id
-
-const ledgerKey = (item: WaitingEmailLedgerKey) =>
-  `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
 
 function waitingEmailPushError(item: OperatorWaitingItem, cause: unknown): string {
   return (
@@ -40,14 +32,12 @@ export function dueOperatorWaitingEmails(
   items: readonly OperatorWaitingItem[],
   now: Date,
   delayMinutes: number,
-  pushed: readonly WaitingEmailLedgerKey[],
 ): OperatorWaitingItem[] {
   if (!Number.isFinite(delayMinutes) || delayMinutes <= 0) return []
   const cutoff = now.getTime() - delayMinutes * 60_000
-  const known = new Set(pushed.map(ledgerKey))
   return items.filter((item) => {
     const since = Date.parse(item.waiting_since)
-    return Number.isFinite(since) && since < cutoff && !known.has(ledgerKey(item))
+    return Number.isFinite(since) && since < cutoff
   })
 }
 
@@ -71,23 +61,6 @@ export function setOperatorEmailDelayMinutes(value: number): void {
   )
 }
 
-function recordPushed(item: OperatorWaitingItem): void {
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT OR IGNORE INTO operator_waiting_email(kind,item_id,question_record_id,episode,pushed_at)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(
-        item.kind,
-        item.kind === 'workflow' ? item.workflow_cursor_record_id : null,
-        item.kind === 'question' ? item.question_record_id : null,
-        item.episode,
-        nowIso(),
-      ),
-  )
-}
-
 export async function deliverOperatorWaitingEmails(
   dependencies: {
     readWaiting?: typeof waiting
@@ -95,9 +68,7 @@ export async function deliverOperatorWaitingEmails(
     push?: typeof hostedCreateOperatorWaitingEmail
     now?: () => Date
     delay?: () => number
-    ledger?: () => WaitingEmailLedgerKey[]
     taskRecordId?: (taskKey: string | null) => string | null
-    record?: (item: OperatorWaitingItem) => void
     error?: (message: string) => void
     destination?: (item: OperatorWaitingItem) => Promise<string>
     destinationOptions?: HostedWriteDestinationOptions
@@ -110,12 +81,7 @@ export async function deliverOperatorWaitingEmails(
     if (delay <= 0) return
     if (!(await (dependencies.signedIn ?? hostedSignedInUserId)())) return
     const items = await (dependencies.readWaiting ?? waiting)()
-    due = dueOperatorWaitingEmails(
-      items,
-      (dependencies.now ?? (() => new Date()))(),
-      delay,
-      (dependencies.ledger ?? (() => []))(),
-    )
+    due = dueOperatorWaitingEmails(items, (dependencies.now ?? (() => new Date()))(), delay)
   } catch (cause) {
     error(`hub: operator waiting email check failed: ${String(cause)}`)
     return
@@ -156,7 +122,6 @@ export async function deliverOperatorWaitingEmails(
       )
       if (result.status === 'failed') throw new Error(result.reason ?? 'hosted email failed')
       if (result.status === 'sent' || result.status === 'abandoned') {
-        ;(dependencies.record ?? recordPushed)(item)
         if (result.status === 'abandoned')
           error(
             `hub: operator waiting email abandoned after retries: ${result.reason ?? 'no reason recorded'}`,

@@ -46,8 +46,9 @@ import {
 import {
   getNote,
   listActionableNotes,
-  listHostedNoteAcknowledgements,
+  listNoteAcknowledgements,
   listNotes,
+  localNoteAcknowledgementSightings,
 } from './note-read.ts'
 import { relinkHostedNote } from './note-relink-record.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
@@ -239,12 +240,8 @@ export async function acknowledgeNote(
     })
     return { note, alreadyAcknowledged: false }
   }
-  const existing = db()
-    .query<{ sightings: number }, [string, string]>(
-      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
-    )
-    .get(note.record_id, sessionId)
-  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
+  const existingSightings = localNoteAcknowledgementSightings(note.record_id, sessionId)
+  if (existingSightings === note.sightings) return { note, alreadyAcknowledged: true }
   writeTransaction((conn) => {
     const row = decodeNoteRow(noteRow(conn, note.record_id))
     conn
@@ -789,17 +786,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   ]
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
   const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
-  const acknowledgements =
-    hostedWriteMode(url) === 'hosted-configured'
-      ? (await listHostedNoteAcknowledgements(deps.hosted)).map((acknowledgement) => ({
-          note_record_id: acknowledgement.note_id,
-          session_id: acknowledgement.session_id,
-        }))
-      : db()
-          .query<{ note_record_id: string; session_id: string }, []>(
-            'SELECT note_record_id,session_id FROM note_acknowledgement',
-          )
-          .all()
+  const acknowledgements = await listNoteAcknowledgements(deps.hosted)
   const acknowledgementSessions = new Map<string, string[]>()
   for (const acknowledgement of acknowledgements) {
     const sessions = acknowledgementSessions.get(acknowledgement.note_record_id) ?? []

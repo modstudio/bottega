@@ -82,11 +82,18 @@ const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
       'mintLocalNoteNumber is reached only by createLocalNoteRow in createNote local-authoritative handling',
   },
   {
-    file: 'hub/src/note.ts',
-    functionName: 'staleNotes',
+    file: 'hub/src/note-read.ts',
+    functionName: 'listNoteAcknowledgements',
     expectedSites: 1,
     detail:
-      'staleNotes selects this local acknowledgement query only when hostedWriteMode is not hosted-configured',
+      'listNoteAcknowledgements returns through its hosted-first branch before selecting local acknowledgements',
+  },
+  {
+    file: 'hub/src/note-read.ts',
+    functionName: 'localNoteAcknowledgementSightings',
+    expectedSites: 1,
+    detail:
+      'acknowledgeNote calls localNoteAcknowledgementSightings only after its hosted write arm returns',
   },
   {
     file: 'hub/src/task.ts',
