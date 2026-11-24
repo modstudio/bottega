@@ -682,6 +682,9 @@ export async function fetchTrackerTasks(
   mode: TrackerReadMode,
   since: string | null,
   prefixes: readonly string[],
+  listHostedTrackerCandidates?: (
+    project: string,
+  ) => Promise<Array<Pick<TaskRow, 'key' | 'source' | 'status_category'>>>,
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
@@ -690,13 +693,16 @@ export async function fetchTrackerTasks(
   const tasks = fetched.tasks
   if (mode === 'incremental') return fetched
   const seen = new Set([...tasks.map((task) => task.key), ...fetched.deletedKeys])
-  const vanished = db()
-    .query<{ key: string }, [string]>(
-      `SELECT key FROM task
-       WHERE project = ? AND source = 'mcp'
-         AND status_category IN ('open','active','review')`,
-    )
-    .all(source.project)
+  const candidates = listHostedTrackerCandidates
+    ? (await listHostedTrackerCandidates(source.project)).filter(
+        (row) =>
+          row.source === 'mcp' &&
+          (row.status_category === 'open' ||
+            row.status_category === 'active' ||
+            row.status_category === 'review'),
+      )
+    : localOpenTrackerTasks(source.project)
+  const vanished = candidates
     .filter((row) => !seen.has(row.key))
     .filter((row) => trackerKeyInScope(row.key, prefixes))
   for (const { key } of vanished.slice(0, 200)) {
@@ -708,6 +714,16 @@ export async function fetchTrackerTasks(
     }
   }
   return { ...fetched, tasks }
+}
+
+function localOpenTrackerTasks(project: string): { key: string }[] {
+  return db()
+    .query<{ key: string }, [string]>(
+      `SELECT key FROM task
+       WHERE project = ? AND source = 'mcp'
+         AND status_category IN ('open','active','review')`,
+    )
+    .all(project)
 }
 
 async function lookupTrackerTask(
@@ -925,12 +941,20 @@ async function collectTrackerSource(
   missing: { task_key: string; project: string }[],
   at: string,
   m: Mcp,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ): Promise<CollectedTracker> {
   const s = tracker.source
   const startedAt = nowIso()
   const read = storedTrackerReadMode(s, startedAt)
   const prefixes = tracker.prefixes
-  const fetched = await fetchTrackerTasks(s, m, read.mode, read.since, prefixes)
+  const fetched = await fetchTrackerTasks(
+    s,
+    m,
+    read.mode,
+    read.since,
+    prefixes,
+    listHostedTrackerCandidates,
+  )
   const unique = scopedTrackerTasks(fetched.tasks, prefixes)
   const hosted = hostedWriteMode(resolveHostedUrl()) === 'hosted-configured'
   const hostedBackfill = hosted ? await hostedBackfillReads(s, m, missing, prefixes) : []
@@ -992,6 +1016,7 @@ async function collectTracker(
   tracker: TrackerRegistration,
   missing: { task_key: string; project: string }[],
   at: string,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ): Promise<CollectedTracker> {
   if ('error' in tracker)
     return {
@@ -1018,7 +1043,7 @@ async function collectTracker(
   const m = new Mcp(resolved.credentials.url, resolved.credentials.token)
   try {
     await m.initialize()
-    return await collectTrackerSource(tracker, missing, at, m)
+    return await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
   } catch (cause) {
     return {
       result: { project: s.project, tasks: 0, changed: 0, error: String((cause as Error).message) },
@@ -1030,11 +1055,16 @@ async function collectTracker(
 }
 
 /** Snapshot every reachable tracker into the task table, recording transitions. */
-export async function ingestTrackers(only: ReadonlySet<Project> | null = null) {
+export async function ingestTrackers(
+  only: ReadonlySet<Project> | null = null,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
+) {
   const at = nowIso()
   const { trackers, missing } = trackerIngestInputs(only)
   return finishTrackerResults(
-    await Promise.all(trackers.map((tracker) => collectTracker(tracker, missing, at))),
+    await Promise.all(
+      trackers.map((tracker) => collectTracker(tracker, missing, at, listHostedTrackerCandidates)),
+    ),
     at,
   )
 }

@@ -29,6 +29,52 @@ export type NoteFilters = {
   text?: string
 }
 
+async function listHostedNoteAcknowledgements(
+  options: NoteClientOptions = {},
+): Promise<HostedAcknowledgement[]> {
+  const spaces = await noteReadSpaces(undefined, options)
+  try {
+    const results = await Promise.all(
+      spaces.map((recordSpace) =>
+        hostedListNotes({ stale: true }, { ...options, recordSpace }).catch((cause) => {
+          throw spaceReadFailure(recordSpace, undefined, cause)
+        }),
+      ),
+    )
+    return results.flatMap(({ acknowledgements }) => acknowledgements)
+  } catch (cause) {
+    throw hostedReadFailure(cause)
+  }
+}
+
+export async function listNoteAcknowledgements(
+  options: NoteClientOptions = {},
+): Promise<{ note_record_id: string; session_id: string }[]> {
+  if (hostedWriteMode(options.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
+    return (await listHostedNoteAcknowledgements(options)).map((acknowledgement) => ({
+      note_record_id: acknowledgement.note_id,
+      session_id: acknowledgement.session_id,
+    }))
+  return db()
+    .query<{ note_record_id: string; session_id: string }, []>(
+      'SELECT note_record_id,session_id FROM note_acknowledgement',
+    )
+    .all()
+}
+
+export function localNoteAcknowledgementSightings(
+  noteRecordId: string,
+  sessionId: string,
+): number | null {
+  return (
+    db()
+      .query<{ sightings: number }, [string, string]>(
+        'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
+      )
+      .get(noteRecordId, sessionId)?.sightings ?? null
+  )
+}
+
 type NormalizedNoteFilters = Omit<NoteFilters, 'session'> & { sessions: string[] }
 
 function normalizeNoteFilters(filters: NoteFilters): NormalizedNoteFilters {

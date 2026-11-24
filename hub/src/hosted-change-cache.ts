@@ -716,6 +716,19 @@ export async function pullHostedChanges(options: PullOptions = {}): Promise<Host
   }
 }
 
+export async function pullHostedNoteChanges(options: PullOptions = {}): Promise<void> {
+  const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
+  const identity = await hostedTaskIdentity(shared)
+  const registered = options.registeredProjects ?? projects()
+  const family = noteFamily(registered, identity)
+  const feed: FeedFamily = {
+    name: 'note',
+    family,
+    spaces: family.spaces(registered, identity),
+  }
+  for (const space of feed.spaces) await runFullPull(feed, space, shared)
+}
+
 export function hostedChangesLines(report: HostedChangesReport): string {
   return report.families
     .map(({ name, report: family }) =>

@@ -2,11 +2,13 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadAllowedFile,
   type HostedLocalReadCandidate,
   hostedBoardLocalReadFailures,
+  hostedHubLocalReadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
   hostedLocalReadScan,
@@ -16,6 +18,7 @@ import { extractSqlFromSource } from './hosted-sql-schema.ts'
 
 const tables = [
   { table: 'hosted_row', cache: false },
+  { table: 'task', cache: false },
   { table: 'hosted_cache', cache: true },
   {
     table: 'declared_cache',
@@ -34,22 +37,84 @@ function candidates(file: string, sourceText: string): HostedLocalReadCandidate[
   return [
     ...extracted.sites.map((site) => ({
       ...site,
+      sourceText,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
     ...extracted.unresolved.map((site) => ({
       ...site,
+      sourceText,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
     ...extracted.cannotJudge.map((site) => ({
       ...site,
+      sourceText,
       dynamicTable: true,
       sourceUsesPostgres: false,
       sourceUsesSqlite: false,
     })),
   ]
 }
+
+test.each([
+  {
+    name: 'a read in the local arm',
+    source: `function read() {
+      if (writeMode(project) === 'local-authoritative') {
+        db.query(\`SELECT * FROM hosted_row\`)
+      }
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read after a returning hosted arm',
+    source: `function read() {
+      if (hostedWriteMode(url) === 'hosted-configured') return hostedRead()
+      db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read before the branch',
+    source: `function read() {
+      db.query(\`SELECT * FROM hosted_row\`)
+      if (hostedWriteMode(url) === 'hosted-configured') return hostedRead()
+    }`,
+    path: 'hosted-reachable',
+  },
+  {
+    name: 'a read inside the hosted arm',
+    source: `function read() {
+      if (writeMode(project) === 'hosted-configured') {
+        db.query(\`SELECT * FROM hosted_row\`)
+      }
+    }`,
+    path: 'hosted-reachable',
+  },
+  {
+    name: 'a helper reached only from local arms',
+    source: `function localRead() {
+      db.query(\`SELECT * FROM hosted_row\`)
+    }
+    function read() {
+      if (writeMode(project) === 'local-authoritative') {
+        localRead()
+      }
+    }`,
+    path: 'local-only',
+  },
+] as const)('classifies selector control flow for $name', ({ source, path }) => {
+  const hit = classifyHostedLocalReadSites({
+    candidates: candidates('hub/src/fixture.ts', source).map((candidate) => ({
+      ...candidate,
+      sourceSelector: hostedLocalReadSourceFacts(source).sourceSelector,
+    })),
+    tables,
+    allowedFiles: [],
+  })[0]
+  expect(hit?.path).toBe(path)
+})
 
 test.each([
   ['SELECT * FROM hosted_row', 'read'],
@@ -99,6 +164,59 @@ test('refuses only hosted-reachable reads of B1 board tables', () => {
       { ...hit, file: 'orchestrator/src/board/board-suggestions.ts' },
     ]),
   ).toEqual([])
+})
+
+test('refuses hosted-reachable and cannot-tell reads of B2 hub tables', () => {
+  const hit = {
+    file: 'hub/src/new-reader.ts',
+    line: 23,
+    table: 'task',
+    kind: 'read' as const,
+    path: 'hosted-reachable' as const,
+    reason: 'fixture',
+    module: 'hub:new-reader.ts',
+  }
+  expect(hostedHubLocalReadFailures([hit, { ...hit, path: 'cannot-tell' }])).toEqual([
+    expect.stringContaining('new-reader.ts:23: hosted install can read task'),
+    expect.stringContaining('read the hosted record through the hub client on a hosted install'),
+  ])
+  expect(
+    hostedHubLocalReadFailures([
+      { ...hit, path: 'local-only' },
+      { ...hit, kind: 'write' },
+      { ...hit, table: 'typed_question_answer' },
+    ]),
+  ).toEqual([])
+})
+
+test('reports planned reads as hosted-reachable without refusing them', () => {
+  const source = `function plannedRead() {
+    db.query(\`SELECT * FROM task\`)
+  }`
+  const [planned] = classifyHostedLocalReadSites({
+    candidates: candidates('hub/src/planned.ts', source),
+    tables,
+    allowedFiles: [
+      {
+        pattern: /^hub\/src\/planned\.ts$/,
+        functionName: 'plannedRead',
+        reason: 'planned',
+        detail: `planned by project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads`,
+        expectedSites: 1,
+        reportOnly: true,
+      },
+    ],
+  })
+  expect(planned).toMatchObject({
+    path: 'hosted-reachable',
+    exclusionReason: 'planned',
+    functionName: 'plannedRead',
+  })
+  expect(planned?.reason).toContain(`project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads`)
+  expect(hostedHubLocalReadFailures([planned!])).toEqual([])
+  expect(hostedHubLocalReadFailures([{ ...planned!, exclusionReason: undefined }])).toEqual([
+    expect.stringContaining('hosted install can read task'),
+  ])
 })
 
 test.each([

@@ -48,6 +48,7 @@ export type HostedLocalReadCandidate = {
   file: string
   line: number
   sql: string
+  sourceText?: string
   expression?: string
   dynamicTable?: boolean
   sourceSelector?: string
@@ -68,6 +69,8 @@ export type HostedLocalReadHit = {
   kind: HostedLocalReadKind
   path: HostedLocalReadPath
   reason: string
+  exclusionReason?: string
+  functionName?: string
   module: string
 }
 export type HostedLocalReadReport = {
@@ -114,6 +117,31 @@ export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]
   )
 }
 
+const HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES = [
+  'task',
+  'task_document',
+  'task_comment',
+  'task_status_event',
+  'note',
+  'note_acknowledgement',
+  'note_counter',
+  'operator_waiting_email',
+] as const
+
+export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
+  const refused = new Set<string>(HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES)
+  return hits.flatMap((hit) =>
+    hit.kind === 'read' &&
+    (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
+    hit.exclusionReason !== 'planned' &&
+    refused.has(hit.table)
+      ? [
+          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; read the hosted record through the hub client on a hosted install`,
+        ]
+      : [],
+  )
+}
+
 const WRITE_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
 const HOSTED_SELECTORS = [
   'boardMode',
@@ -131,6 +159,253 @@ const ATTACHMENT_PREDICATES = [
   'record_install_binding',
 ] as const
 const OWNERSHIP_PREDICATE = hostedRecordOwnsHostedTables.name
+
+type SelectorPath = Pick<HostedLocalReadHit, 'path' | 'reason'> | null
+type SourceRange = { start: number; end: number }
+type MaskState = 'code' | 'line' | 'block' | 'single' | 'double' | 'template'
+type MaskStep = { state: MaskState; text: string; advance: number }
+
+function maskCodeCharacter(char: string, next: string): MaskStep {
+  if (char === '/' && next === '/') return { state: 'line', text: '  ', advance: 2 }
+  if (char === '/' && next === '*') return { state: 'block', text: '  ', advance: 2 }
+  if (char === "'") return { state: 'single', text: char, advance: 1 }
+  if (char === '"') return { state: 'double', text: char, advance: 1 }
+  if (char === '`') return { state: 'template', text: ' ', advance: 1 }
+  return { state: 'code', text: char, advance: 1 }
+}
+
+function maskEscape(state: Exclude<MaskState, 'code' | 'line' | 'block'>, next: string): MaskStep {
+  const visible = state === 'single' || state === 'double'
+  return {
+    state,
+    text: `\\${next === '\n' ? '\n' : visible ? next : ' '}`,
+    advance: 2,
+  }
+}
+
+function closesMaskState(state: Exclude<MaskState, 'code'>, char: string): boolean {
+  if (state === 'single') return char === "'"
+  if (state === 'double') return char === '"'
+  return state === 'template' && char === '`'
+}
+
+function maskNonCodeCharacter(
+  state: Exclude<MaskState, 'code'>,
+  char: string,
+  next: string,
+): MaskStep {
+  if (char === '\n') return { state: state === 'line' ? 'code' : state, text: '\n', advance: 1 }
+  const visible = state === 'single' || state === 'double'
+  if (char === '\\' && state !== 'line' && state !== 'block') return maskEscape(state, next)
+  if (state === 'block' && char === '*' && next === '/')
+    return { state: 'code', text: '  ', advance: 2 }
+  if (closesMaskState(state, char)) return { state: 'code', text: visible ? char : ' ', advance: 1 }
+  return { state, text: visible ? char : ' ', advance: 1 }
+}
+
+function maskSource(source: string): string {
+  let result = ''
+  let state: MaskState = 'code'
+  for (let index = 0; index < source.length; ) {
+    const char = source[index] ?? ''
+    const next = source[index + 1] ?? ''
+    const step: MaskStep =
+      state === 'code' ? maskCodeCharacter(char, next) : maskNonCodeCharacter(state, char, next)
+    result += step.text
+    state = step.state
+    index += step.advance
+  }
+  return result
+}
+
+function matchingDelimiter(source: string, start: number, open: string, close: string): number {
+  let depth = 0
+  for (let index = start; index < source.length; index += 1) {
+    if (source[index] === open) depth += 1
+    if (source[index] === close && --depth === 0) return index
+  }
+  return -1
+}
+
+function functionBodyRange(source: string, parenEnd: number): SourceRange | null {
+  let start = source.indexOf('{', parenEnd)
+  while (start >= 0) {
+    const end = matchingDelimiter(source, start, '{', '}')
+    if (end < 0) return null
+    const next = source.slice(end + 1).match(/\S/)?.[0]
+    if (!next || !['>', '[', '|', '&', '{'].includes(next)) return { start, end }
+    start = source.indexOf('{', end + 1)
+  }
+  return null
+}
+
+function functionRanges(source: string): Array<SourceRange & { name: string }> {
+  const ranges: Array<SourceRange & { name: string }> = []
+  for (const match of source.matchAll(/\bfunction\s+(\w+)(?:<[^\n]*>)?\s*\(/g)) {
+    const parenStart = (match.index ?? 0) + match[0].lastIndexOf('(')
+    const parenEnd = matchingDelimiter(source, parenStart, '(', ')')
+    if (parenEnd < 0) continue
+    const range = functionBodyRange(source, parenEnd)
+    if (range) ranges.push({ name: match[1] ?? '(anonymous)', ...range })
+  }
+  for (const match of source.matchAll(
+    /\b(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]+)?=>\s*\{/g,
+  )) {
+    const start = (match.index ?? 0) + match[0].lastIndexOf('{')
+    const end = matchingDelimiter(source, start, '{', '}')
+    if (end >= 0) ranges.push({ name: match[1] ?? '(anonymous)', start, end })
+  }
+  return ranges
+}
+
+function siteOffset(source: string, line: number): number {
+  let offset = 0
+  for (let current = 1; current < line; current += 1) {
+    const next = source.indexOf('\n', offset)
+    if (next < 0) return source.length
+    offset = next + 1
+  }
+  return offset
+}
+
+function selectorVariables(functionText: string): Map<string, 'mode' | 'hosted'> {
+  const result = new Map<string, 'mode' | 'hosted'>()
+  for (const match of functionText.matchAll(
+    /\bconst\s+(\w+)\s*=\s*(?:writeMode|hostedWriteMode)\s*\([^;\n]+/g,
+  ))
+    result.set(match[1] ?? '', /hosted-configured/.test(match[0]) ? 'hosted' : 'mode')
+  for (const [modeName, kind] of result) {
+    if (kind !== 'mode') continue
+    const derived = new RegExp(
+      `\\bconst\\s+(\\w+)\\s*=\\s*${modeName}\\s*={2,3}\\s*['"]hosted-configured['"]`,
+      'g',
+    )
+    for (const match of functionText.matchAll(derived)) result.set(match[1] ?? '', 'hosted')
+  }
+  return result
+}
+
+function conditionMode(
+  condition: string,
+  variables: ReadonlyMap<string, 'mode' | 'hosted'>,
+): 'local' | 'hosted' | null {
+  const direct = /\b(?:writeMode|hostedWriteMode)\s*\(/.test(condition)
+  const mode = [...variables].find(
+    ([name, kind]) => kind === 'mode' && new RegExp(`\\b${name}\\b`).test(condition),
+  )
+  const hosted = [...variables].find(
+    ([name, kind]) => kind === 'hosted' && new RegExp(`\\b${name}\\b`).test(condition),
+  )
+  if (!direct && !mode && !hosted) return null
+  if (hosted) return new RegExp(`!\\s*${hosted[0]}\\b`).test(condition) ? 'local' : 'hosted'
+  const notEqual = /!==?/.test(condition)
+  if (/['"]local-authoritative['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
+  if (/['"]hosted-configured['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
+  return null
+}
+
+function statementRange(body: string, parenEnd: number): SourceRange & { braced: boolean } {
+  let start = parenEnd + 1
+  while (/\s/.test(body[start] ?? '')) start += 1
+  const braced = body[start] === '{'
+  if (braced) return { start, end: matchingDelimiter(body, start, '{', '}'), braced }
+  const newline = body.indexOf('\n', start)
+  return { start, end: newline < 0 ? body.length : newline, braced }
+}
+
+function selectorIfPath(input: {
+  body: string
+  ifStart: number
+  parenEnd: number
+  mode: 'local' | 'hosted'
+  site: number
+}): 'local' | 'hosted' | null {
+  const statement = statementRange(input.body, input.parenEnd)
+  if (input.site >= statement.start && input.site <= statement.end) return input.mode
+  if (input.ifStart >= input.site) return 'hosted'
+  const statementText = input.body.slice(
+    statement.start + (statement.braced ? 1 : 0),
+    statement.end,
+  )
+  return /\b(?:return|throw)\b/.test(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+}
+
+function functionSitePath(
+  source: string,
+  range: SourceRange,
+  offset: number,
+): 'local' | 'hosted' | null {
+  const body = source.slice(range.start + 1, range.end)
+  const site = offset - range.start - 1
+  const variables = selectorVariables(body)
+  for (const match of body.matchAll(/\bif\s*\(/g)) {
+    const ifStart = match.index ?? 0
+    const parenStart = ifStart + match[0].lastIndexOf('(')
+    const parenEnd = matchingDelimiter(body, parenStart, '(', ')')
+    if (parenEnd < 0) continue
+    const mode = conditionMode(body.slice(parenStart + 1, parenEnd), variables)
+    if (!mode) continue
+    return selectorIfPath({ body, ifStart, parenEnd, mode, site })
+  }
+  return null
+}
+
+function selectorPath(candidate: HostedLocalReadCandidate): SelectorPath {
+  if (!candidate.sourceSelector || !candidate.sourceText) return null
+  const masked = maskSource(candidate.sourceText)
+  const offset = siteOffset(masked, candidate.line)
+  const ranges = functionRanges(masked)
+  const enclosing = ranges
+    .filter((range) => range.start < offset && offset < range.end)
+    .sort((left, right) => right.start - left.start)[0]
+  if (!enclosing) return null
+  const direct = functionSitePath(masked, enclosing, offset)
+  if (direct)
+    return {
+      path: direct === 'local' ? 'local-only' : 'hosted-reachable',
+      reason: `${candidate.sourceSelector} control flow in enclosing function ${enclosing.name} is ${direct}`,
+    }
+  const callerPathsFor = (
+    subject: SourceRange & { name: string },
+    seen: ReadonlySet<string>,
+  ): Array<'local' | 'hosted' | null> => {
+    if (seen.has(subject.name)) return [null]
+    const nextSeen = new Set([...seen, subject.name])
+    const callers = [...masked.matchAll(new RegExp(`\\b${subject.name}\\s*\\(`, 'g'))]
+      .map((match) => match.index ?? -1)
+      .filter((call) => call >= 0 && !(subject.start - 120 < call && call < subject.start))
+    return callers.flatMap((call) => {
+      const caller = ranges
+        .filter((range) => range.start < call && call < range.end)
+        .sort((left, right) => right.start - left.start)[0]
+      if (!caller) return [null]
+      const path = functionSitePath(masked, caller, call)
+      return path ? [path] : callerPathsFor(caller, nextSeen)
+    })
+  }
+  const callerPaths = callerPathsFor(enclosing, new Set())
+  if (!callerPaths.length) return null
+  if (callerPaths.every((path) => path === 'local'))
+    return {
+      path: 'local-only',
+      reason: `${enclosing.name} is called only from local arms in this file`,
+    }
+  if (callerPaths.some((path) => path === 'hosted'))
+    return {
+      path: 'hosted-reachable',
+      reason: `${enclosing.name} has a hosted-reachable caller in this file`,
+    }
+  return null
+}
+
+function enclosingFunctionName(candidate: HostedLocalReadCandidate): string | undefined {
+  if (!candidate.sourceText) return undefined
+  const source = maskSource(candidate.sourceText)
+  const offset = siteOffset(source, candidate.line)
+  return functionRanges(source)
+    .filter((range) => range.start < offset && offset < range.end)
+    .sort((left, right) => right.start - left.start)[0]?.name
+}
 
 export function hostedLocalSqlExemptionReasonFailures(
   allowedFiles: readonly HostedLocalReadAllowedFile[],
@@ -202,11 +477,35 @@ function hostedLocalReadModule(file: string): string {
   return `${match[1]}:${match[2]}`
 }
 
+function reachablePath(
+  candidate: HostedLocalReadCandidate,
+  table: HostedLocalReadTable | null,
+): Pick<HostedLocalReadHit, 'path' | 'reason'> {
+  if (candidate.dynamicTable)
+    return {
+      path: 'cannot-tell',
+      reason: `dynamic table expression ${candidate.expression ?? '(unknown)'}`,
+    }
+  if (table?.task)
+    return {
+      path: 'hosted-reachable',
+      reason: `hosted home is planned by ${table.task}; local read remains report-only`,
+    }
+  const selected = selectorPath(candidate)
+  if (selected) return selected
+  if (candidate.sourceSelector)
+    return {
+      path: 'cannot-tell',
+      reason: `${candidate.sourceSelector} is called somewhere in the file; the extractor cannot prove it encloses this site`,
+    }
+  return { path: 'hosted-reachable', reason: 'no local-only or excluded hosted path was found' }
+}
+
 function classifiedPath(
   candidate: HostedLocalReadCandidate,
   table: HostedLocalReadTable | null,
   allowedFiles: readonly HostedLocalReadAllowedFile[],
-): Pick<HostedLocalReadHit, 'path' | 'reason'> {
+): Pick<HostedLocalReadHit, 'path' | 'reason' | 'exclusionReason'> {
   if (table?.cache)
     return { path: 'excluded-by-design', reason: 'hosted cache table is local by design' }
   if (table?.readCache && hostedLocalReadKind(candidate.sql) === 'read')
@@ -216,8 +515,25 @@ function classifiedPath(
     }
   if (LOCAL_ADAPTER.test(candidate.file))
     return { path: 'local-only', reason: 'file matches LOCAL_SQLITE_ADAPTER_PATH' }
-  const allowed = allowedFiles.find(({ pattern }) => pattern.test(candidate.file))
+  const functionName = enclosingFunctionName(candidate)
+  const allowed = allowedFiles.find(
+    ({ pattern, functionName: allowedFunction }) =>
+      pattern.test(candidate.file) &&
+      (allowedFunction === undefined || allowedFunction === functionName),
+  )
   const allowedDetail = allowed?.detail ?? allowed?.reason ?? ''
+  if (allowed?.reason === 'planned')
+    return {
+      path: 'hosted-reachable',
+      reason: `planned: ${allowedDetail}`,
+      exclusionReason: 'planned',
+    }
+  if (allowed?.reason === 'local-only')
+    return {
+      path: 'local-only',
+      reason: `reasoned local-only allowlist: ${allowedDetail}`,
+      exclusionReason: 'local-only',
+    }
   if (allowedDetail.includes(OWNERSHIP_SELECTOR))
     return {
       path: 'local-only',
@@ -247,22 +563,7 @@ function classifiedPath(
       path: 'hosted-record',
       reason: 'SQL runs on the hosted record, not the local store',
     }
-  if (candidate.dynamicTable)
-    return {
-      path: 'cannot-tell',
-      reason: `dynamic table expression ${candidate.expression ?? '(unknown)'}`,
-    }
-  if (table?.task)
-    return {
-      path: 'hosted-reachable',
-      reason: `hosted home is planned by ${table.task}; local read remains report-only`,
-    }
-  if (candidate.sourceSelector)
-    return {
-      path: 'cannot-tell',
-      reason: `${candidate.sourceSelector} is called somewhere in the file; the extractor cannot prove it encloses this site`,
-    }
-  return { path: 'hosted-reachable', reason: 'no local-only or excluded hosted path was found' }
+  return reachablePath(candidate, table)
 }
 
 /** Pure report policy over SQL sites and inventory declarations gathered by the caller. */
@@ -273,12 +574,14 @@ export function classifyHostedLocalReadSites(input: {
 }): HostedLocalReadHit[] {
   const tablesByName = new Map(input.tables.map((table) => [table.table, table]))
   return input.candidates.flatMap((candidate) => {
+    const functionName = enclosingFunctionName(candidate)
     const namedTables = candidate.dynamicTable
       ? [null]
       : input.tables.filter(({ table }) => hostedTableInSql(candidate.sql, [table]) !== null)
     return namedTables.map((table) => ({
       file: candidate.file,
       line: candidate.line,
+      ...(functionName ? { functionName } : {}),
       table: table?.table ?? `dynamic:${candidate.expression ?? '(unknown)'}`,
       kind: hostedLocalReadKind(candidate.sql),
       ...classifiedPath(
@@ -456,18 +759,21 @@ function scanHostedLocalReadConcern(input: {
     return [
       ...extracted.sites.map((site) => ({
         ...site,
+        sourceText,
         sourceSelector,
         sourceUsesPostgres,
         sourceUsesSqlite,
       })),
       ...extracted.unresolved.map((site) => ({
         ...site,
+        sourceText,
         sourceSelector,
         sourceUsesPostgres,
         sourceUsesSqlite,
       })),
       ...extracted.cannotJudge.map((site) => ({
         ...site,
+        sourceText,
         dynamicTable: true,
         sourceSelector,
         sourceUsesPostgres,

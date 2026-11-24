@@ -6,6 +6,7 @@ import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
 import {
   acknowledgeNote,
+  createHostedNoteReferenceResolver,
   createNote,
   curateNotes,
   curatorEnabled,
@@ -14,7 +15,6 @@ import {
   noteSessionId,
   parseExplicitNoteAnchor,
   relinkNote,
-  resolveNoteReference,
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
@@ -53,8 +53,9 @@ const NOTE_LIST_DEFAULT_LIMIT = 50
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
 const open = () => requireDatabase()
+const resolveReference = createHostedNoteReferenceResolver()
 const reference = (value: string, project?: string) =>
-  resolveNoteReference(value, project ?? projectOf(process.cwd()))
+  resolveReference(value, project ?? projectOf(process.cwd()))
 
 function explicitNoteAnchor(value: string | undefined): Parameters<typeof createNote>[0]['anchor'] {
   return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
@@ -99,7 +100,7 @@ async function keepNoteCommand(ids: string[], project?: string): Promise<void> {
   const session = noteSessionId()
   if (!session) throw new Error(`${PLATFORM_SLUG} note keep requires a session environment`)
   for (const id of ids) {
-    const result = await acknowledgeNote(reference(id, project), session)
+    const result = await acknowledgeNote(await reference(id, project), session)
     console.log(noteKeepLine(result.note, result.alreadyAcknowledged))
   }
 }
@@ -134,7 +135,7 @@ async function newNoteCommand(text: string, options: NoteOptions): Promise<void>
   let result = await createNote({
     text,
     area: options.area,
-    sameAs: same ? reference(same, options.project) : undefined,
+    sameAs: same ? await reference(same, options.project) : undefined,
     forceNew: Boolean(options.new),
     anchor: explicitNoteAnchor(options.anchorJson),
     project: options.project,
@@ -188,7 +189,7 @@ async function resolveDuplicateNote(
       ? await createNote({
           text,
           area: options.area,
-          sameAs: reference(answer, options.project),
+          sameAs: await reference(answer, options.project),
           project: options.project,
         })
       : answer === 'new'
@@ -213,7 +214,7 @@ function registerNoteRelinkCommand(note: Command): void {
     .action(async (noteReference, options: NoteOptions) => {
       open()
       const row = await relinkNote(
-        reference(noteReference, options.project),
+        await reference(noteReference, options.project),
         options.task!,
         options.reason!,
       )
@@ -230,8 +231,8 @@ function registerNoteReferenceCommands(note: Command): void {
     .action(async (a, b, options: NoteOptions) => {
       open()
       const recorded = await recordNoteDuplicateDistinct(
-        reference(a, options.project),
-        reference(b, options.project),
+        await reference(a, options.project),
+        await reference(b, options.project),
       )
       if (recorded) console.log('notes recorded as distinct')
       else {
@@ -248,8 +249,8 @@ function registerNoteReferenceCommands(note: Command): void {
     .action(async (target, source, options: NoteOptions) => {
       open()
       const row = await mergeNote(
-        reference(target, options.project),
-        reference(source, options.project),
+        await reference(target, options.project),
+        await reference(source, options.project),
       )
       console.log(noteSameLine(row))
     })
@@ -269,7 +270,7 @@ function registerNoteReferenceCommands(note: Command): void {
     .option('--project <name>', 'resolve the note in this project')
     .action(async (noteReference, options: NoteOptions) => {
       open()
-      const row = await promoteNoteCommand(reference(noteReference, options.project), {
+      const row = await promoteNoteCommand(await reference(noteReference, options.project), {
         task: options.task,
         taskFlagPresent: options.task !== undefined,
         title: options.title,
@@ -294,7 +295,9 @@ function registerNoteReferenceCommands(note: Command): void {
       if (!options.reason)
         throw new Error(`${PLATFORM_SLUG} note drop <LABEL|UUID|NUMBER> --reason "..."`)
       console.log(
-        noteDropLine(await dropNote(reference(noteReference, options.project), options.reason)),
+        noteDropLine(
+          await dropNote(await reference(noteReference, options.project), options.reason),
+        ),
       )
     })
 }

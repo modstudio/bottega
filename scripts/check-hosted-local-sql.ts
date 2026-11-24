@@ -13,6 +13,7 @@ import {
 import {
   type HostedLocalReadHit,
   hostedBoardLocalReadFailures,
+  hostedHubLocalReadFailures,
   hostedLocalReadScan,
   hostedLocalSqlAllowedFileFailures,
   hostedLocalSqlExemptionReasonFailures,
@@ -39,7 +40,13 @@ export function reportOnlyAllowedFileBudgetFailures(
   return allowedFiles.flatMap((allowed) => {
     if (!allowed.reportOnly || allowed.expectedSites === undefined) return []
     const actual = new Set(
-      hits.filter((hit) => allowed.pattern.test(hit.file)).map((hit) => `${hit.file}:${hit.line}`),
+      hits
+        .filter(
+          (hit) =>
+            allowed.pattern.test(hit.file) &&
+            (allowed.functionName === undefined || allowed.functionName === hit.functionName),
+        )
+        .map((hit) => `${hit.file}:${hit.line}`),
     ).size
     return actual === allowed.expectedSites
       ? []
@@ -414,6 +421,7 @@ export function checkHostedLocalSql(root: string): {
       ...scan.configurationFailures,
       ...reportOnlyAllowedFileBudgetFailures(scan.report.hits, HOSTED_LOCAL_SQL_ALLOWED_FILES),
       ...hostedBoardLocalReadFailures(scan.report.hits),
+      ...hostedHubLocalReadFailures(scan.report.hits),
       ...hostedLocalSqlViolations({
         sites,
         unresolved,

@@ -9,6 +9,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { pullHostedNoteChanges } from './hosted-change-cache.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
@@ -16,7 +17,7 @@ import {
   hostedWriteMode,
   projectWriteDecisionFor,
 } from './hosted-write-mode.ts'
-import { resolveNoteIdentity } from './identity/identity.ts'
+import { NoteReferenceNotVisibleError, resolveNoteIdentity } from './identity/identity.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
@@ -43,7 +44,13 @@ import {
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
-import { getNote, listActionableNotes, listNotes } from './note-read.ts'
+import {
+  getNote,
+  listActionableNotes,
+  listNoteAcknowledgements,
+  listNotes,
+  localNoteAcknowledgementSightings,
+} from './note-read.ts'
 import { relinkHostedNote } from './note-relink-record.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
@@ -204,6 +211,28 @@ export function resolveNoteReference(value: string, sessionProject: string | nul
   return resolveNoteIdentity(db(), value, sessionProject, isRegisteredNoteProject)
 }
 
+export function createHostedNoteReferenceResolver(
+  dependencies: { hostedUrl?: () => string | undefined; pullNotes?: () => Promise<unknown> } = {},
+) {
+  const hostedUrl = dependencies.hostedUrl ?? resolveHostedUrl
+  const pullNotes = dependencies.pullNotes ?? pullHostedNoteChanges
+  let refresh: Promise<unknown> | null = null
+  return async (value: string, sessionProject: string | null): Promise<string> => {
+    try {
+      return resolveNoteReference(value, sessionProject)
+    } catch (cause) {
+      if (
+        !(cause instanceof NoteReferenceNotVisibleError) ||
+        hostedWriteMode(hostedUrl()) !== 'hosted-configured'
+      )
+        throw cause
+      refresh ??= pullNotes()
+      await refresh
+      return resolveNoteReference(value, sessionProject)
+    }
+  }
+}
+
 export async function acknowledgeNote(
   recordId: string,
   session: string,
@@ -214,12 +243,6 @@ export async function acknowledgeNote(
   const note = await getNote(recordId, options.hosted)
   const mode = writeMode(note.project, options.hosted)
   const at = nowIso()
-  const existing = db()
-    .query<{ sightings: number }, [string, string]>(
-      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
-    )
-    .get(note.record_id, sessionId)
-  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   if (mode === 'hosted-configured') {
     const acknowledgement = await sendHostedNoteAcknowledgement(note, sessionId, at, options.hosted)
     writeTransaction((conn) => {
@@ -240,6 +263,8 @@ export async function acknowledgeNote(
     })
     return { note, alreadyAcknowledged: false }
   }
+  const existingSightings = localNoteAcknowledgementSightings(note.record_id, sessionId)
+  if (existingSightings === note.sightings) return { note, alreadyAcknowledged: true }
   writeTransaction((conn) => {
     const row = decodeNoteRow(noteRow(conn, note.record_id))
     conn
@@ -636,7 +661,6 @@ export async function dropNote(
   const at = nowIso()
   const updated = await sendHostedNoteDrop(current, reason.trim(), at, options.hosted)
   writeTransaction((conn) => {
-    noteRow(conn, recordId)
     conn
       .query(`UPDATE note SET stale_at=?,stale_reason=?,last_seen_at=? WHERE record_id=?`)
       .run(at, updated.stale_reason, at, recordId)
@@ -784,11 +808,8 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     ),
   ]
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
-  const acknowledgements = db()
-    .query<{ note_record_id: string; session_id: string }, []>(
-      'SELECT note_record_id,session_id FROM note_acknowledgement',
-    )
-    .all()
+  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
+  const acknowledgements = await listNoteAcknowledgements(deps.hosted)
   const acknowledgementSessions = new Map<string, string[]>()
   for (const acknowledgement of acknowledgements) {
     const sessions = acknowledgementSessions.get(acknowledgement.note_record_id) ?? []
@@ -840,7 +861,6 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
       : [],
   )
   const deletedIds = deletedRows.map((row) => row.record_id)
-  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
       `this install belongs to a hosted space; local writes are refused while hosting is unavailable. ${hostedUnavailableRemedy(url)}`,

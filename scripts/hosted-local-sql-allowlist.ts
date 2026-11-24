@@ -2,6 +2,7 @@
 /** Check-owned exclusions for local SQL that names hosted tables. */
 
 import { LOCAL_SQLITE_ADAPTER_PATH } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 export const HOSTED_LOCAL_SQL_EXCLUSION_REASONS = [
   'outbox',
@@ -11,14 +12,226 @@ export const HOSTED_LOCAL_SQL_EXCLUSION_REASONS = [
   'fixture',
   'migration',
   'local-only',
+  'planned',
   'hosted-record',
   'passthrough',
 ] as const
 
 type HostedLocalSqlExclusionReason = (typeof HOSTED_LOCAL_SQL_EXCLUSION_REASONS)[number]
 
+type B2ReasonedSite = {
+  file: string
+  functionName: string
+  expectedSites: number
+  detail: string
+}
+
+const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
+  ...[
+    ['listLocalTasks', 1],
+    ['lookupLocalTasks', 2],
+    ['showLocalTask', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/task-local-read.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail:
+      'task.ts listTasks, lookupTasks, and readCurrentTask return through listHostedTasks, hostedLookupTasks, or showHostedTask before calling this local reader',
+  })),
+  ...[
+    ['listLocalTaskDocuments', 1],
+    ['getLocalTaskDocument', 1],
+    ['assertLocalRoleAvailable', 1],
+    ['createLocalTaskDocument', 3],
+    ['applyHostedDocumentUpdateLocally', 2],
+    ['updateTaskDocument', 3],
+    ['deleteTaskDocument', 3],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/task-document.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail:
+      'listTaskDocuments, getTaskDocument, and the document write operations return through resolveHostedTaskDocuments, resolveHostedTaskDocument, or their hosted write arm before calling this local helper',
+  })),
+  ...['taskDocumentIdentityByNumber', 'otherTaskDocumentIdentityByNumber'].map((functionName) => ({
+    file: 'hub/src/identity/identity.ts',
+    functionName,
+    expectedSites: 1,
+    detail:
+      'task-document public readers return through their hosted document client before reaching this local identity helper',
+  })),
+  {
+    file: 'hub/src/note-read.ts',
+    functionName: 'listLocalFilteredRows',
+    expectedSites: 1,
+    detail:
+      'listNotes and listSlimNotes return through their hosted list client before listLocalFilteredRows',
+  },
+  {
+    file: 'hub/src/note.ts',
+    functionName: 'noteRow',
+    expectedSites: 1,
+    detail:
+      'noteRow callers are confined to local-authoritative arms after dropNote stopped calling it on the hosted path',
+  },
+  {
+    file: 'hub/src/note.ts',
+    functionName: 'mintLocalNoteNumber',
+    expectedSites: 2,
+    detail:
+      'mintLocalNoteNumber is reached only by createLocalNoteRow in createNote local-authoritative handling',
+  },
+  {
+    file: 'hub/src/note-read.ts',
+    functionName: 'listNoteAcknowledgements',
+    expectedSites: 1,
+    detail:
+      'listNoteAcknowledgements returns through its hosted-first branch before selecting local acknowledgements',
+  },
+  {
+    file: 'hub/src/note-read.ts',
+    functionName: 'localNoteAcknowledgementSightings',
+    expectedSites: 1,
+    detail:
+      'acknowledgeNote calls localNoteAcknowledgementSightings only after its hosted write arm returns',
+  },
+  {
+    file: 'hub/src/ingest/trackers.ts',
+    functionName: 'localOpenTrackerTasks',
+    expectedSites: 1,
+    detail:
+      'fetchTrackerTasks returns through listHostedTasks on a hosted install before calling localOpenTrackerTasks',
+  },
+  {
+    file: 'hub/src/task.ts',
+    functionName: 'mintLocalTaskKey',
+    expectedSites: 1,
+    detail: 'mintLocalTaskKey is reached only by createLocalTaskInTransaction local callers',
+  },
+  {
+    file: 'hub/src/task.ts',
+    functionName: 'createLocalTaskInTransaction',
+    expectedSites: 4,
+    detail:
+      'createLocalTaskInTransaction is called by createTask and promoteNote only in their local-authoritative arms',
+  },
+  {
+    file: 'hub/src/task.ts',
+    functionName: 'localTaskInTransaction',
+    expectedSites: 1,
+    detail:
+      'localTaskInTransaction callers attachLocalTaskEvidenceInTransaction and prepareNoteRelinkComments are reached only by promoteNote and relinkNote local arms',
+  },
+  {
+    file: 'hub/src/task.ts',
+    functionName: 'applyLocalTaskPatch',
+    expectedSites: 3,
+    detail:
+      'applyLocalTaskPatch is called by setTaskBody and updateTask only after their hosted paths return',
+  },
+  {
+    file: 'hub/src/task.ts',
+    functionName: 'editableComment',
+    expectedSites: 1,
+    detail:
+      'editableComment is called by editTaskComment and removeTaskComment after hosted returns',
+  },
+]
+
+const B2_PLANNED_LOCAL_READ_SITES: readonly B2ReasonedSite[] = [
+  ...[
+    ['intervalsInWindow', 1],
+    ['completedInWindow', 1],
+    ['boardTasks', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/query.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail: `hub query reporting calls ${String(functionName)} directly`,
+  })),
+  ...[
+    ['uniqueTaskRecordIdForKey', 1],
+    ['observedTaskKeyPrefixes', 1],
+    ['taskIdentityCandidates', 1],
+    ['taskByRecordId', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/task-identity.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail: `task identity resolution reaches ${String(functionName)}`,
+  })),
+  {
+    file: 'hub/src/task-record.ts',
+    functionName: 'taskRecordFromRows',
+    expectedSites: 1,
+    detail: 'taskRecord calls taskRecordFromRows to attach local status history',
+  },
+  ...[
+    ['deletionPlans', 1],
+    ['retirementPlans', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/ingest/tracker-hosted-collector.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail: `applyHostedCollectorPass calls ${String(functionName)}`,
+  })),
+  ...[
+    ['retireLocalTrackerRows', 1],
+    ['dropLocalTrackerRows', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/ingest/tracker-local-collector.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail: `the local collector calls ${String(functionName)}`,
+  })),
+  ...[
+    ['trackerIdentityRow', 3],
+    ['trackerLabelAfterCollisionCheck', 1],
+    ['plannedTrackerLabel', 1],
+    ['refreshTrackerClaim', 2],
+    ['recentIntervalsNeedingTracker', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/ingest/trackers.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail:
+      'tracker ingestion reaches synchronous connection helpers at trackers.ts:253, :280, :328, :499 and :874 under q7809(a)',
+  })),
+  ...[
+    ['recordedSubjectRefs', 1],
+    ['recordNoteDuplicateMerge', 1],
+    ['recordNoteDuplicateDistinct', 1],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'hub/src/note-duplicate-question.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail: `note duplicate handling reaches ${String(functionName)}`,
+  })),
+  {
+    file: 'hub/src/note-staleness-store.ts',
+    functionName: 'applyLocalStaleness',
+    expectedSites: 2,
+    detail: 'note staleness handling reaches applyLocalStaleness',
+  },
+  {
+    file: 'hub/src/identity/identity.ts',
+    functionName: 'resolveNoteIdentity',
+    expectedSites: 1,
+    detail:
+      'note keep, same, promote, merge, and relink commands call note-cli reference, which refreshes the hosted note cache once on a local miss before resolveNoteReference calls resolveNoteIdentity',
+  },
+  {
+    file: 'hub/src/identity/identity.ts',
+    functionName: 'noteIdentityByNumber',
+    expectedSites: 1,
+    detail:
+      'note keep, same, promote, merge, and relink commands call note-cli reference, which refreshes the hosted note cache once on a local miss before resolveNoteReference calls resolveNoteIdentity and noteIdentityByNumber',
+  },
+]
+
 export type HostedLocalSqlAllowedFile = {
   pattern: RegExp
+  functionName?: string
   reason?: HostedLocalSqlExclusionReason | string
   detail?: string
   expectedSites?: number
@@ -155,6 +368,22 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     detail: 'The local document read adapter builds SQL only for machine-local document tables',
     expectedSites: 1,
   },
+  ...B2_LOCAL_ONLY_SITES.map(({ file, functionName, expectedSites, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    functionName,
+    reason: 'local-only' as const,
+    detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
+  ...B2_PLANNED_LOCAL_READ_SITES.map(({ file, functionName, expectedSites, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    functionName,
+    reason: 'planned' as const,
+    detail: `${detail}; planned by project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads`,
+    expectedSites,
+    reportOnly: true as const,
+  })),
   ...REPORT_ONLY_ALLOWED_FILES.map(({ file, reason, expectedSites }) => ({
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
     reason,

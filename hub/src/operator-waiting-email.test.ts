@@ -32,21 +32,19 @@ const item = (patch: Partial<OperatorWaitingItem> = {}): OperatorWaitingItem => 
   ...patch,
 })
 
-test('due decision selects only overdue unpushed episodes and zero disables it', () => {
+test('due decision selects only overdue episodes and zero disables it', () => {
   const now = new Date('2026-09-25T11:00:00.000Z')
   expect(
     dueOperatorWaitingEmails(
       [item(), item({ id: 8, episode: 'episode-2', waiting_since: '2026-09-25T10:45:00Z' })],
       now,
       30,
-      [],
     ).map((row) => row.id),
   ).toEqual([7])
-  expect(dueOperatorWaitingEmails([item()], now, 30, [item()])).toEqual([])
-  expect(dueOperatorWaitingEmails([item()], now, 0, [])).toEqual([])
+  expect(dueOperatorWaitingEmails([item()], now, 0)).toEqual([])
 })
 
-test('local loop skips without a hosted sign-in and does not read or record waiting text', async () => {
+test('local loop skips without a hosted sign-in and does not read waiting text', async () => {
   const calls: string[] = []
   await deliverOperatorWaitingEmails({
     delay: () => 30,
@@ -60,30 +58,28 @@ test('local loop skips without a hosted sign-in and does not read or record wait
       calls.push('push')
       return { id: 'mail', status: 'sent', reason: null }
     },
-    record: () => calls.push('record'),
   })
   expect(calls).toEqual([])
 })
 
-test('local loop records only successful pushes and logs failures for retry', async () => {
-  const recorded: number[] = []
+test('local loop sends successful pushes and logs failures for retry', async () => {
+  const pushed: number[] = []
   const errors: string[] = []
   await deliverOperatorWaitingEmails({
     delay: () => 30,
     destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => [item(), item({ id: 8, episode: 'episode-2' })],
-    ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
     taskRecordId: () => null,
     push: async (body) => {
       if ((body as { item_id: number }).item_id === 8) throw new Error('offline')
+      pushed.push((body as { item_id: number }).item_id)
       return { id: 'mail', status: 'sent', reason: null }
     },
-    record: (row) => recorded.push(row.id),
     error: (message) => errors.push(message),
   })
-  expect(recorded).toEqual([7])
+  expect(pushed).toEqual([7])
   expect(errors).toEqual([
     `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: offline`,
   ])
@@ -97,7 +93,6 @@ test('local loop sends a task UUID only when the waiting key resolves', async ()
     destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => [item(), item({ id: 8, task_key: 'MISSING-8', episode: 'episode-2' })],
-    ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
     taskRecordId: (key) => (key === 'DEV-943' ? taskId : null),
     push: async (body) => {
@@ -105,7 +100,6 @@ test('local loop sends a task UUID only when the waiting key resolves', async ()
       bodies.push({ task_key: pushed.task_key, task_id: pushed.task_id })
       return { id: 'mail', status: 'sent', reason: null }
     },
-    record: () => undefined,
   })
   expect(bodies).toEqual([
     { task_key: 'DEV-943', task_id: taskId },
@@ -129,7 +123,6 @@ test('local loop names each waiting item by its kind-specific UUID', async () =>
         episode: 'episode-2',
       }),
     ],
-    ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
     taskRecordId: () => null,
     push: async (body) => {
@@ -137,7 +130,6 @@ test('local loop names each waiting item by its kind-specific UUID', async () =>
       bodies.push({ kind: pushed.kind, item_record_id: pushed.item_record_id })
       return { id: 'mail', status: 'sent', reason: null }
     },
-    record: () => undefined,
   })
   expect(bodies).toEqual([
     { kind: 'question', item_record_id: item().question_record_id },
@@ -145,8 +137,7 @@ test('local loop names each waiting item by its kind-specific UUID', async () =>
   ])
 })
 
-test('local loop records abandonment once but leaves intent and failed results retryable', async () => {
-  const recorded: number[] = []
+test('local loop reports abandonment and leaves intent and failed results retryable', async () => {
   const errors: string[] = []
   const statuses = ['intent', 'failed', 'abandoned'] as const
   await deliverOperatorWaitingEmails({
@@ -154,17 +145,14 @@ test('local loop records abandonment once but leaves intent and failed results r
     destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => statuses.map((_, id) => item({ id: id + 1, episode: `e-${id}` })),
-    ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
     taskRecordId: () => null,
     push: async (body) => {
       const status = statuses[(body as { item_id: number }).item_id - 1]!
       return { id: 'mail', status, reason: status === 'intent' ? null : 'delivery refused' }
     },
-    record: (row) => recorded.push(row.id),
     error: (message) => errors.push(message),
   })
-  expect(recorded).toEqual([3])
   expect(errors).toEqual([
     `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: delivery refused`,
     'hub: operator waiting email abandoned after retries: delivery refused',
@@ -186,7 +174,6 @@ test('waiting email real resolver uses declared or personal destinations and hol
     delay: () => 30,
     signedIn: async () => 'user',
     readWaiting: async () => rows,
-    ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
     destinationOptions: {
       baseUrl: 'https://hub.example.test',
@@ -219,7 +206,6 @@ test('waiting email real resolver uses declared or personal destinations and hol
       return { id: 'mail', status: 'sent', reason: null }
     },
     taskRecordId: () => null,
-    record: () => undefined,
     error: (message) => errors.push(message),
   })
   expect(pushed).toEqual([

@@ -11,6 +11,8 @@ import {
   uuidQualifierRefusal,
 } from '../../../shared/reference-refusal.ts'
 
+export class NoteReferenceNotVisibleError extends Error {}
+
 export function resolveNoteIdentity(
   database: Database,
   value: string,
@@ -33,7 +35,7 @@ export function resolveNoteIdentity(
       .query<{ record_id: string }, [string]>('SELECT record_id FROM note WHERE record_id=?')
       .get(parsed.value.recordId)
     if (row) return row.record_id
-    throw new Error(
+    throw new NoteReferenceNotVisibleError(
       referenceNotVisibleRefusal('any project you can see', 'pass a visible UUID or note label'),
     )
   }
@@ -45,7 +47,7 @@ export function resolveNoteIdentity(
     throw new Error(malformedReferenceRefusal(value, NOTE_REFERENCE_FORMS))
   const recordId = project ? noteIdentityByNumber(database, project, number) : null
   if (recordId) return recordId
-  throw new Error(
+  throw new NoteReferenceNotVisibleError(
     referenceNotVisibleRefusal(
       project ? `project ${project}` : "the caller's project",
       'pass the UUID or a <project>#<number> label',

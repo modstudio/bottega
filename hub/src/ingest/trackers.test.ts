@@ -233,6 +233,56 @@ describe('tracker register', () => {
     expect(lookups).toBe(0)
   })
 
+  test('a hosted full read takes vanished candidates from the hosted task list', async () => {
+    cacheTrackerTask({
+      ...trackerTask,
+      externalId: 'local-only',
+      key: 'LOCAL-ONLY',
+    })
+    const hostedTask = (
+      key: string,
+      statusCategory: 'active' | 'done',
+      taskSource: 'mcp' | 'local' = 'mcp',
+    ) => ({
+      key,
+      status_category: statusCategory,
+      source: taskSource,
+    })
+    const listed = [
+      hostedTask('HOST-VANISHED', 'active'),
+      hostedTask('HOST-SEEN', 'active'),
+      hostedTask('HOST-DONE', 'done'),
+      hostedTask('HOST-LOCAL-SOURCE', 'active', 'local'),
+    ]
+    const projects: string[] = []
+    const lookups: string[] = []
+    const full = source(false, async () => ({
+      tasks: [{ ...trackerTask, key: 'HOST-SEEN' }],
+      complete: true,
+      deletedKeys: [],
+    }))
+    full.lookup = async (_client, key) => {
+      lookups.push(key)
+      return { ...trackerTask, key }
+    }
+
+    const fetched = await fetchTrackerTasks(
+      full,
+      { callTool: async () => ({}) },
+      'full',
+      null,
+      [],
+      async (project) => {
+        projects.push(project)
+        return listed
+      },
+    )
+
+    expect(projects).toEqual(['alpha'])
+    expect(lookups).toEqual(['HOST-VANISHED'])
+    expect(fetched.tasks.map((task) => task.key)).toEqual(['HOST-SEEN', 'HOST-VANISHED'])
+  })
+
   test('full collection neither looks up nor writes out-of-scope tasks', async () => {
     const project = 'scope-guard'
     const at = '2026-11-09T10:00:00.000Z'

@@ -825,7 +825,7 @@ describe('suggestion notes', () => {
     ).toEqual([])
   })
 
-  test('keep acknowledges one session idempotently and a further sighting clears it', async () => {
+  test('hosted keep lets the record decide acknowledgement idempotency', async () => {
     const session = `keep-${crypto.randomUUID()}`
     const otherSession = `other-${crypto.randomUUID()}`
     const note = (
@@ -844,7 +844,7 @@ describe('suggestion notes', () => {
     )
 
     expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(false)
-    expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(true)
+    expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(false)
     expect(
       (await listNotes({ session }, { baseUrl: '' })).map((row) => row.record_id),
     ).not.toContain(note.record_id)
