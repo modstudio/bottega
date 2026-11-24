@@ -23,6 +23,18 @@ test('Docker executable guard ignores comments', () => {
   ).toEqual([])
 })
 
+test('Docker executable guard stays synchronized after a template substitution', () => {
+  expect(
+    dockerExecutableLiteralBypasses("const a = `x${y}z`\nconst b = 'docker'", 'fixture.ts'),
+  ).toEqual(['fixture.ts:2: Docker executable literals must use DOCKER_EXECUTABLE'])
+})
+
+test('Docker executable guard stays synchronized after a regex literal', () => {
+  expect(
+    dockerExecutableLiteralBypasses("const a = /x/\nconst b = 'docker'", 'fixture.ts'),
+  ).toEqual(['fixture.ts:2: Docker executable literals must use DOCKER_EXECUTABLE'])
+})
+
 test('Docker executable leaf is the guard exemption', () => {
   expect(
     dockerExecutableLiteralBypasses(
