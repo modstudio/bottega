@@ -71,29 +71,6 @@ export function setOperatorEmailDelayMinutes(value: number): void {
   )
 }
 
-function pushedEpisodes(): WaitingEmailLedgerKey[] {
-  return db()
-    .query<
-      {
-        kind: 'question' | 'workflow'
-        item_id: string | null
-        question_record_id: string | null
-        episode: string
-      },
-      []
-    >(
-      'SELECT kind,item_id,question_record_id,episode FROM operator_waiting_email ORDER BY kind,item_id,question_record_id,episode',
-    )
-    .all()
-    .map((row) => ({
-      kind: row.kind,
-      id: 0,
-      workflow_cursor_record_id: row.kind === 'workflow' ? row.item_id! : null,
-      question_record_id: row.kind === 'question' ? row.question_record_id! : '',
-      episode: row.episode,
-    }))
-}
-
 function recordPushed(item: OperatorWaitingItem): void {
   writeTransaction((conn) =>
     conn
@@ -137,7 +114,7 @@ export async function deliverOperatorWaitingEmails(
       items,
       (dependencies.now ?? (() => new Date()))(),
       delay,
-      (dependencies.ledger ?? pushedEpisodes)(),
+      (dependencies.ledger ?? (() => []))(),
     )
   } catch (cause) {
     error(`hub: operator waiting email check failed: ${String(cause)}`)

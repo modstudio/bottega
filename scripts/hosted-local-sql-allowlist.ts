@@ -2,6 +2,7 @@
 /** Check-owned exclusions for local SQL that names hosted tables. */
 
 import { LOCAL_SQLITE_ADAPTER_PATH } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 export const HOSTED_LOCAL_SQL_EXCLUSION_REASONS = [
   'outbox',
@@ -16,6 +17,65 @@ export const HOSTED_LOCAL_SQL_EXCLUSION_REASONS = [
 ] as const
 
 type HostedLocalSqlExclusionReason = (typeof HOSTED_LOCAL_SQL_EXCLUSION_REASONS)[number]
+
+const B2_LOCAL_ONLY_SITES: readonly { file: string; line: number; detail: string }[] = [
+  ...[29, 43, 53, 72].map((line) => ({
+    file: 'hub/src/task-local-read.ts',
+    line,
+    detail:
+      'task.ts listTasks, lookupTasks, and readCurrentTask return through listHostedTasks, hostedLookupTasks, or showHostedTask before calling this local reader',
+  })),
+  ...[73, 84, 136, 174, 303, 417, 499].map((line) => ({
+    file: 'hub/src/task-document.ts',
+    line,
+    detail:
+      'listTaskDocuments, getTaskDocument, and the document write operations return through resolveHostedTaskDocuments, resolveHostedTaskDocument, or their hosted write arm before calling this local helper',
+  })),
+  ...[33, 64, 78, 93].map((line) => ({
+    file: 'hub/src/identity/identity.ts',
+    line,
+    detail:
+      'note and task-document public readers return through their hosted note or hosted document client before reaching this local identity helper',
+  })),
+  {
+    file: 'hub/src/note-read.ts',
+    line: 97,
+    detail:
+      'listNotes and listSlimNotes return through their hosted list client before listLocalFilteredRows',
+  },
+  {
+    file: 'hub/src/note.ts',
+    line: 160,
+    detail:
+      'noteRow callers are confined to local-authoritative arms after dropNote stopped calling it on the hosted path',
+  },
+  {
+    file: 'hub/src/note.ts',
+    line: 170,
+    detail:
+      'mintLocalNoteNumber is reached only by createLocalNoteRow in createNote local-authoritative handling',
+  },
+  {
+    file: 'hub/src/note.ts',
+    line: 800,
+    detail:
+      'staleNotes selects this local acknowledgement query only when hostedWriteMode is not hosted-configured',
+  },
+]
+
+const B2_PLANNED_LOCAL_READ_SITES: readonly { file: string; line: number }[] = [
+  ...[33, 101, 324].map((line) => ({ file: 'hub/src/query.ts', line })),
+  ...[44, 67, 92, 199].map((line) => ({ file: 'hub/src/task-identity.ts', line })),
+  { file: 'hub/src/task-record.ts', line: 83 },
+  ...[114, 141].map((line) => ({ file: 'hub/src/ingest/tracker-hosted-collector.ts', line })),
+  ...[29, 72].map((line) => ({ file: 'hub/src/ingest/tracker-local-collector.ts', line })),
+  ...[257, 265, 273, 290, 332, 503, 508, 695, 877].map((line) => ({
+    file: 'hub/src/ingest/trackers.ts',
+    line,
+  })),
+  ...[122, 217, 237].map((line) => ({ file: 'hub/src/note-duplicate-question.ts', line })),
+  { file: 'hub/src/note-staleness-store.ts', line: 80 },
+]
 
 export type HostedLocalSqlAllowedFile = {
   pattern: RegExp
@@ -164,6 +224,22 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 1,
     reportOnly: true,
   },
+  ...B2_LOCAL_ONLY_SITES.map(({ file, line, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    line,
+    reason: 'local-only' as const,
+    detail,
+    expectedSites: 1,
+    reportOnly: true as const,
+  })),
+  ...B2_PLANNED_LOCAL_READ_SITES.map(({ file, line }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    line,
+    reason: 'local-only' as const,
+    detail: `hosted read is planned by project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads; the B2 refusal remains active for every unplanned site`,
+    expectedSites: 1,
+    reportOnly: true as const,
+  })),
   ...([248, 310] as const).map((line) => ({
     pattern: /^hub\/src\/task\.ts$/,
     line,
@@ -197,15 +273,6 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     reason: 'local-only',
     detail:
       'editableComment is called by editTaskComment and removeTaskComment after hosted returns',
-    expectedSites: 1,
-    reportOnly: true,
-  },
-  {
-    pattern: /^hub\/src\/note-read\.ts$/,
-    line: 87,
-    reason: 'local-only',
-    detail:
-      'listLocalFilteredRows is called by listLocalSlimNotes and listLocalNotes only after hosted list paths return',
     expectedSites: 1,
     reportOnly: true,
   },

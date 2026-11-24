@@ -29,6 +29,16 @@ export type NoteFilters = {
   text?: string
 }
 
+export async function listHostedNoteAcknowledgements(
+  options: NoteClientOptions = {},
+): Promise<HostedAcknowledgement[]> {
+  const spaces = await noteReadSpaces(undefined, options)
+  const results = await Promise.all(
+    spaces.map((recordSpace) => hostedListNotes({ stale: true }, { ...options, recordSpace })),
+  )
+  return results.flatMap(({ acknowledgements }) => acknowledgements)
+}
+
 type NormalizedNoteFilters = Omit<NoteFilters, 'session'> & { sessions: string[] }
 
 function normalizeNoteFilters(filters: NoteFilters): NormalizedNoteFilters {

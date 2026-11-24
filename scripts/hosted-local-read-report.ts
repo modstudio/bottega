@@ -115,6 +115,30 @@ export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]
   )
 }
 
+const HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES = [
+  'task',
+  'task_document',
+  'task_comment',
+  'task_status_event',
+  'note',
+  'note_acknowledgement',
+  'note_counter',
+  'operator_waiting_email',
+] as const
+
+export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
+  const refused = new Set<string>(HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES)
+  return hits.flatMap((hit) =>
+    hit.kind === 'read' &&
+    (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
+    refused.has(hit.table)
+      ? [
+          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; read the hosted record through the hub client on a hosted install`,
+        ]
+      : [],
+  )
+}
+
 const WRITE_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
 const HOSTED_SELECTORS = [
   'boardMode',
@@ -135,53 +159,53 @@ const OWNERSHIP_PREDICATE = hostedRecordOwnsHostedTables.name
 
 type SelectorPath = Pick<HostedLocalReadHit, 'path' | 'reason'> | null
 type SourceRange = { start: number; end: number }
+type MaskState = 'code' | 'line' | 'block' | 'single' | 'double' | 'template'
+type MaskStep = { state: MaskState; text: string; advance: number }
+
+function maskCodeCharacter(char: string, next: string): MaskStep {
+  if (char === '/' && next === '/') return { state: 'line', text: '  ', advance: 2 }
+  if (char === '/' && next === '*') return { state: 'block', text: '  ', advance: 2 }
+  if (char === "'") return { state: 'single', text: char, advance: 1 }
+  if (char === '"') return { state: 'double', text: char, advance: 1 }
+  if (char === '`') return { state: 'template', text: ' ', advance: 1 }
+  return { state: 'code', text: char, advance: 1 }
+}
+
+function maskNonCodeCharacter(
+  state: Exclude<MaskState, 'code'>,
+  char: string,
+  next: string,
+): MaskStep {
+  if (char === '\n') return { state: state === 'line' ? 'code' : state, text: '\n', advance: 1 }
+  const visible = state === 'single' || state === 'double'
+  if (char === '\\' && state !== 'line' && state !== 'block')
+    return {
+      state,
+      text: `\\${next === '\n' ? '\n' : visible ? next : ' '}`,
+      advance: 2,
+    }
+  if (state === 'block' && char === '*' && next === '/')
+    return { state: 'code', text: '  ', advance: 2 }
+  if (
+    (state === 'single' && char === "'") ||
+    (state === 'double' && char === '"') ||
+    (state === 'template' && char === '`')
+  )
+    return { state: 'code', text: visible ? char : ' ', advance: 1 }
+  return { state, text: visible ? char : ' ', advance: 1 }
+}
 
 function maskSource(source: string): string {
   let result = ''
-  let state: 'code' | 'line' | 'block' | 'single' | 'double' | 'template' = 'code'
-  for (let index = 0; index < source.length; index += 1) {
+  let state: MaskState = 'code'
+  for (let index = 0; index < source.length; ) {
     const char = source[index] ?? ''
     const next = source[index + 1] ?? ''
-    if (state === 'code') {
-      if (char === '/' && next === '/') {
-        state = 'line'
-        result += '  '
-        index += 1
-      } else if (char === '/' && next === '*') {
-        state = 'block'
-        result += '  '
-        index += 1
-      } else if (char === "'") {
-        state = 'single'
-        result += char
-      } else if (char === '"') {
-        state = 'double'
-        result += char
-      } else if (char === '`') {
-        state = 'template'
-        result += ' '
-      } else result += char
-      continue
-    }
-    if (char === '\n') {
-      result += '\n'
-      if (state === 'line') state = 'code'
-      continue
-    }
-    result += state === 'single' || state === 'double' ? char : ' '
-    if (char === '\\' && state !== 'line' && state !== 'block') {
-      result += next === '\n' ? '\n' : state === 'template' ? ' ' : next
-      index += 1
-    } else if (state === 'block' && char === '*' && next === '/') {
-      result += ' '
-      index += 1
-      state = 'code'
-    } else if (
-      (state === 'single' && char === "'") ||
-      (state === 'double' && char === '"') ||
-      (state === 'template' && char === '`')
-    )
-      state = 'code'
+    const step =
+      state === 'code' ? maskCodeCharacter(char, next) : maskNonCodeCharacter(state, char, next)
+    result += step.text
+    state = step.state
+    index += step.advance
   }
   return result
 }
@@ -261,6 +285,32 @@ function conditionMode(
   return null
 }
 
+function statementRange(body: string, parenEnd: number): SourceRange & { braced: boolean } {
+  let start = parenEnd + 1
+  while (/\s/.test(body[start] ?? '')) start += 1
+  const braced = body[start] === '{'
+  if (braced) return { start, end: matchingDelimiter(body, start, '{', '}'), braced }
+  const newline = body.indexOf('\n', start)
+  return { start, end: newline < 0 ? body.length : newline, braced }
+}
+
+function selectorIfPath(input: {
+  body: string
+  ifStart: number
+  parenEnd: number
+  mode: 'local' | 'hosted'
+  site: number
+}): 'local' | 'hosted' | null {
+  const statement = statementRange(input.body, input.parenEnd)
+  if (input.site >= statement.start && input.site <= statement.end) return input.mode
+  if (input.ifStart >= input.site) return 'hosted'
+  const statementText = input.body.slice(
+    statement.start + (statement.braced ? 1 : 0),
+    statement.end,
+  )
+  return /\b(?:return|throw)\b/.test(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+}
+
 function functionSitePath(
   source: string,
   range: SourceRange,
@@ -276,21 +326,7 @@ function functionSitePath(
     if (parenEnd < 0) continue
     const mode = conditionMode(body.slice(parenStart + 1, parenEnd), variables)
     if (!mode) continue
-    let statementStart = parenEnd + 1
-    while (/\s/.test(body[statementStart] ?? '')) statementStart += 1
-    const braced = body[statementStart] === '{'
-    const newline = body.indexOf('\n', statementStart)
-    const statementEnd = braced
-      ? matchingDelimiter(body, statementStart, '{', '}')
-      : newline < 0
-        ? body.length
-        : newline
-    if (site >= statementStart && site <= statementEnd) return mode
-    if (ifStart < site) {
-      const statement = body.slice(statementStart + (braced ? 1 : 0), statementEnd)
-      if (/\b(?:return|throw)\b/.test(statement) && mode === 'hosted') return 'local'
-      return 'hosted'
-    } else return 'hosted'
+    return selectorIfPath({ body, ifStart, parenEnd, mode, site })
   }
   return null
 }
@@ -413,6 +449,30 @@ function hostedLocalReadModule(file: string): string {
   return `${match[1]}:${match[2]}`
 }
 
+function reachablePath(
+  candidate: HostedLocalReadCandidate,
+  table: HostedLocalReadTable | null,
+): Pick<HostedLocalReadHit, 'path' | 'reason'> {
+  if (candidate.dynamicTable)
+    return {
+      path: 'cannot-tell',
+      reason: `dynamic table expression ${candidate.expression ?? '(unknown)'}`,
+    }
+  if (table?.task)
+    return {
+      path: 'hosted-reachable',
+      reason: `hosted home is planned by ${table.task}; local read remains report-only`,
+    }
+  const selected = selectorPath(candidate)
+  if (selected) return selected
+  if (candidate.sourceSelector)
+    return {
+      path: 'cannot-tell',
+      reason: `${candidate.sourceSelector} is called somewhere in the file; the extractor cannot prove it encloses this site`,
+    }
+  return { path: 'hosted-reachable', reason: 'no local-only or excluded hosted path was found' }
+}
+
 function classifiedPath(
   candidate: HostedLocalReadCandidate,
   table: HostedLocalReadTable | null,
@@ -461,24 +521,7 @@ function classifiedPath(
       path: 'hosted-record',
       reason: 'SQL runs on the hosted record, not the local store',
     }
-  if (candidate.dynamicTable)
-    return {
-      path: 'cannot-tell',
-      reason: `dynamic table expression ${candidate.expression ?? '(unknown)'}`,
-    }
-  if (table?.task)
-    return {
-      path: 'hosted-reachable',
-      reason: `hosted home is planned by ${table.task}; local read remains report-only`,
-    }
-  const selected = selectorPath(candidate)
-  if (selected) return selected
-  if (candidate.sourceSelector)
-    return {
-      path: 'cannot-tell',
-      reason: `${candidate.sourceSelector} is called somewhere in the file; the extractor cannot prove it encloses this site`,
-    }
-  return { path: 'hosted-reachable', reason: 'no local-only or excluded hosted path was found' }
+  return reachablePath(candidate, table)
 }
 
 /** Pure report policy over SQL sites and inventory declarations gathered by the caller. */

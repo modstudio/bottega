@@ -43,7 +43,12 @@ import {
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
-import { getNote, listActionableNotes, listNotes } from './note-read.ts'
+import {
+  getNote,
+  listActionableNotes,
+  listHostedNoteAcknowledgements,
+  listNotes,
+} from './note-read.ts'
 import { relinkHostedNote } from './note-relink-record.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
@@ -214,12 +219,6 @@ export async function acknowledgeNote(
   const note = await getNote(recordId, options.hosted)
   const mode = writeMode(note.project, options.hosted)
   const at = nowIso()
-  const existing = db()
-    .query<{ sightings: number }, [string, string]>(
-      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
-    )
-    .get(note.record_id, sessionId)
-  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   if (mode === 'hosted-configured') {
     const acknowledgement = await sendHostedNoteAcknowledgement(note, sessionId, at, options.hosted)
     writeTransaction((conn) => {
@@ -240,6 +239,12 @@ export async function acknowledgeNote(
     })
     return { note, alreadyAcknowledged: false }
   }
+  const existing = db()
+    .query<{ sightings: number }, [string, string]>(
+      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
+    )
+    .get(note.record_id, sessionId)
+  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   writeTransaction((conn) => {
     const row = decodeNoteRow(noteRow(conn, note.record_id))
     conn
@@ -636,7 +641,6 @@ export async function dropNote(
   const at = nowIso()
   const updated = await sendHostedNoteDrop(current, reason.trim(), at, options.hosted)
   writeTransaction((conn) => {
-    noteRow(conn, recordId)
     conn
       .query(`UPDATE note SET stale_at=?,stale_reason=?,last_seen_at=? WHERE record_id=?`)
       .run(at, updated.stale_reason, at, recordId)
@@ -784,11 +788,18 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     ),
   ]
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
-  const acknowledgements = db()
-    .query<{ note_record_id: string; session_id: string }, []>(
-      'SELECT note_record_id,session_id FROM note_acknowledgement',
-    )
-    .all()
+  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
+  const acknowledgements =
+    hostedWriteMode(url) === 'hosted-configured'
+      ? (await listHostedNoteAcknowledgements(deps.hosted)).map((acknowledgement) => ({
+          note_record_id: acknowledgement.note_id,
+          session_id: acknowledgement.session_id,
+        }))
+      : db()
+          .query<{ note_record_id: string; session_id: string }, []>(
+            'SELECT note_record_id,session_id FROM note_acknowledgement',
+          )
+          .all()
   const acknowledgementSessions = new Map<string, string[]>()
   for (const acknowledgement of acknowledgements) {
     const sessions = acknowledgementSessions.get(acknowledgement.note_record_id) ?? []
@@ -840,7 +851,6 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
       : [],
   )
   const deletedIds = deletedRows.map((row) => row.record_id)
-  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
       `this install belongs to a hosted space; local writes are refused while hosting is unavailable. ${hostedUnavailableRemedy(url)}`,

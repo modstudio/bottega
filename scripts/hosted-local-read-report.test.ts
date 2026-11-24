@@ -7,6 +7,7 @@ import {
   type HostedLocalReadAllowedFile,
   type HostedLocalReadCandidate,
   hostedBoardLocalReadFailures,
+  hostedHubLocalReadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
   hostedLocalReadScan,
@@ -159,6 +160,29 @@ test('refuses only hosted-reachable reads of B1 board tables', () => {
       { ...hit, table: 'session_board_hold' },
       { ...hit, table: 'typed_question_answer' },
       { ...hit, file: 'orchestrator/src/board/board-suggestions.ts' },
+    ]),
+  ).toEqual([])
+})
+
+test('refuses hosted-reachable and cannot-tell reads of B2 hub tables', () => {
+  const hit = {
+    file: 'hub/src/new-reader.ts',
+    line: 23,
+    table: 'task',
+    kind: 'read' as const,
+    path: 'hosted-reachable' as const,
+    reason: 'fixture',
+    module: 'hub:new-reader.ts',
+  }
+  expect(hostedHubLocalReadFailures([hit, { ...hit, path: 'cannot-tell' }])).toEqual([
+    expect.stringContaining('new-reader.ts:23: hosted install can read task'),
+    expect.stringContaining('read the hosted record through the hub client on a hosted install'),
+  ])
+  expect(
+    hostedHubLocalReadFailures([
+      { ...hit, path: 'local-only' },
+      { ...hit, kind: 'write' },
+      { ...hit, table: 'typed_question_answer' },
     ]),
   ).toEqual([])
 })
