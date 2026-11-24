@@ -1,7 +1,7 @@
 // concern: Docker inventory process adapter and availability decision
 
 import * as boundedProcess from '../../../shared/bounded-process.ts'
-import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+import { DOCKER_BUDGET, DOCKER_EXECUTABLE } from './docker-executable.ts'
 
 export type DockerHostEvidence = {
   executablePaths: string[]
@@ -124,7 +124,7 @@ export function runBoundedDockerInventoryCommand(
     return {
       ok: true,
       result: boundedProcess.startBoundedSync(dockerInventoryArgv(args), {
-        budget: DOCKER_EXECUTABLE,
+        budget: DOCKER_BUDGET,
       }),
     }
   } catch (error) {

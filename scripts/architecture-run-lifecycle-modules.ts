@@ -16,7 +16,11 @@ const module = (
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
-  module('orchestrator/src/resources/docker-executable.ts', []),
+  module(
+    'orchestrator/src/resources/docker-executable.ts',
+    [],
+    ['../../../shared/call-budgets.ts'],
+  ),
   module('orchestrator/src/resources/docker-inventory-command.ts', [
     '../../../shared/bounded-process.ts',
     './docker-executable.ts',
