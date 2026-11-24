@@ -8,13 +8,15 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   claimCachedHosted,
   claimCachedHostedForPush,
-  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
-  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
-  hostedBoardStoppedMessage,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'

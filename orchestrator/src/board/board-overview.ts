@@ -6,12 +6,14 @@ import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
-  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
-  hostedBoardStoppedMessage,
   hostedBoardVerificationWarning,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { hostedMessageIsLive } from './board-hosted-cache-readers.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
 import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'

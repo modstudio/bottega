@@ -11,13 +11,15 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
   claimCachedHosted,
-  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
-  hostedBoardRefreshStoppedReason,
-  hostedBoardStoppedMessage,
   reapHostedBoardCache,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { cachedHostedBoardReceiptFacts } from './board-hosted-cache-readers.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardRefreshStoppedReason,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { boardMode } from './board-mode.ts'
 import {
   architectIdentity,

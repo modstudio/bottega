@@ -7,12 +7,11 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
 import {
-  BOARD_READ_REFRESH_BUDGET_MS,
   HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
-  refreshHostedBoard,
-} from './board-hosted-cache.ts'
+} from './board-hosted-refresh-message.ts'
 import { boardMode } from './board-mode.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'

@@ -83,24 +83,6 @@ export type HostedBoardRefresh = {
   reason?: string
 }
 
-export function hostedBoardRefreshStoppedReason(refresh: HostedBoardRefresh): string {
-  if (refresh.reason) return refresh.reason.replace(/\s+/g, ' ')
-  if (refresh.status === 'incomplete') return 'refresh did not catch up within its budget'
-  return `refresh ${refresh.status}`
-}
-
-export const HOSTED_BOARD_PRODUCT_STOPPED_REMEDY = '; restore hosted record access and retry'
-export const HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY =
-  '; notices stay queued for the next successful refresh'
-
-export function hostedBoardStoppedMessage(
-  surface: string,
-  refresh: HostedBoardRefresh,
-  remedy: string,
-): string {
-  return `hosted board ${surface} stopped: ${hostedBoardRefreshStoppedReason(refresh)}${remedy}`
-}
-
 const meta = (database: Database, key: string) =>
   (database.query('SELECT value FROM schema_meta WHERE key=?').get(key) as { value: string } | null)
     ?.value ?? null

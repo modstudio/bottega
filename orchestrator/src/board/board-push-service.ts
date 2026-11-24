@@ -11,11 +11,13 @@ import {
   cachedMessageAddressed,
   cachedRows,
   claimCachedHostedForPush,
-  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
-  hostedBoardStoppedMessage,
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
+import {
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import { requireRealSession } from './board-policy.ts'
