@@ -2,11 +2,6 @@
 /** Registers machine database verbs without owning their decisions. */
 
 import type { Command } from 'commander'
-import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
-import { db } from '../database/db.ts'
-import { machineUpdateCommand } from '../database/machine-update.ts'
-import { writeGateFacts } from '../gate/gate-facts.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
 
 export function registerDatabaseCommands(
   program: Command,
@@ -17,12 +12,18 @@ export function registerDatabaseCommands(
     .description('write the branch-stable facts consumed by machine-dependent gate legs')
     .requiredOption('--out <path>', 'write the gate-facts JSON to this path')
     .allowExcessArguments(false)
-    .action((options) => writeGateFacts(options.out))
+    .action(async (options) => (await import('../gate/gate-facts.ts')).writeGateFacts(options.out))
   program
     .command('update [version]')
     .description('update the installed release, or update a checkout from its landing branch')
     .allowExcessArguments(false)
-    .action((version?: string) => machineUpdateCommand(presentation, {}, version))
+    .action(async (version?: string) =>
+      (await import('../database/machine-update.ts')).machineUpdateCommand(
+        presentation,
+        {},
+        version,
+      ),
+    )
   program
     .command('migrate')
     .description('apply pending orchestrator store migrations')
@@ -30,8 +31,8 @@ export function registerDatabaseCommands(
     .option('--force-in-flight <reason>', 'apply a non-additive migration for this operator reason')
     .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
-    .action((options) =>
-      migrateCommand(presentation, undefined, {
+    .action(async (options) =>
+      (await import('../database/database-commands.ts')).migrateCommand(presentation, undefined, {
         forceInFlight: options.forceInFlight,
         fromOperator: Boolean(options.fromOperator),
       }),
@@ -40,5 +41,15 @@ export function registerDatabaseCommands(
     .command('reconcile <id>')
     .description('reconcile a completed run with its saved artifacts')
     .allowExcessArguments(false)
-    .action((id) => reconcileCommand(resolveRunIdentifier(db(), id), presentation))
+    .action(async (id) => {
+      const [commands, database, identifier] = await Promise.all([
+        import('../database/database-commands.ts'),
+        import('../database/db.ts'),
+        import('../run/run-identifier.ts'),
+      ])
+      return commands.reconcileCommand(
+        identifier.resolveRunIdentifier(database.db(), id),
+        presentation,
+      )
+    })
 }

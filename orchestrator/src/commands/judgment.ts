@@ -5,12 +5,10 @@ import { readFileSync } from 'node:fs'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
-import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { db, writableDb } from '../database/db.ts'
+import type { CleanupPresentation } from '../cleanup/cleanup.ts'
+import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
-import { judgeRun, scoreRun } from '../judgment.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
 import {
   FINDING_DETAIL_RULE,
@@ -21,7 +19,6 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { recalibrate } from '../score/recalibration.ts'
 import type { CliFlags } from './support.ts'
 import { collect, log, optionFlags, write } from './support.ts'
 
@@ -186,13 +183,20 @@ export function register(program: Command): void {
       .command('score <run-id> [words...]')
       .description('record a verdict and comparisons for a run'),
   ).action(async (id, words, options) => {
+    const [{ discardRun }, { dashboardCapabilityAuthorized }, { writableDb }, judgment] =
+      await Promise.all([
+        import('../cleanup/cleanup.ts'),
+        import('../dashboard-capability.ts'),
+        import('../database/db.ts'),
+        import('../judgment.ts'),
+      ])
     const flags = resolveDuplicateRunIds(resolveComparisonRunIds(optionFlags(options)))
     writableDb()
     const runId = resolveRunIdentifier(db(), id)
     const given = (name: string) =>
       name === 'finding' || name === 'duplicate' ? flags.values(name).length > 0 : flags.has(name)
     if (scorePathForJob(rootJob(runId), given) === 'judge') {
-      await judgeRun(
+      await judgment.judgeRun(
         runId,
         flags,
         {
@@ -212,7 +216,7 @@ export function register(program: Command): void {
       }
       return
     }
-    await scoreRun(
+    await judgment.scoreRun(
       runId,
       flags,
       {
@@ -235,7 +239,7 @@ export function register(program: Command): void {
     .option('--force', 'sample verdicts from every scorer')
     .allowExcessArguments(false)
     .action(async (options) => {
-      await recalibrate(optionFlags(options), {
+      await (await import('../score/recalibration.ts')).recalibrate(optionFlags(options), {
         log,
         write,
         input: process.stdin,

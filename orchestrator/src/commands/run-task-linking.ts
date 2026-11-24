@@ -2,7 +2,6 @@
 /** Registers the run task-linking adapter. Must not own derivation or persistence behavior. */
 
 import type { Command } from 'commander'
-import { formatRunTaskLinkReport, linkRunTasks } from '../run/run-task-linking.ts'
 import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -13,6 +12,7 @@ export function register(program: Command): void {
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { formatRunTaskLinkReport, linkRunTasks } = await import('../run/run-task-linking.ts')
       const flags = optionFlags(options)
       const report = await linkRunTasks({ dryRun: flags.has('dry-run') })
       if (flags.has('json')) log(JSON.stringify(report))

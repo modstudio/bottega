@@ -30,10 +30,14 @@ import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
+import { activeMembershipSpace } from './record-membership.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
+
+export * from './record-token-key.ts'
+export { activeMembershipSpace }
+
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
-export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitation only; ask a record space owner to run \`${PLATFORM_SLUG} record space invite --email <email>\`.`
 
 type RecordAuthEnvironment = Record<string, string | undefined>
@@ -534,13 +538,6 @@ export type RecordIdentity = {
   activeSpaceId: string | null
   personalSpaceId: string | null
   memberships: Record<string, unknown>[]
-}
-
-export function activeMembershipSpace(
-  activeSpaceId: string | null,
-  membershipSpaceIds: readonly string[],
-): string | null {
-  return activeSpaceId && membershipSpaceIds.includes(activeSpaceId) ? activeSpaceId : null
 }
 
 export function recordIdentityFromRows(

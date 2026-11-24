@@ -15,63 +15,67 @@ import {
 } from '../../../shared/outside-write-decision.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { withDatabaseForMigrationStep } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
-import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
-import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
 import {
   decideRecordPassword,
   PASSWORD_PROMPT_EOF_REFUSAL,
   RECORD_PASSWORD_ENV,
-  signInCommand,
-  signUpCommand,
-  verifyEmailCommand,
-  whoamiCommand,
-} from '../record/record-auth-command.ts'
-import {
-  recordAuditSecretsCommand,
-  recordDoctorCommand,
-  recordMigrateCommand,
-  recordPublicDocClearCommand,
-  recordPublicDocDesignateCommand,
-  recordPublicDocListCommand,
-  recordRedactSyncedCommand,
-  recordSpaceAcceptCommand,
-  recordSpaceAccessGrantCommand,
-  recordSpaceAccessListCommand,
-  recordSpaceAccessWithdrawCommand,
-  recordSpaceCreateCommand,
-  recordSpaceDeleteCommand,
-  recordSpaceDeleteTrialCommand,
-  recordSpaceHiddenCommand,
-  recordSpaceHideCommand,
-  recordSpaceIntakeBlockCommand,
-  recordSpaceIntakeBlocksCommand,
-  recordSpaceIntakePauseCommand,
-  recordSpaceIntakeResumeCommand,
-  recordSpaceIntakeSetCommand,
-  recordSpaceIntakeShowCommand,
-  recordSpaceIntakeUnblockCommand,
-  recordSpaceInvitationsCommand,
-  recordSpaceInviteCommand,
-  recordSpaceListCommand,
-  recordSpaceMemberRemoveCommand,
-  recordSpaceMoveProjectCommand,
-  recordSpaceSwitchCommand,
-  recordSpaceUnhideCommand,
-} from '../record/record-command.ts'
-import { recordLocalCommand } from '../record/record-local-command.ts'
-import { publishSnapshotsCommand } from '../record/record-publish.ts'
-import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
-import { pushDocsCommand } from '../record/record-push-docs.ts'
-import { restoreQuestionsCommand } from '../record/record-restore-questions.ts'
-import { useHostedRecord } from '../record/record-use.ts'
-import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
+} from '../record/record-password.ts'
 import { promptHidden } from './hidden-prompt.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
 const presentation = { log }
+
+type RecordCommands = typeof import('../record/record-command.ts')
+type RecordCommandName = {
+  [Name in keyof RecordCommands]: RecordCommands[Name] extends (...args: never[]) => unknown
+    ? Name
+    : never
+}[keyof RecordCommands]
+
+function lazyRecordCommand<Name extends RecordCommandName>(name: Name) {
+  return async (
+    ...args: Parameters<RecordCommands[Name]>
+  ): Promise<Awaited<ReturnType<RecordCommands[Name]>>> => {
+    const commands = await import('../record/record-command.ts')
+    return await (
+      commands[name] as unknown as (
+        ...values: Parameters<RecordCommands[Name]>
+      ) => ReturnType<RecordCommands[Name]>
+    )(...args)
+  }
+}
+
+const recordAuditSecretsCommand = lazyRecordCommand('recordAuditSecretsCommand')
+const recordDoctorCommand = lazyRecordCommand('recordDoctorCommand')
+const recordMigrateCommand = lazyRecordCommand('recordMigrateCommand')
+const recordPublicDocClearCommand = lazyRecordCommand('recordPublicDocClearCommand')
+const recordPublicDocDesignateCommand = lazyRecordCommand('recordPublicDocDesignateCommand')
+const recordPublicDocListCommand = lazyRecordCommand('recordPublicDocListCommand')
+const recordRedactSyncedCommand = lazyRecordCommand('recordRedactSyncedCommand')
+const recordSpaceAcceptCommand = lazyRecordCommand('recordSpaceAcceptCommand')
+const recordSpaceAccessGrantCommand = lazyRecordCommand('recordSpaceAccessGrantCommand')
+const recordSpaceAccessListCommand = lazyRecordCommand('recordSpaceAccessListCommand')
+const recordSpaceAccessWithdrawCommand = lazyRecordCommand('recordSpaceAccessWithdrawCommand')
+const recordSpaceCreateCommand = lazyRecordCommand('recordSpaceCreateCommand')
+const recordSpaceDeleteCommand = lazyRecordCommand('recordSpaceDeleteCommand')
+const recordSpaceDeleteTrialCommand = lazyRecordCommand('recordSpaceDeleteTrialCommand')
+const recordSpaceHiddenCommand = lazyRecordCommand('recordSpaceHiddenCommand')
+const recordSpaceHideCommand = lazyRecordCommand('recordSpaceHideCommand')
+const recordSpaceIntakeBlockCommand = lazyRecordCommand('recordSpaceIntakeBlockCommand')
+const recordSpaceIntakeBlocksCommand = lazyRecordCommand('recordSpaceIntakeBlocksCommand')
+const recordSpaceIntakePauseCommand = lazyRecordCommand('recordSpaceIntakePauseCommand')
+const recordSpaceIntakeResumeCommand = lazyRecordCommand('recordSpaceIntakeResumeCommand')
+const recordSpaceIntakeSetCommand = lazyRecordCommand('recordSpaceIntakeSetCommand')
+const recordSpaceIntakeShowCommand = lazyRecordCommand('recordSpaceIntakeShowCommand')
+const recordSpaceIntakeUnblockCommand = lazyRecordCommand('recordSpaceIntakeUnblockCommand')
+const recordSpaceInvitationsCommand = lazyRecordCommand('recordSpaceInvitationsCommand')
+const recordSpaceInviteCommand = lazyRecordCommand('recordSpaceInviteCommand')
+const recordSpaceListCommand = lazyRecordCommand('recordSpaceListCommand')
+const recordSpaceMemberRemoveCommand = lazyRecordCommand('recordSpaceMemberRemoveCommand')
+const recordSpaceMoveProjectCommand = lazyRecordCommand('recordSpaceMoveProjectCommand')
+const recordSpaceSwitchCommand = lazyRecordCommand('recordSpaceSwitchCommand')
+const recordSpaceUnhideCommand = lazyRecordCommand('recordSpaceUnhideCommand')
 
 export function httpAddress(value: string): string {
   if (!isHttpAddress(value)) throw new Error('address must be an http or https URL')
@@ -95,12 +99,13 @@ export async function promptPassword(
   return promptHidden('Record password: ', PASSWORD_PROMPT_EOF_REFUSAL, input, output)
 }
 
-function hostedCommand<T>(command: string, action: () => T): T {
+async function hostedCommand<T>(command: string, action: () => T): Promise<Awaited<T>> {
+  const { requireHostedRecord } = await import('../record/record-write-authority.ts')
   requireHostedRecord(command)
-  return action()
+  return await action()
 }
 
-function hostedRecord<T>(verb: string, action: () => T): T {
+function hostedRecord<T>(verb: string, action: () => T): Promise<Awaited<T>> {
   return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
 }
 
@@ -109,7 +114,12 @@ function registerUseCommand(record: Command): void {
     .command('use')
     .description('bind this machine to a hosted record')
     .argument('<address>', 'public record API address', httpAddress)
-    .action((address) => useHostedRecord(String(address), { log, warn: console.warn }))
+    .action(async (address) =>
+      (await import('../record/record-use.ts')).useHostedRecord(String(address), {
+        log,
+        warn: console.warn,
+      }),
+    )
 }
 
 function registerLocalCommand(record: Command): void {
@@ -117,7 +127,9 @@ function registerLocalCommand(record: Command): void {
     .command('local')
     .description('mark this orchestrator store as deliberately local')
     .option('--off', 'clear the deliberately-local mark')
-    .action((options) => recordLocalCommand(!options.off, { log }))
+    .action(async (options) =>
+      (await import('../record/record-local-command.ts')).recordLocalCommand(!options.off, { log }),
+    )
 }
 
 function registerIdentityCommands(record: Command): void {
@@ -128,8 +140,13 @@ function registerIdentityCommands(record: Command): void {
     .requiredOption('--email <email>', 'email address for the new account')
     .requiredOption('--name <name>', 'display name for the new account')
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record sign-up`, () =>
-        signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
+      hostedCommand(`${PLATFORM_SLUG} record sign-up`, async () =>
+        (await import('../record/record-auth-command.ts')).signUpCommand(
+          String(options.email),
+          String(options.name),
+          promptPassword,
+          { log },
+        ),
       ),
     )
   record
@@ -137,19 +154,30 @@ function registerIdentityCommands(record: Command): void {
     .description('sign in to the hosted record and apply machine settings')
     .requiredOption('--email <email>', 'email address of the account')
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>
-        signInCommand(String(options.email), promptPassword, { log }, withDatabaseForMigrationStep),
+      hostedCommand(`${PLATFORM_SLUG} record sign-in`, async () =>
+        (await import('../record/record-auth-command.ts')).signInCommand(
+          String(options.email),
+          promptPassword,
+          { log },
+          (await import('../database/db.ts')).withDatabaseForMigrationStep,
+        ),
       ),
     )
   record
     .command('whoami')
     .description('show the signed-in hosted record identity')
-    .action(() => hostedCommand(`${PLATFORM_SLUG} record whoami`, () => whoamiCommand({ log })))
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record whoami`, async () =>
+        (await import('../record/record-auth-command.ts')).whoamiCommand({ log }),
+      ),
+    )
   record
     .command('verify-email')
     .description('send verification mail to the signed-in account')
     .action(() =>
-      hostedCommand(`${PLATFORM_SLUG} record verify-email`, () => verifyEmailCommand({ log })),
+      hostedCommand(`${PLATFORM_SLUG} record verify-email`, async () =>
+        (await import('../record/record-auth-command.ts')).verifyEmailCommand({ log }),
+      ),
     )
   record
     .command('migrate')
@@ -197,8 +225,11 @@ function registerPushCommands(record: Command): void {
     .description('push local documents to the hosted record')
     .option('--dry-run', 'report document changes without pushing them')
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
-        pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
+      hostedCommand(`${PLATFORM_SLUG} record push-docs`, async () =>
+        (await import('../record/record-push-docs.ts')).pushDocsCommand(
+          { dryRun: Boolean(options.dryRun) },
+          { log },
+        ),
       ),
     )
   record
@@ -206,8 +237,11 @@ function registerPushCommands(record: Command): void {
     .description('push local catalogues and port items to the hosted record')
     .option('--dry-run', 'report the import plan without writing')
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record push-catalogues`, () =>
-        pushCataloguesCommand({ dryRun: Boolean(options.dryRun) }, { log }),
+      hostedCommand(`${PLATFORM_SLUG} record push-catalogues`, async () =>
+        (await import('../record/record-push-catalogues.ts')).pushCataloguesCommand(
+          { dryRun: Boolean(options.dryRun) },
+          { log },
+        ),
       ),
     )
 }
@@ -516,13 +550,17 @@ function registerSpaceAccessCommands(space: Command): void {
     )
 }
 
-function retryOutboxCommand(rowId: string | undefined, matching: string | undefined): void {
+async function retryOutboxCommand(
+  rowId: string | undefined,
+  matching: string | undefined,
+): Promise<void> {
   if ((rowId === undefined) === (matching === undefined)) {
     throw new Error(
       `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
     )
   }
   if (rowId !== undefined) {
+    const { retryOutboxRow } = await import('../record/outbox-quarantine.ts')
     retryOutboxRow(Number(rowId))
     log(`outbox row ${String(rowId)} will retry on the next sync`)
     return
@@ -533,6 +571,7 @@ function retryOutboxCommand(rowId: string | undefined, matching: string | undefi
       `--matching requires non-empty text; name part of an orchestrator quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
     )
   }
+  const { retryOutboxRowsMatching } = await import('../record/outbox-quarantine.ts')
   const count = retryOutboxRowsMatching(matching!)
   log(`${count} orchestrator outbox rows will retry on the next sync`)
 }
@@ -558,7 +597,8 @@ function registerOutboxCommands(record: Command): void {
     .description('retire an outbox row after proving its dependencies')
     .argument('<row-id>')
     .requiredOption('--reason <text>', 'reason the outbox row is retired')
-    .action((rowId, options) => {
+    .action(async (rowId, options) => {
+      const { retireOutboxRowWithDependencyProof } = await import('../record/outbox-operator.ts')
       retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
       log(`outbox row ${String(rowId)} retired`)
     })
@@ -567,8 +607,8 @@ function registerOutboxCommands(record: Command): void {
     .description('restore retired question snapshots to their hosted record spaces')
     .option('--dry-run', "resolve each question snapshot's destination space without sending it")
     .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record outbox restore-questions`, () =>
-        restoreQuestionsCommand(
+      hostedCommand(`${PLATFORM_SLUG} record outbox restore-questions`, async () =>
+        (await import('../record/record-restore-questions.ts')).restoreQuestionsCommand(
           { dryRun: Boolean(options.dryRun) },
           {
             log,
@@ -625,8 +665,12 @@ export function register(program: Command): void {
   record
     .command('publish')
     .description('publish hosted record snapshots')
-    .action(() =>
-      publishSnapshotsCommand(
+    .action(async () => {
+      const [{ publishSnapshotsCommand }, { recordPublishAvailability }] = await Promise.all([
+        import('../record/record-publish.ts'),
+        import('../record/record-write-authority.ts'),
+      ])
+      return publishSnapshotsCommand(
         {
           log,
           setExitCode: (code) => {
@@ -634,13 +678,14 @@ export function register(program: Command): void {
           },
         },
         { availability: recordPublishAvailability() },
-      ),
-    )
+      )
+    })
   record
     .command('doctor')
     .description('check hosted record configuration and access')
-    .action(() =>
-      recordDoctorCommand(
+    .action(async () => {
+      const { projects } = await import('../project/projects.ts')
+      return recordDoctorCommand(
         {
           log,
           exitCode: (code) => {
@@ -651,6 +696,6 @@ export function register(program: Command): void {
           name: project.name,
           space: project.settings.space ?? null,
         })),
-      ),
-    )
+      )
+    })
 }

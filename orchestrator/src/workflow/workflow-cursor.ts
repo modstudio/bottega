@@ -39,11 +39,11 @@ import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
-  persistedAdvanceRenderFailure,
   refuseMissingAbandonReason,
   refuseMissingCloseNote,
   refuseTerminalCursor,
-  renderWorkflowAdvanceResult,
+  renderPersistedWorkflowAdvanceResult,
+  workflowAdvanceResultText,
 } from './workflow-cursor-result.ts'
 import {
   findWorkflowCursor,
@@ -83,12 +83,16 @@ import {
 } from './workflow-self-ruling-mutation.ts'
 import {
   followTaskCursorClaim,
+  followTaskCursorClaimWithWarning,
   type TaskCursorClaimPorts,
-  taskClaimFollowWarning,
   taskClaimReleaseWarning,
 } from './workflow-task-claim.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
-import { workflowTextDeletionIds } from './workflow-text.ts'
+import {
+  unresolvedWorkflowTextReportForStage,
+  workflowTextDeletionIds,
+  workflowTextLinkState,
+} from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
 type CursorRow = SelectableCursorRow
@@ -198,7 +202,7 @@ export async function composeWorkflowWithCursor(
     commitCount,
   )
   await readThroughWorkflowCursorContext(project, context, d)
-  await linkResolvedWorkflowTask(project, context, d)
+  const taskLinkNotice = await linkResolvedWorkflowTask(project, context, d)
   const selected = await selectWorkflowCursorForKeyAdoption({
     project: shape.project,
     workflow: shape.workflow.slug,
@@ -262,6 +266,7 @@ export async function composeWorkflowWithCursor(
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
+    taskLinkNotice,
     graduated,
   }
 }
@@ -433,6 +438,7 @@ async function closeFloorsForStep(
 async function persistWorkflowAdvance(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
+  closesText: boolean,
   closed: CursorTrailEntry[],
   note: string,
   outcome: string | undefined,
@@ -459,13 +465,7 @@ async function persistWorkflowAdvance(
   )
   const finishing = advance.ordinal === null
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
-  const deleteTextIds = await advanceTextDeletionIds(
-    row,
-    composition,
-    finishing,
-    d,
-    context.taskFlowClient,
-  )
+  const deleteTextIds = await advanceTextDeletionIds(row, closesText, d, context.taskFlowClient)
   if (finishing) {
     return await writeFinishingWorkflowAdvance({
       row,
@@ -619,13 +619,12 @@ async function selectClosingTaskFlow(
 
 async function advanceTextDeletionIds(
   row: CursorRow,
-  composition: ReturnType<typeof composeWorkflow>,
-  finishing: boolean,
+  closesText: boolean,
   database: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
-  if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return []
-  return await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database, client)
+  if (!closesText) return []
+  return await workflowTextDeletionIds(row.record_id, workflowTextLinkState(row), database, client)
 }
 
 function advanceRecordRows(
@@ -733,6 +732,22 @@ function workflowTakeoverForAdvance(
     : { notice: null, fromMachineId: null }
 }
 
+function prepareWorkflowAdvanceRow(
+  row: CursorRow,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  evidence: WorkflowEvidenceInput,
+  live: LiveCursorAutonomy | undefined,
+  database: Database,
+): void {
+  refuseTerminalCursor(row)
+  const resolvedArguments = resolveCursorArguments(row, args, database)
+  row.args = resolvedArguments.encoded
+  row.closed = resolvedArguments.closed
+  refuseKeylessStepClose(row, evidence.task, database, live)
+  refuseForeignKeylessCursor(row, context.session)
+}
+
 async function nextWorkflowStepImpl(
   row: CursorRow,
   args: Record<string, string>,
@@ -744,15 +759,11 @@ async function nextWorkflowStepImpl(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
+  taskLinkNotice?: string | null,
 ): Promise<WorkflowAdvanceResult> {
   const { workflow_slug: slug, project, mode_slug: mode } = row
   const takeover = workflowTakeoverForAdvance(row, context)
-  refuseTerminalCursor(row)
-  const resolvedArguments = resolveCursorArguments(row, args, d)
-  row.args = resolvedArguments.encoded
-  row.closed = resolvedArguments.closed
-  refuseKeylessStepClose(row, evidence.task, d, live)
-  refuseForeignKeylessCursor(row, context.session)
+  prepareWorkflowAdvanceRow(row, args, context, evidence, live, d)
   row = await adoptAndRefreshWorkflowTask(row, evidence.task, context, d)
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
@@ -769,9 +780,17 @@ async function nextWorkflowStepImpl(
     context.session,
   )
   refuseFinishWithLiveWriter(d, row, close.advance.ordinal === null, context.session)
+  const closesText = close.advance.ordinal === null || step.needs.includes('workflow-text')
+  const keptTextNotice = await unresolvedWorkflowTextReportForStage(
+    row,
+    closesText,
+    d,
+    context.taskFlowClient,
+  )
   let claimWarning = await persistWorkflowAdvance(
     row,
     composition,
+    closesText,
     close.closed,
     note.trim(),
     outcome,
@@ -784,51 +803,48 @@ async function nextWorkflowStepImpl(
     close.selfRulingPlan,
   )
   if (close.advance.ordinal !== null) {
-    try {
-      await followTaskCursorClaim({
+    claimWarning =
+      (await followTaskCursorClaimWithWarning({
         project: row.project,
         taskKey: row.workflow_key || null,
         session: context.session,
         verb: 'advance',
         database: d,
-      })
-    } catch (error) {
-      if (row.workflow_key) claimWarning = taskClaimFollowWarning(row.workflow_key, error)
-    }
+      })) ?? claimWarning
   }
-  let rendered: string
-  try {
-    rendered = await renderWorkflowAdvanceResult({
-      row,
-      composition,
-      closed: close.closed,
-      advance: close.advance,
-      slug,
-      project,
-      mode,
-      selfRuling,
-      d,
-      client: context.taskFlowClient,
-      live,
-    })
-  } catch (error) {
-    if (close.advance.ordinal === null) throw error
-    const active = composition.steps[close.advance.ordinal]!
-    throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
-  }
+  const rendered = await renderPersistedWorkflowAdvanceResult({
+    row,
+    composition,
+    closed: close.closed,
+    advance: close.advance,
+    closedStep: step,
+    notices: [taskLinkNotice, keptTextNotice],
+    slug,
+    project,
+    mode,
+    selfRuling,
+    d,
+    client: context.taskFlowClient,
+    live,
+  })
+  const activeStep =
+    close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]
   return {
-    text: [takeover.notice, rendered, ...(close.floor.notices ?? []), claimWarning]
-      .filter(Boolean)
-      .join('\n'),
+    text: workflowAdvanceResultText({
+      takeoverNotice: takeover.notice,
+      rendered,
+      floorNotices: close.floor.notices ?? [],
+      taskLinkNotice,
+      keptTextNotice,
+      claimWarning,
+    }),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
     cursorNumber: row.id,
     cursorRecordId: row.record_id,
     workflowKey: row.workflow_key || null,
     finished: close.advance.ordinal === null,
-    stepSlug:
-      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.slug,
-    stepTitle:
-      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.title,
+    stepSlug: activeStep?.slug,
+    stepTitle: activeStep?.title,
   }
 }
 
@@ -856,7 +872,7 @@ export async function nextWorkflowStep(
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): Promise<WorkflowAdvanceResult> {
-  await linkResolvedWorkflowTask(project, context, d)
+  const taskLinkNotice = await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
     const row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
@@ -874,6 +890,7 @@ export async function nextWorkflowStep(
       selfRuling,
       outcome,
       live,
+      taskLinkNotice,
     )
   })
 }

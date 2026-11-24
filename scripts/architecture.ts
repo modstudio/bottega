@@ -2,7 +2,11 @@ import { dirname, join } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { agentProbeModules } from './architecture-agent-probe-modules.ts'
 import { boardModules } from './architecture-board-modules.ts'
-import { importBoundaries, sqliteAdapterImportRule } from './architecture-boundaries.ts'
+import {
+  commandStaticHeavyImportRule,
+  importBoundaries,
+  sqliteAdapterImportRule,
+} from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonModules } from './architecture-canon-modules.ts'
@@ -947,6 +951,7 @@ export function architectureRules() {
     activeSpaceResolverRule,
     recordPoolInstallerRule,
     sqliteAdapterImportRule,
+    commandStaticHeavyImportRule,
     treeRunScriptArchitectureRule(exactArchitecturePath),
     {
       name: 'import-record-api-server-transitive-boundary',

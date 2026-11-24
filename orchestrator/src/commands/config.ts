@@ -1,12 +1,11 @@
 // concern: config-commands
 /** Owns only the `bottega machine config` grammar and presentation. */
-import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigDestination, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
-import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
+import { DISPLAY_TIMEZONE_KEY } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
@@ -15,38 +14,11 @@ import {
   SHIP_TO_VALUES,
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
-import { setRemedy } from '../config/config-entry-policy.ts'
-import {
-  configHome,
-  deleteEntry,
-  deleteMachineEntry,
-  deleteSecret,
-  getConfigEntry,
-  listEntries,
-  listSecrets,
-  machineInit,
-  machineRevoke,
-  machineShow,
-  personalConfigWriteDestination,
-  setConfigEntry,
-  setSecret,
-} from '../config/config-service.ts'
-import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
-import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
-import { trustMachine } from '../config/machine-trust.ts'
-import { machineRegister } from '../config/named-space-config.ts'
-import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
-import {
-  sealSecretDecision,
-  secretDeleteRemedy,
-  secretSetRemedy,
-} from '../config/secret-set-policy.ts'
-import { type pinnedConfigDestination, secretWriteTarget } from '../config/secret-write-target.ts'
-import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
+import type { getConfigEntry, setConfigEntry } from '../config/config-service.ts'
+import type { pinnedConfigDestination } from '../config/secret-write-target.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'
-import { requestedMachineNames } from './machine-name-options.ts'
 import { log, rawArgv } from './support.ts'
 
 const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd, for example ${subscriptionMonthlyUsdKey('codex')} and ${subscriptionMonthlyUsdKey('grok')}.\nExamples:\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('codex')} <usd>\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('grok')} <usd>\n`
@@ -64,6 +36,12 @@ function registerConfigSet(config: Command): void {
     .option('--expect <rowVersion>', 'row version required before writing')
     .option('--json', 'write the resulting configuration row as JSON')
     .action(async (key, value, options) => {
+      const [{ setRemedy }, { configHome, setConfigEntry }, { hostedConfigClient }] =
+        await Promise.all([
+          import('../config/config-entry-policy.ts'),
+          import('../config/config-service.ts'),
+          import('../config/hosted-config-call-outcome.ts'),
+        ])
       const write = shipToWrite(key, value)
       assertConfigWriteAllowed(write.key, write.value)
       const space = configSpaceSelection('set', options.space, false, () =>
@@ -135,6 +113,10 @@ function registerConfigGet(config: Command): void {
     .option('--machine', 'read the value from machine.toml only')
     .option('--json', 'write the configuration row as JSON')
     .action(async (parsedKey, options) => {
+      const [{ configHome, getConfigEntry }, { hostedConfigClient }] = await Promise.all([
+        import('../config/config-service.ts'),
+        import('../config/hosted-config-call-outcome.ts'),
+      ])
       const { key, space } = configGetRequest(parsedKey, options.space)
       if (options.machine && space !== undefined)
         throw new Error('refusing machine config get: --machine cannot be combined with --space')
@@ -199,7 +181,12 @@ export async function configWriteTarget(
       spaceSlug: destination.slug,
     }
   }
-  return { scope: 'user', destination: await personalConfigWriteDestination(client) }
+  return {
+    scope: 'user',
+    destination: await (await import('../config/config-service.ts')).personalConfigWriteDestination(
+      client,
+    ),
+  }
 }
 
 export async function configReadDestination(
@@ -241,7 +228,9 @@ async function resolveSecretWriteTarget(
 }> {
   const selected = requested ? await selectedMachineSpace(verb, requested, client) : undefined
   return {
-    ...(await secretWriteTarget(selected?.spaceId, client, env)),
+    ...(await (
+      await import('../config/secret-write-target.ts')
+    ).secretWriteTarget(selected?.spaceId, client, env)),
     ...(selected ? { spaceSlug: selected.slug } : {}),
   }
 }
@@ -309,6 +298,11 @@ export const configListPresentation = (
 function registerMachineCommands(config: Command): void {
   const machine = config.command('machine').description('manage machine encryption identity')
   registerMachineJoinCommands(machine, selectedMachineSpace)
+  registerMachineIdentityCommands(machine)
+  registerMachineTrustCommands(machine)
+}
+
+function registerMachineIdentityCommands(machine: Command): void {
   machine
     .command('init')
     .description('create this machine encryption identity')
@@ -317,13 +311,20 @@ function registerMachineCommands(config: Command): void {
     .option('--short-name <name>', 'short machine name')
     .option('--display-name <name>', 'display machine name')
     .action(async (options) => {
+      const [services, { hostedConfigClient }, { requestedMachineNames }, adoption] =
+        await Promise.all([
+          import('../config/config-service.ts'),
+          import('../config/hosted-config-call-outcome.ts'),
+          import('./machine-name-options.ts'),
+          import('../project/project-checkout-adoption.ts'),
+        ])
       const client = hostedConfigClient()
       const selected = await selectedMachineSpace(
         'machine config machine init',
         options.space,
         client,
       )
-      const keyId = await machineInit(
+      const keyId = await services.machineInit(
         selected.spaceId,
         options.label,
         client,
@@ -331,13 +332,16 @@ function registerMachineCommands(config: Command): void {
         await requestedMachineNames(options),
       )
       log(keyId)
-      await reportCheckedOutHostedProjects({ log }, `${PLATFORM_SLUG} machine config machine init`)
+      await adoption.reportCheckedOutHostedProjects(
+        { log },
+        `${PLATFORM_SLUG} machine config machine init`,
+      )
     })
   machine
     .command('show')
     .description('show this machine public encryption identity')
     .action(async () => {
-      const shown = await machineShow()
+      const shown = await (await import('../config/config-service.ts')).machineShow()
       log(`${shown.keyId}\t${shown.publicKey}`)
     })
   machine
@@ -346,6 +350,10 @@ function registerMachineCommands(config: Command): void {
     .option('--space <slug>', 'register in this record space')
     .option('--label <label>', 'label stored for this machine identity')
     .action(async (options) => {
+      const [{ hostedConfigClient }, { machineRegister }] = await Promise.all([
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/named-space-config.ts'),
+      ])
       const client = hostedConfigClient()
       const selected = await selectedMachineSpace(
         'machine config machine register',
@@ -354,6 +362,9 @@ function registerMachineCommands(config: Command): void {
       )
       for (const line of await machineRegister(selected, options.label, client)) log(line)
     })
+}
+
+function registerMachineTrustCommands(machine: Command): void {
   machine
     .command('trust <keyId> <publicKey>')
     .description('trust a machine public key for sealed configuration')
@@ -361,6 +372,11 @@ function registerMachineCommands(config: Command): void {
     .option('--label <label>', 'label stored for the trusted machine')
     .option('--yes', 'trust the machine without interactive confirmation')
     .action(async (keyId, publicKey, options) => {
+      const [{ createInterface }, { hostedConfigClient }, { trustMachine }] = await Promise.all([
+        import('node:readline/promises'),
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/machine-trust.ts'),
+      ])
       const label = options.label ?? keyId
       if (!options.yes) {
         if (!process.stdin.isTTY)
@@ -385,7 +401,7 @@ function registerMachineCommands(config: Command): void {
     .command('revoke <keyId>')
     .description('revoke a trusted machine and reseal configuration')
     .action(async (keyId) => {
-      const rows = await machineRevoke(keyId)
+      const rows = await (await import('../config/config-service.ts')).machineRevoke(keyId)
       log(
         `revoked ${keyId}; re-sealed ${rows.length} row(s)${rows.length ? `: ${rows.join(', ')}` : ''}`,
       )
@@ -408,6 +424,12 @@ async function selectedMachineSpace(
 
 /** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
 async function sealPipedSecret(key: string, options: { space?: string }): Promise<void> {
+  const [{ hostedConfigClient }, { sealSecretDecision, secretSetRemedy }, { setSecret }] =
+    await Promise.all([
+      import('../config/hosted-config-call-outcome.ts'),
+      import('../config/secret-set-policy.ts'),
+      import('../config/config-service.ts'),
+    ])
   const space = configSpaceSelection('secret set', options.space, false, () =>
     secretSetRemedy(key, 'space', '<slug>'),
   )
@@ -427,6 +449,11 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
 }
 
 async function deleteSelectedSecret(key: string, options: { space?: string }): Promise<void> {
+  const [{ hostedConfigClient }, { secretDeleteRemedy }, { deleteSecret }] = await Promise.all([
+    import('../config/hosted-config-call-outcome.ts'),
+    import('../config/secret-set-policy.ts'),
+    import('../config/config-service.ts'),
+  ])
   const space = configSpaceSelection('secret delete', options.space, false, () =>
     secretDeleteRemedy(key, 'space', '<slug>'),
   )
@@ -447,6 +474,11 @@ function registerConfigList(config: Command): void {
     .option('--machine', 'list machine configuration values')
     .option('--json', 'write the configuration rows as JSON')
     .action(async (options) => {
+      const [{ listMachineEntries }, { hostedConfigClient }, { listEntries }] = await Promise.all([
+        import('../../../shared/machine-config.ts'),
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/config-service.ts'),
+      ])
       const space = configSpaceSelection(
         'list',
         options.space,
@@ -488,6 +520,7 @@ export function register(program: Command): void {
     .command('list')
     .description('list sealed configuration keys')
     .action(async () => {
+      const { listSecrets } = await import('../config/config-service.ts')
       for (const row of await listSecrets()) log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
     })
   secret
@@ -504,6 +537,7 @@ export function register(program: Command): void {
     .allowExcessArguments()
     .passThroughOptions()
     .action(async (_options, command: Command) => {
+      const { parseSecretRunArgs, runNamedSecrets } = await import('../config/secret-run.ts')
       process.exitCode = await runNamedSecrets(parseSecretRunArgs(rawArgv(command).slice(3)))
     })
 }
@@ -513,6 +547,11 @@ export async function deleteSelectedConfig(
   options: { expect?: string; machine?: boolean; space?: string },
   client?: ConfigClient,
 ): Promise<void> {
+  const [{ deleteEntry, deleteMachineEntry, listEntries }, { hostedConfigClient }] =
+    await Promise.all([
+      import('../config/config-service.ts'),
+      import('../config/hosted-config-call-outcome.ts'),
+    ])
   assertConfigWriteAllowed(key, undefined)
   const space = configSpaceSelection(
     'delete',
@@ -556,5 +595,6 @@ export async function deleteSelectedConfig(
       )
     }
   } else await deleteEntry(key, target.scope, expected, hostedClient, target.destination)
-  if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(null)
+  if (key === DISPLAY_TIMEZONE_KEY)
+    (await import('../config/display-timezone-cache.ts')).refreshDisplayTimezoneCache(null)
 }

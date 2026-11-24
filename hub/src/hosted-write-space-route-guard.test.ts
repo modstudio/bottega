@@ -58,7 +58,7 @@ test('every hosted write route behavior matches its destination classification',
         body: '{}',
       }),
     )
-    const body = (await response.json().catch(() => null)) as {
+    const body = (await response.json()) as {
       error?: string
       remedy?: string
     } | null

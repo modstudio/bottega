@@ -2,7 +2,6 @@
 /** Owns the public credential grammar and adapts it to hosted sealed configuration. */
 
 import type { Command } from 'commander'
-import { configClient } from '../../../shared/config-client.ts'
 import {
   CREDENTIAL_ENVIRONMENTS,
   CREDENTIAL_MODES,
@@ -26,20 +25,7 @@ import {
   credentialSlot,
   parseCredentialSlot,
 } from '../config/credential-presentation.ts'
-import {
-  accountCredentialBinding,
-  type CredentialAddress,
-  deleteCredential,
-  listCredentials,
-  projectCredentialAddress,
-  projectCredentialBinding,
-  reachCredential,
-  resolveCredentialValue,
-  resolveProjectCredential,
-  setCredential,
-} from '../config/credential-service.ts'
-import { runWithEnvironment } from '../config/secret-run.ts'
-import { projectByName } from '../project/projects.ts'
+import type { CredentialAddress } from '../config/credential-service.ts'
 import { log } from './support.ts'
 
 type BindingOptions = {
@@ -125,12 +111,17 @@ async function bindingAddress(
   options: BindingOptions,
   writeVerb?: string,
 ): Promise<CredentialBindingAddress> {
+  const [{ configClient }, credentialService, { projectByName }] = await Promise.all([
+    import('../../../shared/config-client.ts'),
+    import('../config/credential-service.ts'),
+    import('../project/projects.ts'),
+  ])
   validateBindingExclusivity(options)
   const client = configClient()
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
-  if (project) return projectCredentialBinding(project, client)
-  if (options.account) return accountCredentialBinding(client)
+  if (project) return credentialService.projectCredentialBinding(project, client)
+  if (options.account) return credentialService.accountCredentialBinding(client)
   if (writeVerb)
     return selectedCredentialWriteSpace(writeVerb, options, async () =>
       parseRecordSpaceMemberships((await client.whoami()).memberships),
@@ -162,6 +153,10 @@ async function address(
   validateBindingExclusivity(options)
   const identity = identityName(name)
   if (options.project) {
+    const [{ projectByName }, { projectCredentialAddress }] = await Promise.all([
+      import('../project/projects.ts'),
+      import('../config/credential-service.ts'),
+    ])
     const project = projectByName(options.project)
     if (!project) throw new Error(`no project ${options.project}`)
     const target = await projectCredentialAddress(project, identity.provider)
@@ -197,6 +192,7 @@ async function parsedReach(value: string): Promise<string[] | null> {
   if (value === 'all') return null
   const slugs = value.split(',').filter(Boolean)
   if (slugs.length === 0) throw new Error('reach must be all or a comma-separated space slug list')
+  const { configClient } = await import('../../../shared/config-client.ts')
   const memberships = parseRecordSpaceMemberships((await configClient().whoami()).memberships)
   const ids: string[] = []
   for (const slug of slugs) {
@@ -224,13 +220,18 @@ async function resolveAction(
   argv: string[],
   options: BindingOptions & { revealToEnv?: string },
 ): Promise<void> {
+  const [{ configClient }, credentialService, { runWithEnvironment }] = await Promise.all([
+    import('../../../shared/config-client.ts'),
+    import('../config/credential-service.ts'),
+    import('../config/secret-run.ts'),
+  ])
   const target = await address(name, options)
   const client = configClient()
   if (options.revealToEnv) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.revealToEnv))
       throw new Error('--reveal-to-env must be an environment-variable name')
     if (argv.length === 0) throw new Error('--reveal-to-env requires -- <argv>')
-    const result = await resolveCredentialValue(target, client)
+    const result = await credentialService.resolveCredentialValue(target, client)
     process.exitCode = await runWithEnvironment(argv, {
       ...process.env,
       [options.revealToEnv]: result.value,
@@ -238,7 +239,7 @@ async function resolveAction(
     return
   }
   if (argv.length > 0) throw new Error('command argv requires --reveal-to-env <VAR>')
-  const result = await resolveProjectCredential(target, client)
+  const result = await credentialService.resolveProjectCredential(target, client)
   log(
     `${credentialDisplayName(target.provider, target.name, target.type, target.mode, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId, result.credential.account !== undefined)}\t${result.reason}`,
   )
@@ -250,7 +251,40 @@ function registerReachCommand(credential: Command): void {
     .requiredOption('--spaces <spaces>', 'all or comma-separated space slugs')
     .action(async (name, options: BindingOptions) => {
       if (!options.account) throw new Error('reach requires --account')
+      const { reachCredential } = await import('../config/credential-service.ts')
       await reachCredential(await address(name, options), await parsedReach(options.spaces!))
+    })
+}
+
+function registerPreferenceCommand(credential: Command): void {
+  addBindingOptions(credential.command('prefer <provider/type>'), false, false)
+    .description('set or clear a payer preference')
+    .option('--use <slot>', CREDENTIAL_SLOTS.join(' or '))
+    .option('--clear', 'clear the preference')
+    .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
+      const { configClient } = await import('../../../shared/config-client.ts')
+      if (Boolean(options.project) === Boolean(options.space))
+        throw new Error('prefer requires exactly one of --project or --space')
+      if (Boolean(options.use) === Boolean(options.clear))
+        throw new Error('choose exactly one of --use or --clear')
+      const target = await address(name, options)
+      const client = configClient()
+      const input = {
+        projectId: target.projectId,
+        provider: target.provider,
+        name: target.name,
+        type: target.type,
+        mode: target.mode,
+        environment: target.environment,
+      }
+      const destination = { destinationSpaceId: target.destinationSpaceId }
+      if (options.clear) {
+        await client.deleteCredentialPreference(input, destination)
+        return
+      }
+      const slot = parseCredentialSlot(options.use!)
+      if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
+      await client.putCredentialPreference({ ...input, ...slot }, destination)
     })
 }
 
@@ -260,6 +294,7 @@ export function registerCredentialCommands(program: Command): void {
     .description('set a credential from standard input')
     .option('--reach <spaces>', 'all or comma-separated space slugs')
     .action(async (name, options: BindingOptions) => {
+      const { setCredential } = await import('../config/credential-service.ts')
       validateAccountOptions(options)
       if (process.stdin.isTTY) throw new Error('credential value must be provided on stdin')
       const target = await address(name, options, 'credential set')
@@ -270,12 +305,17 @@ export function registerCredentialCommands(program: Command): void {
   addBindingOptions(credential.command('delete <provider/type>'), true)
     .description('delete a credential')
     .action(async (name, options: BindingOptions) => {
+      const { deleteCredential } = await import('../config/credential-service.ts')
       validateAccountOptions(options)
       await deleteCredential(await address(name, options, 'credential delete'))
     })
   addBindingOptions(credential.command('list'), false)
     .description('list credential metadata and masked hints')
     .action(async (options: BindingOptions) => {
+      const [{ configClient }, { listCredentials }] = await Promise.all([
+        import('../../../shared/config-client.ts'),
+        import('../config/credential-service.ts'),
+      ])
       validateAccountOptions(options)
       const target = await bindingAddress(options)
       const selectedMode = options.mode ? mode(options.mode) : undefined
@@ -302,34 +342,7 @@ export function registerCredentialCommands(program: Command): void {
         )
       }
     })
-  addBindingOptions(credential.command('prefer <provider/type>'), false, false)
-    .description('set or clear a payer preference')
-    .option('--use <slot>', CREDENTIAL_SLOTS.join(' or '))
-    .option('--clear', 'clear the preference')
-    .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
-      if (Boolean(options.project) === Boolean(options.space))
-        throw new Error('prefer requires exactly one of --project or --space')
-      if (Boolean(options.use) === Boolean(options.clear))
-        throw new Error('choose exactly one of --use or --clear')
-      const target = await address(name, options)
-      const client = configClient()
-      const input = {
-        projectId: target.projectId,
-        provider: target.provider,
-        name: target.name,
-        type: target.type,
-        mode: target.mode,
-        environment: target.environment,
-      }
-      const destination = { destinationSpaceId: target.destinationSpaceId }
-      if (options.clear) {
-        await client.deleteCredentialPreference(input, destination)
-        return
-      }
-      const slot = parseCredentialSlot(options.use!)
-      if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
-      await client.putCredentialPreference({ ...input, ...slot }, destination)
-    })
+  registerPreferenceCommand(credential)
   registerReachCommand(credential)
   credential
     .command('resolve <provider/type> [argv...]')

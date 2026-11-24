@@ -687,7 +687,7 @@ test('every classified record tenant write reaches its refusing seam', async () 
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(recordTenantRouteBodies.get(route) ?? {}),
     })
-    const body = await response.json().catch(() => null)
+    const body = await response.json()
     if (response.status !== refusal.status || JSON.stringify(body) !== JSON.stringify(refusal.body))
       failures.push(`${route}: ${response.status} ${JSON.stringify(body)}`)
   }

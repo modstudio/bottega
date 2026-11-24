@@ -499,7 +499,7 @@ describe('array-mcp task writes', () => {
               { name: 'update-task-tool', args: { id: 'ADN-1659', status: 'In Progress' } },
               { name: 'get-task-tool', args: { id: 'ADN-1659' } },
             ]
-          : [{ name: 'task.update', args: { id: taskId, status: 'in_progress' } }],
+          : [{ name: 'task_update', args: { id: taskId, status: 'in_progress' } }],
       )
     })
   }

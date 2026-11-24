@@ -38,6 +38,11 @@ export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
 export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
 
+export function hostedRequestSafety(method?: string): HostedRequestSafety {
+  const normalized = method?.toUpperCase() ?? 'GET'
+  return normalized === 'GET' || normalized === 'HEAD' ? 'probe' : 'non-idempotent'
+}
+
 export function hostedRequestSafetyStatement(outcome: HostedRequestSafety): string {
   if (outcome === 'probe') return 'nothing was written'
   if (outcome === 'idempotent') return 'safe to retry'

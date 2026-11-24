@@ -1,13 +1,22 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
+  abandonCursor,
   args,
   context,
   database,
   selectAndNextWorkflowStep as nextWorkflowStep,
 } from './workflow-cursor-test.fixture.ts'
+import { renderWorkflowComposition } from './workflow-render.ts'
+import { attachWorkflowTextByHandle } from './workflow-text.ts'
 
 describe('workflow cursor task reference', () => {
   test('an unknown user task key is stored as a label with no UUID link', async () => {
@@ -18,16 +27,135 @@ describe('workflow cursor task reference', () => {
       context,
       async () => null,
     )
-    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
+    const composed = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      unresolved,
+      d,
+      {},
+      {},
+    )
     expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
       workflow_key: 'DEV-822',
       task_record_id: null,
     })
+    expect(renderWorkflowComposition(composed)).toContain(
+      "workflow task DEV-822 in project fixture is unresolved; file or fix the task in the project's tracker, then rerun",
+    )
     await expect(
       composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {}),
     ).rejects.toThrow(
       'task key DEV-822 names no task in hub and earlier cursor 1 holds that label; use a real task key',
     )
+  })
+
+  test('advance keeps attached text for an unresolved task', async () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const draft = setStepCatalogueLocal(
+      {
+        ...current,
+        steps: current.steps.map((step) =>
+          step.slug === 'rebase' ? { ...step, needs: [...step.needs, 'workflow-text'] } : step,
+        ),
+      },
+      'unresolved workflow text fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogueLocal(draft.n, 'unresolved workflow text fixture', 'test', d)
+    const unresolved = await resolveWorkflowCursorContext(
+      'fixture',
+      args,
+      context,
+      async () => null,
+    )
+    const composed = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      unresolved,
+      d,
+      {},
+      {},
+    )
+    const token = await attachWorkflowTextByHandle(
+      composed.cursor!.id,
+      'Keep this text on advance.',
+      unresolved,
+      d,
+    )
+    d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+
+    const output = await nextWorkflowStep(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'advance unresolved task',
+      unresolved,
+      d,
+      {},
+      undefined,
+      composed.cursor!.id,
+    )
+
+    expect(output).toContain(token)
+    expect(output).toContain('workflow key DEV-822 in project fixture has an unresolved task link')
+    expect(output).toContain(
+      `${PLATFORM_SLUG} workflow text copy --cursor ${composed.cursor!.id} --project fixture --task DEV-822`,
+    )
+    expect(output).toContain(
+      "workflow task DEV-822 in project fixture is unresolved; file or fix the task in the project's tracker, then rerun",
+    )
+    expect(d.query('SELECT COUNT(*) AS count FROM workflow_step_text').get()).toEqual({ count: 1 })
+  })
+
+  test('abandon reports attached texts kept for an unresolved task', async () => {
+    const d = database()
+    const unresolved = await resolveWorkflowCursorContext(
+      'fixture',
+      args,
+      context,
+      async () => null,
+    )
+    const composed = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      unresolved,
+      d,
+      {},
+      {},
+    )
+    const token = await attachWorkflowTextByHandle(
+      composed.cursor!.id,
+      'Keep this text.',
+      unresolved,
+      d,
+    )
+
+    const output = await abandonCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'unresolved task',
+      unresolved,
+      d,
+      composed.cursor!.id,
+    )
+
+    expect(output).toContain(token)
+    expect(output).toContain('workflow key DEV-822 in project fixture has an unresolved task link')
+    expect(output).toContain(
+      `${PLATFORM_SLUG} workflow text copy --cursor ${composed.cursor!.id} --project fixture --task DEV-822`,
+    )
+    expect(d.query('SELECT COUNT(*) AS count FROM workflow_step_text').get()).toEqual({ count: 1 })
   })
 
   test('a pre-rollout cursor named by number links to its resolved task on next', async () => {

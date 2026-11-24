@@ -18,6 +18,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
+import { hostedJsonFailureMessage, type JsonBodyResult, jsonBody } from '../../shared/http-json.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
@@ -29,7 +30,7 @@ import {
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
-import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
+import { hostedRequestSafety, hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
@@ -502,9 +503,21 @@ const settingsAutoModeResultSchema = z.object({
 export type RecordDoc = z.infer<typeof docSchema>
 export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
-function mappedError(status: number, body: unknown, path: string): TRPCError {
+function mappedNotFoundMessage(result: JsonBodyResult, path: string, error: string): string {
+  if (!result.ok && path.startsWith('/v1/board/'))
+    return 'the hosted record does not serve the message board yet'
+  return error
+}
+
+function mappedError(status: number, result: JsonBodyResult, path: string): TRPCError {
+  const body = result.ok ? result.value : null
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  const error = typeof record.error === 'string' ? record.error : `record API ${status}`
+  const error =
+    typeof record.error === 'string'
+      ? record.error
+      : !result.ok
+        ? hostedJsonFailureMessage(result)
+        : `record API ${status}`
   const remedy = typeof record.remedy === 'string' ? record.remedy : undefined
   if (status === 401) return new TRPCError({ code: 'UNAUTHORIZED', message: remedy ?? error })
   if (status === 403) return new TRPCError({ code: 'FORBIDDEN', message: error })
@@ -513,10 +526,7 @@ function mappedError(status: number, body: unknown, path: string): TRPCError {
   if (status === 404)
     return new TRPCError({
       code: 'NOT_FOUND',
-      message:
-        body === null && path.startsWith('/v1/board/')
-          ? 'the hosted record does not serve the message board yet'
-          : error,
+      message: mappedNotFoundMessage(result, path, error),
     })
   if (status === 400) return new TRPCError({ code: 'BAD_REQUEST', message: error })
   return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error })
@@ -548,7 +558,7 @@ async function request<T>(
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
-  const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
+  const safety = hostedRequestSafety(init.method)
   const retry = safety === 'probe' ? '; retry,' : ','
   const retryStatement = `${hostedRequestSafetyStatement(safety)}${retry} and if it stalls again`
   const timeoutError = () =>
@@ -571,8 +581,14 @@ async function request<T>(
           { ...init, headers, signal },
           fetchImpl as typeof fetch,
         )
-        const body = await response.json().catch(() => null)
-        if (!response.ok) throw mappedError(response.status, body, path)
+        const result = await jsonBody(response, url)
+        const body = result.ok ? result.value : null
+        if (!response.ok) throw mappedError(response.status, result, path)
+        if (!result.ok)
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: hostedJsonFailureMessage(result),
+          })
         const parsed = schema.safeParse(body)
         if (!parsed.success) {
           throw new TRPCError({

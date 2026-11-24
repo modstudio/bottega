@@ -1,15 +1,6 @@
 // concern: cli
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
-import { persistedRunOutput } from '../collect/collect.ts'
-import { checkRetrieval } from '../doc/doc-search.ts'
-import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
-import { doctorCommand } from '../health/doctor.ts'
-import { blockersCommand, healthCommand } from '../health/health-commands.ts'
-import { JOBS } from '../jobs/jobs.ts'
-import { candidates, pick } from '../route/route.ts'
-import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
-import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -19,7 +10,9 @@ export function register(program: Command): void {
     .option('--days <value>', 'number of recent days to include')
     .option('--json', 'write the blocker report as JSON')
     .allowExcessArguments(false)
-    .action((options) => blockersCommand(optionFlags(options), { log }))
+    .action(async (options) =>
+      (await import('../health/health-commands.ts')).blockersCommand(optionFlags(options), { log }),
+    )
 
   program
     .command('health')
@@ -27,7 +20,9 @@ export function register(program: Command): void {
     .option('--days <value>', 'number of recent days to include')
     .option('--json', 'write the health report as JSON')
     .allowExcessArguments(false)
-    .action((options) => healthCommand(optionFlags(options), { log }))
+    .action(async (options) =>
+      (await import('../health/health-commands.ts')).healthCommand(optionFlags(options), { log }),
+    )
 
   program
     .command('reclassify-failures')
@@ -36,7 +31,13 @@ export function register(program: Command): void {
     )
     .option('--dry-run', 'report reclassifications without writing them')
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
+      const [{ reclassifyFailuresCommand }, { persistedRunOutput }, { rollUpChangedTurnRoots }] =
+        await Promise.all([
+          import('../failure/failure-commands.ts'),
+          import('../collect/collect.ts'),
+          import('../run/run-root-rollup.ts'),
+        ])
       reclassifyFailuresCommand(
         optionFlags(options),
         { log },
@@ -51,16 +52,23 @@ export function register(program: Command): void {
     .option('--wake', 'wake configured local model services during diagnosis')
     .allowExcessArguments(false)
     .action(async (options) => {
-      await doctorCommand(optionFlags(options), {
+      const [doctor, route, jobs, transport, search] = await Promise.all([
+        import('../health/doctor.ts'),
+        import('../route/route.ts'),
+        import('../jobs/jobs.ts'),
+        import('../transport/transport.ts'),
+        import('../doc/doc-search.ts'),
+      ])
+      await doctor.doctorCommand(optionFlags(options), {
         log,
         exitCode: (code) => {
           process.exitCode = code
         },
-        candidates,
-        pick,
-        jobs: () => Object.keys(JOBS),
-        acpRuntimeGaps,
-        retrievalCheck: checkRetrieval,
+        candidates: route.candidates,
+        pick: route.pick,
+        jobs: () => Object.keys(jobs.JOBS),
+        acpRuntimeGaps: transport.acpRuntimeGaps,
+        retrievalCheck: search.checkRetrieval,
       })
     })
 }

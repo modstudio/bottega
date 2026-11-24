@@ -35,12 +35,20 @@ import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { median } from '../state/statistics.ts'
+import { confinedLaunchCwd } from './confined-launch-cwd.ts'
 import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
 import { firstErrorLine, launchSandboxProbe } from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
 } from './confinement-probe-task-port.ts'
+import {
+  type AccessTarget,
+  applyCommandCellVerdict,
+  type CommandProbe,
+  type FilesystemProbeAccess,
+  probeVerdict,
+} from './confinement-probe-verdict.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -54,9 +62,6 @@ import {
   writerProfile,
 } from './sandbox.ts'
 
-type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
-type CommandProbeStatus = 'ran' | 'failed'
-type CommandProbe = { status: CommandProbeStatus; reason: string }
 const SANDBOX_GIT_SPAWN_SAMPLES = 9
 const SANDBOX_GIT_SPAWN_RATIO_MAX = 8
 
@@ -85,19 +90,11 @@ export type ConfinementFilesystemProbeRow = {
     | 'host override'
     | 'sandbox git spawn'
     | 'headless browser'
-  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
+  status: FilesystemProbeAccess | CommandProbe['status'] | 'committed' | 'refused' | 'ok' | 'slow'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   gitSpawn?: SandboxGitSpawnMeasurement
   reason?: string
-}
-
-type AccessTarget = {
-  name: string
-  path: string
-  expected: 'denied' | 'readable'
-  plant?: boolean
-  createAfterLaunch?: boolean
 }
 
 type AfterLaunchFixture = { target: string; ready: string; release: string }
@@ -188,62 +185,16 @@ function initializeProbeGitFixture(ownPath: string, worktree: string): void {
   gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
 }
 
-export function probeVerdict(
-  targets: readonly AccessTarget[],
-  paths: Record<string, FilesystemProbeAccess>,
-  commands: Record<string, CommandProbe>,
-  missingExpectedReadableTargets: readonly string[] = [],
-): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
-  let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
-  const missingTargetReason =
-    missingExpectedReadableTargets.length > 0
-      ? `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
-      : null
-  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
-    filesystemVerdict = {
-      status: 'readable',
-      reason: `one or more denied paths were unexpectedly readable${missingTargetReason ? `; ${missingTargetReason}` : ''}`,
-    }
-  } else if (missingTargetReason) {
-    filesystemVerdict = {
-      status: 'not covered',
-      reason: missingTargetReason,
-    }
-  } else if (targets.some(({ name }) => paths[name] === 'not covered')) {
-    filesystemVerdict = {
-      status: 'not covered',
-      reason: 'one or more filesystem probe output lines were missing',
-    }
-  } else if (targets.some(({ name, expected }) => paths[name] !== expected)) {
-    filesystemVerdict = {
-      status: 'failed',
-      reason: 'one or more expected-readable paths were denied',
-    }
-  } else {
-    filesystemVerdict = { status: 'denied' }
-  }
-  return applyCommandCellVerdict(filesystemVerdict, commands)
-}
-
-function applyCommandCellVerdict(
-  filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>,
-  commands: Record<string, CommandProbe>,
-): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
-  if (filesystemVerdict.status !== 'denied') return filesystemVerdict
-  const failed = Object.entries(commands).find(([, command]) => command.status === 'failed')
-  if (!failed) return filesystemVerdict
-  const [name, command] = failed
-  return { status: 'failed', reason: `command cell ${name} failed: ${command.reason}` }
-}
-
-async function launchCommand(
+export async function launchCommand(
   profile: ReturnType<typeof readonlyLensProfile>,
   argv: string[],
   environment: Record<string, string>,
   scratchDir: string,
+  cwd: string,
   hubOpenMode?: string,
+  launcher: typeof launchSandboxProbe = launchSandboxProbe,
 ): Promise<CommandProbe> {
-  const result = await launchSandboxProbe(profile, argv[0]!, argv.slice(1), environment, scratchDir)
+  const result = await launcher(profile, argv[0]!, argv.slice(1), environment, scratchDir, { cwd })
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
     reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
@@ -482,6 +433,7 @@ async function launchProbe(
   commandArgv: string[],
   environment: Record<string, string>,
   scratchDir: string,
+  cwd: string,
   hubOpenMode: string,
   commandLabel: string,
   missingExpectedReadableTargets: readonly string[],
@@ -503,7 +455,14 @@ async function launchProbe(
         values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
-    const command = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
+    const command = await launchCommand(
+      profile,
+      commandArgv,
+      environment,
+      scratchDir,
+      cwd,
+      hubOpenMode,
+    )
     const commands = { [commandLabel]: command }
     return {
       family,
@@ -529,6 +488,7 @@ async function launchWorkflowProbe(
   commandArgv: string[],
   environment: Record<string, string>,
   scratchDir: string,
+  cwd: string,
   hubOpenMode: string,
   commandLabel: string,
   missingExpectedReadableTargets: readonly string[],
@@ -540,6 +500,7 @@ async function launchWorkflowProbe(
     commandArgv,
     environment,
     scratchDir,
+    cwd,
     hubOpenMode,
     commandLabel,
     missingExpectedReadableTargets,
@@ -570,6 +531,7 @@ async function launchCrossProjectCliProbe(
   commandArgv: string[],
   environment: Record<string, string>,
   scratchDir: string,
+  cwd: string,
   hubOpenMode: string,
   commandLabel: string,
 ): Promise<ConfinementFilesystemProbeRow> {
@@ -582,9 +544,23 @@ async function launchCrossProjectCliProbe(
       ['/bin/cat', installEnvPath],
       environment,
       scratchDir,
+      cwd,
     )
-    const version = await launchCommand(profile, [...cliArgv, '--version'], environment, scratchDir)
-    const verb = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
+    const version = await launchCommand(
+      profile,
+      [...cliArgv, '--version'],
+      environment,
+      scratchDir,
+      cwd,
+    )
+    const verb = await launchCommand(
+      profile,
+      commandArgv,
+      environment,
+      scratchDir,
+      cwd,
+      hubOpenMode,
+    )
     const paths = { 'install .env': access.status === 'ran' ? 'readable' : 'denied' } as const
     const command: CommandProbe = {
       status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
@@ -749,6 +725,16 @@ function probeHubOpenMode(hubDatabase: string): string {
   }).openMode
 }
 
+function fixtureConfinedLaunchCwd(worktreePath: string): string {
+  return confinedLaunchCwd('create', worktreePath, worktreePath, worktreePath)
+}
+
+function missingExpectedReadableTargetNames(targets: readonly AccessTarget[]): string[] {
+  return targets
+    .filter(({ path, expected }) => expected === 'readable' && !existsSync(path))
+    .map(({ name }) => name)
+}
+
 function probeAccessTargets(input: {
   ownPath: string
   worktree: string
@@ -905,6 +891,7 @@ function createProbeFixture(root: string) {
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
     commandLabel,
+    commandCwd: fixtureConfinedLaunchCwd(worktree),
     fixtureInstall,
     environment: probeWorkerEnvironment(environment),
     common: {
@@ -944,9 +931,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
     const fixture = createProbeFixture(root)
     hubWriter = fixture.hubWriter
     const { common } = fixture
-    const missingExpectedReadableTargets = fixture.targets
-      .filter(({ path, expected }) => expected === 'readable' && !existsSync(path))
-      .map(({ name }) => name)
+    const missingExpectedReadableTargets = missingExpectedReadableTargetNames(fixture.targets)
     process.env[STATE_HOME_ENV] = fixture.stateRoot
     const launch = (
       family: Parameters<typeof launchProbe>[0],
@@ -959,6 +944,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.commandArgv,
         fixture.environment,
         common.scratchDir,
+        fixture.commandCwd,
         fixture.hubOpenMode,
         fixture.commandLabel,
         missingExpectedReadableTargets,
@@ -989,6 +975,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.commandArgv,
         fixture.environment,
         common.scratchDir,
+        fixture.commandCwd,
         fixture.hubOpenMode,
         fixture.commandLabel,
         missingExpectedReadableTargets,
@@ -1000,6 +987,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.commandArgv,
         fixture.environment,
         common.scratchDir,
+        fixture.commandCwd,
         fixture.hubOpenMode,
         fixture.commandLabel,
       ),

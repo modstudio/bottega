@@ -25,6 +25,13 @@ const headersSpreadSelectors = [
   },
 ]
 
+const hostedResponseJsonCatchSelector = {
+  selector:
+    "CallExpression[callee.property.name='catch'][callee.object.type='CallExpression'][callee.object.callee.property.name='json'][callee.object.callee.object.type='Identifier'][callee.object.callee.object.name=/^(response|res)$/]",
+  message:
+    'This rule matches only receivers named response or res; read every hosted response through jsonBody and format failures with hostedJsonFailureMessage from shared/http-json.ts whatever it is named.',
+}
+
 const recordPushModules = [
   'orchestrator/src/record/outbox-failure.ts',
   'orchestrator/src/record/outbox-held-contract.ts',
@@ -68,6 +75,7 @@ export default [
       'orchestrator/src/**/*.{ts,tsx}',
       'orchestrator/test/**/*.{ts,tsx}',
       'hub/src/**/*.{ts,tsx}',
+      'hub/data/src/**/*.{ts,tsx}',
       'hub/web/src/**/*.{ts,tsx}',
       'shared/**/*.{ts,tsx}',
       'scripts/**/*.{ts,tsx}',
@@ -82,7 +90,12 @@ export default [
     },
     plugins: { sonarjs },
     rules: {
-      'no-restricted-syntax': ['error', importMetaUrlPathnameSelector, ...headersSpreadSelectors],
+      'no-restricted-syntax': [
+        'error',
+        importMetaUrlPathnameSelector,
+        ...headersSpreadSelectors,
+        hostedResponseJsonCatchSelector,
+      ],
       'sonarjs/cognitive-complexity': ['error', 15],
     },
   },
@@ -93,6 +106,7 @@ export default [
         'error',
         importMetaUrlPathnameSelector,
         ...headersSpreadSelectors,
+        hostedResponseJsonCatchSelector,
         {
           selector: "ThrowStatement > NewExpression[callee.name='Error']",
           message:
@@ -108,6 +122,7 @@ export default [
         'error',
         importMetaUrlPathnameSelector,
         ...headersSpreadSelectors,
+        hostedResponseJsonCatchSelector,
         ...RECORD_TIMESTAMP_COMPARISON_SELECTORS,
       ],
     },

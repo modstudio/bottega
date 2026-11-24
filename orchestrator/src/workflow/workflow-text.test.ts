@@ -27,6 +27,7 @@ import {
   WORKFLOW_TEXT_CURSOR_MAX_BYTES,
   workflowTextFacts,
   workflowTextIdsToDelete,
+  workflowTextLinkState,
 } from './workflow-text.ts'
 import {
   closeCursorWithTextCopy,
@@ -129,21 +130,40 @@ const rowCount = (d: Database, cursor: number) =>
   ).count
 
 describe('workflow text decisions', () => {
-  test('linked deletion selects only copied rows while unlinked deletion selects every row', async () => {
-    const cases = [
-      { linked: false, copied: [], expected: ['one', 'two'] },
-      { linked: true, copied: [], expected: [] },
-      { linked: true, copied: ['two'], expected: ['two'] },
-      { linked: true, copied: ['one', 'two'], expected: ['one', 'two'] },
-    ]
-    for (const entry of cases)
-      expect(
-        workflowTextIdsToDelete({
-          linked: entry.linked,
-          rowIds: ['one', 'two'],
-          copiedIds: new Set(entry.copied),
-        }),
-      ).toEqual(entry.expected)
+  test('link state distinguishes linked, keyless, and unresolved stages', () => {
+    expect(workflowTextLinkState({ workflow_key: 'DEV-2620', task_record_id: 'task-id' })).toBe(
+      'linked',
+    )
+    expect(workflowTextLinkState({ workflow_key: '', task_record_id: null })).toBe('keyless')
+    expect(workflowTextLinkState({ task_record_id: null })).toBe('keyless')
+    expect(workflowTextLinkState({ workflow_key: 'DEV-2620', task_record_id: null })).toBe(
+      'unresolved',
+    )
+  })
+
+  test('deletion preserves unresolved texts, removes keyless texts, and removes copied linked texts', () => {
+    const rowIds = ['one', 'two', 'three', 'four', 'five', 'six']
+    expect(
+      workflowTextIdsToDelete({
+        linkState: 'unresolved',
+        rowIds,
+        copiedIds: new Set(),
+      }),
+    ).toEqual([])
+    expect(
+      workflowTextIdsToDelete({
+        linkState: 'keyless',
+        rowIds,
+        copiedIds: new Set(),
+      }),
+    ).toEqual(rowIds)
+    expect(
+      workflowTextIdsToDelete({
+        linkState: 'linked',
+        rowIds,
+        copiedIds: new Set(['two', 'five']),
+      }),
+    ).toEqual(['two', 'five'])
   })
 
   test('attach permission names both measured byte bounds and ownership', async () => {

@@ -125,7 +125,7 @@ export async function createRecordContractFixture(
     if (requestInit.body && !headers.has('content-type'))
       headers.set('content-type', 'application/json')
     const response = await app.request(path, { ...requestInit, headers })
-    const body = await response.json().catch(() => null)
+    const body = await response.json()
     if (!response.ok) {
       if (requestInit.acceptedError?.status === response.status)
         return requestInit.acceptedError.schema(body) as T

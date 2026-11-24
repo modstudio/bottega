@@ -6,20 +6,13 @@ import {
   RECORD_SIGN_IN_REMEDY,
 } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
-import {
-  readRecordSessionToken,
-  readRecordSessionTokenAsync,
-  type SecurityRunner,
-  writeRecordSessionToken,
-} from '../../../shared/record-session.ts'
-import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
-import {
-  activeMembershipSpace,
-  noSpaceBuiltIns,
-  RECORD_SESSION_KEY,
-  recordAuth,
-} from './record-auth.ts'
+import type { SecurityRunner } from '../../../shared/record-session.ts'
+import { db } from '../database/db.ts'
+import { activeMembershipSpace } from './record-membership.ts'
 import { recordPool } from './record-pool.ts'
+import { storedRecordToken } from './record-token.ts'
+
+export { storedRecordToken, storedRecordTokenAsync } from './record-token.ts'
 
 const RECORD_USER_KEY = 'record_signed_in_user'
 
@@ -78,42 +71,8 @@ export function recordUserSessionFromMemberships<
   }
 }
 
-export function storedRecordToken(
-  local: Database = db(),
-  runner?: SecurityRunner,
-  mayMigrate = !DATABASE_RESOLUTION.linkedWorktreeBinary,
-): string | null {
-  const keychainToken = readRecordSessionToken(runner)
-  if (keychainToken || !mayMigrate) return keychainToken
-  const legacy = local
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(RECORD_SESSION_KEY)?.value
-  if (!legacy) return null
-  writeTransaction(() => {
-    writeRecordSessionToken(legacy, runner)
-    local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
-  }, local)
-  return legacy
-}
-
 export function recordSessionPresent(): boolean {
   return storedRecordToken() !== null
-}
-
-/** The cancellable read for budgeted requests. It never migrates a legacy token, because the
- * keychain write and its transaction cannot be cancelled; storedRecordToken migrates it. */
-export async function storedRecordTokenAsync(
-  local: Database = db(),
-  signal?: AbortSignal,
-  mayReadLegacy = !DATABASE_RESOLUTION.linkedWorktreeBinary,
-): Promise<string | null> {
-  const keychainToken = await readRecordSessionTokenAsync(signal)
-  if (keychainToken || !mayReadLegacy) return keychainToken
-  return (
-    local
-      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-      .get(RECORD_SESSION_KEY)?.value ?? null
-  )
 }
 
 export async function currentRecordUserSession(
@@ -123,6 +82,7 @@ export async function currentRecordUserSession(
 ) {
   const token = storedRecordToken(local, runner)
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const { noSpaceBuiltIns, recordAuth } = await import('./record-auth.ts')
   const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
   const current = await auth.api
     .getSession({ headers: recordRequestHeaders({ bearerToken: token }) })

@@ -9,8 +9,9 @@ import type {
   DocKind,
   DocStatus,
 } from '../../../shared/docs.ts'
+import { hostedJsonFailureMessage, jsonBody } from '../../../shared/http-json.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { type HostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { hostedRequestSafety, RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
@@ -35,6 +36,7 @@ import {
   recordAuthRefusal,
   recordAuthToken,
 } from './record-api-client-error.ts'
+import { hostedErrorBody } from './record-api-client-hosted-response.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import { recordModerationClient } from './record-api-client-moderation.ts'
@@ -480,12 +482,11 @@ function injectSlot(): InjectSlot {
   return created
 }
 
-const injectedClient = (): RecordApiClient | null => injectSlot().current
-export const recordApiClientInjected = (): boolean => injectedClient() !== null
+export const recordApiClientInjected = (): boolean => injectSlot().current !== null
 
 const recordApiUnreachable = (
   error: unknown,
-  outcome: HostedRequestSafety,
+  outcome: Parameters<typeof classifyRecordApiUnreachable>[2],
   origin = recordApiBaseUrl(),
 ) => classifyRecordApiUnreachable(error, origin, outcome)
 
@@ -507,8 +508,15 @@ async function recordEmailAuthRequest(
   } catch (error) {
     throw classifyRecordApiUnreachable(error, origin, 'non-idempotent')
   }
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
+  const result = await jsonBody(response, `${origin}${path}`)
+  const payload = result.ok ? result.value : null
+  if (!response.ok)
+    throw recordAuthRefusal(
+      response.status,
+      hostedErrorBody(result, `${origin}${path}`, response.status),
+      response.headers,
+    )
+  if (!result.ok) throw new Error(hostedJsonFailureMessage(result))
   const token = recordAuthToken(response.headers, payload)
   const user = responseRecord(payload).user
   if (!token || !user || typeof user !== 'object') throw new Error(RECORD_SIGN_IN_REMEDY)
@@ -534,7 +542,7 @@ export function recordApiBaseUrl(
   if (
     environment.NODE_ENV === 'test' &&
     !environment.BOTTEGA_TEST_POSTGRES_CONTAINER &&
-    !injectedClient()
+    !injectSlot().current
   )
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return url.replace(/\/$/, '')
@@ -569,12 +577,7 @@ export async function recordApiRequest<T>(
     try {
       return await recordTransport(resolvedOrigin, path, { ...init, headers }, transport)
     } catch (error) {
-      const method = init.method?.toUpperCase() ?? 'GET'
-      throw classifyRecordApiUnreachable(
-        error,
-        resolvedOrigin,
-        method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
-      )
+      throw classifyRecordApiUnreachable(error, resolvedOrigin, hostedRequestSafety(init.method))
     }
   }
   const sendStored = async (token: string | null) => {
@@ -587,11 +590,22 @@ export async function recordApiRequest<T>(
         signal: init.signal ?? undefined,
         readToken,
       })
-  const body = await response.json().catch(() => null)
+  const result = await jsonBody(response, `${resolvedOrigin}${path}`)
+  const body = result.ok ? result.value : null
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
-    throw recordApiError(body, response.status, response.headers)
+    throw recordApiError(
+      hostedErrorBody(result, `${resolvedOrigin}${path}`, response.status),
+      response.status,
+      response.headers,
+    )
   }
+  if (!result.ok)
+    throw classifyRecordApiUnreachable(
+      new Error(hostedJsonFailureMessage(result)),
+      resolvedOrigin,
+      hostedRequestSafety(init.method),
+    )
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -622,8 +636,20 @@ async function publicRequest<T>(
   } catch (error) {
     throw recordApiUnreachable(error, 'probe')
   }
-  const body = await response.json().catch(() => null)
-  if (!response.ok) throw recordApiError(body, response.status)
+  const resolvedOrigin = origin()
+  const result = await jsonBody(response, `${resolvedOrigin}${path}`)
+  const body = result.ok ? result.value : null
+  if (!response.ok)
+    throw recordApiError(
+      hostedErrorBody(result, `${resolvedOrigin}${path}`, response.status),
+      response.status,
+    )
+  if (!result.ok)
+    throw classifyRecordApiUnreachable(
+      new Error(hostedJsonFailureMessage(result)),
+      resolvedOrigin,
+      'probe',
+    )
   return body as T
 }
 
@@ -730,7 +756,7 @@ export function recordApiClient(
   request = recordApiRequest,
   transport?: typeof fetch,
 ): RecordApiClient {
-  const injected = injectedClient()
+  const injected = injectSlot().current
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')

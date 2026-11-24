@@ -1,28 +1,22 @@
 // concern: cli
 /** Registers cleanup adapters. Must not own cleanup decisions. */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
-import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
-import { db } from '../database/db.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { confirmRunProcessTermination, planRecordedRunTermination } from '../run/run-process.ts'
-import { abandonRun, stopRun } from '../run/run-stop.ts'
-import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
-import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
-import { readProjectTaskList } from '../workflow/project-task-list.ts'
+import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(
+  database: Database,
   branch: string,
   uniqueCount: number,
   afterCutCount: number | null,
   id: string,
 ): string {
   const number = (
-    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+    database.query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
   ).number
   const reason =
     afterCutCount === null
@@ -31,14 +25,14 @@ function keptBranchLine(
   return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${number} --force to delete it after checking no other run owns it`
 }
 
-const presentation: CleanupPresentation = {
-  log: log,
+const cleanupPresentation = (database: Database): CleanupPresentation => ({
+  log,
   error: (...values) => console.error(...values),
   setExitCode: (code) => {
     process.exitCode = code
   },
-  keptBranchLine,
-}
+  keptBranchLine: (...args) => keptBranchLine(database, ...args),
+})
 
 function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
   const scorer = flags.flag('scorer')
@@ -56,7 +50,7 @@ function lifecycleCheckpoint(name: string): void {
   while (!existsSync(release)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
 }
 
-export function register(program: Command): void {
+function registerSweep(program: Command): void {
   program
     .command('sweep')
     .description('release terminal runs and reclaim safe stale resources')
@@ -66,11 +60,17 @@ export function register(program: Command): void {
     .option('--verbose', 'list every kept run artifact')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const [{ sweepRuns }, grokTrust, taskList] = await Promise.all([
+        import('../cleanup/cleanup-sweep.ts'),
+        import('../sandbox/grok-trust.ts'),
+        import('../workflow/project-task-list.ts'),
+      ])
+      const database = (await import('../database/db.ts')).db()
       const flags = optionFlags(options)
       if (!flags.has('dry-run')) {
         const { repairAskingTurns } = await import('../run/run-liveness.ts')
-        const repaired = repairAskingTurns(db(), new Date().toISOString())
-        presentation.log(
+        const repaired = repairAskingTurns(database, new Date().toISOString())
+        log(
           `asking-turn repair repaired ${repaired.supersededCount + repaired.repairedAbandoned.length} rows`,
         )
       }
@@ -80,43 +80,69 @@ export function register(program: Command): void {
           verbose: flags.has('verbose'),
           project: flags.flag('project'),
           force: flags.has('force'),
-          presentation,
+          presentation: cleanupPresentation(database),
         },
-        { observeGrokTrustHeadings, grokTrustPathFromHeading, hubTaskReader: readProjectTaskList },
+        {
+          observeGrokTrustHeadings: grokTrust.observeGrokTrustHeadings,
+          grokTrustPathFromHeading: grokTrust.grokTrustPathFromHeading,
+          hubTaskReader: taskList.readProjectTaskList,
+        },
       )
     })
+}
 
+function registerDiscard(program: Command): void {
   program
     .command('discard <id>')
     .description('remove a run worktree and discard its branch')
     .option('--force', 'discard a branch with unique commits')
     .allowExcessArguments(false)
     .action(async (id, options) => {
+      const [{ discardRun }, databaseModule, identifier] = await Promise.all([
+        import('../cleanup/cleanup.ts'),
+        import('../database/db.ts'),
+        import('../run/run-identifier.ts'),
+      ])
+      const database = databaseModule.db()
       const flags = optionFlags(options)
-      await discardRun(resolveRunIdentifier(db(), id), {
+      await discardRun(identifier.resolveRunIdentifier(database, id), {
         force: flags.has('force'),
         auditReason: auditReason(flags),
-        presentation,
+        presentation: cleanupPresentation(database),
       })
     })
+}
 
+function registerStop(program: Command): void {
   program
     .command('stop <id>')
     .description('stop a live run and its processes')
     .allowExcessArguments(false)
     .action(async (id) => {
+      const [{ stopRun }, processModule, sharedGit, databaseModule, identifier] = await Promise.all(
+        [
+          import('../run/run-stop.ts'),
+          import('../run/run-process.ts'),
+          import('../run/shared-git-config-run.ts'),
+          import('../database/db.ts'),
+          import('../run/run-identifier.ts'),
+        ],
+      )
+      const database = databaseModule.db()
       await stopRun(
-        resolveRunIdentifier(db(), id),
-        { force: false, auditReason: null, presentation },
+        identifier.resolveRunIdentifier(database, id),
+        { force: false, auditReason: null, presentation: cleanupPresentation(database) },
         {
           lifecycleCheckpoint,
-          planRunProcessTermination: planRecordedRunTermination,
-          terminateRunProcesses: confirmRunProcessTermination,
-          checkSharedGitConfig: terminalSharedGitConfigForRecordedRun,
+          planRunProcessTermination: processModule.planRecordedRunTermination,
+          terminateRunProcesses: processModule.confirmRunProcessTermination,
+          checkSharedGitConfig: sharedGit.terminalSharedGitConfigForRecordedRun,
         },
       )
     })
+}
 
+function registerAbandon(program: Command): void {
   program
     .command('abandon <id>')
     .description('stop a run and abandon its worktree')
@@ -124,14 +150,26 @@ export function register(program: Command): void {
     .option('--force', 'abandon a branch with unique commits')
     .allowExcessArguments(false)
     .action(async (id, options) => {
+      const [
+        { abandonRun },
+        { terminalSharedGitConfigForRecordedRun },
+        databaseModule,
+        identifier,
+      ] = await Promise.all([
+        import('../run/run-stop.ts'),
+        import('../run/shared-git-config-run.ts'),
+        import('../database/db.ts'),
+        import('../run/run-identifier.ts'),
+      ])
+      const database = databaseModule.db()
       const flags = optionFlags(options)
       await abandonRun(
-        resolveRunIdentifier(db(), id),
+        identifier.resolveRunIdentifier(database, id),
         {
           force: flags.has('force'),
           note: flags.flag('note'),
           auditReason: auditReason(flags),
-          presentation,
+          presentation: cleanupPresentation(database),
         },
         {
           lifecycleCheckpoint,
@@ -139,4 +177,11 @@ export function register(program: Command): void {
         },
       )
     })
+}
+
+export function register(program: Command): void {
+  registerSweep(program)
+  registerDiscard(program)
+  registerStop(program)
+  registerAbandon(program)
 }
