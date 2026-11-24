@@ -18,9 +18,7 @@ import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.t
 import { mainCheckoutOf } from '../../shared/git.ts'
 import type { GateTimingSidecar, TestPhaseTiming } from './gate-phase-timing.ts'
 
-const enabled =
-  process.env.BOTTEGA_GATE_TIMINGS ??
-  '/Users/shmuel/.local/state/bottega/orchestrator/runs/01a20f82-81f5-77c7-987f-e71c0a7a4ee7/scratch/spawn-measurement.json'
+const enabled = process.env.BOTTEGA_GATE_TIMINGS
 const testPhases: TestPhaseTiming[] = []
 let activeTestPhase: TestPhaseTiming | undefined
 const orchRoot = join(import.meta.dir, '..')
