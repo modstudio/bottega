@@ -11,8 +11,6 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { gooseProviderFile } from '../agent/goose-provider.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { acpHarnessAttachesProjectServers } from '../mcp/mcp-native-attachment.ts'
@@ -49,7 +47,7 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
-import { acpProjectMcpServers } from './transport-acp-mcp.ts'
+import { acpProjectMcpServers, acpStdioWorkerChannel } from './transport-acp-mcp.ts'
 import type {
   AcpMessageUsage,
   AcpMessageUsageUpdate,
@@ -634,42 +632,22 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
     : null
 }
 
-/**
- * The ACP session's MCP servers: the worker channel first, then the project
- * selection. The run identity gates only the worker channel, because the ask
- * server needs it; a registration probe carries no identity and still attaches
- * its project servers. Grok reaches its servers through the per-run config.
- */
+/** The worker channel first, followed by the run's selected project servers. */
 export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   if (!acpHarnessAttachesProjectServers(opts.agent.harness ?? opts.agent.name)) return []
   return [...acpWorkerChannel(opts), ...acpProjectMcpServers(opts.projectMcpSelection)]
 }
 
 function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
+  // Identity gates only the worker channel; registration probes still attach project servers.
   if (!opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN) return []
-  if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
-    return [
-      {
-        type: 'http',
-        name: WORKER_MCP_SERVER_NAME,
-        url: opts.ask.url,
-        headers: [{ name: 'Authorization', value: `Bearer ${opts.env.BOTTEGA_RUN_TOKEN}` }],
-      },
-    ]
-  }
-  const [command, ...args] = bottegaEntryArgv('ask-server')
+  if (!(opts.writingAcp && opts.ask?.kind === 'endpoint')) return acpStdioWorkerChannel(opts.env)
   return [
     {
+      type: 'http',
       name: WORKER_MCP_SERVER_NAME,
-      command: command!,
-      args,
-      env: [
-        'BOTTEGA_ASK_URL',
-        'BOTTEGA_RUN_ID',
-        'BOTTEGA_RUN_TOKEN',
-        'BOTTEGA_ORCHESTRATOR_DB',
-        CHECKOUT_CLI_BINARY_ENV,
-      ].flatMap((name) => (opts.env[name] ? [{ name, value: opts.env[name]! }] : [])),
+      url: opts.ask.url,
+      headers: [{ name: 'Authorization', value: `Bearer ${opts.env.BOTTEGA_RUN_TOKEN}` }],
     },
   ]
 }

@@ -232,6 +232,43 @@ describe('sandbox runtime payloads', () => {
     }
   })
 
+  test('pinned Linux wrapper binds bridge sockets after covering read-deny tmpfs mounts', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'srt-bridge-bind-order-')))
+    const httpSocketPath = join(root, 'http.sock')
+    const socksSocketPath = join(root, 'socks.sock')
+    writeFileSync(httpSocketPath, '')
+    writeFileSync(socksSocketPath, '')
+    const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
+    )
+    try {
+      const command = await wrapCommandWithSandboxLinux({
+        command: 'true',
+        needsNetworkRestriction: true,
+        httpSocketPath,
+        socksSocketPath,
+        readConfig: { denyOnly: [root], allowWithinDeny: [] },
+        allowAllUnixSockets: true,
+        bwrapPath: '/usr/bin/bwrap',
+        binShell: '/bin/sh',
+        socatPath: '/usr/bin/socat',
+      })
+      for (const socketPath of [httpSocketPath, socksSocketPath]) {
+        const socketDirectory = dirname(socketPath)
+        const lastCoveringTmpfs = [...command.matchAll(/--tmpfs ([^ ]+)/g)]
+          .filter(([, path]) => socketDirectory === path || socketDirectory.startsWith(`${path}/`))
+          .at(-1)?.index
+        expect(lastCoveringTmpfs).toBeNumber()
+        expect(command.lastIndexOf(`--bind ${socketPath} ${socketPath}`)).toBeGreaterThan(
+          lastCoveringTmpfs!,
+        )
+      }
+    } finally {
+      cleanupBwrapMountPoints()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('missing system dependencies make the shared ruling unavailable with an exact install command', () => {
     const ruling = classifySandboxRuntimeAvailability({
       ...availabilityFacts,

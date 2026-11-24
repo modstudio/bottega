@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV, CHECKOUT_ROOT_ENV } from '../../shared/install-root.ts'
@@ -423,13 +423,57 @@ async function probeConfinedTaskReads(
     throw new Error(`confined out-of-scope task read did not name its scope: ${refused.stderr}`)
 }
 
-/**
- * Bun words an unresolvable bare specifier as either "Cannot find package" or
- * "Cannot find module", depending on which import it reaches first; a relative
- * path is a different failure and never matches.
- */
 function packageResolutionFailure(error: string): string | null {
   return error.match(/Cannot find (?:package|module) '(?![./])[^']*'/)?.[0] ?? null
+}
+
+export type CheckoutConfinementFailure =
+  | { kind: 'package-resolution'; match: string }
+  | { kind: 'hidden-relative-import'; match: string; specifier: string; importer: string }
+
+export function checkoutConfinementFailure(
+  error: string,
+  relativeImportExists: (specifier: string, importer: string) => boolean,
+): CheckoutConfinementFailure | null {
+  const packageMatch = packageResolutionFailure(error)
+  if (packageMatch) return { kind: 'package-resolution', match: packageMatch }
+
+  const relativeMatch = error.match(/Cannot find module '(\.\.?\/[^']*)' imported from ([^\r\n]+)/)
+  if (!relativeMatch) return null
+  const [, specifier, importer] = relativeMatch
+  if (!specifier || !importer || !relativeImportExists(specifier, importer)) return null
+  return {
+    kind: 'hidden-relative-import',
+    match: relativeMatch[0],
+    specifier,
+    importer,
+  }
+}
+
+function hostCheckoutConfinementFailure(error: string): CheckoutConfinementFailure | null {
+  return checkoutConfinementFailure(error, (specifier, importer) =>
+    existsSync(resolve(dirname(importer), specifier)),
+  )
+}
+
+function handleConfinedToolsFailure(error: string, forceSource: boolean): void {
+  const confinementFailure = hostCheckoutConfinementFailure(error)
+  if (forceSource && confinementFailure?.kind === 'hidden-relative-import') {
+    console.log(
+      `forced source launch failed with a hidden relative import ${confinementFailure.specifier} (exists on host)`,
+    )
+    return
+  }
+  if (forceSource && confinementFailure?.kind === 'package-resolution') {
+    console.log(
+      `forced source launch failed with the package-resolution error: ${confinementFailure.match}`,
+    )
+    return
+  }
+  if (!forceSource && confinementFailure) {
+    throw new Error(`confined ask-server fell back to source: ${error}`)
+  }
+  throw new Error(`confined ask-server tools/list failed: ${error}`)
 }
 
 function fixtureEnvironment(operatorHome: string): Record<string, string> {
@@ -505,15 +549,8 @@ async function main(): Promise<void> {
     })
     if (!result.ok) {
       const error = result.error ?? 'unknown MCP probe failure'
-      const resolution = packageResolutionFailure(error)
-      if (forceSource && resolution) {
-        console.log(`forced source launch failed with the package-resolution error: ${resolution}`)
-        return
-      }
-      if (!forceSource && resolution) {
-        throw new Error(`confined ask-server fell back to source: ${error}`)
-      }
-      throw new Error(`confined ask-server tools/list failed: ${error}`)
+      handleConfinedToolsFailure(error, forceSource)
+      return
     }
     if (forceSource)
       throw new Error(
@@ -540,4 +577,4 @@ async function main(): Promise<void> {
   }
 }
 
-await main()
+if (import.meta.main) await main()

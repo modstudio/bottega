@@ -8,12 +8,32 @@ import {
   disabledProjectMcpServers,
   type McpServerConfig,
   mcpCallEvidence,
+  mcpRequestsAnswered,
   mintStdioPingServer,
   probeMcpServer,
   readMcpConfig,
   resolveMcpServerLaunch,
   resolveMcpServerLaunchFromRead,
 } from './mcp-probe.ts'
+
+test('the stdio probe waits only for responses to the requests it sent', () => {
+  const requestIds = [1, 'list']
+  expect(
+    mcpRequestsAnswered(requestIds, [
+      { jsonrpc: '2.0', id: 1, result: {} },
+      { jsonrpc: '2.0', id: 'list', result: { tools: [] } },
+    ]),
+  ).toBe(true)
+  expect(
+    mcpRequestsAnswered(requestIds, [
+      { jsonrpc: '2.0', id: 1, result: {} },
+      { jsonrpc: '2.0', id: 'list', error: { code: -32601, message: 'not found' } },
+    ]),
+  ).toBe(true)
+  expect(mcpRequestsAnswered([], [{ jsonrpc: '2.0', method: 'notifications/ready' }])).toBe(true)
+  expect(mcpRequestsAnswered(requestIds, [{ jsonrpc: '2.0', id: 1, result: {} }])).toBe(false)
+  expect(mcpRequestsAnswered(requestIds, [{ jsonrpc: '2.0', id: 99, result: {} }])).toBe(false)
+})
 
 test('computes the complement only for declared worker MCP scope', () => {
   const names = ['orch', 'starship', 'stopal']

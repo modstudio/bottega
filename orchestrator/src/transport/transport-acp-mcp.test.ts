@@ -3,6 +3,7 @@ import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ProjectMcpSelection, selectProjectMcpServers } from '../sandbox/project-mcp-scope.ts'
 import type { TransportStartOpts } from './transport.ts'
 import { acpMcpServers } from './transport-acp.ts'
+import { acpStdioWorkerChannel } from './transport-acp-mcp.ts'
 
 const opts = (over: Partial<TransportStartOpts>): TransportStartOpts => ({
   agent: { name: 'or-deepseek-v41-flash', harness: 'goose' } as TransportStartOpts['agent'],
@@ -45,6 +46,25 @@ test('MCP off gives exactly the worker channel', () => {
       },
     ]),
   })
+})
+
+test('the ask extension receives only proxy variables that are set', () => {
+  const [server] = acpStdioWorkerChannel({
+    BOTTEGA_RUN_ID: 'run-1',
+    BOTTEGA_RUN_TOKEN: 'token-1',
+    HTTP_PROXY: 'http://127.0.0.1:8123',
+    http_proxy: 'http://127.0.0.1:8124',
+    NO_PROXY: 'example.test',
+  })
+  const env = server && 'env' in server && Array.isArray(server.env) ? server.env : []
+  expect(server).toMatchObject({
+    env: expect.arrayContaining([
+      { name: 'HTTP_PROXY', value: 'http://127.0.0.1:8123' },
+      { name: 'http_proxy', value: 'http://127.0.0.1:8124' },
+      { name: 'NO_PROXY', value: 'example.test' },
+    ]),
+  })
+  expect(env.map((entry) => entry.name)).not.toContain('no_proxy')
 })
 
 test('the worker channel comes first, then the selected project servers in both shapes', () => {

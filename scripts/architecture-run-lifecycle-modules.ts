@@ -67,7 +67,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/ask/ask-failure.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/ask/ask-invocation.ts', ['../../../shared/commander-public-path.ts']),
-  module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
+  module('orchestrator/src/ask/ask-proxy.ts', ['./ask-failure.ts', './ask-loopback-client.ts']),
+  module('orchestrator/src/ask/ask-loopback-auth.ts', ['node:crypto'], ['node:net']),
+  module('orchestrator/src/ask/ask-loopback-client.ts', [
+    'node:http',
+    'node:net',
+    './ask-loopback-auth.ts',
+  ]),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/ask/worker-record-scope.ts', ['../run/run-status.ts']),
   module('orchestrator/src/ask/worker-record-read-client.ts', [

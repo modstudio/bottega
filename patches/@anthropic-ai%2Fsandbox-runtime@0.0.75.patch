@@ -39,3 +39,34 @@ index 185a9bd6a092041c24190a9216d2aa88ef910dd4..fe68286af86adab05a63b54a5e9cdc13
  }
  /**
   * Generate filesystem bind mount arguments for bwrap
+@@ -1445,14 +1446,6 @@ export async function wrapCommandWithSandboxLinux(params) {
+                     throw new Error(`Linux SOCKS bridge socket does not exist: ${socksSocketPath}. ` +
+                         'The bridge process may have died. Try reinitializing the sandbox.');
+                 }
+-                // Bind both sockets into the sandbox
+-                bwrapArgs.push('--bind', httpSocketPath, httpSocketPath);
+-                // When the mux serves both protocols, socksSocketPath is the same
+-                // file as httpSocketPath; bwrap rejects a duplicate --bind of the
+-                // same source→target.
+-                if (socksSocketPath !== httpSocketPath) {
+-                    bwrapArgs.push('--bind', socksSocketPath, socksSocketPath);
+-                }
+                 // Add proxy environment variables
+                 // HTTP_PROXY points to the socat listener inside the sandbox (port 3128)
+                 // which forwards to the Unix socket that bridges to the host's proxy server
+@@ -1530,5 +1523,15 @@ export async function wrapCommandWithSandboxLinux(params) {
+         // bwrap itself has when not installed setuid). See README for the
+         // Ubuntu 24.04 sysctl if AppArmor restricts this.
++        if (needsNetworkRestriction && httpSocketPath && socksSocketPath) {
++            // A deny tmpfs over an ancestor of tmpdir must not hide the bridge sockets.
++            bwrapArgs.push('--bind', httpSocketPath, httpSocketPath);
++            // When the mux serves both protocols, socksSocketPath is the same
++            // file as httpSocketPath; bwrap rejects a duplicate --bind of the
++            // same source→target.
++            if (socksSocketPath !== httpSocketPath) {
++                bwrapArgs.push('--bind', socksSocketPath, socksSocketPath);
++            }
++        }
+         // ========== COMMAND ==========
+         // Use the user's shell (zsh, bash, etc.) to ensure aliases/snapshots work
+         // Resolve the full path to the shell binary since bwrap doesn't use $PATH
