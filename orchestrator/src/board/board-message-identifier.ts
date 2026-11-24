@@ -3,6 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
+import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
 import { boardModeForId } from './board-mode.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
@@ -13,6 +15,38 @@ export type BoardIdentifierResolution = {
 }
 
 type Environment = Record<string, string | undefined>
+export type BoardIdentifierRefresh = typeof refreshHostedBoard
+
+export async function refreshHostedBoardIdentifier(
+  database: Database,
+  environment: Environment,
+  refresh: BoardIdentifierRefresh = refreshHostedBoard,
+): Promise<void> {
+  const refreshed = await refresh({
+    budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+    env: environment,
+    database,
+  })
+  if (refreshed.status !== 'success')
+    throw new Error(
+      `hosted board message read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+    )
+}
+
+export function boardMessageKind(
+  database: Database,
+  recordId: string,
+  source: 'local' | 'hosted',
+): 'root' | 'reply' | 'missing' {
+  if (source === 'hosted') return cachedHostedBoardMessageKind(recordId, database)
+  const row = database
+    .query<{ thread_root_record_id: string | null }, [string]>(
+      `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
+    )
+    .get(recordId)
+  if (!row) return 'missing'
+  return row.thread_root_record_id === null ? 'root' : 'reply'
+}
 
 function uploadedShadow(database: Database, recordId: string, kind: 'message' | 'claim'): boolean {
   const row = database

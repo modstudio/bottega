@@ -23,6 +23,7 @@ export const sessionLossesModules: SessionLossesModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/state-directory.ts',
+    '../board/board-operations.ts',
     '../cleanup/cleanup-sweep-decisions.ts',
     '../contract/contract.ts',
     '../database/db.ts',

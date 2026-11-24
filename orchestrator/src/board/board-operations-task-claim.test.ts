@@ -8,6 +8,7 @@ import {
   boardClaimRelease,
   boardClaimReleaseTask,
   boardClaimTake,
+  boardLiveClaimsOfSession,
 } from './board-operations.ts'
 
 const destinationResolver = async (_client: unknown, project?: string | null) => ({
@@ -112,4 +113,60 @@ test('the uncovered read authority lists claims for a foreign registered project
     }),
   ).resolves.toEqual({ claims: [] })
   expect(listedProjects).toEqual(['board-route-project'])
+})
+
+test('hosted session claim reads return the hosted answer instead of a local row', async () => {
+  const database = db()
+  const clock = Date.parse('2026-11-23T20:00:00.000Z')
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  database
+    .query(
+      `INSERT INTO board_claim
+       (record_id,project,project_record_id,subject_kind,subject_value,holder_kind,holder_session,
+        duration_ms,taken_at,renewed_at,lapses_at)
+       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),'task','DEV-LOCAL','architect',?,60000,?,?,?)`,
+    )
+    .run(
+      '01990000-0000-7000-8000-000000000111',
+      'board-route-project',
+      'board-route-project',
+      'claim-reader',
+      new Date(clock - 1_000).toISOString(),
+      new Date(clock - 1_000).toISOString(),
+      new Date(clock + 60_000).toISOString(),
+    )
+  const hostedId = '01990000-0000-7000-8000-000000000222'
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardClaims: async (project: string) => ({
+      claims:
+        project === 'board-route-project'
+          ? [
+              {
+                id: hostedId,
+                project,
+                subject: { kind: 'task' as const, value: 'DEV-HOSTED' },
+                holder: 'hosted-user',
+                holderSession: 'claim-reader',
+                note: null,
+                runId: null,
+                takenAt: new Date(clock - 1_000).toISOString(),
+                renewedAt: new Date(clock - 1_000).toISOString(),
+                lapsesAt: new Date(clock + 60_000).toISOString(),
+                live: true,
+                closedAt: null,
+                closeReason: null,
+                previousClaimIds: [],
+                supersededByClaimId: null,
+              },
+            ]
+          : [],
+    }),
+  }
+  const claims = await boardLiveClaimsOfSession('claim-reader', clock, database, { env, client })
+  expect(claims.map(({ recordId, subject }) => [recordId, subject.value])).toEqual([
+    [hostedId, 'DEV-HOSTED'],
+  ])
 })

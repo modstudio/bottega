@@ -99,6 +99,7 @@ export const workflowBoundarySpecs = [
     file: 'orchestrator/src/workflow/workflow-task-claim.ts',
     allowed: [
       '../board/board-claim-policy.ts',
+      '../board/board-operation-results.ts',
       '../board/board-operations.ts',
       'bun:sqlite',
       '../database/db.ts',

@@ -55,7 +55,7 @@ test('run receipts carry their UUID sibling while session receipts leave it NULL
   })
 })
 
-test('run receipts stay out of session acknowledgement policy and delivery stamps the sibling', () => {
+test('run receipts stay out of session acknowledgement policy and delivery stamps the sibling', async () => {
   const clock = Date.now()
   const runId = newRecordId()
   db()
@@ -81,7 +81,7 @@ test('run receipts stay out of session acknowledgement policy and delivery stamp
 
   expect(noticeStatus(posted.recordId, {}, clock + 1).unacknowledged).toEqual([])
   expect(
-    boardEscalations(clock + 1_001).some(
+    (await boardEscalations(clock + 1_001)).some(
       (row) => row.subject === `board:${posted.number}:run:${runId}`,
     ),
   ).toBe(false)

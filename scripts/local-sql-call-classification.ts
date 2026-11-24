@@ -11,6 +11,18 @@ function unwrapExpression(expression: ts.Expression): ts.Expression {
   return value
 }
 
+export function sqlCallArgument(node: ts.Node, methods: ReadonlySet<string>): ts.Expression | null {
+  if (!ts.isCallExpression(node)) return null
+  const target = unwrapExpression(node.expression)
+  const method = ts.isIdentifier(target)
+    ? target.text
+    : ts.isPropertyAccessExpression(target)
+      ? target.name.text
+      : null
+  const argument = node.arguments[0]
+  return method && methods.has(method) && argument ? argument : null
+}
+
 export function couldBeSqlExpression(expression: ts.Expression, statementStart: RegExp): boolean {
   const value = unwrapExpression(expression)
   if (ts.isIdentifier(value)) return /(?:sql|query|statement)/i.test(value.text)

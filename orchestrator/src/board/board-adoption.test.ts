@@ -418,7 +418,14 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
     db().query('SELECT withdrawn_reason FROM board_message WHERE record_id=?').get(notice.recordId),
   ).toEqual({ withdrawn_reason: 'adopted' })
   expect(
-    (await pendingBoardDelivery({ session: 'reader', budgetMs: 0, clock: NOW + 1 })).delivery,
+    (
+      await pendingBoardDelivery({
+        session: 'reader',
+        budgetMs: 0,
+        clock: NOW + 1,
+        refresh: async () => ({ status: 'success', applied: 0 }),
+      })
+    ).delivery,
   ).toEqual([])
   expect(
     db().query('SELECT close_reason FROM board_claim WHERE record_id=?').get(localClaim.recordId),

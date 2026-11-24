@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { parseAudience } from './board-policy.ts'
 import { markBoardDeliveryDelivered } from './board-push-service.ts'
 import {
@@ -242,7 +243,7 @@ test('an empty reach window has no pushes or worst messages', () => {
   )
 })
 
-test('reach report includes delivered and never-delivered reply rows', () => {
+test('reach report includes delivered and never-delivered reply rows', async () => {
   const clock = Date.parse('2026-10-13T12:00:00.000Z')
   const rootId = newRecordId()
   const deliveredId = newRecordId()
@@ -305,7 +306,7 @@ test('reach report includes delivered and never-delivered reply rows', () => {
     )
     .run(newRecordId(), deliveredId, 'reach-root-author', 1, new Date(clock + 3_000).toISOString())
 
-  const replies = boardReachReport(1, clock + 4_000, db()).replies
+  const replies = (await boardReachReport(1, clock + 4_000, db())).replies
   expect(replies).toMatchObject({
     replies: 2,
     deliveredToRootAuthor: 1,
@@ -314,8 +315,11 @@ test('reach report includes delivered and never-delivered reply rows', () => {
   expect(replies.rows.map((reply) => reply.replyId)).toEqual([deliveredId, neverId])
 })
 
-test('hosted reply reach distinguishes sessions belonging to the same author user', () => {
+test('hosted reply reach distinguishes sessions belonging to the same author user', async () => {
   const clock = Date.parse('2026-10-13T14:00:00.000Z')
+  db()
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const rootId = newRecordId()
   const deliveredId = newRecordId()
   const neverId = newRecordId()
@@ -411,7 +415,12 @@ test('hosted reply reach distinguishes sessions belonging to the same author use
     )
     .run(newRecordId(), deliveredId, 'hosted-root-author', 1, new Date(clock + 3_000).toISOString())
 
-  const replies = boardReachReport(1, clock + 4_000, db()).replies
+  const replies = (
+    await boardReachReport(1, clock + 4_000, db(), {
+      env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+      refresh: async () => ({ status: 'success', applied: 0 }),
+    })
+  ).replies
   expect(replies).toMatchObject({
     replies: 2,
     deliveredToRootAuthor: 1,
@@ -481,11 +490,11 @@ test('rendering identifies a removed message by id alone', async () => {
     deliveryPoint: 'after-tool-call',
     clock: clock + 1,
   })
-  expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
+  expect(renderBoardReach(await boardReachReport(1, clock + 2, db()))).toContain(
     `${posted.recordId} — Soon gone [architects:all]`,
   )
   db().query('DELETE FROM board_message WHERE record_id=?').run(posted.recordId)
-  expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
+  expect(renderBoardReach(await boardReachReport(1, clock + 2, db()))).toContain(
     `${posted.recordId} [architects:all]: 1 not shown to concern`,
   )
 })
@@ -587,7 +596,7 @@ test('delivery records its point and the reader project in the reach window', as
     clock: clock + 1,
   })
 
-  const measured = boardReachReport(1, clock + 2, db()).rows.find(
+  const measured = (await boardReachReport(1, clock + 2, db())).rows.find(
     (delivery) => delivery.messageId === String(posted.recordId),
   )
   expect(measured).toMatchObject({
@@ -667,7 +676,7 @@ test('reach reports pushes with audience_at_posting 0 separately', async () => {
     deliveryPoint: 'after-tool-call',
     clock: clock + 1,
   })
-  const report = boardReachReport(1, clock + 2, db())
+  const report = await boardReachReport(1, clock + 2, db())
   expect(report.totals.audienceAtPostingZero).toBe(1)
   expect(report.totals.audienceAtPostingNull).toBe(0)
   expect(report.totals.successorDeliveries).toBe(0)
@@ -678,7 +687,7 @@ test('reach reports pushes with audience_at_posting 0 separately', async () => {
   expect(renderBoardReach(report)).toContain('Pushes with audience_at_posting unset: 0')
   expect(renderBoardReach(report)).toContain('Successor deliveries: 0')
   db().query('UPDATE board_receipt SET successor=1 WHERE reader_session=?').run(session)
-  const successorReport = boardReachReport(1, clock + 2, db())
+  const successorReport = await boardReachReport(1, clock + 2, db())
   expect(successorReport.totals.successorDeliveries).toBe(1)
   expect(
     successorReport.rows.find((row) => row.messageId === String(posted.recordId))?.successor,

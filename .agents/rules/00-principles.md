@@ -23,20 +23,20 @@ data because architect attention is the scarce resource.
 
 ## Design from the multi-space hosted platform
 
-Design starts from the hosted, multi-space platform; on a hosted install the
+Design from the hosted multi-space platform; on a hosted install the
 record is the truth. A hosted table is written straight to the record and kept
-nowhere locally; a write that cannot reach it stops with a remedy, never queued.
-A synced table records what happened here, written locally and pushed on a
-schedule. A machine table is state no other machine would care about. A
-local-only install keeps every table locally. A hosted table without a built
-home names the task that builds it.
+locally only as a declared read cache; `scripts/check-hosted-local-sql.ts`
+refuses other local reads. A write that cannot reach it stops with a remedy,
+never queued. A synced table is written locally and pushed on a schedule. A
+machine table is state no other machine cares about. A local-only install keeps
+every table. A hosted table without a home names its task.
 
 Every table declares a lifecycle: what it is, where its authoritative copy
-lives, how long each copy is kept, and what removes it. Local tables declare
+lives, how long each copy is kept and what removes it. Tables declare
 `hosted`, `synced` or `machine` in
-`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, a machine one naming Shmuel Barkin's ruling;
+`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming Shmuel Barkin's ruling;
 `scripts/check-identity-inventory.ts` enforces both. Doc-store records
-`design-machine-hosted-seam` and `design-data-lifecycle` hold the detail.
+`design-machine-hosted-seam` and `design-data-lifecycle` hold detail.
 
 ## Delegation costs nothing in judgment
 

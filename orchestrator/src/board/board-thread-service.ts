@@ -14,6 +14,7 @@ import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
 } from './board-answer-note.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
@@ -292,6 +293,7 @@ export function replyToThread(
 }
 
 export function readThread(recordId: string, env: Environment = process.env, clock = Date.now()) {
+  requireLocalBoardRead(env, db())
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const root = threadRoot(recordId)

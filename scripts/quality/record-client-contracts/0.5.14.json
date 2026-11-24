@@ -1,0 +1,2227 @@
+[
+  {
+    "sample": "config.addWraps",
+    "method": "POST",
+    "path": "/v1/config/data-keys/01990000-0000-7000-8000-000000000001/wraps",
+    "query": [],
+    "body": {
+      "wraps": []
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.allocateMachineJoinNameplate",
+    "method": "POST",
+    "path": "/v1/config/join/nameplates",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.appendTrustLogEntry",
+    "method": "POST",
+    "path": "/v1/config/trust-log",
+    "query": [],
+    "body": {
+      "expectedHead": null,
+      "entry": "AQ"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.claimMachineKey",
+    "method": "POST",
+    "path": "/v1/config/machine-keys/AAAAAAAAAAAAAAAAAAAAAA/claim",
+    "query": [],
+    "body": {
+      "challengeId": "01990000-0000-7000-8000-000000000001",
+      "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.createDataKey",
+    "method": "POST",
+    "path": "/v1/config/data-keys",
+    "query": [],
+    "body": {
+      "dekId": "01990000-0000-7000-8000-000000000001",
+      "version": 1,
+      "wraps": []
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.createMachineKeyClaimChallenge",
+    "method": "POST",
+    "path": "/v1/config/machine-keys/AAAAAAAAAAAAAAAAAAAAAA/claim-challenge",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.currentDataKey",
+    "method": "GET",
+    "path": "/v1/config/data-keys/current",
+    "query": [["recipientKeyId", "AAAAAAAAAAAAAAAAAAAAAA"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 404
+  },
+  {
+    "sample": "config.deleteCredentialPreference",
+    "method": "DELETE",
+    "path": "/v1/config/credential-preferences",
+    "query": [],
+    "body": {
+      "projectId": null,
+      "provider": "provider",
+      "name": null,
+      "type": "api-key",
+      "mode": "default",
+      "environment": "local",
+      "payer": "personal",
+      "binding": "space"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.deleteEntry",
+    "method": "DELETE",
+    "path": "/v1/config/entries/key",
+    "query": [],
+    "body": {
+      "scope": "user",
+      "environment": "default",
+      "expectedRowVersion": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.deleteSecret",
+    "method": "DELETE",
+    "path": "/v1/config/secrets/key",
+    "query": [["projectId", "01990000-0000-7000-8000-000000000001"]],
+    "body": {
+      "scope": "user",
+      "environment": "default",
+      "expectedRowVersion": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.failMachineJoinNameplate",
+    "method": "POST",
+    "path": "/v1/config/join/nameplates/1/failure",
+    "query": [],
+    "body": {
+      "side": "00000000000000000000000000000000"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.getDataKey",
+    "method": "GET",
+    "path": "/v1/config/data-keys/01990000-0000-7000-8000-000000000001",
+    "query": [["recipientKeyId", "AAAAAAAAAAAAAAAAAAAAAA"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 404
+  },
+  {
+    "sample": "config.getEntry",
+    "method": "GET",
+    "path": "/v1/config/entries/key",
+    "query": [["environment", "default"], ["scope", "user"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 404
+  },
+  {
+    "sample": "config.getSecret",
+    "method": "GET",
+    "path": "/v1/config/secrets/key",
+    "query": [
+      ["environment", "default"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["scope", "user"]
+    ],
+    "body": null,
+    "recordSpace": true,
+    "status": 404
+  },
+  {
+    "sample": "config.listCredentialPreferences",
+    "method": "GET",
+    "path": "/v1/config/credential-preferences",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.listDataKeys",
+    "method": "GET",
+    "path": "/v1/config/data-keys",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.listEntries",
+    "method": "GET",
+    "path": "/v1/config/entries",
+    "query": [["environment", "default"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.listMachineKeys",
+    "method": "GET",
+    "path": "/v1/config/machine-keys",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.listSecrets",
+    "method": "GET",
+    "path": "/v1/config/secrets",
+    "query": [["environment", "default"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.postMachineJoinMessage",
+    "method": "POST",
+    "path": "/v1/config/join/nameplates/1/messages",
+    "query": [],
+    "body": {
+      "side": "00000000000000000000000000000000",
+      "phase": "phase",
+      "body": "AQ"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.putCredentialPreference",
+    "method": "PUT",
+    "path": "/v1/config/credential-preferences",
+    "query": [],
+    "body": {
+      "projectId": null,
+      "provider": "provider",
+      "name": null,
+      "type": "api-key",
+      "mode": "default",
+      "environment": "local",
+      "payer": "personal",
+      "binding": "space"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.putEntry",
+    "method": "PUT",
+    "path": "/v1/config/entries/key",
+    "query": [],
+    "body": {
+      "scope": "user",
+      "environment": "default",
+      "value": "sample",
+      "expectedRowVersion": null
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.putSecret",
+    "method": "PUT",
+    "path": "/v1/config/secrets/key",
+    "query": [],
+    "body": {
+      "scope": "user",
+      "environment": "default",
+      "dekId": "01990000-0000-7000-8000-000000000001",
+      "envelope": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedRowVersion": null
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.readMachineJoinMessages",
+    "method": "GET",
+    "path": "/v1/config/join/nameplates/1/messages",
+    "query": [["side", "00000000000000000000000000000000"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.readTrustLog",
+    "method": "GET",
+    "path": "/v1/config/trust-log",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.registerMachineKey",
+    "method": "PUT",
+    "path": "/v1/config/machine-keys/AAAAAAAAAAAAAAAAAAAAAA",
+    "query": [],
+    "body": {
+      "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "label": "label"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "config.retireDataKey",
+    "method": "POST",
+    "path": "/v1/config/data-keys/01990000-0000-7000-8000-000000000001/retire",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.revokeMachineKey",
+    "method": "POST",
+    "path": "/v1/config/machine-keys/AAAAAAAAAAAAAAAAAAAAAA/revoke",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "config.whoami",
+    "method": "GET",
+    "path": "/v1/whoami",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.abandonTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/abandon",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.acceptBoardAnswer",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/accept",
+    "query": [],
+    "body": {
+      "replyId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.acceptInvitation",
+    "method": "POST",
+    "path": "/api/auth/organization/accept-invitation",
+    "query": [],
+    "body": {
+      "invitationId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.addProjectSubject",
+    "method": "PUT",
+    "path": "/v1/subjects",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.adoptTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/adopt",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.advanceTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/advance",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.applySettingsAutoMode",
+    "method": "POST",
+    "path": "/v1/settings/auto-mode",
+    "query": [],
+    "body": {
+      "target": {
+        "kind": "user"
+      },
+      "list": "allow",
+      "rule": "sample",
+      "operation": "add",
+      "reason": "contract sample",
+      "expectedRevision": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.applySettingsPermission",
+    "method": "POST",
+    "path": "/v1/settings/permission",
+    "query": [],
+    "body": {
+      "target": {
+        "kind": "user"
+      },
+      "list": "allow",
+      "rule": "sample",
+      "operation": "add",
+      "reason": "contract sample",
+      "expectedRevision": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.attachTaskFlowText",
+    "method": "POST",
+    "path": "/v1/task-flow/attach-text",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.awaitTaskFlowRuling",
+    "method": "POST",
+    "path": "/v1/task-flow/await-ruling",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.blockOutsideAuthor",
+    "method": "POST",
+    "path": "/v1/outside-blocks",
+    "query": [],
+    "body": {
+      "message": "01990000-0000-7000-8000-000000000001",
+      "hours": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.cacheCounts",
+    "method": "GET",
+    "path": "/v1/docs/counts",
+    "query": [["by", "scope"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.completeBoardFilingLease",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/filing-lease/complete",
+    "query": [],
+    "body": {
+      "noteId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.composeTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/compose",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.consumeDoc",
+    "method": "POST",
+    "path": "/v1/docs/01990000-0000-7000-8000-000000000001/consume",
+    "query": [],
+    "body": {
+      "reason": "contract sample",
+      "author": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.copyTaskFlowText",
+    "method": "POST",
+    "path": "/v1/task-flow/copy-text",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.counts",
+    "method": "GET",
+    "path": "/v1/docs/counts",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.createOrganization",
+    "method": "POST",
+    "path": "/api/auth/organization/create",
+    "query": [],
+    "body": {
+      "name": "sample",
+      "slug": "sample"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.defineProjectSubject",
+    "method": "POST",
+    "path": "/v1/subjects/01990000-0000-7000-8000-000000000001/define",
+    "query": [],
+    "body": {
+      "project": "sample",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "definition": "sample"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.deleteContextItem",
+    "method": "DELETE",
+    "path": "/v1/context-items/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.deleteDoc",
+    "method": "DELETE",
+    "path": "/v1/docs/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": {
+      "reason": "contract sample",
+      "author": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.deleteSpace",
+    "method": "POST",
+    "path": "/v1/spaces/delete",
+    "query": [],
+    "body": {
+      "slug": "sample",
+      "confirmation": "sample"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.deleteSpaceAgent",
+    "method": "DELETE",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": {
+      "name": "contract-agent"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.deleteTaskFlowText",
+    "method": "POST",
+    "path": "/v1/task-flow/delete-text",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.deleteTrialSpace",
+    "method": "POST",
+    "path": "/v1/spaces/delete-trial",
+    "query": [],
+    "body": {
+      "slug": "sample"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.draftWorkflow",
+    "method": "POST",
+    "path": "/v1/workflow-catalogue/draft",
+    "query": [],
+    "body": {
+      "kind": "workflow",
+      "slug": "sample",
+      "event": "set",
+      "definition": "{}",
+      "author": "contract",
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.ensureSpaceBuiltIns",
+    "method": "POST",
+    "path": "/v1/catalogues/ensure-built-ins",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.failBoardFilingLease",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/filing-lease/fail",
+    "query": [],
+    "body": {
+      "error": "sample"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.getBoardStatus",
+    "method": "GET",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/status",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.getBoardThread",
+    "method": "GET",
+    "path": "/v1/board/threads/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.getContextItem",
+    "method": "GET",
+    "path": "/v1/context-items",
+    "query": [["holder", "task:DEV-1"], ["slug", "sample"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.getDoc",
+    "method": "GET",
+    "path": "/v1/docs/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 404
+  },
+  {
+    "sample": "record.getDocRevision",
+    "method": "GET",
+    "path": "/v1/doc-revisions/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 404
+  },
+  {
+    "sample": "record.getPublicDoc",
+    "method": "GET",
+    "path": "/public/v1/docs/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 404
+  },
+  {
+    "sample": "record.grantConfigAccess",
+    "method": "POST",
+    "path": "/v1/config-access/grant",
+    "query": [],
+    "body": {
+      "email": "a@example.test"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.handoffTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/handoff",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.hideRow",
+    "method": "POST",
+    "path": "/v1/moderation/hide",
+    "query": [],
+    "body": {
+      "message": "01990000-0000-7000-8000-000000000001",
+      "reason": "spam"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.importCanon",
+    "method": "POST",
+    "path": "/v1/docs/canon/import",
+    "query": [],
+    "body": {
+      "address": {
+        "kind": "project",
+        "subject": "sample",
+        "projectId": "01990000-0000-7000-8000-000000000001"
+      },
+      "rows": [],
+      "expectedRevisions": {},
+      "reason": "contract sample",
+      "author": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.importDoc",
+    "method": "POST",
+    "path": "/v1/docs/import",
+    "query": [],
+    "body": {
+      "doc": {
+        "id": "01990000-0000-7000-8000-000000000001",
+        "scope": "project",
+        "subject": "sample",
+        "slug": "sample",
+        "title": "Sample",
+        "body": "sample",
+        "delivery": "demand",
+        "audiences": ["technical"],
+        "createdAt": "2025-01-01T00:00:00.000Z",
+        "updatedAt": "2025-01-01T00:00:00.000Z",
+        "deletedAt": null
+      },
+      "revisions": []
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.importLensCatalogue",
+    "method": "POST",
+    "path": "/v1/lens-catalogue/import",
+    "query": [],
+    "body": {
+      "dryRun": true,
+      "lens": [],
+      "lens_revision": [],
+      "lens_profile": [],
+      "lens_profile_revision": [],
+      "project_lens_profile": [],
+      "project_lens_profile_revision": []
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.importPortCatalogue",
+    "method": "POST",
+    "path": "/v1/port-catalogue/import",
+    "query": [],
+    "body": {
+      "dryRun": true,
+      "replace": false,
+      "port_doctrine": [],
+      "port_pair": [],
+      "port_baseline": [],
+      "port_ref": [],
+      "port_ref_source": [],
+      "port_skip": []
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.importQuestion",
+    "method": "POST",
+    "path": "/v1/questions/import",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.importTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/import",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.importWorkflowCatalogue",
+    "method": "POST",
+    "path": "/v1/workflow-catalogue/import/v2",
+    "query": [],
+    "body": {
+      "dryRun": true,
+      "step_catalogue": [],
+      "step_catalogue_version": [],
+      "step_catalogue_event": [],
+      "workflow": [],
+      "workflow_version": [],
+      "workflow_event": []
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.inviteMember",
+    "method": "POST",
+    "path": "/api/auth/organization/invite-member",
+    "query": [],
+    "body": {
+      "email": "a@example.test",
+      "role": "member",
+      "organizationId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listBoardChanges",
+    "method": "GET",
+    "path": "/v1/board/changes",
+    "query": [["after", "0"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listBoardClaims",
+    "method": "GET",
+    "path": "/v1/board/claims",
+    "query": [["project", "sample"], ["projectId", "01990000-0000-7000-8000-000000000001"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listBoardMessages",
+    "method": "GET",
+    "path": "/v1/board/messages",
+    "query": [["kind", "notice"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listChanges",
+    "method": "GET",
+    "path": "/v1/changes",
+    "query": [["wait", "0"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listConfigAccess",
+    "method": "GET",
+    "path": "/v1/config-access",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listContextHolders",
+    "method": "GET",
+    "path": "/v1/context-items/holders",
+    "query": [["kind", "task"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.listContextItems",
+    "method": "GET",
+    "path": "/v1/context-items",
+    "query": [["holder", "task:DEV-1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.listDocs",
+    "method": "GET",
+    "path": "/v1/docs",
+    "query": [["limit", "1"], ["scope", "project"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listHidden",
+    "method": "GET",
+    "path": "/v1/moderation/hidden",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listInvitations",
+    "method": "GET",
+    "path": "/v1/invitations",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listLensCatalogue",
+    "method": "GET",
+    "path": "/v1/lens-catalogue/lens",
+    "query": [["limit", "1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listOutsideBlocks",
+    "method": "GET",
+    "path": "/v1/outside-blocks",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listPortCatalogue",
+    "method": "GET",
+    "path": "/v1/port-catalogue/port_doctrine",
+    "query": [["limit", "1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listProjects",
+    "method": "GET",
+    "path": "/v1/projects",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listProjectSubjects",
+    "method": "GET",
+    "path": "/v1/subjects",
+    "query": [["limit", "1"], ["project", "sample"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listPublicDocs",
+    "method": "GET",
+    "path": "/public/v1/docs",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listRevisions",
+    "method": "GET",
+    "path": "/v1/docs/01990000-0000-7000-8000-000000000001/revisions",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listRoutingEvidence",
+    "method": "GET",
+    "path": "/v1/routing-evidence",
+    "query": [["limit", "1"], ["spaceId", "01990000-0000-7000-8000-000000000001"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listScores",
+    "method": "GET",
+    "path": "/v1/scores",
+    "query": [["limit", "1"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listSnapshots",
+    "method": "GET",
+    "path": "/v1/snapshots",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.listSpaceAgents",
+    "method": "GET",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.listTaskFlowStages",
+    "method": "GET",
+    "path": "/v1/task-flow/stages",
+    "query": [["limit", "1"], ["taskKey", "DEV-1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.listWorkflowCatalogue",
+    "method": "GET",
+    "path": "/v1/workflow-catalogue/workflow",
+    "query": [["limit", "1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.noDestinationWrites",
+    "method": "GET",
+    "path": "/v1/health/no-destination-writes",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.openBoardStream",
+    "method": "GET",
+    "path": "/v1/board/stream",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.pauseOutsideIntake",
+    "method": "POST",
+    "path": "/v1/outside-intake/pause",
+    "query": [],
+    "body": {
+      "hours": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.postBoardMessage",
+    "method": "PUT",
+    "path": "/v1/board/messages",
+    "query": [],
+    "body": {
+      "id": "01990000-0000-7000-8000-000000000001",
+      "kind": "notice",
+      "audience": "architects",
+      "title": "Sample",
+      "body": "sample",
+      "expiresAt": "2025-01-01T00:00:00.000Z"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.promoteWorkflow",
+    "method": "POST",
+    "path": "/v1/workflow-catalogue/promote",
+    "query": [],
+    "body": {
+      "kind": "workflow",
+      "slug": "sample",
+      "n": 1,
+      "expectedProductionVersion": null,
+      "author": "contract",
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.purgeProject",
+    "method": "POST",
+    "path": "/v1/projects/01990000-0000-7000-8000-000000000001/purge",
+    "query": [],
+    "body": {
+      "confirmation": "sample"
+    },
+    "recordSpace": false,
+    "status": 409
+  },
+  {
+    "sample": "record.putBoardReceipt",
+    "method": "PUT",
+    "path": "/v1/board/receipts",
+    "query": [],
+    "body": {
+      "messageId": "01990000-0000-7000-8000-000000000001",
+      "readerSession": "contract",
+      "audienceAtPosting": true,
+      "delivered": true
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.putSnapshot",
+    "method": "PUT",
+    "path": "/v1/snapshots/state",
+    "query": [],
+    "body": {
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "payload": {}
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.readMembershipQuestions",
+    "method": "GET",
+    "path": "/v1/questions/memberships",
+    "query": [
+      ["author", "contract"],
+      ["count", "1"],
+      ["cursor", "0"],
+      ["definition", "sample"],
+      ["destinationSpaceId", "space-a"],
+      ["environment", "default"],
+      ["expectedRevision", "01990000-0000-7000-8000-000000000001"],
+      ["expectedRowVersion", "1"],
+      ["id", "01990000-0000-7000-8000-000000000001"],
+      ["ids", "01990000-0000-7000-8000-000000000001"],
+      ["key", "DEV-1"],
+      ["limit", "1"],
+      ["machineId", "01990000-0000-7000-8000-000000000001"],
+      ["name", "sample"],
+      ["payload", "[object Object]"],
+      ["project", "sample"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["reason", "contract sample"],
+      ["scope", "user"],
+      ["slug", "sample"],
+      ["subject", "null"],
+      ["wraps", ""]
+    ],
+    "body": null,
+    "recordSpace": false,
+    "status": 503
+  },
+  {
+    "sample": "record.readQuestions",
+    "method": "GET",
+    "path": "/v1/questions",
+    "query": [
+      ["author", "contract"],
+      ["count", "1"],
+      ["cursor", "0"],
+      ["definition", "sample"],
+      ["destinationSpaceId", "space-a"],
+      ["environment", "default"],
+      ["expectedRevision", "01990000-0000-7000-8000-000000000001"],
+      ["expectedRowVersion", "1"],
+      ["id", "01990000-0000-7000-8000-000000000001"],
+      ["ids", "01990000-0000-7000-8000-000000000001"],
+      ["key", "DEV-1"],
+      ["limit", "1"],
+      ["machineId", "01990000-0000-7000-8000-000000000001"],
+      ["name", "sample"],
+      ["payload", "[object Object]"],
+      ["project", "sample"],
+      ["projectId", "01990000-0000-7000-8000-000000000001"],
+      ["reason", "contract sample"],
+      ["scope", "user"],
+      ["slug", "sample"],
+      ["subject", "null"],
+      ["wraps", ""]
+    ],
+    "body": null,
+    "recordSpace": false,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlow",
+    "method": "GET",
+    "path": "/v1/task-flow",
+    "query": [["taskKey", "DEV-1"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.readTaskFlowObligation",
+    "method": "GET",
+    "path": "/v1/task-flow/obligations/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlowPresence",
+    "method": "POST",
+    "path": "/v1/task-flow/presence",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlowProjectReferenceCounts",
+    "method": "GET",
+    "path": "/v1/task-flow/project-reference-counts",
+    "query": [["projectId", "01990000-0000-7000-8000-000000000001"]],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlowStage",
+    "method": "GET",
+    "path": "/v1/task-flow/stages/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlowStageSummaries",
+    "method": "POST",
+    "path": "/v1/task-flow/stage-summaries",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.readTaskFlowText",
+    "method": "GET",
+    "path": "/v1/task-flow/texts/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.releaseBoardClaim",
+    "method": "POST",
+    "path": "/v1/board/claims/01990000-0000-7000-8000-000000000001/release",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.releaseBoardTaskClaims",
+    "method": "POST",
+    "path": "/v1/board/claims/release-task",
+    "query": [],
+    "body": {
+      "project": "sample",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.removeMember",
+    "method": "POST",
+    "path": "/api/auth/organization/remove-member",
+    "query": [],
+    "body": {
+      "memberIdOrEmail": "a@example.test",
+      "organizationId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.renameMachine",
+    "method": "PUT",
+    "path": "/v1/machine/name",
+    "query": [],
+    "body": {
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "name": "sample"
+    },
+    "recordSpace": false,
+    "status": 501
+  },
+  {
+    "sample": "record.renameProjectSubject",
+    "method": "POST",
+    "path": "/v1/subjects/01990000-0000-7000-8000-000000000001/rename",
+    "query": [],
+    "body": {
+      "project": "sample",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "name": "sample"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.renameSubject",
+    "method": "POST",
+    "path": "/v1/docs/rename-subject",
+    "query": [],
+    "body": {
+      "from": "old",
+      "to": "new",
+      "count": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.renewBoardClaim",
+    "method": "POST",
+    "path": "/v1/board/claims/01990000-0000-7000-8000-000000000001/renew",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.reorderDocs",
+    "method": "PUT",
+    "path": "/v1/docs/order",
+    "query": [],
+    "body": {
+      "scope": "project",
+      "subject": "sample",
+      "parentId": null,
+      "orderedIds": ["01990000-0000-7000-8000-000000000001"]
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.reorderProjectSubjects",
+    "method": "POST",
+    "path": "/v1/subjects/reorder",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.repinTaskFlow",
+    "method": "POST",
+    "path": "/v1/task-flow/repin",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.replyBoardMessage",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/replies",
+    "query": [],
+    "body": {
+      "id": "01990000-0000-7000-8000-000000000001",
+      "body": "sample"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.restoreDoc",
+    "method": "POST",
+    "path": "/v1/docs/01990000-0000-7000-8000-000000000001/restore",
+    "query": [],
+    "body": {
+      "revisionId": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.resumeOutsideIntake",
+    "method": "POST",
+    "path": "/v1/outside-intake/resume",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.retireMachine",
+    "method": "POST",
+    "path": "/v1/machine/retire",
+    "query": [],
+    "body": {
+      "shortName": "sample"
+    },
+    "recordSpace": false,
+    "status": 501
+  },
+  {
+    "sample": "record.retireProject",
+    "method": "POST",
+    "path": "/v1/projects/01990000-0000-7000-8000-000000000001/retire",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 409
+  },
+  {
+    "sample": "record.retireProjectSubject",
+    "method": "POST",
+    "path": "/v1/subjects/01990000-0000-7000-8000-000000000001/retire",
+    "query": [],
+    "body": {
+      "project": "sample",
+      "projectId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.retireWorkflow",
+    "method": "POST",
+    "path": "/v1/workflow-catalogue/retire",
+    "query": [],
+    "body": {
+      "kind": "workflow",
+      "slug": "sample",
+      "n": 1,
+      "expectedProductionVersion": 1,
+      "author": "contract",
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.searchDocs",
+    "method": "GET",
+    "path": "/v1/docs/search",
+    "query": [["q", "sample"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.searchPublicDocs",
+    "method": "GET",
+    "path": "/public/v1/docs/search",
+    "query": [["q", "sample"]],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.selectProjectLensProfile",
+    "method": "PUT",
+    "path": "/v1/lens-catalogue/selections",
+    "query": [],
+    "body": {
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "lensKey": null,
+      "axis": "framework",
+      "profileName": "sample",
+      "selectedVersion": null,
+      "selectedVersionId": null,
+      "expectedSelectionVersion": null,
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.setActiveOrganization",
+    "method": "POST",
+    "path": "/api/auth/organization/set-active",
+    "query": [],
+    "body": {
+      "organizationId": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.setOutsideIntake",
+    "method": "POST",
+    "path": "/v1/outside-intake",
+    "query": [],
+    "body": {
+      "project": "sample"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.showOutsideIntake",
+    "method": "GET",
+    "path": "/v1/outside-intake",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.storage",
+    "method": "GET",
+    "path": "/v1/storage",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.sync",
+    "method": "POST",
+    "path": "/v1/sync",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": false,
+    "status": 501
+  },
+  {
+    "sample": "record.takeBoardClaim",
+    "method": "PUT",
+    "path": "/v1/board/claims",
+    "query": [],
+    "body": {
+      "id": "01990000-0000-7000-8000-000000000001",
+      "project": "sample",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "subject": "task:DEV-1"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.takeBoardFilingLease",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/filing-lease",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.takeBoardSuccessor",
+    "method": "PUT",
+    "path": "/v1/board/successor",
+    "query": [],
+    "body": {
+      "messageId": "01990000-0000-7000-8000-000000000001",
+      "candidateSession": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.unblockOutsideAuthor",
+    "method": "DELETE",
+    "path": "/v1/outside-blocks/01990000-0000-7000-8000-000000000001",
+    "query": [],
+    "body": null,
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.unhideRow",
+    "method": "POST",
+    "path": "/v1/moderation/unhide",
+    "query": [],
+    "body": {
+      "message": "01990000-0000-7000-8000-000000000001"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.updateTaskFlowStage",
+    "method": "POST",
+    "path": "/v1/task-flow/stage-update",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  },
+  {
+    "sample": "record.upsertContextItem",
+    "method": "PUT",
+    "path": "/v1/context-items",
+    "query": [],
+    "body": {
+      "holderKind": "task",
+      "holderId": "DEV-1",
+      "slug": "sample",
+      "kind": "fact",
+      "body": "sample",
+      "source": "contract",
+      "questionNumber": null,
+      "target": null
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.upsertDoc",
+    "method": "PUT",
+    "path": "/v1/docs",
+    "query": [],
+    "body": {
+      "scope": "project",
+      "subject": "sample",
+      "slug": "sample",
+      "title": "Sample",
+      "body": "sample",
+      "delivery": "demand",
+      "reason": "contract sample",
+      "author": "contract"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.upsertLens",
+    "method": "PUT",
+    "path": "/v1/lens-catalogue/lenses",
+    "query": [],
+    "body": {
+      "key": "sample",
+      "title": "Sample",
+      "question": "Sample?",
+      "excludes": "nothing",
+      "slots": "",
+      "enabled": true,
+      "requiresExecution": false,
+      "expectedVersion": null,
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.upsertLensProfile",
+    "method": "PUT",
+    "path": "/v1/lens-catalogue/profiles",
+    "query": [],
+    "body": {
+      "lensKey": "sample",
+      "axis": "framework",
+      "name": "sample",
+      "body": "sample",
+      "enabled": true,
+      "expectedVersion": null,
+      "reason": "contract sample"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.upsertProject",
+    "method": "PUT",
+    "path": "/v1/projects",
+    "query": [],
+    "body": {
+      "id": "01990000-0000-7000-8000-000000000001",
+      "name": "sample",
+      "path": "/sample",
+      "stack": null,
+      "canon": false,
+      "settings": {},
+      "retiredAt": null,
+      "expectedRevision": null
+    },
+    "recordSpace": false,
+    "status": 409
+  },
+  {
+    "sample": "record.upsertSpaceAgent",
+    "method": "PUT",
+    "path": "/v1/space-agents",
+    "query": [],
+    "body": {
+      "name": "contract-agent",
+      "harness": "codex",
+      "backend": null,
+      "model": "contract-model",
+      "baseUrl": null,
+      "transport": "acp",
+      "provider": null,
+      "apiKeySecret": "CONTRACT_SECRET_NAME",
+      "requestSettings": null,
+      "jobs": null,
+      "preferredJobs": null,
+      "maxConcurrent": 1,
+      "routeMetered": false,
+      "trainsOnInputs": false,
+      "operatedBy": "vendor",
+      "billing": "subscription"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.whoami",
+    "method": "GET",
+    "path": "/v1/whoami",
+    "query": [],
+    "body": null,
+    "recordSpace": false,
+    "status": 200
+  },
+  {
+    "sample": "record.withdrawBoardMessage",
+    "method": "POST",
+    "path": "/v1/board/messages/01990000-0000-7000-8000-000000000001/withdraw",
+    "query": [],
+    "body": {},
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.withdrawConfigAccess",
+    "method": "POST",
+    "path": "/v1/config-access/withdraw",
+    "query": [],
+    "body": {
+      "email": "a@example.test"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
+    "sample": "record.writePort",
+    "method": "POST",
+    "path": "/v1/port-catalogue/write",
+    "query": [],
+    "body": {
+      "action": "add_doctrine",
+      "number": 1,
+      "title": "Sample",
+      "body": "sample",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    "recordSpace": true,
+    "status": 500
+  },
+  {
+    "sample": "record.writeQuestion",
+    "method": "POST",
+    "path": "/v1/questions/sample",
+    "query": [],
+    "body": {
+      "destinationSpaceId": "space-a",
+      "projectId": "01990000-0000-7000-8000-000000000001",
+      "id": "01990000-0000-7000-8000-000000000001",
+      "key": "DEV-1",
+      "name": "sample",
+      "slug": "sample",
+      "project": "sample",
+      "definition": "sample",
+      "scope": "user",
+      "subject": null,
+      "environment": "default",
+      "expectedRowVersion": 1,
+      "expectedRevision": "01990000-0000-7000-8000-000000000001",
+      "reason": "contract sample",
+      "author": "contract",
+      "ids": ["01990000-0000-7000-8000-000000000001"],
+      "wraps": [],
+      "payload": {},
+      "machineId": "01990000-0000-7000-8000-000000000001",
+      "count": 1,
+      "cursor": "0",
+      "limit": 1
+    },
+    "recordSpace": true,
+    "status": 503
+  }
+]

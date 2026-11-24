@@ -33,7 +33,7 @@ afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
   delete process.env.BOTTEGA_FLY_METRICS_TOKEN
 })
-test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {
+test('heartbeat delivery emits hosted instead of differing local rows', async () => {
   const session = 'monitor-hosted-reader'
   const userId = newRecordId()
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -54,7 +54,7 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
       body: 'local monitor body',
       ackRequired: false,
     },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt),
   )
   const hosted: HostedBoardMessage = {
@@ -95,25 +95,17 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(hosted.id, hosted.kind, null, hosted.revision, JSON.stringify(hosted))
-  let refreshFails = true
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
-    listBoardChanges: async () => {
-      if (refreshFails) throw new Error('monitor refresh offline\nForged-Warning: monitor')
-      return { userId, items: [], highestRevision: null }
-    },
+    listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
     putBoardReceipt: async () => {
       throw new Error('receipt offline')
     },
   })
   const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
-  expect(delivery.notices.map((row) => row.noticeId)).toEqual([
-    `board:${local.number}`,
-    `board:${hosted.id}`,
-  ])
-  expect(delivery.warning).toContain('monitor refresh offline')
-  expect(delivery.warning).toContain('offline Forged-Warning: monitor')
-  expect(delivery.warning).not.toContain('\n')
+  expect(delivery.notices.map((row) => row.noticeId)).toEqual([`board:${hosted.id}`])
+  expect(delivery.notices.map((row) => row.noticeId)).not.toContain(`board:${local.number}`)
+  expect(delivery.warning).toBeNull()
   await markMonitorNoticesDeliveredWithHosted(
     session,
     delivery.notices.map((row) => row.noticeId),
@@ -127,19 +119,15 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
        FROM board_reach_delivery GROUP BY delivery_point`,
     )
     .get()
-  expect(measured).toEqual({ delivery_point: 'heartbeat-monitor', emissions: 1, messages: 2 })
+  expect(measured).toEqual({ delivery_point: 'heartbeat-monitor', emissions: 1, messages: 1 })
   const repeatedFailure = await claimMonitorNoticesForCommand(session, {
     skipBoardRefresh: false,
   })
   expect(repeatedFailure.notices).toEqual([])
   expect(repeatedFailure.warning).toBeNull()
-  refreshFails = false
-  const recovery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
-  expect(recovery.notices).toEqual([])
-  expect(recovery.warning).toContain('Hosted board cache is verified again')
   const verified = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(verified.notices).toEqual([])
-  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 1 })
   expect(verified.warning).toBeNull()
 })
 

@@ -4,8 +4,9 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { gitAt } from '../../../shared/git.ts'
-import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-service.ts'
-import { claimNotices } from '../board/board-service.ts'
+import type { ClaimView } from '../board/board-claim-service.ts'
+import { boardLiveClaimsOfSession } from '../board/board-operations.ts'
+import { boardRequestCountForSession } from '../board/board-service.ts'
 import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
@@ -398,7 +399,7 @@ export async function contextBriefWithCursors(
 ): Promise<{ brief: ContextBrief; cursors: WorkflowCursorListRow[] }> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
-  const liveClaims = liveClaimsOfSession(session, Date.now(), database)
+  const liveClaims = await boardLiveClaimsOfSession(session, Date.now(), database)
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
@@ -425,9 +426,7 @@ export async function contextBriefWithCursors(
   )
   const questionCounts = await questionInboxCountsForSession(session, database)
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }
-  const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
-    (notice) => notice.purpose === 'request',
-  ).length
+  const boardRequests = await boardRequestCountForSession(session, boardEnv, database)
   const references = holderSequence(session, working, taskRows, keylessCursors)
   const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
