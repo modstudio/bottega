@@ -75,7 +75,7 @@ import { scopeMcpToolCallers, wrapMcpToolHandlers } from './mcp-caller.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
-import { registerWorkflowPrompts } from './mcp-prompts.ts'
+import { registerWorkflowPrompts, type WorkflowPromptNoteReader } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
@@ -89,6 +89,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskLookup?: HubTaskLookup
+  listWorkflowNotes?: WorkflowPromptNoteReader
   hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
@@ -578,7 +579,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 }
 
 function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
-  registerWorkflowPrompts(server, ports.hubTaskLookup)
+  registerWorkflowPrompts(server, ports.hubTaskLookup, ports.listWorkflowNotes)
   registerSearchTools(server)
   registerOperatorTools(server, ports.contextMomentPorts)
   registerBoardTools(server)

@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
+import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
 import type { WorkflowCommandOptions, WorkflowPresentation } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
@@ -406,6 +407,7 @@ function registerWorkflowAdvancement({
       .option('--gate <value>', 'cite a gate as floor evidence')
       .option('--run <value>', 'cite a run as floor evidence')
       .addOption(collectedOption('--artifact <value>', 'cite an artifact as floor evidence'))
+      .option('--class <value>', 'name the measured defect class')
       .option('--task <value>', 'cite a task as floor evidence')
       .option('--defer <value>', 'record deferred floor evidence')
       .option('--satisfies <value>', 'cite the floor this evidence satisfies')
@@ -554,6 +556,17 @@ function registerWorkflowCursorAdmin({
   )
     .allowExcessArguments(false)
     .action((options) => cursorsCommand(workflowArgv('cursors', [], options), output(options)))
+
+  jsonOption(
+    workflow
+      .command('class-audit')
+      .description('count note-promoted cursors that reached implement without class measurement')
+      .requiredOption('--since <value>', 'include cursors created at or after this ISO date'),
+  )
+    .allowExcessArguments(false)
+    .action((options) =>
+      classAuditCommand(workflowArgv('class-audit', [], options), output(options)),
+    )
 }
 
 function registerWorkflowRepin({ workflow, output }: WorkflowRegistration): void {

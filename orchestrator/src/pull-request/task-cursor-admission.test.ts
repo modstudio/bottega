@@ -1,6 +1,9 @@
+import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
+import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
+import { evidenceRefs } from '../workflow/workflow-floor-evidence-refs.ts'
 import {
   assertPullRequestTaskCursorAdmission,
   decidePullRequestTaskCursorAdmission,
@@ -185,4 +188,59 @@ test('the adapter refuses a keyed branch when the harness has no cursor', async 
       async () => [],
     ),
   ).rejects.toThrow(`${PLATFORM_SLUG} workflow compose ship-task`)
+})
+
+test('the adapter enforces the class guard from a held fix-defect cursor', async () => {
+  const database = new Database(':memory:')
+  database.run(`CREATE TABLE probe (
+    command TEXT NOT NULL,
+    command_withheld INTEGER NOT NULL DEFAULT 0,
+    output_tail TEXT NOT NULL,
+    exit_code INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    session_id TEXT
+  )`)
+  const argv = ['sh', '-c', 'rg leak | wc -l']
+  const command = renderClassMeasurementCommand(argv)!
+  database
+    .query(
+      `INSERT INTO probe (command,output_tail,exit_code,created_at,kind,session_id)
+       VALUES (?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
+    )
+    .run(JSON.stringify(argv))
+  const closed = JSON.stringify([
+    {
+      n: 1,
+      slug: 'measure-class',
+      note: 'measured',
+      at: '2026-11-24T10:00:00Z',
+      evidence: evidenceRefs({
+        classMeasurement: { className: 'reader leak', command, execId: 7, count: 3 },
+      }),
+    },
+    { n: 2, slug: 'implement-fix', note: 'fixed', at: '2026-11-24T11:00:00Z' },
+  ])
+  const held = {
+    ...cursor(1212, 'open-pr', ['pr-create']),
+    closed,
+    args: JSON.stringify({ worktree: '/tree with space' }),
+  }
+  const admission = (body: string) =>
+    assertPullRequestTaskCursorAdmission(
+      {
+        command: 'pr create',
+        project,
+        branch: 'DEV-2387-change',
+        env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
+        database,
+        body,
+      },
+      async () => [held],
+    )
+
+  await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
+  await expect(
+    admission('Summary\nClass guard: architecture check (before 3, after 0)'),
+  ).resolves.toBeUndefined()
 })

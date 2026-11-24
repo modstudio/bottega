@@ -10,6 +10,7 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import type { HubNote } from '../mcp/hub-notes.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -116,6 +117,7 @@ export type WorkflowCommandOptions = {
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
   promotionContainsHead?: PromotionContainsHead
+  listNotes?: (project: string, options: { cwd: string }) => Promise<HubNote[]>
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -449,6 +451,7 @@ export function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifacts: resolveOfferedArtifacts(db(), flagValues(argv, 'artifact')),
+    className: flagValue(argv, 'class'),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),
@@ -668,6 +671,7 @@ export async function stepCommand(
         live,
         cursor,
         options.commitCount,
+        options.listNotes,
       )
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, live.resolution)
   print(step, renderWorkflowStep(step))
@@ -920,6 +924,7 @@ export async function composeCommand(
         options.commitCount,
         undefined,
         cursor,
+        options.listNotes,
       )
     : composeWorkflow(argv[2]!, project, mode, args, undefined, selection, live.resolution)
   print(result, json ? undefined : renderWorkflowComposition(result))

@@ -7,6 +7,7 @@ export type WorkflowEvidenceInput = {
   gate?: string | number
   run?: string
   artifacts?: string[]
+  className?: string
   task?: string
   defer?: string
   satisfies?: string

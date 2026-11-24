@@ -148,6 +148,7 @@ export async function createPullRequestCommand(
       overrideReason: options.overrideTriage,
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
+      body: body ?? '',
     },
     cwd,
   )

@@ -268,6 +268,7 @@ describe('workflow prompts on the wire', () => {
         record_id: 'task-STAR-4291',
         project: 'prompt-fixture',
       }),
+      listWorkflowNotes: async () => [],
     })
     const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'prompt-test', version: '1' })

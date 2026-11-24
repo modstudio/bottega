@@ -673,6 +673,7 @@ type CreatePullRequestOptions = {
   overrideReason?: string
   ceilingRuling?: string
   fromOperator?: boolean
+  body?: string
 }
 
 function createPullRequestAdmittedChange(
@@ -815,6 +816,7 @@ export async function createPullRequest(
     command: 'pr create',
     project: change.project,
     branch: change.branch,
+    body: options.body,
   })
   return createPullRequestAdmittedChange(
     args,

@@ -469,6 +469,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'workflow catalogue set',
   'workflow catalogue show',
   'workflow catalogue versions',
+  'workflow class-audit',
   'workflow compose',
   'workflow cursor',
   'workflow cursor help',

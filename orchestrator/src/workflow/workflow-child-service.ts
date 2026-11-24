@@ -19,7 +19,7 @@ import {
   selectChildToStart,
   sessionWorksUnderEpic,
 } from './workflow-child-queue.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { insertWorkflowCursor, type ListWorkflowNotesPort } from './workflow-cursor-compose.ts'
 import {
   workflowCursorComposeCommand,
   workflowDefaultModeComposeCommand,
@@ -39,6 +39,7 @@ import { composeWorkflow } from './workflows.ts'
 type StartChildClaimContext = Parameters<typeof boardClaimTake>[1]
 type StartChildClaimInput = Parameters<typeof boardClaimTake>[0]
 export type WorkflowChildServicePorts = {
+  listNotes?: ListWorkflowNotesPort
   takeTaskClaim?: (
     input: StartChildClaimInput,
     context: StartChildClaimContext,
@@ -245,6 +246,7 @@ export async function startWorkflowChild(
       activeSlug: 'start',
       closedStepNotes: inheritance.closed,
     },
+    ports.listNotes,
   )
   try {
     await (ports.takeTaskClaim ?? boardClaimTake)(

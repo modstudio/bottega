@@ -10,7 +10,12 @@ import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { classMeasurementExecsForSession } from '../workflow/workflow-class-measurement-execs.ts'
+import { classMeasurementFromClosedSteps } from '../workflow/workflow-class-measurement-trail.ts'
+import { closedStepsFromTrail } from '../workflow/workflow-cursor-trail.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
+import { decidePullRequestClassGuard } from './pr-class-guard.ts'
 
 type HeldTaskCursor = {
   number: number
@@ -19,6 +24,8 @@ type HeldTaskCursor = {
   workflowKey: string
   stepSlug: string
   actions: readonly string[]
+  closed?: string
+  args?: string
 }
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
@@ -97,19 +104,27 @@ export async function assertPullRequestTaskCursorAdmission(
     database?: Database
     env?: Record<string, string | undefined>
     systemJob?: string | null
+    body?: string
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
     session,
   ) =>
-    (await openQuestionStages(database, session)).map((cursor) => ({
-      number: cursor.number,
-      project: cursor.project,
-      workflowSlug: cursor.workflow_slug,
-      workflowKey: cursor.workflow_key,
-      stepSlug: cursor.step_slug,
-      actions: cursor.step_actions,
-    })),
+    Promise.all(
+      (await openQuestionStages(database, session)).map(async (cursor) => {
+        const stage = await taskFlowReadStore(database).stageByRecordId(cursor.record_id)
+        return {
+          number: cursor.number,
+          project: cursor.project,
+          workflowSlug: cursor.workflow_slug,
+          workflowKey: cursor.workflow_key,
+          stepSlug: cursor.step_slug,
+          actions: cursor.step_actions,
+          closed: stage?.closed,
+          args: stage?.args,
+        }
+      }),
+    ),
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
@@ -131,4 +146,25 @@ export async function assertPullRequestTaskCursorAdmission(
       : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.message)
+  if (input.command !== 'pr create') return
+  const cursor = heldCursors.find(
+    (item) =>
+      item.project === input.project.name &&
+      item.workflowKey === taskKey &&
+      item.workflowSlug === 'fix-defect' &&
+      item.closed,
+  )
+  if (!cursor?.closed) return
+  const closed = closedStepsFromTrail(cursor.closed)
+  const measurement = classMeasurementFromClosedSteps(closed)
+  if (!measurement) return
+  const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
+  const classGuard = decidePullRequestClassGuard({
+    body: input.body ?? '',
+    measurement,
+    implementClosedAt: measurement.implementClosedAt,
+    execs: classMeasurementExecsForSession(database, harnessSession ?? ''),
+    worktree: args.worktree ?? '<worktree>',
+  })
+  if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

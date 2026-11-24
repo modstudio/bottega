@@ -15,6 +15,7 @@ workflows and their cursors
 - [bottega workflow catalogue set](#bottega-workflow-catalogue-set)
 - [bottega workflow catalogue show](#bottega-workflow-catalogue-show)
 - [bottega workflow catalogue versions](#bottega-workflow-catalogue-versions)
+- [bottega workflow class-audit](#bottega-workflow-class-audit)
 - [bottega workflow compose](#bottega-workflow-compose)
 - [bottega workflow cursor](#bottega-workflow-cursor)
 - [bottega workflow cursor help](#bottega-workflow-cursor-help)
@@ -63,6 +64,7 @@ workflows and their cursors
 - [bottega workflow attach](./workflow.md#bottega-workflow-attach)
 - [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
+- [bottega workflow class-audit](./workflow.md#bottega-workflow-class-audit)
 - [bottega workflow compose](./workflow.md#bottega-workflow-compose)
 - [bottega workflow cursor](./workflow.md#bottega-workflow-cursor)
 - [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
@@ -265,6 +267,21 @@ list step catalogue versions
 ### Related
 
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
+
+## bottega workflow class-audit
+
+**Synopsis:** `bottega workflow class-audit --since <value> [--json]`
+
+count note-promoted cursors that reached implement without class measurement
+
+### Options
+
+- `--since <value>`: include cursors created at or after this ISO date
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
 
 ## bottega workflow compose
 
@@ -530,7 +547,7 @@ list workflow definitions
 
 ## bottega workflow next
 
-**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--outcome <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json]`
+**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--outcome <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--class <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json]`
 
 close the current step and advance a workflow cursor
 
@@ -549,6 +566,7 @@ close the current step and advance a workflow cursor
 - `--gate <value>`: cite a gate as floor evidence
 - `--run <value>`: cite a run as floor evidence
 - `--artifact <value>`: cite an artifact as floor evidence
+- `--class <value>`: name the measured defect class
 - `--task <value>`: cite a task as floor evidence
 - `--defer <value>`: record deferred floor evidence
 - `--satisfies <value>`: cite the floor this evidence satisfies

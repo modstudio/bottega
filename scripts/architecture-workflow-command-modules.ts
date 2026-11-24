@@ -12,6 +12,21 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-class-audit.ts', [
+    './workflow-class-measurement-trail.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-compose-note-provenance.ts', [
+    '../../../shared/brand.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-class-audit-command.ts', [
+    '../cli/args.ts',
+    '../database/db.ts',
+    '../mcp/hub-notes.ts',
+    './workflow-class-audit.ts',
+    './workflow-commands.ts',
+    './workflow-cursor-list.ts',
+    './workflow-cursor-trail.ts',
+  ]),
   module('orchestrator/src/workflow/project-task-list.ts', [
     '../../../shared/trackers.ts',
     './task-read-port.ts',
@@ -302,6 +317,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../doc/doc-revision-conflict.ts',
+    '../mcp/hub-notes.ts',
     '../record/machine-identity.ts',
     '../record/record-api-client.ts',
     '../record/record-task-flow-contract.ts',
@@ -316,6 +332,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-store-sqlite.ts',
     './task-flow-store-types.ts',
     './workflow-compose-branch.ts',
+    './workflow-compose-note-provenance.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-selection.ts',

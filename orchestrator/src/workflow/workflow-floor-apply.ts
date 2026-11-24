@@ -151,6 +151,7 @@ export async function applyFloorDecision(
     d: database,
     taskFlowClient: client,
   })
+  validated.className = evidence.className
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
   attachRunObligationEvidence(validated, row, step, stepActivatedAt, database)

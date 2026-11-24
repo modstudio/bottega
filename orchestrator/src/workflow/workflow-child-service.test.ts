@@ -117,6 +117,8 @@ async function openEpicAtStart(
     {},
     undefined,
     claimPorts(d),
+    undefined,
+    async () => [],
   )
   const startOrdinal = composition.steps.findIndex(({ slug }) => slug === 'start')
   const closed = composition.steps.slice(0, startOrdinal).map((step, index) => ({
@@ -285,6 +287,7 @@ test('start-child opens at start with inherited closures and parent flow', async
   const started = await startWorkflowChild(
     { project: 'fixture', cursor: epic.cursor, task: 'DEV-2', callerSession: 'epic-owner' },
     d,
+    { listNotes: async () => [] },
   )
   const child = await taskFlowReadStore(d).stageByHandle('fixture', started.cursor.id)
   expect(child).toMatchObject({
@@ -421,6 +424,7 @@ test('grandchild inherits from the nearest ancestor flow when its container has 
   const started = await startWorkflowChild(
     { project: 'fixture', cursor: epic.cursor, task: 'DEV-3', callerSession: 'epic-owner' },
     d,
+    { listNotes: async () => [] },
   )
   const rootFlow = await taskFlowReadStore(d).flowForTask('task-DEV-1')
   expect(started.parentFlowRecordId).toBe(rootFlow!.record_id)
@@ -532,6 +536,7 @@ test('queued caller starts its child, closes the queue as started, and owns the 
   const started = await startWorkflowChild(
     { project: 'fixture', cursor: epic.cursor, callerSession: 'lane-a' },
     d,
+    { listNotes: async () => [] },
   )
   expect(started.child).toBe('DEV-2')
   expect(
@@ -560,6 +565,7 @@ test('start-child does not take over a task claim that appears after selection',
       { project: 'fixture', cursor: epic.cursor, task: 'DEV-2', callerSession: 'epic-owner' },
       d,
       {
+        listNotes: async () => [],
         takeTaskClaim: async (input, context) => {
           expect(
             d.query("SELECT state FROM workflow_cursor WHERE workflow_key='DEV-2'").get(),

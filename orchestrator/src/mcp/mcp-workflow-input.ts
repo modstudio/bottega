@@ -20,6 +20,7 @@ export const nextWorkflowStepInputSchema = z.object({
   artifact: z
     .union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)])
     .optional(),
+  class: z.string().trim().min(1).optional(),
   task: z.string().trim().min(1).optional(),
   cursor: z.number().int().positive().optional(),
   defer: z.string().trim().min(1).optional(),

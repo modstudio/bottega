@@ -11,6 +11,7 @@ import { composeWorkflow, type WorkflowDefinition } from '../workflow/workflows.
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
+export type WorkflowPromptNoteReader = NonNullable<Parameters<typeof composeWorkflowWithCursor>[11]>
 
 export type WorkflowPromptDefinition = {
   name: string
@@ -183,7 +184,11 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
     ]),
   )
 
-export function registerWorkflowPrompts(server: McpServer, hubTaskLookup?: HubTaskLookup): void {
+export function registerWorkflowPrompts(
+  server: McpServer,
+  hubTaskLookup?: HubTaskLookup,
+  listNotes?: WorkflowPromptNoteReader,
+): void {
   for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
     server.registerPrompt(
@@ -232,6 +237,10 @@ export function registerWorkflowPrompts(server: McpServer, hubTaskLookup?: HubTa
                   undefined,
                   {},
                   { resolution: resolved },
+                  undefined,
+                  undefined,
+                  undefined,
+                  listNotes,
                 ),
               ),
             ].join('\n'),

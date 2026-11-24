@@ -23,11 +23,7 @@ import {
   writeLocalAdvance,
 } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
-import {
-  type CommitCountPort,
-  readCommitsPastLanding,
-  workflowComposeBranchRefusal,
-} from './workflow-compose-branch.ts'
+import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { reuseWorkflowCursor } from './workflow-compose-reuse.ts'
 import {
@@ -35,7 +31,12 @@ import {
   selectWorkflowCursorForKeyAdoption,
 } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import {
+  closeGraduatingExploreForReuse,
+  insertWorkflowCursor,
+  type ListWorkflowNotesPort,
+  refuseLocalComposeBranch,
+} from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -143,37 +144,24 @@ function adoptLinkedTask(
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
 
-async function refuseLocalComposeBranch(
-  composition: {
-    project: string
-    workflow: { slug: string }
-    mode: { slug: string }
-    arguments: Record<string, string>
-  },
+const insertComposedWorkflowCursor = (
+  composition: ReturnType<typeof composeWorkflow>,
   context: WorkflowCursorContext,
   database: Database,
+  live: LiveCursorAutonomy,
   commitCount: CommitCountPort,
-): Promise<void> {
-  const existing = keyOf(composition.arguments)
-    ? await findWorkflowCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode.slug,
-        composition.arguments,
-        context,
-        database,
-      )
-    : null
-  if (decideCursorStart(existing?.state ?? null) === 'reuse') return
-  const refusal = workflowComposeBranchRefusal({
-    workflow: composition.workflow.slug,
-    project: composition.project,
-    args: composition.arguments,
-    d: database,
+  listNotes?: ListWorkflowNotesPort,
+) =>
+  insertWorkflowCursor(
+    composition,
+    context,
+    database,
+    live.resolution,
     commitCount,
-  })
-  if (refusal) throw new Error(refusal)
-}
+    false,
+    undefined,
+    listNotes,
+  )
 
 export async function composeWorkflowWithCursor(
   slug: string,
@@ -187,6 +175,7 @@ export async function composeWorkflowWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   taskClaimPorts?: TaskCursorClaimPorts,
   cursorHandle?: number,
+  listNotes?: ListWorkflowNotesPort,
 ) {
   const shape = composeWorkflow(slug, project, mode, args, d, selection)
   if (!shape.mode || shape.needs.arguments) return { ...shape, cursor: null, graduated: undefined }
@@ -221,12 +210,18 @@ export async function composeWorkflowWithCursor(
   const handedOff =
     start === 'reuse'
       ? undefined
-      : await handoffGraduatingExplore(composition, context, d, live, commitCount, taskClaimPorts)
+      : await handoffGraduatingExplore(composition, context, d, {
+          live,
+          commitCount,
+          taskClaimPorts,
+          listNotes,
+        })
   let row!: CursorRow
   if (handedOff) row = handedOff.row
   else if (existing && start === 'reuse')
     row = await reuseWorkflowCursor(existing, args, context, d)
-  else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+  else
+    row = await insertComposedWorkflowCursor(composition, context, d, live, commitCount, listNotes)
   if (selected.adopted)
     await followTaskCursorClaim(
       {

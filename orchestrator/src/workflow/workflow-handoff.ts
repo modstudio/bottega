@@ -22,7 +22,11 @@ import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
-import { graduatingExploreCursor } from './workflow-cursor-compose.ts'
+import {
+  assertPlanTaskNoteProvenance,
+  graduatingExploreCursor,
+  type ListWorkflowNotesPort,
+} from './workflow-cursor-compose.ts'
 import { shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
@@ -55,6 +59,7 @@ type HandoffInput = {
   evidence?: WorkflowEvidenceInput
   floorPorts?: FloorEvidencePorts
   graduatingUntouchedExplore?: true
+  listNotes?: ListWorkflowNotesPort
 }
 
 export function handoffTargetArguments(
@@ -141,6 +146,7 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
     commitCount: input.commitCount ?? readCommitsPastLanding,
   })
   if (refusal) throw new Error(refusal)
+  await assertPlanTaskNoteProvenance(composition, input.listNotes)
   return { composition, targetKey }
 }
 
@@ -341,9 +347,12 @@ export async function handoffGraduatingExplore(
   composition: ReturnType<typeof composeWorkflow>,
   context: WorkflowCursorContext,
   database: Database,
-  live: LiveCursorAutonomy,
-  commitCount: CommitCountPort,
-  taskClaimPorts?: TaskCursorClaimPorts,
+  ports: {
+    live: LiveCursorAutonomy
+    commitCount: CommitCountPort
+    taskClaimPorts?: TaskCursorClaimPorts
+    listNotes?: ListWorkflowNotesPort
+  },
 ) {
   const source = await graduatingExploreCursor({
     project: composition.project,
@@ -360,11 +369,12 @@ export async function handoffGraduatingExplore(
     args: composition.arguments,
     reason: `graduated to ${composition.workflow.slug}`,
     context,
-    live,
+    live: ports.live,
     database,
-    commitCount,
-    taskClaimPorts,
+    commitCount: ports.commitCount,
+    taskClaimPorts: ports.taskClaimPorts,
     graduatingUntouchedExplore: true,
+    listNotes: ports.listNotes,
   })
   const row = await taskFlowReadStore(database, context.taskFlowClient).stageByHandle(
     composition.project,
