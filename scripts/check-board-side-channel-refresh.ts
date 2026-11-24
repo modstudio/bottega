@@ -21,30 +21,13 @@ const SIDE_CHANNELS = [
   },
 ] as const
 
-type BoardSideChannelRefreshViolation = {
+export type BoardSideChannelRefreshViolation = {
   file: string
   functionName: string
   line: number
 }
 
-function isRefreshStatusCondition(condition: ts.Expression, source: ts.SourceFile): boolean {
-  return /\b\w+\.status\b/.test(condition.getText(source))
-}
-
-function throwRejectsNonSuccess(
-  statement: ts.ThrowStatement,
-  fn: ts.FunctionDeclaration,
-  source: ts.SourceFile,
-): boolean {
-  let node: ts.Node = statement
-  while (node.parent && node.parent !== fn) {
-    node = node.parent
-    if (ts.isIfStatement(node) && isRefreshStatusCondition(node.expression, source)) return true
-  }
-  return false
-}
-
-function boardSideChannelRefreshViolations(
+export function boardSideChannelRefreshViolations(
   sourceText: string,
   file: string,
   expectedFunctions: readonly string[],
@@ -60,8 +43,7 @@ function boardSideChannelRefreshViolations(
       if (expected.has(name)) {
         found.add(name)
         const inspect = (child: ts.Node): void => {
-          if (ts.isFunctionLike(child) && child !== node) return
-          if (ts.isThrowStatement(child) && throwRejectsNonSuccess(child, node, source)) {
+          if (ts.isThrowStatement(child)) {
             const { line } = source.getLineAndCharacterOfPosition(child.getStart(source))
             violations.push({ file, functionName: name, line: line + 1 })
           }

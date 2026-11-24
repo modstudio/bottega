@@ -11,6 +11,7 @@ import {
   cachedMessageAddressed,
   cachedRows,
   claimCachedHostedForPush,
+  hostedBoardRefreshStoppedReason,
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
@@ -411,7 +412,7 @@ async function refreshForPendingBoardDelivery(input: DeliveryInput, database: Da
     return { localMode: refreshed.status === 'local', warning: null }
   return {
     localMode: false,
-    warning: `hosted board delivery stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}`,
+    warning: `hosted board delivery stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; notices stay queued for the next successful refresh`,
   }
 }
 

@@ -116,7 +116,10 @@ def pending(
     overflow = value.get("overflow")
     if overflow is not None and not isinstance(overflow, str):
         raise ValueError("malformed board pending output")
-    return delivery, overflow, acknowledgements
+    warning = value.get("warning")
+    if warning is not None and not isinstance(warning, str):
+        raise ValueError("malformed board pending output")
+    return delivery, overflow, acknowledgements, warning
 
 
 def mark_delivered(

@@ -11,6 +11,7 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
   claimCachedHosted,
+  hostedBoardRefreshStoppedReason,
   reapHostedBoardCache,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
@@ -565,7 +566,7 @@ export async function boardRequestCountForSession(
       (notice) => notice.purpose === 'request',
     ).length
   return {
-    unread: refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`,
+    unread: hostedBoardRefreshStoppedReason(refreshed),
   }
 }
 
@@ -696,7 +697,7 @@ async function boardEscalationRows(
     })
     if (refreshed.status !== 'success')
       throw new Error(
-        `hosted board acknowledgement read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+        `hosted board acknowledgement read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
       )
     const messages = cachedHostedBoardMessages(database)
     return messages.flatMap((message) =>

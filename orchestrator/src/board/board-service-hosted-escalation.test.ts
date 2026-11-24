@@ -15,10 +15,10 @@ test('an incomplete hosted refresh makes the board request count unread', async 
     'brief-reader',
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     db(),
-    async () => ({ status: 'incomplete' as const, applied: 0, reason: 'refresh budget spent' }),
+    async () => ({ status: 'incomplete' as const, applied: 0 }),
   )
 
-  expect(result).toEqual({ unread: 'refresh budget spent' })
+  expect(result).toEqual({ unread: 'refresh did not catch up within its budget' })
 })
 
 test('hosted acknowledgement escalation returns the cached record id, not a local number', async () => {

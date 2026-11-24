@@ -195,11 +195,12 @@ test('an incomplete refresh leaves a run notice claimable for a later turn', asy
   const incomplete = await claimRunBoardNotices(runId, false, 500, false, async () => ({
     status: 'incomplete' as const,
     applied: 0,
-    reason: 'refresh budget spent',
   }))
 
   expect(incomplete.notices).toEqual([])
-  expect(incomplete.warning).toContain('hosted board read stopped: refresh budget spent')
+  expect(incomplete.warning).toBe(
+    'hosted board read stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
+  )
   expect(
     db()
       .query('SELECT delivered_at FROM hosted_board_receipt_cache WHERE message_id=?')
@@ -253,7 +254,7 @@ test('a spent refresh budget stops the hosted read with a remedy', async () => {
       }),
   })
   await expect(claimBoardNotices(false, { env, budgetMs: 20 })).rejects.toThrow(
-    'hosted board read stopped: refresh incomplete',
+    'hosted board read stopped: refresh did not catch up within its budget',
   )
 })
 

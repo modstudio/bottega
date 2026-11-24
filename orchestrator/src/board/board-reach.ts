@@ -7,7 +7,11 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
+import {
+  BOARD_READ_REFRESH_BUDGET_MS,
+  hostedBoardRefreshStoppedReason,
+  refreshHostedBoard,
+} from './board-hosted-cache.ts'
 import { boardMode } from './board-mode.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
@@ -520,7 +524,7 @@ export async function boardReachReport(
     })
     if (refreshed.status !== 'success')
       throw new Error(
-        `hosted board reach read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+        `hosted board reach read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
       )
   }
   const recording = database

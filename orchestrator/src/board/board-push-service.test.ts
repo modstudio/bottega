@@ -535,13 +535,14 @@ test('an incomplete hosted refresh delivers and marks nothing', async () => {
     refresh: async () => ({
       status: 'incomplete' as const,
       applied: 0,
-      reason: 'refresh budget spent',
     }),
   })
 
   expect(result.delivery).toEqual([])
   expect(result.pendingAcknowledgements).toEqual([])
-  expect(result.warning).toContain('refresh budget spent')
+  expect(result.warning).toBe(
+    'hosted board delivery stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
+  )
   expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
   expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
     count: 0,
@@ -796,6 +797,24 @@ test('PostToolUse fails open on malformed command output', () => {
   expect(broken.stdout.toString()).toBe('')
 })
 
+test('PostToolUse treats a pending warning like the former command failure', () => {
+  const warning = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped"}',
+  )
+  addCandidate(warning, 1)
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), warning)
+
+  expect(result.exitCode).toBe(0)
+  expect(result.stdout.toString()).toBe('')
+  const markerRoot = join(warning.root, 'board-hook-state', 'interrupt')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  expect(JSON.parse(readFileSync(marker, 'utf8'))).toMatchObject({
+    candidate_ids: [],
+    ran_at: 0,
+    injected_at: {},
+  })
+})
+
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
   const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
   item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
@@ -948,6 +967,22 @@ test('Stop keeps its acknowledgement budget and never blocks or stamps for ordin
   expect(values[5].systemMessage).toContain('unacknowledged board notice')
   expect(result.outputs[6]).toBe('')
   expect(result.delivered).toEqual([])
+})
+
+test('Stop keeps its acknowledgement counter when pending carries a warning', () => {
+  const warning = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped"}',
+  )
+  const markerRoot = join(warning.root, 'board-hook-state', 'stop')
+  mkdirSync(markerRoot, { recursive: true })
+  const marker = join(markerRoot, createHash('sha256').update('reader').digest('hex'))
+  writeFileSync(marker, JSON.stringify({ blocks: 2 }))
+
+  const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), warning)
+
+  expect(result.exitCode).toBe(0)
+  expect(result.stdout.toString()).toBe('')
+  expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ blocks: 2 })
 })
 
 test('Stop with only ordinary messages does not block, stamps nothing, and preserves markers atomically', () => {

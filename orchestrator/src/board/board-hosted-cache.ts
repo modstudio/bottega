@@ -83,6 +83,12 @@ export type HostedBoardRefresh = {
   reason?: string
 }
 
+export function hostedBoardRefreshStoppedReason(refresh: HostedBoardRefresh): string {
+  if (refresh.reason) return refresh.reason.replace(/\s+/g, ' ')
+  if (refresh.status === 'incomplete') return 'refresh did not catch up within its budget'
+  return `refresh ${refresh.status}`
+}
+
 const meta = (database: Database, key: string) =>
   (database.query('SELECT value FROM schema_meta WHERE key=?').get(key) as { value: string } | null)
     ?.value ?? null

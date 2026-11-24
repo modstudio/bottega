@@ -226,7 +226,7 @@ test('a spent refresh budget stops overview and push hosted reads', async () => 
         client: hanging,
       },
     ),
-  ).rejects.toThrow('hosted board overview stopped: refresh incomplete')
+  ).rejects.toThrow('hosted board overview stopped: refresh did not catch up within its budget')
   const session = 'overview-push'
   db()
     .query(
@@ -240,7 +240,9 @@ test('a spent refresh budget stops overview and push hosted reads', async () => 
   try {
     const pending = await pendingBoardDelivery({ session, budgetMs: 20, clock: clock + 1 })
     expect(pending.delivery).toEqual([])
-    expect(pending.warning).toContain('hosted board delivery stopped: refresh incomplete')
+    expect(pending.warning).toContain(
+      'hosted board delivery stopped: refresh did not catch up within its budget',
+    )
     expect(
       (
         db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_OUTCOME_KEY) as {

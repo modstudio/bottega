@@ -3,7 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
+import {
+  BOARD_READ_REFRESH_BUDGET_MS,
+  hostedBoardRefreshStoppedReason,
+  refreshHostedBoard,
+} from './board-hosted-cache.ts'
 import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
 import { boardModeForId } from './board-mode.ts'
 
@@ -29,7 +33,7 @@ export async function refreshHostedBoardIdentifier(
   })
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board message read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      `hosted board message read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
     )
 }
 
