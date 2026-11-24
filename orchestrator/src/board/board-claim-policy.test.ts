@@ -20,18 +20,36 @@ const operator = { kind: 'operator' as const, session: null }
 
 test('claim liveness derives closure, lapse, and the latest tied run state', () => {
   const facts = { boundToOpenCursor: false }
-  expect(claimIsLive({ closed: false, lapsesAt: 101, runStatus: null, now: 100, ...facts })).toBeTrue()
-  expect(claimIsLive({ closed: true, lapsesAt: 101, runStatus: null, now: 100, ...facts })).toBeFalse()
-  expect(claimCloseReason({ closed: true, lapsesAt: 101, runStatus: null, now: 100, ...facts })).toBeNull()
-  expect(claimCloseReason({ closed: false, lapsesAt: 100, runStatus: null, now: 100, ...facts })).toBe(
-    'lapsed',
-  )
-  expect(claimIsLive({ closed: false, lapsesAt: 100, runStatus: null, now: 100, boundToOpenCursor: true })).toBeTrue()
-  expect(claimIsLive({ closed: false, lapsesAt: 101, runStatus: 'running', now: 100, ...facts })).toBeTrue()
-  expect(claimIsLive({ closed: false, lapsesAt: 101, runStatus: 'asking', now: 100, ...facts })).toBeTrue()
-  expect(claimCloseReason({ closed: false, lapsesAt: 101, runStatus: 'ok', now: 100, ...facts })).toBe(
-    'run-ended',
-  )
+  expect(
+    claimIsLive({ closed: false, lapsesAt: 101, runStatus: null, now: 100, ...facts }),
+  ).toBeTrue()
+  expect(
+    claimIsLive({ closed: true, lapsesAt: 101, runStatus: null, now: 100, ...facts }),
+  ).toBeFalse()
+  expect(
+    claimCloseReason({ closed: true, lapsesAt: 101, runStatus: null, now: 100, ...facts }),
+  ).toBeNull()
+  expect(
+    claimCloseReason({ closed: false, lapsesAt: 100, runStatus: null, now: 100, ...facts }),
+  ).toBe('lapsed')
+  expect(
+    claimIsLive({
+      closed: false,
+      lapsesAt: 100,
+      runStatus: null,
+      now: 100,
+      boundToOpenCursor: true,
+    }),
+  ).toBeTrue()
+  expect(
+    claimIsLive({ closed: false, lapsesAt: 101, runStatus: 'running', now: 100, ...facts }),
+  ).toBeTrue()
+  expect(
+    claimIsLive({ closed: false, lapsesAt: 101, runStatus: 'asking', now: 100, ...facts }),
+  ).toBeTrue()
+  expect(
+    claimCloseReason({ closed: false, lapsesAt: 101, runStatus: 'ok', now: 100, ...facts }),
+  ).toBe('run-ended')
 })
 
 test('claims conflict only within a kind, with symmetric path glob matching', () => {

@@ -20,8 +20,8 @@ import {
   selectBoardAdoptionCandidates,
   uploadErrorDisposition,
 } from './board-adoption-policy.ts'
-import { claimIsLive } from './board-claim-policy.ts'
 import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
+import { claimIsLive } from './board-claim-policy.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 import { parseReplyAudienceOption } from './board-reply-audience.ts'

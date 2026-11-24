@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import {
   BOARD_CLAIM_DEFAULT_MS,
   type ClaimActor,
@@ -19,7 +20,6 @@ import {
   parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
-import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,

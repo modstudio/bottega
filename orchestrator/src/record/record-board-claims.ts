@@ -688,7 +688,10 @@ export async function listHostedBoardClaims(
                 AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
                 AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
             ) bound_to_open_cursor
-          FROM board_claim claim WHERE claim.project_id=${projectId}::uuid AND claim.closed_at IS NULL
+          FROM (
+            SELECT * FROM board_claim
+            WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+          ) claim
           ORDER BY taken_at, id
         `
         : await tx`
@@ -699,7 +702,9 @@ export async function listHostedBoardClaims(
                 AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
                 AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
             ) bound_to_open_cursor
-          FROM board_claim claim WHERE claim.project_id=${projectId}::uuid
+          FROM (
+            SELECT * FROM board_claim WHERE project_id=${projectId}::uuid
+          ) claim
           ORDER BY taken_at, id
         `
     ) as ClaimRow[]

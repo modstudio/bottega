@@ -16,8 +16,8 @@ import { classifyCaller } from '../caller-classification.ts'
 import { db, type writableDb } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt, projects } from '../project/projects.ts'
-import { claimIsLive } from './board-claim-policy.ts'
 import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
+import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
   type Audience,

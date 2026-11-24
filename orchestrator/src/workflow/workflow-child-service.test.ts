@@ -9,6 +9,7 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { HostedBoardClaim } from '../record/record-board-contract.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { installTaskReader, type TaskReadPort, type TaskReadRow } from './task-read-port.ts'
@@ -157,13 +158,15 @@ function hostedClaim(
 async function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) {
   const localStages = await taskFlowReadStore(d).listStages({
     project: 'fixture',
-    states: ['running', 'awaiting-ruling'],
+    states: [...TASK_FLOW_OPEN_STAGE_STATES],
   })
   const taskFlowStages = localStages.map((stage) => ({
     stage: {
       id: stage.record_id,
       flowRecordId: stage.task_flow_record_id!,
-      projectId: d.query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'").get()!.record_id,
+      projectId: d
+        .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+        .get()!.record_id,
       projectName: 'fixture',
       number: stage.id,
       workflow: stage.workflow_slug,
@@ -193,7 +196,9 @@ async function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClai
     },
     flow: {
       id: stage.task_flow_record_id!,
-      projectId: d.query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'").get()!.record_id,
+      projectId: d
+        .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+        .get()!.record_id,
       taskId: stage.task_record_id,
       taskKey: stage.workflow_key,
       state: 'open' as const,
@@ -407,7 +412,9 @@ test('queue uses the nearest open epic cursor instead of a grand-epic claim', as
   const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1'), row('DEV-3', 'DEV-2')]
   await openEpicAtStart(d, tasks, 'grand-owner', 'DEV-1')
   await openEpicAtStart(d, tasks, 'nested-owner', 'DEV-2')
-  d.query("UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_value IN ('DEV-1','DEV-2')").run()
+  d.query(
+    "UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_value IN ('DEV-1','DEV-2')",
+  ).run()
 
   await expect(
     queueWorkflowChild(

@@ -50,11 +50,14 @@ export function sessionWorksUnderEpic(
   descendants: ReadonlySet<string>,
   ownsOpenCursor: boolean,
 ): boolean {
-  return ownsOpenCursor || claims.some(
-    (claim) =>
-      claim.holderSession === session &&
-      claim.subject_kind === 'queued-task' &&
-      descendants.has(claim.subject_value),
+  return (
+    ownsOpenCursor ||
+    claims.some(
+      (claim) =>
+        claim.holderSession === session &&
+        claim.subject_kind === 'queued-task' &&
+        descendants.has(claim.subject_value),
+    )
   )
 }
 

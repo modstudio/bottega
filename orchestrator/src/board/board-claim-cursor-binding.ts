@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { TASK_FLOW_OPEN_STAGE_STATES_SQL } from '../record/record-task-flow-contract.ts'
+import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 
 export type CursorBindableClaim = {
   project: string
@@ -13,6 +14,9 @@ export type CursorBindableClaim = {
 
 export function claimBoundToOpenCursor(row: CursorBindableClaim, database: Database): boolean {
   if (row.subject_kind !== 'task' || !row.holder_session) return false
+  // Hosted installs resolve both claims and task-flow stages in the record adapters. Local rows
+  // are adoption residue there, and the hosted-table guard deliberately forbids consulting them.
+  if (hostedRecordOwnsHostedTables(database)) return false
   return Boolean(
     database
       .query(

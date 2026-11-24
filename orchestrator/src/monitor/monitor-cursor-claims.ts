@@ -3,10 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
-import { claimBoundToOpenCursor } from '../board/board-claim-cursor-binding.ts'
-import { claimIsLive } from '../board/board-claim-policy.ts'
-import { latestRunStatus } from '../board/board-store.ts'
-import { TASK_FLOW_OPEN_STAGE_STATES_SQL } from '../record/record-task-flow-contract.ts'
+import { boardClaimList } from '../board/board-operations.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export type OpenKeyedCursorFact = {
@@ -50,57 +49,55 @@ function splitDetail(split: Split): string {
   return `epic ${split.epic.length} [${split.epic.join(', ') || 'none'}]; non-epic ${split.nonEpic.length} [${split.nonEpic.join(', ') || 'none'}]`
 }
 
-export function cursorClaimHealthConditions(
+export async function cursorClaimHealthConditions(
   database: Database,
   clock: number,
-): MonitorCondition[] {
-  const cursors = database
-    .query(
-      `SELECT number id,project,workflow_key key,session_id session,
-              workflow_slug='plan-task' AND step_slug='start' is_epic
-       FROM workflow_cursor
-       WHERE workflow_key<>'' AND session_id IS NOT NULL
-         AND state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})`,
+): Promise<MonitorCondition[]> {
+  const projectNames = (
+    database.query('SELECT name FROM project ORDER BY name').all() as Array<{ name: string }>
+  ).map(({ name }) => name)
+  const cursors: OpenKeyedCursorFact[] = []
+  const claims: CursorClaimFact[] = []
+  for (const project of projectNames) {
+    const stages = await taskFlowReadStore(database).listStages({
+      project,
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
+    })
+    cursors.push(
+      ...stages.flatMap((stage): OpenKeyedCursorFact[] =>
+        stage.workflow_key && stage.session_id
+          ? [
+              {
+                project,
+                id: stage.id,
+                key: stage.workflow_key,
+                session: stage.session_id,
+                isEpic: stage.workflow_slug === 'plan-task' && stage.step_slug === 'start',
+              },
+            ]
+          : [],
+      ),
     )
-    .all() as Array<{
-    id: number
-    project: string
-    key: string
-    session: string
-    is_epic: number
-  }>
-  const claimRows = database
-    .query(
-      `SELECT project,subject_kind,subject_value,holder_session,lapses_at,closed_at,run_record_id
-       FROM board_claim WHERE subject_kind='task' AND closed_at IS NULL`,
+    const listed = await boardClaimList(project, false, {
+      database,
+      clock,
+      taskCursorAuthority: { mode: 'coverage-read', session: null },
+    })
+    claims.push(
+      ...listed.claims.flatMap((claim): CursorClaimFact[] =>
+        claim.live && claim.subject.kind === 'task' && claim.holderSession
+          ? [
+              {
+                project,
+                key: claim.subject.value,
+                session: claim.holderSession,
+                live: true,
+              },
+            ]
+          : [],
+      ),
     )
-    .all() as Array<{
-    project: string
-    subject_kind: string
-    subject_value: string
-    holder_session: string | null
-    lapses_at: string
-    closed_at: string | null
-    run_record_id: string | null
-  }>
-  const claims = claimRows.flatMap((row): CursorClaimFact[] =>
-    row.holder_session
-      ? [
-          {
-            project: row.project,
-            key: row.subject_value,
-            session: row.holder_session,
-            live: claimIsLive({
-              closed: false,
-              lapsesAt: Date.parse(row.lapses_at),
-              runStatus: latestRunStatus(row.run_record_id, database),
-              now: clock,
-              boundToOpenCursor: claimBoundToOpenCursor(row, database),
-            }),
-          },
-        ]
-      : [],
-  )
+  }
   const cutoff = new Date(clock - SESSION_LIVE_MS).toISOString()
   const aliveSessions = new Set(
     (
@@ -109,11 +106,7 @@ export function cursorClaimHealthConditions(
         .all(cutoff) as Array<{ session_id: string }>
     ).map(({ session_id }) => session_id),
   )
-  const health = cursorClaimHealth(
-    cursors.map((cursor) => ({ ...cursor, isEpic: Boolean(cursor.is_epic) })),
-    claims,
-    aliveSessions,
-  )
+  const health = cursorClaimHealth(cursors, claims, aliveSessions)
   const conditions: MonitorCondition[] = []
   if (health.unclaimed.epic.length || health.unclaimed.nonEpic.length)
     conditions.push({
