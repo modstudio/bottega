@@ -125,6 +125,18 @@ export const sqliteAdapterImportRule = {
   to: { path: LOCAL_SQLITE_ADAPTER_PATH },
 }
 
+export const commandStaticHeavyImportRule = {
+  name: 'commands-load-heavy-packages-only-from-actions',
+  severity: 'error' as const,
+  comment:
+    'CLI command declarations stay cheap; actions may dynamically load authentication, mail, database adapters, MCP, and sandbox runtime packages when used.',
+  from: { path: '^orchestrator/src/commands/' },
+  to: {
+    path: '(?:^|/)node_modules/(?:better-auth(?:/|$)|@better-auth/|@aws-sdk/client-sesv2(?:/|$)|drizzle-orm(?:/|$)|@modelcontextprotocol/sdk(?:/|$)|@anthropic-ai/sandbox-runtime(?:/|$))',
+    dynamic: false,
+  },
+}
+
 export type ImportBoundary = {
   name: string
   file: string

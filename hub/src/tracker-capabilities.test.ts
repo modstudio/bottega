@@ -55,7 +55,7 @@ describe('tracker capabilities', () => {
                 protocol === 'workspace-mcp'
                   ? 'list-tasks-tool'
                   : protocol === 'cursor-mcp'
-                    ? 'task.list'
+                    ? 'task_list'
                     : 'task_list',
               inputSchema: {
                 properties:

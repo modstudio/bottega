@@ -31,6 +31,14 @@ import {
   type WithMaintenanceDatabase,
 } from './record-history-upload.ts'
 import { pushDocsCommand } from './record-push-docs.ts'
+
+export {
+  decideRecordPassword,
+  PASSWORD_PROMPT_EOF_REFUSAL,
+  RECORD_PASSWORD_ENV,
+} from './record-password.ts'
+
+import { RECORD_PASSWORD_ENV } from './record-password.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { recordMemberships } from './record-space.ts'
 
@@ -48,15 +56,6 @@ type VerificationEmailAction =
   | { action: 'already-verified'; email: string }
   | { action: 'send'; email: string }
 
-export const RECORD_PASSWORD_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD`
-const NON_INTERACTIVE_PASSWORD_REFUSAL = `record password is required: stdin is not a terminal; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
-export const PASSWORD_PROMPT_EOF_REFUSAL = `record password prompt ended before a password was entered; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
-
-type RecordPasswordDecision =
-  | { action: 'use-environment'; password: string }
-  | { action: 'prompt' }
-  | { action: 'refuse'; message: string }
-
 type RecordAuthCommandDependencies = {
   probeSessionStore(): void
   signIn(email: string, password: string): Promise<RecordSessionResult>
@@ -67,17 +66,6 @@ const recordAuthCommandDependencies: RecordAuthCommandDependencies = {
   probeSessionStore: probeRecordSessionStore,
   signIn: recordApiSignIn,
   signUp: recordApiSignUp,
-}
-
-export function decideRecordPassword(
-  passwordFromEnvironment: string | undefined,
-  stdinIsTerminal: boolean,
-): RecordPasswordDecision {
-  if (passwordFromEnvironment !== undefined) {
-    return { action: 'use-environment', password: passwordFromEnvironment }
-  }
-  if (stdinIsTerminal) return { action: 'prompt' }
-  return { action: 'refuse', message: NON_INTERACTIVE_PASSWORD_REFUSAL }
 }
 
 export async function recordPassword(readPassword: () => Promise<string>): Promise<string> {

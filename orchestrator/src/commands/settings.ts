@@ -3,28 +3,6 @@
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import {
-  settingsAdoptCommand,
-  settingsEnvImportCommand,
-  settingsRenderWriteCommand,
-  settingsRestoreCommand,
-} from '../settings/settings-apply-commands.ts'
-import {
-  settingsAutoModeCommand,
-  settingsImportCommand,
-  settingsPermissionCommand,
-  settingsRenderCheckCommand,
-} from '../settings/settings-commands.ts'
-import { settingsEnvCommand } from '../settings/settings-env-commands.ts'
-import {
-  applyMachineSettings,
-  printMachineSettingsApplyResults,
-} from '../settings/settings-machine-apply.ts'
-import {
-  editMachineSettingsPermission,
-  listMachineSettingsPermissions,
-} from '../settings/settings-machine-permissions.ts'
-import { settingsSubagentsCommand } from '../settings/settings-subagents.ts'
 import { collect, log, optionFlags } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>
@@ -36,6 +14,7 @@ function registerSettingsSources(settings: Command): void {
     .description('allow or block Claude subagents for the signed-in user')
     .argument('[choice]')
     .action(async (choice?: string) => {
+      const { settingsSubagentsCommand } = await import('../settings/settings-subagents.ts')
       const result = await settingsSubagentsCommand(choice)
       log(`subagent blocking: ${result.blocking} (source: ${result.source})`)
     })
@@ -44,6 +23,9 @@ function registerSettingsSources(settings: Command): void {
     .description('apply managed settings and canon to installed harnesses')
     .option('--check', 'report machine settings drift without writing files')
     .action(async (options) => {
+      const { applyMachineSettings, printMachineSettingsApplyResults } = await import(
+        '../settings/settings-machine-apply.ts'
+      )
       const check = Boolean(options.check)
       const results = await applyMachineSettings({ check })
       printMachineSettingsApplyResults(results, log)
@@ -58,13 +40,16 @@ function registerSettingsSources(settings: Command): void {
     .option('--project <name>', 'registered project whose settings are imported')
     .option('--dry-run', 'report the import without writing a document')
     .action(async (options) => {
-      await settingsImportCommand(optionFlags(options), {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
+      await (await import('../settings/settings-commands.ts')).settingsImportCommand(
+        optionFlags(options),
+        {
+          log,
+          cwd: process.cwd,
+          exitCode: (code: number) => {
+            process.exitCode = code
+          },
         },
-      })
+      )
     })
   settings
     .command('adopt')
@@ -74,13 +59,17 @@ function registerSettingsSources(settings: Command): void {
     .option('--all', 'adopt every local permission rule')
     .argument('[rules...]')
     .action(async (rules: string[], options) => {
-      await settingsAdoptCommand(optionFlags(options), rules, {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
+      await (await import('../settings/settings-apply-commands.ts')).settingsAdoptCommand(
+        optionFlags(options),
+        rules,
+        {
+          log,
+          cwd: process.cwd,
+          exitCode: (code: number) => {
+            process.exitCode = code
+          },
         },
-      })
+      )
     })
   registerAutoMode(settings)
 }
@@ -99,7 +88,9 @@ function registerAutoMode(settings: Command): void {
       .option('--reason <text>', 'reason recorded for the settings revision')
       .option('--json', 'write the auto-mode result as JSON')
       .action(async (options) => {
-        const result = await settingsAutoModeCommand(optionFlags(options), operation)
+        const result = await (
+          await import('../settings/settings-commands.ts')
+        ).settingsAutoModeCommand(optionFlags(options), operation)
         if (options.json) log(JSON.stringify(result))
         else log(result.message ?? `updated autoMode.${options.list} at ${result.revision}`)
       })
@@ -114,7 +105,9 @@ function registerEnvironment(settings: Command): void {
     .argument('<name>')
     .argument('<value>')
     .action(async (name: string, value: string) => {
-      const result = await settingsEnvCommand('set', name, value)
+      const result = await (
+        await import('../settings/settings-env-commands.ts')
+      ).settingsEnvCommand('set', name, value)
       log(result.message)
       log(
         `settings environment values take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
@@ -125,7 +118,9 @@ function registerEnvironment(settings: Command): void {
     .description('unset a plain canonical user settings environment value')
     .argument('<name>')
     .action(async (name: string) => {
-      const result = await settingsEnvCommand('unset', name)
+      const result = await (
+        await import('../settings/settings-env-commands.ts')
+      ).settingsEnvCommand('unset', name)
       log(result.message)
       log(
         `settings environment values take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
@@ -138,104 +133,20 @@ function registerEnvironment(settings: Command): void {
     .option('--project <name>', 'project target, which environment import refuses')
     .option('--dry-run', 'report the import without writing files or settings')
     .action(async (options) => {
-      await settingsEnvImportCommand(optionFlags(options), {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
+      await (await import('../settings/settings-apply-commands.ts')).settingsEnvImportCommand(
+        optionFlags(options),
+        {
+          log,
+          cwd: process.cwd,
+          exitCode: (code: number) => {
+            process.exitCode = code
+          },
         },
-      })
+      )
     })
 }
 
-export function register(program: Command): void {
-  const settings = program.command('settings').description('manage canonical Claude settings')
-  registerSettingsSources(settings)
-  const permission = settings.command('permission').description('manage canonical permission rules')
-  permission
-    .command('list')
-    .description('list machine permission overlays')
-    .option('--machine', 'list the machine permission overlay')
-    .option('--json', 'write the permission overlay as JSON')
-    .action((options) => {
-      if (!options.machine) {
-        throw new Error(
-          `refusing hosted permission listing; run ${PLATFORM_SLUG} machine settings permission list --machine`,
-        )
-      }
-      for (const line of listMachineSettingsPermissions(Boolean(options.json))) log(line)
-    })
-  for (const operation of ['add', 'remove'] as const) {
-    permission
-      .command(operation)
-      .description(`${operation} a canonical or machine permission rule`)
-      .option('--user', 'target the signed-in user settings')
-      .option('--project <name>', 'registered project whose rule is edited')
-      .option('--machine', 'edit the machine permission overlay')
-      .requiredOption('--list <name>', 'permission list containing the rule')
-      .requiredOption('--rule <rule>', 'permission rule to edit')
-      .option('--expect <revision>', 'document revision required before editing')
-      .option('--reason <text>', 'reason recorded for the settings revision')
-      .option('--json', 'write the permission result as JSON')
-      .action(async (options) => {
-        const flags = optionFlags(options)
-        if (
-          flags.has('machine') &&
-          (flags.has('user') ||
-            flags.flag('project') ||
-            flags.flag('expect') ||
-            flags.flag('reason'))
-        )
-          throw new Error(
-            'refusing machine permission edit: --machine cannot be combined with --user, --project, --expect, or --reason',
-          )
-        if (flags.has('machine')) {
-          const result = editMachineSettingsPermission({
-            operation,
-            list: flags.flag('list'),
-            rule: flags.flag('rule'),
-          })
-          if (options.json) log(JSON.stringify(result))
-          else {
-            log(result.message)
-            log(
-              `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-            )
-          }
-          return
-        }
-        const result = await settingsPermissionCommand(flags, operation)
-        if (options.json) log(JSON.stringify(result))
-        else log(result.message ?? `updated permissions.${options.list} at ${result.revision}`)
-      })
-  }
-  for (const operation of ['drop', 'undrop'] as const) {
-    permission
-      .command(operation)
-      .description(
-        operation === 'drop'
-          ? 'suppress a machine permission rule'
-          : 'stop suppressing a machine permission rule',
-      )
-      .requiredOption('--list <name>', 'permission list containing the rule')
-      .requiredOption('--rule <rule>', 'permission rule to edit')
-      .option('--json', 'write the permission result as JSON')
-      .action((options) => {
-        const flags = optionFlags(options)
-        const result = editMachineSettingsPermission({
-          operation,
-          list: flags.flag('list'),
-          rule: flags.flag('rule'),
-        })
-        if (options.json) log(JSON.stringify(result))
-        else {
-          log(result.message)
-          log(
-            `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-          )
-        }
-      })
-  }
+function registerRestore(settings: Command): void {
   settings
     .command('restore')
     .description('restore user settings from a rendered backup')
@@ -243,16 +154,22 @@ export function register(program: Command): void {
     .option('--project <name>', 'project target, which restore refuses')
     .option('--force', 'restore despite later settings writes')
     .argument('<backup>')
-    .action((backup: string, options) => {
-      settingsRestoreCommand(optionFlags(options), backup, {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
+    .action(async (backup: string, options) => {
+      ;(await import('../settings/settings-apply-commands.ts')).settingsRestoreCommand(
+        optionFlags(options),
+        backup,
+        {
+          log,
+          cwd: process.cwd,
+          exitCode: (code: number) => {
+            process.exitCode = code
+          },
         },
-      })
+      )
     })
-  registerEnvironment(settings)
+}
+
+function registerRender(settings: Command): void {
   settings
     .command('render')
     .description('compare or write canonical settings to a settings file')
@@ -279,7 +196,121 @@ export function register(program: Command): void {
           process.exitCode = code
         },
       }
-      if (flags.has('write')) await settingsRenderWriteCommand(flags, presentation)
-      else await settingsRenderCheckCommand(flags, presentation)
+      if (flags.has('write'))
+        await (await import('../settings/settings-apply-commands.ts')).settingsRenderWriteCommand(
+          flags,
+          presentation,
+        )
+      else
+        await (await import('../settings/settings-commands.ts')).settingsRenderCheckCommand(
+          flags,
+          presentation,
+        )
     })
+}
+
+function registerPermissionList(permission: Command): void {
+  permission
+    .command('list')
+    .description('list machine permission overlays')
+    .option('--machine', 'list the machine permission overlay')
+    .option('--json', 'write the permission overlay as JSON')
+    .action(async (options) => {
+      if (!options.machine) {
+        throw new Error(
+          `refusing hosted permission listing; run ${PLATFORM_SLUG} machine settings permission list --machine`,
+        )
+      }
+      for (const line of (
+        await import('../settings/settings-machine-permissions.ts')
+      ).listMachineSettingsPermissions(Boolean(options.json)))
+        log(line)
+    })
+}
+
+export function register(program: Command): void {
+  const settings = program.command('settings').description('manage canonical Claude settings')
+  registerSettingsSources(settings)
+  const permission = settings.command('permission').description('manage canonical permission rules')
+  registerPermissionList(permission)
+  for (const operation of ['add', 'remove'] as const) {
+    permission
+      .command(operation)
+      .description(`${operation} a canonical or machine permission rule`)
+      .option('--user', 'target the signed-in user settings')
+      .option('--project <name>', 'registered project whose rule is edited')
+      .option('--machine', 'edit the machine permission overlay')
+      .requiredOption('--list <name>', 'permission list containing the rule')
+      .requiredOption('--rule <rule>', 'permission rule to edit')
+      .option('--expect <revision>', 'document revision required before editing')
+      .option('--reason <text>', 'reason recorded for the settings revision')
+      .option('--json', 'write the permission result as JSON')
+      .action(async (options) => {
+        const flags = optionFlags(options)
+        if (
+          flags.has('machine') &&
+          (flags.has('user') ||
+            flags.flag('project') ||
+            flags.flag('expect') ||
+            flags.flag('reason'))
+        )
+          throw new Error(
+            'refusing machine permission edit: --machine cannot be combined with --user, --project, --expect, or --reason',
+          )
+        if (flags.has('machine')) {
+          const result = (
+            await import('../settings/settings-machine-permissions.ts')
+          ).editMachineSettingsPermission({
+            operation,
+            list: flags.flag('list'),
+            rule: flags.flag('rule'),
+          })
+          if (options.json) log(JSON.stringify(result))
+          else {
+            log(result.message)
+            log(
+              `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+            )
+          }
+          return
+        }
+        const result = await (
+          await import('../settings/settings-commands.ts')
+        ).settingsPermissionCommand(flags, operation)
+        if (options.json) log(JSON.stringify(result))
+        else log(result.message ?? `updated permissions.${options.list} at ${result.revision}`)
+      })
+  }
+  for (const operation of ['drop', 'undrop'] as const) {
+    permission
+      .command(operation)
+      .description(
+        operation === 'drop'
+          ? 'suppress a machine permission rule'
+          : 'stop suppressing a machine permission rule',
+      )
+      .requiredOption('--list <name>', 'permission list containing the rule')
+      .requiredOption('--rule <rule>', 'permission rule to edit')
+      .option('--json', 'write the permission result as JSON')
+      .action(async (options) => {
+        const flags = optionFlags(options)
+        const result = (
+          await import('../settings/settings-machine-permissions.ts')
+        ).editMachineSettingsPermission({
+          operation,
+          list: flags.flag('list'),
+          rule: flags.flag('rule'),
+        })
+        if (options.json) log(JSON.stringify(result))
+        else {
+          log(result.message)
+          log(
+            `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+          )
+        }
+      })
+  }
+  registerRestore(settings)
+  registerEnvironment(settings)
+  registerRender(settings)
 }

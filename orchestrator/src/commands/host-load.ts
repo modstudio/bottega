@@ -3,17 +3,9 @@
 
 import type { Command } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
-import { boundedJsonLinePath } from '../../../shared/bounded-json-lines-log.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
-import { contentionRawHorizon } from '../database/contention-retention.ts'
-import { db } from '../database/db.ts'
-import {
-  HOST_LOAD_LOG_NAME,
-  HOST_LOAD_WAIT_MIN_MS,
-  loadHostLoadWindow,
-  recordHostLoadSeriesSample,
-} from '../host-load-series.ts'
+import type { db } from '../database/db.ts'
 import { writeStdout } from './support.ts'
 
 const HOST_LOAD_DEFAULT_WINDOW_MS = 30 * 60 * 1_000
@@ -46,9 +38,14 @@ export async function hostLoadCommand(
     write: (value: string) => Promise<void>
   },
 ): Promise<void> {
+  const [logPath, contention, hostLoad] = await Promise.all([
+    import('../../../shared/bounded-json-lines-log.ts'),
+    import('../database/contention-retention.ts'),
+    import('../host-load-series.ts'),
+  ])
   const now = (presentation.now ?? Date.now)()
   const since = parseSince(options.since, now)
-  const report = loadHostLoadWindow(
+  const report = hostLoad.loadHostLoadWindow(
     database,
     since,
     new Date(now).toISOString(),
@@ -56,12 +53,15 @@ export async function hostLoadCommand(
     presentation.env,
   )
   if (!report) {
-    const path = boundedJsonLinePath(HOST_LOAD_LOG_NAME, presentation.env ?? process.env)
+    const path = logPath.boundedJsonLinePath(
+      hostLoad.HOST_LOAD_LOG_NAME,
+      presentation.env ?? process.env,
+    )
     throw new Error(
       `host load window has no samples in ${path}\ncleared by: run ${PLATFORM_SLUG} machine load sample and keep its launchd sampler job running`,
     )
   }
-  const rawHorizon = contentionRawHorizon(database, now)
+  const rawHorizon = contention.contentionRawHorizon(database, now)
   const rawCoverageReleased = rawHorizon && Date.parse(since) < Date.parse(rawHorizon)
   if (options.json) {
     await presentation.write(
@@ -75,7 +75,7 @@ export async function hostLoadCommand(
   await presentation.write(
     `host load: ${report.sampleCount} samples ${report.firstSampleAt} to ${report.lastSampleAt}\n` +
       `${quantileText}\n` +
-      `swap latest=${report.latestSwapUsed} delta=${report.swapDelta} loadavg1=${report.latestLoadavg1.toFixed(3)} waits>=${HOST_LOAD_WAIT_MIN_MS}ms=${report.hostCapacityWaitCount}\n` +
+      `swap latest=${report.latestSwapUsed} delta=${report.swapDelta} loadavg1=${report.latestLoadavg1.toFixed(3)} waits>=${hostLoad.HOST_LOAD_WAIT_MIN_MS}ms=${report.hostCapacityWaitCount}\n` +
       (rawCoverageReleased
         ? `contention waits before ${rawHorizon} are outside the raw window; ${PLATFORM_SLUG} machine health still totals the older days\n`
         : ''),
@@ -89,9 +89,9 @@ export function registerHostLoadCommands(program: Command): void {
     .option('--quantiles <list>', 'comma-separated CPU busy quantiles')
     .option('--json', 'write the host-load report as JSON')
     .allowExcessArguments(false)
-    .action((options) =>
+    .action(async (options) =>
       hostLoadCommand(
-        db(),
+        (await import('../database/db.ts')).db(),
         {
           since: options.since,
           quantiles: options.quantiles,
@@ -105,6 +105,6 @@ export function registerHostLoadCommands(program: Command): void {
     .description('append one machine host-load sample')
     .allowExcessArguments(false)
     .action(async () => {
-      await recordHostLoadSeriesSample()
+      await (await import('../host-load-series.ts')).recordHostLoadSeriesSample()
     })
 }

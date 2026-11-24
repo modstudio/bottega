@@ -3,15 +3,6 @@
 
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { disposeBranch } from '../branch/branch-disposal.ts'
-import { recordBranchLanding } from '../branch/branch-landing-service.ts'
-import {
-  branchesReport,
-  pruneBranches,
-  pruneOtherBranches,
-  renderBranchesReport,
-  renderBranchPruneReport,
-} from '../branch/branches.ts'
 import { log } from './support.ts'
 
 export function register(program: Command): void {
@@ -24,7 +15,8 @@ export function register(program: Command): void {
     .option('--json', 'write the branch report as JSON')
     .passThroughOptions()
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
+      const { branchesReport, renderBranchesReport } = await import('../branch/branches.ts')
       const report = branchesReport({
         project: options.project,
         key: options.key,
@@ -44,6 +36,7 @@ export function register(program: Command): void {
     .option('--json', 'write the disposal record as JSON')
     .allowExcessArguments(false)
     .action(async (target, options) => {
+      const { disposeBranch } = await import('../branch/branch-disposal.ts')
       const result = await disposeBranch({
         target,
         reason: options.reason,
@@ -64,7 +57,8 @@ export function register(program: Command): void {
     .requiredOption('--pr <number>', 'name the merged pull request')
     .option('--json', 'write the landing record as JSON')
     .allowExcessArguments(false)
-    .action((branch, options) => {
+    .action(async (branch, options) => {
+      const { recordBranchLanding } = await import('../branch/branch-landing-service.ts')
       const report = recordBranchLanding(branch, Number(options.pr))
       log(
         options.json
@@ -82,12 +76,15 @@ export function register(program: Command): void {
     .option('--dry-run', 'report branches without deleting them')
     .option('--json', 'write the prune report as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
       if (Boolean(options.key) === Boolean(options.allLocal)) {
         throw new Error(
           `${PLATFORM_SLUG} tree branch prune requires exactly one of --key <KEY> or --all-local`,
         )
       }
+      const { pruneOtherBranches, pruneBranches, renderBranchPruneReport } = await import(
+        '../branch/branches.ts'
+      )
       const report = options.allLocal
         ? pruneOtherBranches({ project: options.project, dryRun: options.dryRun })
         : pruneBranches({ project: options.project, key: options.key, dryRun: options.dryRun })

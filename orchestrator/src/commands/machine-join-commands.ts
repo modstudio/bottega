@@ -1,17 +1,7 @@
 // concern: machine join, approval, anchoring, and recovery command grammar
 
-import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import type { ConfigClient } from '../../../shared/config-client.ts'
-import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
-import { machineApprove, machineJoin, unanchoredApprovalNotice } from '../config/machine-join.ts'
-import {
-  machineAnchor,
-  machineRecover,
-  RECOVERY_WORDS_CONFIRMATION_PROMPT,
-  recoveryWordsConfirmed,
-} from '../config/trust-log-anchor.ts'
-import { promptHidden } from './hidden-prompt.ts'
 import { log } from './support.ts'
 
 type SelectedSpace = { spaceId: string; slug: string }
@@ -32,6 +22,10 @@ export function registerMachineJoinCommands(machine: Command, selectSpace: Selec
     .description('print a pairing code and wait for an approved machine')
     .option('--space <slug>', 'join this record space')
     .action(async (options) => {
+      const [{ hostedConfigClient }, { machineJoin }] = await Promise.all([
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/machine-join.ts'),
+      ])
       const client = hostedConfigClient()
       const selected = await selectSpace('machine join', options.space, client)
       const approved = await machineJoin(selected, { client, env: process.env, output: log })
@@ -42,24 +36,33 @@ export function registerMachineJoinCommands(machine: Command, selectSpace: Selec
     .description('approve a joining machine with its pairing code')
     .option('--space <slug>', 'approve in this record space')
     .action(async (code: string[], options) => {
+      const [{ hostedConfigClient }, join] = await Promise.all([
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/machine-join.ts'),
+      ])
       const client = hostedConfigClient()
       const selected = await selectSpace('machine approve', options.space, client)
-      const approved = await machineApprove(code.join('-'), selected, {
+      const approved = await join.machineApprove(code.join('-'), selected, {
         client,
         env: process.env,
         output: log,
       })
       log(`approved ${approved.label} (${approved.keyId})`)
-      if (!approved.anchored) log(unanchoredApprovalNotice(selected.slug))
+      if (!approved.anchored) log(join.unanchoredApprovalNotice(selected.slug))
     })
   machine
     .command('anchor')
     .description('anchor this record space machine trust log')
     .option('--space <slug>', 'anchor this record space')
     .action(async (options) => {
+      const [{ createInterface }, { hostedConfigClient }, anchor] = await Promise.all([
+        import('node:readline/promises'),
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/trust-log-anchor.ts'),
+      ])
       const client = hostedConfigClient()
       const selected = await selectSpace('machine anchor', options.space, client)
-      await machineAnchor(selected, {
+      await anchor.machineAnchor(selected, {
         client,
         env: process.env,
         ...ttyPorts(),
@@ -67,8 +70,8 @@ export function registerMachineJoinCommands(machine: Command, selectSpace: Selec
         confirm: async () => {
           const terminal = createInterface({ input: process.stdin, output: process.stdout })
           try {
-            return recoveryWordsConfirmed(
-              await terminal.question(RECOVERY_WORDS_CONFIRMATION_PROMPT),
+            return anchor.recoveryWordsConfirmed(
+              await terminal.question(anchor.RECOVERY_WORDS_CONFIRMATION_PROMPT),
             )
           } finally {
             terminal.close()
@@ -81,6 +84,11 @@ export function registerMachineJoinCommands(machine: Command, selectSpace: Selec
     .description('recover this machine into a record space machine trust log')
     .option('--space <slug>', 'recover into this record space')
     .action(async (options) => {
+      const [{ hostedConfigClient }, { machineRecover }, { promptHidden }] = await Promise.all([
+        import('../config/hosted-config-call-outcome.ts'),
+        import('../config/trust-log-anchor.ts'),
+        import('./hidden-prompt.ts'),
+      ])
       const client = hostedConfigClient()
       const selected = await selectSpace('machine recover', options.space, client)
       await machineRecover(selected, {

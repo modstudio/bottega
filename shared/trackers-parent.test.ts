@@ -18,7 +18,7 @@ const project = (protocol: string): TrackerProject => ({
 
 const scopeTools = async () => [
   { name: 'list-tasks-tool', inputSchema: { properties: { team_id: {} } } },
-  { name: 'task.list', inputSchema: { properties: { projectId: {} } } },
+  { name: 'task_list', inputSchema: { properties: { projectId: {} } } },
 ]
 
 describe('tracker parent mapping', () => {

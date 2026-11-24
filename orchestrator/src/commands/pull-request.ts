@@ -5,34 +5,15 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { writableDb } from '../database/db.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
-import { assertOrchestratorProse } from '../prose-service.ts'
-import {
-  checkPushedTip,
-  createPullRequest,
-  recordTriageOverride,
-} from '../pull-request/pr-admission.ts'
+import type { writableDb } from '../database/db.ts'
+import type { createPullRequest } from '../pull-request/pr-admission.ts'
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
-import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
-import {
-  cliPullRequestMergeAdapterWithPostLanding,
-  mergePullRequest,
-} from '../pull-request/pr-merge.ts'
-import {
-  cliPostLandingAdapter,
-  runPullRequestPostLanding,
-} from '../pull-request/pr-post-landing.ts'
+import type { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
   type PullRequestPostLandingPayload,
-  parsePullRequestPostLandingPayload,
-  postLandingRecovery,
 } from '../pull-request/pr-post-landing-payload.ts'
-import { releaseRequiredRungsBeforeMainMove } from '../release/release-required.ts'
-import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
-import { releaseAtCommitFromHookTree } from './release-tree.ts'
 import { log } from './support.ts'
 
 export const PR_CREATE_OPTIONS = [
@@ -130,12 +111,19 @@ export type PullRequestCreateOptions = {
   fromOperator?: boolean
 }
 
+const defaultCreatePullRequest: typeof createPullRequest = async (...args) =>
+  (await import('../pull-request/pr-admission.ts')).createPullRequest(...args)
+
 export async function createPullRequestCommand(
   githubArgs: string[],
   options: PullRequestCreateOptions,
   _command?: Command,
-  create: typeof createPullRequest = createPullRequest,
+  create: typeof createPullRequest = defaultCreatePullRequest,
 ): Promise<void> {
+  const [{ resolveReviewCommandCwd }, { assertOrchestratorProse }] = await Promise.all([
+    import('../review/review-command-cwd.ts'),
+    import('../prose-service.ts'),
+  ])
   validateGithubArguments(githubArgs)
   const cwd = resolveReviewCommandCwd(options.cwd)
   const title = githubValue(githubArgs, '--title', '-t')
@@ -177,7 +165,8 @@ type PullRequestPostLandingCommandPorts = {
 
 const pullRequestPostLandingCommandPorts: PullRequestPostLandingCommandPorts = {
   readPayload: () => Bun.stdin.text(),
-  runPostLanding: runPullRequestPostLanding,
+  runPostLanding: async (...args) =>
+    (await import('../pull-request/pr-post-landing.ts')).runPullRequestPostLanding(...args),
   log,
 }
 
@@ -186,6 +175,9 @@ async function runPullRequestPostLandingCommand(
   database: ReturnType<typeof writableDb>,
   overrides: Partial<PullRequestPostLandingCommandPorts> = {},
 ): Promise<number> {
+  const { parsePullRequestPostLandingPayload, postLandingRecovery } = await import(
+    '../pull-request/pr-post-landing-payload.ts'
+  )
   const ports = { ...pullRequestPostLandingCommandPorts, ...overrides }
   let recoveryDepth: string | null = null
   let payload: PullRequestPostLandingPayload | null = null
@@ -212,19 +204,30 @@ export async function mergePullRequestCommand(
   target: string,
   options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean; depth?: string },
 ): Promise<void> {
+  const [database, merge, postLandingModule, release, reviewCwd, releaseTree] = await Promise.all([
+    import('../database/db.ts'),
+    import('../pull-request/pr-merge.ts'),
+    import('../pull-request/pr-post-landing.ts'),
+    import('../release/release-required.ts'),
+    import('../review/review-command-cwd.ts'),
+    import('./release-tree.ts'),
+  ])
   if (options.postLanding) {
-    const exitCode = await runPullRequestPostLandingCommand(target, writableDb())
+    const exitCode = await runPullRequestPostLandingCommand(target, database.writableDb())
     if (exitCode !== 0) process.exitCode = exitCode
     return
   }
-  const cwd = resolveReviewCommandCwd(options.cwd)
-  const postLanding = cliPostLandingAdapter((input) =>
-    releaseRequiredRungsBeforeMainMove({ ...input, releaseAt: releaseAtCommitFromHookTree }),
+  const cwd = reviewCwd.resolveReviewCommandCwd(options.cwd)
+  const postLanding = postLandingModule.cliPostLandingAdapter((input) =>
+    release.releaseRequiredRungsBeforeMainMove({
+      ...input,
+      releaseAt: releaseTree.releaseAtCommitFromHookTree,
+    }),
   )
-  const outcome = await mergePullRequest(
+  const outcome = await merge.mergePullRequest(
     target,
     cwd,
-    cliPullRequestMergeAdapterWithPostLanding(postLanding),
+    merge.cliPullRequestMergeAdapterWithPostLanding(postLanding),
     undefined,
     Boolean(options.releaseRequired),
     options.depth,
@@ -254,11 +257,22 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(mergePullRequestCommand)
 
+  registerPullRequestCi(pr)
+  registerPullRequestAdmission(pr)
+}
+
+function registerPullRequestCi(pr: Command): void {
   pr.command('ci-record <number>')
     .description('record GitHub Actions attempts for an already-merged pull request')
     .option('--project <name>', 'record against this registered project')
     .allowExcessArguments(false)
-    .action((target: string, options) => {
+    .action(async (target: string, options) => {
+      const [{ writableDb }, { projectAt, projectByName }, { recordPullRequestCi }] =
+        await Promise.all([
+          import('../database/db.ts'),
+          import('../project/projects.ts'),
+          import('../pull-request/pr-ci-record.ts'),
+        ])
       const database = writableDb()
       const project = options.project
         ? projectByName(options.project, database)
@@ -281,14 +295,20 @@ export function register(program: Command): void {
       if (outcome.output) log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })
+}
 
+function registerPullRequestAdmission(pr: Command): void {
   pr.command('override')
     .description('record an operator override for the checked-out tip')
     .requiredOption('--reason <reason>', 'record why the operator admits incomplete triage')
     .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
-    .action((options) => {
-      const id = recordTriageOverride(options.reason, Boolean(options.fromOperator), process.cwd())
+    .action(async (options) => {
+      const id = (await import('../pull-request/pr-admission.ts')).recordTriageOverride(
+        options.reason,
+        Boolean(options.fromOperator),
+        process.cwd(),
+      )
       log(String(id))
     })
 
@@ -299,7 +319,7 @@ export function register(program: Command): void {
     .requiredOption('--remote-ref <ref>', 'name the destination ref')
     .allowExcessArguments(false)
     .action(async (options) => {
-      const result = await checkPushedTip(
+      const result = await (await import('../pull-request/pr-admission.ts')).checkPushedTip(
         process.cwd(),
         options.sha.trim(),
         options.remoteRef.trim(),

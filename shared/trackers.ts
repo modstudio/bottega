@@ -832,9 +832,8 @@ async function lookupCursorTask(
 }
 
 /**
- * Dotted tool names (`task.list`) with a `{data:{items,nextCursor}}` envelope,
- * paged by cursor. The dot is the server's wire name even when clients display
- * it as an underscore.
+ * Underscore tool names (`task_list`) with a `{data:{items,nextCursor}}` envelope,
+ * paged by cursor.
  */
 function cursorMcpSource(
   project: string,

@@ -4,7 +4,6 @@
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { runRatchet } from '../ratchet/ratchet-service.ts'
 
 const USAGE =
   `usage: ${PLATFORM_SLUG} gate ratchet --format <name> [--staged|--base <ref>] [--support <path>]... <command...>\n` +
@@ -45,6 +44,7 @@ export function register(program: Command): void {
     .argument('[command...]')
     .allowUnknownOption(true)
     .action(async (command, options) => {
+      const { runRatchet } = await import('../ratchet/ratchet-service.ts')
       if (options.staged && options.base) throw new Error('--staged cannot be combined with --base')
       const reportFlag =
         options.headReport || options.baseReport || options.reportRoot || options.measure.length > 0

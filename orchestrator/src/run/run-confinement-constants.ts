@@ -1,0 +1,1 @@
+export const CONFINEMENT_RUN_WINDOW_DAYS = 7

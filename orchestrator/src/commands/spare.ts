@@ -1,7 +1,6 @@
 // concern: cli
 /** Registers the spare-hands lane adapter. Must not own its behavior. */
 import type { Command } from 'commander'
-import { spareRunCommand } from '../spare/spare-runner.ts'
 import { write } from './support.ts'
 
 export function register(program: Command): void {
@@ -16,6 +15,7 @@ export function register(program: Command): void {
     .option('--until <HH:MM>', 'stop at this clock time instead of spare.stop_time')
     .allowExcessArguments(false)
     .action(async (options) => {
+      const { spareRunCommand } = await import('../spare/spare-runner.ts')
       const code = await spareRunCommand({ job: options.job, until: options.until }, (line) =>
         write(`${line}\n`),
       )
