@@ -311,6 +311,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-release-client-contract.test.ts',
   'scripts/check-hosted-secret-writers.test.ts',
   'scripts/check-hosted-local-sql.test.ts',
+  'scripts/check-board-side-channel-refresh.test.ts',
   'scripts/hosted-local-read-report.test.ts',
   'scripts/check-doc-local-sql-authority.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',

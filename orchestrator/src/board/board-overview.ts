@@ -10,6 +10,10 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { hostedMessageIsLive } from './board-hosted-cache-readers.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
 import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'
@@ -196,7 +200,7 @@ export async function listBoardOverview(
   })
   if (refreshed.status !== 'local' && refreshed.status !== 'success')
     throw new Error(
-      `hosted board overview stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('overview', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const rows =
     refreshed.status === 'local'

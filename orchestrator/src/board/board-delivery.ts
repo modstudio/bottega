@@ -12,6 +12,11 @@ import {
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
@@ -112,7 +117,7 @@ export async function claimBoardNotices(
   }
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const hosted = await claimCachedHostedForPush(sessionReader(env), all)
   return {
@@ -139,7 +144,7 @@ export async function readBoardNotices(
     return { notices: readNotices(all, env).map(deliveryNotice), warning: null }
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const hosted = claimCachedHosted(sessionReader(env), all)
   await markCachedHostedDelivered(
@@ -176,22 +181,25 @@ export async function claimRunBoardNotices(
       withheldOlderCount: local.withheldOlderCount,
     }
   }
-  if (refreshed.status !== 'success')
-    throw new Error(
-      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+  if (refreshed.status === 'success') {
+    const hosted = await claimCachedHostedForPush(
+      reader,
+      all,
+      Date.now(),
+      undefined,
+      true,
+      readerRunRecordId,
     )
-  const hosted = await claimCachedHostedForPush(
-    reader,
-    all,
-    Date.now(),
-    undefined,
-    true,
-    readerRunRecordId,
-  )
+    return {
+      notices: hosted.notices.map(deliveryNotice).map(runNotice),
+      warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
+      withheldOlderCount: hosted.withheldOlderCount,
+    }
+  }
   return {
-    notices: hosted.notices.map(deliveryNotice).map(runNotice),
-    warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
-    withheldOlderCount: hosted.withheldOlderCount,
+    notices: [],
+    warning: hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY),
+    withheldOlderCount: 0,
   }
 }
 

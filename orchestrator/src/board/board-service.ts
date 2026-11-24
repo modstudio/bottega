@@ -15,6 +15,11 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { cachedHostedBoardReceiptFacts } from './board-hosted-cache-readers.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardRefreshStoppedReason,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { boardMode } from './board-mode.ts'
 import {
   architectIdentity,
@@ -542,12 +547,14 @@ export function readNotices(
   return notices
 }
 
+export type BoardRequestCount = number | { unread: string }
+
 export async function boardRequestCountForSession(
   session: string,
   env: Environment = process.env,
   database: Database = db(),
   refresh: typeof refreshHostedBoard = refreshHostedBoard,
-): Promise<number> {
+): Promise<BoardRequestCount> {
   const boardEnv = { ...env, CLAUDE_CODE_SESSION_ID: session }
   if (boardMode('shared', boardEnv, database) === 'local')
     return claimNotices(true, boardEnv, Date.now(), database).filter(
@@ -558,13 +565,13 @@ export async function boardRequestCountForSession(
     env: boardEnv,
     database,
   })
-  if (refreshed.status !== 'success')
-    throw new Error(
-      `hosted context brief board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
-    )
-  return claimCachedHosted(session, true, Date.now(), database).filter(
-    (notice) => notice.purpose === 'request',
-  ).length
+  if (refreshed.status === 'success')
+    return claimCachedHosted(session, true, Date.now(), database).filter(
+      (notice) => notice.purpose === 'request',
+    ).length
+  return {
+    unread: hostedBoardRefreshStoppedReason(refreshed),
+  }
 }
 
 export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
@@ -694,7 +701,11 @@ async function boardEscalationRows(
     })
     if (refreshed.status !== 'success')
       throw new Error(
-        `hosted board acknowledgement read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+        hostedBoardStoppedMessage(
+          'acknowledgement read',
+          refreshed,
+          HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+        ),
       )
     const messages = cachedHostedBoardMessages(database)
     return messages.flatMap((message) =>

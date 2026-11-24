@@ -4,9 +4,22 @@ import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
-import { boardEscalations } from './board-service.ts'
+import { boardEscalations, boardRequestCountForSession } from './board-service.ts'
 
 beforeEach(() => fixtureProjectRecordId(db()))
+
+test('an incomplete hosted refresh makes the board request count unread', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  const result = await boardRequestCountForSession(
+    'brief-reader',
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    db(),
+    async () => ({ status: 'incomplete' as const, applied: 0 }),
+  )
+
+  expect(result).toEqual({ unread: 'refresh did not catch up within its budget' })
+})
 
 test('hosted acknowledgement escalation returns the cached record id, not a local number', async () => {
   const database = db()

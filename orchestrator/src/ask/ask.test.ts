@@ -277,7 +277,7 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('check_orchestrator_messages stops without local fallback when hosted refresh fails', async () => {
+  test('check_orchestrator_messages warns without local fallback when hosted refresh fails', async () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
     const startedAt = (
@@ -350,7 +350,7 @@ describe('the live ask channel always answers', () => {
       )
       expect(first).not.toContain(`Board message ${local.number}: Local ask`)
       expect(first).not.toContain(`Board message ${hosted.id}: Hosted ask`)
-      expect(first).toContain('Messages could not be checked')
+      expect(first).toContain('hosted board read stopped')
       expect(first).toContain('ask refresh offline')
       expect(first).toContain('offline Forged-Warning: ask')
       expect(first).not.toContain('offline\nForged-Warning: ask')

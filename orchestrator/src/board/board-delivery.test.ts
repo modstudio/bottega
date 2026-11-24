@@ -180,6 +180,42 @@ test('a second chain turn claims and marks hosted and local notices through its 
   ).toEqual({ reader_session: `run:${root.id}` })
 })
 
+test('an incomplete refresh leaves a run notice claimable for a later turn', async () => {
+  const runId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn,project_record_id)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-2608',?,1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
+    )
+    .run('2026-10-05T11:00:00.000Z', runId)
+  const notice = hosted(`run:${runId}`)
+  installFailedRefreshWithCached(notice)
+
+  const incomplete = await claimRunBoardNotices(runId, false, 500, false, async () => ({
+    status: 'incomplete' as const,
+    applied: 0,
+  }))
+
+  expect(incomplete.notices).toEqual([])
+  expect(incomplete.warning).toBe(
+    'hosted board read stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
+  )
+  expect(
+    db()
+      .query('SELECT delivered_at FROM hosted_board_receipt_cache WHERE message_id=?')
+      .get(notice.id),
+  ).toBeNull()
+  expect(
+    (
+      await claimRunBoardNotices(runId, false, 500, false, async () => ({
+        status: 'success' as const,
+        applied: 0,
+      }))
+    ).notices.map((row) => row.id),
+  ).toEqual([notice.id])
+})
+
 test('a spent refresh budget stops the hosted read with a remedy', async () => {
   const env = {
     CLAUDE_CODE_SESSION_ID: 'delivery-reader',
@@ -218,7 +254,7 @@ test('a spent refresh budget stops the hosted read with a remedy', async () => {
       }),
   })
   await expect(claimBoardNotices(false, { env, budgetMs: 20 })).rejects.toThrow(
-    'hosted board read stopped: refresh incomplete',
+    'hosted board read stopped: refresh did not catch up within its budget',
   )
 })
 

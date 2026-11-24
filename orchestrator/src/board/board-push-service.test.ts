@@ -30,7 +30,11 @@ import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
-import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import {
+  boardPendingJson,
+  markBoardDeliveryDelivered,
+  pendingBoardDelivery,
+} from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
 import { postNotice } from './board-service.ts'
 import { renderBoardReplyDelivery } from './board-thread-render.ts'
@@ -516,6 +520,69 @@ test('delivery returns every pending notice and preserves its first delivered ti
   ).toEqual(first)
 })
 
+test('an incomplete hosted refresh delivers and marks nothing', async () => {
+  const session = 'incomplete-refresh-reader'
+  const clock = Date.parse('2026-10-08T12:15:00.000Z')
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 20,
+    clock,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    refresh: async () => ({
+      status: 'incomplete' as const,
+      applied: 0,
+    }),
+  })
+
+  expect(result.delivery).toEqual([])
+  expect(result.pendingAcknowledgements).toEqual([])
+  expect(result.warning).toBe(
+    'hosted board delivery stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
+  )
+  expect(result.stopped).toBe(true)
+  expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
+  expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
+    count: 0,
+  })
+
+  expect(boardPendingJson(result).stopped).toBe(true)
+})
+
+test('board pending JSON distinguishes a stopped read from an informational warning', () => {
+  const warning = 'One reply successor was deferred until the next board pending read.'
+  const value = boardPendingJson({
+    delivery: [
+      {
+        id: 'notice-1',
+        text: 'Notice text',
+        requiresAcknowledgement: false,
+        createdAt: '2026-10-08T12:15:00.000Z',
+        deliveredAt: null,
+      },
+    ],
+    overflow: null,
+    pendingAcknowledgements: [],
+    warning,
+    stopped: false,
+  })
+
+  expect(value).toEqual({
+    delivery: [{ id: 'notice-1', text: 'Notice text', requiresAcknowledgement: false }],
+    overflow: null,
+    pendingAcknowledgements: [],
+    warning,
+    stopped: false,
+  })
+})
+
 test('recent reminders are removed before bounding without changing pending acknowledgements', async () => {
   const clock = Date.parse('2026-10-08T12:30:00.000Z')
   const session = 'bounded-reminder-reader'
@@ -765,7 +832,9 @@ test('PostToolUse fails open on malformed command output', () => {
 })
 
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
-  const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
+  const item = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"stopped":false}',
+  )
   item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
   const payload = JSON.stringify({
@@ -802,6 +871,7 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   const freshOutput = JSON.stringify({
     delivery: [{ id: '8', text: 'fresh notice', requiresAcknowledgement: false }],
     overflow: null,
+    stopped: false,
     pendingAcknowledgements: [{ id: '7', text: 'recent reminder', requiresAcknowledgement: true }],
   })
   const item = createHookFixture(freshOutput)
@@ -859,7 +929,9 @@ test('PostToolUse throttles a failed path until the retry interval', () => {
 })
 
 test('PostToolUse refreshes a stale hosted cache at most once per refresh interval', () => {
-  const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
+  const item = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"stopped":false}',
+  )
   item.database
     .query("UPDATE schema_meta SET value='2000-01-01T00:00:00.000Z' WHERE key=?")
     .run('board_hosted_refresh_at')

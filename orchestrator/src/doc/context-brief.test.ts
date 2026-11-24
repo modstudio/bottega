@@ -129,6 +129,26 @@ test('renders the compact context layout line by line and keeps only item first 
   ])
 })
 
+test('renders an unread board request count with its reason', () => {
+  const brief: ContextBrief = {
+    session: 'unread-board-session',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session unread-board-session`,
+    holders: [],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: {
+      boardRequests: { unread: 'refresh budget spent' },
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'manual',
+  }
+
+  expect(renderContextBrief(brief)).toContain('board requests: not read: refresh budget spent')
+})
+
 test('renders a keyless cursor with its idle age and close command', () => {
   const brief: ContextBrief = {
     session: 'session-a',

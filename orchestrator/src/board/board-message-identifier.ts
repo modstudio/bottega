@@ -5,6 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
 import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
+import {
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { boardModeForId } from './board-mode.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
@@ -29,7 +33,7 @@ export async function refreshHostedBoardIdentifier(
   })
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board message read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('message read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
 }
 

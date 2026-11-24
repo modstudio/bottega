@@ -14,6 +14,10 @@ import {
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
+import {
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
+} from './board-hosted-refresh-message.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import { requireRealSession } from './board-policy.ts'
@@ -407,11 +411,16 @@ async function refreshForPendingBoardDelivery(input: DeliveryInput, database: Da
     : input.budgetMs > 0
       ? await refreshHostedBoard({ budgetMs: input.budgetMs, database })
       : cachedMode()
-  if (refreshed.status !== 'local' && refreshed.status !== 'success')
-    throw new Error(
-      `hosted board delivery stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
-    )
-  return refreshed.status === 'local'
+  if (refreshed.status === 'local' || refreshed.status === 'success')
+    return { localMode: refreshed.status === 'local', warning: null }
+  return {
+    localMode: false,
+    warning: hostedBoardStoppedMessage(
+      'delivery',
+      refreshed,
+      HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+    ),
+  }
 }
 
 function pendingDeliveryCandidates(
@@ -434,11 +443,29 @@ function pendingDeliveryCandidates(
     : [...unread, ...withdrawalDeliveries]
 }
 
-export async function pendingBoardDelivery(input: DeliveryInput) {
+export type PendingBoardDelivery = {
+  delivery: BoardDelivery[]
+  overflow: string | null
+  pendingAcknowledgements: BoardDelivery[]
+  warning: string | null
+  stopped: boolean
+}
+
+const unavailableBoardDelivery = (warning: string): PendingBoardDelivery => ({
+  delivery: [],
+  overflow: null,
+  pendingAcknowledgements: [],
+  warning,
+  stopped: true,
+})
+
+export async function pendingBoardDelivery(input: DeliveryInput): Promise<PendingBoardDelivery> {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
-  const localMode = await refreshForPendingBoardDelivery(input, database)
+  const refresh = await refreshForPendingBoardDelivery(input, database)
+  if (refresh.warning) return unavailableBoardDelivery(refresh.warning)
+  const localMode = refresh.localMode
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
   const claimReplySuccessors = input.claimReplySuccessors ?? true
@@ -503,6 +530,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
+    stopped: false,
     warning: deliveryWarning(
       localPush?.warning ?? null,
       hostedPush?.warning ?? null,
@@ -514,6 +542,24 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
         boardPendingCommand(input.session),
       ),
     ),
+  }
+}
+
+export function boardPendingJson(delivery: PendingBoardDelivery) {
+  return {
+    delivery: delivery.delivery.map((notice) => ({
+      id: notice.id,
+      text: notice.text,
+      requiresAcknowledgement: notice.requiresAcknowledgement,
+    })),
+    overflow: delivery.overflow,
+    warning: delivery.warning,
+    stopped: delivery.stopped,
+    pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
+      id: notice.id,
+      text: notice.text,
+      requiresAcknowledgement: true,
+    })),
   }
 }
 

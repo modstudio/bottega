@@ -6,7 +6,7 @@ import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts
 import { gitAt } from '../../../shared/git.ts'
 import type { ClaimView } from '../board/board-claim-service.ts'
 import { boardLiveClaimsOfSession } from '../board/board-operations.ts'
-import { boardRequestCountForSession } from '../board/board-service.ts'
+import { type BoardRequestCount, boardRequestCountForSession } from '../board/board-service.ts'
 import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
@@ -81,7 +81,7 @@ export type ContextBrief = {
   claims: Array<{ kind: string; value: string }>
   reviewVerdictLines?: string[]
   waiting: {
-    boardRequests: number
+    boardRequests: BoardRequestCount
     questions: QuestionInboxCounts | null
     filedIssues: number
     resumeBriefs: number
@@ -106,6 +106,11 @@ function waitingQuestionLine(counts: QuestionInboxCounts | null): string {
   ].filter((group): group is string => group !== null)
   if (!groups.length) return '0 questions'
   return `${groups.join(' · ')} (${PLATFORM_SLUG} question inbox --all --active)`
+}
+
+function boardRequestLine(requests: BoardRequestCount): string {
+  if (typeof requests !== 'number') return `board requests: not read: ${requests.unread}`
+  return `${count(requests, 'board request')} (${PLATFORM_SLUG} board read)`
 }
 
 function renderItem(item: ContextItem): string {
@@ -155,7 +160,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   else lines.push('In flight: none')
   lines.push(...(brief.reviewVerdictLines ?? []))
   lines.push(
-    `Waiting: ${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read) · ` +
+    `Waiting: ${boardRequestLine(brief.waiting.boardRequests)} · ` +
       `${waitingQuestionLine(brief.waiting.questions)} · ` +
       `${count(brief.waiting.filedIssues, 'filed issue')} (${PLATFORM_SLUG} workflow fix-defect --waiting) · ` +
       `${count(brief.waiting.resumeBriefs, 'resume brief')} (${PLATFORM_SLUG} doc resumes)`,
