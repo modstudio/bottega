@@ -20,7 +20,7 @@ const RUN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 /** The local operator has no session id; this reserved reader keeps receipts non-null. */
 export const OPERATOR_READER = 'operator'
 
-export type ArchitectIdentity = { session: string; harness: 'claude-code' }
+export type ArchitectIdentity = { session: string; harness: 'claude-code' | 'codex' }
 export function architectIdentity(
   env: Record<string, string | undefined>,
 ): ArchitectIdentity | null {
