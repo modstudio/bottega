@@ -575,9 +575,7 @@ test('board pending JSON distinguishes a stopped read from an informational warn
   })
 
   expect(value).toEqual({
-    delivery: [
-      { id: 'notice-1', text: 'Notice text', requiresAcknowledgement: false },
-    ],
+    delivery: [{ id: 'notice-1', text: 'Notice text', requiresAcknowledgement: false }],
     overflow: null,
     pendingAcknowledgements: [],
     warning,
