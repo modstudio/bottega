@@ -1058,12 +1058,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
         input.workflowKey,
       ),
     }
-  const satisfied = satisfyOf(
-    evidence,
-    classMeasured,
-    input.freshRulingAfter,
-    input.workflowKey,
-  )
+  const satisfied = satisfyOf(evidence, classMeasured, input.freshRulingAfter, input.workflowKey)
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== evidence.satisfy?.id)
   const finishing = finishOf(input.finishing, remaining, deferred.defer)

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
 import { decidePullRequestClassGuard } from './pr-class-guard.ts'
 
@@ -39,11 +40,7 @@ test.each([
 })
 
 test('quotes a spaced worktree and shell command as one rerunnable invocation', () => {
-  const measuredCommand = renderClassMeasurementCommand([
-    'sh',
-    '-c',
-    "rg 'reader leak' | wc -l",
-  ])!
+  const measuredCommand = renderClassMeasurementCommand(['sh', '-c', "rg 'reader leak' | wc -l"])!
   const decision = decidePullRequestClassGuard({
     ...base,
     measurement: { ...base.measurement, command: measuredCommand },
@@ -52,7 +49,6 @@ test('quotes a spaced worktree and shell command as one rerunnable invocation', 
   })
   expect(decision).toEqual({
     kind: 'refuse',
-    message:
-      "the Class guard has no successful post-implement measurement; run `bottega workflow exec --cwd '/tree with space' -- 'sh' '-c' 'rg '\\''reader leak'\\'' | wc -l'`",
+    message: `the Class guard has no successful post-implement measurement; run \`${PLATFORM_SLUG} workflow exec --cwd '/tree with space' -- 'sh' '-c' 'rg '\\''reader leak'\\'' | wc -l'\``,
   })
 })

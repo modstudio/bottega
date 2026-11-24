@@ -1,9 +1,9 @@
-import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { evidenceRefs } from '../workflow/workflow-floor-evidence-refs.ts'
 import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
+import { evidenceRefs } from '../workflow/workflow-floor-evidence-refs.ts'
 import {
   assertPullRequestTaskCursorAdmission,
   decidePullRequestTaskCursorAdmission,
