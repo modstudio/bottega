@@ -2,7 +2,8 @@
 /** Selects required per-machine settings values and reports every missing name. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { readSettingsEnv, selectedSettingsEnvironment } from './settings-env.ts'
+import type { OwnedSettings } from './settings.ts'
+import { renderedSettingsEnvironment } from './settings-render.ts'
 
 export function missingSettingsEnvironmentRefusal(path: string, names: readonly string[]): string {
   return [
@@ -20,17 +21,12 @@ export function missingSettingsEnvironmentRefusal(path: string, names: readonly 
   ].join('\n')
 }
 
-function selectSettingsEnvironment(path: string, names: readonly string[]) {
-  return selectedSettingsEnvironment(readSettingsEnv(path), names)
-}
-
-export function requireSettingsEnvironment(
-  path: string,
-  names: readonly string[],
-): Record<string, string> {
-  const selection = selectSettingsEnvironment(path, names)
-  if (selection.missing.length > 0) {
-    throw new Error(missingSettingsEnvironmentRefusal(path, selection.missing))
-  }
-  return selection.selected
+export function environmentForSettingsApply(
+  owned: OwnedSettings,
+  selected: Record<string, string>,
+  missing: readonly string[],
+  fileExists: boolean,
+): Record<string, string> | undefined {
+  if (missing.length === 0) return renderedSettingsEnvironment(owned, selected)
+  return fileExists ? undefined : { ...(owned.env ?? {}) }
 }

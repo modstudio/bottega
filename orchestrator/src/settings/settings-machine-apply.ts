@@ -50,7 +50,10 @@ import {
   selectedSettingsEnvironment,
   userSettingsEnvPath,
 } from './settings-env.ts'
-import { missingSettingsEnvironmentRefusal } from './settings-environment-selection.ts'
+import {
+  environmentForSettingsApply,
+  missingSettingsEnvironmentRefusal,
+} from './settings-environment-selection.ts'
 import {
   claudeHomeFromEnvironment,
   tryReadSettingsFile,
@@ -69,7 +72,6 @@ import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
   parseSettingsFile,
-  renderedSettingsEnvironment,
   renderOwnedSettingsFile,
 } from './settings-render.ts'
 import {
@@ -185,16 +187,6 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
     detail: error instanceof Error ? error.message : String(error),
     changed: false,
   }
-}
-
-function environmentForSettingsApply(
-  owned: OwnedSettings,
-  selected: Record<string, string>,
-  missing: readonly string[],
-  fileExists: boolean,
-): Record<string, string> | undefined {
-  if (missing.length === 0) return renderedSettingsEnvironment(owned, selected)
-  return fileExists ? undefined : { ...(owned.env ?? {}) }
 }
 
 function localUserSettingsDocuments(owner: string): UserSettingsDocuments {

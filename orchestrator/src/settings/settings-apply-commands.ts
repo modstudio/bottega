@@ -1,6 +1,7 @@
 // concern: settings-apply-commands
 /** Knows env import, adoption, guarded render writes, and restore command semantics. */
-import { realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
@@ -25,16 +26,20 @@ import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
 import {
   mergeSettingsEnv,
   readSettingsEnv,
+  selectedSettingsEnvironment,
   settingsEnvironmentFromJson,
   userSettingsEnvPath,
 } from './settings-env.ts'
-import { requireSettingsEnvironment } from './settings-environment-selection.ts'
+import {
+  environmentForSettingsApply,
+  missingSettingsEnvironmentRefusal,
+} from './settings-environment-selection.ts'
 import {
   claudeHomeFromEnvironment,
   projectLocalSettingsPath,
   projectSettingsPath,
   readLocalPermissionLists,
-  readSettingsFile,
+  tryReadSettingsFile,
   userLocalSettingsPath,
   userSettingsPath,
 } from './settings-files.ts'
@@ -44,10 +49,15 @@ import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
   displaySettingsValue,
-  renderedSettingsEnvironment,
+  parseSettingsFile,
   renderOwnedSettingsFile,
 } from './settings-render.ts'
-import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
+import {
+  applySettingsWrite,
+  planSettingsWrite,
+  restoreSettingsBackup,
+  writeNewSettingsFileAtomically,
+} from './settings-write.ts'
 
 type Flags = {
   has(name: string): boolean
@@ -234,7 +244,8 @@ export async function settingsRenderWriteCommand(
     )
   }
   const path = target.kind === 'user' ? userSettingsPath(root) : projectSettingsPath(root)
-  const parsed = readSettingsFile(path)
+  const existing = tryReadSettingsFile(path)
+  const parsed = existing ?? parseSettingsFile('{}')
   const hosted = parseStoredOwnedSettings(row.body)
   const merged =
     target.kind === 'user'
@@ -245,6 +256,8 @@ export async function settingsRenderWriteCommand(
   if (target.kind === 'project' && droppedEnv.length > 0) {
     throw new Error('refusing settings render: --drop-env is user-only')
   }
+  let missingEnvironment: string[] = []
+  let environment: Record<string, string> | undefined
   if (target.kind === 'user') {
     const secretsPath = userSettingsEnvPath(root)
     const secrets = readSettingsEnv(secretsPath)
@@ -259,22 +272,23 @@ export async function settingsRenderWriteCommand(
           ' to drop deliberately',
       )
     }
+    const selection = selectedSettingsEnvironment(secrets, owned.envKeys ?? [])
+    missingEnvironment = selection.missing
+    environment = environmentForSettingsApply(
+      owned,
+      selection.selected,
+      selection.missing,
+      existing !== null,
+    )
   }
-  const environment =
-    target.kind === 'user'
-      ? renderedSettingsEnvironment(
-          owned,
-          requireSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? []),
-        )
-      : undefined
   const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-  const plan = planSettingsWrite(path, rendered)
+  const plan = existing ? planSettingsWrite(path, rendered) : null
   logWritePlan(
     target,
     path,
     owned,
     parsed.envKeys,
-    plan.currentText !== plan.renderedText,
+    plan === null || plan.currentText !== plan.renderedText,
     presentation.log,
   )
   if (!flags.has('yes')) {
@@ -282,13 +296,25 @@ export async function settingsRenderWriteCommand(
     presentation.exitCode(1)
     return
   }
-  const result = applySettingsWrite(plan, process.env)
-  if (!result.written) {
-    presentation.log(`unchanged ${path}; no backup written`)
-    return
+  if (plan === null) {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    writeNewSettingsFileAtomically(path, rendered)
+    presentation.log(`wrote ${path}`)
+  } else {
+    const result = applySettingsWrite(plan, process.env)
+    if (!result.written) {
+      presentation.log(`unchanged ${path}; no backup written`)
+    } else {
+      presentation.log(`backup: ${result.backup}`)
+      presentation.log(`wrote ${path}`)
+    }
   }
-  presentation.log(`backup: ${result.backup}`)
-  presentation.log(`wrote ${path}`)
+  if (missingEnvironment.length > 0) {
+    presentation.log(
+      missingSettingsEnvironmentRefusal(userSettingsEnvPath(root), missingEnvironment),
+    )
+    presentation.exitCode(1)
+  }
 }
 
 export function settingsRestoreCommand(

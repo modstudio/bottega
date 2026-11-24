@@ -311,13 +311,11 @@ export async function settingsRenderCheckCommand(
     )
   }
   const secretsPath = userSettingsEnvPath(claudeHomeFromEnvironment(process.env))
-  const selection = selectedSettingsEnvironment(
-    target.kind === 'user' ? readSettingsEnv(secretsPath) : {},
-    storeOwned.envKeys ?? [],
+  const { environment, missingEnvironment } = checkSettingsEnvironment(
+    target,
+    storeOwned,
+    secretsPath,
   )
-  const missingEnvironment = target.kind === 'user' ? selection.missing : []
-  const environment =
-    target.kind === 'user' && missingEnvironment.length === 0 ? selection.selected : undefined
   const renderedEnvironment =
     environment === undefined ? undefined : renderedSettingsEnvironment(storeOwned, environment)
   if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, renderedEnvironment)
@@ -359,6 +357,22 @@ export async function settingsRenderCheckCommand(
     presentation.log(`no settings row for ${targetLabel(target)}`)
   }
   if (drifted || !existing || missingEnvironment.length > 0) presentation.exitCode(1)
+}
+
+function checkSettingsEnvironment(
+  target: SettingsTargetKind,
+  storeOwned: OwnedSettings,
+  secretsPath: string,
+): { environment: Record<string, string> | undefined; missingEnvironment: string[] } {
+  if (target.kind === 'project') return { environment: undefined, missingEnvironment: [] }
+  const selection = selectedSettingsEnvironment(
+    readSettingsEnv(secretsPath),
+    storeOwned.envKeys ?? [],
+  )
+  return {
+    environment: selection.missing.length === 0 ? selection.selected : undefined,
+    missingEnvironment: selection.missing,
+  }
 }
 
 function effectiveStoredSettings(

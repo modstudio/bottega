@@ -60,8 +60,8 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-environment-selection-boundary',
     file: `${source}settings-environment-selection.ts`,
-    allowed: ['shared/brand.ts', 'shared/refusal.ts', `${source}settings-env.ts`],
-    typeOnlyAllowed: [],
+    allowed: ['shared/brand.ts', 'shared/refusal.ts', `${source}settings-render.ts`],
+    typeOnlyAllowed: [`${source}settings.ts`],
     reason: 'Keep required per-machine environment selection independent of stores and commands.',
   },
   {

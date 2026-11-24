@@ -341,7 +341,8 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/settings/settings-environment-selection.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
-    './settings-env.ts',
+    './settings-render.ts',
+    './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-subagents.ts', [
     '../../../shared/brand.ts',

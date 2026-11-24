@@ -418,6 +418,40 @@ describe('settings subagents', () => {
 })
 
 describe('settings render write', () => {
+  test('a fresh file writes owned settings and plain env while reporting every missing name', async () => {
+    await setDoc({
+      scope: 'settings',
+      subject: null,
+      owner: OWNER,
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: ['Bash(test *)'] },
+        hooks: {},
+        env: { PLAIN: 'plain' },
+        envKeys: ['MISSING_A', 'MISSING_B'],
+      }),
+      delivery: 'demand',
+      reason: 'missing environment fixture',
+    })
+    const output = shown()
+
+    await settingsRenderWriteCommand(
+      flags({ user: true, write: true, yes: true }),
+      output.port,
+      () => false,
+    )
+
+    const rendered = JSON.parse(readFileSync(join(claude, 'settings.json'), 'utf8'))
+    expect(rendered.permissions).toEqual({ allow: ['Bash(test *)'] })
+    expect(Object.keys(rendered.hooks).length).toBeGreaterThan(0)
+    expect(rendered.env).toEqual({ PLAIN: 'plain' })
+    expect(output.logs.join('\n')).toContain('MISSING_A')
+    expect(output.logs.join('\n')).toContain('MISSING_B')
+    expect(output.logs.join('\n')).not.toContain('plain')
+    expect(output.code()).toBe(1)
+  })
+
   test('without --yes prints a names-and-counts plan and writes nothing', async () => {
     writeFileSync(
       join(claude, 'settings.json'),
