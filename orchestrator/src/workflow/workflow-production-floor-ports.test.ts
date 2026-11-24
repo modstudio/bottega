@@ -61,7 +61,9 @@ test('note evidence refuses an old note with the sighting command', async () => 
         '2026-09-01T00:00:00.000Z',
         productionWorkflowFloorPorts(),
       ),
-    ).rejects.toThrow(`${PLATFORM_SLUG} note new --same-as fixture#1 --project fixture "<sighting>"`)
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} note new --same-as fixture#1 --project fixture "<sighting>"`,
+    )
   } finally {
     list.mockRestore()
   }
