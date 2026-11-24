@@ -62,7 +62,7 @@ test('an unreadable project is reported while readable projects are still counte
     ['broken', 'readable'],
     new Set(['alive']),
     async (project) => {
-      if (project === 'broken') throw new Error('task list unavailable')
+      if (project === 'broken') throw new Error('task-flow read unavailable')
       return {
         cursors: [{ project: 'readable', id: 11, key: 'DEV-11', session: 'alive', isEpic: false }],
         claims: [],

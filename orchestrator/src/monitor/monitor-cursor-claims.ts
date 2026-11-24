@@ -106,7 +106,7 @@ export async function cursorClaimHealthConditionsForProjects(
         since: null,
         ageMs: null,
         detail: `${project} cursor claim observation unavailable: ${String((cause as Error).message ?? cause)}`,
-        action: `reported; restore readable task, workflow cursor, and claim data for ${project}, then run ${PLATFORM_SLUG} machine monitor`,
+        action: `reported; restore readable task-flow cursor and claim data for ${project}, then run ${PLATFORM_SLUG} machine monitor`,
         affectedProject: project,
       })
     }
