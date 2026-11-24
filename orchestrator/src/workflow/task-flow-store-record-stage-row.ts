@@ -20,7 +20,10 @@ export function required<T>(value: T | null | undefined, field: string): T {
 export function stageRow(
   item: ListedItem,
   includeOpenStageCount = true,
-): TaskFlowStageCursorRow & { open_stage_count?: number } {
+): TaskFlowStageCursorRow & {
+  open_stage_count?: number
+  parent_flow_record_id: string | null
+} {
   const { stage, flow } = item
   return {
     id: stage.number,
@@ -32,6 +35,7 @@ export function stageRow(
     task_record_id: flow.taskId,
     // SQLite cannot persist a taskless flow, so preserve the port's existing taskless row shape.
     task_flow_record_id: flow.taskId === null ? null : stage.flowRecordId,
+    parent_flow_record_id: flow.parentFlowRecordId ?? null,
     instance_id: stage.instanceId ?? '',
     session_id: stage.sessionId ?? null,
     ordinal: stage.activeOrdinal,
@@ -65,7 +69,10 @@ export function stageRow(
 
 export function summaryStageRow(
   item: ListedItem,
-): TaskFlowStageCursorRow & { open_stage_count?: number } {
+): TaskFlowStageCursorRow & {
+  open_stage_count?: number
+  parent_flow_record_id: string | null
+} {
   return stageRow({
     ...item,
     stage: { ...item.stage, closedStepNotes: [], autonomy: null },

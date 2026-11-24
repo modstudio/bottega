@@ -42,9 +42,9 @@ test('a plan-task cursor at start is non-epic when no child flow names its flow'
           workflow_key: 'DEV-10',
           session_id: 'session',
           task_flow_record_id: 'flow-10',
+          parent_flow_record_id: null,
         },
       ],
-      new Set(),
     ),
   ).toEqual([
     {
@@ -54,6 +54,30 @@ test('a plan-task cursor at start is non-epic when no child flow names its flow'
       session: 'session',
       isEpic: false,
     },
+  ])
+})
+
+test('a flow named as another cursor flow parent makes that cursor epic', () => {
+  expect(
+    openKeyedCursorFacts('p', [
+      {
+        id: 10,
+        workflow_key: 'DEV-10',
+        session_id: 'session',
+        task_flow_record_id: 'flow-10',
+        parent_flow_record_id: null,
+      },
+      {
+        id: 11,
+        workflow_key: 'DEV-11',
+        session_id: 'session',
+        task_flow_record_id: 'flow-11',
+        parent_flow_record_id: 'flow-10',
+      },
+    ]),
+  ).toEqual([
+    { project: 'p', id: 10, key: 'DEV-10', session: 'session', isEpic: true },
+    { project: 'p', id: 11, key: 'DEV-11', session: 'session', isEpic: false },
   ])
 })
 

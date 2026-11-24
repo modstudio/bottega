@@ -34,6 +34,7 @@ test('summary stage listings replace only closed notes and autonomy', async () =
     autonomy: 'delegated',
   })
   expect(summary).toEqual({ ...full, closed: '[]', autonomy: null })
+  expect(summary.parent_flow_record_id).toBeNull()
 })
 
 test('all-state stage reads include closed cursors without widening open reads', async () => {

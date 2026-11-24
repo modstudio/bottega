@@ -28,6 +28,7 @@ type OpenStageFact = {
   workflow_key: string
   session_id: string | null
   task_flow_record_id: string | null
+  parent_flow_record_id: string | null
 }
 type CursorClaimProjectFacts = {
   cursors: OpenKeyedCursorFact[]
@@ -67,8 +68,12 @@ function splitDetail(split: Split): string {
 export function openKeyedCursorFacts(
   project: string,
   stages: readonly OpenStageFact[],
-  childParentFlowRecordIds: ReadonlySet<string>,
 ): OpenKeyedCursorFact[] {
+  const childParentFlowRecordIds = new Set(
+    stages.flatMap(({ parent_flow_record_id }) =>
+      parent_flow_record_id ? [parent_flow_record_id] : [],
+    ),
+  )
   return stages.flatMap((stage): OpenKeyedCursorFact[] =>
     stage.workflow_key && stage.session_id
       ? [
@@ -155,16 +160,6 @@ export async function cursorClaimHealthConditions(
         states: [...TASK_FLOW_STAGE_STATES],
         view: 'summary',
       })
-      const flowRecordIds = new Set(
-        stages.flatMap(({ task_flow_record_id }) =>
-          task_flow_record_id ? [task_flow_record_id] : [],
-        ),
-      )
-      const childParentFlowRecordIds = new Set(
-        (
-          await Promise.all([...flowRecordIds].map((recordId) => store.flowState(recordId)))
-        ).flatMap((flow) => (flow?.parent_flow_record_id ? [flow.parent_flow_record_id] : [])),
-      )
       const openStates = new Set<string>(TASK_FLOW_OPEN_STAGE_STATES)
       const listed = await boardClaimList(project, false, {
         database,
@@ -175,7 +170,6 @@ export async function cursorClaimHealthConditions(
         cursors: openKeyedCursorFacts(
           project,
           stages.filter(({ state }) => openStates.has(state)),
-          childParentFlowRecordIds,
         ),
         claims: listed.claims.flatMap((claim): CursorClaimFact[] =>
           claim.live && claim.subject.kind === 'task' && claim.holderSession

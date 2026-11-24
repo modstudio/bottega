@@ -123,6 +123,7 @@ export type TaskFlowOpenStageWorktreeRow = {
 
 export type TaskFlowListedStageRow = TaskFlowStageCursorRow & {
   open_stage_count: number
+  parent_flow_record_id: string | null
   question_number: number | null
 }
 
