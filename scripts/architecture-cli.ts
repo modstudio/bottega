@@ -3,6 +3,8 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 export const cliConcernEntries = [
   'hub/src/cli.ts',
   'hub/src/hosted-tasks.ts',
+  'hub/src/hosted-url.ts',
+  'hub/src/hosted-write-mode.ts',
   'hub/src/task-hosted-record.ts',
   'hub/src/task-print.ts',
   'orchestrator/src/ask/ask-proxy.ts',
@@ -32,12 +34,16 @@ export const cliModules = [
     file: 'cli/worker-record-read.ts',
     allowed: [
       'hub/src/hosted-tasks.ts',
+      'hub/src/hosted-url.ts',
+      'hub/src/hosted-write-mode.ts',
       'hub/src/task-hosted-record.ts',
       'hub/src/task-print.ts',
       'orchestrator/src/ask/worker-record-read-client.ts',
       'orchestrator/src/workflow/workflow-text.ts',
       'orchestrator/src/workflow/workflow-text-commands.ts',
+      'shared/brand.ts',
       'shared/caller-classification.ts',
+      'shared/worker-read-tools.ts',
     ],
   },
   {

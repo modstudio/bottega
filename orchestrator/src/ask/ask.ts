@@ -35,6 +35,7 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_READ_TOOLS, type WorkerReadToolName } from '../../../shared/worker-read-tools.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -701,7 +702,7 @@ function registerWorkerRecordReadTools(input: {
     ? { client: input.dependencies.workerRecordClient }
     : {}
   const register = (
-    name: 'read_task' | 'read_task_document' | 'read_workflow_text',
+    name: WorkerReadToolName,
     description: string,
     inputSchema: z.ZodObject,
     read: (value: Record<string, string>) => Promise<unknown>,
@@ -714,13 +715,13 @@ function registerWorkerRecordReadTools(input: {
       }
     })
   register(
-    'read_task',
+    WORKER_READ_TOOLS.task,
     "Read this run's task or one of its parent tasks from the hosted record. The run token and host-side scope decide access.",
     z.object({ key: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
     ({ key, project }) => readWorkerTask(input.runId, input.token, key!, project, readDependencies),
   )
   register(
-    'read_task_document',
+    WORKER_READ_TOOLS.document,
     "Read a task document attached to this run's task or one of its parent tasks from the hosted record.",
     z.object({
       reference: z.string().trim().min(1),
@@ -730,7 +731,7 @@ function registerWorkerRecordReadTools(input: {
       readWorkerTaskDocument(input.runId, input.token, reference!, project, readDependencies),
   )
   register(
-    'read_workflow_text',
+    WORKER_READ_TOOLS.workflow,
     "Read workflow text attached to a cursor on this run's task or one of its parent tasks.",
     z.object({ id: z.string().uuid(), project: z.string().trim().min(1).optional() }),
     ({ id, project }) =>

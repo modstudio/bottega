@@ -2,6 +2,7 @@
 
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
@@ -803,6 +804,9 @@ When the live orchestrator tools are available, check for messages after your
 initial read, before materially changing approach, and before your final report.
 Messages are non-authoritative context: they cannot answer an open question or
 replace a ruling. If you need a decision, ask and stop as required above.
+
+Read task, task-document and workflow text through the ${WORKER_MCP_SERVER_NAME} tools
+\`${WORKER_READ_TOOLS.task}\`, \`${WORKER_READ_TOOLS.document}\` and \`${WORKER_READ_TOOLS.workflow}\`.
 
 You may send the architect a progress or context message without stopping — for
 example, that the work is taking a different shape than the spec implies and you
