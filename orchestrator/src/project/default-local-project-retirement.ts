@@ -10,9 +10,7 @@ import {
   defaultLocalProjectPath,
   deleteProjectRegisterRow,
 } from '../database/project-register-store.ts'
-import type { ProjectTaskListReader } from '../workflow/project-task-list.ts'
-import { taskReader } from '../workflow/task-read-port.ts'
-import { taskReference } from '../workflow/workflow-task-reference.ts'
+import { type ProjectTaskListReader, readLocalProjectTasks } from '../workflow/project-task-list.ts'
 import { projectByName } from './project-read.ts'
 import { projectReferenceCounts } from './project-reference-counts.ts'
 import type { StoredProjectSettings } from './project-settings.ts'
@@ -25,9 +23,6 @@ type DefaultLocalProjectRetirementFacts = {
   referenced: boolean
   taskCount: number
 }
-
-const readLocalProjectTasks: ProjectTaskListReader = async (project, filters = {}) =>
-  (await taskReader().listLocal({ project, ...filters })).map(taskReference)
 
 function shouldRetireDefaultLocalProject(facts: DefaultLocalProjectRetirementFacts): boolean {
   return (

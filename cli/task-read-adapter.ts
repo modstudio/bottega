@@ -3,7 +3,10 @@ import {
   installProjectRegisterReader,
   projectRegisterReader,
 } from '../hub/src/project-register-reader.ts'
-import type { lookupTasks as lookupTaskRows } from '../hub/src/task.ts'
+import type {
+  listLocalTasks as listLocalTaskRows,
+  lookupTasks as lookupTaskRows,
+} from '../hub/src/task.ts'
 import {
   type ConfinementProbeTaskInput,
   installConfinementProbeTaskCreator,
@@ -20,8 +23,10 @@ import {
 
 type HubTaskReads = {
   db: typeof import('../hub/src/db.ts')
-  task: typeof import('../hub/src/task.ts') & { lookupTasks: typeof lookupTaskRows }
-  taskLocalRead: typeof import('../hub/src/task-local-read.ts')
+  task: typeof import('../hub/src/task.ts') & {
+    listLocalTasks: typeof listLocalTaskRows
+    lookupTasks: typeof lookupTaskRows
+  }
   document: typeof import('../hub/src/task-document.ts')
   projects: typeof import('../hub/src/projects.ts')
 }
@@ -64,8 +69,6 @@ function hubTaskReads(): HubTaskReads {
   loadedHubTaskReads = {
     db: require('../hub/src/db.ts') as typeof import('../hub/src/db.ts'),
     task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
-    taskLocalRead:
-      require('../hub/src/task-local-read.ts') as typeof import('../hub/src/task-local-read.ts'),
     document:
       require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
     projects: require('../hub/src/projects.ts') as typeof import('../hub/src/projects.ts'),
@@ -105,7 +108,7 @@ function cliTaskReadAdapter(): TaskReadPort {
       return hubTaskReads().task.listTasks(filters)
     },
     listLocal(filters) {
-      return Promise.resolve(hubTaskReads().taskLocalRead.listLocalTasks(filters))
+      return Promise.resolve(hubTaskReads().task.listLocalTasks(filters))
     },
     lookup(project, keys) {
       return hubTaskReads().task.lookupTasks(project, keys)

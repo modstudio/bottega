@@ -17,6 +17,13 @@ export async function readProjectTaskList(
   return (await taskReader().list({ project, ...filters })).map(taskReference)
 }
 
+export async function readLocalProjectTasks(
+  project: string,
+  filters: { status?: string; parent?: string } = {},
+): Promise<HubTaskReference[]> {
+  return (await taskReader().listLocal({ project, ...filters })).map(taskReference)
+}
+
 export async function readLiveProjectTasks(
   reader: ProjectTaskListReader,
   project: string,
