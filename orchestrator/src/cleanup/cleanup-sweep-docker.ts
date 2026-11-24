@@ -193,6 +193,14 @@ function reportLeakedDockerResources(
   }
 }
 
+export function reportDockerInventoryFinish(
+  presentation: CleanupPresentation,
+  input: { errors: Set<string>; absent: boolean },
+): void {
+  if (input.absent) presentation.log('docker: executable not found; Docker inventory steps skipped')
+  for (const error of input.errors) presentation.error(error)
+}
+
 function directoryPresence(path: string): boolean | null {
   try {
     statSync(path)

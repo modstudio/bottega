@@ -11,6 +11,7 @@ const PRIMITIVES = new Set([
   'shared/call-budgets.ts',
   'shared/bounded-process.ts',
   'shared/bounded-fetch.ts',
+  'orchestrator/src/resources/docker-inventory-command.ts',
 ])
 const TEST_INFRASTRUCTURE = new Set(['shared/test-git-repository.ts'])
 const BASELINE_PATH = resolve(ROOT, 'scripts/quality/raw-start.json')

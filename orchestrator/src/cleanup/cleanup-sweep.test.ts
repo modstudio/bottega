@@ -23,12 +23,13 @@ import { upsertProject } from '../project/projects.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { finishDockerInventory, sweepRuns } from './cleanup-sweep.ts'
+import { sweepRuns } from './cleanup-sweep.ts'
 import {
   decideSessionContextSweep,
   sessionContextOwnershipLine,
   sweepSessionContext,
 } from './cleanup-sweep-context.ts'
+import { reportDockerInventoryFinish } from './cleanup-sweep-docker.ts'
 import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'
 
 afterEach(() => {
@@ -46,15 +47,17 @@ test('sweep finish reports Docker absence once and each failure reason once', ()
   observeDockerAbsent()
   observeDockerAbsent()
 
-  finishDockerInventory(
+  reportDockerInventoryFinish(
     {
       log: (...values) => info.push(values.join(' ')),
       error: (...values) => errors.push(values.join(' ')),
       setExitCode: () => {},
       keptBranchLine: () => '',
     },
-    new Set(['docker ps -a inventory unavailable: daemon unavailable']),
-    dockerAbsent,
+    {
+      errors: new Set(['docker ps -a inventory unavailable: daemon unavailable']),
+      absent: dockerAbsent,
+    },
   )
 
   expect(info).toEqual(['docker: executable not found; Docker inventory steps skipped'])

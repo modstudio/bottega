@@ -16,6 +16,7 @@ const module = (
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/resources/docker-inventory-command.ts', []),
   module('orchestrator/src/run/run-gate-facts.ts', ['node:path', '../gate/gate-facts.ts']),
   module('orchestrator/src/run/run-task-claim-renewal.ts', ['bun:sqlite']),
   module('orchestrator/src/run/run-inherited-dispatch.ts', [

@@ -244,6 +244,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-machine-state.test.ts',
   'scripts/check-legacy-names.test.ts',
   'scripts/check-docker-workspaces.test.ts',
+  'scripts/check-docker-inventory-spawns.test.ts',
   'scripts/check-hosted-memory.test.ts',
   'scripts/check-fly-deploy-timeouts.test.ts',
   'scripts/check-dependency-audit.test.ts',
