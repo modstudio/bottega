@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -462,9 +463,7 @@ test('queue refuses with a compose remedy when no ancestor has an open epic curs
       },
       d,
     ),
-  ).rejects.toThrow(
-    'bottega workflow compose plan-task --project fixture --arg key=DEV-1',
-  )
+  ).rejects.toThrow(`${PLATFORM_SLUG} workflow compose plan-task --project fixture --arg key=DEV-1`)
 })
 
 test("queue prefers the caller's open cursor when another mode has a newer cursor on the epic", async () => {
@@ -494,7 +493,7 @@ test('queue and start-child ownership refusals name the owner and runnable compo
   const remedy =
     'cursor ' +
     epic.cursor +
-    ' is owned by session epic-owner; compose the epic cursor with bottega workflow compose plan-task --project fixture --mode feature --arg key=DEV-1'
+    ` is owned by session epic-owner; compose the epic cursor with ${PLATFORM_SLUG} workflow compose plan-task --project fixture --mode feature --arg key=DEV-1`
 
   await expect(
     queueWorkflowChild(

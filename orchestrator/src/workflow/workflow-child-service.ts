@@ -20,6 +20,10 @@ import {
   sessionWorksUnderEpic,
 } from './workflow-child-queue.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import {
+  workflowCursorComposeCommand,
+  workflowDefaultModeComposeCommand,
+} from './workflow-cursor-format.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import {
@@ -31,10 +35,6 @@ import type { ClosedStep } from './workflow-cursor-trail.ts'
 import type { HubTaskReference } from './workflow-task-reference.ts'
 import { descendantTaskKeys } from './workflow-task-tree.ts'
 import { composeWorkflow } from './workflows.ts'
-import {
-  workflowCursorComposeCommand,
-  workflowDefaultModeComposeCommand,
-} from './workflow-cursor-format.ts'
 
 type StartChildClaimContext = Parameters<typeof boardClaimTake>[1]
 type StartChildClaimInput = Parameters<typeof boardClaimTake>[0]

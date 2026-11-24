@@ -1,11 +1,11 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { boardClaimTake } from './board-operations.ts'
-import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
-import { stampEndedClaims } from './board-claim-service.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { seedCurrentWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
+import { stampEndedClaims } from './board-claim-service.ts'
+import { boardClaimTake } from './board-operations.ts'
 
 const database = testDatabaseFixture((d) => {
   seedCurrentWorkflowTreeFixture(d, ['plan-task'], 'claim cursor binding fixture')
@@ -66,9 +66,9 @@ test('end stamping leaves a lapsed task claim open while its holder cursor is op
   d.query("UPDATE board_claim SET lapses_at='2000-01-01' WHERE subject_kind='task'").run()
 
   expect(stampEndedClaims(clock, d)).toBe(0)
-  expect(
-    d.query("SELECT closed_at FROM board_claim WHERE subject_kind='task'").get(),
-  ).toEqual({ closed_at: null })
+  expect(d.query("SELECT closed_at FROM board_claim WHERE subject_kind='task'").get()).toEqual({
+    closed_at: null,
+  })
 })
 
 test('cursor-bound conflict refusal names cursor lifecycle instead of an expired lease', async () => {
@@ -88,7 +88,9 @@ test('cursor-bound conflict refusal names cursor lifecycle instead of an expired
     throw new Error('expected conflicting claim refusal')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    expect(message).toContain("session cursor-owner's claim follows that session's open workflow cursor on DEV-1")
+    expect(message).toContain(
+      "session cursor-owner's claim follows that session's open workflow cursor on DEV-1",
+    )
     expect(message).toContain('board ask --audience session:cursor-owner')
     expect(message).toContain('ends when the holder finishes or abandons that cursor')
     expect(message).not.toContain('until 2000')

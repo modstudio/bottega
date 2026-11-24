@@ -722,10 +722,7 @@ export async function releaseHostedBoardTaskClaims(
       (row) => String(row.holder_user_id) !== input.userId && hostedLive(row, clock),
     )
     if (foreignLive.length) {
-      throw new RecordBoardError(
-        liveClaimRefusal(foreignLive),
-        409,
-      )
+      throw new RecordBoardError(liveClaimRefusal(foreignLive), 409)
     }
     const closable = rows.filter(
       (row) => String(row.holder_user_id) === input.userId || !hostedLive(row, clock),
