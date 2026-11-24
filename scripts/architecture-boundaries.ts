@@ -16,6 +16,7 @@ import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architectur
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import { proseBoundarySpecs } from './architecture-prose-modules.ts'
+import { recipeBoundarySpecs } from './architecture-recipe-boundaries.ts'
 import {
   recordApiBoundaries,
   recordAuthCommandBoundaries,
@@ -719,37 +720,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep recalibration independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
   ),
-  boundary(
-    'recipe-lifecycle-boundary',
-    'orchestrator/src/recipe/recipe-lifecycle.ts',
-    ['./compose-provision-plan.ts', './recipe-schema.ts', './recipe-step.ts',
-      '../resources/docker-executable.ts'],
-    'Keep lifecycle planning pure and independent of execution, persistence, filesystem, and the register.',
-  ),
-  boundary(
-    'recipe-loader-boundary',
-    'orchestrator/src/recipe/recipe-loader.ts',
-    ['node:fs', 'node:path', '../git/git-environment.ts', './recipe-schema.ts'],
-    'Keep tracked recipe loading independent of execution, persistence, and CLI concerns.',
-  ),
-  boundary(
-    'recipe-schema-boundary',
-    'orchestrator/src/recipe/recipe-schema.ts',
-    [
-      'zod',
-      './database-provision-schema.ts',
-      './recipe-exec-schema.ts',
-      '../worktree/provision-group-validation.ts',
-    ],
-    'Keep the recipe schema pure and independent of file, register, and execution concerns.',
-  ),
-  boundary(
-    'recipe-step-boundary',
-    'orchestrator/src/recipe/recipe-step.ts',
-    ['node:path', '../worktree/worktree-template.ts', './recipe-schema.ts',
-      '../resources/docker-executable.ts'],
-    'Keep recipe step execution independent of lifecycle, persistence, claims, and register concerns.',
-  ),
+  ...recipeBoundarySpecs,
   ...recordApiBoundaries.slice(0, 1),
   boundary(
     'record-api-projects-boundary',
