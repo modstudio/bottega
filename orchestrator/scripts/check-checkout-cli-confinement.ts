@@ -11,7 +11,6 @@ import { writeRecordSessionToken } from '../../shared/record-session.ts'
 import {
   HUB_DATABASE_ENV,
   ORCHESTRATOR_DATABASE_ENV,
-  resolveStateRoot,
   STATE_HOME_ENV,
 } from '../../shared/state-directory.ts'
 import type { Agent } from '../src/agent/agents.ts'
@@ -467,7 +466,6 @@ async function main(): Promise<void> {
   const forceSource = process.argv.includes('--force-source')
   const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-checkout-cli-confinement-`))
   const operatorHome = join(root, 'operator-home')
-  const stateRoot = resolveStateRoot({ HOME: operatorHome })
   const cwd = join(root, 'outside-project')
   const runtimeDir = join(root, 'run')
   mkdirSync(cwd, { recursive: true })
