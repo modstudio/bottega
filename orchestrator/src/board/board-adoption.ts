@@ -21,6 +21,7 @@ import {
   uploadErrorDisposition,
 } from './board-adoption-policy.ts'
 import { claimIsLive } from './board-claim-policy.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 import { parseReplyAudienceOption } from './board-reply-audience.ts'
@@ -139,6 +140,7 @@ function candidateRows(
         lapsesAt: Date.parse(row.lapses_at),
         runStatus: latestRunStatus(row.run_record_id, database),
         now: clock,
+        boundToOpenCursor: claimBoundToOpenCursor(row, database),
       }),
       accepted: false,
       machine: false,

@@ -19,6 +19,7 @@ import {
   parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,
@@ -119,6 +120,7 @@ function rowLive(row: ClaimRow, clock: number, database = db()): boolean {
     lapsesAt: Date.parse(row.lapses_at),
     runStatus: latestRunStatus(row.run_record_id, database),
     now: clock,
+    boundToOpenCursor: claimBoundToOpenCursor(row, database),
   })
 }
 
@@ -339,6 +341,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
       lapsesAt: Date.parse(conflict.lapses_at),
       runStatus: latestRunStatus(conflict.run_record_id, context.database),
       now: context.clock,
+      boundToOpenCursor: claimBoundToOpenCursor(conflict, context.database),
     })
     close.run(now, endedReason ?? 'taken-over', row.record_id, conflict.record_id)
     tellTakenOverHolder(conflict, context)
@@ -585,6 +588,7 @@ export function stampEndedClaims(clock = Date.now()): number {
         lapsesAt: Date.parse(row.lapses_at),
         runStatus: latestRunStatus(row.run_record_id, database),
         now: clock,
+        boundToOpenCursor: claimBoundToOpenCursor(row, database),
       })
       if (!reason) continue
       close.run(new Date(clock).toISOString(), reason, row.record_id)

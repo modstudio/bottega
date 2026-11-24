@@ -101,16 +101,9 @@ test('a composed descendant refusal names its cursor, state, and abandon remedy'
   })
 })
 
-test('a session works under an epic through its epic claim or a queued descendant claim', () => {
+test('a session works under an epic through cursor ownership or a queued descendant claim', () => {
   const descendants = new Set(['DEV-2', 'DEV-3'])
-  expect(
-    sessionWorksUnderEpic(
-      [{ subject_kind: 'task', subject_value: 'DEV-1', holderUserId: null, holderSession: 'mine' }],
-      'mine',
-      'DEV-1',
-      descendants,
-    ),
-  ).toBeTrue()
+  expect(sessionWorksUnderEpic([], 'mine', descendants, true)).toBeTrue()
   expect(
     sessionWorksUnderEpic(
       [
@@ -122,8 +115,8 @@ test('a session works under an epic through its epic claim or a queued descendan
         },
       ],
       'mine',
-      'DEV-1',
       descendants,
+      false,
     ),
   ).toBeTrue()
   expect(
@@ -143,8 +136,8 @@ test('a session works under an epic through its epic claim or a queued descendan
         },
       ],
       'mine',
-      'DEV-1',
       descendants,
+      false,
     ),
   ).toBeFalse()
   expect(
@@ -158,8 +151,8 @@ test('a session works under an epic through its epic claim or a queued descendan
         },
       ],
       'user-u',
-      'DEV-1',
       descendants,
+      false,
     ),
   ).toBeFalse()
 })

@@ -47,6 +47,7 @@ function hostedLive(row: ClaimRow, clock: number): boolean {
     lapsesAt: recordDate(row.lapses_at).getTime(),
     runStatus: null,
     now: clock,
+    boundToOpenCursor: row.bound_to_open_cursor === true,
   })
 }
 
@@ -119,7 +120,18 @@ async function singleClaimView(
 }
 
 async function loadClaim(tx: SQL, id: string): Promise<ClaimRow | null> {
-  const rows = await tx`SELECT * FROM board_claim WHERE id=${id}::uuid`
+  const rows = await tx`
+    SELECT claim.*,
+      EXISTS (
+        SELECT 1 FROM task_flow_stage stage
+        WHERE claim.subject_kind='task'
+          AND stage.project_id=claim.project_id
+          AND stage.workflow_key=claim.subject_value
+          AND stage.session_id=claim.holder_session
+          AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
+      ) bound_to_open_cursor
+    FROM board_claim claim WHERE claim.id=${id}::uuid
+  `
   return rows[0] ? (rows[0] as ClaimRow) : null
 }
 
@@ -318,6 +330,7 @@ async function supersedeClaims(
         lapsesAt: recordDate(conflict.lapses_at).getTime(),
         runStatus: null,
         now: clock,
+        boundToOpenCursor: conflict.bound_to_open_cursor === true,
       }) ?? 'taken-over'
     await tx`
       UPDATE board_claim
@@ -512,7 +525,14 @@ async function readTakeOverlaps(
 ) {
   const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
   const open = (await tx`
-    SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+    SELECT claim.*,
+      EXISTS (
+        SELECT 1 FROM task_flow_stage stage
+        WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
+          AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
+          AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
+      ) bound_to_open_cursor
+    FROM board_claim claim WHERE claim.project_id=${projectId}::uuid AND claim.closed_at IS NULL
     ORDER BY taken_at, id
   `) as ClaimRow[]
   return { projectId, ...takeOverlaps(open, subject, input.userId, session, clock) }
@@ -661,11 +681,25 @@ export async function listHostedBoardClaims(
     const rows = (
       input.openOnly
         ? await tx`
-          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+          SELECT claim.*,
+            EXISTS (
+              SELECT 1 FROM task_flow_stage stage
+              WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
+                AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
+                AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
+            ) bound_to_open_cursor
+          FROM board_claim claim WHERE claim.project_id=${projectId}::uuid AND claim.closed_at IS NULL
           ORDER BY taken_at, id
         `
         : await tx`
-          SELECT * FROM board_claim WHERE project_id=${projectId}::uuid
+          SELECT claim.*,
+            EXISTS (
+              SELECT 1 FROM task_flow_stage stage
+              WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
+                AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
+                AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
+            ) bound_to_open_cursor
+          FROM board_claim claim WHERE claim.project_id=${projectId}::uuid
           ORDER BY taken_at, id
         `
     ) as ClaimRow[]
@@ -681,9 +715,16 @@ export async function releaseHostedBoardTaskClaims(
   return withBoardTenant(input, false, async (tx) => {
     const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
     const rows = (await tx`
-      SELECT * FROM board_claim
-      WHERE project_id=${projectId}::uuid AND subject_kind=${'task'} AND subject_value=${input.key}
-        AND closed_at IS NULL
+      SELECT claim.*,
+        EXISTS (
+          SELECT 1 FROM task_flow_stage stage
+          WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
+            AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
+            AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
+        ) bound_to_open_cursor
+      FROM board_claim claim
+      WHERE claim.project_id=${projectId}::uuid AND claim.subject_kind=${'task'} AND claim.subject_value=${input.key}
+        AND claim.closed_at IS NULL
     `) as ClaimRow[]
     const foreignLive = rows.filter(
       (row) => String(row.holder_user_id) !== input.userId && hostedLive(row, clock),

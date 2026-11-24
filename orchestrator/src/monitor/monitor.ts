@@ -47,6 +47,7 @@ import { branchInventoryDecision, branchMonitorConditions } from './monitor-bran
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
+import { cursorClaimHealthConditions } from './monitor-cursor-claims.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -728,6 +729,7 @@ export async function monitor(
 
   conditions.push(...outboxConditions(database, clock))
   conditions.push(...boardEscalations(clock))
+  conditions.push(...cursorClaimHealthConditions(database, clock))
 
   conditions.push(...abandonedBootstrapConditions(clock))
   conditions.push(...deadRunningProcessConditions(clock))
