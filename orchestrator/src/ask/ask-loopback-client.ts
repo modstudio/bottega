@@ -1,4 +1,4 @@
-import { request, type RequestOptions } from 'node:http'
+import { type RequestOptions, request } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
 import { askAuthPreamble } from './ask-loopback-auth.ts'
 
@@ -69,22 +69,32 @@ export function askProxyConnectOptions(
   }
 }
 
-function directSocket(connection: Extract<AskLoopbackConnection, { kind: 'direct' }>): Promise<Socket> {
+function directSocket(
+  connection: Extract<AskLoopbackConnection, { kind: 'direct' }>,
+): Promise<Socket> {
   const socket = createConnection({ host: connection.host, port: connection.port })
   return new Promise((resolve, reject) => {
     socket.once('connect', () => resolve(socket))
     socket.once('error', (error) => {
-      reject(connection.linuxWithoutProxy ? new Error(`${error.message} ${LINUX_DIRECT_REMEDY}`) : error)
+      reject(
+        connection.linuxWithoutProxy ? new Error(`${error.message} ${LINUX_DIRECT_REMEDY}`) : error,
+      )
     })
   })
 }
 
-function tunnelSocket(connection: Extract<AskLoopbackConnection, { kind: 'tunnel' }>): Promise<Socket> {
+function tunnelSocket(
+  connection: Extract<AskLoopbackConnection, { kind: 'tunnel' }>,
+): Promise<Socket> {
   const options = askProxyConnectOptions(connection.proxy, connection.askHost, connection.askPort)
   return new Promise((resolve, reject) => {
     const proxyRequest = request(options)
     proxyRequest.once('connect', (response, socket, head) => {
-      if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
+      if (
+        response.statusCode === undefined ||
+        response.statusCode < 200 ||
+        response.statusCode >= 300
+      ) {
         socket.destroy()
         reject(
           new Error(

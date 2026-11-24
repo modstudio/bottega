@@ -48,12 +48,12 @@ test('the connection decision tunnels only on Linux with a proxy', () => {
 })
 
 test('the connection decision refuses a non-loopback or non-tcp ask URL', () => {
-  expect(() => decideAskLoopbackConnection({ platform: 'darwin', askUrl: 'http://127.0.0.1:1' })).toThrow(
-    'BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint',
-  )
-  expect(() => decideAskLoopbackConnection({ platform: 'darwin', askUrl: 'tcp://localhost:1' })).toThrow(
-    'BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint',
-  )
+  expect(() =>
+    decideAskLoopbackConnection({ platform: 'darwin', askUrl: 'http://127.0.0.1:1' }),
+  ).toThrow('BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
+  expect(() =>
+    decideAskLoopbackConnection({ platform: 'darwin', askUrl: 'tcp://localhost:1' }),
+  ).toThrow('BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
 })
 
 test('CONNECT options carry the target and optional proxy credentials', () => {
@@ -64,7 +64,9 @@ test('CONNECT options carry the target and optional proxy credentials', () => {
     path: '127.0.0.1:43127',
     headers: { Host: '127.0.0.1:43127' },
   })
-  expect(askProxyConnectOptions('http://worker:secret@proxy.test:8080', '127.0.0.1', 43127)).toEqual({
+  expect(
+    askProxyConnectOptions('http://worker:secret@proxy.test:8080', '127.0.0.1', 43127),
+  ).toEqual({
     host: 'proxy.test',
     port: 8080,
     method: 'CONNECT',
@@ -117,7 +119,9 @@ test('CONNECT tunnels through an in-process proxy without exposing its credentia
       askPort: 43127,
       proxy: `http://worker:secret@127.0.0.1:${address.port}`,
     })
-    const echoed = new Promise<string>((resolve) => tunnel!.once('data', (data) => resolve(data.toString())))
+    const echoed = new Promise<string>((resolve) =>
+      tunnel!.once('data', (data) => resolve(data.toString())),
+    )
     tunnel.write('through')
     expect(await echoed).toBe('through')
     expect(seen).toEqual({

@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import type { Socket } from 'node:net'
 
 export const ASK_AUTH_PREAMBLE_MAX_BYTES = 4_096
-export const ASK_AUTH_PREAMBLE_TIMEOUT_MS = 1_000
+const ASK_AUTH_PREAMBLE_TIMEOUT_MS = 1_000
 
 export function askAuthPreamble(token: string): string {
   return `${JSON.stringify({ bottega_ask_auth: { run_token: token } })}\n`

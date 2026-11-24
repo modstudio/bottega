@@ -27,7 +27,8 @@ async function authServer(timeoutMs = 100): Promise<{
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('auth server did not bind a TCP port')
+  if (!address || typeof address === 'string')
+    throw new Error('auth server did not bind a TCP port')
   return { server, port: address.port, authenticated: () => count }
 }
 
