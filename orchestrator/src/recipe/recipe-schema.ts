@@ -211,6 +211,10 @@ export function phasedRecipeSteps(recipe: RecipeInput): PhasedRecipeStep[] {
   ]
 }
 
+export function creationRecipeSteps(recipe: RecipeInput): PhasedRecipeStep[] {
+  return phasedRecipeSteps(recipe).filter(({ phase }) => phase === 'pre' || phase === 'create')
+}
+
 const STATIC_PLACEHOLDERS = new Set([
   'branch',
   'name',

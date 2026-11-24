@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DoctorReporter } from './doctor-reporter.ts'
-import {
-  recipeExecutableDoctorLines,
-  reportProjectLifecycles,
-} from './recipe-executable-doctor.ts'
+import { recipeExecutableDoctorLines, reportProjectLifecycles } from './recipe-executable-doctor.ts'
 
 test('reports missing tools from every tracked recipe phase', () => {
   expect(

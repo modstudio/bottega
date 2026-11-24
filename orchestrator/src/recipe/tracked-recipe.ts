@@ -41,8 +41,8 @@ import {
 import { loadRecipeAtBase } from './recipe-loader.ts'
 import {
   allocationEnvironmentVariable,
+  creationRecipeSteps,
   hookBranchName,
-  phasedRecipeSteps,
   type TrackedRecipe,
 } from './recipe-schema.ts'
 import {
@@ -552,11 +552,8 @@ function prepareTrackedCreate(
     repoRoot: input.repoRoot,
     baseRef: input.baseRef,
   })
-  assertRecipeExecutables(
-    input.projectName ?? '(unregistered)',
-    phasedRecipeSteps(loaded.recipe).filter(({ phase }) => phase === 'pre' || phase === 'create'),
-    hostExecutableOnPath,
-  )
+  const projectName = input.projectName ?? '(unregistered)'
+  assertRecipeExecutables(projectName, creationRecipeSteps(loaded.recipe), hostExecutableOnPath)
   const staticVars = {
     branch: input.branch,
     name: input.name,
