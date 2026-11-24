@@ -291,29 +291,21 @@ export function mainStackServedWorktree(input: {
     '--format',
     '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  let result: ReturnType<typeof Bun.spawnSync>
-  try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
-  } catch (error) {
+  const result = runDockerInventoryCommand(
+    command,
+    MAIN_STACK_COMMAND_TIMEOUT_MS,
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!result.ok) {
+    if (result.kind === 'docker-absent') return { value: false, orphans: [] }
     return {
       value: 'unknown',
-      reason: `${command.join(' ')} failed: ${(error as Error).message}`,
-      orphans: [],
-    }
-  }
-  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
-    return {
-      value: 'unknown',
-      reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || 'timed out'}`,
+      reason: `${command.join(' ')} failed: ${result.reason}`,
       orphans: [],
     }
   }
   const entries: ServedWorktreeEntry[] = []
-  for (const line of (result.stdout?.toString() ?? '').split('\n')) {
+  for (const line of result.stdout.split('\n')) {
     if (!line) continue
     const [composeProject, workingDirectory, ...extra] = line.split('\t')
     if (extra.length > 0 || composeProject === undefined || workingDirectory === undefined) {

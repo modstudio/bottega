@@ -10,7 +10,9 @@ const KNOWN_DOCKER_EXECUTABLE_PATHS = [
   '/usr/bin/docker',
   '/usr/local/bin/docker',
   '/opt/homebrew/bin/docker',
+  '/snap/bin/docker',
   '~/.docker/bin/docker',
+  '~/.rd/bin/docker',
 ] as const
 
 type EvidenceContext = {
@@ -26,6 +28,8 @@ const KNOWN_DOCKER_DAEMON_SOCKET_PATHS = [
   ({ env }: EvidenceContext) =>
     env.XDG_RUNTIME_DIR ? [join(env.XDG_RUNTIME_DIR, 'docker.sock')] : [],
   ({ home }: EvidenceContext) => [join(home, '.docker/run/docker.sock')],
+  ({ home }: EvidenceContext) => [join(home, '.rd/docker.sock')],
+  ({ home }: EvidenceContext) => [join(home, '.orbstack/run/docker.sock')],
   ({ home, colimaSockets }: EvidenceContext) => colimaSockets(home),
 ] as const
 

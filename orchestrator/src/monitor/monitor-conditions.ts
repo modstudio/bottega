@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import * as boundedProcess from '../../../shared/bounded-process.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions
@@ -23,6 +24,8 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
+import { classifyDockerInventorySpawnError } from '../resources/docker-inventory-command.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -611,12 +614,18 @@ export function dockerConditions(clock: number): {
 } {
   let listed: ReturnType<typeof startBoundedSync>
   try {
-    listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
+    listed = boundedProcess.startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
       budget: 'docker',
     })
   } catch (error) {
     if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    throw error
+    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
+    return availability.kind === 'docker-absent'
+      ? { conditions: [], errors: [] }
+      : {
+          conditions: [],
+          errors: [`docker volume inventory unavailable: ${availability.reason}`],
+        }
   }
   if (listed.exitCode !== 0) {
     return {
@@ -633,12 +642,18 @@ export function dockerConditions(clock: number): {
   if (!candidates.length) return { conditions: [], errors: [] }
   let inspected: ReturnType<typeof startBoundedSync>
   try {
-    inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
+    inspected = boundedProcess.startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
       budget: 'docker',
     })
   } catch (error) {
     if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    throw error
+    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
+    return availability.kind === 'docker-absent'
+      ? { conditions: [], errors: [] }
+      : {
+          conditions: [],
+          errors: [`docker volume inspection unavailable: ${availability.reason}`],
+        }
   }
   if (inspected.exitCode !== 0) {
     return {

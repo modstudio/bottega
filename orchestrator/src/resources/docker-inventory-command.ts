@@ -21,10 +21,19 @@ export function decideDockerInventoryAvailability(
   if (input.ok) return { kind: 'proceed' }
   if (!input.executableAbsent) return { kind: 'fail', reason: input.reason }
   const executable = input.executablePaths[0]
-  if (executable) return { kind: 'fail', reason: `docker not on PATH but ${executable} exists` }
+  if (executable) {
+    const directory = executable.slice(0, executable.lastIndexOf('/'))
+    return {
+      kind: 'fail',
+      reason: `docker not on PATH but ${executable} exists; add ${directory} to PATH`,
+    }
+  }
   const socket = input.daemonSocketPaths[0]
   if (socket)
-    return { kind: 'fail', reason: `docker not on PATH but daemon socket ${socket} exists` }
+    return {
+      kind: 'fail',
+      reason: `docker not on PATH but daemon socket ${socket} exists; put docker on PATH or set DOCKER_HOST`,
+    }
   return { kind: 'docker-absent' }
 }
 

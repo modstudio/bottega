@@ -37,7 +37,7 @@ test('Docker inventory availability fails and names an executable found off PATH
     }),
   ).toEqual({
     kind: 'fail',
-    reason: 'docker not on PATH but /opt/homebrew/bin/docker exists',
+    reason: 'docker not on PATH but /opt/homebrew/bin/docker exists; add /opt/homebrew/bin to PATH',
   })
 })
 
@@ -52,7 +52,8 @@ test('Docker inventory availability fails and names daemon socket evidence', () 
     }),
   ).toEqual({
     kind: 'fail',
-    reason: 'docker not on PATH but daemon socket /var/run/docker.sock exists',
+    reason:
+      'docker not on PATH but daemon socket /var/run/docker.sock exists; put docker on PATH or set DOCKER_HOST',
   })
 })
 
@@ -82,8 +83,9 @@ test('Docker inventory availability treats a timeout as failure', () => {
 
 test('Docker host evidence resolves every dynamic path and probes existence only', () => {
   const existing = new Set([
-    '/home/test/.docker/bin/docker',
+    '/home/test/.rd/bin/docker',
     '/runtime/docker.sock',
+    '/home/test/.orbstack/run/docker.sock',
     '/home/test/.colima/default/docker.sock',
   ])
   expect(
@@ -94,7 +96,11 @@ test('Docker host evidence resolves every dynamic path and probes existence only
       colimaSockets: () => ['/home/test/.colima/default/docker.sock'],
     }),
   ).toEqual({
-    executablePaths: ['/home/test/.docker/bin/docker'],
-    daemonSocketPaths: ['/runtime/docker.sock', '/home/test/.colima/default/docker.sock'],
+    executablePaths: ['/home/test/.rd/bin/docker'],
+    daemonSocketPaths: [
+      '/runtime/docker.sock',
+      '/home/test/.orbstack/run/docker.sock',
+      '/home/test/.colima/default/docker.sock',
+    ],
   })
 })

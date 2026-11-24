@@ -3,17 +3,20 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import * as boundedProcess from '../../../shared/bounded-process.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-liveness-policy.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
+  dockerConditions,
   orphanRecipeDatabaseConditions,
   pidBornAfterRun,
   reconcileHub,
@@ -32,6 +35,71 @@ import {
   orphanSandboxDirectoryConditions,
   staleTrustEntryConditions,
 } from './orphan-inventory-conditions.ts'
+
+describe('Docker monitor conditions', () => {
+  test('returns no condition or error when Docker is absent', () => {
+    const spawn = spyOn(boundedProcess, 'startBoundedSync').mockImplementation((() => {
+      const error = new Error('spawn failed') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    }) as typeof boundedProcess.startBoundedSync)
+    const evidence = spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+      executablePaths: [],
+      daemonSocketPaths: [],
+    })
+    try {
+      expect(dockerConditions(Date.now())).toEqual({ conditions: [], errors: [] })
+    } finally {
+      evidence.mockRestore()
+      spawn.mockRestore()
+    }
+  })
+
+  test('returns no condition or error when Docker disappears during volume inspection', () => {
+    let calls = 0
+    const spawn = spyOn(boundedProcess, 'startBoundedSync').mockImplementation((() => {
+      calls++
+      if (calls === 1) return { exitCode: 0, stdout: 'fixture\n', stderr: '' }
+      const error = new Error('spawn failed') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    }) as typeof boundedProcess.startBoundedSync)
+    const evidence = spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+      executablePaths: [],
+      daemonSocketPaths: [],
+    })
+    try {
+      expect(dockerConditions(Date.now())).toEqual({ conditions: [], errors: [] })
+      expect(calls).toBe(2)
+    } finally {
+      evidence.mockRestore()
+      spawn.mockRestore()
+    }
+  })
+
+  test('reports evidence when Docker is off PATH without throwing', () => {
+    const spawn = spyOn(boundedProcess, 'startBoundedSync').mockImplementation((() => {
+      const error = new Error('spawn failed') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    }) as typeof boundedProcess.startBoundedSync)
+    const evidence = spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+      executablePaths: [],
+      daemonSocketPaths: ['/var/run/docker.sock'],
+    })
+    try {
+      expect(dockerConditions(Date.now())).toEqual({
+        conditions: [],
+        errors: [
+          'docker volume inventory unavailable: docker not on PATH but daemon socket /var/run/docker.sock exists; put docker on PATH or set DOCKER_HOST',
+        ],
+      })
+    } finally {
+      evidence.mockRestore()
+      spawn.mockRestore()
+    }
+  })
+})
 
 describe('record tunnel monitor condition', () => {
   async function observeUnconfigured(credentialPresent: () => Promise<boolean>) {

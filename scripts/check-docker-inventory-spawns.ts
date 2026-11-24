@@ -7,7 +7,6 @@ import * as ts from 'typescript'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const HELPER = 'orchestrator/src/resources/docker-inventory-command.ts'
-const DOCKER_RESOURCES = 'orchestrator/src/resources/docker-resources.ts'
 const SPAWN_NAMES = new Set([
   'spawn',
   'spawnSync',
@@ -17,7 +16,37 @@ const SPAWN_NAMES = new Set([
   'execaSync',
 ])
 
+function enclosingScopes(node: ts.Node): (ts.Block | ts.SourceFile)[] {
+  const scopes: (ts.Block | ts.SourceFile)[] = []
+  for (let parent: ts.Node | undefined = node.parent; parent; parent = parent.parent) {
+    if (ts.isBlock(parent) || ts.isSourceFile(parent)) scopes.push(parent)
+  }
+  return scopes
+}
+
+function constArrayInitializer(identifier: ts.Identifier): ts.ArrayLiteralExpression | null {
+  for (const scope of enclosingScopes(identifier)) {
+    for (const statement of scope.statements) {
+      if (!ts.isVariableStatement(statement)) continue
+      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue
+      for (const declaration of statement.declarationList.declarations) {
+        if (
+          ts.isIdentifier(declaration.name) &&
+          declaration.name.text === identifier.text &&
+          declaration.pos < identifier.pos &&
+          declaration.initializer &&
+          ts.isArrayLiteralExpression(declaration.initializer)
+        ) {
+          return declaration.initializer
+        }
+      }
+    }
+  }
+  return null
+}
+
 function stringElements(node: ts.Expression | undefined): string[] | null {
+  if (node && ts.isIdentifier(node)) node = constArrayInitializer(node) ?? node
   if (!node || !ts.isArrayLiteralExpression(node)) return null
   const values: string[] = []
   for (const element of node.elements) {
@@ -87,17 +116,9 @@ function catchUsesSharedClassifier(call: ts.CallExpression): boolean {
   return false
 }
 
-function approvedBoundedNetworkInventory(
-  call: ts.CallExpression,
-  command: readonly string[],
-  fileName: string,
-): boolean {
+function approvedBoundedInventory(call: ts.CallExpression): boolean {
   return (
-    fileName === DOCKER_RESOURCES &&
     spawnName(call) === 'startBoundedSync' &&
-    command[0] === 'docker' &&
-    command[1] === 'network' &&
-    (command[2] === 'ls' || command[2] === 'inspect') &&
     dockerBudget(call.arguments[1]) &&
     catchUsesSharedClassifier(call)
   )
@@ -115,7 +136,7 @@ export function dockerInventorySpawnBypasses(source: string, fileName: string): 
         SPAWN_NAMES.has(name) &&
         command &&
         isInventoryCommand(command) &&
-        !approvedBoundedNetworkInventory(node, command, fileName)
+        !approvedBoundedInventory(node)
       ) {
         const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
         failures.push(
@@ -130,7 +151,7 @@ export function dockerInventorySpawnBypasses(source: string, fileName: string): 
 }
 
 function sourceFiles(): string[] {
-  const patterns = ['orchestrator/src/resources/**/*.ts', 'orchestrator/src/cleanup/**/*.ts']
+  const patterns = ['orchestrator/src/**/*.ts']
   return patterns.flatMap((pattern) =>
     [...new Glob(pattern).scanSync({ cwd: ROOT, onlyFiles: true })].filter(
       (path) => !path.endsWith('.test.ts') && path !== HELPER,

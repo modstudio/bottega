@@ -395,6 +395,23 @@ test('served worktree observation does not infer a Compose prefix from the check
   })
 })
 
+test('served worktree observation reports no served worktree when Docker is absent', () => {
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
+  spyOn(Bun, 'spawnSync').mockImplementation((() => {
+    const error = new Error('spawn failed') as NodeJS.ErrnoException
+    error.code = 'ENOENT'
+    throw error
+  }) as unknown as typeof Bun.spawnSync)
+
+  expect(mainStackServedWorktree({ checkoutPath: '/registered/starship' })).toEqual({
+    value: false,
+    orphans: [],
+  })
+})
+
 test('idle sweep reads project identity from a post-0117 store', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
