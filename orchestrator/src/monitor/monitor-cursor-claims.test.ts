@@ -101,9 +101,7 @@ test('an open cursor is epic when its only child flow has only closed stages', (
         parent_flow_record_id: 'flow-10',
       },
     ]),
-  ).toEqual([
-    { project: 'p', id: 10, key: 'DEV-10', session: 'session', isEpic: true },
-  ])
+  ).toEqual([{ project: 'p', id: 10, key: 'DEV-10', session: 'session', isEpic: true }])
 })
 
 test('an unreadable project is reported while readable projects are still counted', async () => {
