@@ -75,7 +75,7 @@ import {
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
-import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import { reclaimSweptDockerResources, reportDockerInventoryFinish } from './cleanup-sweep-docker.ts'
 import { sweepHarnessSessionPublications } from './cleanup-sweep-harness-session.ts'
 import { sweepHubTasks } from './cleanup-sweep-hub-tasks.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
@@ -447,13 +447,14 @@ function printSweepKept(
   }
 }
 
-/** Finishes task maintenance and fails the sweep when any part failed. */
 async function finishSweep(
   cleanupFailed: boolean,
   hubTaskReader: ProjectTaskListReader,
   options: SweepOptions,
+  dockerInventory: { errors: Set<string>; absent: boolean },
 ): Promise<void> {
   const { dryRun: dry, project = null, presentation } = options
+  reportDockerInventoryFinish(dry, presentation, dockerInventory)
   const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, project, presentation)
   if (!dry) {
     const repaired = backfillRunRecordsForSweep()
@@ -836,11 +837,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   const { removeFor } = await import('../worktree/worktree-remove.ts')
 
-  const closedCounts: ClosedSweepCounts = {
-    released: 0,
-    absent: 0,
-    forgotten: 0,
-  }
+  const closedCounts: ClosedSweepCounts = { released: 0, absent: 0, forgotten: 0 }
   let cleanupFailed =
     context.archiveRetention.failed || runLeftovers.failed || context.harnessSessionFailed
   const sessionCleanupFailed = await sweepSessionState({
@@ -849,12 +846,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
   })
   cleanupFailed ||= sessionCleanupFailed
+  const dockerInventory = { errors: new Set<string>(), absent: false }
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,
     dryRun: dry,
     log: (message) => options.presentation.log(message),
     error: (message) => options.presentation.error(message),
+    onDockerAbsent: () => (dockerInventory.absent = true),
   })
   const unattended = sweepUnattendedResidue({
     dryRun: dry,
@@ -862,7 +861,6 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     presentation: options.presentation,
   })
   cleanupFailed ||= unattended.failed
-  const inventoryErrors = new Set<string>()
   const leaked = new Map<string, { resource: DockerResource; project: string; runId: string }>()
   const kept: { line: string; reason: string }[] = []
   const keep = (line: string, reason: string) => {
@@ -871,7 +869,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const { byProject: heldByProject, add: addHeld } = heldProjectTrees()
   const recordedState: RecordedSweepState = {
     cleanupFailed,
-    inventoryErrors,
+    inventoryErrors: dockerInventory.errors,
     leaked,
     kept,
     counts: closedCounts,
@@ -1005,7 +1003,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             branch: safe.branch,
             ownersBefore,
             ownersAfter,
-            inventoryErrors,
+            inventoryErrors: dockerInventory.errors,
             leaked,
             keep,
             presentation: options.presentation,
@@ -1050,8 +1048,9 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     dryRun: dry,
     selectedProject,
     presentation: options.presentation,
-    inventoryErrors,
+    inventoryErrors: dockerInventory.errors,
     leaked,
+    onDockerAbsent: () => (dockerInventory.absent = true),
   })
 
   const branchCleanupFailed = pruneSweptProjectBranches({
@@ -1072,5 +1071,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  await finishSweep(cleanupFailed, helpers.hubTaskReader, options)
+  await finishSweep(cleanupFailed, helpers.hubTaskReader, options, dockerInventory)
 }

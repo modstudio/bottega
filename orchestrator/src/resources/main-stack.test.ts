@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { Project } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import {
   ensureMainStackStarted,
   MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT,
@@ -394,6 +395,23 @@ test('served worktree observation does not infer a Compose prefix from the check
   })
 })
 
+test('served worktree observation reports no served worktree when Docker is absent', () => {
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
+  spyOn(Bun, 'spawnSync').mockImplementation((() => {
+    const error = new Error('spawn failed') as NodeJS.ErrnoException
+    error.code = 'ENOENT'
+    throw error
+  }) as unknown as typeof Bun.spawnSync)
+
+  expect(mainStackServedWorktree({ checkoutPath: '/registered/starship' })).toEqual({
+    value: false,
+    orphans: [],
+  })
+})
+
 test('idle sweep reads project identity from a post-0117 store', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
@@ -510,12 +528,63 @@ test('idle sweep keeps a stack while a declared prefix serves a worktree', () =>
   }
 })
 
-function commandResult(stdout: string): ReturnType<typeof Bun.spawnSync> {
+test('idle sweep passes without later Docker calls when the executable is absent', () => {
+  const commands: string[] = []
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' '))
+    const error = new Error('spawn failed') as NodeJS.ErrnoException
+    error.code = 'ENOENT'
+    throw error
+  }) as unknown as typeof Bun.spawnSync)
+  const errors: string[] = []
+  let absent = 0
+
+  expect(
+    sweepIdleMainStacks({
+      database: {} as Database,
+      projects: [],
+      dryRun: true,
+      log: () => {},
+      error: (message) => errors.push(message),
+      onDockerAbsent: () => absent++,
+    }),
+  ).toBe(false)
+  expect(absent).toBe(1)
+  expect(errors).toEqual([])
+  expect(commands).toHaveLength(1)
+})
+
+test('idle sweep fails visibly when Docker inventory exits nonzero', () => {
+  spyOn(Bun, 'spawnSync').mockImplementation((() =>
+    commandResult('', 1, 'daemon unavailable')) as typeof Bun.spawnSync)
+  const errors: string[] = []
+
+  expect(
+    sweepIdleMainStacks({
+      database: {} as Database,
+      projects: [],
+      dryRun: true,
+      log: () => {},
+      error: (message) => errors.push(message),
+    }),
+  ).toBe(true)
+  expect(errors).toEqual(['main stack inventory unavailable: daemon unavailable'])
+})
+
+function commandResult(
+  stdout: string,
+  exitCode = 0,
+  stderr = '',
+): ReturnType<typeof Bun.spawnSync> {
   return {
-    exitCode: 0,
+    exitCode,
     stdout: Buffer.from(stdout),
-    stderr: Buffer.from(''),
-    success: true,
+    stderr: Buffer.from(stderr),
+    success: exitCode === 0,
     exitedDueToTimeout: false,
   } as ReturnType<typeof Bun.spawnSync>
 }

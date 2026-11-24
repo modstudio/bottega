@@ -1,6 +1,7 @@
 // concern: built-in Compose lifecycle decisions
 /** Plans Compose identity and commands from plain values. Must not inspect Docker or execute commands. */
 
+import { DOCKER_EXECUTABLE } from '../resources/docker-executable.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 
 export type ComposeCommandPlan = {
@@ -36,7 +37,7 @@ export function composeCommandPlan(input: {
   return {
     projectName,
     up: [
-      'docker',
+      DOCKER_EXECUTABLE,
       'compose',
       '-p',
       projectName,
@@ -46,6 +47,14 @@ export function composeCommandPlan(input: {
       '-d',
       ...(compose.wait ? ['--wait'] : []),
     ],
-    down: ['docker', 'compose', '-p', projectName, 'down', '--volumes', '--remove-orphans'],
+    down: [
+      DOCKER_EXECUTABLE,
+      'compose',
+      '-p',
+      projectName,
+      'down',
+      '--volumes',
+      '--remove-orphans',
+    ],
   }
 }

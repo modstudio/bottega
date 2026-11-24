@@ -21,6 +21,12 @@ const boundary = (
 
 export const runLifecycleBoundarySpecs: ImportBoundary[] = [
   boundary(
+    'docker-inventory-command-boundary',
+    'orchestrator/src/resources/docker-inventory-command.ts',
+    ['../../../shared/bounded-process.ts', './docker-executable.ts'],
+    'Keep Docker inventory process classification independent of sweep policy and persistence.',
+  ),
+  boundary(
     'run-answer-boundary',
     'orchestrator/src/run/run-answer.ts',
     [

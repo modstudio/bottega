@@ -44,6 +44,8 @@ export const monitorModules: MonitorModule[] = [
     '../project/project-lock.ts',
     '../reclaim/reclaim-kind.ts',
     '../project/projects.ts',
+    '../resources/docker-host-evidence.ts',
+    '../resources/docker-inventory-command.ts',
     '../resources/resource-claims.ts',
     '../resources/resource-step-recorder.ts',
     '../resources/resource-inventory.ts',

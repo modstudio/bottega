@@ -192,16 +192,17 @@ function reportLeakedDockerResources(
   }
 }
 
-function reportDockerInventoryErrors(
+export function reportDockerInventoryFinish(
   dryRun: boolean,
-  inventoryErrors: Set<string>,
   presentation: CleanupPresentation,
+  input: { errors: Set<string>; absent: boolean },
 ): void {
-  if (inventoryErrors.size) {
+  if (input.absent) presentation.log('docker: executable not found; Docker inventory steps skipped')
+  if (input.errors.size) {
     presentation.error(
-      `\n${dryRun ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`,
+      `\n${dryRun ? 'would report ' : ''}inventory unavailable: ${input.errors.size}`,
     )
-    for (const error of inventoryErrors)
+    for (const error of input.errors)
       presentation.error(`  ${dryRun ? 'would report ' : ''}${error}`)
   }
 }
@@ -680,6 +681,7 @@ export function reclaimSweptDockerResources(input: {
   presentation: CleanupPresentation
   inventoryErrors: Set<string>
   leaked: Map<string, { resource: DockerResource; project: string; runId: string }>
+  onDockerAbsent?(): void
 }): boolean {
   const { dryRun, selectedProject, presentation, inventoryErrors, leaked } = input
   const inventory = dockerRunResources(
@@ -687,6 +689,7 @@ export function reclaimSweptDockerResources(input: {
       .filter(isProjectRepository)
       .map(({ path }) => path),
   )
+  if (inventory.ascertainable && inventory.dockerAbsent) input.onDockerAbsent?.()
   if (!inventory.ascertainable) inventoryErrors.add(inventory.reason)
   let failed = !inventory.ascertainable
   const resources = inventory.ascertainable ? inventory.resources : []
@@ -739,6 +742,5 @@ export function reclaimSweptDockerResources(input: {
   failed ||= leaked.size > 0
   reportRetainedDockerResources(dryRun, retained, presentation)
   reportLeakedDockerResources(dryRun, leaked, presentation)
-  reportDockerInventoryErrors(dryRun, inventoryErrors, presentation)
   return failed
 }

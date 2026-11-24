@@ -1,4 +1,4 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import * as boundedProcess from '../../../shared/bounded-process.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions
@@ -23,6 +23,8 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
+import { runBoundedDockerInventoryCommand } from '../resources/docker-inventory-command.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -498,9 +500,12 @@ export function rulingConditions(clock = Date.now()): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'], {
-    budget: 'self-cli',
-  })
+  const p = boundedProcess.startBoundedSync(
+    [...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'],
+    {
+      budget: 'self-cli',
+    },
+  )
   if (p.exitCode !== 0)
     return {
       conditions: [],
@@ -557,11 +562,14 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  let p: ReturnType<typeof startBoundedSync>
+  let p: ReturnType<typeof boundedProcess.startBoundedSync>
   try {
-    p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
-      budget: 'self-cli',
-    })
+    p = boundedProcess.startBoundedSync(
+      [...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'],
+      {
+        budget: 'self-cli',
+      },
+    )
   } catch (error) {
     if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
     throw error
@@ -609,15 +617,21 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  let listed: ReturnType<typeof startBoundedSync>
-  try {
-    listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
-      budget: 'docker',
-    })
-  } catch (error) {
-    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    throw error
+  const listedCommand = runBoundedDockerInventoryCommand(
+    ['volume', 'ls', '--format', '{{.Name}}'],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!listedCommand.ok) {
+    if (listedCommand.kind === 'fail' && listedCommand.error instanceof BoundExceededError)
+      return { conditions: [], errors: [listedCommand.error.message] }
+    return listedCommand.kind === 'docker-absent'
+      ? { conditions: [], errors: [] }
+      : {
+          conditions: [],
+          errors: [`docker volume inventory unavailable: ${listedCommand.reason}`],
+        }
   }
+  const listed = listedCommand.result
   if (listed.exitCode !== 0) {
     return {
       conditions: [],
@@ -631,15 +645,21 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  let inspected: ReturnType<typeof startBoundedSync>
-  try {
-    inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
-      budget: 'docker',
-    })
-  } catch (error) {
-    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    throw error
+  const inspectedCommand = runBoundedDockerInventoryCommand(
+    ['volume', 'inspect', ...candidates],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!inspectedCommand.ok) {
+    if (inspectedCommand.kind === 'fail' && inspectedCommand.error instanceof BoundExceededError)
+      return { conditions: [], errors: [inspectedCommand.error.message] }
+    return inspectedCommand.kind === 'docker-absent'
+      ? { conditions: [], errors: [] }
+      : {
+          conditions: [],
+          errors: [`docker volume inspection unavailable: ${inspectedCommand.reason}`],
+        }
   }
+  const inspected = inspectedCommand.result
   if (inspected.exitCode !== 0) {
     return {
       conditions: [],

@@ -13,6 +13,9 @@ import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
+import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
+import { dockerInventoryArgv, runDockerInventoryCommand } from './docker-inventory-command.ts'
 import {
   classifyServedWorktree,
   decideMainStackEnsure,
@@ -29,9 +32,13 @@ const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'BOTTEGA_MAIN_STACK_IDLE_STOP_AFTER_MS'
 const MAIN_STACK_COMMAND_TIMEOUT_MS = 120_000
 
 type CommandResult = { ok: true; output: string } | { ok: false; reason: string }
+type DockerInventoryResult =
+  | { kind: 'proceed'; output: string }
+  | { kind: 'docker-absent' }
+  | { kind: 'fail'; reason: string }
 
 function dockerCompose(cwd: string, args: string[]): CommandResult {
-  const command = ['docker', 'compose', ...args]
+  const command = [DOCKER_EXECUTABLE, 'compose', ...args]
   let result: ReturnType<typeof Bun.spawnSync>
   try {
     result = Bun.spawnSync(command, {
@@ -138,7 +145,9 @@ export function ensureMainStackStarted(input: {
       ? { runningServices: observed.output.split('\n').filter(Boolean) }
       : 'unknown',
   })
-  const command = ['docker', 'compose', 'up', '-d', '--wait', ...(required ?? [])].join(' ')
+  const command = [DOCKER_EXECUTABLE, 'compose', 'up', '-d', '--wait', ...(required ?? [])].join(
+    ' ',
+  )
   if (decision === 'refuse') {
     throw new Error(
       `cannot ascertain main stack for ${input.projectName}, required by ${input.consumer}, from registered main checkout ${input.projectPath}: ${observed.ok ? 'unknown state' : observed.reason}; run ${command} there, then retry`,
@@ -228,7 +237,7 @@ export function stopMainStackServices(input: {
   }
   const stopped = dockerCompose(input.projectPath, ['stop', ...input.startedServices])
   if (stopped.ok) return { outcome: 'stopped' }
-  const command = ['docker', 'compose', 'stop', ...input.startedServices].join(' ')
+  const command = [DOCKER_EXECUTABLE, 'compose', 'stop', ...input.startedServices].join(' ')
   throw new Error(
     `main stack services started for ${input.projectName} ${input.consumer} could not be stopped: ${stopped.reason}; run ${command} in ${input.projectPath}, then retry`,
   )
@@ -249,30 +258,19 @@ export function ensureProjectMainStack(
   })
 }
 
-function runningMainStackPaths(): CommandResult {
-  let result: ReturnType<typeof Bun.spawnSync>
-  const command = [
-    'docker',
-    'ps',
-    '--format',
-    '{{.Label "com.docker.compose.project.working_dir"}}',
-  ]
-  try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
-  } catch (error) {
-    return { ok: false, reason: `main stack inventory unavailable: ${(error as Error).message}` }
+function runningMainStackPaths(): DockerInventoryResult {
+  const args = ['ps', '--format', '{{.Label "com.docker.compose.project.working_dir"}}']
+  const result = runDockerInventoryCommand(
+    args,
+    MAIN_STACK_COMMAND_TIMEOUT_MS,
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!result.ok) {
+    return result.kind === 'docker-absent'
+      ? { kind: 'docker-absent' }
+      : { kind: 'fail', reason: `main stack inventory unavailable: ${result.reason}` }
   }
-  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
-    return {
-      ok: false,
-      reason: `main stack inventory unavailable: ${result.stderr?.toString().trim() || 'timed out'}`,
-    }
-  }
-  return { ok: true, output: result.stdout?.toString() ?? '' }
+  return { kind: 'proceed', output: result.stdout }
 }
 
 /**
@@ -285,35 +283,28 @@ export function mainStackServedWorktree(input: {
   checkoutPath: string
   worktreeComposeProjectPrefix?: string
 }): ServedWorktreeObservation {
-  const command = [
-    'docker',
+  const args = [
     'ps',
     '--format',
     '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  let result: ReturnType<typeof Bun.spawnSync>
-  try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
-  } catch (error) {
+  const result = runDockerInventoryCommand(
+    args,
+    MAIN_STACK_COMMAND_TIMEOUT_MS,
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!result.ok) {
+    if (result.kind === 'docker-absent') return { value: false, orphans: [] }
+    const command = dockerInventoryArgv(args)
     return {
       value: 'unknown',
-      reason: `${command.join(' ')} failed: ${(error as Error).message}`,
-      orphans: [],
-    }
-  }
-  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
-    return {
-      value: 'unknown',
-      reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || 'timed out'}`,
+      reason: `${command.join(' ')} failed: ${result.reason}`,
       orphans: [],
     }
   }
   const entries: ServedWorktreeEntry[] = []
-  for (const line of (result.stdout?.toString() ?? '').split('\n')) {
+  const command = dockerInventoryArgv(args)
+  for (const line of result.stdout.split('\n')) {
     if (!line) continue
     const [composeProject, workingDirectory, ...extra] = line.split('\t')
     if (extra.length > 0 || composeProject === undefined || workingDirectory === undefined) {
@@ -357,32 +348,23 @@ export function mainStackExecInProgress(
   const ids = containers.output.split('\n').filter(Boolean)
   if (ids.length === 0) return { value: false }
 
-  const command = ['docker', 'inspect', '-f', '{{json .ExecIDs}}', ...ids]
-  let result: ReturnType<typeof Bun.spawnSync>
-  try {
-    result = Bun.spawnSync(command, {
-      cwd: projectPath,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
-  } catch (error) {
-    return { value: 'unknown', reason: `${command.join(' ')} failed: ${(error as Error).message}` }
-  }
-  if (result.exitedDueToTimeout) {
+  const args = ['inspect', '-f', '{{json .ExecIDs}}', ...ids]
+  const command = dockerInventoryArgv(args)
+  const result = runDockerInventoryCommand(
+    args,
+    MAIN_STACK_COMMAND_TIMEOUT_MS,
+    dockerHostEvidenceProbe.gather,
+    { cwd: projectPath },
+  )
+  if (!result.ok) {
+    if (result.kind === 'docker-absent') return { value: false }
     return {
       value: 'unknown',
-      reason: `${command.join(' ')} failed: timed out after ${MAIN_STACK_COMMAND_TIMEOUT_MS}ms`,
-    }
-  }
-  if (result.exitCode !== 0) {
-    return {
-      value: 'unknown',
-      reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || `exit ${result.exitCode}`}`,
+      reason: `${command.join(' ')} failed: ${result.reason}`,
     }
   }
   try {
-    const execIds = (result.stdout?.toString() ?? '')
+    const execIds = result.stdout
       .trim()
       .split('\n')
       // A container that has never had an exec reports `null`, not `[]`.
@@ -484,6 +466,7 @@ type MainStackSweepInput = {
   nowMs?: number
   log(message: string): void
   error(message: string): void
+  onDockerAbsent?(): void
 }
 
 function sweepIdleMainStack(
@@ -549,7 +532,11 @@ function sweepIdleMainStack(
 
 export function sweepIdleMainStacks(input: MainStackSweepInput): boolean {
   const inventory = runningMainStackPaths()
-  if (!inventory.ok) {
+  if (inventory.kind === 'docker-absent') {
+    input.onDockerAbsent?.()
+    return false
+  }
+  if (inventory.kind === 'fail') {
     input.error(inventory.reason)
     return true
   }

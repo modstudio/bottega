@@ -4,6 +4,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DOCKER_EXECUTABLE } from '../resources/docker-executable.ts'
 import { type ComposeCommandPlan, composeCommandPlan } from './compose-provision-plan.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import type { StepResult } from './recipe-step.ts'
@@ -94,7 +95,7 @@ function inventory(
     {
       kind: 'container',
       argv: [
-        'docker',
+        DOCKER_EXECUTABLE,
         'ps',
         '-a',
         '--filter',
@@ -106,7 +107,7 @@ function inventory(
     {
       kind: 'volume',
       argv: [
-        'docker',
+        DOCKER_EXECUTABLE,
         'volume',
         'ls',
         '--filter',
@@ -118,7 +119,7 @@ function inventory(
     {
       kind: 'network',
       argv: [
-        'docker',
+        DOCKER_EXECUTABLE,
         'network',
         'ls',
         '--filter',

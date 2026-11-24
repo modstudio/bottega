@@ -20,6 +20,7 @@ import { getContextItem } from '../doc/context-item-store.ts'
 import { sessionResumeBriefState } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -29,11 +30,59 @@ import {
   sessionContextOwnershipLine,
   sweepSessionContext,
 } from './cleanup-sweep-context.ts'
+import { reportDockerInventoryFinish } from './cleanup-sweep-docker.ts'
 import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'
 
 afterEach(() => {
   mock.restore()
   installRecordApiClient(null)
+})
+
+function dockerFinishLines(dryRun: boolean): { info: string[]; errors: string[] } {
+  const info: string[] = []
+  const errors: string[] = []
+  let dockerAbsent = false
+  const observeDockerAbsent = () => {
+    dockerAbsent = true
+  }
+  observeDockerAbsent()
+  observeDockerAbsent()
+
+  reportDockerInventoryFinish(
+    dryRun,
+    {
+      log: (...values) => info.push(values.join(' ')),
+      error: (...values) => errors.push(values.join(' ')),
+      setExitCode: () => {},
+      keptBranchLine: () => '',
+    },
+    {
+      errors: new Set(['docker ps -a inventory unavailable: daemon unavailable']),
+      absent: dockerAbsent,
+    },
+  )
+
+  return { info, errors }
+}
+
+test('dry-run sweep finish restores exact Docker inventory error lines', () => {
+  expect(dockerFinishLines(true)).toEqual({
+    info: ['docker: executable not found; Docker inventory steps skipped'],
+    errors: [
+      '\nwould report inventory unavailable: 1',
+      '  would report docker ps -a inventory unavailable: daemon unavailable',
+    ],
+  })
+})
+
+test('real sweep finish restores exact Docker inventory error lines', () => {
+  expect(dockerFinishLines(false)).toEqual({
+    info: ['docker: executable not found; Docker inventory steps skipped'],
+    errors: [
+      '\ninventory unavailable: 1',
+      '  docker ps -a inventory unavailable: daemon unavailable',
+    ],
+  })
 })
 
 test('hosted session context sweep keeps foreign holders and drops owned expired holders', () => {
@@ -425,7 +474,7 @@ test('session context sweep resolves an open brief author past a later consume r
   expect(await getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
 })
 
-test('an owned terminal sweep candidate reaches close-out by UUID', async () => {
+test('an owned terminal sweep candidate reaches close-out when Docker is absent', async () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-sweep-owned-terminal-'))
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
   const projectRecordId = newRecordId()
@@ -461,13 +510,17 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
     .query('UPDATE run SET repo=?,project_record_id=?,worktree=?,cwd=? WHERE record_id=?')
     .run(name, projectRecordId, tree, tree, run)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
+  spyOn(dockerHostEvidenceProbe, 'gather').mockReturnValue({
+    executablePaths: [],
+    daemonSocketPaths: [],
+  })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options) => {
     const command = args.join(' ')
-    if (command === 'docker ps --format {{.Label "com.docker.compose.project.working_dir"}}')
-      return result('')
-    if (command.startsWith('docker ps -a --format')) return result('')
-    if (command.startsWith('docker volume ls --format')) return result('')
-    if (command === 'docker network ls --format {{.Name}}') return result('')
+    if (command.startsWith('docker ')) {
+      const error = new Error('spawn failed') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    }
     return actualSpawnSync(args, options)
   }) as typeof Bun.spawnSync)
 
@@ -521,6 +574,11 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(run)).toEqual({
       close_out_outcome: 'absent',
     })
+    expect(
+      lines.filter(
+        (line) => line === 'docker: executable not found; Docker inventory steps skipped',
+      ),
+    ).toHaveLength(1)
     expect(lines).toContain('outbox prune failed: prune busy')
     expect(
       db()

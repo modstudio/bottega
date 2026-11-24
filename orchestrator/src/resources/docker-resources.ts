@@ -1,10 +1,15 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
+import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
+import {
+  runBoundedDockerInventoryCommand,
+  runDockerInventoryCommand,
+} from './docker-inventory-command.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
@@ -50,6 +55,7 @@ export type DockerInventory =
       unattributedComposeResources?: UnattributedComposeDockerResource[]
       composeContainerProjects?: string[]
       composeContainers?: ComposeContainerFact[]
+      dockerAbsent?: boolean
     }
   | { ascertainable: false; reason: string }
 
@@ -62,62 +68,44 @@ type DockerNetwork = {
 }
 
 export type DockerNetworkInventory =
-  | { ascertainable: true; networks: DockerNetwork[] }
+  | { ascertainable: true; networks: DockerNetwork[]; dockerAbsent?: boolean }
   | { ascertainable: false; reason: string }
 
 function list(
   kind: 'container' | 'volume',
   timeout: number,
 ):
-  | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
+  | {
+      ascertainable: true
+      rows: { name: string; labels: Record<string, string> }[]
+      dockerAbsent?: boolean
+    }
   | { ascertainable: false; reason: string } {
   const args =
     kind === 'container'
       ? [
-          'docker',
           'ps',
           '-a',
           '--format',
           `{{.Names}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
         ]
       : [
-          'docker',
           'volume',
           'ls',
           '--format',
           `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
         ]
-  let p: ReturnType<typeof Bun.spawnSync>
-  try {
-    p = Bun.spawnSync(args, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
-    })
-  } catch (error) {
+  const p = runDockerInventoryCommand(args, timeout, dockerHostEvidenceProbe.gather)
+  if (!p.ok) {
+    if (p.kind === 'docker-absent') return { ascertainable: true, rows: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
-    }
-  }
-  if (p.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason:
-        `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
-        `timed out after ${timeout}ms`,
-    }
-  }
-  if (p.exitCode !== 0) {
-    const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
-    return {
-      ascertainable: false,
-      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${detail}`,
+      reason: `docker ${args.slice(0, 2).join(' ')} inventory unavailable: ${p.reason}`,
     }
   }
   return {
     ascertainable: true,
-    rows: (p.stdout?.toString() ?? '')
+    rows: p.stdout
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
@@ -318,6 +306,39 @@ function unattributedComposeNetworks(
   })
 }
 
+function absentDockerInventory(): Extract<DockerInventory, { ascertainable: true }> {
+  return {
+    ascertainable: true,
+    resources: [],
+    unattributable: [],
+    unattributedComposeResources: [],
+    composeContainerProjects: [],
+    composeContainers: [],
+    dockerAbsent: true,
+  }
+}
+
+type ListedRows = Extract<ReturnType<typeof list>, { ascertainable: true }>['rows']
+
+function listedDockerInventory():
+  | { complete: true; rows: Record<'container' | 'volume', ListedRows> }
+  | { complete: false; inventory: DockerInventory } {
+  const rows = {} as Record<'container' | 'volume', ListedRows>
+  const configuredTimeout = dockerInventoryTimeoutMs()
+  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  for (const kind of ['container', 'volume'] as const) {
+    let found = list(kind, configuredTimeout)
+    // The idle-machine default gets one materially longer chance under load.
+    // An explicit bound remains exact for the test gate and other callers.
+    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out'))
+      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
+    if (!found.ascertainable) return { complete: false, inventory: found }
+    if (found.dockerAbsent) return { complete: false, inventory: absentDockerInventory() }
+    rows[kind] = found.rows
+  }
+  return { complete: true, rows }
+}
+
 /** Inventory only resources created for orchestrator run worktrees. Never mutates Docker. */
 export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInventory {
   const rows: DockerResource[] = []
@@ -326,17 +347,11 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const composeContainerProjects = new Set<string>()
   const composeContainers: ComposeContainerFact[] = []
   const observed: { workingDir: string | null; composeProject: string | null }[] = []
-  const configuredTimeout = dockerInventoryTimeoutMs()
-  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  const listed = listedDockerInventory()
+  if (!listed.complete) return listed.inventory
   for (const kind of ['container', 'volume'] as const) {
-    let found = list(kind, configuredTimeout)
-    // The idle-machine default gets one materially longer chance under load.
-    // An explicit bound remains exact for the test gate and other callers.
-    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out')) {
-      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
-    }
-    if (!found.ascertainable) return found
-    const compose = listedComposeFacts(kind, found.rows)
+    const found = listed.rows[kind]
+    const compose = listedComposeFacts(kind, found)
     observed.push(...compose.observed)
     compose.containerProjects.forEach((project) => {
       composeContainerProjects.add(project)
@@ -344,7 +359,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
     unattributedComposeResources.push(...compose.unattributed)
     if (kind === 'container') {
       composeContainers.push(
-        ...found.rows.flatMap(({ name, labels }): ComposeContainerFact[] => {
+        ...found.flatMap(({ name, labels }): ComposeContainerFact[] => {
           const composeProject = labels['com.docker.compose.project']
           if (!composeProject) return []
           const workingDir = labels['com.docker.compose.project.working_dir'] ?? null
@@ -360,12 +375,13 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
         }),
       )
     }
-    const classified = classifyListedRows(kind, found.rows)
+    const classified = classifyListedRows(kind, found)
     rows.push(...classified.resources)
     unattributable.push(...classified.unattributable)
   }
   const networks = dockerNetworkInventory()
   if (!networks.ascertainable) return networks
+  if (networks.dockerAbsent) return absentDockerInventory()
   const networkRows = classifyNetworkRows(networks.networks)
   observed.push(...networks.networks)
   rows.push(...networkRows.resources)
@@ -403,17 +419,19 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  let listed: ReturnType<typeof startBoundedSync>
-  try {
-    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
-      budget: 'docker',
-    })
-  } catch (error) {
+  const listedCommand = runBoundedDockerInventoryCommand(
+    ['network', 'ls', '--format', '{{.Name}}'],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!listedCommand.ok) {
+    if (listedCommand.kind === 'docker-absent')
+      return { ascertainable: true, networks: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      reason: `docker network inventory unavailable: ${(error as Error).message}`,
+      reason: `docker network inventory unavailable: ${listedCommand.reason}`,
     }
   }
+  const listed = listedCommand.result
   if (listed.exitCode !== 0) {
     return {
       ascertainable: false,
@@ -426,17 +444,19 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  let inspected: ReturnType<typeof startBoundedSync>
-  try {
-    inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], {
-      budget: 'docker',
-    })
-  } catch (error) {
+  const inspectedCommand = runBoundedDockerInventoryCommand(
+    ['network', 'inspect', ...names],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!inspectedCommand.ok) {
+    if (inspectedCommand.kind === 'docker-absent')
+      return { ascertainable: true, networks: [], dockerAbsent: true }
     return {
       ascertainable: false,
-      reason: `docker network inspection unavailable: ${(error as Error).message}`,
+      reason: `docker network inspection unavailable: ${inspectedCommand.reason}`,
     }
   }
+  const inspected = inspectedCommand.result
   if (inspected.exitCode !== 0) {
     return {
       ascertainable: false,
@@ -480,6 +500,7 @@ export function resourcesForRuns(
   return {
     ascertainable: true,
     resources: inventory.resources.filter((resource) => owned.has(resource.runId)),
+    ...(inventory.dockerAbsent ? { dockerAbsent: true } : {}),
   }
 }
 
@@ -497,7 +518,7 @@ export function removeDockerResource(
   const command = dockerRemovalCommand(resource)
   let process: ReturnType<typeof Bun.spawnSync>
   try {
-    process = Bun.spawnSync(command.split(' '), {
+    process = Bun.spawnSync([DOCKER_EXECUTABLE, ...command.split(' ').slice(1)], {
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: dockerRemovalTimeoutMs(),
