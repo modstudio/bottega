@@ -26,7 +26,11 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/pr-class-guard.ts',
-    allowed: ['../../../shared/brand.ts', '../workflow/workflow-class-measured-floor.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/shell-quote.ts',
+      '../workflow/workflow-class-measured-floor.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',

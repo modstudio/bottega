@@ -2,6 +2,7 @@
 /** Pure admission for the class guard declared by a measured defect fix. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import { measuredCountFromOutput } from '../workflow/workflow-class-measured-floor.ts'
 
 export type ClassGuardMeasurement = { className: string; command: string; count: number }
@@ -15,7 +16,7 @@ export type ClassGuardExec = {
 export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
 const rerun = (worktree: string, command: string) =>
-  `${PLATFORM_SLUG} workflow exec --cwd ${worktree} -- ${command}`
+  `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(worktree)} -- ${command}`
 
 export function decidePullRequestClassGuard(input: {
   body: string

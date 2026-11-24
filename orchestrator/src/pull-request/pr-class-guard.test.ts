@@ -1,13 +1,15 @@
 import { expect, test } from 'bun:test'
+import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
 import { decidePullRequestClassGuard } from './pr-class-guard.ts'
 
+const command = renderClassMeasurementCommand(['sh', '-c', 'rg leak | wc -l'])!
 const base = {
   body: 'Summary\nClass guard: architecture check (before 3, after 0)',
-  measurement: { className: 'reader leak', command: 'rg leak | wc -l', count: 3 },
+  measurement: { className: 'reader leak', command, count: 3 },
   implementClosedAt: '2026-11-24T10:00:00Z',
   execs: [
     {
-      command: 'rg leak | wc -l',
+      command,
       output: '0\n',
       exitCode: 0,
       createdAt: '2026-11-24T10:01:00Z',
@@ -33,5 +35,24 @@ test.each([
   expect(decidePullRequestClassGuard({ ...base, ...overrides })).toMatchObject({
     kind: 'refuse',
     message: expect.stringContaining(message),
+  })
+})
+
+test('quotes a spaced worktree and shell command as one rerunnable invocation', () => {
+  const measuredCommand = renderClassMeasurementCommand([
+    'sh',
+    '-c',
+    "rg 'reader leak' | wc -l",
+  ])!
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurement: { ...base.measurement, command: measuredCommand },
+    execs: [],
+    worktree: '/tree with space',
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message:
+      "the Class guard has no successful post-implement measurement; run `bottega workflow exec --cwd '/tree with space' -- 'sh' '-c' 'rg '\\''reader leak'\\'' | wc -l'`",
   })
 })

@@ -1007,9 +1007,11 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
   const classMeasured = classMeasuredFor(input)
-  if (classMeasured?.met) input.evidence.classMeasurement = classMeasured.measurement
+  const evidence = classMeasured?.met
+    ? { ...input.evidence, classMeasurement: classMeasured.measurement }
+    : input.evidence
   const met = input.floors.filter((floor) =>
-    floorIsMet(floor, input.evidence, classMeasured, input.freshRulingAfter, input.workflowKey),
+    floorIsMet(floor, evidence, classMeasured, input.freshRulingAfter, input.workflowKey),
   )
   const obligationInput = {
     workflowKey: input.workflowKey,
@@ -1026,9 +1028,9 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (dispatchRefusal) return { action: 'refuse', message: dispatchRefusal }
   const judgingRefusal = judgingObligationRefusal(obligationInput)
   if (judgingRefusal) return { action: 'refuse', message: judgingRefusal }
-  const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
+  const commandFailure = commandExitFailureRefusal(input.floors, evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
-  const bindingRefusal = input.evidence.artifacts
+  const bindingRefusal = evidence.artifacts
     ?.map((entry) =>
       commandExitBindingRefusal(
         entry.exec,
@@ -1043,34 +1045,34 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     input.floors.some((floor) => floor.kind === 'command-exit')
   )
     return { action: 'refuse', message: bindingRefusal }
-  const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
+  const deferred = deferralOf(input.floors, evidence, met.length > 0)
   if ('action' in deferred) return deferred
   if (met.length === 0 && input.floors.length > 0 && !deferred.defer)
     return {
       action: 'refuse',
       message: unmetMessage(
         input.floors,
-        input.evidence,
+        evidence,
         classMeasured,
         input.freshRulingAfter,
         input.workflowKey,
       ),
     }
   const satisfied = satisfyOf(
-    input.evidence,
+    evidence,
     classMeasured,
     input.freshRulingAfter,
     input.workflowKey,
   )
   if ('action' in satisfied) return satisfied
-  const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)
+  const remaining = input.openObligations.filter((row) => row.id !== evidence.satisfy?.id)
   const finishing = finishOf(input.finishing, remaining, deferred.defer)
   if (finishing) return finishing
   return {
     action: 'allow',
     enforcement: 'floors',
-    refs: evidenceRefs(input.evidence),
-    ...(evidenceNotices(input.evidence).length ? { notices: evidenceNotices(input.evidence) } : {}),
+    refs: evidenceRefs(evidence),
+    ...(evidenceNotices(evidence).length ? { notices: evidenceNotices(evidence) } : {}),
     ...deferred,
     ...satisfied,
   }

@@ -12,7 +12,9 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
-  module('orchestrator/src/workflow/workflow-class-audit.ts', []),
+  module('orchestrator/src/workflow/workflow-class-audit.ts', [
+    './workflow-class-measurement-trail.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-compose-note-provenance.ts', [
     '../../../shared/brand.ts',
   ]),

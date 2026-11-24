@@ -24,7 +24,7 @@ test('round-trips persisted floor evidence into a trail class measurement', () =
             id: 7,
             recordId: 'exec-record',
             command: 'rg leak | wc -l',
-            argv: ['rg', 'leak'],
+            argv: ['sh', '-c', 'rg leak | wc -l'],
             exitCode: 0,
             sessionMatches: true,
             sessionAdoptedCursor: false,
@@ -43,6 +43,10 @@ test('round-trips persisted floor evidence into a trail class measurement', () =
   })
   expect(decision.action).toBe('allow')
   if (decision.action !== 'allow') return
+  expect(decision.refs).toContainEqual({
+    flag: '--command',
+    value: "'sh' '-c' 'rg leak | wc -l'",
+  })
   const trail = JSON.stringify([
     {
       n: 1,
@@ -55,7 +59,7 @@ test('round-trips persisted floor evidence into a trail class measurement', () =
   ])
   expect(classMeasurementFromClosedSteps(closedStepsFromTrail(trail))).toEqual({
     className: 'reader leak',
-    command: 'rg leak | wc -l',
+    command: "'sh' '-c' 'rg leak | wc -l'",
     count: 3,
     implementClosedAt: '2026-11-24T11:00:00Z',
   })

@@ -2,6 +2,7 @@
 /** Reads workflow exec facts used to verify a post-implement class measurement. */
 
 import type { Database } from 'bun:sqlite'
+import { renderClassMeasurementCommand } from './workflow-class-measured-floor.ts'
 
 export type ClassMeasurementExec = {
   command: string
@@ -10,33 +11,40 @@ export type ClassMeasurementExec = {
   createdAt: string
 }
 
+function structuredArgv(raw: string, withheld: boolean): string[] | null {
+  if (withheld) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.every((part) => typeof part === 'string') ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 export function classMeasurementExecsForSession(
   database: Database,
   session: string,
 ): ClassMeasurementExec[] {
   return database
     .query<
-      { command: string; output_tail: string; exit_code: number; created_at: string },
+      {
+        command: string
+        command_withheld: number
+        output_tail: string
+        exit_code: number
+        created_at: string
+      },
       [string]
     >(
-      "SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
+      "SELECT command,command_withheld,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
     )
     .all(session)
-    .map((row) => ({
-      command: recordedCommand(row.command),
-      output: row.output_tail,
-      exitCode: row.exit_code,
-      createdAt: row.created_at,
-    }))
-}
-
-function recordedCommand(raw: string): string {
-  try {
-    const value: unknown = JSON.parse(raw)
-    if (Array.isArray(value) && value.every((part) => typeof part === 'string'))
-      return value.join(' ')
-  } catch {
-    // Legacy command records are already text.
-  }
-  return raw
+    .flatMap((row) => {
+      const command = renderClassMeasurementCommand(
+        structuredArgv(row.command, row.command_withheld === 1),
+      )
+      return command
+        ? [{ command, output: row.output_tail, exitCode: row.exit_code, createdAt: row.created_at }]
+        : []
+    })
 }

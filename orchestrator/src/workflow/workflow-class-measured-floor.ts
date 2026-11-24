@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {
@@ -25,6 +26,10 @@ export function measuredCountFromOutput(output: string): number | null {
     .filter(Boolean)
     .at(-1)
   return lastLine && /^\d+$/.test(lastLine) ? Number(lastLine) : null
+}
+
+export function renderClassMeasurementCommand(argv: readonly string[] | null): string | null {
+  return argv?.length ? argv.map(shellQuote).join(' ') : null
 }
 
 export function decideClassMeasuredFloor(input: {
@@ -55,6 +60,12 @@ export function decideClassMeasuredFloor(input: {
       met: false,
       message: `floor class-measured is unmet: exec:${exec.id} predates this step; ${remedy}`,
     }
+  const command = exec.commandWithheld ? null : renderClassMeasurementCommand(exec.argv)
+  if (!command)
+    return {
+      met: false,
+      message: `floor class-measured is unmet: exec:${exec.id} has no structured command; rerun the measurement through \`${PLATFORM_SLUG} workflow exec -- <command>\``,
+    }
   const count = measuredCountFromOutput(exec.output)
   if (count === null)
     return {
@@ -63,6 +74,6 @@ export function decideClassMeasuredFloor(input: {
     }
   return {
     met: true,
-    measurement: { className, command: exec.command, execId: exec.id, count },
+    measurement: { className, command, execId: exec.id, count },
   }
 }

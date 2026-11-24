@@ -1,6 +1,11 @@
 // concern: workflows
 /** Pure class-audit decision over cursor, promotion, and implement-run facts. */
 
+import {
+  CLASS_MEASUREMENT_EVIDENCE,
+  CLASS_MEASUREMENT_STEP,
+} from './workflow-class-measurement-trail.ts'
+
 type ClassAuditClosedStep = {
   slug: string
   evidence?: Array<{ flag: string; value: string }>
@@ -24,9 +29,9 @@ export type ClassAuditImplementRun = {
 const promotionKey = (project: string, key: string) => `${project}\0${key}`
 
 function carriesClassMeasurement(step: ClassAuditClosedStep): boolean {
-  if (step.slug !== 'measure-class') return false
+  if (step.slug !== CLASS_MEASUREMENT_STEP) return false
   const flags = new Set((step.evidence ?? []).map((entry) => entry.flag))
-  return ['--class', '--command', '--exec', '--count'].every((flag) => flags.has(flag))
+  return Object.values(CLASS_MEASUREMENT_EVIDENCE).every((flag) => flags.has(flag))
 }
 
 export function auditUnmeasuredDefectCursors(input: {

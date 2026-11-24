@@ -224,12 +224,16 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-class-measured-floor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
+    '../../../shared/shell-quote.ts',
     './workflow-artifact-evidence.ts',
   ]),
   module('orchestrator/src/workflow/workflow-class-measurement-trail.ts', [
     './workflow-cursor-trail.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-class-measurement-execs.ts', ['bun:sqlite']),
+  module('orchestrator/src/workflow/workflow-class-measurement-execs.ts', [
+    'bun:sqlite',
+    './workflow-class-measured-floor.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-refs.ts', [
     './workflow-class-measurement-trail.ts',
   ]),
