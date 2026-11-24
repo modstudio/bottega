@@ -1,6 +1,7 @@
 /** Decide whether a project write is hosted, local, or refused. Must not know stores or HTTP. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { projectKeepsOwnTracker } from '../../shared/trackers.ts'
 export type HostedWriteMode = 'hosted-configured' | 'local-authoritative' | 'hosted-unavailable'
 export type TaskWriteMode = Exclude<HostedWriteMode, 'hosted-unavailable'>
 
@@ -60,7 +61,7 @@ export function reportedWriteMode(
 export function projectHasRemoteTracker(
   tracker: { protocol?: string } | null | undefined,
 ): boolean {
-  return Boolean(tracker) && tracker?.protocol !== 'hub'
+  return projectKeepsOwnTracker(tracker)
 }
 
 export function projectMappedToHostedSpace(space: unknown): boolean {

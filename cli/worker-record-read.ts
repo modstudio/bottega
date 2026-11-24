@@ -5,6 +5,7 @@ import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
 import { resolveHostedUrl } from '../hub/src/hosted-url.ts'
 import { hostedWriteMode } from '../hub/src/hosted-write-mode.ts'
 import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
+import type { WorkerTaskRead } from '../orchestrator/src/ask/worker-record-broker.ts'
 import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
 import { WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { type CallerClassification, classifyCaller } from '../shared/caller-classification.ts'
@@ -95,17 +96,24 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
     ])
     const readOptions = project ? { project } : {}
     if (route === 'task') {
-      const detail = await callWorkerRecordRead<HostedTaskDetail>(WORKER_READ_TOOLS.task, {
-        key: value,
-        ...readOptions,
-      })
+      const detail = await callWorkerRecordRead<WorkerTaskRead<HostedTaskDetail>>(
+        WORKER_READ_TOOLS.task,
+        {
+          key: value,
+          ...readOptions,
+        },
+      )
       const shown = {
         task: hostedTaskRow(detail.task),
         comments: detail.comments.map(hostedComment),
         documents: detail.documents.map(hostedTaskDocumentSummary),
+        ...(detail.tracker_notice ? { tracker_notice: detail.tracker_notice } : {}),
       }
       if (json) console.log(JSON.stringify(shown))
-      else printShownTask(shown)
+      else {
+        printShownTask(shown)
+        if (detail.tracker_notice) console.log(detail.tracker_notice)
+      }
     } else if (route === 'document') {
       const hosted = await callWorkerRecordRead<HostedDocument>(WORKER_READ_TOOLS.document, {
         reference: value,

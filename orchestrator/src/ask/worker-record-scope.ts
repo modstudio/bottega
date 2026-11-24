@@ -26,7 +26,14 @@ export type WorkerRecordScopeDecision = { allowed: true } | { allowed: false; re
 
 export function workerRecordScopeName(facts: WorkerRecordScopeFacts): string {
   const task = facts.runTaskKey ?? facts.runTaskId ?? '(unbound task)'
-  return `run task ${task}, its parent chain, and linked tasks in record space ${facts.runSpaceId ?? '(unbound space)'}`
+  return `run task ${task} and its parent chain in record space ${facts.runSpaceId ?? '(unbound space)'}`
+}
+
+export function workerRecordReadScopeAllowsKey(
+  facts: WorkerRecordScopeFacts,
+  key: string,
+): boolean {
+  return facts.allowedTaskKeys.includes(key.toUpperCase())
 }
 
 export function decideWorkerRecordReadScope(
@@ -46,7 +53,7 @@ export function decideWorkerRecordReadScope(
     return { allowed: false, reason: `read refused: the requested project is outside ${scope}` }
   const taskAllowed =
     (target.taskId !== null && facts.allowedTaskIds.includes(target.taskId)) ||
-    (target.taskKey !== null && facts.allowedTaskKeys.includes(target.taskKey.toUpperCase()))
+    (target.taskKey !== null && workerRecordReadScopeAllowsKey(facts, target.taskKey))
   if (!taskAllowed)
     return {
       allowed: false,

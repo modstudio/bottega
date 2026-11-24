@@ -88,7 +88,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../record/record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/ask/worker-record-broker.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/trackers.ts',
     '../database/db.ts',
+    '../project/project-read.ts',
     '../project-space-cache.ts',
     './worker-auth.ts',
     './worker-record-client.ts',
