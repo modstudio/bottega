@@ -133,6 +133,14 @@ export function publishHarnessSession(input: {
   return publication
 }
 
+/** Read the one publication belonging to an already-established harness process identity. */
+export function readHarnessSession(
+  identity: HarnessProcessIdentity,
+  env: StateEnvironment = process.env,
+): HarnessSessionPublication | null {
+  return parsePublication(publicationPath(harnessSessionDirectory(env), identity), identity)
+}
+
 export function reapHarnessSessions(
   options: {
     env?: StateEnvironment

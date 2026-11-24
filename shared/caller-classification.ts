@@ -1,4 +1,6 @@
 /** Classifies a caller from environment markers without knowing any concern state. */
+import { requestSession } from './request-session.ts'
+
 export const OPERATOR_SESSION_PREFIX = 'operator:'
 
 export function isOperatorSession(sessionId: string | null): boolean {
@@ -7,7 +9,7 @@ export function isOperatorSession(sessionId: string | null): boolean {
 
 export type CallerClassification =
   | { kind: 'worker' }
-  | { kind: 'harness'; harness: 'claude-code'; session: string }
+  | { kind: 'harness'; harness: 'claude-code' | 'codex'; session: string }
   | { kind: 'reserved-operator-session' }
   | { kind: 'unsupported-harness'; markers: string[] }
   | { kind: 'operator' }
@@ -35,6 +37,11 @@ const TERMINAL_SESSION_MARKERS = new Set([
 export function classifyCaller(env: Record<string, string | undefined>): CallerClassification {
   if (WORKER_ENVIRONMENT_MARKERS.some((marker) => Boolean(env[marker]?.trim())))
     return { kind: 'worker' }
+  const scoped = requestSession()
+  if (scoped)
+    return isOperatorSession(scoped.session)
+      ? { kind: 'reserved-operator-session' }
+      : { kind: 'harness', ...scoped }
   for (const entry of RECOGNIZED_HARNESSES) {
     const session = env[entry.environment]?.trim()
     if (session)

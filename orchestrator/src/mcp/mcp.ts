@@ -14,6 +14,11 @@ import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { readDocs as authoritativeDocs } from '../doc/doc-authoritative-read.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown } from '../doc/docs.ts'
+import { readHarnessSession } from '../harness-session/harness-session.ts'
+import type {
+  HarnessProcessIdentity,
+  HarnessSessionPublication,
+} from '../harness-session/harness-session-decision.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -92,6 +97,10 @@ export type DocsMcpPorts = LandingBranchPorts & {
     onRefusal?: (reason: string) => void,
   ) => void
   exit?: (code: number) => void
+  requestSessions?: {
+    identity: HarnessProcessIdentity | null
+    read(identity: HarnessProcessIdentity): HarnessSessionPublication | null
+  }
 }
 
 const portLedgerSources = (
@@ -536,7 +545,17 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       exit(MCP_SERVER_STALE_EXIT)
     },
   )
-  scopeMcpToolCallers(server)
+  const requestSessions = ports.requestSessions
+  scopeMcpToolCallers(
+    server,
+    undefined,
+    requestSessions
+      ? () => {
+          const identity = requestSessions.identity
+          return identity ? (requestSessions.read(identity)?.session ?? null) : null
+        }
+      : undefined,
+  )
   wrapMcpToolHandlers(server, (_name, handler) => async (...args) => {
     db()
     return handler(...args)
@@ -1032,6 +1051,6 @@ function registerNoteTool(server: McpServer): void {
   )
 }
 
-export async function serveDocsMcp(): Promise<void> {
-  serveStdio(() => createDocsMcpServer())
+export async function serveDocsMcp(identity: HarnessProcessIdentity | null): Promise<void> {
+  serveStdio(() => createDocsMcpServer({ requestSessions: { identity, read: readHarnessSession } }))
 }

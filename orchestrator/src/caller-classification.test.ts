@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
+import { withRequestSession } from '../../shared/request-session.ts'
 import {
   callerIdentityRefusal,
   classifyCaller,
@@ -61,6 +62,19 @@ describe('caller classification', () => {
         CLAUDE_CODE_SESSION_ID: 'claude-1',
         CODEX_THREAD_ID: 'codex-1',
       }),
+    ).toEqual({ kind: 'worker' })
+  })
+
+  test('a request session replaces the harness environment after worker classification', () => {
+    expect(
+      withRequestSession({ harness: 'codex', session: 'request-session' }, () =>
+        classifyCaller({ CLAUDE_CODE_SESSION_ID: 'environment-session' }),
+      ),
+    ).toEqual({ kind: 'harness', harness: 'codex', session: 'request-session' })
+    expect(
+      withRequestSession({ harness: 'codex', session: 'request-session' }, () =>
+        classifyCaller({ BOTTEGA_DEPTH: '1', CLAUDE_CODE_SESSION_ID: 'environment-session' }),
+      ),
     ).toEqual({ kind: 'worker' })
   })
 

@@ -14,7 +14,11 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { harnessSessionDirectory } from '../../../shared/state-directory.ts'
-import { publishHarnessSession, reapHarnessSessions } from './harness-session.ts'
+import {
+  publishHarnessSession,
+  readHarnessSession,
+  reapHarnessSessions,
+} from './harness-session.ts'
 import { HARNESS_SESSION_TEMP_GRACE_MS } from './harness-session-decision.ts'
 
 const roots: string[] = []
@@ -52,6 +56,22 @@ test('publish atomically replaces the current harness session', () => {
     harness: 'claude-code',
     source: 'clear',
   })
+})
+
+test('reader returns only the publication for the requested process identity', () => {
+  const env = state()
+  publishHarnessSession({
+    pid: 42,
+    session: 'published-session',
+    source: 'startup',
+    env,
+    observeStartTime: () => 'published-start',
+  })
+
+  expect(readHarnessSession({ pid: 42, startTime: 'published-start' }, env)?.session).toBe(
+    'published-session',
+  )
+  expect(readHarnessSession({ pid: 42, startTime: 'other-start' }, env)).toBeNull()
 })
 
 test('reaper removes dead and reused publications and keeps a live publication', () => {

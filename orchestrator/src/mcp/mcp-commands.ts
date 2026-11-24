@@ -1,5 +1,6 @@
 // concern: mcp-commands
 /** Owns MCP server entry and configuration presentation. Must not know CLI grammar. */
+import { processStartTime } from '../../../shared/process-identity.ts'
 import { serveMcpSupervisor } from './mcp-supervisor.ts'
 
 export async function mcpCommand(
@@ -46,5 +47,9 @@ export async function mcpCommand(
     presentation.log(
       JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: bottegaMcpServerEntry(binary) } }, null, 2),
     )
-  } else await serveMcpSupervisor()
+  } else {
+    const pid = process.ppid
+    const startTime = processStartTime(pid)
+    await serveMcpSupervisor(startTime ? { pid, startTime } : null)
+  }
 }

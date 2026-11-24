@@ -323,9 +323,18 @@ function registerMcpServers(program: Command): void {
       }
     })
   program
-    .command('mcp-serve-child', { hidden: true })
+    .command('mcp-serve-child [harness-pid] [harness-start-time]', { hidden: true })
     .allowExcessArguments(false)
-    .action(async () => (await import('../mcp/mcp.ts')).serveDocsMcp())
+    .action(async (harnessPid: string | undefined, harnessStartTime: string | undefined) => {
+      if (Boolean(harnessPid) !== Boolean(harnessStartTime))
+        throw new Error('the MCP serve child requires both harness pid and start time')
+      const pid = harnessPid ? Number(harnessPid) : null
+      if (pid !== null && (!Number.isSafeInteger(pid) || pid <= 1))
+        throw new Error('the MCP serve child harness pid must be an integer greater than one')
+      await (await import('../mcp/mcp.ts')).serveDocsMcp(
+        pid !== null && harnessStartTime ? { pid, startTime: harnessStartTime } : null,
+      )
+    })
   program
     .command('mcp-reader-proxy <policy> <project> <server> <tree>', { hidden: true })
     .allowExcessArguments(false)
