@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
@@ -36,12 +37,17 @@ import {
   readCommitsPastLanding,
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
+import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
-import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import {
+  findWorkflowCursor,
+  type SelectableCursorRow,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { closedStepsFromTrail } from './workflow-cursor-trail.ts'
-import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import { cursorOwnerAfter, decideCursorStart } from './workflow-cursor-transition.ts'
 import {
   closeExploreForLifecycle,
   type FinishExploreLifecycle,
@@ -50,11 +56,67 @@ import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
+export type ListWorkflowNotesPort = (
+  project: string,
+  options: { cwd: string },
+) => Promise<HubNote[]>
 export type WorkflowComposeInheritance = {
   parentFlowRecordId: string
   activeOrdinal: number
   activeSlug: string
   closedStepNotes: unknown[]
+}
+
+export async function assertPlanTaskNoteProvenance(
+  composition: Composition,
+  listNotes: ListWorkflowNotesPort = listHubNotes,
+): Promise<void> {
+  const key = workflowKeyOf(composition.arguments)
+  if (composition.workflow.slug !== 'plan-task' || !key) return
+  let read: Parameters<typeof decidePlanTaskNoteProvenance>[0]['read']
+  try {
+    const notes = await listNotes(composition.project, { cwd: process.cwd() })
+    read = {
+      kind: 'available',
+      notes: notes.map((note) => ({ label: note.label, promotedTask: note.promoted_task })),
+    }
+  } catch (error) {
+    read = { kind: 'unavailable', reason: error instanceof Error ? error.message : String(error) }
+  }
+  const decision = decidePlanTaskNoteProvenance({
+    workflow: composition.workflow.slug,
+    project: composition.project,
+    key,
+    read,
+  })
+  if (decision.kind === 'refuse') throw new Error(decision.message)
+}
+
+export async function refuseLocalComposeBranch(
+  composition: Composition,
+  context: WorkflowCursorContext,
+  database: Database,
+  commitCount: CommitCountPort,
+): Promise<void> {
+  const existing = workflowKeyOf(composition.arguments)
+    ? await findWorkflowCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode!.slug,
+        composition.arguments,
+        context,
+        database,
+      )
+    : null
+  if (decideCursorStart(existing?.state ?? null) === 'reuse') return
+  const refusal = workflowComposeBranchRefusal({
+    workflow: composition.workflow.slug,
+    project: composition.project,
+    args: composition.arguments,
+    d: database,
+    commitCount,
+  })
+  if (refusal) throw new Error(refusal)
 }
 type ExistingFlow = { record_id: string; revision: number } | null
 type ComposeFacts = {
@@ -402,6 +464,7 @@ async function recoverComposeConflict(
   commitCount: CommitCountPort,
   keylessSiblingRetry: boolean,
   target: TaskFlowWriteTarget,
+  listNotes: ListWorkflowNotesPort,
 ): Promise<SelectableCursorRow> {
   const client = context.taskFlowClient ?? recordApiClient()
   const listed = await client.listTaskFlowStages!(
@@ -426,7 +489,16 @@ async function recoverComposeConflict(
   const alreadyCached = await taskFlowReadStore(database, client).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay)
   if (facts.key || keylessSiblingRetry) throw error
-  return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)
+  return insertWorkflowCursor(
+    composition,
+    context,
+    database,
+    autonomy,
+    commitCount,
+    true,
+    undefined,
+    listNotes,
+  )
 }
 
 export async function insertWorkflowCursor(
@@ -437,6 +509,7 @@ export async function insertWorkflowCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   keylessSiblingRetry = false,
   inheritance?: WorkflowComposeInheritance,
+  listNotes: ListWorkflowNotesPort = listHubNotes,
 ): Promise<SelectableCursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,
@@ -446,6 +519,7 @@ export async function insertWorkflowCursor(
     commitCount,
   })
   if (refusal) throw new Error(refusal)
+  await assertPlanTaskNoteProvenance(composition, listNotes)
   const facts = await readComposeFacts(
     composition,
     context,
@@ -472,6 +546,7 @@ export async function insertWorkflowCursor(
       commitCount,
       keylessSiblingRetry,
       target,
+      listNotes,
     )
   }
 }

@@ -16,7 +16,7 @@ import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose
 import { selectWorkflowCursorForKeyAdoption } from './workflow-cursor-adoption.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { insertWorkflowCursor, type ListWorkflowNotesPort } from './workflow-cursor-compose.ts'
 import {
   foreignCursorOwnerNotice,
   formatCursorOpened,
@@ -145,6 +145,7 @@ async function refreshStepServe(
   cursor: number | undefined,
   live: LiveCursorAutonomy | undefined,
   commitCount: CommitCountPort,
+  listNotes?: ListWorkflowNotesPort,
 ) {
   let prepared = await prepareStepServe(
     slug,
@@ -160,7 +161,16 @@ async function refreshStepServe(
   )
   if (prepared.index === 0 && prepared.row && decideCursorStart(prepared.row.state) === 'retire') {
     refuseMissingWorkflowArguments(prepared.composition)
-    await insertWorkflowCursor(prepared.composition, context, database, autonomy, commitCount)
+    await insertWorkflowCursor(
+      prepared.composition,
+      context,
+      database,
+      autonomy,
+      commitCount,
+      false,
+      undefined,
+      listNotes,
+    )
     prepared = await prepareStepServe(
       slug,
       project,
@@ -183,6 +193,25 @@ function refuseMissingWorkflowArguments(composition: ReturnType<typeof composeWo
       `missing required arguments: ${composition.needs.arguments.map(({ name }) => name).join(', ')}`,
     )
 }
+
+const openWorkflowCursor = (
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+  autonomy: AutonomyResolution | undefined,
+  commitCount: CommitCountPort,
+  listNotes?: ListWorkflowNotesPort,
+) =>
+  insertWorkflowCursor(
+    composition,
+    context,
+    database,
+    autonomy,
+    commitCount,
+    false,
+    undefined,
+    listNotes,
+  )
 
 function serveDecision(
   prepared: Awaited<ReturnType<typeof prepareStepServe>>,
@@ -344,6 +373,7 @@ async function serveWorkflowStepWithCursor(
   cursor?: number,
   live?: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  listNotes?: ListWorkflowNotesPort,
 ) {
   await readThroughWorkflowCursorContext(project, context, database)
   await linkResolvedWorkflowTask(project, context, database)
@@ -383,13 +413,21 @@ async function serveWorkflowStepWithCursor(
     preparedCursor,
     live,
     commitCount,
+    listNotes,
   )
   let { row } = prepared
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)
   if (!row) {
     refuseMissingWorkflowArguments(composition)
-    row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
+    row = await openWorkflowCursor(
+      composition,
+      context,
+      database,
+      autonomy,
+      commitCount,
+      listNotes,
+    )
   }
   await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = await withWorkflowTextFacts(
@@ -438,6 +476,7 @@ export async function getWorkflowStepWithCursor(
   live: LiveCursorAutonomy,
   cursor?: number,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  listNotes?: ListWorkflowNotesPort,
 ) {
   return serveWorkflowStepWithCursor(
     slug,
@@ -451,5 +490,6 @@ export async function getWorkflowStepWithCursor(
     cursor,
     live,
     commitCount,
+    listNotes,
   )
 }

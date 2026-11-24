@@ -10,7 +10,7 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
-import { type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
+import type { HubNote } from '../mcp/hub-notes.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -29,7 +29,6 @@ import { obligationUuid, positive, workflowArgs } from './workflow-command-argum
 import { workflowCommandProject } from './workflow-command-project.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
-import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 import {
   type WorkflowContextMoment,
   type WorkflowNextCommandMoment,
@@ -270,27 +269,6 @@ export async function attachCommand(
     selectedRow,
   } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow attach`)
   const args = workflowArgs(argv)
-  if (argv[2] === 'plan-task' && args.key) {
-    let read: Parameters<typeof decidePlanTaskNoteProvenance>[0]['read']
-    try {
-      const notes = await (options.listNotes ?? listHubNotes)(project, {
-        cwd: options.cwd ?? process.cwd(),
-      })
-      read = {
-        kind: 'available',
-        notes: notes.map((note) => ({ label: note.label, promotedTask: note.promoted_task })),
-      }
-    } catch (error) {
-      read = { kind: 'unavailable', reason: error instanceof Error ? error.message : String(error) }
-    }
-    const provenance = decidePlanTaskNoteProvenance({
-      workflow: argv[2]!,
-      project,
-      key: args.key,
-      read,
-    })
-    if (provenance.kind === 'refuse') throw new Error(provenance.message)
-  }
   context = await resolveWorkflowCursorContext(
     project,
     args,
@@ -693,6 +671,7 @@ export async function stepCommand(
         live,
         cursor,
         options.commitCount,
+        options.listNotes,
       )
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, live.resolution)
   print(step, renderWorkflowStep(step))
@@ -945,6 +924,7 @@ export async function composeCommand(
         options.commitCount,
         undefined,
         cursor,
+        options.listNotes,
       )
     : composeWorkflow(argv[2]!, project, mode, args, undefined, selection, live.resolution)
   print(result, json ? undefined : renderWorkflowComposition(result))
