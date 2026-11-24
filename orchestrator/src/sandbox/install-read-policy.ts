@@ -1,9 +1,13 @@
 // concern: running-install read carve-outs shared by SRT profiles and their executed probe.
 
-import { readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
+import {
+  installationExecutable,
+  runningInstallationKind,
+  runningInstallRoot,
+} from '../../../shared/install-root.ts'
 
 type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
@@ -68,4 +72,38 @@ export function runningInstallReadCarveouts(layout: RunningInstallLayout): strin
       ...layout.workspaceDirectories,
     ]),
   ]
+}
+
+export function installProbeFixture(
+  root: string,
+  running: RunningInstallLayout,
+  executableName: string,
+): RunningInstallLayout {
+  mkdirSync(root, { recursive: true })
+  for (const name of ['cli', 'shared', 'hub', 'orchestrator', 'node_modules'])
+    symlinkSync(join(running.root, name), join(root, name), 'dir')
+  const fixtureBin = join(root, 'bin')
+  mkdirSync(fixtureBin)
+  copyFileSync(installationExecutable(running.root, running.kind), join(fixtureBin, executableName))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'probe-install' }))
+  writeFileSync(join(root, '.env'), 'PLANTED_INSTALL_SECRET=fixture\n')
+  return {
+    kind: 'checkout',
+    root,
+    workspaceDirectories: [join(root, 'hub'), join(root, 'orchestrator')],
+  }
+}
+
+export function runningInstallAccessTarget(runningInstall: RunningInstallLayout) {
+  return runningInstall.kind === 'checkout'
+    ? {
+        name: 'running package.json',
+        path: join(runningInstall.root, 'package.json'),
+        expected: 'readable' as const,
+      }
+    : {
+        name: 'running executable',
+        path: installationExecutable(runningInstall.root, runningInstall.kind),
+        expected: 'readable' as const,
+      }
 }

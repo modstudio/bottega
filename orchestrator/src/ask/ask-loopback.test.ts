@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
-import { Client, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client'
 import { createConnection, type Socket } from 'node:net'
+import { Client, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client'
+import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { startAskLoopback } from './ask.ts'
-import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 
 function socketTransport(urlValue: string): Transport {
   const url = new URL(urlValue)
@@ -55,7 +55,9 @@ test('a loopback without dependencies resolves worker scope from the run store',
     taskRecordId: '01990000-0000-7000-8000-000000002623',
     projectRecordId: projectId,
   })
-  db().query('UPDATE run SET launch_key=?,run_token=? WHERE record_id=?').run('DEV-2623', 'token', runId)
+  db()
+    .query('UPDATE run SET launch_key=?,run_token=? WHERE record_id=?')
+    .run('DEV-2623', 'token', runId)
   const loopback = await startAskLoopback(runId, 'token')
   const client = new Client({ name: 'default-loopback-test', version: '1' })
   try {

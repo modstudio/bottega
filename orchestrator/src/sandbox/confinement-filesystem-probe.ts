@@ -1,37 +1,31 @@
 // concern: executed confinement probe; owns disposable fixtures and real SRT launches.
 
 import { Database } from 'bun:sqlite'
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startBounded, startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
-import { installationExecutable } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
   realPathForPotentialPath,
   resolveHubDatabase,
+  resolveOrchestratorDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
+import { BUILTIN_AGENTS } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { buildCheckoutCli } from '../database/checkout-cli-build.ts'
 import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
+import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { median } from '../state/statistics.ts'
 import { confinedLaunchCwd } from './confined-launch-cwd.ts'
 import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
@@ -40,10 +34,10 @@ import {
   launchCommand,
   launchSandboxProbe,
   launchTaskReadCommands,
-  probeWorkerEnvironment,
 } from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
+  confinementProbeProject,
   createConfinementProbeTask,
   probeTaskReadCommands,
   probeWorkerRecordDependencies,
@@ -56,8 +50,9 @@ import {
   probeVerdict,
 } from './confinement-probe-verdict.ts'
 import {
-  type RunningInstallLayout,
+  installProbeFixture,
   resolveRunningInstallLayout,
+  runningInstallAccessTarget,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
 import {
@@ -127,22 +122,23 @@ const PROBE_RUN_ID = 'confinement-filesystem-probe'
 const PROBE_RUN_TOKEN = 'confinement-filesystem-probe-token'
 const PROBE_SPACE_ID = '01990000-0000-7000-8000-000000002623'
 
-function fixtureProject(
-  recordId: string,
-  name: string,
-  path: string,
-  secretPaths: string[] = [],
-  keyPrefixes: string[] = [],
-): Project {
-  return {
-    recordId,
-    name,
-    path,
-    stack: 'probe',
-    canon: false,
-    retiredAt: null,
-    settings: { keyPrefixes, secretPaths },
-  }
+export function probeWorkerEnvironment(
+  environment: Record<string, string>,
+  askUrl: string,
+): Record<string, string> {
+  const child = workerChildEnvironment({
+    agent: BUILTIN_AGENTS.grok!,
+    sandbox: 'srt',
+    runRecordId: PROBE_RUN_ID,
+    runToken: PROBE_RUN_TOKEN,
+    runNumber: 1,
+    environment,
+    stateEnvironment: environment,
+    includeStore: true,
+  })
+  child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(environment)
+  child.BOTTEGA_ASK_URL = askUrl
+  return child
 }
 
 function stderrTail(stderr: string): string {
@@ -673,23 +669,6 @@ function openLiveHubFixture(destination: string): Database {
   return writer
 }
 
-function installFixture(root: string, running: RunningInstallLayout): RunningInstallLayout {
-  mkdirSync(root, { recursive: true })
-  for (const name of ['cli', 'shared', 'hub', 'orchestrator', 'node_modules']) {
-    symlinkSync(join(running.root, name), join(root, name), 'dir')
-  }
-  const fixtureBin = join(root, 'bin')
-  mkdirSync(fixtureBin)
-  copyFileSync(installationExecutable(running.root, running.kind), join(fixtureBin, PLATFORM_SLUG))
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'probe-install' }))
-  writeFileSync(join(root, '.env'), 'PLANTED_INSTALL_SECRET=fixture\n')
-  return {
-    kind: 'checkout',
-    root,
-    workspaceDirectories: [join(root, 'hub'), join(root, 'orchestrator')],
-  }
-}
-
 function probeHubOpenMode(hubDatabase: string): string {
   return decideStoreAccess({
     restrictedActor: true,
@@ -762,26 +741,12 @@ function probeAccessTargets(input: {
   return targets
 }
 
-function runningInstallAccessTarget(runningInstall: RunningInstallLayout): AccessTarget {
-  return runningInstall.kind === 'checkout'
-    ? {
-        name: 'running package.json',
-        path: join(runningInstall.root, 'package.json'),
-        expected: 'readable',
-      }
-    : {
-        name: 'running executable',
-        path: installationExecutable(runningInstall.root, runningInstall.kind),
-        expected: 'readable',
-      }
-}
-
 function createProbeTaskFixture(
   hubWriter: Database,
   orchestratorDatabase: string,
   ownPath: string,
 ): { own: Project; task: ConfinementProbeTask } {
-  const own = fixtureProject(
+  const own = confinementProbeProject(
     Bun.randomUUIDv7(),
     PROBE_PROJECT_NAME,
     ownPath,
@@ -798,6 +763,11 @@ function createProbeTaskFixture(
   return { own, task }
 }
 
+function probeCliCommands(task: ConfinementProbeTask) {
+  const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
+  return { cliArgv, taskCommands: probeTaskReadCommands(task, cliArgv, PLATFORM_SLUG) }
+}
+
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -805,7 +775,11 @@ function createProbeFixture(root: string) {
   const siblingPath = join(root, 'projects', 'sibling')
   const stateRoot = join(root, 'state')
   const runningInstall = resolveRunningInstallLayout(process.env)
-  const fixtureInstall = installFixture(join(root, 'projects', 'install'), runningInstall)
+  const fixtureInstall = installProbeFixture(
+    join(root, 'projects', 'install'),
+    runningInstall,
+    PLATFORM_SLUG,
+  )
   const hubDatabase = join(stateRoot, 'hub', 'hub.db')
   const environment = {
     ...process.env,
@@ -843,14 +817,12 @@ function createProbeFixture(root: string) {
     state.orchestratorDatabase,
     ownPath,
   )
-  const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
-  const taskCommands = probeTaskReadCommands(probeTask, cliArgv, PLATFORM_SLUG)
-  const sibling = fixtureProject('sibling', 'sibling', siblingPath)
+  const sibling = confinementProbeProject('sibling', 'sibling', siblingPath)
   const registeredProjects = [
     own,
     sibling,
-    fixtureProject('fixture-install', 'fixture-install', fixtureInstall.root),
-    fixtureProject('running-install', PLATFORM_SLUG, runningInstall.root),
+    confinementProbeProject('fixture-install', 'fixture-install', fixtureInstall.root),
+    confinementProbeProject('running-install', PLATFORM_SLUG, runningInstall.root),
   ]
   const loginToken = join(hubLoginTokenDirectory(environment), 'planted-token')
   mkdirSync(join(loginToken, '..'), { recursive: true })
@@ -864,8 +836,7 @@ function createProbeFixture(root: string) {
     hubOpenMode: probeHubOpenMode(hubDatabase),
     stateRoot,
     targets,
-    cliArgv,
-    taskCommands,
+    ...probeCliCommands(probeTask),
     probeTask,
     commandCwd: fixtureConfinedLaunchCwd(worktree),
     fixtureInstall,
@@ -896,6 +867,75 @@ function launchHeadlessBrowserProbeRow(
   )
 }
 
+async function runProbeRows(
+  fixture: ReturnType<typeof createProbeFixture>,
+  workerEnvironment: Record<string, string>,
+  askAddress: string,
+): Promise<ConfinementFilesystemProbeRow[]> {
+  const { common } = fixture
+  const missingTargets = missingExpectedReadableTargetNames(fixture.targets)
+  const launch = (
+    family: Parameters<typeof launchProbe>[0],
+    profile: Parameters<typeof launchProbe>[1],
+  ) =>
+    launchProbe(
+      family,
+      profile,
+      fixture.targets,
+      fixture.taskCommands,
+      workerEnvironment,
+      common.scratchDir,
+      fixture.commandCwd,
+      fixture.hubOpenMode,
+      missingTargets,
+    )
+  return [
+    await launch('goose', readonlyLensProfile({ ...common, agent: 'goose' })),
+    await launch('grok', readonlyLensProfile({ ...common, agent: 'grok' })),
+    await launch('ACP writer', writerProfile({ ...common, agent: 'grok', askAddress })),
+    await launchExtractedRefGuardProbe(
+      writerProfile({ ...common, agent: 'grok', askAddress }),
+      common.worktree,
+      common.scratchDir,
+      workerEnvironment,
+    ),
+    await launchWorkflowProbe(
+      probeSandboxProfile({
+        allowWriteDir: common.scratchDir,
+        cwd: common.worktree,
+        project: common.project,
+        registeredProjects: common.registeredProjects,
+        environment: common.environment,
+        socketDenyPaths: common.socketDenyPaths,
+      }),
+      fixture.targets,
+      fixture.taskCommands,
+      workerEnvironment,
+      common.scratchDir,
+      fixture.commandCwd,
+      fixture.hubOpenMode,
+      missingTargets,
+    ),
+    await launchCrossProjectCliProbe(
+      readonlyLensProfile({ ...common, agent: 'grok' }),
+      join(fixture.fixtureInstall.root, '.env'),
+      fixture.cliArgv,
+      fixture.taskCommands,
+      workerEnvironment,
+      common.scratchDir,
+      fixture.commandCwd,
+      fixture.hubOpenMode,
+    ),
+    await launchSandboxGitSpawnProbe(
+      readonlyLensProfile({ ...common, agent: 'grok' }),
+      workerEnvironment,
+      common.scratchDir,
+    ),
+    await launchHeadlessBrowserProbeRow(common, workerEnvironment),
+    ...NOT_COVERED,
+  ]
+}
+
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
   const probeParent = tmpdir()
@@ -907,90 +947,21 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
   try {
     const fixture = createProbeFixture(root)
     hubWriter = fixture.hubWriter
-    const { common } = fixture
-    const missingExpectedReadableTargets = missingExpectedReadableTargetNames(fixture.targets)
     process.env[STATE_HOME_ENV] = fixture.stateRoot
     askLoopback = await startAskLoopback(
       PROBE_RUN_ID,
       PROBE_RUN_TOKEN,
       probeWorkerRecordDependencies({
         task: fixture.probeTask,
-        project: common.project,
+        project: fixture.common.project,
         runId: PROBE_RUN_ID,
         token: PROBE_RUN_TOKEN,
         spaceId: PROBE_SPACE_ID,
       }),
     )
-    const workerEnvironment = probeWorkerEnvironment({
-      environment: fixture.environment,
-      askUrl: askLoopback.url,
-      runId: PROBE_RUN_ID,
-      runToken: PROBE_RUN_TOKEN,
-    })
+    const workerEnvironment = probeWorkerEnvironment(fixture.environment, askLoopback.url)
     const askAddress = askLoopback.url.slice('tcp://'.length)
-    const launch = (
-      family: Parameters<typeof launchProbe>[0],
-      profile: Parameters<typeof launchProbe>[1],
-    ) =>
-      launchProbe(
-        family,
-        profile,
-        fixture.targets,
-        fixture.taskCommands,
-        workerEnvironment,
-        common.scratchDir,
-        fixture.commandCwd,
-        fixture.hubOpenMode,
-        missingExpectedReadableTargets,
-      )
-    return [
-      await launch('goose', readonlyLensProfile({ ...common, agent: 'goose' })),
-      await launch('grok', readonlyLensProfile({ ...common, agent: 'grok' })),
-      await launch(
-        'ACP writer',
-        writerProfile({ ...common, agent: 'grok', askAddress }),
-      ),
-      await launchExtractedRefGuardProbe(
-        writerProfile({ ...common, agent: 'grok', askAddress }),
-        common.worktree,
-        common.scratchDir,
-        workerEnvironment,
-      ),
-      await launchWorkflowProbe(
-        probeSandboxProfile({
-          allowWriteDir: common.scratchDir,
-          cwd: common.worktree,
-          project: common.project,
-          registeredProjects: common.registeredProjects,
-          environment: common.environment,
-          socketDenyPaths: common.socketDenyPaths,
-        }),
-        fixture.targets,
-        fixture.taskCommands,
-        workerEnvironment,
-        common.scratchDir,
-        fixture.commandCwd,
-        fixture.hubOpenMode,
-        missingExpectedReadableTargets,
-      ),
-      await launchCrossProjectCliProbe(
-        readonlyLensProfile({ ...common, agent: 'grok' }),
-        join(fixture.fixtureInstall.root, '.env'),
-        fixture.cliArgv,
-        fixture.taskCommands,
-        workerEnvironment,
-        common.scratchDir,
-        fixture.commandCwd,
-        fixture.hubOpenMode,
-      ),
-      await launchSandboxGitSpawnProbe(
-        readonlyLensProfile({ ...common, agent: 'grok' }),
-        workerEnvironment,
-        common.scratchDir,
-      ),
-      await launchHeadlessBrowserProbeRow(common, workerEnvironment),
-      ...NOT_COVERED,
-    ]
+    return runProbeRows(fixture, workerEnvironment, askAddress)
   } finally {
     await askLoopback?.close()
     hubWriter?.close()

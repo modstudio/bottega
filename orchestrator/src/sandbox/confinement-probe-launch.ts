@@ -1,36 +1,13 @@
 // concern: shared confinement-probe launch and process-error formatting.
 
 import { startBounded } from '../../../shared/bounded-process.ts'
-import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
-import { BUILTIN_AGENTS } from '../agent/agents.ts'
-import { workerChildEnvironment } from '../run/run-worker-home.ts'
-import type { CommandProbe } from './confinement-probe-verdict.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from './sandbox.ts'
+
+type ProbeCommandResult = { status: 'ran' | 'failed'; reason: string }
 
 export type TaskReadCommands = {
   own: { argv: string[]; label: string }
   refused: { argv: string[]; label: string }
-}
-
-export function probeWorkerEnvironment(input: {
-  environment: Record<string, string>
-  askUrl: string
-  runId: string
-  runToken: string
-}): Record<string, string> {
-  const child = workerChildEnvironment({
-    agent: BUILTIN_AGENTS.grok!,
-    sandbox: 'srt',
-    runRecordId: input.runId,
-    runToken: input.runToken,
-    runNumber: 1,
-    environment: input.environment,
-    stateEnvironment: input.environment,
-    includeStore: true,
-  })
-  child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(input.environment)
-  child.BOTTEGA_ASK_URL = input.askUrl
-  return child
 }
 
 export function firstErrorLine(stderr: string | undefined): string {
@@ -60,7 +37,7 @@ export async function launchCommand(
   cwd: string,
   hubOpenMode?: string,
   launcher: typeof launchSandboxProbe = launchSandboxProbe,
-): Promise<CommandProbe> {
+): Promise<ProbeCommandResult> {
   const result = await launcher(profile, argv[0]!, argv.slice(1), environment, scratchDir, { cwd })
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
@@ -75,7 +52,7 @@ async function launchRefusedTaskRead(
   scratchDir: string,
   cwd: string,
   hubOpenMode: string,
-): Promise<CommandProbe> {
+): Promise<ProbeCommandResult> {
   const result = await launchSandboxProbe(
     profile,
     argv[0]!,
@@ -101,7 +78,7 @@ export async function launchTaskReadCommands(
   scratchDir: string,
   cwd: string,
   hubOpenMode: string,
-): Promise<Record<string, CommandProbe>> {
+): Promise<Record<string, ProbeCommandResult>> {
   const own = await launchCommand(
     profile,
     commands.own.argv,

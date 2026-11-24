@@ -574,7 +574,7 @@ export async function ask(
  * spawned the agent, which is the only party that actually knows.
  */
 type AskServerDependencies = {
-  fileWorkerNote?: (run: WorkerNoteRun, input: WorkerNoteInput) => Promise<WorkerNoteFiledResult>
+  fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
   workerRecordClient?: WorkerRecordClient
@@ -891,10 +891,7 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
-        const filed = await (dependencies.fileWorkerNote ?? requestWorkerNote)(
-          workerNoteRun(runId),
-          input,
-        )
+        const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
         return text(
           JSON.stringify({
             noteRecordId: filed.noteRecordId,
@@ -1042,15 +1039,15 @@ export function startAskHttpEndpoint(runId: string, token: string): AskLoopback 
 export async function startAskLoopback(
   runId: string,
   token: string,
-  dependencies?: Pick<
-    AskServerDependencies,
-    'workerRecordClient' | 'workerRecordScopeFacts'
-  >,
+  dependencies?: Pick<AskServerDependencies, 'workerRecordClient' | 'workerRecordScopeFacts'>,
 ): Promise<AskLoopback> {
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    const askServer = createAskMcpServer(runId, token, undefined, dependencies)
+    const askServer = createAskMcpServer(runId, token, undefined, {
+      fileWorkerNote: requestWorkerNote,
+      ...dependencies,
+    })
     const mcp = serveStdio(() => askServer, {
       transport: observeAskTransport(new StdioServerTransport(socket, socket), runId),
     })

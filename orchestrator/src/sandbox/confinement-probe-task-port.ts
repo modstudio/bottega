@@ -1,8 +1,6 @@
 // concern: confinement probe task creation port; the CLI composition root supplies the hub adapter.
 
 import type { Database } from 'bun:sqlite'
-import type { WorkerRecordScopeFactsProvider } from '../ask/worker-record-broker.ts'
-import type { WorkerHostedTaskDetail, WorkerRecordClient } from '../ask/worker-record-client.ts'
 import type { Project } from '../project/projects.ts'
 
 export type ConfinementProbeTaskInput = {
@@ -38,19 +36,34 @@ export function createConfinementProbeTask(
   return installedCreator(connection, input)
 }
 
-/** Adapt the hub-local probe task to the ask broker's in-process fixture ports. */
+export function confinementProbeProject(
+  recordId: string,
+  name: string,
+  path: string,
+  secretPaths: string[] = [],
+  keyPrefixes: string[] = [],
+): Project {
+  return {
+    recordId,
+    name,
+    path,
+    stack: 'probe',
+    canon: false,
+    retiredAt: null,
+    settings: { keyPrefixes, secretPaths },
+  }
+}
+
+/** Adapt the hub-local probe task to the ask broker's narrow in-process fixture ports. */
 export function probeWorkerRecordDependencies(input: {
   task: ConfinementProbeTask
   project: Project
   runId: string
   token: string
   spaceId: string
-}): {
-  workerRecordClient: WorkerRecordClient
-  workerRecordScopeFacts: WorkerRecordScopeFactsProvider
-} {
+}) {
   const { task, project } = input
-  const detail: WorkerHostedTaskDetail = {
+  const detail = {
     task: {
       id: task.id,
       key: task.key,
@@ -82,7 +95,7 @@ export function probeWorkerRecordDependencies(input: {
   }
   return {
     workerRecordClient: {
-      task: async (identity) => {
+      task: async (identity: string) => {
         if (identity !== task.id && identity.toUpperCase() !== task.key.toUpperCase())
           throw new Error(`no fixture task ${identity}`)
         return detail
@@ -90,7 +103,7 @@ export function probeWorkerRecordDependencies(input: {
       workflowText: async () => null,
       workflowStage: async () => null,
     },
-    workerRecordScopeFacts: (runId, token) => ({
+    workerRecordScopeFacts: (runId: string, token: string) => ({
       authenticated: runId === input.runId && token === input.token,
       runStatus: 'running',
       runTaskId: task.id,

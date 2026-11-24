@@ -1,24 +1,24 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { decideOutboundRefusal, sandboxGitSpawnVerdict } from './confinement-filesystem-probe.ts'
-import { probeWorkerEnvironment } from './confinement-probe-launch.ts'
+import {
+  decideOutboundRefusal,
+  probeWorkerEnvironment,
+  sandboxGitSpawnVerdict,
+} from './confinement-filesystem-probe.ts'
 import { probeVerdict } from './confinement-probe-verdict.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
 
 test('the probe worker environment carries the ask loopback URL', () => {
   const environment = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
   )
-  expect(
-    probeWorkerEnvironment({
-      environment,
-      askUrl: 'tcp://127.0.0.1:43127',
-      runId: 'probe-run',
-      runToken: 'probe-token',
-    }).BOTTEGA_ASK_URL,
-  ).toBe('tcp://127.0.0.1:43127')
+  expect(probeWorkerEnvironment(environment, 'tcp://127.0.0.1:43127').BOTTEGA_ASK_URL).toBe(
+    'tcp://127.0.0.1:43127',
+  )
 })
 
 describe('decideOutboundRefusal', () => {
