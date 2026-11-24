@@ -214,6 +214,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-artifact-reference.ts',
     './workflow-checkout-refusal.ts',
     './workflow-class-measured-floor.ts',
+    './workflow-class-measurement-trail.ts',
     './workflow-floor-kinds.ts',
     './workflow-floor-refusal.ts',
     './workflow-run-obligation.ts',
@@ -222,8 +223,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-kinds.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-class-measured-floor.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/secret-shaped.ts',
     './workflow-artifact-evidence.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-class-measurement-trail.ts', [
+    './workflow-cursor-trail.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-class-measurement-execs.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-task-open-with-notes-floor.ts', []),
   module('orchestrator/src/workflow/step-catalogue-outcome-floors.ts', ['./workflow-floor.ts']),
   module('orchestrator/src/workflow/workflow-run-obligation.ts', [

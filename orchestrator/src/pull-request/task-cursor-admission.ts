@@ -11,6 +11,8 @@ import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { classMeasurementExecsForSession } from '../workflow/workflow-class-measurement-execs.ts'
+import { classMeasurementFromClosedSteps } from '../workflow/workflow-class-measurement-trail.ts'
 import { closedStepsFromTrail } from '../workflow/workflow-cursor-trail.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
 import { decidePullRequestClassGuard } from './pr-class-guard.ts'
@@ -154,48 +156,15 @@ export async function assertPullRequestTaskCursorAdmission(
   )
   if (!cursor?.closed) return
   const closed = closedStepsFromTrail(cursor.closed)
-  const measured = closed.find((step) => step.slug === 'measure-class')
-  if (!measured) return
-  const values = Object.fromEntries(
-    (measured.evidence ?? []).map((item) => [item.flag, item.value]),
-  )
-  const command = values['--command']
-  const count = Number(values['--count'])
-  if (!command || !Number.isInteger(count)) return
-  const implementClosedAt = closed.findLast((step) => step.slug === 'implement-fix')?.at
-  const rows = database
-    .query<
-      { command: string; output_tail: string; exit_code: number; created_at: string },
-      [string]
-    >(
-      "SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
-    )
-    .all(harnessSession ?? '')
-    .map((row) => ({
-      command: recordedCommand(row.command),
-      output: row.output_tail,
-      exitCode: row.exit_code,
-      createdAt: row.created_at,
-    }))
+  const measurement = classMeasurementFromClosedSteps(closed)
+  if (!measurement) return
   const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
   const classGuard = decidePullRequestClassGuard({
-    applies: true,
     body: input.body ?? '',
-    measurement: { className: values['--class'] ?? '', command, count },
-    implementClosedAt,
-    execs: rows,
+    measurement,
+    implementClosedAt: measurement.implementClosedAt,
+    execs: classMeasurementExecsForSession(database, harnessSession ?? ''),
     worktree: args.worktree ?? '<worktree>',
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
-}
-
-function recordedCommand(raw: string): string {
-  try {
-    const value: unknown = JSON.parse(raw)
-    if (Array.isArray(value) && value.every((part) => typeof part === 'string'))
-      return value.join(' ')
-  } catch {
-    // Legacy command records are already text.
-  }
-  return raw
 }

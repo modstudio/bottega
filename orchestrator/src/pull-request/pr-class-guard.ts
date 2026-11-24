@@ -2,6 +2,7 @@
 /** Pure admission for the class guard declared by a measured defect fix. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { measuredCountFromOutput } from '../workflow/workflow-class-measured-floor.ts'
 
 export type ClassGuardMeasurement = { className: string; command: string; count: number }
 export type ClassGuardExec = {
@@ -17,14 +18,12 @@ const rerun = (worktree: string, command: string) =>
   `${PLATFORM_SLUG} workflow exec --cwd ${worktree} -- ${command}`
 
 export function decidePullRequestClassGuard(input: {
-  applies: boolean
   body: string
   measurement?: ClassGuardMeasurement
   implementClosedAt?: string
   execs: readonly ClassGuardExec[]
   worktree: string
 }): ClassGuardDecision {
-  if (!input.applies) return { kind: 'allow' }
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
   const line = input.body.split(/\r?\n/).find((candidate) => candidate.startsWith('Class guard:'))
@@ -59,15 +58,11 @@ export function decidePullRequestClassGuard(input: {
       kind: 'refuse',
       message: `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, measurement.command)}\``,
     }
-  const lastLine = afterExec.output
-    .split(/\r?\n/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .at(-1)
-  if (!lastLine || !/^\d+$/.test(lastLine) || Number(parsed[3]) !== Number(lastLine))
+  const afterCount = measuredCountFromOutput(afterExec.output)
+  if (afterCount === null || Number(parsed[3]) !== afterCount)
     return {
       kind: 'refuse',
-      message: `the Class guard after count must equal the post-implement measurement${lastLine && /^\d+$/.test(lastLine) ? ` ${lastLine}` : ''}; rerun \`${rerun(input.worktree, measurement.command)}\` and update the line`,
+      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(input.worktree, measurement.command)}\` and update the line`,
     }
   return { kind: 'allow' }
 }

@@ -13,6 +13,8 @@ export const pullRequestModuleSpecs = [
       '../run/synthetic-lifecycle-job.ts',
       '../workflow/workflow-step-action.ts',
       '../workflow/task-flow-store.ts',
+      '../workflow/workflow-class-measurement-execs.ts',
+      '../workflow/workflow-class-measurement-trail.ts',
       '../workflow/workflow-cursor-trail.ts',
       './pr-class-guard.ts',
     ],
@@ -24,7 +26,10 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/pr-class-guard.ts',
-    allowed: ['../../../shared/brand.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../workflow/workflow-class-measured-floor.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',

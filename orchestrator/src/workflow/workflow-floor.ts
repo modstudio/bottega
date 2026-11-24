@@ -18,10 +18,11 @@ import type {
 } from './workflow-artifact-evidence.ts'
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
+  type ClassMeasuredDecision,
   type ClassMeasurement,
-  classMeasurementForFloors,
   decideClassMeasuredFloor,
 } from './workflow-class-measured-floor.ts'
+import { CLASS_MEASUREMENT_EVIDENCE } from './workflow-class-measurement-trail.ts'
 import { ARTIFACT_FORMS, type FloorKind, isFloorKind } from './workflow-floor-kinds.ts'
 
 export {
@@ -620,6 +621,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
 function floorIsMet(
   floor: Floor,
   evidence: ValidatedEvidence,
+  classMeasured: ClassMeasuredDecision | undefined,
   freshRulingAfter?: string,
   workflowKey?: string,
 ): boolean {
@@ -631,11 +633,7 @@ function floorIsMet(
           (entry) => decidePullRequestEvidence(pullRequestFacts(entry)).met,
         )
       : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
-  if (floor.kind === 'class-measured')
-    return decideClassMeasuredFloor({
-      className: evidence.className,
-      artifacts: evidence.artifacts ?? [],
-    }).met
+  if (floor.kind === 'class-measured') return classMeasured?.met === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   if (floor.kind === 'task-open-with-notes')
     return taskOpenWithNotesMet(evidence, workflowKey, floor.requirePullRequest, PLATFORM_SLUG)
@@ -685,13 +683,13 @@ function taskOpenWithNotesUnmetMessage(
   return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY> and --artifact note:<record-id|label> for every note named`
 }
 
-function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {
+function pullRequestUnmetMessage(
+  floor: Floor,
+  evidence: ValidatedEvidence,
+  classMeasured?: ClassMeasuredDecision,
+): string | null {
   if (floor.kind === 'class-measured') {
-    const decision = decideClassMeasuredFloor({
-      className: evidence.className,
-      artifacts: evidence.artifacts ?? [],
-    })
-    return decision.met ? null : decision.message
+    return !classMeasured || classMeasured.met ? null : classMeasured.message
   }
   if (floor.commandEvidence !== 'pull-request') return null
   if (floor.kind !== 'command-exit' && floor.kind !== 'recorded-artifact') return null
@@ -712,6 +710,7 @@ function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): str
 function floorUnmetMessage(
   floor: Floor,
   evidence: ValidatedEvidence,
+  classMeasured?: ClassMeasuredDecision,
   freshRulingAfter?: string,
   workflowKey?: string,
 ): string {
@@ -737,7 +736,7 @@ function floorUnmetMessage(
       evidence.passingGateForTree,
       evidence.gate !== undefined,
     )
-  const pullRequest = pullRequestUnmetMessage(floor, evidence)
+  const pullRequest = pullRequestUnmetMessage(floor, evidence, classMeasured)
   if (pullRequest) return pullRequest
   const existing =
     `floor ${floor.kind} is unmet; pass ${closingFlagsForFloor(floor)}` +
@@ -812,19 +811,20 @@ function suppliedOperatorRulingRefusal(
 function unmetMessage(
   floors: Floor[],
   evidence: ValidatedEvidence,
+  classMeasured?: ClassMeasuredDecision,
   freshRulingAfter?: string,
   workflowKey?: string,
 ): string {
   if (floors.length === 1)
-    return floorUnmetMessage(floors[0]!, evidence, freshRulingAfter, workflowKey)
+    return floorUnmetMessage(floors[0]!, evidence, classMeasured, freshRulingAfter, workflowKey)
   const ordinary = floors.filter((floor) => !isOperatorRulingFloor(floor))
   const operator = floors.filter(isOperatorRulingFloor)
   const remedies = ordinary.map((floor) =>
-    floorUnmetMessage(floor, evidence, freshRulingAfter, workflowKey),
+    floorUnmetMessage(floor, evidence, classMeasured, freshRulingAfter, workflowKey),
   )
   if (operator.length === 0) return `${remedies.join('; ')}; any one floor is enough`
   const operatorRemedies = operator.map((floor) =>
-    floorUnmetMessage(floor, evidence, freshRulingAfter, workflowKey),
+    floorUnmetMessage(floor, evidence, classMeasured, freshRulingAfter, workflowKey),
   )
   if (ordinary.length === 0) return `${operatorRemedies.join('; ')}; any one floor is enough`
   return `${remedies.join('; ')}; any one floor is enough; a person's ruling is needed only when that other evidence does not close the step — ${operatorRemedies.join('; ')}`
@@ -891,10 +891,10 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   }
   if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
   if (evidence.classMeasurement) {
-    refs.push({ flag: '--class', value: evidence.classMeasurement.className })
-    refs.push({ flag: '--command', value: evidence.classMeasurement.command })
-    refs.push({ flag: '--exec', value: String(evidence.classMeasurement.execId) })
-    refs.push({ flag: '--count', value: String(evidence.classMeasurement.count) })
+    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.className, value: evidence.classMeasurement.className })
+    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.command, value: evidence.classMeasurement.command })
+    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.execId, value: String(evidence.classMeasurement.execId) })
+    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.count, value: String(evidence.classMeasurement.count) })
   }
   return refs
 }
@@ -972,6 +972,7 @@ function deferralOf(
 
 function satisfyOf(
   evidence: ValidatedEvidence,
+  classMeasured?: ClassMeasuredDecision,
   freshRulingAfter?: string,
   workflowKey?: string,
 ): FloorDecision | { satisfyId?: string } {
@@ -983,7 +984,7 @@ function satisfyOf(
       satisfy.open &&
       !satisfy.abandoned &&
       satisfy.cursorMatches &&
-      floorIsMet(satisfy.floor, evidence, freshRulingAfter, workflowKey)
+      floorIsMet(satisfy.floor, evidence, classMeasured, freshRulingAfter, workflowKey)
     )
   )
     return refuseSatisfy(satisfy)
@@ -1016,10 +1017,17 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  input.evidence.classMeasurement =
-    classMeasurementForFloors(input.floors, input.evidence) ?? input.evidence.classMeasurement
+  const classMeasured =
+    input.floors.some((floor) => floor.kind === 'class-measured') ||
+    input.evidence.satisfy?.floor.kind === 'class-measured'
+    ? decideClassMeasuredFloor({
+        className: input.evidence.className,
+        artifacts: input.evidence.artifacts ?? [],
+      })
+    : undefined
+  if (classMeasured?.met) input.evidence.classMeasurement = classMeasured.measurement
   const met = input.floors.filter((floor) =>
-    floorIsMet(floor, input.evidence, input.freshRulingAfter, input.workflowKey),
+    floorIsMet(floor, input.evidence, classMeasured, input.freshRulingAfter, input.workflowKey),
   )
   const obligationInput = {
     workflowKey: input.workflowKey,
@@ -1061,11 +1069,17 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
       message: unmetMessage(
         input.floors,
         input.evidence,
+        classMeasured,
         input.freshRulingAfter,
         input.workflowKey,
       ),
     }
-  const satisfied = satisfyOf(input.evidence, input.freshRulingAfter, input.workflowKey)
+  const satisfied = satisfyOf(
+    input.evidence,
+    classMeasured,
+    input.freshRulingAfter,
+    input.workflowKey,
+  )
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)
   const finishing = finishOf(input.finishing, remaining, deferred.defer)

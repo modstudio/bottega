@@ -2,6 +2,7 @@
 /** Pure validation and persistence facts for a class-measured workflow floor. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {
@@ -17,6 +18,15 @@ export type ClassMeasuredDecision =
 
 const remedy = `run the class-wide command with \`${PLATFORM_SLUG} workflow exec -- <command>\`, print a non-negative integer as its last stdout line, then pass exactly one \`--artifact exec:<id>\` and \`--class "<class name>"\``
 
+export function measuredCountFromOutput(output: string): number | null {
+  const lastLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1)
+  return lastLine && /^\d+$/.test(lastLine) ? Number(lastLine) : null
+}
+
 export function decideClassMeasuredFloor(input: {
   className?: string
   artifacts: readonly ValidatedArtifactEvidence[]
@@ -24,6 +34,11 @@ export function decideClassMeasuredFloor(input: {
   const className = input.className?.trim()
   if (!className)
     return { met: false, message: `floor class-measured is unmet: --class is missing; ${remedy}` }
+  if (containsSecretShaped(className))
+    return {
+      met: false,
+      message: `floor class-measured is unmet: --class contains secret-shaped content; ${remedy}`,
+    }
   if (input.artifacts.length !== 1 || !input.artifacts[0]?.exec)
     return {
       met: false,
@@ -40,30 +55,14 @@ export function decideClassMeasuredFloor(input: {
       met: false,
       message: `floor class-measured is unmet: exec:${exec.id} predates this step; ${remedy}`,
     }
-  const lastLine = exec.output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .at(-1)
-  if (!lastLine || !/^\d+$/.test(lastLine))
+  const count = measuredCountFromOutput(exec.output)
+  if (count === null)
     return {
       met: false,
       message: `floor class-measured is unmet: exec:${exec.id} stdout does not end in a non-negative integer; ${remedy}`,
     }
   return {
     met: true,
-    measurement: { className, command: exec.command, execId: exec.id, count: Number(lastLine) },
+    measurement: { className, command: exec.command, execId: exec.id, count },
   }
-}
-
-export function classMeasurementForFloors(
-  floors: ReadonlyArray<{ kind: string }>,
-  input: { className?: string; artifacts?: readonly ValidatedArtifactEvidence[] },
-): ClassMeasurement | undefined {
-  if (!floors.some((floor) => floor.kind === 'class-measured')) return undefined
-  const decision = decideClassMeasuredFloor({
-    className: input.className,
-    artifacts: input.artifacts ?? [],
-  })
-  return decision.met ? decision.measurement : undefined
 }

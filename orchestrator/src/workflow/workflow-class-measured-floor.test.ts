@@ -47,4 +47,14 @@ describe('class-measured floor', () => {
     const decision = decideClassMeasuredFloor({ className, artifacts })
     expect(decision.met ? '' : decision.message).toContain(message)
   })
+
+  test('refuses a secret-shaped class without echoing it', () => {
+    const secret = 'ghp_123456789012345678901234567890123456'
+    const decision = decideClassMeasuredFloor({ className: secret, artifacts: [artifact()] })
+    expect(decision.met).toBe(false)
+    if (!decision.met) {
+      expect(decision.message).toContain('secret-shaped')
+      expect(decision.message).not.toContain(secret)
+    }
+  })
 })
