@@ -15,6 +15,7 @@ export const contractBoundarySpecs: ContractBoundarySpec[] = [
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/orch-contract.ts',
+      '../../../shared/worker-read-tools.ts',
       '../jobs/jobs.ts',
       '../outcome.ts',
       '../review/review-vocabulary.ts',

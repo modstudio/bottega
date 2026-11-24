@@ -115,6 +115,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/autonomy.ts', ['./ship-to.ts']),
   module('shared/user-canon-home.ts', []),
   module('shared/caller-classification.ts', []),
+  module('shared/worker-read-tools.ts', []),
   module('shared/keychain.ts', ['node:crypto', './bounded-process.ts', './brand.ts']),
   ...keyStoreModules,
   module('shared/machine-key-id.ts', []),

@@ -1,5 +1,9 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import {
   AGENTS,
@@ -15,6 +19,60 @@ import { checkoutCliBinaryEnvironment } from '../sandbox/checkout-cli-freshness.
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
 afterEach(() => mock.restore())
+
+describe('checkout CLI selection', () => {
+  let fixture: string
+  let inheritedHome: string | undefined
+  let inheritedStateHome: string | undefined
+  let inheritedXdgStateHome: string | undefined
+
+  beforeEach(() => {
+    fixture = mkdtempSync(join(tmpdir(), 'orch-run-process-cli-'))
+    inheritedHome = process.env.HOME
+    inheritedStateHome = process.env[STATE_HOME_ENV]
+    inheritedXdgStateHome = process.env.XDG_STATE_HOME
+    process.env.HOME = join(fixture, 'operator-home')
+    delete process.env[STATE_HOME_ENV]
+    delete process.env.XDG_STATE_HOME
+  })
+
+  afterEach(() => {
+    if (inheritedHome === undefined) delete process.env.HOME
+    else process.env.HOME = inheritedHome
+    if (inheritedStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = inheritedStateHome
+    if (inheritedXdgStateHome === undefined) delete process.env.XDG_STATE_HOME
+    else process.env.XDG_STATE_HOME = inheritedXdgStateHome
+    rmSync(fixture, { recursive: true, force: true })
+  })
+
+  test('an SRT worker home receives the checkout CLI selected from the host state root', () => {
+    const selectedOnHost = checkoutCliBinaryEnvironment(process.env, () => true)[
+      CHECKOUT_CLI_BINARY_ENV
+    ]!
+    mkdirSync(dirname(selectedOnHost), { recursive: true })
+    writeFileSync(selectedOnHost, 'fixture binary')
+    writeFileSync(`${selectedOnHost}.stamp`, 'fixture stamp')
+
+    const child = childEnv(
+      AGENTS.codex!,
+      undefined,
+      undefined,
+      { HOME: join(fixture, 'worker-home') },
+      false,
+      undefined,
+      {},
+      null,
+      null,
+      false,
+      (facts) => facts.stampContents === 'fixture stamp' && facts.binaryStat !== null,
+    )
+
+    expect(child.HOME).toBe(join(fixture, 'worker-home'))
+    expect(child[STATE_HOME_ENV]).toBeUndefined()
+    expect(child[CHECKOUT_CLI_BINARY_ENV]).toBe(selectedOnHost)
+  })
+})
 
 test('repository workers receive test caps while inline workers do not', () => {
   const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)

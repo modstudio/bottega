@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { detectBlockers } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -49,6 +50,12 @@ test('the harness worker preamble offers only the durable question path', () => 
   expect(preamble).toContain('durable run answer path')
   expect(preamble).not.toContain('NON-BLOCKING MESSAGES')
   expect(preamble).not.toContain('live orchestrator tools are available')
+})
+
+test(`the live worker pack directs hosted reads through ${WORKER_MCP_SERVER_NAME}`, () => {
+  const preamble = workerPreamble('implement', false)
+  expect(preamble).toContain(WORKER_MCP_SERVER_NAME)
+  for (const tool of Object.values(WORKER_READ_TOOLS)) expect(preamble).toContain(tool)
 })
 
 test('reader preambles direct temporary and escaped writes', () => {

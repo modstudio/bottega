@@ -91,7 +91,7 @@ export function childEnv(
   }
   if (!includeStore) delete child.BOTTEGA_ORCHESTRATOR_DB
   delete child[CHECKOUT_CLI_BINARY_ENV]
-  Object.assign(child, checkoutCliBinaryEnvironment(child, cliFreshnessDecision))
+  Object.assign(child, checkoutCliBinaryEnvironment(process.env, cliFreshnessDecision))
   return child
 }
 export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }

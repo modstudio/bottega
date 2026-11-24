@@ -1,4 +1,5 @@
 // concern: CI proof that a confined ACP worker can launch checkout bottega-ask.
+// The proof runs against this real checkout, which is outside its temporary fixture directory.
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -7,18 +8,17 @@ import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV, CHECKOUT_ROOT_ENV } from '../../shared/install-root.ts'
 import { writeRecordSessionToken } from '../../shared/record-session.ts'
-import { ORCHESTRATOR_DATABASE_ENV, STATE_HOME_ENV } from '../../shared/state-directory.ts'
+import {
+  HUB_DATABASE_ENV,
+  ORCHESTRATOR_DATABASE_ENV,
+  STATE_HOME_ENV,
+} from '../../shared/state-directory.ts'
+import { WORKER_READ_TOOLS } from '../../shared/worker-read-tools.ts'
 import type { Agent } from '../src/agent/agents.ts'
 import type { Project } from '../src/project/projects.ts'
 import type { TransportStartOpts } from '../src/transport/transport.ts'
 
-const REQUIRED_TOOLS = [
-  'ask_orchestrator',
-  'note',
-  'read_task',
-  'read_task_document',
-  'read_workflow_text',
-] as const
+const REQUIRED_TOOLS = ['ask_orchestrator', 'note', ...Object.values(WORKER_READ_TOOLS)] as const
 
 const FIXTURE_PROJECT_ID = '01990000-0000-7000-8000-000000002585'
 const FIXTURE_TASK_ID = '01990000-0000-7000-8000-000000002586'
@@ -50,17 +50,25 @@ function migrateTemporaryStore(checkout: string, environment: Record<string, str
   }
 }
 
+// An ACP agent: codex, grok and qwen take their own home branches, so only such an agent reaches
+// prepareSandboxHome's SRT worker-home branch, the home a live confined ACP worker receives.
+const SRT_WORKER_HOME_AGENT = 'goose'
+
 function guardRunEnvironment(
   childEnv: typeof import('../src/run/run-process.ts').childEnv,
   agent: Agent,
   environment: Record<string, string>,
+  srtWorkerHome: Record<string, string>,
   forceSource: boolean,
 ): Record<string, string> {
+  const extra = { ...environment, ...srtWorkerHome }
+  delete extra[STATE_HOME_ENV]
+  delete extra.XDG_STATE_HOME
   return childEnv(
     agent,
     'checkout-cli-confinement',
     'checkout-cli-confinement-token',
-    environment,
+    extra,
     true,
     undefined,
     {},
@@ -239,6 +247,7 @@ async function probeConfinedTools(
     runtime.run.childEnv,
     runtime.agents.BUILTIN_AGENTS.codex!,
     input.environment,
+    runtime.sandbox.prepareSandboxHome(SRT_WORKER_HOME_AGENT, input.runtimeDir, process.env, 'srt'),
     input.forceSource,
   )
   if (input.forceSource) {
@@ -258,7 +267,7 @@ async function probeConfinedTools(
       fixtureProject(`${PLATFORM_SLUG}-checkout`, PLATFORM_NAME, input.checkout),
     ],
     agent: 'codex',
-    environment: runEnvironment,
+    environment: input.environment,
     socketDenyPaths: [],
   })
   const opts: TransportStartOpts = {
@@ -380,6 +389,7 @@ async function probeConfinedTaskReads(
     runtime.run.childEnv,
     runtime.agents.BUILTIN_AGENTS.codex!,
     input.environment,
+    runtime.sandbox.prepareSandboxHome(SRT_WORKER_HOME_AGENT, input.runtimeDir, process.env, 'srt'),
     false,
   )
   const commandEnvironment = { ...runEnvironment, [CHECKOUT_ROOT_ENV]: input.checkout }
@@ -391,7 +401,7 @@ async function probeConfinedTaskReads(
     project: outside,
     registeredProjects: [outside, fixtureProject(PLATFORM_SLUG, PLATFORM_NAME, input.checkout)],
     agent: 'codex',
-    environment: commandEnvironment,
+    environment: input.environment,
     socketDenyPaths: [],
   })
   const execute = async (key: string) =>
@@ -422,19 +432,22 @@ function packageResolutionFailure(error: string): string | null {
   return error.match(/Cannot find (?:package|module) '(?![./])[^']*'/)?.[0] ?? null
 }
 
-function fixtureEnvironment(stateRoot: string): Record<string, string> {
-  const environment = {
+function fixtureEnvironment(operatorHome: string): Record<string, string> {
+  const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,
       ),
     ),
-    [STATE_HOME_ENV]: stateRoot,
+    HOME: operatorHome,
     BOTTEGA_RUN_ID: FIXTURE_RUN_ID,
     BOTTEGA_RUN_TOKEN: FIXTURE_TOKEN,
     BOTTEGA_KEYSTORE: 'file',
   }
+  delete environment[HUB_DATABASE_ENV]
   delete environment[ORCHESTRATOR_DATABASE_ENV]
+  delete environment[STATE_HOME_ENV]
+  delete environment.XDG_STATE_HOME
   delete environment[CHECKOUT_CLI_BINARY_ENV]
   delete environment[CHECKOUT_ROOT_ENV]
   return environment
@@ -451,17 +464,19 @@ async function main(): Promise<void> {
   }
   const forceSource = process.argv.includes('--force-source')
   const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-checkout-cli-confinement-`))
-  const stateRoot = join(root, 'state')
+  const operatorHome = join(root, 'operator-home')
   const cwd = join(root, 'outside-project')
   const runtimeDir = join(root, 'run')
   mkdirSync(cwd, { recursive: true })
   mkdirSync(runtimeDir, { recursive: true })
-  const environment = fixtureEnvironment(stateRoot)
+  const environment = fixtureEnvironment(operatorHome)
   let closeAskLoopback: (() => Promise<void>) | undefined
   let fixtureServer: ReturnType<typeof taskFixtureServer> | undefined
   try {
     migrateTemporaryStore(checkout, environment)
-    process.env[STATE_HOME_ENV] = stateRoot
+    process.env.HOME = operatorHome
+    delete process.env[STATE_HOME_ENV]
+    delete process.env.XDG_STATE_HOME
     delete process.env[ORCHESTRATOR_DATABASE_ENV]
     const runtime = await loadGuardRuntime()
     runtime.hooks.registerStandardHooks()
