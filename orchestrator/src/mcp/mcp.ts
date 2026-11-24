@@ -14,11 +14,11 @@ import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { readDocs as authoritativeDocs } from '../doc/doc-authoritative-read.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown } from '../doc/docs.ts'
-import { readHarnessSession } from '../harness-session/harness-session.ts'
-import type {
-  HarnessProcessIdentity,
-  HarnessSessionPublication,
-} from '../harness-session/harness-session-decision.ts'
+import {
+  readHarnessSession,
+  type HarnessSessionReadResult,
+} from '../harness-session/harness-session.ts'
+import type { HarnessProcessIdentity } from '../harness-session/harness-session-decision.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -99,7 +99,7 @@ export type DocsMcpPorts = LandingBranchPorts & {
   exit?: (code: number) => void
   requestSessions?: {
     identity: HarnessProcessIdentity | null
-    read(identity: HarnessProcessIdentity): HarnessSessionPublication | null
+    read(identity: HarnessProcessIdentity): HarnessSessionReadResult
   }
 }
 
@@ -548,13 +548,18 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const requestSessions = ports.requestSessions
   scopeMcpToolCallers(
     server,
-    undefined,
     requestSessions
-      ? () => {
-          const identity = requestSessions.identity
-          return identity ? (requestSessions.read(identity)?.session ?? null) : null
+      ? {
+          requestSession: () => {
+            const identity = requestSessions.identity
+            if (!identity) return { kind: 'unavailable', reason: 'no-boot-identity' }
+            const result = requestSessions.read(identity)
+            if (result.kind !== 'published') return result
+            const { harness, session } = result.publication
+            return { kind: 'published', publication: { harness, session } }
+          },
         }
-      : undefined,
+      : {},
   )
   wrapMcpToolHandlers(server, (_name, handler) => async (...args) => {
     db()

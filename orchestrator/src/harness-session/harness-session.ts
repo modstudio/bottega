@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
+import { isHarnessName } from '../../../shared/harness-name.ts'
 import {
   type PidRecordIdentity,
   pidRecordIdentity,
@@ -36,6 +37,11 @@ type StoredPublication = Omit<HarnessSessionPublication, 'identity'>
 type Identity = (pid: number, startTime: string) => PidRecordIdentity
 type Stat = (path: string) => { mtimeMs: number }
 
+export type HarnessSessionReadResult =
+  | { kind: 'published'; publication: HarnessSessionPublication }
+  | { kind: 'absent' }
+  | { kind: 'unreadable'; path: string; reason: string }
+
 function publicationPath(directory: string, identity: HarnessProcessIdentity): string {
   return join(directory, `${identity.pid}-${identity.startTime}.json`)
 }
@@ -47,25 +53,32 @@ function parsePublicationName(name: string): HarnessProcessIdentity | null {
   return Number.isSafeInteger(pid) && pid > 1 ? { pid, startTime: matched[2]! } : null
 }
 
-function parsePublication(
+function readPublication(
   path: string,
   identity: HarnessProcessIdentity,
-): HarnessSessionPublication | null {
+): HarnessSessionReadResult {
+  let source: string
   try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<StoredPublication>
-    if (
-      typeof value.session !== 'string' ||
-      !value.session ||
-      value.harness !== 'claude-code' ||
-      typeof value.source !== 'string' ||
-      !value.source ||
-      typeof value.published_at !== 'string'
-    )
-      return null
-    return { identity, ...value } as HarnessSessionPublication
-  } catch {
-    return null
+    source = readFileSync(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return { kind: 'absent' }
+    return { kind: 'unreadable', path, reason: `read failed: ${String(error)}` }
   }
+  let value: Partial<StoredPublication>
+  try {
+    value = JSON.parse(source) as Partial<StoredPublication>
+  } catch (error) {
+    return { kind: 'unreadable', path, reason: `invalid JSON: ${String(error)}` }
+  }
+  if (typeof value.session !== 'string' || !value.session)
+    return { kind: 'unreadable', path, reason: 'session must be a non-empty string' }
+  if (!isHarnessName(value.harness))
+    return { kind: 'unreadable', path, reason: 'harness is not recognized' }
+  if (typeof value.source !== 'string' || !value.source)
+    return { kind: 'unreadable', path, reason: 'source must be a non-empty string' }
+  if (typeof value.published_at !== 'string')
+    return { kind: 'unreadable', path, reason: 'published_at must be a string' }
+  return { kind: 'published', publication: { identity, ...value } as HarnessSessionPublication }
 }
 
 function storedPublications(env: StateEnvironment): HarnessSessionPublication[] {
@@ -74,8 +87,8 @@ function storedPublications(env: StateEnvironment): HarnessSessionPublication[] 
   return readdirSync(directory).flatMap((name) => {
     const identity = parsePublicationName(name)
     if (!identity) return []
-    const publication = parsePublication(join(directory, name), identity)
-    return publication ? [publication] : []
+    const result = readPublication(join(directory, name), identity)
+    return result.kind === 'published' ? [result.publication] : []
   })
 }
 
@@ -137,8 +150,8 @@ export function publishHarnessSession(input: {
 export function readHarnessSession(
   identity: HarnessProcessIdentity,
   env: StateEnvironment = process.env,
-): HarnessSessionPublication | null {
-  return parsePublication(publicationPath(harnessSessionDirectory(env), identity), identity)
+): HarnessSessionReadResult {
+  return readPublication(publicationPath(harnessSessionDirectory(env), identity), identity)
 }
 
 export function reapHarnessSessions(

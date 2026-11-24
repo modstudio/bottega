@@ -17,8 +17,10 @@ test('registered MCP tools keep their caller scope across an await', async () =>
   } as unknown as McpServer
 
   try {
-    scopeMcpToolCallers(server, (name) => {
-      registeredName = name
+    scopeMcpToolCallers(server, {
+      onRegister: (name) => {
+        registeredName = name
+      },
     })
     const registerTool = server.registerTool as unknown as (
       name: string,
@@ -58,7 +60,12 @@ test('concurrent MCP calls classify their own request sessions', async () => {
       return {}
     },
   } as unknown as McpServer
-  scopeMcpToolCallers(server, undefined, () => 'published-session')
+  scopeMcpToolCallers(server, {
+    requestSession: () => ({
+      kind: 'published',
+      publication: { harness: 'claude-code', session: 'published-session' },
+    }),
+  })
   const registerTool = server.registerTool as unknown as (
     name: string,
     config: object,
@@ -100,7 +107,7 @@ test('an MCP call without a request or publication refuses instead of reading se
 
   try {
     process.env.CLAUDE_CODE_SESSION_ID = 'stale-environment-session'
-    scopeMcpToolCallers(server, undefined, () => null)
+    scopeMcpToolCallers(server, { requestSession: () => ({ kind: 'absent' }) })
     const registerTool = server.registerTool as unknown as (
       name: string,
       config: object,
@@ -117,7 +124,7 @@ test('an MCP call without a request or publication refuses instead of reading se
   }
 })
 
-test('a worker MCP call ignores a request session', async () => {
+test('a worker MCP call without a request or publication does not refuse', async () => {
   const previous = process.env.BOTTEGA_DEPTH
   let handler:
     | ((
@@ -141,7 +148,11 @@ test('a worker MCP call ignores a request session', async () => {
 
   try {
     process.env.BOTTEGA_DEPTH = '1'
-    scopeMcpToolCallers(server, undefined, () => 'published-session')
+    scopeMcpToolCallers(server, {
+      requestSession: () => {
+        throw new Error('worker calls must not read a publication')
+      },
+    })
     const registerTool = server.registerTool as unknown as (
       name: string,
       config: object,
@@ -149,9 +160,7 @@ test('a worker MCP call ignores a request session', async () => {
     ) => unknown
     registerTool('current_session', {}, async () => classifyCaller(process.env))
 
-    expect(await handler?.({}, { mcpReq: { _meta: { sessionId: 'request-session' } } })).toEqual({
-      kind: 'worker',
-    })
+    expect(await handler?.({}, { mcpReq: {} })).toEqual({ kind: 'worker' })
   } finally {
     if (previous === undefined) delete process.env.BOTTEGA_DEPTH
     else process.env.BOTTEGA_DEPTH = previous

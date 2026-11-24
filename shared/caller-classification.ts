@@ -1,5 +1,6 @@
 /** Classifies a caller from environment markers without knowing any concern state. */
 import { requestSession } from './request-session.ts'
+import type { HarnessName } from './harness-name.ts'
 
 export const OPERATOR_SESSION_PREFIX = 'operator:'
 
@@ -9,7 +10,7 @@ export function isOperatorSession(sessionId: string | null): boolean {
 
 export type CallerClassification =
   | { kind: 'worker' }
-  | { kind: 'harness'; harness: 'claude-code' | 'codex'; session: string }
+  | { kind: 'harness'; harness: HarnessName; session: string }
   | { kind: 'reserved-operator-session' }
   | { kind: 'unsupported-harness'; markers: string[] }
   | { kind: 'operator' }
@@ -23,6 +24,14 @@ export const WORKER_ENVIRONMENT_MARKERS = [
   'BOTTEGA_ASK_URL',
 ] as const
 
+export function isWorkerEnvironment(env: Record<string, string | undefined>): boolean {
+  return WORKER_ENVIRONMENT_MARKERS.some((marker) => Boolean(env[marker]?.trim()))
+}
+
+function isReservedReaderSession(sessionId: string): boolean {
+  return sessionId === 'operator' || sessionId.startsWith('run:') || isOperatorSession(sessionId)
+}
+
 const RECOGNIZED_HARNESSES = [
   { environment: 'CLAUDE_CODE_SESSION_ID', harness: 'claude-code' as const },
 ] as const
@@ -35,17 +44,16 @@ const TERMINAL_SESSION_MARKERS = new Set([
 ])
 
 export function classifyCaller(env: Record<string, string | undefined>): CallerClassification {
-  if (WORKER_ENVIRONMENT_MARKERS.some((marker) => Boolean(env[marker]?.trim())))
-    return { kind: 'worker' }
+  if (isWorkerEnvironment(env)) return { kind: 'worker' }
   const scoped = requestSession()
   if (scoped)
-    return isOperatorSession(scoped.session)
+    return isReservedReaderSession(scoped.session)
       ? { kind: 'reserved-operator-session' }
       : { kind: 'harness', ...scoped }
   for (const entry of RECOGNIZED_HARNESSES) {
     const session = env[entry.environment]?.trim()
     if (session)
-      return isOperatorSession(session)
+      return isReservedReaderSession(session)
         ? { kind: 'reserved-operator-session' }
         : { kind: 'harness', harness: entry.harness, session }
   }

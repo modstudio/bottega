@@ -789,7 +789,7 @@ export function createAskMcpServer(
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
   const [pendingGateResults, lifecycle, toolNames] = askServerState(runId, dependencies)
   const server = new McpServer({ name: WORKER_MCP_SERVER_NAME, version: '1' })
-  scopeMcpToolCallers(server, (name) => toolNames.push(name))
+  scopeMcpToolCallers(server, { onRegister: (name) => toolNames.push(name) })
   const registerTool = server.registerTool.bind(server)
   const text = (value: string, isError?: true) => ({
     content: [{ type: 'text' as const, text: value }],

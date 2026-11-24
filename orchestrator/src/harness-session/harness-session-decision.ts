@@ -1,6 +1,7 @@
 // concern: harness session publication decisions
 
 import type { PidRecordIdentity } from '../../../shared/process-identity.ts'
+import type { HarnessName } from '../../../shared/harness-name.ts'
 
 export type HarnessProcessIdentity = { pid: number; startTime: string }
 export type HarnessProcessFact = { pid: number; startTime: string; command: string }
@@ -8,7 +9,7 @@ export type HarnessProcessFact = { pid: number; startTime: string; command: stri
 export type HarnessSessionPublication = {
   identity: HarnessProcessIdentity
   session: string
-  harness: 'claude-code'
+  harness: HarnessName
   source: string
   published_at: string
 }

@@ -68,10 +68,27 @@ test('reader returns only the publication for the requested process identity', (
     observeStartTime: () => 'published-start',
   })
 
-  expect(readHarnessSession({ pid: 42, startTime: 'published-start' }, env)?.session).toBe(
-    'published-session',
-  )
-  expect(readHarnessSession({ pid: 42, startTime: 'other-start' }, env)).toBeNull()
+  expect(readHarnessSession({ pid: 42, startTime: 'published-start' }, env)).toEqual({
+    kind: 'published',
+    publication: expect.objectContaining({ session: 'published-session' }),
+  })
+  expect(readHarnessSession({ pid: 42, startTime: 'other-start' }, env)).toEqual({
+    kind: 'absent',
+  })
+})
+
+test('reader distinguishes an invalid publication from an absent one', () => {
+  const env = state()
+  const directory = harnessSessionDirectory(env)
+  mkdirSync(directory, { recursive: true })
+  const path = join(directory, '42-broken-start.json')
+  writeFileSync(path, '{broken')
+
+  expect(readHarnessSession({ pid: 42, startTime: 'broken-start' }, env)).toEqual({
+    kind: 'unreadable',
+    path,
+    reason: expect.stringContaining('invalid JSON'),
+  })
 })
 
 test('reaper removes dead and reused publications and keeps a live publication', () => {

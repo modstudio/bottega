@@ -98,6 +98,12 @@ describe('caller classification', () => {
     })
   })
 
+  test('a scoped run reader cannot become a harness identity', () => {
+    expect(
+      withRequestSession({ harness: 'codex', session: 'run:123' }, () => classifyCaller({})),
+    ).toEqual({ kind: 'reserved-operator-session' })
+  })
+
   test('an operator without a stored machine id has a named no-identity reason', () => {
     expect(resolveCallerIdentity(classifyCaller({}), null)).toEqual({
       kind: 'no-identity',
