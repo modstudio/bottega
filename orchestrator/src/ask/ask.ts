@@ -30,7 +30,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { createConnection, createServer, type Socket } from 'node:net'
+import { createServer, type Socket } from 'node:net'
 import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
@@ -90,6 +90,7 @@ import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
+import { connectAskLoopback } from './ask-loopback-client.ts'
 import { preAnswerWorkerQuestion, preAnswerWorkerQuestions } from './jev-worker-question.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import {
@@ -1065,25 +1066,6 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
   }
 }
 
-/** Forward the registered stdio endpoint into the host process that owns database writes. */
-async function proxyAsk(urlValue: string): Promise<void> {
-  const url = new URL(urlValue)
-  if (url.protocol !== 'tcp:' || url.hostname !== '127.0.0.1' || !url.port) {
-    throw new Error('BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
-  }
-  const socket = createConnection({ host: '127.0.0.1', port: Number(url.port) })
-  await new Promise<void>((resolve, reject) => {
-    socket.once('connect', resolve)
-    socket.once('error', reject)
-  })
-  process.stdin.pipe(socket)
-  socket.pipe(process.stdout)
-  await new Promise<void>((resolve, reject) => {
-    socket.once('close', resolve)
-    socket.once('error', reject)
-  })
-}
-
 /**
  * The two store-facing steps of the ask-server entry, in the order it must run them.
  *
@@ -1106,7 +1088,7 @@ const askServerStoreSteps: AskServerStoreSteps = {
 
 export async function serveAsk(steps: AskServerStoreSteps = askServerStoreSteps): Promise<void> {
   const loopback = process.env.BOTTEGA_ASK_URL
-  if (loopback) return proxyAsk(loopback)
+  if (loopback) return connectAskLoopback(loopback)
   steps.declareBrokerChannel()
   const runId = resolveRunIdentifier(steps.openStore(), process.env.BOTTEGA_RUN_ID ?? '')
   enableRunSchemaReload(runId)
