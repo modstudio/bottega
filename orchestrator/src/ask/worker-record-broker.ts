@@ -30,11 +30,23 @@ type RunScopeRow = {
   settings: string | null
 }
 
-type WorkerReadDependencies = { client?: WorkerRecordClient }
 export type WorkerTaskRead<Detail extends WorkerHostedTaskDetail = WorkerHostedTaskDetail> =
   Detail & { tracker_notice?: string }
 
-type RunScopeFacts = WorkerRecordScopeFacts & { project: string; keepsOwnTracker: boolean }
+export type RunScopeFacts = WorkerRecordScopeFacts & {
+  project: string
+  keepsOwnTracker: boolean
+}
+
+export type WorkerRecordScopeFactsProvider = (
+  runId: string,
+  token: string,
+) => RunScopeFacts
+
+export type WorkerReadDependencies = {
+  client?: WorkerRecordClient
+  scopeFacts?: WorkerRecordScopeFactsProvider
+}
 
 function runScopeFacts(runId: string, token: string): RunScopeFacts {
   const row = db()
@@ -145,7 +157,7 @@ export async function readWorkerTask(
   project?: string,
   dependencies: WorkerReadDependencies = {},
 ): Promise<WorkerTaskRead> {
-  const scope = runScopeFacts(runId, token)
+  const scope = (dependencies.scopeFacts ?? runScopeFacts)(runId, token)
   requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
   const chain = await allowedTaskChain(scope, client)
@@ -166,7 +178,7 @@ export async function readWorkerTaskDocument(
   project?: string,
   dependencies: WorkerReadDependencies = {},
 ): Promise<Record<string, unknown>> {
-  const scope = runScopeFacts(runId, token)
+  const scope = (dependencies.scopeFacts ?? runScopeFacts)(runId, token)
   requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
   const chain = await allowedTaskChain(scope, client)
@@ -195,7 +207,7 @@ export async function readWorkerWorkflowText(
   project?: string,
   dependencies: WorkerReadDependencies = {},
 ): Promise<ShownWorkflowText> {
-  const scope = runScopeFacts(runId, token)
+  const scope = (dependencies.scopeFacts ?? runScopeFacts)(runId, token)
   requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
   const chain = await allowedTaskChain(scope, client)

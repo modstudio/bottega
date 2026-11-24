@@ -132,6 +132,7 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/state-directory.ts',
     '../../../shared/store-access.ts',
     '../agent/agents.ts',
+    '../ask/ask.ts',
     '../branch/branch-ref-guard.ts',
     '../database/checkout-cli-build.ts',
     '../git/git-environment.ts',

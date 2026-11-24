@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { type ConfinedLaunchMode, confinedLaunchCwd } from './confined-launch-cwd.ts'
-import { launchCommand } from './confinement-filesystem-probe.ts'
+import { launchCommand } from './confinement-probe-launch.ts'
 import type { launchSandboxProbe } from './confinement-probe-launch.ts'
 
 const paths = {

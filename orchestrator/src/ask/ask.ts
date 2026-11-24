@@ -110,6 +110,7 @@ import {
   readWorkerTask,
   readWorkerTaskDocument,
   readWorkerWorkflowText,
+  type WorkerRecordScopeFactsProvider,
 } from './worker-record-broker.ts'
 import type { WorkerRecordClient } from './worker-record-client.ts'
 
@@ -573,10 +574,11 @@ export async function ask(
  * spawned the agent, which is the only party that actually knows.
  */
 type AskServerDependencies = {
-  fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
+  fileWorkerNote?: (run: WorkerNoteRun, input: WorkerNoteInput) => Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
   workerRecordClient?: WorkerRecordClient
+  workerRecordScopeFacts?: WorkerRecordScopeFactsProvider
 }
 
 function workerNoteRun(runId: string): WorkerNoteRun {
@@ -698,9 +700,14 @@ function registerWorkerRecordReadTools(input: {
   dependencies: AskServerDependencies
   text: AskText
 }): void {
-  const readDependencies = input.dependencies.workerRecordClient
-    ? { client: input.dependencies.workerRecordClient }
-    : {}
+  const readDependencies = {
+    ...(input.dependencies.workerRecordClient
+      ? { client: input.dependencies.workerRecordClient }
+      : {}),
+    ...(input.dependencies.workerRecordScopeFacts
+      ? { scopeFacts: input.dependencies.workerRecordScopeFacts }
+      : {}),
+  }
   const register = (
     name: WorkerReadToolName,
     description: string,
@@ -884,7 +891,10 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
-        const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
+        const filed = await (dependencies.fileWorkerNote ?? requestWorkerNote)(
+          workerNoteRun(runId),
+          input,
+        )
         return text(
           JSON.stringify({
             noteRecordId: filed.noteRecordId,
@@ -1029,11 +1039,18 @@ export function startAskHttpEndpoint(runId: string, token: string): AskLoopback 
  * Start the database-owning side of bottega-ask outside a worker's process sandbox.
  * The OS chooses the port, and the listener is bound only to loopback.
  */
-export async function startAskLoopback(runId: string, token: string): Promise<AskLoopback> {
+export async function startAskLoopback(
+  runId: string,
+  token: string,
+  dependencies?: Pick<
+    AskServerDependencies,
+    'workerRecordClient' | 'workerRecordScopeFacts'
+  >,
+): Promise<AskLoopback> {
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    const askServer = createAskMcpServer(runId, token)
+    const askServer = createAskMcpServer(runId, token, undefined, dependencies)
     const mcp = serveStdio(() => askServer, {
       transport: observeAskTransport(new StdioServerTransport(socket, socket), runId),
     })

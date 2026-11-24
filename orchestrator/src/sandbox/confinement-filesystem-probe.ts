@@ -21,26 +21,32 @@ import {
   hubLoginTokenDirectory,
   realPathForPotentialPath,
   resolveHubDatabase,
-  resolveOrchestratorDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
-import { BUILTIN_AGENTS } from '../agent/agents.ts'
+import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { buildCheckoutCli } from '../database/checkout-cli-build.ts'
 import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
-import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { median } from '../state/statistics.ts'
 import { confinedLaunchCwd } from './confined-launch-cwd.ts'
 import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
-import { firstErrorLine, launchSandboxProbe } from './confinement-probe-launch.ts'
+import {
+  firstErrorLine,
+  launchCommand,
+  launchSandboxProbe,
+  launchTaskReadCommands,
+  probeWorkerEnvironment,
+} from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
+  probeTaskReadCommands,
+  probeWorkerRecordDependencies,
 } from './confinement-probe-task-port.ts'
 import {
   type AccessTarget,
@@ -117,6 +123,9 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
+const PROBE_RUN_ID = 'confinement-filesystem-probe'
+const PROBE_RUN_TOKEN = 'confinement-filesystem-probe-token'
+const PROBE_SPACE_ID = '01990000-0000-7000-8000-000000002623'
 
 function fixtureProject(
   recordId: string,
@@ -183,22 +192,6 @@ function initializeProbeGitFixture(ownPath: string, worktree: string): void {
   assertBranchRefMayBeCreated(ownPath, 'probe-writer')
   // branch-ref-guard: assertBranchRefMayBeCreated
   gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
-}
-
-export async function launchCommand(
-  profile: ReturnType<typeof readonlyLensProfile>,
-  argv: string[],
-  environment: Record<string, string>,
-  scratchDir: string,
-  cwd: string,
-  hubOpenMode?: string,
-  launcher: typeof launchSandboxProbe = launchSandboxProbe,
-): Promise<CommandProbe> {
-  const result = await launcher(profile, argv[0]!, argv.slice(1), environment, scratchDir, { cwd })
-  return {
-    status: result.exitCode === 0 ? 'ran' : 'failed',
-    reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
-  }
 }
 
 async function launchSandboxGitSpawnProbe(
@@ -430,12 +423,11 @@ async function launchProbe(
   family: 'goose' | 'grok' | 'ACP writer' | 'workflow probe',
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
-  commandArgv: string[],
+  taskCommands: TaskReadCommands,
   environment: Record<string, string>,
   scratchDir: string,
   cwd: string,
   hubOpenMode: string,
-  commandLabel: string,
   missingExpectedReadableTargets: readonly string[],
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
@@ -455,15 +447,14 @@ async function launchProbe(
         values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
-    const command = await launchCommand(
+    const commands = await launchTaskReadCommands(
       profile,
-      commandArgv,
+      taskCommands,
       environment,
       scratchDir,
       cwd,
       hubOpenMode,
     )
-    const commands = { [commandLabel]: command }
     return {
       family,
       ...probeVerdict(targets, paths, commands, missingExpectedReadableTargets),
@@ -485,24 +476,22 @@ async function launchProbe(
 async function launchWorkflowProbe(
   profile: ReturnType<typeof probeSandboxProfile>,
   targets: readonly AccessTarget[],
-  commandArgv: string[],
+  taskCommands: TaskReadCommands,
   environment: Record<string, string>,
   scratchDir: string,
   cwd: string,
   hubOpenMode: string,
-  commandLabel: string,
   missingExpectedReadableTargets: readonly string[],
 ): Promise<ConfinementFilesystemProbeRow> {
   const row = await launchProbe(
     'workflow probe',
     profile,
     targets,
-    commandArgv,
+    taskCommands,
     environment,
     scratchDir,
     cwd,
     hubOpenMode,
-    commandLabel,
     missingExpectedReadableTargets,
   )
   try {
@@ -528,12 +517,11 @@ async function launchCrossProjectCliProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   installEnvPath: string,
   cliArgv: string[],
-  commandArgv: string[],
+  taskCommands: TaskReadCommands,
   environment: Record<string, string>,
   scratchDir: string,
   cwd: string,
   hubOpenMode: string,
-  commandLabel: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const targets: AccessTarget[] = [
@@ -553,21 +541,24 @@ async function launchCrossProjectCliProbe(
       scratchDir,
       cwd,
     )
-    const verb = await launchCommand(
+    const taskResults = await launchTaskReadCommands(
       profile,
-      commandArgv,
+      taskCommands,
       environment,
       scratchDir,
       cwd,
       hubOpenMode,
     )
+    const tasksRan = Object.values(taskResults).every(({ status }) => status === 'ran')
     const paths = { 'install .env': access.status === 'ran' ? 'readable' : 'denied' } as const
     const command: CommandProbe = {
-      status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
+      status: version.status === 'ran' && tasksRan ? 'ran' : 'failed',
       reason:
         version.status === 'failed'
           ? `${PLATFORM_SLUG} --version ${version.reason}`
-          : `${commandLabel} ${verb.reason}`,
+          : Object.entries(taskResults)
+              .map(([label, result]) => `${label} ${result.reason}`)
+              .join('; '),
     }
     const verdict = probeVerdict(targets, paths, { 'real CLI verb': command })
     return {
@@ -576,7 +567,7 @@ async function launchCrossProjectCliProbe(
       paths,
       commands: {
         [`${PLATFORM_SLUG} --version`]: version,
-        [commandLabel]: verb,
+        ...taskResults,
       },
       reason:
         verdict.status === 'denied'
@@ -697,21 +688,6 @@ function installFixture(root: string, running: RunningInstallLayout): RunningIns
     root,
     workspaceDirectories: [join(root, 'hub'), join(root, 'orchestrator')],
   }
-}
-
-function probeWorkerEnvironment(environment: Record<string, string>): Record<string, string> {
-  const child = workerChildEnvironment({
-    agent: BUILTIN_AGENTS.grok!,
-    sandbox: 'srt',
-    runRecordId: 'confinement-filesystem-probe',
-    runToken: 'confinement-filesystem-probe-token',
-    runNumber: 1,
-    environment,
-    stateEnvironment: environment,
-    includeStore: true,
-  })
-  child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(environment)
-  return child
 }
 
 function probeHubOpenMode(hubDatabase: string): string {
@@ -867,7 +843,8 @@ function createProbeFixture(root: string) {
     state.orchestratorDatabase,
     ownPath,
   )
-  const commandLabel = `${PLATFORM_SLUG} task show <probe task>`
+  const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
+  const taskCommands = probeTaskReadCommands(probeTask, cliArgv, PLATFORM_SLUG)
   const sibling = fixtureProject('sibling', 'sibling', siblingPath)
   const registeredProjects = [
     own,
@@ -882,18 +859,17 @@ function createProbeFixture(root: string) {
     { name: 'hub store', path: hubDatabase, expected: 'readable' },
     { name: 'hub login token', path: loginToken, expected: 'denied' },
   )
-  const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
   return {
     hubWriter,
     hubOpenMode: probeHubOpenMode(hubDatabase),
     stateRoot,
     targets,
     cliArgv,
-    commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
-    commandLabel,
+    taskCommands,
+    probeTask,
     commandCwd: fixtureConfinedLaunchCwd(worktree),
     fixtureInstall,
-    environment: probeWorkerEnvironment(environment),
+    environment,
     common: {
       worktree,
       runtimeDir,
@@ -927,12 +903,31 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
   const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
   let hubWriter: Database | null = null
+  let askLoopback: AskLoopback | null = null
   try {
     const fixture = createProbeFixture(root)
     hubWriter = fixture.hubWriter
     const { common } = fixture
     const missingExpectedReadableTargets = missingExpectedReadableTargetNames(fixture.targets)
     process.env[STATE_HOME_ENV] = fixture.stateRoot
+    askLoopback = await startAskLoopback(
+      PROBE_RUN_ID,
+      PROBE_RUN_TOKEN,
+      probeWorkerRecordDependencies({
+        task: fixture.probeTask,
+        project: common.project,
+        runId: PROBE_RUN_ID,
+        token: PROBE_RUN_TOKEN,
+        spaceId: PROBE_SPACE_ID,
+      }),
+    )
+    const workerEnvironment = probeWorkerEnvironment({
+      environment: fixture.environment,
+      askUrl: askLoopback.url,
+      runId: PROBE_RUN_ID,
+      runToken: PROBE_RUN_TOKEN,
+    })
+    const askAddress = askLoopback.url.slice('tcp://'.length)
     const launch = (
       family: Parameters<typeof launchProbe>[0],
       profile: Parameters<typeof launchProbe>[1],
@@ -941,12 +936,11 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         family,
         profile,
         fixture.targets,
-        fixture.commandArgv,
-        fixture.environment,
+        fixture.taskCommands,
+        workerEnvironment,
         common.scratchDir,
         fixture.commandCwd,
         fixture.hubOpenMode,
-        fixture.commandLabel,
         missingExpectedReadableTargets,
       )
     return [
@@ -954,13 +948,13 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       await launch('grok', readonlyLensProfile({ ...common, agent: 'grok' })),
       await launch(
         'ACP writer',
-        writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
+        writerProfile({ ...common, agent: 'grok', askAddress }),
       ),
       await launchExtractedRefGuardProbe(
-        writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
+        writerProfile({ ...common, agent: 'grok', askAddress }),
         common.worktree,
         common.scratchDir,
-        fixture.environment,
+        workerEnvironment,
       ),
       await launchWorkflowProbe(
         probeSandboxProfile({
@@ -972,34 +966,33 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
           socketDenyPaths: common.socketDenyPaths,
         }),
         fixture.targets,
-        fixture.commandArgv,
-        fixture.environment,
+        fixture.taskCommands,
+        workerEnvironment,
         common.scratchDir,
         fixture.commandCwd,
         fixture.hubOpenMode,
-        fixture.commandLabel,
         missingExpectedReadableTargets,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
         join(fixture.fixtureInstall.root, '.env'),
         fixture.cliArgv,
-        fixture.commandArgv,
-        fixture.environment,
+        fixture.taskCommands,
+        workerEnvironment,
         common.scratchDir,
         fixture.commandCwd,
         fixture.hubOpenMode,
-        fixture.commandLabel,
       ),
       await launchSandboxGitSpawnProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
-        fixture.environment,
+        workerEnvironment,
         common.scratchDir,
       ),
-      await launchHeadlessBrowserProbeRow(common, fixture.environment),
+      await launchHeadlessBrowserProbeRow(common, workerEnvironment),
       ...NOT_COVERED,
     ]
   } finally {
+    await askLoopback?.close()
     hubWriter?.close()
     if (priorStateRoot === undefined) delete process.env[STATE_HOME_ENV]
     else process.env[STATE_HOME_ENV] = priorStateRoot
