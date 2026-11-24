@@ -6,7 +6,8 @@ import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
-  hostedBoardRefreshStoppedReason,
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
   hostedBoardVerificationWarning,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
@@ -197,7 +198,7 @@ export async function listBoardOverview(
   })
   if (refreshed.status !== 'local' && refreshed.status !== 'success')
     throw new Error(
-      `hosted board overview stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('overview', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const rows =
     refreshed.status === 'local'

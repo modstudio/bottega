@@ -547,13 +547,13 @@ test('an incomplete hosted refresh delivers and marks nothing', async () => {
   expect(result.warning).toBe(
     'hosted board delivery stopped: refresh did not catch up within its budget; notices stay queued for the next successful refresh',
   )
-  expect(result.stopped).toBe(result.warning)
+  expect(result.stopped).toBe(true)
   expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
   expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
     count: 0,
   })
 
-  expect(boardPendingJson(result).stopped).toBe(result.warning)
+  expect(boardPendingJson(result).stopped).toBe(true)
 })
 
 test('board pending JSON distinguishes a stopped read from an informational warning', () => {
@@ -571,7 +571,7 @@ test('board pending JSON distinguishes a stopped read from an informational warn
     overflow: null,
     pendingAcknowledgements: [],
     warning,
-    stopped: null,
+    stopped: false,
   })
 
   expect(value).toEqual({
@@ -579,7 +579,7 @@ test('board pending JSON distinguishes a stopped read from an informational warn
     overflow: null,
     pendingAcknowledgements: [],
     warning,
-    stopped: null,
+    stopped: false,
   })
 })
 
@@ -832,7 +832,9 @@ test('PostToolUse fails open on malformed command output', () => {
 })
 
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
-  const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
+  const item = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"stopped":false}',
+  )
   item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
   const payload = JSON.stringify({
@@ -869,6 +871,7 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   const freshOutput = JSON.stringify({
     delivery: [{ id: '8', text: 'fresh notice', requiresAcknowledgement: false }],
     overflow: null,
+    stopped: false,
     pendingAcknowledgements: [{ id: '7', text: 'recent reminder', requiresAcknowledgement: true }],
   })
   const item = createHookFixture(freshOutput)
@@ -926,7 +929,9 @@ test('PostToolUse throttles a failed path until the retry interval', () => {
 })
 
 test('PostToolUse refreshes a stale hosted cache at most once per refresh interval', () => {
-  const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
+  const item = createHookFixture(
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"stopped":false}',
+  )
   item.database
     .query("UPDATE schema_meta SET value='2000-01-01T00:00:00.000Z' WHERE key=?")
     .run('board_hosted_refresh_at')

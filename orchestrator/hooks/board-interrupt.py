@@ -375,7 +375,7 @@ def main() -> int:
                 session, recently_injected
             )
             if stopped:
-                raise RuntimeError(stopped)
+                raise RuntimeError(_warning or "hosted board delivery stopped")
         except Exception:
             previous = marker or {
                 "candidate_ids": set(),

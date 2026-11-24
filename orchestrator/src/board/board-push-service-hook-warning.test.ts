@@ -16,7 +16,7 @@ afterEach(removeHookFixtures)
 
 test('PostToolUse treats a stopped pending read like the former command failure', () => {
   const stopped = createHookFixture(
-    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":"hosted board delivery stopped"}',
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":true}',
   )
   addCandidate(stopped, 1)
   const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), stopped)
@@ -34,7 +34,7 @@ test('PostToolUse treats a stopped pending read like the former command failure'
 
 test('PostToolUse injects a successful delivery carrying a deferred-successor warning', () => {
   const warning = createHookFixture(
-    '{"delivery":[{"id":"7","text":"reply successor","requiresAcknowledgement":false}],"overflow":null,"pendingAcknowledgements":[],"warning":"1 reply successor remains queued; run board pending again","stopped":null}',
+    '{"delivery":[{"id":"7","text":"reply successor","requiresAcknowledgement":false}],"overflow":null,"pendingAcknowledgements":[],"warning":"1 reply successor remains queued; run board pending again","stopped":false}',
   )
   addCandidate(warning, 1)
 
@@ -48,7 +48,7 @@ test('PostToolUse injects a successful delivery carrying a deferred-successor wa
 
 test('Stop keeps its acknowledgement counter when pending is stopped', () => {
   const stopped = createHookFixture(
-    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":"hosted board delivery stopped"}',
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[],"warning":"hosted board delivery stopped","stopped":true}',
   )
   const markerRoot = join(stopped.root, 'board-hook-state', 'stop')
   mkdirSync(markerRoot, { recursive: true })
@@ -64,7 +64,7 @@ test('Stop keeps its acknowledgement counter when pending is stopped', () => {
 
 test('Stop counts acknowledgements when a successful delivery carries a deferred-successor warning', () => {
   const warning = createHookFixture(
-    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[{"id":"8","text":"acknowledge me","requiresAcknowledgement":true}],"warning":"1 reply successor remains queued; run board pending again","stopped":null}',
+    '{"delivery":[],"overflow":null,"pendingAcknowledgements":[{"id":"8","text":"acknowledge me","requiresAcknowledgement":true}],"warning":"1 reply successor remains queued; run board pending again","stopped":false}',
   )
 
   const result = runHook(guardHook, JSON.stringify({ session_id: 'reader' }), warning)

@@ -223,6 +223,7 @@ export const hookOutput = JSON.stringify({
     },
   ],
   overflow: null,
+  stopped: false,
   pendingAcknowledgements: [
     {
       id: '7',

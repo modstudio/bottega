@@ -120,7 +120,7 @@ def pending(
     if warning is not None and not isinstance(warning, str):
         raise ValueError("malformed board pending output")
     stopped = value.get("stopped")
-    if stopped is not None and not isinstance(stopped, str):
+    if not isinstance(stopped, bool):
         raise ValueError("malformed board pending output")
     return delivery, overflow, acknowledgements, warning, stopped
 

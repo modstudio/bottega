@@ -11,7 +11,8 @@ import {
   cachedMessageAddressed,
   cachedRows,
   claimCachedHostedForPush,
-  hostedBoardRefreshStoppedReason,
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
@@ -412,7 +413,11 @@ async function refreshForPendingBoardDelivery(input: DeliveryInput, database: Da
     return { localMode: refreshed.status === 'local', warning: null }
   return {
     localMode: false,
-    warning: `hosted board delivery stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; notices stay queued for the next successful refresh`,
+    warning: hostedBoardStoppedMessage(
+      'delivery',
+      refreshed,
+      HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+    ),
   }
 }
 
@@ -436,15 +441,23 @@ function pendingDeliveryCandidates(
     : [...unread, ...withdrawalDeliveries]
 }
 
-const unavailableBoardDelivery = (warning: string) => ({
+export type PendingBoardDelivery = {
+  delivery: BoardDelivery[]
+  overflow: string | null
+  pendingAcknowledgements: BoardDelivery[]
+  warning: string | null
+  stopped: boolean
+}
+
+const unavailableBoardDelivery = (warning: string): PendingBoardDelivery => ({
   delivery: [],
   overflow: null,
   pendingAcknowledgements: [],
   warning,
-  stopped: warning,
+  stopped: true,
 })
 
-export async function pendingBoardDelivery(input: DeliveryInput) {
+export async function pendingBoardDelivery(input: DeliveryInput): Promise<PendingBoardDelivery> {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
@@ -515,7 +528,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
-    stopped: null,
+    stopped: false,
     warning: deliveryWarning(
       localPush?.warning ?? null,
       hostedPush?.warning ?? null,
@@ -530,7 +543,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   }
 }
 
-export function boardPendingJson(delivery: Awaited<ReturnType<typeof pendingBoardDelivery>>) {
+export function boardPendingJson(delivery: PendingBoardDelivery) {
   return {
     delivery: delivery.delivery.map((notice) => ({
       id: notice.id,

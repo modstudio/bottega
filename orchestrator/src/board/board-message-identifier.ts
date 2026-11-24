@@ -5,7 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
-  hostedBoardRefreshStoppedReason,
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
@@ -33,7 +34,7 @@ export async function refreshHostedBoardIdentifier(
   })
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board message read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('message read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
 }
 

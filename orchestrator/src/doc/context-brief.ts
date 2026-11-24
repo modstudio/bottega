@@ -108,6 +108,11 @@ function waitingQuestionLine(counts: QuestionInboxCounts | null): string {
   return `${groups.join(' · ')} (${PLATFORM_SLUG} question inbox --all --active)`
 }
 
+function boardRequestLine(requests: BoardRequestCount): string {
+  if (typeof requests !== 'number') return `board requests: not read: ${requests.unread}`
+  return `${count(requests, 'board request')} (${PLATFORM_SLUG} board read)`
+}
+
 function renderItem(item: ContextItem): string {
   const label = item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
   const body = firstLine(item.body)
@@ -155,7 +160,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   else lines.push('In flight: none')
   lines.push(...(brief.reviewVerdictLines ?? []))
   lines.push(
-    `Waiting: ${typeof brief.waiting.boardRequests === 'number' ? `${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read)` : `board requests: not read: ${brief.waiting.boardRequests.unread}`} · ` +
+    `Waiting: ${boardRequestLine(brief.waiting.boardRequests)} · ` +
       `${waitingQuestionLine(brief.waiting.questions)} · ` +
       `${count(brief.waiting.filedIssues, 'filed issue')} (${PLATFORM_SLUG} workflow fix-defect --waiting) · ` +
       `${count(brief.waiting.resumeBriefs, 'resume brief')} (${PLATFORM_SLUG} doc resumes)`,

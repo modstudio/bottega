@@ -8,7 +8,9 @@ import {
   BOARD_READ_REFRESH_BUDGET_MS,
   claimCachedHosted,
   claimCachedHostedForPush,
-  hostedBoardRefreshStoppedReason,
+  HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
+  HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
+  hostedBoardStoppedMessage,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
@@ -113,7 +115,7 @@ export async function claimBoardNotices(
   }
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const hosted = await claimCachedHostedForPush(sessionReader(env), all)
   return {
@@ -140,7 +142,7 @@ export async function readBoardNotices(
     return { notices: readNotices(all, env).map(deliveryNotice), warning: null }
   if (refreshed.status !== 'success')
     throw new Error(
-      `hosted board read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; restore hosted record access and retry`,
+      hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
     )
   const hosted = claimCachedHosted(sessionReader(env), all)
   await markCachedHostedDelivered(
@@ -194,7 +196,7 @@ export async function claimRunBoardNotices(
   }
   return {
     notices: [],
-    warning: `hosted board read stopped: ${hostedBoardRefreshStoppedReason(refreshed)}; notices stay queued for the next successful refresh`,
+    warning: hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY),
     withheldOlderCount: 0,
   }
 }
