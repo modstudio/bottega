@@ -30,12 +30,8 @@ import {
 } from './settings.ts'
 import { editSettingsAutoMode, type SettingsAutoModeOperation } from './settings-auto-mode.ts'
 import { assertNoUnknownStoredSettingsEdit } from './settings-edit-refusal.ts'
-import {
-  missingSettingsEnvironmentRefusal,
-  readSettingsEnv,
-  selectedSettingsEnvironment,
-  userSettingsEnvPath,
-} from './settings-env.ts'
+import { userSettingsEnvPath } from './settings-env.ts'
+import { requireSettingsEnvironment } from './settings-environment-selection.ts'
 import {
   claudeHomeFromEnvironment,
   projectLocalSettingsPath,
@@ -310,18 +306,13 @@ export async function settingsRenderCheckCommand(
       'refusing settings render: env is user-only; remove project env and envKeys from the row',
     )
   }
-  let environment: Record<string, string> | undefined
-  if (target.kind === 'user') {
-    const secretsPath = userSettingsEnvPath(claudeHomeFromEnvironment(process.env))
-    const selection = selectedSettingsEnvironment(
-      readSettingsEnv(secretsPath),
-      storeOwned.envKeys ?? [],
-    )
-    if (selection.missing.length > 0) {
-      throw new Error(missingSettingsEnvironmentRefusal(secretsPath, selection.missing))
-    }
-    environment = selection.selected
-  }
+  const environment =
+    target.kind === 'user'
+      ? requireSettingsEnvironment(
+          userSettingsEnvPath(claudeHomeFromEnvironment(process.env)),
+          storeOwned.envKeys ?? [],
+        )
+      : undefined
   const renderedEnvironment =
     environment === undefined ? undefined : renderedSettingsEnvironment(storeOwned, environment)
   if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, renderedEnvironment)

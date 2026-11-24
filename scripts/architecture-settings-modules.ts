@@ -338,6 +338,11 @@ export const settingsModules: SettingsModule[] = [
     './settings.ts',
     './settings-edit-refusal.ts',
   ]),
+  module('orchestrator/src/settings/settings-environment-selection.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    './settings-env.ts',
+  ]),
   module('orchestrator/src/settings/settings-subagents.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
@@ -380,6 +385,7 @@ export const settingsModules: SettingsModule[] = [
     '../run/run-process.ts',
     '../setup/setup-mcp.ts',
     './settings.ts',
+    './settings-environment-selection.ts',
     './settings-env.ts',
     './settings-files.ts',
     './settings-render.ts',

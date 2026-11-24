@@ -37,6 +37,7 @@ import {
   stableMcpServers,
 } from '../setup/setup-mcp.ts'
 import {
+  type OwnedSettings,
   ownedEnvironmentNames,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
@@ -45,11 +46,11 @@ import {
   subagentBlockingOn,
 } from './settings.ts'
 import {
-  missingSettingsEnvironmentRefusal,
   readSettingsEnv,
   selectedSettingsEnvironment,
   userSettingsEnvPath,
 } from './settings-env.ts'
+import { missingSettingsEnvironmentRefusal } from './settings-environment-selection.ts'
 import {
   claudeHomeFromEnvironment,
   tryReadSettingsFile,
@@ -186,6 +187,16 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
   }
 }
 
+function environmentForSettingsApply(
+  owned: OwnedSettings,
+  selected: Record<string, string>,
+  missing: readonly string[],
+  fileExists: boolean,
+): Record<string, string> | undefined {
+  if (missing.length === 0) return renderedSettingsEnvironment(owned, selected)
+  return fileExists ? undefined : { ...(owned.env ?? {}) }
+}
+
 function localUserSettingsDocuments(owner: string): UserSettingsDocuments {
   return {
     source: 'local',
@@ -265,12 +276,12 @@ function applyUserSettings(
       }
       const selection = selectedSettingsEnvironment(secrets, owned.envKeys ?? [])
       missingEnvironment = selection.missing
-      environment =
-        selection.missing.length === 0
-          ? renderedSettingsEnvironment(owned, selection.selected)
-          : existing === null
-            ? { ...(owned.env ?? {}) }
-            : undefined
+      environment = environmentForSettingsApply(
+        owned,
+        selection.selected,
+        selection.missing,
+        existing !== null,
+      )
     }
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
     const settingsResult = applyRenderedUserSettings({

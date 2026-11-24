@@ -451,15 +451,17 @@ describe('settings apply', () => {
 
   test('missing per-machine env values refuse only env while owned settings apply', async () => {
     const row = getDoc('settings', null, 'settings', OWNER)!
-    db().query('UPDATE doc SET body=? WHERE record_id=?').run(
-      serializeOwnedSettings({
-        permissions: { allow: ['Bash(updated *)'] },
-        hooks: {},
-        env: { PLAIN: 'plain' },
-        envKeys: ['MISSING_A', 'MISSING_B'],
-      }),
-      row.record_id,
-    )
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run(
+        serializeOwnedSettings({
+          permissions: { allow: ['Bash(updated *)'] },
+          hooks: {},
+          env: { PLAIN: 'plain' },
+          envKeys: ['MISSING_A', 'MISSING_B'],
+        }),
+        row.record_id,
+      )
     const settingsPath = join(root, '.claude', 'settings.json')
     const envBlock = '"env": {"PLAIN":"keep",  "MISSING_A":"old"}'
     writeFileSync(
@@ -483,8 +485,8 @@ describe('settings apply', () => {
     })
     expect(refusalText).toContain('MISSING_A')
     expect(refusalText).toContain('MISSING_B')
-    expect(refusalText).toContain('bottega machine settings env set MISSING_A <value>')
-    expect(refusalText).toContain('bottega machine settings env set MISSING_B <value>')
+    expect(refusalText).toContain(`${PLATFORM_SLUG} machine settings env set MISSING_A <value>`)
+    expect(refusalText).toContain(`${PLATFORM_SLUG} machine settings env set MISSING_B <value>`)
     const rendered = readFileSync(settingsPath, 'utf8')
     expect(rendered).toContain(envBlock)
     expect(JSON.parse(rendered).permissions).toEqual({ allow: ['Bash(updated *)'] })

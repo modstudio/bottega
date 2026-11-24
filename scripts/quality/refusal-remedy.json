@@ -73,7 +73,7 @@
     "orchestrator/src/sandbox/project-mcp-scope.ts": 1,
     "orchestrator/src/settings/settings-apply-commands.ts": 3,
     "orchestrator/src/settings/settings-commands.ts": 3,
-    "orchestrator/src/settings/settings-env.ts": 3,
+    "orchestrator/src/settings/settings-env.ts": 2,
     "orchestrator/src/settings/settings-files.ts": 1,
     "orchestrator/src/settings/settings-machine-apply.ts": 1,
     "orchestrator/src/settings/settings-machine-write-authority.ts": 2,
@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/settings/settings.ts#assertPlainSettingsEnvSet": {
+      "test": "orchestrator/src/settings/settings.test.ts: set refuses a secret-shaped value without printing it"
+    },
     "orchestrator/src/database/checkout-cli-build.ts#checkoutCliBuildFailure": {
       "test": "orchestrator/src/database/checkout-cli-build.test.ts: the checkout CLI build failure names machine update as the clearing command"
     },

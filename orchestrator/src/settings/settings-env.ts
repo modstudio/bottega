@@ -71,19 +71,6 @@ export function selectedSettingsEnvironment(
   return { selected, missing }
 }
 
-export function missingSettingsEnvironmentRefusal(path: string, names: readonly string[]): string {
-  return (
-    `refusing settings render: per-machine env values are missing from ${path}\n` +
-    names
-      .map(
-        (name) =>
-          `${name}: add ${name} to ${path} with mode 0600, or, if it is not a secret, run ` +
-          `\`bottega machine settings env set ${name} <value>\``,
-      )
-      .join('\n')
-  )
-}
-
 export function mergeSettingsEnv(
   path: string,
   imported: Record<string, string>,

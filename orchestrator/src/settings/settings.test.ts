@@ -341,7 +341,7 @@ describe('editSettingsEnv', () => {
       message = error instanceof Error ? error.message : String(error)
     }
     expect(message).toContain('PRIVATE has a secret-shaped value')
-    expect(message).toContain('bottega machine config secret set PRIVATE')
+    expect(message).toContain(`${PLATFORM_SLUG} machine config secret set PRIVATE`)
     expect(message).not.toContain(value)
   })
 })

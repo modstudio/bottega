@@ -1,6 +1,7 @@
 // concern: settings
 /** Owned Claude settings policy over the shared stored shape. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -193,6 +194,24 @@ export function ownedEnvironmentNames(owned: OwnedSettings): string[] {
   return [...new Set([...Object.keys(owned.env ?? {}), ...(owned.envKeys ?? [])])].sort()
 }
 
+function assertPlainSettingsEnvSet(input: {
+  operation: SettingsEnvOperation
+  name: string
+  value?: string
+}): void {
+  if (input.operation !== 'set') return
+  if (input.value === undefined) throw new Error('refusing settings env set: value is required')
+  if (!containsSecretShaped(input.value)) return
+  throw new Error(
+    renderRefusal(
+      refusal(`refusing settings env set: ${input.name} has a secret-shaped value`, {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'machine', 'config', 'secret', 'set', input.name],
+      }),
+    ),
+  )
+}
+
 export function editSettingsEnv(
   owned: OwnedSettings,
   input: { operation: SettingsEnvOperation; name: string; value?: string },
@@ -200,15 +219,7 @@ export function editSettingsEnv(
   if (!ENV_NAME.test(input.name)) {
     throw new Error(`refusing settings env ${input.operation}: invalid name ${input.name}`)
   }
-  if (input.operation === 'set' && input.value === undefined) {
-    throw new Error('refusing settings env set: value is required')
-  }
-  if (input.operation === 'set' && containsSecretShaped(input.value!)) {
-    throw new Error(
-      `refusing settings env set: ${input.name} has a secret-shaped value\n` +
-        `cleared by: run \`${PLATFORM_SLUG} machine config secret set ${input.name}\``,
-    )
-  }
+  assertPlainSettingsEnvSet(input)
   const current = owned.env ?? {}
   if (input.operation === 'unset' && !Object.hasOwn(current, input.name)) {
     return {
