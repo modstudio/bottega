@@ -407,11 +407,12 @@ async function refreshForPendingBoardDelivery(input: DeliveryInput, database: Da
     : input.budgetMs > 0
       ? await refreshHostedBoard({ budgetMs: input.budgetMs, database })
       : cachedMode()
-  if (refreshed.status !== 'local' && refreshed.status !== 'success')
-    throw new Error(
-      `hosted board delivery stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
-    )
-  return refreshed.status === 'local'
+  if (refreshed.status === 'local' || refreshed.status === 'success')
+    return { localMode: refreshed.status === 'local', warning: null }
+  return {
+    localMode: false,
+    warning: `hosted board delivery stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}`,
+  }
 }
 
 function pendingDeliveryCandidates(
@@ -438,7 +439,15 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
-  const localMode = await refreshForPendingBoardDelivery(input, database)
+  const refresh = await refreshForPendingBoardDelivery(input, database)
+  if (refresh.warning)
+    return {
+      delivery: [],
+      overflow: null,
+      pendingAcknowledgements: [],
+      warning: refresh.warning,
+    }
+  const localMode = refresh.localMode
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
   const claimReplySuccessors = input.claimReplySuccessors ?? true

@@ -14,9 +14,11 @@ import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
 import { projectAt } from '../project/projects.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import {
   acknowledgeNotice,
   boardEscalations,
+  boardRequestCountForSession,
   claimNotices,
   claimPushNotices,
   claimRunNotices,
@@ -30,6 +32,19 @@ import {
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 beforeEach(() => fixtureProjectRecordId(db()))
+
+test('an incomplete hosted refresh makes the board request count unread', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  const result = await boardRequestCountForSession(
+    'brief-reader',
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    db(),
+    async () => ({ status: 'incomplete' as const, applied: 0, reason: 'refresh budget spent' }),
+  )
+
+  expect(result).toEqual({ unread: 'refresh budget spent' })
+})
 
 test('local posts default acknowledgement-required messages to request', () => {
   const posted = postNotice({

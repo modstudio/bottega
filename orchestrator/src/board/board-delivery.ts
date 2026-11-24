@@ -176,22 +176,25 @@ export async function claimRunBoardNotices(
       withheldOlderCount: local.withheldOlderCount,
     }
   }
-  if (refreshed.status !== 'success')
-    throw new Error(
-      `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
+  if (refreshed.status === 'success') {
+    const hosted = await claimCachedHostedForPush(
+      reader,
+      all,
+      Date.now(),
+      undefined,
+      true,
+      readerRunRecordId,
     )
-  const hosted = await claimCachedHostedForPush(
-    reader,
-    all,
-    Date.now(),
-    undefined,
-    true,
-    readerRunRecordId,
-  )
+    return {
+      notices: hosted.notices.map(deliveryNotice).map(runNotice),
+      warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
+      withheldOlderCount: hosted.withheldOlderCount,
+    }
+  }
   return {
-    notices: hosted.notices.map(deliveryNotice).map(runNotice),
-    warning: deliveryWarning(hosted.warning, hostedBoardVerificationWarning()),
-    withheldOlderCount: hosted.withheldOlderCount,
+    notices: [],
+    warning: `hosted board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}`,
+    withheldOlderCount: 0,
   }
 }
 

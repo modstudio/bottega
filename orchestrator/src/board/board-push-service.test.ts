@@ -31,6 +31,7 @@ import { takeClaim } from './board-claim-service.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
 import { postNotice } from './board-service.ts'
 import { renderBoardReplyDelivery } from './board-thread-render.ts'
@@ -514,6 +515,38 @@ test('delivery returns every pending notice and preserves its first delivered ti
       )
       .get(posted.recordId, 'remind-reader'),
   ).toEqual(first)
+})
+
+test('an incomplete hosted refresh delivers and marks nothing', async () => {
+  const session = 'incomplete-refresh-reader'
+  const clock = Date.parse('2026-10-08T12:15:00.000Z')
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 20,
+    clock,
+    env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    refresh: async () => ({
+      status: 'incomplete' as const,
+      applied: 0,
+      reason: 'refresh budget spent',
+    }),
+  })
+
+  expect(result.delivery).toEqual([])
+  expect(result.pendingAcknowledgements).toEqual([])
+  expect(result.warning).toContain('refresh budget spent')
+  expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
+  expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
+    count: 0,
+  })
 })
 
 test('recent reminders are removed before bounding without changing pending acknowledgements', async () => {

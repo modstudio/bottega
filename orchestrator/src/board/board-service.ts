@@ -542,12 +542,14 @@ export function readNotices(
   return notices
 }
 
+export type BoardRequestCount = number | { unread: string }
+
 export async function boardRequestCountForSession(
   session: string,
   env: Environment = process.env,
   database: Database = db(),
   refresh: typeof refreshHostedBoard = refreshHostedBoard,
-): Promise<number> {
+): Promise<BoardRequestCount> {
   const boardEnv = { ...env, CLAUDE_CODE_SESSION_ID: session }
   if (boardMode('shared', boardEnv, database) === 'local')
     return claimNotices(true, boardEnv, Date.now(), database).filter(
@@ -558,13 +560,13 @@ export async function boardRequestCountForSession(
     env: boardEnv,
     database,
   })
-  if (refreshed.status !== 'success')
-    throw new Error(
-      `hosted context brief board read stopped: ${refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`}; restore hosted record access and retry`,
-    )
-  return claimCachedHosted(session, true, Date.now(), database).filter(
-    (notice) => notice.purpose === 'request',
-  ).length
+  if (refreshed.status === 'success')
+    return claimCachedHosted(session, true, Date.now(), database).filter(
+      (notice) => notice.purpose === 'request',
+    ).length
+  return {
+    unread: refreshed.reason?.replace(/\s+/g, ' ') ?? `refresh ${refreshed.status}`,
+  }
 }
 
 export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
