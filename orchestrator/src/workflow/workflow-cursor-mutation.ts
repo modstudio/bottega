@@ -18,7 +18,11 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
-import { workflowTextDeletionIds } from './workflow-text.ts'
+import {
+  unresolvedWorkflowTextReportForStage,
+  workflowTextDeletionIds,
+  workflowTextLinkState,
+} from './workflow-text.ts'
 
 export async function closeOpenWorkflowQuestion(
   cursorId: string,
@@ -43,9 +47,16 @@ export async function abandonWorkflowCursor(
   const closed = abandonedCursorTrail(row, reason, at)
   const store = taskFlowReadStore(d, context.taskFlowClient)
   const obligations = await store.openObligationRecordIds(row.record_id)
+  const linkState = workflowTextLinkState(row)
+  const keptTextNotice = await unresolvedWorkflowTextReportForStage(
+    row,
+    true,
+    d,
+    context.taskFlowClient,
+  )
   const deleteTextIds = await workflowTextDeletionIds(
     row.record_id,
-    Boolean(row.task_record_id),
+    linkState,
     d,
     context.taskFlowClient,
   )
@@ -97,7 +108,12 @@ export async function abandonWorkflowCursor(
   const result = writeTransaction(() => {
     taskFlowLocalStore(d).write('abandon', payload, hosted)
     return {
-      text: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`,
+      text: [
+        `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`,
+        keptTextNotice,
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }
   }, d)
   try {

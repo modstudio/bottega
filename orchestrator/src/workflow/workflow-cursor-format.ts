@@ -24,6 +24,9 @@ export function workflowCursorReference(
   }
 }
 
+export const workflowTextCopyCommand = (cursor: number, project: string): string =>
+  `${PLATFORM_SLUG} workflow text copy${workflowCursorReference(cursor, project).cli}`
+
 export const workflowTaskBindingCommand = (row: {
   id: number
   workflow_slug: string

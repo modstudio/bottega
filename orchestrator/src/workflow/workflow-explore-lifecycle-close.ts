@@ -8,7 +8,7 @@ import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { isKeylessExplore, type TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { workflowTextDeletionIds } from './workflow-text.ts'
+import { workflowTextDeletionIds, workflowTextLinkState } from './workflow-text.ts'
 
 export type ExploreLifecycleOutcome = 'answered' | 'expired'
 export type ExploreLifecycleCloseOutcome = 'closed' | 'absent' | 'terminal' | 'touched'
@@ -59,7 +59,7 @@ export async function closeExploreForLifecycle(
   const deleteTextIds =
     outcome === 'expired'
       ? []
-      : await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database)
+      : await workflowTextDeletionIds(row.record_id, workflowTextLinkState(row), database)
   await finish({
     row,
     closed,

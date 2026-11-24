@@ -102,6 +102,21 @@ export async function followTaskCursorClaim(
   return { decision }
 }
 
+export async function followTaskCursorClaimWithWarning(input: {
+  project: string
+  taskKey: string | null
+  session: string | null | undefined
+  verb: TaskCursorClaimVerb
+  database?: Database
+}): Promise<string | null> {
+  try {
+    await followTaskCursorClaim(input)
+    return null
+  } catch (error) {
+    return input.taskKey ? taskClaimFollowWarning(input.taskKey, error) : null
+  }
+}
+
 export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
   if (!session) return
   const database = db()

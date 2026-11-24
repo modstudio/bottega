@@ -68,14 +68,17 @@ export async function linkResolvedWorkflowTask(
   project: string,
   context: WorkflowCursorContext,
   database: Database,
-): Promise<void> {
+): Promise<string | null> {
   const workflowKey = context.workflowKey
-  if (!workflowKey || !context.taskRecordId) return
+  if (!workflowKey) return null
+  if (!context.taskRecordId)
+    return `workflow task ${workflowKey} in project ${project} is unresolved; file or fix the task in the project's tracker, then rerun`
   await linkWorkflowTaskLabel(
     database,
     { project, workflowKey, taskRecordId: context.taskRecordId },
     context.taskFlowClient,
   )
+  return null
 }
 
 export async function withLinkedWorkflowTask<T>(
