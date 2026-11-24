@@ -20,7 +20,11 @@ import {
   boardWithdraw,
 } from './board-operations.ts'
 import { listBoardOverview } from './board-overview.ts'
-import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import {
+  boardPendingJson,
+  markBoardDeliveryDelivered,
+  pendingBoardDelivery,
+} from './board-push-service.ts'
 import type { BoardDeliveryPoint } from './board-reach.ts'
 import { registerBoardReachCommand } from './board-reach-command.ts'
 import { parseReplyAudienceOption } from './board-reply-audience.ts'
@@ -136,22 +140,7 @@ function registerBoardPendingCommand(board: Command): void {
           ? String(options.recentlyInjected).split(',').filter(Boolean)
           : [],
       })
-      console.log(
-        JSON.stringify({
-          delivery: delivery.delivery.map((notice) => ({
-            id: notice.id,
-            text: notice.text,
-            requiresAcknowledgement: notice.requiresAcknowledgement,
-          })),
-          overflow: delivery.overflow,
-          warning: delivery.warning,
-          pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
-            id: notice.id,
-            text: notice.text,
-            requiresAcknowledgement: true,
-          })),
-        }),
-      )
+      console.log(JSON.stringify(boardPendingJson(delivery)))
     })
 }
 

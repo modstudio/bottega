@@ -530,6 +530,24 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   }
 }
 
+export function boardPendingJson(delivery: Awaited<ReturnType<typeof pendingBoardDelivery>>) {
+  return {
+    delivery: delivery.delivery.map((notice) => ({
+      id: notice.id,
+      text: notice.text,
+      requiresAcknowledgement: notice.requiresAcknowledgement,
+    })),
+    overflow: delivery.overflow,
+    warning: delivery.warning,
+    stopped: delivery.stopped,
+    pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
+      id: notice.id,
+      text: notice.text,
+      requiresAcknowledgement: true,
+    })),
+  }
+}
+
 export async function markBoardDeliveryDelivered(input: {
   session: string
   ids: string[]

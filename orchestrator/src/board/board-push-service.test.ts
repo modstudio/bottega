@@ -30,7 +30,11 @@ import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
-import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import {
+  boardPendingJson,
+  markBoardDeliveryDelivered,
+  pendingBoardDelivery,
+} from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
 import { postNotice } from './board-service.ts'
 import { renderBoardReplyDelivery } from './board-thread-render.ts'
@@ -547,6 +551,37 @@ test('an incomplete hosted refresh delivers and marks nothing', async () => {
   expect(db().query('SELECT COUNT(*) AS count FROM board_receipt').get()).toEqual({ count: 0 })
   expect(db().query('SELECT COUNT(*) AS count FROM hosted_board_receipt_cache').get()).toEqual({
     count: 0,
+  })
+
+  expect(boardPendingJson(result).stopped).toBe(result.warning)
+})
+
+test('board pending JSON distinguishes a stopped read from an informational warning', () => {
+  const warning = 'One reply successor was deferred until the next board pending read.'
+  const value = boardPendingJson({
+    delivery: [
+      {
+        id: 'notice-1',
+        text: 'Notice text',
+        requiresAcknowledgement: false,
+        createdAt: '2026-10-08T12:15:00.000Z',
+        deliveredAt: null,
+      },
+    ],
+    overflow: null,
+    pendingAcknowledgements: [],
+    warning,
+    stopped: null,
+  })
+
+  expect(value).toEqual({
+    delivery: [
+      { id: 'notice-1', text: 'Notice text', requiresAcknowledgement: false },
+    ],
+    overflow: null,
+    pendingAcknowledgements: [],
+    warning,
+    stopped: null,
   })
 })
 
