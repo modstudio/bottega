@@ -35,6 +35,7 @@
     "orchestrator/src/ratchet/ratchet-service.ts": 1,
     "orchestrator/src/release/live-reading.ts": 1,
     "orchestrator/src/release/release-service.ts": 1,
+    "orchestrator/src/resources/docker-inventory-command.ts": 1,
     "orchestrator/src/resources/docker-resources.ts": 1,
     "orchestrator/src/resources/main-stack-network.ts": 1,
     "orchestrator/src/resources/main-stack.ts": 3,

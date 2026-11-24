@@ -1,11 +1,11 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { CALL_BUDGETS } from '../../../shared/call-budgets.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
-import { runDockerInventoryCommand } from './docker-inventory-command.ts'
+import { executableAbsentFrom, runDockerInventoryCommand } from './docker-inventory-command.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
 const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
@@ -384,15 +384,23 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  const listed = runDockerInventoryCommand(
-    ['docker', 'network', 'ls', '--format', '{{.Name}}'],
-    CALL_BUDGETS.docker.deadlineMs,
-  )
-  if (!listed.ok) {
+  let listed: ReturnType<typeof startBoundedSync>
+  try {
+    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
+      budget: 'docker',
+    })
+  } catch (error) {
     return {
       ascertainable: false,
-      executableAbsent: listed.executableAbsent,
-      reason: `docker network inventory unavailable: ${listed.reason}`,
+      executableAbsent: executableAbsentFrom(error),
+      reason: `docker network inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (listed.exitCode !== 0) {
+    return {
+      ascertainable: false,
+      executableAbsent: false,
+      reason: `docker network inventory unavailable: ${listed.stderr.trim() || `exit ${listed.exitCode}`}`,
     }
   }
   const names = listed.stdout
@@ -401,15 +409,23 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  const inspected = runDockerInventoryCommand(
-    ['docker', 'network', 'inspect', ...names],
-    CALL_BUDGETS.docker.deadlineMs,
-  )
-  if (!inspected.ok) {
+  let inspected: ReturnType<typeof startBoundedSync>
+  try {
+    inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], {
+      budget: 'docker',
+    })
+  } catch (error) {
     return {
       ascertainable: false,
-      executableAbsent: inspected.executableAbsent,
-      reason: `docker network inspection unavailable: ${inspected.reason}`,
+      executableAbsent: executableAbsentFrom(error),
+      reason: `docker network inspection unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (inspected.exitCode !== 0) {
+    return {
+      ascertainable: false,
+      executableAbsent: false,
+      reason: `docker network inspection unavailable: ${inspected.stderr.trim() || `exit ${inspected.exitCode}`}`,
     }
   }
   try {

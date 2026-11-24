@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
-import { decideDockerInventoryAvailability } from './docker-inventory-command.ts'
+import {
+  decideDockerInventoryAvailability,
+  executableAbsentFrom,
+} from './docker-inventory-command.ts'
+
+test('Docker executable absence is classified structurally', () => {
+  expect(executableAbsentFrom(Object.assign(new Error('missing'), { code: 'ENOENT' }))).toBeTrue()
+  expect(executableAbsentFrom(Object.assign(new Error('denied'), { code: 'EACCES' }))).toBeFalse()
+})
 
 test('Docker inventory availability proceeds only with an available inventory', () => {
   expect(decideDockerInventoryAvailability({ ok: true, executableAbsent: false })).toBe('proceed')

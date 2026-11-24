@@ -14,6 +14,11 @@ export type DockerInventoryCommandResult =
   | { ok: true; stdout: string; stderr: string }
   | { ok: false; executableAbsent: boolean; reason: string }
 
+/** Structurally identify a missing executable without depending on runtime message text. */
+export function executableAbsentFrom(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === 'ENOENT'
+}
+
 /** Run and structurally classify a Docker inventory command. */
 export function runDockerInventoryCommand(
   command: string[],
@@ -29,7 +34,7 @@ export function runDockerInventoryCommand(
   } catch (error) {
     return {
       ok: false,
-      executableAbsent: (error as NodeJS.ErrnoException).code === 'ENOENT',
+      executableAbsent: executableAbsentFrom(error),
       reason: (error as Error).message,
     }
   }

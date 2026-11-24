@@ -37,7 +37,7 @@ afterEach(() => {
   installRecordApiClient(null)
 })
 
-test('sweep finish reports Docker absence once and each failure reason once', () => {
+function dockerFinishLines(dryRun: boolean): { info: string[]; errors: string[] } {
   const info: string[] = []
   const errors: string[] = []
   let dockerAbsent = false
@@ -48,6 +48,7 @@ test('sweep finish reports Docker absence once and each failure reason once', ()
   observeDockerAbsent()
 
   reportDockerInventoryFinish(
+    dryRun,
     {
       log: (...values) => info.push(values.join(' ')),
       error: (...values) => errors.push(values.join(' ')),
@@ -60,8 +61,27 @@ test('sweep finish reports Docker absence once and each failure reason once', ()
     },
   )
 
-  expect(info).toEqual(['docker: executable not found; Docker inventory steps skipped'])
-  expect(errors).toEqual(['docker ps -a inventory unavailable: daemon unavailable'])
+  return { info, errors }
+}
+
+test('dry-run sweep finish restores exact Docker inventory error lines', () => {
+  expect(dockerFinishLines(true)).toEqual({
+    info: ['docker: executable not found; Docker inventory steps skipped'],
+    errors: [
+      '\nwould report inventory unavailable: 1',
+      '  would report docker ps -a inventory unavailable: daemon unavailable',
+    ],
+  })
+})
+
+test('real sweep finish restores exact Docker inventory error lines', () => {
+  expect(dockerFinishLines(false)).toEqual({
+    info: ['docker: executable not found; Docker inventory steps skipped'],
+    errors: [
+      '\ninventory unavailable: 1',
+      '  docker ps -a inventory unavailable: daemon unavailable',
+    ],
+  })
 })
 
 test('hosted session context sweep keeps foreign holders and drops owned expired holders', () => {

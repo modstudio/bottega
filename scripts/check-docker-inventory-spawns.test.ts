@@ -18,3 +18,30 @@ test('Docker inventory spawn guard permits the shared helper and unrelated comma
   `
   expect(dockerInventorySpawnBypasses(source, 'fixture.ts')).toEqual([])
 })
+
+test('Docker inventory spawn guard permits bounded classified network inventory', () => {
+  const source = `
+    try {
+      startBoundedSync(['docker', 'network', 'ls'], { budget: 'docker' })
+    } catch (error) {
+      executableAbsentFrom(error)
+    }
+  `
+  expect(
+    dockerInventorySpawnBypasses(source, 'orchestrator/src/resources/docker-resources.ts'),
+  ).toEqual([])
+})
+
+test('Docker inventory spawn guard refuses unclassified or incorrectly budgeted network inventory', () => {
+  const source = `
+    try {
+      startBoundedSync(['docker', 'network', 'ls'], { budget: 'git-plumbing' })
+    } catch (error) {
+      executableAbsentFrom(error)
+    }
+    startBoundedSync(['docker', 'network', 'ls'], { budget: 'docker' })
+  `
+  expect(
+    dockerInventorySpawnBypasses(source, 'orchestrator/src/resources/docker-resources.ts'),
+  ).toHaveLength(2)
+})

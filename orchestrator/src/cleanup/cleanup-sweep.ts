@@ -454,7 +454,7 @@ async function finishSweep(
   dockerInventory: { errors: Set<string>; absent: boolean },
 ): Promise<void> {
   const { dryRun: dry, project = null, presentation } = options
-  reportDockerInventoryFinish(presentation, dockerInventory)
+  reportDockerInventoryFinish(dry, presentation, dockerInventory)
   const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, project, presentation)
   if (!dry) {
     const repaired = backfillRunRecordsForSweep()
