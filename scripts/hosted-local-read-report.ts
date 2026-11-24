@@ -69,6 +69,8 @@ export type HostedLocalReadHit = {
   kind: HostedLocalReadKind
   path: HostedLocalReadPath
   reason: string
+  exclusionReason?: string
+  functionName?: string
   module: string
 }
 export type HostedLocalReadReport = {
@@ -131,6 +133,7 @@ export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]):
   return hits.flatMap((hit) =>
     hit.kind === 'read' &&
     (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
+    hit.exclusionReason !== 'planned' &&
     refused.has(hit.table)
       ? [
           `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; read the hosted record through the hub client on a hosted install`,
@@ -224,15 +227,26 @@ function matchingDelimiter(source: string, start: number, open: string, close: s
   return -1
 }
 
+function functionBodyRange(source: string, parenEnd: number): SourceRange | null {
+  let start = source.indexOf('{', parenEnd)
+  while (start >= 0) {
+    const end = matchingDelimiter(source, start, '{', '}')
+    if (end < 0) return null
+    const next = source.slice(end + 1).match(/\S/)?.[0]
+    if (!next || !['>', '[', '|', '&', '{'].includes(next)) return { start, end }
+    start = source.indexOf('{', end + 1)
+  }
+  return null
+}
+
 function functionRanges(source: string): Array<SourceRange & { name: string }> {
   const ranges: Array<SourceRange & { name: string }> = []
-  for (const match of source.matchAll(/\bfunction\s+(\w+)\s*\(/g)) {
+  for (const match of source.matchAll(/\bfunction\s+(\w+)(?:<[^\n]*>)?\s*\(/g)) {
     const parenStart = (match.index ?? 0) + match[0].lastIndexOf('(')
     const parenEnd = matchingDelimiter(source, parenStart, '(', ')')
-    const start = source.indexOf('{', parenEnd)
-    if (parenEnd < 0 || start < 0 || source.slice(parenEnd, start).includes(';')) continue
-    const end = matchingDelimiter(source, start, '{', '}')
-    if (end >= 0) ranges.push({ name: match[1] ?? '(anonymous)', start, end })
+    if (parenEnd < 0) continue
+    const range = functionBodyRange(source, parenEnd)
+    if (range) ranges.push({ name: match[1] ?? '(anonymous)', ...range })
   }
   for (const match of source.matchAll(
     /\b(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]+)?=>\s*\{/g,
@@ -384,6 +398,15 @@ function selectorPath(candidate: HostedLocalReadCandidate): SelectorPath {
   return null
 }
 
+function enclosingFunctionName(candidate: HostedLocalReadCandidate): string | undefined {
+  if (!candidate.sourceText) return undefined
+  const source = maskSource(candidate.sourceText)
+  const offset = siteOffset(source, candidate.line)
+  return functionRanges(source)
+    .filter((range) => range.start < offset && offset < range.end)
+    .sort((left, right) => right.start - left.start)[0]?.name
+}
+
 export function hostedLocalSqlExemptionReasonFailures(
   allowedFiles: readonly HostedLocalReadAllowedFile[],
 ): string[] {
@@ -482,7 +505,7 @@ function classifiedPath(
   candidate: HostedLocalReadCandidate,
   table: HostedLocalReadTable | null,
   allowedFiles: readonly HostedLocalReadAllowedFile[],
-): Pick<HostedLocalReadHit, 'path' | 'reason'> {
+): Pick<HostedLocalReadHit, 'path' | 'reason' | 'exclusionReason'> {
   if (table?.cache)
     return { path: 'excluded-by-design', reason: 'hosted cache table is local by design' }
   if (table?.readCache && hostedLocalReadKind(candidate.sql) === 'read')
@@ -492,11 +515,25 @@ function classifiedPath(
     }
   if (LOCAL_ADAPTER.test(candidate.file))
     return { path: 'local-only', reason: 'file matches LOCAL_SQLITE_ADAPTER_PATH' }
+  const functionName = enclosingFunctionName(candidate)
   const allowed = allowedFiles.find(
-    ({ pattern, line }) =>
-      pattern.test(candidate.file) && (line === undefined || line === candidate.line),
+    ({ pattern, functionName: allowedFunction }) =>
+      pattern.test(candidate.file) &&
+      (allowedFunction === undefined || allowedFunction === functionName),
   )
   const allowedDetail = allowed?.detail ?? allowed?.reason ?? ''
+  if (allowed?.reason === 'planned')
+    return {
+      path: 'hosted-reachable',
+      reason: `planned: ${allowedDetail}`,
+      exclusionReason: 'planned',
+    }
+  if (allowed?.reason === 'local-only')
+    return {
+      path: 'local-only',
+      reason: `reasoned local-only allowlist: ${allowedDetail}`,
+      exclusionReason: 'local-only',
+    }
   if (allowedDetail.includes(OWNERSHIP_SELECTOR))
     return {
       path: 'local-only',
@@ -537,12 +574,14 @@ export function classifyHostedLocalReadSites(input: {
 }): HostedLocalReadHit[] {
   const tablesByName = new Map(input.tables.map((table) => [table.table, table]))
   return input.candidates.flatMap((candidate) => {
+    const functionName = enclosingFunctionName(candidate)
     const namedTables = candidate.dynamicTable
       ? [null]
       : input.tables.filter(({ table }) => hostedTableInSql(candidate.sql, [table]) !== null)
     return namedTables.map((table) => ({
       file: candidate.file,
       line: candidate.line,
+      ...(functionName ? { functionName } : {}),
       table: table?.table ?? `dynamic:${candidate.expression ?? '(unknown)'}`,
       kind: hostedLocalReadKind(candidate.sql),
       ...classifiedPath(

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadAllowedFile,
@@ -17,6 +18,7 @@ import { extractSqlFromSource } from './hosted-sql-schema.ts'
 
 const tables = [
   { table: 'hosted_row', cache: false },
+  { table: 'task', cache: false },
   { table: 'hosted_cache', cache: true },
   {
     table: 'declared_cache',
@@ -185,6 +187,36 @@ test('refuses hosted-reachable and cannot-tell reads of B2 hub tables', () => {
       { ...hit, table: 'typed_question_answer' },
     ]),
   ).toEqual([])
+})
+
+test('reports planned reads as hosted-reachable without refusing them', () => {
+  const source = `function plannedRead() {
+    db.query(\`SELECT * FROM task\`)
+  }`
+  const [planned] = classifyHostedLocalReadSites({
+    candidates: candidates('hub/src/planned.ts', source),
+    tables,
+    allowedFiles: [
+      {
+        pattern: /^hub\/src\/planned\.ts$/,
+        functionName: 'plannedRead',
+        reason: 'planned',
+        detail: `planned by project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads`,
+        expectedSites: 1,
+        reportOnly: true,
+      },
+    ],
+  })
+  expect(planned).toMatchObject({
+    path: 'hosted-reachable',
+    exclusionReason: 'planned',
+    functionName: 'plannedRead',
+  })
+  expect(planned?.reason).toContain(`project/${PLATFORM_SLUG}/plan-dev-2608-b3-local-task-reads`)
+  expect(hostedHubLocalReadFailures([planned!])).toEqual([])
+  expect(hostedHubLocalReadFailures([{ ...planned!, exclusionReason: undefined }])).toEqual([
+    expect.stringContaining('hosted install can read task'),
+  ])
 })
 
 test.each([

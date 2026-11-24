@@ -44,7 +44,7 @@ export function reportOnlyAllowedFileBudgetFailures(
         .filter(
           (hit) =>
             allowed.pattern.test(hit.file) &&
-            (allowed.line === undefined || allowed.line === hit.line),
+            (allowed.functionName === undefined || allowed.functionName === hit.functionName),
         )
         .map((hit) => `${hit.file}:${hit.line}`),
     ).size
