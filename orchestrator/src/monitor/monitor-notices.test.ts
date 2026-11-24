@@ -54,7 +54,7 @@ test('heartbeat delivery emits hosted instead of differing local rows', async ()
       body: 'local monitor body',
       ackRequired: false,
     },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt),
   )
   const hosted: HostedBoardMessage = {

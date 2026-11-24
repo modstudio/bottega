@@ -287,7 +287,7 @@ describe('the live ask channel always answers', () => {
     db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
     const local = postNotice(
       { audience: `run:${run}`, title: 'Local ask', body: 'local ask body' },
-      {},
+      { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       Date.parse(pushedAt),
     )
     const hosted: HostedBoardMessage = {

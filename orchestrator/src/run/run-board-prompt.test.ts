@@ -167,7 +167,7 @@ test('dispatch and later-turn injection use hosted instead of differing local ro
   })
   const firstLocal = postNotice(
     { audience: `run:${root.id}`, title: 'Local prompt', body: 'local prompt body' },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt),
   )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
@@ -187,7 +187,7 @@ test('dispatch and later-turn injection use hosted instead of differing local ro
     .run(laterHosted.id, laterHosted.kind, null, laterHosted.revision, JSON.stringify(laterHosted))
   const laterLocal = postNotice(
     { audience: `run:${root.id}`, title: 'Local later', body: 'local later body' },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt) + 1_000,
   )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')

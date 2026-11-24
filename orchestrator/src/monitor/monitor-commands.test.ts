@@ -95,7 +95,7 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
       body: 'The command presentation includes this notice.',
       ackRequired: false,
     },
-    {},
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   )
   let changesCalls = 0
   installRecordApiClient({
