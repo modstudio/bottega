@@ -109,6 +109,14 @@ function persistedAdvanceRenderFailure(input: {
   )
 }
 
+function persistedAdvanceNoticesError(
+  error: unknown,
+  notices: readonly (string | null | undefined)[],
+): Error {
+  const message = error instanceof Error ? error.message : String(error)
+  return new Error([message, ...notices].filter(Boolean).join('\n'), { cause: error })
+}
+
 export function workflowAdvanceResultText(input: {
   takeoverNotice: string | null
   rendered: string
@@ -203,6 +211,7 @@ export async function renderWorkflowAdvanceResult(input: {
 export async function renderPersistedWorkflowAdvanceResult(
   input: Parameters<typeof renderWorkflowAdvanceResult>[0] & {
     closedStep: { n: number; slug: string }
+    notices?: readonly (string | null | undefined)[]
   },
 ): Promise<string> {
   try {
@@ -210,11 +219,14 @@ export async function renderPersistedWorkflowAdvanceResult(
   } catch (error) {
     if (input.advance.ordinal === null) throw error
     const active = input.composition.steps[input.advance.ordinal]!
-    throw persistedAdvanceRenderFailure({
-      row: input.row,
-      closed: input.closedStep,
-      active,
-      error,
-    })
+    throw persistedAdvanceNoticesError(
+      persistedAdvanceRenderFailure({
+        row: input.row,
+        closed: input.closedStep,
+        active,
+        error,
+      }),
+      input.notices ?? [],
+    )
   }
 }

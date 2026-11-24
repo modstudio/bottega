@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
@@ -11,11 +16,6 @@ import {
   selectAndNextWorkflowStep as nextWorkflowStep,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
-import {
-  productionStepCatalogue,
-  promoteStepCatalogueLocal,
-  setStepCatalogueLocal,
-} from './step-catalogue.ts'
 import { attachWorkflowTextByHandle } from './workflow-text.ts'
 
 describe('workflow cursor task reference', () => {

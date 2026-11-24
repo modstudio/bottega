@@ -465,12 +465,7 @@ async function persistWorkflowAdvance(
   )
   const finishing = advance.ordinal === null
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
-  const deleteTextIds = await advanceTextDeletionIds(
-    row,
-    closesText,
-    d,
-    context.taskFlowClient,
-  )
+  const deleteTextIds = await advanceTextDeletionIds(row, closesText, d, context.taskFlowClient)
   if (finishing) {
     return await writeFinishingWorkflowAdvance({
       row,
@@ -817,28 +812,21 @@ async function nextWorkflowStepImpl(
         database: d,
       })) ?? claimWarning
   }
-  let rendered: string
-  try {
-    rendered = await renderPersistedWorkflowAdvanceResult({
-      row,
-      composition,
-      closed: close.closed,
-      advance: close.advance,
-      closedStep: step,
-      slug,
-      project,
-      mode,
-      selfRuling,
-      d,
-      client: context.taskFlowClient,
-      live,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error([message, taskLinkNotice, keptTextNotice].filter(Boolean).join('\n'), {
-      cause: error,
-    })
-  }
+  const rendered = await renderPersistedWorkflowAdvanceResult({
+    row,
+    composition,
+    closed: close.closed,
+    advance: close.advance,
+    closedStep: step,
+    notices: [taskLinkNotice, keptTextNotice],
+    slug,
+    project,
+    mode,
+    selfRuling,
+    d,
+    client: context.taskFlowClient,
+    live,
+  })
   const activeStep =
     close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]
   return {
