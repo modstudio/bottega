@@ -1019,7 +1019,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
   const classMeasured =
     input.floors.some((floor) => floor.kind === 'class-measured') ||
-    input.evidence.satisfy?.floor.kind === 'class-measured'
+    input.evidence.satisfy?.floor?.kind === 'class-measured'
     ? decideClassMeasuredFloor({
         className: input.evidence.className,
         artifacts: input.evidence.artifacts ?? [],
