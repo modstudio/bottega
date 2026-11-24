@@ -101,13 +101,14 @@ async function openEpicAtStart(
   tasks: TaskReadRow[],
   session = 'epic-owner',
   epic = 'DEV-1',
+  mode = 'feature',
 ) {
   installTasks(tasks)
-  const composition = composeWorkflow('plan-task', 'fixture', 'feature', { key: epic }, d)
+  const composition = composeWorkflow('plan-task', 'fixture', mode, { key: epic }, d)
   const opened = await composeWorkflowWithCursor(
     'plan-task',
     'fixture',
-    'feature',
+    mode,
     { key: epic },
     { session, workflowKey: epic, taskRecordId: `task-${epic}`, taskStatusCategory: 'open' },
     d,
@@ -155,7 +156,11 @@ function hostedClaim(
   }
 }
 
-async function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClaim>[]) {
+async function useHostedClaims(
+  d: Database,
+  claims: ReturnType<typeof hostedClaim>[],
+  duplicateEpic?: { session: string; mode: string },
+) {
   const localStages = await taskFlowReadStore(d).listStages({
     project: 'fixture',
     states: [...TASK_FLOW_OPEN_STAGE_STATES],
@@ -211,6 +216,19 @@ async function useHostedClaims(d: Database, claims: ReturnType<typeof hostedClai
       updatedAt: stage.updated_at,
     },
   }))
+  if (duplicateEpic && taskFlowStages[0]) {
+    const duplicate = structuredClone(taskFlowStages[0])
+    duplicate.stage.id = newRecordId()
+    duplicate.stage.flowRecordId = newRecordId()
+    duplicate.stage.number += 1000
+    duplicate.stage.mode = duplicateEpic.mode
+    duplicate.stage.sessionId = duplicateEpic.session
+    duplicate.stage.updatedAt = '2099-01-01T00:00:00.000Z'
+    duplicate.flow.id = duplicate.stage.flowRecordId
+    duplicate.flow.openStageRecordId = duplicate.stage.id
+    duplicate.flow.updatedAt = duplicate.stage.updatedAt
+    taskFlowStages.push(duplicate)
+  }
   d.query('DELETE FROM board_claim').run()
   d.query(
     "UPDATE project SET settings=json_set(settings,'$.space','space-fixture') WHERE name='fixture'",
@@ -444,7 +462,58 @@ test('queue refuses with a compose remedy when no ancestor has an open epic curs
       },
       d,
     ),
-  ).rejects.toThrow('compose plan-task for the epic')
+  ).rejects.toThrow(
+    'bottega workflow compose plan-task --project fixture --arg key=DEV-1',
+  )
+})
+
+test("queue prefers the caller's open cursor when another mode has a newer cursor on the epic", async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  await openEpicAtStart(d, tasks, 'caller-owner', 'DEV-1', 'feature')
+  await useHostedClaims(d, [], { session: 'newer-owner', mode: 'fix' })
+
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'caller-owner',
+        callerSession: 'caller-owner',
+        off: false,
+      },
+      d,
+    ),
+  ).resolves.toMatchObject({ child: 'DEV-2', session: 'caller-owner' })
+})
+
+test('queue and start-child ownership refusals name the owner and runnable compose command', async () => {
+  const d = database()
+  const tasks = [row('DEV-1', null), row('DEV-2', 'DEV-1')]
+  const epic = await openEpicAtStart(d, tasks)
+  const remedy =
+    'cursor ' +
+    epic.cursor +
+    ' is owned by session epic-owner; compose the epic cursor with bottega workflow compose plan-task --project fixture --mode feature --arg key=DEV-1'
+
+  await expect(
+    queueWorkflowChild(
+      {
+        project: 'fixture',
+        child: 'DEV-2',
+        session: 'other',
+        callerSession: 'other',
+        off: false,
+      },
+      d,
+    ),
+  ).rejects.toThrow(remedy)
+  await expect(
+    startWorkflowChild(
+      { project: 'fixture', cursor: epic.cursor, task: 'DEV-2', callerSession: 'other' },
+      d,
+    ),
+  ).rejects.toThrow(remedy)
 })
 
 test('queued caller starts its child, closes the queue as started, and owns the task claim', async () => {

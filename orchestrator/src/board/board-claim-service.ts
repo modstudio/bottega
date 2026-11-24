@@ -279,10 +279,13 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
   const details = conflicts.map((conflict) => {
     const named =
       conflict.holder_kind === 'operator' ? 'operator' : `session ${conflict.holder_session}`
-    const remedy =
+    const ask =
       conflict.holder_kind === 'architect'
-        ? `ask with ${PLATFORM_SLUG} board ask --audience session:${conflict.holder_session}, or wait`
-        : 'wait for the operator claim to lapse'
+        ? `ask with ${PLATFORM_SLUG} board ask --audience session:${conflict.holder_session}`
+        : null
+    if (claimBoundToOpenCursor(conflict, context.database))
+      return `${named}'s claim follows that session's open workflow cursor on ${conflict.subject_value} (${ask}; the claim ends when the holder finishes or abandons that cursor)`
+    const remedy = ask ? `${ask}, or wait` : 'wait for the operator claim to lapse'
     return `${named} until ${conflict.lapses_at} (${remedy})`
   })
   return {
@@ -572,8 +575,7 @@ export function releaseTaskClaims(
   }, database)
 }
 
-export function stampEndedClaims(clock = Date.now()): number {
-  const database = writableDb()
+export function stampEndedClaims(clock = Date.now(), database = writableDb()): number {
   return writeTransaction(() => {
     const rows = database
       .query(`SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE closed_at IS NULL`)

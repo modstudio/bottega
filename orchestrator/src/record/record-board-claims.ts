@@ -39,6 +39,15 @@ import { TASK_FLOW_OPEN_STAGE_STATES_SQL } from './record-task-flow-contract.ts'
 
 export const CLAIM_CONFLICT = 'claim conflicts with:'
 
+const HOSTED_OPEN_CURSOR_BOUND_SQL = `EXISTS (
+  SELECT 1 FROM task_flow_stage stage
+  WHERE claim.subject_kind='task'
+    AND stage.project_id=claim.project_id
+    AND stage.workflow_key=claim.subject_value
+    AND stage.session_id=claim.holder_session
+    AND stage.state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})
+)`
+
 type ClaimRow = Record<string, unknown>
 
 function hostedLive(row: ClaimRow, clock: number): boolean {
@@ -122,14 +131,7 @@ async function singleClaimView(
 async function loadClaim(tx: SQL, id: string): Promise<ClaimRow | null> {
   const rows = await tx`
     SELECT claim.*,
-      EXISTS (
-        SELECT 1 FROM task_flow_stage stage
-        WHERE claim.subject_kind='task'
-          AND stage.project_id=claim.project_id
-          AND stage.workflow_key=claim.subject_value
-          AND stage.session_id=claim.holder_session
-          AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
-      ) bound_to_open_cursor
+      ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
     FROM board_claim claim WHERE claim.id=${id}::uuid
   `
   return rows[0] ? (rows[0] as ClaimRow) : null
@@ -246,6 +248,11 @@ function liveClaimRefusal(rows: ClaimRow[]): string {
       row.holder_session == null
         ? ''
         : `ask with ${PLATFORM_SLUG} board ask --audience session:${String(row.holder_session)}, `
+    if (row.bound_to_open_cursor === true)
+      return (
+        `${holder}'s claim ${String(row.id)} follows that session's open workflow cursor on ${String(row.subject_value)} ` +
+        `(${ask}the claim ends when the holder finishes or abandons that cursor)`
+      )
     return (
       `${holder} holding claim ${String(row.id)} until ${nullableRecordIso(row.lapses_at)} ` +
       `(${ask}release claim ${String(row.id)}, or wait for lapse)`
@@ -526,12 +533,7 @@ async function readTakeOverlaps(
   const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
   const open = (await tx`
     SELECT claim.*,
-      EXISTS (
-        SELECT 1 FROM task_flow_stage stage
-        WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
-          AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
-          AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
-      ) bound_to_open_cursor
+      ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
     FROM board_claim claim WHERE claim.project_id=${projectId}::uuid AND claim.closed_at IS NULL
     ORDER BY taken_at, id
   `) as ClaimRow[]
@@ -682,12 +684,7 @@ export async function listHostedBoardClaims(
       input.openOnly
         ? await tx`
           SELECT claim.*,
-            EXISTS (
-              SELECT 1 FROM task_flow_stage stage
-              WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
-                AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
-                AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
-            ) bound_to_open_cursor
+            ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
           FROM (
             SELECT * FROM board_claim
             WHERE project_id=${projectId}::uuid AND closed_at IS NULL
@@ -696,12 +693,7 @@ export async function listHostedBoardClaims(
         `
         : await tx`
           SELECT claim.*,
-            EXISTS (
-              SELECT 1 FROM task_flow_stage stage
-              WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
-                AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
-                AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
-            ) bound_to_open_cursor
+            ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
           FROM (
             SELECT * FROM board_claim WHERE project_id=${projectId}::uuid
           ) claim
@@ -721,12 +713,7 @@ export async function releaseHostedBoardTaskClaims(
     const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
     const rows = (await tx`
       SELECT claim.*,
-        EXISTS (
-          SELECT 1 FROM task_flow_stage stage
-          WHERE claim.subject_kind='task' AND stage.project_id=claim.project_id
-            AND stage.workflow_key=claim.subject_value AND stage.session_id=claim.holder_session
-            AND stage.state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
-        ) bound_to_open_cursor
+        ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
       FROM board_claim claim
       WHERE claim.project_id=${projectId}::uuid AND claim.subject_kind=${'task'} AND claim.subject_value=${input.key}
         AND claim.closed_at IS NULL
@@ -736,7 +723,7 @@ export async function releaseHostedBoardTaskClaims(
     )
     if (foreignLive.length) {
       throw new RecordBoardError(
-        `${CLAIM_CONFLICT} ${foreignLive.map((row) => `user ${String(row.holder_user_id)} until ${nullableRecordIso(row.lapses_at)}`).join('; ')}`,
+        liveClaimRefusal(foreignLive),
         409,
       )
     }

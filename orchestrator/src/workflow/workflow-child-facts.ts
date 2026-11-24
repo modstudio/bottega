@@ -86,6 +86,7 @@ export async function nearestOpenEpicCursor(
   database: Database,
   project: string,
   ancestorKeys: readonly string[],
+  callerSession: string,
 ) {
   if (ancestorKeys.length === 0) return null
   const stages = await taskFlowReadStore(database).listStages({
@@ -93,11 +94,13 @@ export async function nearestOpenEpicCursor(
     workflowKeys: [...ancestorKeys],
     states: [...TASK_FLOW_OPEN_STAGE_STATES],
   })
-  const byKey = new Map(
-    stages
-      .filter((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start')
-      .map((stage) => [stage.workflow_key, stage]),
-  )
+  const byKey = new Map<string, (typeof stages)[number]>()
+  for (const stage of stages) {
+    if (stage.workflow_slug !== 'plan-task' || stage.step_slug !== 'start') continue
+    const existing = byKey.get(stage.workflow_key)
+    if (!existing || stage.session_id === callerSession || existing.session_id !== callerSession)
+      byKey.set(stage.workflow_key, stage)
+  }
   for (const key of ancestorKeys) {
     const stage = byKey.get(key)
     if (stage) return stage

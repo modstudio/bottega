@@ -31,6 +31,10 @@ import type { ClosedStep } from './workflow-cursor-trail.ts'
 import type { HubTaskReference } from './workflow-task-reference.ts'
 import { descendantTaskKeys } from './workflow-task-tree.ts'
 import { composeWorkflow } from './workflows.ts'
+import {
+  workflowCursorComposeCommand,
+  workflowDefaultModeComposeCommand,
+} from './workflow-cursor-format.ts'
 
 type StartChildClaimContext = Parameters<typeof boardClaimTake>[1]
 type StartChildClaimInput = Parameters<typeof boardClaimTake>[0]
@@ -114,10 +118,15 @@ export async function queueWorkflowChild(
   const tasks = await readProjectTaskList(input.project)
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
-  const epicCursor = await nearestOpenEpicCursor(database, input.project, ancestors)
+  const epicCursor = await nearestOpenEpicCursor(
+    database,
+    input.project,
+    ancestors,
+    input.callerSession,
+  )
   if (!epicCursor)
     throw new Error(
-      `${input.child} has no ancestor with an open epic plan-task cursor; compose plan-task for the epic`,
+      `${input.child} has no ancestor with an open epic plan-task cursor; compose the nearest ancestor epic cursor with ${workflowDefaultModeComposeCommand('plan-task', input.project, { key: ancestors[0]! })}`,
     )
   const root = epicCursor.workflow_key
   const claims = await liveChildClaims(database, input.project)
@@ -134,7 +143,7 @@ export async function queueWorkflowChild(
     )
   )
     throw new Error(
-      `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it`,
+      `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it; cursor ${epicCursor.id} is owned by session ${epicCursor.session_id}; compose the epic cursor with ${workflowCursorComposeCommand(epicCursor)}`,
     )
   if (input.off) {
     const closed = await boardQueuedClaimClose(
@@ -194,7 +203,7 @@ export async function startWorkflowChild(
     )
   )
     throw new Error(
-      `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it`,
+      `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it; cursor ${epic.id} is owned by session ${epic.session_id}; compose the epic cursor with ${workflowCursorComposeCommand(epic)}`,
     )
   const state = childQueueState(epic.workflow_key, input.callerSession, facts)
   const selected = selectChildToStart(state, facts, input.task)
