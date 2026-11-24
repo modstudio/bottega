@@ -118,6 +118,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-prelaunch-refusal.ts',
     [
       '../database/db.ts',
+      '../recipe/recipe-executable-preflight.ts',
       '../resources/resource-ownership.ts',
       '../sandbox/project-mcp-preflight.ts',
       './run-startup-failure.ts',

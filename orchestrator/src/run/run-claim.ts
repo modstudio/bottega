@@ -104,7 +104,7 @@ import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
-import { startupFailureKind } from './run-startup-failure-kind.ts'
+import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
@@ -1022,7 +1022,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     try {
       // Setting a worktree up is orchestrator's job, so this shared harness failure
       // must publish the child and roll its outcome up to a continuation root.
-      recordRunStartupFailure(claim.id, why, started, { failureKind: startupFailureKind(e) })
+      recordRunStartupFailure(claim.id, why, started, carriedRefusalFailure(e))
     } finally {
       teardownTerminalRunResources(db(), claim.id)
     }

@@ -65,6 +65,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/recipe/recipe-loader.ts',
       'orchestrator/src/recipe/recipe-executable-preflight.ts',
       'orchestrator/src/recipe/recipe-schema.ts',
+      'orchestrator/src/recipe/recipe-step.ts',
       'orchestrator/src/worktree/worktree-lifecycle.ts',
       'orchestrator/src/health/doctor-reporter.ts',
     ],

@@ -1,12 +1,33 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { RecipePrerequisiteError } from '../recipe/recipe-executable-preflight.ts'
 import {
   RequiredMcpProbeRefusalError,
   requiredMcpProbeDecision,
 } from '../sandbox/project-mcp-preflight.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
+
+test('carries the failure kind of recognized prelaunch refusals', () => {
+  const prerequisite = new RecipePrerequisiteError('starship', [
+    { phase: 'create', step: 'root-deps', tool: 'bun' },
+  ])
+  const mcp = new RequiredMcpProbeRefusalError(
+    requiredMcpProbeDecision({
+      mode: 'require',
+      project: { name: 'starship', path: '/opt/starship' },
+      failures: [{ server: 'starship', error: 'not configured' }],
+    }).refusal!,
+  )
+
+  expect(carriedRefusalFailure(prerequisite)).toEqual({ failureKind: 'prerequisite' })
+  expect(carriedRefusalFailure(mcp)).toEqual({
+    failureKind: 'mcp_unverified',
+    mcpError: mcp.message,
+  })
+  expect(carriedRefusalFailure(new Error('another startup failure'))).toBeUndefined()
+})
 
 test('an MCP prelaunch refusal publishes the child and rolls up its root once', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })

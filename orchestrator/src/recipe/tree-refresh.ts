@@ -20,8 +20,8 @@ import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { assertRecipeExecutables } from './recipe-executable-preflight.ts'
 import { teardownVars } from './recipe-lifecycle.ts'
 import { loadTrackedRecipe } from './recipe-loader.ts'
-import { stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
-import { runStep, type StepContext } from './recipe-step.ts'
+import { phasedRecipeSteps, stepPlaceholders, type TrackedRecipe } from './recipe-schema.ts'
+import { hostExecutableOnPath, runStep, type StepContext } from './recipe-step.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot, readSnapshot } from './tracked-recipe.ts'
 
 export type TreeRefreshDecision =
@@ -318,8 +318,8 @@ function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): st
   }
   assertRecipeExecutables(
     project.name,
-    (loaded.recipe.refresh ?? []).map((step) => ({ phase: 'refresh', step })),
-    (name) => Bun.which(name, { PATH: process.env.PATH }) !== null,
+    phasedRecipeSteps(loaded.recipe).filter(({ phase }) => phase === 'refresh'),
+    hostExecutableOnPath,
   )
   const roots = recordedChainRootsForWorktree(treeRoot)
   if (roots.length > 1) {

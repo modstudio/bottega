@@ -158,6 +158,10 @@ export function stepOutcome(
   }
 }
 
+export function hostExecutableOnPath(name: string): boolean {
+  return Bun.which(name, { PATH: process.env.PATH }) !== null
+}
+
 const defaultSpawn: Spawn = (argv, cwd) => {
   const result = Bun.spawnSync(argv, {
     cwd,
