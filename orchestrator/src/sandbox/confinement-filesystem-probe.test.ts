@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   decideOutboundRefusal,
   probeWorkerEnvironment,
+  runBeforeProbeTeardown,
   sandboxGitSpawnVerdict,
 } from './confinement-filesystem-probe.ts'
 import { probeVerdict } from './confinement-probe-verdict.ts'
@@ -19,6 +20,31 @@ test('the probe worker environment carries the ask loopback URL', () => {
   expect(probeWorkerEnvironment(environment, 'tcp://127.0.0.1:43127').BOTTEGA_ASK_URL).toBe(
     'tcp://127.0.0.1:43127',
   )
+})
+
+test('the probe keeps its resources alive until every row finishes', async () => {
+  const events: string[] = []
+  let finishRows: (() => void) | undefined
+  const rowsFinished = new Promise<void>((resolve) => {
+    finishRows = resolve
+  })
+  const result = runBeforeProbeTeardown(
+    async () => {
+      events.push('rows started')
+      await rowsFinished
+      events.push('rows finished')
+      return 'rows'
+    },
+    () => {
+      events.push('resources closed')
+    },
+  )
+
+  await Promise.resolve()
+  expect(events).toEqual(['rows started'])
+  finishRows!()
+  expect(await result).toBe('rows')
+  expect(events).toEqual(['rows started', 'rows finished', 'resources closed'])
 })
 
 describe('decideOutboundRefusal', () => {

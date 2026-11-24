@@ -937,6 +937,17 @@ async function runProbeRows(
   ]
 }
 
+export async function runBeforeProbeTeardown<T>(
+  run: () => Promise<T>,
+  teardown: () => Promise<void> | void,
+): Promise<T> {
+  try {
+    return await run()
+  } finally {
+    await teardown()
+  }
+}
+
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
   const probeParent = tmpdir()
@@ -945,31 +956,34 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
   const priorStateRoot = process.env[STATE_HOME_ENV]
   let hubWriter: Database | null = null
   let askLoopback: AskLoopback | null = null
-  try {
-    const fixture = createProbeFixture(root)
-    hubWriter = fixture.hubWriter
-    process.env[STATE_HOME_ENV] = fixture.stateRoot
-    askLoopback = await startAskLoopback(
-      PROBE_RUN_ID,
-      PROBE_RUN_TOKEN,
-      probeWorkerRecordDependencies({
-        task: fixture.probeTask,
-        project: fixture.common.project,
-        runId: PROBE_RUN_ID,
-        token: PROBE_RUN_TOKEN,
-        spaceId: PROBE_SPACE_ID,
-      }),
-    )
-    const workerEnvironment = probeWorkerEnvironment(fixture.environment, askLoopback.url)
-    const askAddress = askLoopback.url.slice('tcp://'.length)
-    return runProbeRows(fixture, workerEnvironment, askAddress)
-  } finally {
-    await askLoopback?.close()
-    hubWriter?.close()
-    if (priorStateRoot === undefined) delete process.env[STATE_HOME_ENV]
-    else process.env[STATE_HOME_ENV] = priorStateRoot
-    rmSync(root, { recursive: true, force: true })
-  }
+  return runBeforeProbeTeardown(
+    async () => {
+      const fixture = createProbeFixture(root)
+      hubWriter = fixture.hubWriter
+      process.env[STATE_HOME_ENV] = fixture.stateRoot
+      askLoopback = await startAskLoopback(
+        PROBE_RUN_ID,
+        PROBE_RUN_TOKEN,
+        probeWorkerRecordDependencies({
+          task: fixture.probeTask,
+          project: fixture.common.project,
+          runId: PROBE_RUN_ID,
+          token: PROBE_RUN_TOKEN,
+          spaceId: PROBE_SPACE_ID,
+        }),
+      )
+      const workerEnvironment = probeWorkerEnvironment(fixture.environment, askLoopback.url)
+      const askAddress = askLoopback.url.slice('tcp://'.length)
+      return await runProbeRows(fixture, workerEnvironment, askAddress)
+    },
+    async () => {
+      await askLoopback?.close()
+      hubWriter?.close()
+      if (priorStateRoot === undefined) delete process.env[STATE_HOME_ENV]
+      else process.env[STATE_HOME_ENV] = priorStateRoot
+      rmSync(root, { recursive: true, force: true })
+    },
+  )
 }
 
 export function formatConfinementFilesystemProbes(
