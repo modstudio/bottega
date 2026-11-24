@@ -517,7 +517,7 @@ test('idle sweep passes without later Docker calls when the executable is absent
     const error = new Error('spawn failed') as NodeJS.ErrnoException
     error.code = 'ENOENT'
     throw error
-  }) as typeof Bun.spawnSync)
+  }) as unknown as typeof Bun.spawnSync)
   const errors: string[] = []
   let absent = 0
 

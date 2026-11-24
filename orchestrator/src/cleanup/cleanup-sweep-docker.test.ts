@@ -26,7 +26,7 @@ test('Docker sweep passes without reclamation when the executable is absent', ()
     const error = new Error('spawn failed') as NodeJS.ErrnoException
     error.code = 'ENOENT'
     throw error
-  }) as typeof Bun.spawnSync)
+  }) as unknown as typeof Bun.spawnSync)
   const inventoryErrors = new Set<string>()
   let absent = 0
 
