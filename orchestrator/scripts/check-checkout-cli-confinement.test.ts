@@ -3,8 +3,9 @@ import { checkoutConfinementFailure } from './check-checkout-cli-confinement.ts'
 
 test('classifies only package failures and host-present relative imports as confinement failures', () => {
   expect(
-    checkoutConfinementFailure("Cannot find package 'missing-package' imported from /repo/main.ts", () =>
-      false,
+    checkoutConfinementFailure(
+      "Cannot find package 'missing-package' imported from /repo/main.ts",
+      () => false,
     ),
   ).toEqual({
     kind: 'package-resolution',

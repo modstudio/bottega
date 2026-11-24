@@ -438,9 +438,7 @@ export function checkoutConfinementFailure(
   const packageMatch = packageResolutionFailure(error)
   if (packageMatch) return { kind: 'package-resolution', match: packageMatch }
 
-  const relativeMatch = error.match(
-    /Cannot find module '(\.\.?\/[^']*)' imported from ([^\r\n]+)/,
-  )
+  const relativeMatch = error.match(/Cannot find module '(\.\.?\/[^']*)' imported from ([^\r\n]+)/)
   if (!relativeMatch) return null
   const [, specifier, importer] = relativeMatch
   if (!specifier || !importer || !relativeImportExists(specifier, importer)) return null
@@ -456,6 +454,26 @@ function hostCheckoutConfinementFailure(error: string): CheckoutConfinementFailu
   return checkoutConfinementFailure(error, (specifier, importer) =>
     existsSync(resolve(dirname(importer), specifier)),
   )
+}
+
+function handleConfinedToolsFailure(error: string, forceSource: boolean): void {
+  const confinementFailure = hostCheckoutConfinementFailure(error)
+  if (forceSource && confinementFailure?.kind === 'hidden-relative-import') {
+    console.log(
+      `forced source launch failed with a hidden relative import ${confinementFailure.specifier} (exists on host)`,
+    )
+    return
+  }
+  if (forceSource && confinementFailure?.kind === 'package-resolution') {
+    console.log(
+      `forced source launch failed with the package-resolution error: ${confinementFailure.match}`,
+    )
+    return
+  }
+  if (!forceSource && confinementFailure) {
+    throw new Error(`confined ask-server fell back to source: ${error}`)
+  }
+  throw new Error(`confined ask-server tools/list failed: ${error}`)
 }
 
 function fixtureEnvironment(operatorHome: string): Record<string, string> {
@@ -531,23 +549,8 @@ async function main(): Promise<void> {
     })
     if (!result.ok) {
       const error = result.error ?? 'unknown MCP probe failure'
-      const confinementFailure = hostCheckoutConfinementFailure(error)
-      if (forceSource && confinementFailure?.kind === 'hidden-relative-import') {
-        console.log(
-          `forced source launch failed with a hidden relative import ${confinementFailure.specifier} (exists on host)`,
-        )
-        return
-      }
-      if (forceSource && confinementFailure?.kind === 'package-resolution') {
-        console.log(
-          `forced source launch failed with the package-resolution error: ${confinementFailure.match}`,
-        )
-        return
-      }
-      if (!forceSource && confinementFailure) {
-        throw new Error(`confined ask-server fell back to source: ${error}`)
-      }
-      throw new Error(`confined ask-server tools/list failed: ${error}`)
+      handleConfinedToolsFailure(error, forceSource)
+      return
     }
     if (forceSource)
       throw new Error(
