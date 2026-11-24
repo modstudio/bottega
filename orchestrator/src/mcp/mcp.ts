@@ -15,8 +15,8 @@ import { readDocs as authoritativeDocs } from '../doc/doc-authoritative-read.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown } from '../doc/docs.ts'
 import {
-  readHarnessSession,
   type HarnessSessionReadResult,
+  readHarnessSession,
 } from '../harness-session/harness-session.ts'
 import type { HarnessProcessIdentity } from '../harness-session/harness-session-decision.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'

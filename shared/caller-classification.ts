@@ -1,6 +1,7 @@
 /** Classifies a caller from environment markers without knowing any concern state. */
-import { requestSession } from './request-session.ts'
+
 import type { HarnessName } from './harness-name.ts'
+import { requestSession } from './request-session.ts'
 
 export const OPERATOR_SESSION_PREFIX = 'operator:'
 

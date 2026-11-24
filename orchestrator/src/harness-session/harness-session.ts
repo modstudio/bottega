@@ -53,10 +53,7 @@ function parsePublicationName(name: string): HarnessProcessIdentity | null {
   return Number.isSafeInteger(pid) && pid > 1 ? { pid, startTime: matched[2]! } : null
 }
 
-function readPublication(
-  path: string,
-  identity: HarnessProcessIdentity,
-): HarnessSessionReadResult {
+function readPublication(path: string, identity: HarnessProcessIdentity): HarnessSessionReadResult {
   let source: string
   try {
     source = readFileSync(path, 'utf8')

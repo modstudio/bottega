@@ -9,7 +9,7 @@ export type RequestSession = {
   session: string
 }
 
-export type RequestSessionPublication = Pick<RequestSession, 'harness' | 'session'>
+type RequestSessionPublication = Pick<RequestSession, 'harness' | 'session'>
 export type RequestSessionPublicationLookup =
   | { kind: 'published'; publication: RequestSessionPublication }
   | { kind: 'absent' }
