@@ -61,7 +61,7 @@ function stringElements(node: ts.Expression | undefined): string[] | null {
   if (!node || !ts.isArrayLiteralExpression(node)) return null
   const values: string[] = []
   for (const element of node.elements) {
-    if (!ts.isStringLiteral(element)) return null
+    if (!ts.isStringLiteral(element) && !ts.isNoSubstitutionTemplateLiteral(element)) return null
     values.push(element.text)
   }
   return values
@@ -136,6 +136,8 @@ function approvedBoundedInventory(call: ts.CallExpression): boolean {
 }
 
 export function dockerInventorySpawnBypasses(source: string, fileName: string): string[] {
+  if (!source.includes("'docker'") && !source.includes('"docker"') && !source.includes('`docker`'))
+    return []
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true)
   const failures: string[] = []
   const visit = (node: ts.Node): void => {

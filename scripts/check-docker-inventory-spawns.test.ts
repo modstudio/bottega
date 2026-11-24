@@ -12,6 +12,19 @@ test('Docker inventory spawn guard refuses covered direct spawn forms', () => {
   expect(dockerInventorySpawnBypasses(source, 'fixture.ts')).toHaveLength(5)
 })
 
+test('Docker inventory spawn guard prefilter keeps every Docker quote style', () => {
+  const sources = [
+    `Bun.${'spawnSync'}(['docker', 'ps'])`,
+    `Bun.${'spawnSync'}(["docker", "ps"])`,
+    `Bun.${'spawnSync'}([\`docker\`, \`ps\`])`,
+  ]
+  expect(sources.map((source) => dockerInventorySpawnBypasses(source, 'fixture.ts'))).toEqual([
+    ['fixture.ts:1: Docker inventory spawns must use runDockerInventoryCommand'],
+    ['fixture.ts:1: Docker inventory spawns must use runDockerInventoryCommand'],
+    ['fixture.ts:1: Docker inventory spawns must use runDockerInventoryCommand'],
+  ])
+})
+
 test('Docker inventory spawn guard permits the shared helper and unrelated commands', () => {
   const source = `
     runDockerInventoryCommand(['docker', 'ps', '-a'], 1000)

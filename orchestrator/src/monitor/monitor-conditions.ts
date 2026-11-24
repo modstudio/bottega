@@ -1,5 +1,4 @@
 import * as boundedProcess from '../../../shared/bounded-process.ts'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions
@@ -501,9 +500,12 @@ export function rulingConditions(clock = Date.now()): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'], {
-    budget: 'self-cli',
-  })
+  const p = boundedProcess.startBoundedSync(
+    [...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'],
+    {
+      budget: 'self-cli',
+    },
+  )
   if (p.exitCode !== 0)
     return {
       conditions: [],
@@ -560,11 +562,14 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  let p: ReturnType<typeof startBoundedSync>
+  let p: ReturnType<typeof boundedProcess.startBoundedSync>
   try {
-    p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
-      budget: 'self-cli',
-    })
+    p = boundedProcess.startBoundedSync(
+      [...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'],
+      {
+        budget: 'self-cli',
+      },
+    )
   } catch (error) {
     if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
     throw error
@@ -612,7 +617,7 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  let listed: ReturnType<typeof startBoundedSync>
+  let listed: ReturnType<typeof boundedProcess.startBoundedSync>
   try {
     listed = boundedProcess.startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
       budget: 'docker',
@@ -640,7 +645,7 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  let inspected: ReturnType<typeof startBoundedSync>
+  let inspected: ReturnType<typeof boundedProcess.startBoundedSync>
   try {
     inspected = boundedProcess.startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
       budget: 'docker',
