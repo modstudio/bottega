@@ -344,6 +344,19 @@ export function decodeMessages(buffer: Buffer): unknown[] {
   return messages
 }
 
+type JsonRpcId = string | number | null
+
+/** True once every request id sent by the probe has appeared in a response. */
+export function mcpRequestsAnswered(requestIds: JsonRpcId[], messages: unknown[]): boolean {
+  const responseIds = new Set<JsonRpcId>()
+  for (const message of messages) {
+    if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'id')) continue
+    const id = (message as { id?: unknown }).id
+    if (typeof id === 'string' || typeof id === 'number' || id === null) responseIds.add(id)
+  }
+  return requestIds.every((id) => responseIds.has(id))
+}
+
 async function stdioRpc(
   command: string,
   args: string[],
@@ -365,7 +378,18 @@ async function stdioRpc(
     return { ok: false, messages: [], error: 'stdio MCP server has no stdin' }
   }
   for (const message of messages) writer.write(encodeMessage(message))
-  writer.end()
+  const requestIds = messages.flatMap((message): JsonRpcId[] => {
+    if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'id')) return []
+    const id = (message as { id?: unknown }).id
+    return typeof id === 'string' || typeof id === 'number' || id === null ? [id] : []
+  })
+  let stdinEnded = false
+  const endStdin = () => {
+    if (stdinEnded) return
+    stdinEnded = true
+    writer.end()
+  }
+  if (mcpRequestsAnswered(requestIds, [])) endStdin()
   const timer = setTimeout(() => {
     try {
       proc.kill()
@@ -373,13 +397,21 @@ async function stdioRpc(
       /* gone */
     }
   }, timeoutMs)
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).arrayBuffer(),
-    new Response(proc.stderr).text(),
-  ])
+  const stdoutChunks: Buffer[] = []
+  const readStdout = async () => {
+    const reader = proc.stdout.getReader()
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      stdoutChunks.push(Buffer.from(chunk.value))
+      const decoded = decodeMessages(Buffer.concat(stdoutChunks))
+      if (mcpRequestsAnswered(requestIds, decoded)) endStdin()
+    }
+  }
+  const [, stderr] = await Promise.all([readStdout(), new Response(proc.stderr).text()])
   const exit = await proc.exited
   clearTimeout(timer)
-  const decoded = decodeMessages(Buffer.from(stdout))
+  const decoded = decodeMessages(Buffer.concat(stdoutChunks))
   if (!decoded.length && exit !== 0) {
     return { ok: false, messages: [], error: stderr.trim() || `stdio MCP server exited ${exit}` }
   }
