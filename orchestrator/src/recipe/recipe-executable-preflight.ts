@@ -34,12 +34,14 @@ export function recipeExecutableRefusal(project: string, missing: MissingRecipeE
 }
 
 export class RecipePrerequisiteError extends Error {
-  constructor(
-    readonly project: string,
-    readonly missing: readonly MissingRecipeExecutable[],
-  ) {
+  readonly project: string
+  readonly missing: readonly MissingRecipeExecutable[]
+
+  constructor(project: string, missing: readonly MissingRecipeExecutable[]) {
     super(missing.map((entry) => recipeExecutableRefusal(project, entry)).join('\n'))
     this.name = 'RecipePrerequisiteError'
+    this.project = project
+    this.missing = missing
   }
 }
 

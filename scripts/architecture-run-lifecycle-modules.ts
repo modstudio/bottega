@@ -429,6 +429,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-claim.ts',
     './run-retry-claim.ts',
     './run-startup-failure.ts',
+    './run-startup-failure-kind.ts',
     './run-resource-step-recording.ts',
     './run-task-reference.ts',
     './run-task-branch-resolution.ts',
