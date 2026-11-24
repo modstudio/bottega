@@ -22,7 +22,7 @@ import {
   type ClassMeasurement,
   decideClassMeasuredFloor,
 } from './workflow-class-measured-floor.ts'
-import { CLASS_MEASUREMENT_EVIDENCE } from './workflow-class-measurement-trail.ts'
+import { type EvidenceRef, evidenceRefs } from './workflow-floor-evidence-refs.ts'
 import { ARTIFACT_FORMS, type FloorKind, isFloorKind } from './workflow-floor-kinds.ts'
 
 export {
@@ -167,8 +167,6 @@ export type OpenObligation = {
   stepSlug: string
   floorDefinition: Floor
 }
-
-type EvidenceRef = { flag: string; value: string }
 
 export type FloorDecision =
   | {
@@ -877,28 +875,6 @@ function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): 
   return `floor ruling is unmet: review ids ${unfinished.join(', ')} in this round are unfinished`
 }
 
-function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
-  const refs: EvidenceRef[] = []
-  if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
-  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
-  if (evidence.gate) refs.push({ flag: '--gate', value: evidence.gate.recordId })
-  if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
-  const artifactRefs = new Set<string>()
-  for (const entry of evidence.artifacts ?? []) {
-    if (artifactRefs.has(entry.artifact.ref)) continue
-    artifactRefs.add(entry.artifact.ref)
-    refs.push({ flag: '--artifact', value: entry.artifact.ref })
-  }
-  if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
-  if (evidence.classMeasurement) {
-    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.className, value: evidence.classMeasurement.className })
-    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.command, value: evidence.classMeasurement.command })
-    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.execId, value: String(evidence.classMeasurement.execId) })
-    refs.push({ flag: CLASS_MEASUREMENT_EVIDENCE.count, value: String(evidence.classMeasurement.count) })
-  }
-  return refs
-}
-
 function evidenceNotices(evidence: ValidatedEvidence): string[] {
   return [...new Set((evidence.artifacts ?? []).flatMap(({ artifact }) => artifact.notice ?? []))]
 }
@@ -1006,6 +982,19 @@ function finishOf(
   return null
 }
 
+function classMeasuredFor(input: FloorSatisfactionInput): ClassMeasuredDecision | undefined {
+  const satisfy = input.evidence.satisfy
+  if (
+    !input.floors.some((floor) => floor.kind === 'class-measured') &&
+    !(satisfy?.found && satisfy.floor.kind === 'class-measured')
+  )
+    return undefined
+  return decideClassMeasuredFloor({
+    className: input.evidence.className,
+    artifacts: input.evidence.artifacts ?? [],
+  })
+}
+
 export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDecision {
   if (input.enforcement === 'note-only')
     return { action: 'allow', enforcement: 'note-only', refs: [] }
@@ -1017,14 +1006,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  const classMeasured =
-    input.floors.some((floor) => floor.kind === 'class-measured') ||
-    input.evidence.satisfy?.floor?.kind === 'class-measured'
-    ? decideClassMeasuredFloor({
-        className: input.evidence.className,
-        artifacts: input.evidence.artifacts ?? [],
-      })
-    : undefined
+  const classMeasured = classMeasuredFor(input)
   if (classMeasured?.met) input.evidence.classMeasurement = classMeasured.measurement
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, classMeasured, input.freshRulingAfter, input.workflowKey),

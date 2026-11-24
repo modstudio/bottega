@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { decideFloorSatisfaction, type Floor } from './workflow-floor.ts'
 import { classMeasurementFromClosedSteps } from './workflow-class-measurement-trail.ts'
 import { closedStepsFromTrail } from './workflow-cursor-trail.ts'
+import { decideFloorSatisfaction, type Floor } from './workflow-floor.ts'
 
 const floor: Floor = {
   kind: 'class-measured',
@@ -44,7 +44,13 @@ test('round-trips persisted floor evidence into a trail class measurement', () =
   expect(decision.action).toBe('allow')
   if (decision.action !== 'allow') return
   const trail = JSON.stringify([
-    { n: 1, slug: 'measure-class', note: 'measured', at: '2026-11-24T10:00:00Z', evidence: decision.refs },
+    {
+      n: 1,
+      slug: 'measure-class',
+      note: 'measured',
+      at: '2026-11-24T10:00:00Z',
+      evidence: decision.refs,
+    },
     { n: 2, slug: 'implement-fix', note: 'fixed', at: '2026-11-24T11:00:00Z' },
   ])
   expect(classMeasurementFromClosedSteps(closedStepsFromTrail(trail))).toEqual({

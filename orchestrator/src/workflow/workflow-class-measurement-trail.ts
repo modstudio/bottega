@@ -3,8 +3,8 @@
 
 import type { ClosedStep } from './workflow-cursor-trail.ts'
 
-export const CLASS_MEASUREMENT_STEP = 'measure-class'
-export const IMPLEMENT_FIX_STEP = 'implement-fix'
+const CLASS_MEASUREMENT_STEP = 'measure-class'
+const IMPLEMENT_FIX_STEP = 'implement-fix'
 export const CLASS_MEASUREMENT_EVIDENCE = {
   className: '--class',
   command: '--command',
