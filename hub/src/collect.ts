@@ -25,6 +25,7 @@ import {
   pullHostedChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
+import { hostedWriteMode } from './hosted-write-mode.ts'
 
 export { resolveHostedUrl }
 
@@ -63,6 +64,7 @@ import {
   storedLeaseHolder,
   storedLeaseSnapshot,
 } from './store-lease.ts'
+import { listHostedTasks } from './task-hosted-record.ts'
 import { hoursAgo } from './time.ts'
 import { WRITE_HOLD_LOG_MS } from './write-hold.ts'
 
@@ -84,6 +86,11 @@ export type LiveWatcherHeartbeat = {
 
 const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
+
+const hostedTrackerCandidates = () =>
+  hostedWriteMode(resolveHostedUrl()) === 'hosted-configured'
+    ? (project: string) => listHostedTasks({ project })
+    : undefined
 
 type PollState = { nextAt: number; quiet: number; failures: number }
 
@@ -833,7 +840,8 @@ async function collectSlowSourceLegs(
       (await settleTimedLeg(
         'tasks',
         async () => {
-          trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
+          trackerResults =
+            due?.size === 0 ? [] : await ingestTrackers(due, hostedTrackerCandidates())
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
@@ -953,7 +961,9 @@ export async function collectOnce(
       (await settleTimedLeg(
         'tasks',
         async () => {
-          const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
+          const trackerResults = dependencies.trackers
+            ? await dependencies.trackers()
+            : await ingestTrackers(null, hostedTrackerCandidates())
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
           return trackerCounts(trackerResults, 0, 0)

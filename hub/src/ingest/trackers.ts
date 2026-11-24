@@ -19,14 +19,12 @@ import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
 import { reconcileParentRecordId, resolveParentRecordId } from '../task-cache.ts'
-import { hostedListTasks as listHostedTasks } from '../task-client.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import type { TaskRow } from '../task-row.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskChangeSendOptions,
-  hostedTaskWriteOptions,
 } from '../task-write-destination.ts'
 import { applyHostedCollectorPass, sendTrackerPlans } from './tracker-hosted-collector.ts'
 import { dropLocalTrackerRows, retireLocalTrackerRows } from './tracker-local-collector.ts'
@@ -684,7 +682,9 @@ export async function fetchTrackerTasks(
   mode: TrackerReadMode,
   since: string | null,
   prefixes: readonly string[],
-  hostedOptions?: HostedTaskWriteOptions,
+  listHostedTrackerCandidates?: (
+    project: string,
+  ) => Promise<Array<Pick<TaskRow, 'key' | 'source' | 'status_category'>>>,
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
@@ -693,14 +693,8 @@ export async function fetchTrackerTasks(
   const tasks = fetched.tasks
   if (mode === 'incremental') return fetched
   const seen = new Set([...tasks.map((task) => task.key), ...fetched.deletedKeys])
-  const hosted =
-    hostedWriteMode(hostedOptions?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-  const candidates = hosted
-    ? (
-        await listHostedTasks(hostedTaskWriteOptions(source.project, hostedOptions), {
-          project: source.project,
-        })
-      ).tasks.filter(
+  const candidates = listHostedTrackerCandidates
+    ? (await listHostedTrackerCandidates(source.project)).filter(
         (row) =>
           row.source === 'mcp' &&
           (row.status_category === 'open' ||
@@ -947,12 +941,20 @@ async function collectTrackerSource(
   missing: { task_key: string; project: string }[],
   at: string,
   m: Mcp,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ): Promise<CollectedTracker> {
   const s = tracker.source
   const startedAt = nowIso()
   const read = storedTrackerReadMode(s, startedAt)
   const prefixes = tracker.prefixes
-  const fetched = await fetchTrackerTasks(s, m, read.mode, read.since, prefixes)
+  const fetched = await fetchTrackerTasks(
+    s,
+    m,
+    read.mode,
+    read.since,
+    prefixes,
+    listHostedTrackerCandidates,
+  )
   const unique = scopedTrackerTasks(fetched.tasks, prefixes)
   const hosted = hostedWriteMode(resolveHostedUrl()) === 'hosted-configured'
   const hostedBackfill = hosted ? await hostedBackfillReads(s, m, missing, prefixes) : []
@@ -1014,6 +1016,7 @@ async function collectTracker(
   tracker: TrackerRegistration,
   missing: { task_key: string; project: string }[],
   at: string,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ): Promise<CollectedTracker> {
   if ('error' in tracker)
     return {
@@ -1040,7 +1043,7 @@ async function collectTracker(
   const m = new Mcp(resolved.credentials.url, resolved.credentials.token)
   try {
     await m.initialize()
-    return await collectTrackerSource(tracker, missing, at, m)
+    return await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
   } catch (cause) {
     return {
       result: { project: s.project, tasks: 0, changed: 0, error: String((cause as Error).message) },
@@ -1052,11 +1055,16 @@ async function collectTracker(
 }
 
 /** Snapshot every reachable tracker into the task table, recording transitions. */
-export async function ingestTrackers(only: ReadonlySet<Project> | null = null) {
+export async function ingestTrackers(
+  only: ReadonlySet<Project> | null = null,
+  listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
+) {
   const at = nowIso()
   const { trackers, missing } = trackerIngestInputs(only)
   return finishTrackerResults(
-    await Promise.all(trackers.map((tracker) => collectTracker(tracker, missing, at))),
+    await Promise.all(
+      trackers.map((tracker) => collectTracker(tracker, missing, at, listHostedTrackerCandidates)),
+    ),
     at,
   )
 }

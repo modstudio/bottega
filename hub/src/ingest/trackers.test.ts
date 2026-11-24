@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resolveAssigneeIds, type TrackerSource } from '../../../shared/trackers.ts'
-import { declareFixtureProjectSpace } from '../../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
@@ -166,7 +165,6 @@ describe('tracker key scope', () => {
 
 const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const keyStore = process.env.BOTTEGA_KEYSTORE
-declareFixtureProjectSpace('alpha', 'alpha-space')
 beforeAll(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_KEYSTORE = 'file'
@@ -241,26 +239,14 @@ describe('tracker register', () => {
       externalId: 'local-only',
       key: 'LOCAL-ONLY',
     })
-    const hostedTask = (key: string, statusCategory: 'active' | 'done', taskSource = 'mcp') => ({
-      id: crypto.randomUUID(),
+    const hostedTask = (
+      key: string,
+      statusCategory: 'active' | 'done',
+      taskSource: 'mcp' | 'local' = 'mcp',
+    ) => ({
       key,
-      project: 'alpha',
-      project_name: 'alpha',
-      title: key,
-      status: statusCategory,
       status_category: statusCategory,
-      parent_key: null,
-      body: null,
-      assignee: null,
-      opened_at: null,
-      closed_at: null,
       source: taskSource,
-      first_seen: '2026-11-24T00:00:00.000Z',
-      last_seen: '2026-11-24T00:00:00.000Z',
-      created_at: '2026-11-24T00:00:00.000Z',
-      updated_at: '2026-11-24T00:00:00.000Z',
-      deleted_at: null,
-      next_document_number: 1,
     })
     const listed = [
       hostedTask('HOST-VANISHED', 'active'),
@@ -268,7 +254,7 @@ describe('tracker register', () => {
       hostedTask('HOST-DONE', 'done'),
       hostedTask('HOST-LOCAL-SOURCE', 'active', 'local'),
     ]
-    const requests: string[] = []
+    const projects: string[] = []
     const lookups: string[] = []
     const full = source(false, async () => ({
       tasks: [{ ...trackerTask, key: 'HOST-SEEN' }],
@@ -286,19 +272,13 @@ describe('tracker register', () => {
       'full',
       null,
       [],
-      {
-        baseUrl: 'https://hub.example.test',
-        token: 'test',
-        fetch: async (input, init) => {
-          const url = new URL(input)
-          requests.push(`${url.pathname}?${url.searchParams}`)
-          expect(new Headers(init?.headers).get('x-record-space')).toBe('alpha-space')
-          return Response.json({ tasks: listed, cursor: 'done', more: false })
-        },
+      async (project) => {
+        projects.push(project)
+        return listed
       },
     )
 
-    expect(requests).toEqual(['/v1/tasks?project=alpha'])
+    expect(projects).toEqual(['alpha'])
     expect(lookups).toEqual(['HOST-VANISHED'])
     expect(fetched.tasks.map((task) => task.key)).toEqual(['HOST-SEEN', 'HOST-VANISHED'])
   })
