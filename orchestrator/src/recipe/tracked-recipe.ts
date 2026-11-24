@@ -11,11 +11,8 @@ import { git } from '../git/git-environment.ts'
 import { projects, type WorktreeTool } from '../project/projects.ts'
 import { dockerRunResources, orchRunLabelForRun } from '../resources/docker-resources.ts'
 import {
-  claimDatabaseName,
   claimIndex,
   claimRecipePort,
-  claimString,
-  fillStringAllocationTemplate,
   RECIPE_PORT_BAND,
   releaseRecipeAllocationClaims,
   settleClaims,
@@ -53,8 +50,9 @@ import {
   type StepContext,
   type StepResult,
 } from './recipe-step.ts'
-import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
+import { claimTrackedNamedAllocations } from './tracked-allocation-claims.ts'
 import { trackedAllocationKeys } from './tracked-allocation-keys.ts'
+import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
 import {
   startTrackedTeardownMainStack,
   stopTrackedTeardownMainStack,
@@ -231,28 +229,12 @@ export const trackedAllocator: TrackedAllocator = {
       for (const name of input.recipe.allocate?.ports ?? []) {
         ports[name] = claimRecipePort(database, { ...identity, band: RECIPE_PORT_BAND, name })
       }
-      const strings: Record<string, string> = {}
-      const stringVars = { ...input.staticVars, index: String(index) }
-      for (const [name, template] of Object.entries(input.recipe.allocate?.strings ?? {})) {
-        const value = fillStringAllocationTemplate(name, template, stringVars)
-        strings[name] = claimString(database, {
-          ...identity,
-          name,
-          value,
-          templateHasIndex: template.includes('{index}'),
-        })
-      }
-      const databases: Record<string, string> = {}
-      for (const [name, allocation] of Object.entries(input.recipe.allocate?.databases ?? {})) {
-        const value = fillStringAllocationTemplate(name, allocation.name, stringVars)
-        databases[name] = claimDatabaseName(database, {
-          ...identity,
-          name,
-          engine: allocation.engine,
-          value,
-          templateHasIndex: allocation.name.includes('{index}'),
-        })
-      }
+      const { strings, databases } = claimTrackedNamedAllocations(database, {
+        identity,
+        recipe: input.recipe,
+        staticVars: input.staticVars,
+        index,
+      })
       const insertedClaimIds = (
         database
           .query(

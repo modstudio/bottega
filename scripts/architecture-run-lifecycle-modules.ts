@@ -140,6 +140,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './question-vocabulary.ts',
   ]),
   module('orchestrator/src/resources/resource-claims.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../git/checkout-identity.ts',
     '../run/run-status.ts',
