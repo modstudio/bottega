@@ -989,16 +989,6 @@ export async function gatherValidatedEvidenceBase(
   const { d = db(), ports = {} } = input
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
-  if (input.floors.some((floor) => floor.kind === 'class-measured')) {
-    gathered.registeredCheckoutRoots = [
-      ...new Set(
-        projects(undefined, d).flatMap((project) => [
-          project.path,
-          realpathIfPresent(project.path) ?? project.path,
-        ]),
-      ),
-    ]
-  }
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
@@ -1033,5 +1023,17 @@ export async function gatherValidatedEvidenceBase(
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()
   if (satisfies)
     gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d, input.taskFlowClient)
+  if (
+    input.floors.some((floor) => floor.kind === 'class-measured') ||
+    (gathered.satisfy?.found && gathered.satisfy.floor.kind === 'class-measured')
+  )
+    gathered.registeredCheckoutRoots = [
+      ...new Set(
+        projects(undefined, d).flatMap((project) => [
+          project.path,
+          realpathIfPresent(project.path) ?? project.path,
+        ]),
+      ),
+    ]
   return gathered
 }

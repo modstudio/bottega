@@ -247,12 +247,50 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
       },
       async () => [held],
     )
+  const fallbackAdmission = (
+    cwd: string,
+    facts: { topLevel: string | null; mainCheckout: string | null; branch: string | null },
+  ) =>
+    assertPullRequestTaskCursorAdmission(
+      {
+        command: 'pr create',
+        project,
+        branch: 'DEV-2387-change',
+        env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
+        database,
+        body: 'Summary\nClass guard: architecture check (before 3, after 0)',
+        cwd,
+      },
+      async () => [{ ...held, args: '{}' }],
+      () => facts,
+    )
 
   try {
     await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
     await expect(
       admission('Summary\nClass guard: architecture check (before 3, after 0)'),
     ).resolves.toBeUndefined()
+    await expect(
+      fallbackAdmission('/caller/right', {
+        topLevel: linkedWorktree,
+        mainCheckout: join(temp, 'main'),
+        branch: 'DEV-2387-change',
+      }),
+    ).resolves.toBeUndefined()
+    await expect(
+      fallbackAdmission('/caller/wrong-branch', {
+        topLevel: linkedWorktree,
+        mainCheckout: join(temp, 'main'),
+        branch: 'DEV-999-other',
+      }),
+    ).rejects.toThrow('run `bottega pr create` from the branch\'s worktree')
+    await expect(
+      fallbackAdmission('/caller/main', {
+        topLevel: linkedWorktree,
+        mainCheckout: worktree,
+        branch: 'DEV-2387-change',
+      }),
+    ).rejects.toThrow('run `bottega pr create` from the branch\'s worktree')
   } finally {
     rmSync(temp, { recursive: true, force: true })
   }

@@ -817,6 +817,7 @@ export async function createPullRequest(
     project: change.project,
     branch: change.branch,
     body: options.body,
+    cwd,
   })
   return createPullRequestAdmittedChange(
     args,
