@@ -7,7 +7,12 @@ import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations
 import { db } from '../database/db.ts'
 import { readProjectTaskList } from './project-task-list.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { childAncestorKeys, gatherChildTaskFacts, liveChildClaims } from './workflow-child-facts.ts'
+import {
+  childAncestorKeys,
+  gatherChildTaskFacts,
+  liveChildClaims,
+  nearestOpenEpicCursor,
+} from './workflow-child-facts.ts'
 import {
   childEligibility,
   childQueueState,
@@ -15,6 +20,10 @@ import {
   sessionWorksUnderEpic,
 } from './workflow-child-queue.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import {
+  workflowCursorComposeCommand,
+  workflowDefaultModeComposeCommand,
+} from './workflow-cursor-format.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { abandonCursorAfterClaimFailure } from './workflow-cursor-mutation.ts'
 import {
@@ -109,15 +118,32 @@ export async function queueWorkflowChild(
   const tasks = await readProjectTaskList(input.project)
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
-  const root = ancestors.at(-1)!
+  const epicCursor = await nearestOpenEpicCursor(
+    database,
+    input.project,
+    ancestors,
+    input.callerSession,
+  )
+  if (!epicCursor)
+    throw new Error(
+      `${input.child} has no ancestor with an open epic plan-task cursor; compose the nearest ancestor epic cursor with ${workflowDefaultModeComposeCommand('plan-task', input.project, { key: ancestors[0]! })}`,
+    )
+  const root = epicCursor.workflow_key
   const claims = await liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(
     root,
     tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),
   )
-  if (!sessionWorksUnderEpic(claims, input.callerSession, root, descendants))
+  if (
+    !sessionWorksUnderEpic(
+      claims,
+      input.callerSession,
+      descendants,
+      epicCursor.session_id === input.callerSession,
+    )
+  )
     throw new Error(
-      `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it`,
+      `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it; cursor ${epicCursor.id} is owned by session ${epicCursor.session_id}; compose the epic cursor with ${workflowCursorComposeCommand(epicCursor)}`,
     )
   if (input.off) {
     const closed = await boardQueuedClaimClose(
@@ -168,9 +194,16 @@ export async function startWorkflowChild(
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
   const descendants = descendantTaskKeys(epic.workflow_key, facts)
-  if (!sessionWorksUnderEpic(claims, input.callerSession, epic.workflow_key, descendants))
+  if (
+    !sessionWorksUnderEpic(
+      claims,
+      input.callerSession,
+      descendants,
+      epic.session_id === input.callerSession,
+    )
+  )
     throw new Error(
-      `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it`,
+      `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it; cursor ${epic.id} is owned by session ${epic.session_id}; compose the epic cursor with ${workflowCursorComposeCommand(epic)}`,
     )
   const state = childQueueState(epic.workflow_key, input.callerSession, facts)
   const selected = selectChildToStart(state, facts, input.task)

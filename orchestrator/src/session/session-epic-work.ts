@@ -45,7 +45,8 @@ export async function sessionEpicWork(
     for (const cursor of epicCursors) {
       if (!hasChildren.has(cursor.workflow_key)) continue
       const descendants = descendantTaskKeys(cursor.workflow_key, facts)
-      if (!sessionWorksUnderEpic(claims, session, cursor.workflow_key, descendants)) continue
+      if (!sessionWorksUnderEpic(claims, session, descendants, cursor.session_id === session))
+        continue
       const state = childQueueState(cursor.workflow_key, session, facts)
       surfaces.push({
         epic: cursor.workflow_key,

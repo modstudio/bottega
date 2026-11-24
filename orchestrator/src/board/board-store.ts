@@ -16,6 +16,7 @@ import { classifyCaller } from '../caller-classification.ts'
 import { db, type writableDb } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt, projects } from '../project/projects.ts'
+import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import { requireLocalBoardRead } from './board-local-read-guard.ts'
@@ -281,10 +282,11 @@ function workerPresenceFacts(database: ReturnType<typeof db>) {
 function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
   const claims = database
     .query(
-      `SELECT holder_kind,holder_session,subject_value,lapses_at,run_record_id
+      `SELECT project,holder_kind,holder_session,subject_value,lapses_at,run_record_id
        FROM board_claim WHERE closed_at IS NULL AND subject_kind='task'`,
     )
     .all() as {
+    project: string
     holder_kind: 'operator' | 'architect'
     holder_session: string | null
     subject_value: string
@@ -299,6 +301,15 @@ function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
         lapsesAt: Date.parse(claim.lapses_at),
         runStatus: latestRunStatus(claim.run_record_id, database),
         now: at,
+        boundToOpenCursor: claimBoundToOpenCursor(
+          {
+            project: claim.project,
+            subject_kind: 'task',
+            subject_value: claim.subject_value,
+            holder_session: claim.holder_session,
+          },
+          database,
+        ),
       })
     )
       continue

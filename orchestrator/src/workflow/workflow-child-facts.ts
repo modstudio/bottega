@@ -3,7 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { boardClaimList } from '../board/board-operations.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_OPEN_STAGE_STATES,
+  TASK_FLOW_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { ChildClaimFact, ChildTaskFact } from './workflow-child-queue.ts'
 import type { HubTaskReference } from './workflow-task-reference.ts'
@@ -77,4 +80,30 @@ export function childAncestorKeys(key: string, tasks: readonly HubTaskReference[
     key,
     tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),
   )
+}
+
+export async function nearestOpenEpicCursor(
+  database: Database,
+  project: string,
+  ancestorKeys: readonly string[],
+  callerSession: string,
+) {
+  if (ancestorKeys.length === 0) return null
+  const stages = await taskFlowReadStore(database).listStages({
+    project,
+    workflowKeys: [...ancestorKeys],
+    states: [...TASK_FLOW_OPEN_STAGE_STATES],
+  })
+  const byKey = new Map<string, (typeof stages)[number]>()
+  for (const stage of stages) {
+    if (stage.workflow_slug !== 'plan-task' || stage.step_slug !== 'start') continue
+    const existing = byKey.get(stage.workflow_key)
+    if (!existing || stage.session_id === callerSession || existing.session_id !== callerSession)
+      byKey.set(stage.workflow_key, stage)
+  }
+  for (const key of ancestorKeys) {
+    const stage = byKey.get(key)
+    if (stage) return stage
+  }
+  return null
 }

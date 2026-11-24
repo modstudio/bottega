@@ -143,6 +143,13 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 1,
   },
   {
+    pattern: /^orchestrator\/src\/board\/board-claim-cursor-binding\.ts$/,
+    reason: 'local-only',
+    detail:
+      'Cursor-bound local claim liveness is selected only when hostedRecordOwnsHostedTables(database) is false',
+    expectedSites: 1,
+  },
+  {
     pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,
     reason: 'local-only',
     detail: 'The local document read adapter builds SQL only for machine-local document tables',

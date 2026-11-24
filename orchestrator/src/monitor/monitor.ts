@@ -68,6 +68,7 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import { cursorClaimHealthConditions } from './monitor-cursor-claims.ts'
 import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
@@ -147,6 +148,7 @@ async function initialMonitorObservations(
       ...diskPressure.conditions,
       ...collectLease.conditions,
       ...collectorLegs.conditions,
+      ...(await cursorClaimHealthConditions(database, clock)),
     ],
     errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
     hostPressure: hostPressure.report,

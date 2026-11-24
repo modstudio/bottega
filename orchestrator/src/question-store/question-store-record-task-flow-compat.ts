@@ -106,6 +106,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
           return {
             ...row,
             open_stage_count: row.open_stage_count!,
+            parent_flow_record_id: row.parent_flow_record_id ?? null,
             question_number: typeof questionNumber === 'number' ? questionNumber : null,
           }
         })
