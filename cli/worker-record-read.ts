@@ -2,7 +2,7 @@
 /** Routes the three run-scoped worker reads through the host ask server before stores load. */
 
 import type { HostedDocument } from '../hub/src/hosted-tasks.ts'
-import type { HostedTaskDetail } from '../hub/src/task-hosted-record.ts'
+import type { WorkerTaskRead } from '../orchestrator/src/ask/worker-record-broker.ts'
 import type { ShownWorkflowText } from '../orchestrator/src/workflow/workflow-text-commands.ts'
 import { classifyCaller } from '../shared/caller-classification.ts'
 
@@ -65,7 +65,7 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
     ])
     const readOptions = project ? { project } : {}
     if (route === 'task') {
-      const detail = await callWorkerRecordRead<HostedTaskDetail & { tracker_notice?: string }>(
+      const detail = await callWorkerRecordRead<WorkerTaskRead>(
         'read_task',
         {
           key: value,

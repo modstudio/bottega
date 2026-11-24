@@ -32,6 +32,7 @@ function detail(input: {
   projectId: string
   parentId: string | null
   document?: boolean
+  body?: string | null
 }): WorkerHostedTaskDetail {
   return {
     task: {
@@ -40,6 +41,7 @@ function detail(input: {
       projectId: input.projectId,
       parent_id: input.parentId,
       parent_key: null,
+      body: input.body ?? null,
     },
     comments: [],
     documents: input.document
@@ -117,9 +119,6 @@ test('the broker walks and enforces the run task scope before returning hosted r
   expect(await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)).toBe(
     tasks.get(CHILD_ID)!,
   )
-  expect(
-    (await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)).tracker_notice,
-  ).toBeUndefined()
   expect(await readWorkerTask(runId, 'run-token', 'DEV-1', undefined, dependencies)).toBe(
     tasks.get(PARENT_ID)!,
   )
@@ -198,9 +197,20 @@ test('the broker marks record gaps for a project that keeps its own tracker', as
   await expect(
     readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
   ).rejects.toThrow(
-    `Project ${project}'s task documents live in its own tracker and are not in the record`,
+    new RegExp(
+      `project ${project}'s own tracker, not the record[\\s\\S]*${PLATFORM_SLUG} workflow attach`,
+    ),
   )
-  await expect(
-    readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
-  ).rejects.toThrow(`${PLATFORM_SLUG} workflow attach`)
+
+  const taskWithBody = detail({
+    id: CHILD_ID,
+    key: 'DEV-2',
+    projectId,
+    parentId: null,
+    body: 'record body',
+  })
+  const shownWithBody = await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, {
+    client: { ...dependencies.client, task: async () => taskWithBody },
+  })
+  expect(shownWithBody).toBe(taskWithBody)
 })

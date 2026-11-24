@@ -49,16 +49,18 @@ type ProjectRow = {
   retired_at?: string | null
 }
 
-function parseProject(row: ProjectRow): Project {
-  let settings: StoredProjectSettings = {}
+export function parseProjectSettings(settings: string | null): StoredProjectSettings {
   try {
-    settings = row.settings ? JSON.parse(row.settings) : {}
+    return settings ? JSON.parse(settings) : {}
   } catch {
     // Unreadable settings must not take the project out of the register: a
     // typo in one JSON blob would otherwise make a whole repo invisible to
     // routing and reporting at once.
-    settings = {}
+    return {}
   }
+}
+
+function parseProject(row: ProjectRow): Project {
   return {
     recordId: row.record_id,
     recordRevision: row.record_revision ?? null,
@@ -67,7 +69,7 @@ function parseProject(row: ProjectRow): Project {
     stack: row.stack,
     canon: row.canon === 1,
     retiredAt: row.retired_at ?? null,
-    settings,
+    settings: parseProjectSettings(row.settings),
   }
 }
 

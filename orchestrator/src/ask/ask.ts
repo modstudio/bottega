@@ -715,7 +715,7 @@ function registerWorkerRecordReadTools(input: {
     })
   register(
     'read_task',
-    "Read this run's task or one of its parent tasks from the hosted record. The run token and host-side scope decide access.",
+    "Read this run's task or one of its parent tasks from the hosted record. For an empty record row whose project keeps its own tracker, the response includes tracker_notice with the authoritative content location and workflow-text remedy. The run token and host-side scope decide access.",
     z.object({ key: z.string().trim().min(1), project: z.string().trim().min(1).optional() }),
     ({ key, project }) => readWorkerTask(input.runId, input.token, key!, project, readDependencies),
   )
