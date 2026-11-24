@@ -20,6 +20,7 @@ workflows and their cursors
 - [bottega workflow cursor help](#bottega-workflow-cursor-help)
 - [bottega workflow cursor identity-map](#bottega-workflow-cursor-identity-map)
 - [bottega workflow cursors](#bottega-workflow-cursors)
+- [bottega workflow class-audit](#bottega-workflow-class-audit)
 - [bottega workflow dispatch](#bottega-workflow-dispatch)
 - [bottega workflow epic](#bottega-workflow-epic)
 - [bottega workflow exec](#bottega-workflow-exec)
@@ -324,6 +325,12 @@ print numeric workflow cursor identities and their durable record ids as JSON
 **Synopsis:** `bottega workflow cursors [--session <value>] [--project <value>] [--all] [--json]`
 
 list workflow cursors
+
+## bottega workflow class-audit
+
+**Synopsis:** `bottega workflow class-audit --since <ISO date> [--json]`
+
+Count note-promoted fix-defect and plan-task cursors that reached implementation without recorded class-measured evidence. Text output lists each cursor as number, workflow and task key, followed by the bare count. JSON output is `{ count, cursors }`.
 
 ### Options
 

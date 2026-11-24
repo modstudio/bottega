@@ -18,6 +18,10 @@ import type {
 } from './workflow-artifact-evidence.ts'
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
+  type ClassMeasurement,
+  decideClassMeasuredFloor,
+} from './workflow-class-measured-floor.ts'
+import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
   floorsAcceptPullRequestLink,
@@ -41,6 +45,7 @@ export const floorKinds = [
   'ruling',
   'command-exit',
   'recorded-artifact',
+  'class-measured',
   'tracker-transition',
   'task-open-with-notes',
   'descendants-closed',
@@ -71,6 +76,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`, pass \`--gate <gate execution id>\` for a gate floor, or pass \`--run <run id>\` for a run-backed command`,
   'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
+  'class-measured': `run the class-wide command with \`${PLATFORM_SLUG} workflow exec -- <command>\`, then pass exactly one \`--artifact exec:<id>\` and \`--class "<class name>"\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
   'task-open-with-notes':
     'leave the task open, then pass `--task <KEY>` and at least one `--artifact note:<record-id|label>` for an open note attached to that task',
@@ -125,6 +131,8 @@ type ValidatedSatisfy =
 export type ValidatedEvidence = {
   runOffered?: string | number
   artifacts?: ValidatedArtifactEvidence[]
+  className?: string
+  classMeasurement?: ClassMeasurement
   strandedQuestionRemedy?: string
   stepQuestion?: {
     id: number
@@ -219,6 +227,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
+  if (kind === 'class-measured') return '--artifact exec:<id> and --class "<class name>"'
   if (kind === 'tracker-transition' || kind === 'descendants-closed') return '--task <KEY>'
   if (kind === 'task-open-with-notes') return '--task <KEY> and --artifact note:<record-id|label>'
   if (kind === 'review-owed')
@@ -651,6 +660,11 @@ function floorIsMet(
           (entry) => decidePullRequestEvidence(pullRequestFacts(entry)).met,
         )
       : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
+  if (floor.kind === 'class-measured')
+    return decideClassMeasuredFloor({
+      className: evidence.className,
+      artifacts: evidence.artifacts ?? [],
+    }).met
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   if (floor.kind === 'task-open-with-notes')
     return taskOpenWithNotesMet(evidence, workflowKey, floor.requirePullRequest, PLATFORM_SLUG)
@@ -747,6 +761,11 @@ function floorUnmetMessage(
     )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
+  if (floor.kind === 'class-measured')
+    return decideClassMeasuredFloor({
+      className: evidence.className,
+      artifacts: evidence.artifacts ?? [],
+    }).message
   const existing =
     `floor ${floor.kind} is unmet; pass ${closingFlagsForFloor(floor)}` +
     (floor.kind === 'command-exit'
@@ -898,6 +917,12 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
     refs.push({ flag: '--artifact', value: entry.artifact.ref })
   }
   if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
+  if (evidence.classMeasurement) {
+    refs.push({ flag: '--class', value: evidence.classMeasurement.className })
+    refs.push({ flag: '--command', value: evidence.classMeasurement.command })
+    refs.push({ flag: '--exec', value: String(evidence.classMeasurement.execId) })
+    refs.push({ flag: '--count', value: String(evidence.classMeasurement.count) })
+  }
   return refs
 }
 
@@ -1018,6 +1043,13 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
+  const classDecision = input.floors.some((floor) => floor.kind === 'class-measured')
+    ? decideClassMeasuredFloor({
+        className: input.evidence.className,
+        artifacts: input.evidence.artifacts ?? [],
+      })
+    : null
+  if (classDecision?.met) input.evidence.classMeasurement = classDecision.measurement
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter, input.workflowKey),
   )

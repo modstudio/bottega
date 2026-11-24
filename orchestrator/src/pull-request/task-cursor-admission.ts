@@ -11,6 +11,9 @@ import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { closedStepsFromTrail } from '../workflow/workflow-cursor-trail.ts'
+import { decidePullRequestClassGuard } from './pr-class-guard.ts'
 
 type HeldTaskCursor = {
   number: number
@@ -19,6 +22,8 @@ type HeldTaskCursor = {
   workflowKey: string
   stepSlug: string
   actions: readonly string[]
+  closed?: string
+  args?: string
 }
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
@@ -97,19 +102,27 @@ export async function assertPullRequestTaskCursorAdmission(
     database?: Database
     env?: Record<string, string | undefined>
     systemJob?: string | null
+    body?: string
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
     session,
   ) =>
-    (await openQuestionStages(database, session)).map((cursor) => ({
-      number: cursor.number,
-      project: cursor.project,
-      workflowSlug: cursor.workflow_slug,
-      workflowKey: cursor.workflow_key,
-      stepSlug: cursor.step_slug,
-      actions: cursor.step_actions,
-    })),
+    Promise.all(
+      (await openQuestionStages(database, session)).map(async (cursor) => {
+        const stage = await taskFlowReadStore(database).stageByRecordId(cursor.record_id)
+        return {
+          number: cursor.number,
+          project: cursor.project,
+          workflowSlug: cursor.workflow_slug,
+          workflowKey: cursor.workflow_key,
+          stepSlug: cursor.step_slug,
+          actions: cursor.step_actions,
+          closed: stage?.closed,
+          args: stage?.args,
+        }
+      }),
+    ),
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
@@ -131,4 +144,54 @@ export async function assertPullRequestTaskCursorAdmission(
       : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.message)
+  if (input.command !== 'pr create') return
+  const cursor = heldCursors.find(
+    (item) =>
+      item.project === input.project.name &&
+      item.workflowKey === taskKey &&
+      item.workflowSlug === 'fix-defect' &&
+      item.closed,
+  )
+  if (!cursor?.closed) return
+  const closed = closedStepsFromTrail(cursor.closed)
+  const measured = closed.find((step) => step.slug === 'measure-class')
+  if (!measured) return
+  const values = Object.fromEntries((measured.evidence ?? []).map((item) => [item.flag, item.value]))
+  const command = values['--command']
+  const count = Number(values['--count'])
+  if (!command || !Number.isInteger(count)) return
+  const implementClosedAt = closed.findLast((step) => step.slug === 'implement-fix')?.at
+  const rows = database
+    .query<
+      { command: string; output_tail: string; exit_code: number; created_at: string },
+      []
+    >("SELECT command,output_tail,exit_code,created_at FROM probe WHERE kind='exec'")
+    .all()
+    .map((row) => ({
+      command: recordedCommand(row.command),
+      output: row.output_tail,
+      exitCode: row.exit_code,
+      createdAt: row.created_at,
+    }))
+  const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
+  const classGuard = decidePullRequestClassGuard({
+    applies: true,
+    body: input.body ?? '',
+    measurement: { className: values['--class'] ?? '', command, count },
+    implementClosedAt,
+    execs: rows,
+    worktree: args.worktree ?? '<worktree>',
+  })
+  if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
+}
+
+function recordedCommand(raw: string): string {
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (Array.isArray(value) && value.every((part) => typeof part === 'string'))
+      return value.join(' ')
+  } catch {
+    // Legacy command records are already text.
+  }
+  return raw
 }

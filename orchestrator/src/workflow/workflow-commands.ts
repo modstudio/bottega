@@ -95,6 +95,8 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
+import { listHubNotes, type HubNote } from '../mcp/hub-notes.ts'
+import { decidePlanTaskNoteProvenance } from './workflow-compose-note-provenance.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void
@@ -116,6 +118,7 @@ export type WorkflowCommandOptions = {
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
   promotionContainsHead?: PromotionContainsHead
+  listNotes?: (project: string, options: { cwd: string }) => Promise<HubNote[]>
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -267,6 +270,27 @@ export async function attachCommand(
     selectedRow,
   } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow attach`)
   const args = workflowArgs(argv)
+  if (argv[2] === 'plan-task' && args.key) {
+    let read: Parameters<typeof decidePlanTaskNoteProvenance>[0]['read']
+    try {
+      const notes = await (options.listNotes ?? listHubNotes)(project, {
+        cwd: options.cwd ?? process.cwd(),
+      })
+      read = {
+        kind: 'available',
+        notes: notes.map((note) => ({ label: note.label, promotedTask: note.promoted_task })),
+      }
+    } catch (error) {
+      read = { kind: 'unavailable', reason: error instanceof Error ? error.message : String(error) }
+    }
+    const provenance = decidePlanTaskNoteProvenance({
+      workflow: argv[2]!,
+      project,
+      key: args.key,
+      read,
+    })
+    if (provenance.kind === 'refuse') throw new Error(provenance.message)
+  }
   context = await resolveWorkflowCursorContext(
     project,
     args,
@@ -449,6 +473,7 @@ export function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifacts: resolveOfferedArtifacts(db(), flagValues(argv, 'artifact')),
+    className: flagValue(argv, 'class'),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),

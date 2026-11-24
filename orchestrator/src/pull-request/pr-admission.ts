@@ -673,6 +673,7 @@ type CreatePullRequestOptions = {
   overrideReason?: string
   ceilingRuling?: string
   fromOperator?: boolean
+  body?: string
 }
 
 function createPullRequestAdmittedChange(
@@ -752,6 +753,7 @@ function createPullRequestAdmittedChange(
     createResult,
     created,
     branch: change.branch,
+    body: options.body,
     platformSlug: PLATFORM_SLUG,
   })
   if (outcome.refusal) throw new Error(renderRefusal(outcome.refusal))

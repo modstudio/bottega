@@ -988,6 +988,7 @@ export async function gatherValidatedEvidenceBase(
   const { d = db(), ports = {} } = input
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
+  gathered.className = input.evidence.className
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
