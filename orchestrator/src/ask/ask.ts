@@ -35,10 +35,7 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import {
-  WORKER_READ_TOOLS,
-  type WorkerReadToolName,
-} from '../../../shared/worker-read-tools.ts'
+import { WORKER_READ_TOOLS, type WorkerReadToolName } from '../../../shared/worker-read-tools.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,

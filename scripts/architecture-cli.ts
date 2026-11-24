@@ -37,7 +37,9 @@ export const cliModules = [
       'orchestrator/src/ask/worker-record-read-client.ts',
       'orchestrator/src/workflow/workflow-text.ts',
       'orchestrator/src/workflow/workflow-text-commands.ts',
+      'shared/brand.ts',
       'shared/caller-classification.ts',
+      'shared/worker-read-tools.ts',
     ],
   },
   {

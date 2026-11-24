@@ -13,11 +13,7 @@ import type { Agent } from '../src/agent/agents.ts'
 import type { Project } from '../src/project/projects.ts'
 import type { TransportStartOpts } from '../src/transport/transport.ts'
 
-const REQUIRED_TOOLS = [
-  'ask_orchestrator',
-  'note',
-  ...Object.values(WORKER_READ_TOOLS),
-] as const
+const REQUIRED_TOOLS = ['ask_orchestrator', 'note', ...Object.values(WORKER_READ_TOOLS)] as const
 
 const FIXTURE_PROJECT_ID = '01990000-0000-7000-8000-000000002585'
 const FIXTURE_TASK_ID = '01990000-0000-7000-8000-000000002586'

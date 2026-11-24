@@ -1,8 +1,8 @@
 // concern: contract
 
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import { WORKER_READ_TOOLS } from '../../../shared/worker-read-tools.ts'
 import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
