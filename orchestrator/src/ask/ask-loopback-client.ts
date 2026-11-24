@@ -1,9 +1,11 @@
 import { request, type RequestOptions } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
+import { askAuthPreamble } from './ask-loopback-auth.ts'
 
 const ASK_URL_REFUSAL = 'BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint'
 const LINUX_DIRECT_REMEDY =
   "No HTTP proxy is set on Linux. Run the worker under SRT's network bridge."
+const HANDSHAKE_REMEDY = 'Re-dispatch the run from current main.'
 
 export type AskLoopbackConnection =
   | { kind: 'direct'; host: '127.0.0.1'; port: number; linuxWithoutProxy: boolean }
@@ -103,8 +105,18 @@ export function openAskLoopbackSocket(connection: AskLoopbackConnection): Promis
   return connection.kind === 'direct' ? directSocket(connection) : tunnelSocket(connection)
 }
 
+export function requireAskRunToken(token: string | undefined): string {
+  if (!token) throw new Error('BOTTEGA_RUN_TOKEN is required for the ask loopback')
+  return token
+}
+
+export function askHandshakeClosedError(): Error {
+  return new Error(`Ask loopback closed before accepting the handshake. ${HANDSHAKE_REMEDY}`)
+}
+
 /** Forward stdio to the database-owning ask loopback. */
 export async function connectAskLoopback(urlValue: string): Promise<void> {
+  const token = requireAskRunToken(process.env.BOTTEGA_RUN_TOKEN)
   const connection = decideAskLoopbackConnection({
     platform: process.platform,
     askUrl: urlValue,
@@ -112,10 +124,18 @@ export async function connectAskLoopback(urlValue: string): Promise<void> {
     http_proxy: process.env.http_proxy,
   })
   const socket = await openAskLoopbackSocket(connection)
+  socket.write(askAuthPreamble(token))
+  let receivedMcpBytes = false
+  socket.on('data', () => {
+    receivedMcpBytes = true
+  })
   process.stdin.pipe(socket)
   socket.pipe(process.stdout)
   await new Promise<void>((resolve, reject) => {
-    socket.once('close', resolve)
+    socket.once('close', () => {
+      if (receivedMcpBytes) resolve()
+      else reject(askHandshakeClosedError())
+    })
     socket.once('error', reject)
   })
 }

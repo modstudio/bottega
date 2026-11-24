@@ -90,6 +90,7 @@ import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
+import { authenticateAskLoopbackSocket } from './ask-loopback-auth.ts'
 import { connectAskLoopback } from './ask-loopback-client.ts'
 import { preAnswerWorkerQuestion, preAnswerWorkerQuestions } from './jev-worker-question.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
@@ -1034,13 +1035,18 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
-    const askServer = createAskMcpServer(runId, token)
-    const mcp = serveStdio(() => askServer, {
-      transport: observeAskTransport(new StdioServerTransport(socket, socket), runId),
-    })
+    let mcp: ReturnType<typeof serveStdio> | undefined
     socket.once('close', () => {
       sockets.delete(socket)
-      void mcp.close()
+      void mcp?.close()
+    })
+    void authenticateAskLoopbackSocket(socket, token).then((accepted) => {
+      if (!accepted || socket.destroyed) return
+      const askServer = createAskMcpServer(runId, token)
+      mcp = serveStdio(() => askServer, {
+        transport: observeAskTransport(new StdioServerTransport(socket, socket), runId),
+      })
+      socket.resume()
     })
   })
   await new Promise<void>((resolve, reject) => {

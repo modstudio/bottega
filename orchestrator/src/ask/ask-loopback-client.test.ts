@@ -2,12 +2,15 @@ import { expect, test } from 'bun:test'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import {
+  askHandshakeClosedError,
   askProxyConnectOptions,
   decideAskLoopbackConnection,
   openAskLoopbackSocket,
+  requireAskRunToken,
 } from './ask-loopback-client.ts'
 
 const ASK_URL = 'tcp://127.0.0.1:43127'
+const RUN_TOKEN = 'run-token-for-test'
 
 test('the connection decision tunnels only on Linux with a proxy', () => {
   expect(
@@ -82,6 +85,16 @@ test('a Linux direct failure names the SRT network bridge remedy', async () => {
       linuxWithoutProxy: true,
     }),
   ).rejects.toThrow("Run the worker under SRT's network bridge")
+})
+
+test('a missing client token is refused before connection inputs are read', () => {
+  expect(() => requireAskRunToken(undefined)).toThrow('BOTTEGA_RUN_TOKEN is required')
+})
+
+test('a refused handshake names the re-dispatch remedy without including the token', () => {
+  const error = askHandshakeClosedError()
+  expect(error.message).toContain('Re-dispatch the run from current main')
+  expect(error.message).not.toContain(RUN_TOKEN)
 })
 
 test('CONNECT tunnels through an in-process proxy without exposing its credential on failure', async () => {
