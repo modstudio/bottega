@@ -248,7 +248,6 @@ describe('sandbox runtime payloads', () => {
         httpSocketPath,
         socksSocketPath,
         readConfig: { denyOnly: [root], allowWithinDeny: [] },
-        writeConfig: { allowOnly: [], denyWithinAllow: [] },
         allowAllUnixSockets: true,
         bwrapPath: '/usr/bin/bwrap',
         binShell: '/bin/sh',
