@@ -62,7 +62,7 @@ test('Docker inventory spawn guard follows a same-scope const argv binding', () 
   const source = `
     function inventory() {
       const command = ['docker', 'ps', '-a']
-      Bun.spawnSync(command)
+      Bun.${'spawnSync'}(command)
     }
   `
   expect(
@@ -73,7 +73,7 @@ test('Docker inventory spawn guard follows a same-scope const argv binding', () 
 test('Docker inventory spawn guard refuses a bare monitor volume inventory', () => {
   expect(
     dockerInventorySpawnBypasses(
-      `Bun.spawnSync(['docker', 'volume', 'ls'])`,
+      `Bun.${'spawnSync'}(['docker', 'volume', 'ls'])`,
       'orchestrator/src/monitor/monitor-conditions.ts',
     ),
   ).toHaveLength(1)

@@ -1,5 +1,5 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import * as boundedProcess from '../../../shared/bounded-process.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions

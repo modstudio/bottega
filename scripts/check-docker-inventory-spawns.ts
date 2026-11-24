@@ -24,23 +24,34 @@ function enclosingScopes(node: ts.Node): (ts.Block | ts.SourceFile)[] {
   return scopes
 }
 
+function constArrayInScope(
+  scope: ts.Block | ts.SourceFile,
+  identifier: ts.Identifier,
+): ts.ArrayLiteralExpression | null {
+  const declarations = scope.statements.flatMap((statement) =>
+    ts.isVariableStatement(statement) &&
+    (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
+      ? [...statement.declarationList.declarations]
+      : [],
+  )
+  for (const declaration of declarations) {
+    if (
+      ts.isIdentifier(declaration.name) &&
+      declaration.name.text === identifier.text &&
+      declaration.pos < identifier.pos &&
+      declaration.initializer &&
+      ts.isArrayLiteralExpression(declaration.initializer)
+    ) {
+      return declaration.initializer
+    }
+  }
+  return null
+}
+
 function constArrayInitializer(identifier: ts.Identifier): ts.ArrayLiteralExpression | null {
   for (const scope of enclosingScopes(identifier)) {
-    for (const statement of scope.statements) {
-      if (!ts.isVariableStatement(statement)) continue
-      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue
-      for (const declaration of statement.declarationList.declarations) {
-        if (
-          ts.isIdentifier(declaration.name) &&
-          declaration.name.text === identifier.text &&
-          declaration.pos < identifier.pos &&
-          declaration.initializer &&
-          ts.isArrayLiteralExpression(declaration.initializer)
-        ) {
-          return declaration.initializer
-        }
-      }
-    }
+    const initializer = constArrayInScope(scope, identifier)
+    if (initializer) return initializer
   }
   return null
 }
