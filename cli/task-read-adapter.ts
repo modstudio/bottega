@@ -156,7 +156,7 @@ export function installCliTaskReader(): void {
         connection,
       )
       return {
-        id: task.id,
+        id: task.record_id,
         key: task.key,
         project: { name: fixtureProject.name, recordId: fixtureProject.record_id },
       }

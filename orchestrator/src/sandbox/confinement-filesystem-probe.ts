@@ -34,6 +34,7 @@ import {
   launchCommand,
   launchSandboxProbe,
   launchTaskReadCommands,
+  type TaskReadCommands,
 } from './confinement-probe-launch.ts'
 import {
   type ConfinementProbeTask,
