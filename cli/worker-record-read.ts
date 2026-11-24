@@ -65,17 +65,24 @@ export async function dispatchWorkerRecordRead(argv: string[]): Promise<number |
     ])
     const readOptions = project ? { project } : {}
     if (route === 'task') {
-      const detail = await callWorkerRecordRead<HostedTaskDetail>('read_task', {
-        key: value,
-        ...readOptions,
-      })
+      const detail = await callWorkerRecordRead<HostedTaskDetail & { tracker_notice?: string }>(
+        'read_task',
+        {
+          key: value,
+          ...readOptions,
+        },
+      )
       const shown = {
         task: hostedTaskRow(detail.task),
         comments: detail.comments.map(hostedComment),
         documents: detail.documents.map(hostedTaskDocumentSummary),
+        ...(detail.tracker_notice ? { tracker_notice: detail.tracker_notice } : {}),
       }
       if (json) console.log(JSON.stringify(shown))
-      else printShownTask(shown)
+      else {
+        printShownTask(shown)
+        if (detail.tracker_notice) console.log(detail.tracker_notice)
+      }
     } else if (route === 'document') {
       const hosted = await callWorkerRecordRead<HostedDocument>('read_task_document', {
         reference: value,

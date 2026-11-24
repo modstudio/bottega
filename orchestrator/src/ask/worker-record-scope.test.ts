@@ -57,6 +57,7 @@ describe('confined worker hosted-record scope', () => {
     if (!decision.allowed) {
       expect(decision.reason).toContain('run task DEV-2')
       expect(decision.reason).toContain('parent chain')
+      expect(decision.reason).not.toContain('linked tasks')
       expect(decision.reason).toContain(input.runSpaceId ?? '(unbound space)')
     }
   })

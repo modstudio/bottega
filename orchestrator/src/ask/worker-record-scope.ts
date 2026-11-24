@@ -26,7 +26,7 @@ export type WorkerRecordScopeDecision = { allowed: true } | { allowed: false; re
 
 export function workerRecordScopeName(facts: WorkerRecordScopeFacts): string {
   const task = facts.runTaskKey ?? facts.runTaskId ?? '(unbound task)'
-  return `run task ${task}, its parent chain, and linked tasks in record space ${facts.runSpaceId ?? '(unbound space)'}`
+  return `run task ${task} and its parent chain in record space ${facts.runSpaceId ?? '(unbound space)'}`
 }
 
 export function decideWorkerRecordReadScope(

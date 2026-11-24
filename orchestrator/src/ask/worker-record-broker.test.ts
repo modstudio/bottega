@@ -23,6 +23,7 @@ const FOREIGN_TEXT_ID = '01990000-0000-7000-8000-000000000006'
 const MISSING_TEXT_ID = '01990000-0000-7000-8000-000000000007'
 const LIVE_STAGE_ID = '01990000-0000-7000-8000-000000000008'
 const FOREIGN_STAGE_ID = '01990000-0000-7000-8000-000000000009'
+const MISSING_DOCUMENT_ID = '01990000-0000-7000-8000-000000000010'
 
 function detail(input: {
   id: string
@@ -112,6 +113,9 @@ test('the broker walks and enforces the run task scope before returning hosted r
   expect(await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)).toBe(
     tasks.get(CHILD_ID)!,
   )
+  expect(
+    (await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)).tracker_notice,
+  ).toBeUndefined()
   expect(await readWorkerTask(runId, 'run-token', 'DEV-1', undefined, dependencies)).toBe(
     tasks.get(PARENT_ID)!,
   )
@@ -123,6 +127,12 @@ test('the broker walks and enforces the run task scope before returning hosted r
   expect(
     await readWorkerTaskDocument(runId, 'run-token', 'DEV-2/1', undefined, dependencies),
   ).toMatchObject({ task_key: 'DEV-2', number: 1 })
+  await expect(
+    readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
+  ).rejects.toThrow(`no task document ${MISSING_DOCUMENT_ID} in run task DEV-2 and its parent chain`)
+  await expect(
+    readWorkerTaskDocument(runId, 'run-token', 'DEV-2/2', undefined, dependencies),
+  ).rejects.toThrow('no task document DEV-2/2 in run task DEV-2 and its parent chain')
   await expect(
     readWorkerTaskDocument(runId, 'run-token', 'DEV-9/1', undefined, dependencies),
   ).rejects.toThrow('outside run task DEV-2')
@@ -146,4 +156,45 @@ test('the broker walks and enforces the run task scope before returning hosted r
   await expect(
     readWorkerTask(runId, 'run-token', 'DEV-2', `${project}-other`, dependencies),
   ).rejects.toThrow(`outside run project ${project}`)
+})
+
+test('the broker marks record gaps for a project that keeps its own tracker', async () => {
+  const projectId = fixtureProjectRecordId(db())
+  const project = db()
+    .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+    .get(projectId)!.name
+  db()
+    .query('UPDATE project SET settings=? WHERE record_id=?')
+    .run(JSON.stringify({ tracker: { protocol: 'workspace-mcp' } }), projectId)
+  rememberProjectSpace(db(), project, SPACE_ID)
+  const runId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    taskRecordId: CHILD_ID,
+    projectRecordId: projectId,
+  })
+  db()
+    .query('UPDATE run SET launch_key=?,run_token=? WHERE record_id=?')
+    .run('DEV-2', 'run-token', runId)
+  const task = detail({ id: CHILD_ID, key: 'DEV-2', projectId, parentId: null })
+  const dependencies = {
+    client: {
+      task: async () => task,
+      workflowText: async () => null,
+      workflowStage: async () => null,
+    } satisfies WorkerRecordClient,
+  }
+
+  const shown = await readWorkerTask(runId, 'run-token', 'DEV-2', undefined, dependencies)
+  expect(shown.tracker_notice).toContain(`project ${project}'s own tracker, not the record`)
+  expect(shown.tracker_notice).toContain('bottega workflow attach')
+  await expect(
+    readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
+  ).rejects.toThrow(
+    `Project ${project}'s task documents live in its own tracker and are not in the record`,
+  )
+  await expect(
+    readWorkerTaskDocument(runId, 'run-token', MISSING_DOCUMENT_ID, undefined, dependencies),
+  ).rejects.toThrow('bottega workflow attach')
 })

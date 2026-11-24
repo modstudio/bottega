@@ -87,6 +87,13 @@ export const trackerSettingsShape = {
 
 export type TrackerSettings = z.infer<z.ZodObject<typeof trackerSettingsShape>>
 
+/** A configured non-hub tracker remains the authoritative home for a project's tasks. */
+export function projectKeepsOwnTracker(
+  tracker: Pick<TrackerSettings, 'protocol'> | null | undefined,
+): boolean {
+  return tracker != null && tracker.protocol !== 'hub'
+}
+
 /** Hub commands are fixed; only MCP tool names may be overridden. */
 export function refuseHubActionOverrides(
   tracker: TrackerSettings,

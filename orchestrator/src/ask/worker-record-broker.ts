@@ -1,8 +1,11 @@
 // concern: confined worker hosted-record broker
 /** Gathers host-side run facts, applies scope policy, then performs one read. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { projectKeepsOwnTracker } from '../../../shared/trackers.ts'
 import { db } from '../database/db.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
+import { projectByName } from '../project/projects.ts'
 import type { ShownWorkflowText } from '../workflow/workflow-text-commands.ts'
 import { strictlyAuthenticatedWorkerRun } from './worker-auth.ts'
 import {
@@ -26,6 +29,7 @@ type RunScopeRow = {
 }
 
 type WorkerReadDependencies = { client?: WorkerRecordClient }
+type WorkerTaskRead = WorkerHostedTaskDetail & { tracker_notice?: string }
 
 function runScopeFacts(runId: string, token: string): WorkerRecordScopeFacts & { project: string } {
   const row = db()
@@ -113,13 +117,34 @@ function fixedWorkflowRefusal(facts: WorkerRecordScopeFacts, id: string): Error 
   )
 }
 
+function projectUsesOwnTracker(project: string): boolean {
+  return projectKeepsOwnTracker(projectByName(project, db())?.settings.tracker)
+}
+
+function attachWorkflowTextRemedy(): string {
+  return `Attach the content to the cursor as workflow text with \`${PLATFORM_SLUG} workflow attach\`.`
+}
+
+function trackerTaskNotice(project: string): string {
+  return `This task's body and documents live in project ${project}'s own tracker, not the record. ${attachWorkflowTextRemedy()}`
+}
+
+function missingDocumentMessage(
+  reference: string,
+  facts: WorkerRecordScopeFacts & { project: string },
+): string {
+  const missing = `no task document ${reference} in ${workerRecordScopeName(facts)}`
+  if (!projectUsesOwnTracker(facts.project)) return missing
+  return `${missing}. Project ${facts.project}'s task documents live in its own tracker and are not in the record. ${attachWorkflowTextRemedy()}`
+}
+
 export async function readWorkerTask(
   runId: string,
   token: string,
   key: string,
   project?: string,
   dependencies: WorkerReadDependencies = {},
-): Promise<WorkerHostedTaskDetail> {
+): Promise<WorkerTaskRead> {
   const scope = runScopeFacts(runId, token)
   requireProject(scope, project)
   const client = dependencies.client ?? createWorkerRecordClient()
@@ -127,7 +152,9 @@ export async function readWorkerTask(
   const detail = chain.details.get(key.toUpperCase()) ?? chain.details.get(key)
   requireAllowed(chain.facts, targetFor(chain.facts, 'task', detail, key))
   if (!detail) throw new Error(`no task ${key} in ${workerRecordScopeName(chain.facts)}`)
-  return detail
+  return projectUsesOwnTracker(scope.project)
+    ? { ...detail, tracker_notice: trackerTaskNotice(scope.project) }
+    : detail
 }
 
 export async function readWorkerTaskDocument(
@@ -142,6 +169,12 @@ export async function readWorkerTaskDocument(
   const client = dependencies.client ?? createWorkerRecordClient()
   const chain = await allowedTaskChain(scope, client)
   const label = /^([^/]+)\/(\d+)$/.exec(reference)
+  if (label && !chain.facts.allowedTaskKeys.includes(label[1]!.toUpperCase())) {
+    requireAllowed(
+      chain.facts,
+      targetFor(chain.facts, 'task-document', undefined, label[1]),
+    )
+  }
   const documents = [...new Set(chain.details.values())].flatMap((detail) =>
     detail.documents.map((document) => ({ detail, document })),
   )
@@ -151,12 +184,11 @@ export async function readWorkerTaskDocument(
         Number(document.number) === Number(label[2])
       : document.id.toLowerCase() === reference.toLowerCase(),
   )
-  requireAllowed(
-    chain.facts,
-    targetFor(chain.facts, 'task-document', found?.detail, label?.[1] ?? null),
-  )
   if (!found)
-    throw new Error(`no task document ${reference} in ${workerRecordScopeName(chain.facts)}`)
+    throw new Error(
+      missingDocumentMessage(reference, { ...chain.facts, project: scope.project }),
+    )
+  requireAllowed(chain.facts, targetFor(chain.facts, 'task-document', found.detail))
   return found.document
 }
 
