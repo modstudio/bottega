@@ -57,6 +57,7 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/file-backed-secret-paths.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/distribution-manifest.ts',
     '../../../shared/state-directory.ts',
