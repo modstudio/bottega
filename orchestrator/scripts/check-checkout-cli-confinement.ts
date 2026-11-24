@@ -55,6 +55,10 @@ function migrateTemporaryStore(checkout: string, environment: Record<string, str
   }
 }
 
+// An ACP agent: codex, grok and qwen take their own home branches, so only such an agent reaches
+// prepareSandboxHome's SRT worker-home branch, the home a live confined ACP worker receives.
+const SRT_WORKER_HOME_AGENT = 'goose'
+
 function guardRunEnvironment(
   childEnv: typeof import('../src/run/run-process.ts').childEnv,
   agent: Agent,
@@ -248,7 +252,7 @@ async function probeConfinedTools(
     runtime.run.childEnv,
     runtime.agents.BUILTIN_AGENTS.codex!,
     input.environment,
-    runtime.sandbox.prepareSandboxHome('goose', input.runtimeDir, process.env, 'srt'),
+    runtime.sandbox.prepareSandboxHome(SRT_WORKER_HOME_AGENT, input.runtimeDir, process.env, 'srt'),
     input.forceSource,
   )
   if (input.forceSource) {
@@ -390,7 +394,7 @@ async function probeConfinedTaskReads(
     runtime.run.childEnv,
     runtime.agents.BUILTIN_AGENTS.codex!,
     input.environment,
-    runtime.sandbox.prepareSandboxHome('goose', input.runtimeDir, process.env, 'srt'),
+    runtime.sandbox.prepareSandboxHome(SRT_WORKER_HOME_AGENT, input.runtimeDir, process.env, 'srt'),
     false,
   )
   const commandEnvironment = { ...runEnvironment, [CHECKOUT_ROOT_ENV]: input.checkout }
