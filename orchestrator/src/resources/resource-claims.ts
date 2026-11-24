@@ -5,6 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
@@ -236,12 +237,35 @@ export function recipePortAllocation(
 export function indexAllocation(
   claimedIndexes: readonly number[],
   existingClaimedIndex: number | null,
+  renderAllocationKeys: (index: number) => readonly string[],
+  claimedAllocationKeys: readonly string[],
 ): { action: 'reuse' | 'claim'; index: number } {
   if (existingClaimedIndex !== null) return { action: 'reuse', index: existingClaimedIndex }
   const claimed = new Set(claimedIndexes)
-  let index = 1
-  while (claimed.has(index)) index++
-  return { action: 'claim', index }
+  const held = new Set(claimedAllocationKeys)
+  const renderedKeyCount = renderAllocationKeys(1).length
+  const upperBound = claimed.size + held.size * renderedKeyCount + 1
+  for (let index = 1; index <= upperBound; index++) {
+    if (claimed.has(index)) continue
+    if (renderAllocationKeys(index).some((key) => held.has(key))) continue
+    return { action: 'claim', index }
+  }
+  throw new Error('index allocation renderer did not leave a free value within its finite bound')
+}
+
+export function allocationCollisionMessage(input: {
+  kind: 'string' | 'database'
+  name: string
+  value: string
+  holderRootRunId: string
+  templateHasIndex: boolean
+}): string {
+  const held =
+    `${input.kind} allocation "${input.name}" value "${input.value}" is held by run ` +
+    input.holderRootRunId
+  return input.templateHasIndex
+    ? `${held} even though its template already contains {index}; report this allocation defect with ${PLATFORM_SLUG} note new`
+    : `${held}; include {index} in its template`
 }
 
 export function stringClaimDecision(
@@ -417,7 +441,11 @@ export function claimRecipePort(
 
 export function claimIndex(
   database: Database,
-  input: ClaimOwner & { projectId: string; claimedAt: string },
+  input: ClaimOwner & {
+    projectId: string
+    claimedAt: string
+    renderAllocationKeys: (index: number) => readonly string[]
+  },
 ): number {
   const existing = database
     .query(
@@ -435,10 +463,24 @@ export function claimIndex(
       )
       .all(input.projectId) as { allocation_key: string }[]
   ).map((row) => Number(row.allocation_key.split(':').at(-1)))
+  const claimedAllocationKeys = (
+    database
+      .query(
+        `SELECT allocation_key FROM resource_claim
+         WHERE state='claimed' AND root_run_record_id<>?
+           AND (kind='database' OR (kind='string' AND project_record_id=?))`,
+      )
+      .all(input.rootRunId, input.projectId) as { allocation_key: string }[]
+  ).map((row) => row.allocation_key)
   const attempted = new Set(claimedIndexes)
 
   while (true) {
-    const decision = indexAllocation([...attempted], existingIndex)
+    const decision = indexAllocation(
+      [...attempted],
+      existingIndex,
+      input.renderAllocationKeys,
+      claimedAllocationKeys,
+    )
     if (decision.action === 'reuse') return decision.index
     try {
       database
@@ -469,7 +511,13 @@ export function claimIndex(
 
 export function claimString(
   database: Database,
-  input: ClaimOwner & { projectId: string; name: string; value: string; claimedAt: string },
+  input: ClaimOwner & {
+    projectId: string
+    name: string
+    value: string
+    claimedAt: string
+    templateHasIndex: boolean
+  },
 ): string {
   const existing = database
     .query(
@@ -497,7 +545,13 @@ export function claimString(
   if (decision === 'reuse') return existingValue ?? input.value
   if (decision === 'collision') {
     throw new Error(
-      `string allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_record_id}; include {index} in its template`,
+      allocationCollisionMessage({
+        kind: 'string',
+        name: input.name,
+        value: input.value,
+        holderRootRunId: holder!.root_run_record_id,
+        templateHasIndex: input.templateHasIndex,
+      }),
     )
   }
   try {
@@ -528,7 +582,13 @@ export function claimString(
       )
       .get(allocationKey) as { root_run_record_id: string }
     throw new Error(
-      `string allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_record_id}; include {index} in its template`,
+      allocationCollisionMessage({
+        kind: 'string',
+        name: input.name,
+        value: input.value,
+        holderRootRunId: collided.root_run_record_id,
+        templateHasIndex: input.templateHasIndex,
+      }),
     )
   }
 }
@@ -541,6 +601,7 @@ export function claimDatabaseName(
     engine: string
     value: string
     claimedAt: string
+    templateHasIndex: boolean
   },
 ): string {
   const existing = database
@@ -568,7 +629,13 @@ export function claimDatabaseName(
   if (decision === 'reuse') return existingValue ?? input.value
   if (decision === 'collision') {
     throw new Error(
-      `database allocation "${input.name}" value "${input.value}" is held by run ${holder!.root_run_record_id}; include {index} in its template`,
+      allocationCollisionMessage({
+        kind: 'database',
+        name: input.name,
+        value: input.value,
+        holderRootRunId: holder!.root_run_record_id,
+        templateHasIndex: input.templateHasIndex,
+      }),
     )
   }
   try {
@@ -600,7 +667,13 @@ export function claimDatabaseName(
       )
       .get(allocationKey) as { root_run_record_id: string }
     throw new Error(
-      `database allocation "${input.name}" value "${input.value}" is held by run ${collided.root_run_record_id}; include {index} in its template`,
+      allocationCollisionMessage({
+        kind: 'database',
+        name: input.name,
+        value: input.value,
+        holderRootRunId: collided.root_run_record_id,
+        templateHasIndex: input.templateHasIndex,
+      }),
     )
   }
 }

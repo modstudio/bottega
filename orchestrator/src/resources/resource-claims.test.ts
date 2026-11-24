@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
+  allocationCollisionMessage,
   claimDatabaseName,
   claimedWorktreeRefusal,
   claimIndex,
@@ -168,10 +169,29 @@ describe('resource claim decisions', () => {
     })
   })
 
-  test('index allocation chooses the lowest free value and reuses the root value', () => {
-    expect(indexAllocation([], null)).toEqual({ action: 'claim', index: 1 })
-    expect(indexAllocation([1, 3], null)).toEqual({ action: 'claim', index: 2 })
-    expect(indexAllocation([1, 2], 2)).toEqual({ action: 'reuse', index: 2 })
+  test('index allocation skips a rendered database value held by another root', () => {
+    expect(
+      indexAllocation([], null, (index) => [`postgres:stopal_orch_${index}`], [
+        'postgres:stopal_orch_1',
+      ]),
+    ).toEqual({ action: 'claim', index: 2 })
+  })
+
+  test('index allocation skips a rendered string value held by another root', () => {
+    expect(
+      indexAllocation([], null, (index) => [`string:project:net_${index}`], [
+        'string:project:net_1',
+      ]),
+    ).toEqual({ action: 'claim', index: 2 })
+  })
+
+  test('index allocation skips live indexes and reuses the root value unchanged', () => {
+    expect(indexAllocation([], null, () => [], [])).toEqual({ action: 'claim', index: 1 })
+    expect(indexAllocation([1, 2], null, () => [], [])).toEqual({ action: 'claim', index: 3 })
+    expect(indexAllocation([1, 2], 2, () => ['held'], ['held'])).toEqual({
+      action: 'reuse',
+      index: 2,
+    })
   })
 
   test('string allocation filling refuses a missing value instead of filling empty text', () => {
@@ -293,6 +313,7 @@ describe('resource claim decisions', () => {
             runId: rootRunId,
             projectId,
             claimedAt: nowIso(),
+            renderAllocationKeys: () => [],
           }),
         database,
       )
@@ -328,6 +349,7 @@ describe('resource claim decisions', () => {
             name: 'cookie',
             value,
             claimedAt: nowIso(),
+            templateHasIndex: false,
           }),
         database,
       )
@@ -359,6 +381,7 @@ describe('resource claim decisions', () => {
             engine,
             value,
             claimedAt: nowIso(),
+            templateHasIndex: false,
           }),
         database,
       )
@@ -369,6 +392,20 @@ describe('resource claim decisions', () => {
       `database allocation "app" value "app_1" is held by run ${first}; include {index} in its template`,
     )
     expect(claim(second, 'mysql', 'app_1')).toBe('app_1')
+  })
+
+  test('a collision with an indexed template reports the unreachable allocation defect', () => {
+    expect(
+      allocationCollisionMessage({
+        kind: 'database',
+        name: 'app',
+        value: 'app_1',
+        holderRootRunId: 'root-one',
+        templateHasIndex: true,
+      }),
+    ).toBe(
+      `database allocation "app" value "app_1" is held by run root-one even though its template already contains {index}; report this allocation defect with ${PLATFORM_SLUG} note new`,
+    )
   })
 
   test('worktree settlement releases index and string claims unless the tree is retained', () => {

@@ -54,6 +54,7 @@ import {
   type StepResult,
 } from './recipe-step.ts'
 import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
+import { trackedAllocationKeys } from './tracked-allocation-keys.ts'
 import {
   startTrackedTeardownMainStack,
   stopTrackedTeardownMainStack,
@@ -218,7 +219,14 @@ export const trackedAllocator: TrackedAllocator = {
         projectId: owner.project_record_id,
         claimedAt: nowIso(),
       }
-      const index = claimIndex(database, identity)
+      const renderAllocationKeys = (index: number) =>
+        trackedAllocationKeys({
+          recipe: input.recipe,
+          staticVars: input.staticVars,
+          projectId: identity.projectId,
+          index,
+        })
+      const index = claimIndex(database, { ...identity, renderAllocationKeys })
       const ports: Record<string, number> = {}
       for (const name of input.recipe.allocate?.ports ?? []) {
         ports[name] = claimRecipePort(database, { ...identity, band: RECIPE_PORT_BAND, name })
@@ -227,7 +235,12 @@ export const trackedAllocator: TrackedAllocator = {
       const stringVars = { ...input.staticVars, index: String(index) }
       for (const [name, template] of Object.entries(input.recipe.allocate?.strings ?? {})) {
         const value = fillStringAllocationTemplate(name, template, stringVars)
-        strings[name] = claimString(database, { ...identity, name, value })
+        strings[name] = claimString(database, {
+          ...identity,
+          name,
+          value,
+          templateHasIndex: template.includes('{index}'),
+        })
       }
       const databases: Record<string, string> = {}
       for (const [name, allocation] of Object.entries(input.recipe.allocate?.databases ?? {})) {
@@ -237,6 +250,7 @@ export const trackedAllocator: TrackedAllocator = {
           name,
           engine: allocation.engine,
           value,
+          templateHasIndex: allocation.name.includes('{index}'),
         })
       }
       const insertedClaimIds = (
