@@ -13,6 +13,16 @@ const module = (file: string, allowed: string[]): RecipeModule => ({
 
 export const recipeModules: RecipeModule[] = [
   module('orchestrator/src/recipe/env-file.ts', []),
+  module('orchestrator/src/recipe/tracked-allocation-keys.ts', [
+    '../resources/resource-claims.ts',
+    './recipe-schema.ts',
+  ]),
+  module('orchestrator/src/recipe/tracked-allocation-claims.ts', [
+    '../resources/resource-claims.ts',
+    '../resources/resource-step-recorder.ts',
+    './recipe-schema.ts',
+    './tracked-allocation-keys.ts',
+  ]),
   module('orchestrator/src/recipe/database-allocation-matcher.ts', []),
   module('orchestrator/src/recipe/database-connection-observation.ts', [
     './database-allocation-matcher.ts',

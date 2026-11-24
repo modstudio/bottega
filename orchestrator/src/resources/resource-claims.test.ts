@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
+  allocationCollisionMessage,
   claimDatabaseName,
   claimedWorktreeRefusal,
   claimIndex,
@@ -11,6 +12,7 @@ import {
   claimRecipePort,
   claimString,
   createdWorktreeClaimKinds,
+  databaseAllocationKey,
   fillStringAllocationTemplate,
   indexAllocation,
   lowestFreePort,
@@ -23,6 +25,7 @@ import {
   settledStateForCloseOut,
   settledStateForDatabaseTeardown,
   settledStateForWorktreeResource,
+  stringAllocationKey,
   stringClaimDecision,
 } from './resource-claims.ts'
 import { claimCreationDecision } from './resource-step-recorder.ts'
@@ -168,10 +171,32 @@ describe('resource claim decisions', () => {
     })
   })
 
-  test('index allocation chooses the lowest free value and reuses the root value', () => {
-    expect(indexAllocation([], null)).toEqual({ action: 'claim', index: 1 })
-    expect(indexAllocation([1, 3], null)).toEqual({ action: 'claim', index: 2 })
-    expect(indexAllocation([1, 2], 2)).toEqual({ action: 'reuse', index: 2 })
+  test('index allocation skips a rendered database value held by another root', () => {
+    expect(
+      indexAllocation(
+        [],
+        null,
+        (index) => [databaseAllocationKey('postgres', `stopal_orch_${index}`)],
+        [databaseAllocationKey('postgres', 'stopal_orch_1')],
+      ),
+    ).toEqual({ action: 'claim', index: 2 })
+  })
+
+  test('index allocation skips a rendered string value held by another root', () => {
+    expect(
+      indexAllocation([], null, (index) => [stringAllocationKey('project', `net_${index}`)], [
+        stringAllocationKey('project', 'net_1'),
+      ]),
+    ).toEqual({ action: 'claim', index: 2 })
+  })
+
+  test('index allocation skips live indexes and reuses the root value unchanged', () => {
+    expect(indexAllocation([], null, () => [], [])).toEqual({ action: 'claim', index: 1 })
+    expect(indexAllocation([1, 2], null, () => [], [])).toEqual({ action: 'claim', index: 3 })
+    expect(indexAllocation([1, 2], 2, () => ['held'], ['held'])).toEqual({
+      action: 'reuse',
+      index: 2,
+    })
   })
 
   test('string allocation filling refuses a missing value instead of filling empty text', () => {
@@ -293,6 +318,7 @@ describe('resource claim decisions', () => {
             runId: rootRunId,
             projectId,
             claimedAt: nowIso(),
+            renderAllocationKeys: () => [],
           }),
         database,
       )
@@ -307,6 +333,44 @@ describe('resource claim decisions', () => {
       )
       .run(first)
     expect(claim(third, projectOne)).toBe(1)
+  })
+
+  test('a retained database makes a new root skip its rendered index', () => {
+    const database = db()
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'retained-index','/retained-index',1) RETURNING record_id",
+      )
+      .get()!.record_id
+    const holder = resourceRun(projectId)
+    const requester = resourceRun(projectId)
+    claimDatabaseName(database, {
+      rootRunId: holder,
+      runId: holder,
+      projectId,
+      name: 'app',
+      engine: 'postgres',
+      value: 'stopal_orch_1',
+      claimedAt: nowIso(),
+      templateHasIndex: true,
+    })
+    database
+      .query(
+        "UPDATE resource_claim SET state='retained' WHERE root_run_record_id=? AND kind='database'",
+      )
+      .run(holder)
+
+    expect(
+      claimIndex(database, {
+        rootRunId: requester,
+        runId: requester,
+        projectId,
+        claimedAt: nowIso(),
+        renderAllocationKeys: (index) => [
+          databaseAllocationKey('postgres', `stopal_orch_${index}`),
+        ],
+      }),
+    ).toBe(2)
   })
 
   test('string claims reuse by root and name and refuse another root holding the value', () => {
@@ -328,6 +392,7 @@ describe('resource claim decisions', () => {
             name: 'cookie',
             value,
             claimedAt: nowIso(),
+            templateHasIndex: false,
           }),
         database,
       )
@@ -359,6 +424,7 @@ describe('resource claim decisions', () => {
             engine,
             value,
             claimedAt: nowIso(),
+            templateHasIndex: false,
           }),
         database,
       )
@@ -369,6 +435,20 @@ describe('resource claim decisions', () => {
       `database allocation "app" value "app_1" is held by run ${first}; include {index} in its template`,
     )
     expect(claim(second, 'mysql', 'app_1')).toBe('app_1')
+  })
+
+  test('a collision with an indexed template reports the unreachable allocation defect', () => {
+    expect(
+      allocationCollisionMessage({
+        kind: 'database',
+        name: 'app',
+        value: 'app_1',
+        holderRootRunId: 'root-one',
+        templateHasIndex: true,
+      }),
+    ).toBe(
+      `database allocation "app" value "app_1" is held by run root-one even though its template already contains {index}; report this allocation defect with ${PLATFORM_SLUG} note new`,
+    )
   })
 
   test('worktree settlement releases index and string claims unless the tree is retained', () => {
