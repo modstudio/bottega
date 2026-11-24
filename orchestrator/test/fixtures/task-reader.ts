@@ -7,6 +7,7 @@ export function installTaskRows(rows: readonly TaskLookupRow[] | null): void {
     return
   }
   installTaskReader({
+    listLocal: async () => [],
     list: async ({ project, status } = {}) =>
       rows
         .filter(
