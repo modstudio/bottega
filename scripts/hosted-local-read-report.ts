@@ -171,6 +171,21 @@ function maskCodeCharacter(char: string, next: string): MaskStep {
   return { state: 'code', text: char, advance: 1 }
 }
 
+function maskEscape(state: Exclude<MaskState, 'code' | 'line' | 'block'>, next: string): MaskStep {
+  const visible = state === 'single' || state === 'double'
+  return {
+    state,
+    text: `\\${next === '\n' ? '\n' : visible ? next : ' '}`,
+    advance: 2,
+  }
+}
+
+function closesMaskState(state: Exclude<MaskState, 'code'>, char: string): boolean {
+  if (state === 'single') return char === "'"
+  if (state === 'double') return char === '"'
+  return state === 'template' && char === '`'
+}
+
 function maskNonCodeCharacter(
   state: Exclude<MaskState, 'code'>,
   char: string,
@@ -178,20 +193,10 @@ function maskNonCodeCharacter(
 ): MaskStep {
   if (char === '\n') return { state: state === 'line' ? 'code' : state, text: '\n', advance: 1 }
   const visible = state === 'single' || state === 'double'
-  if (char === '\\' && state !== 'line' && state !== 'block')
-    return {
-      state,
-      text: `\\${next === '\n' ? '\n' : visible ? next : ' '}`,
-      advance: 2,
-    }
+  if (char === '\\' && state !== 'line' && state !== 'block') return maskEscape(state, next)
   if (state === 'block' && char === '*' && next === '/')
     return { state: 'code', text: '  ', advance: 2 }
-  if (
-    (state === 'single' && char === "'") ||
-    (state === 'double' && char === '"') ||
-    (state === 'template' && char === '`')
-  )
-    return { state: 'code', text: visible ? char : ' ', advance: 1 }
+  if (closesMaskState(state, char)) return { state: 'code', text: visible ? char : ' ', advance: 1 }
   return { state, text: visible ? char : ' ', advance: 1 }
 }
 
@@ -201,7 +206,7 @@ function maskSource(source: string): string {
   for (let index = 0; index < source.length; ) {
     const char = source[index] ?? ''
     const next = source[index + 1] ?? ''
-    const step =
+    const step: MaskStep =
       state === 'code' ? maskCodeCharacter(char, next) : maskNonCodeCharacter(state, char, next)
     result += step.text
     state = step.state
