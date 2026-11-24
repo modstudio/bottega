@@ -37,7 +37,6 @@ import {
   stableMcpServers,
 } from '../setup/setup-mcp.ts'
 import {
-  type OwnedSettings,
   ownedEnvironmentNames,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
@@ -70,10 +69,7 @@ import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import {
-  parseSettingsFile,
-  renderOwnedSettingsFile,
-} from './settings-render.ts'
+import { parseSettingsFile, renderOwnedSettingsFile } from './settings-render.ts'
 import {
   applySettingsWrite,
   planSettingsWrite,

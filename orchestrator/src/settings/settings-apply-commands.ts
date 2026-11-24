@@ -253,34 +253,15 @@ export async function settingsRenderWriteCommand(
       : hosted
   const owned = withProductHooksForTarget(target, merged, hosted.options)
   const droppedEnv = flags.values?.('drop-env') ?? []
-  if (target.kind === 'project' && droppedEnv.length > 0) {
-    throw new Error('refusing settings render: --drop-env is user-only')
-  }
-  let missingEnvironment: string[] = []
-  let environment: Record<string, string> | undefined
-  if (target.kind === 'user') {
-    const secretsPath = userSettingsEnvPath(root)
-    const secrets = readSettingsEnv(secretsPath)
-    const names = new Set(ownedEnvironmentNames(owned))
-    const removed = parsed.envKeys.filter((name) => !names.has(name))
-    const unprotected = removed.filter((name) => !secrets.has(name) && !droppedEnv.includes(name))
-    if (unprotected.length > 0) {
-      throw new Error(
-        `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
-          `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first, or pass ` +
-          unprotected.map((name) => `--drop-env ${name}`).join(' ') +
-          ' to drop deliberately',
-      )
-    }
-    const selection = selectedSettingsEnvironment(secrets, owned.envKeys ?? [])
-    missingEnvironment = selection.missing
-    environment = environmentForSettingsApply(
-      owned,
-      selection.selected,
-      selection.missing,
-      existing !== null,
-    )
-  }
+  const { environment, missingEnvironment } = selectRenderWriteEnvironment({
+    target,
+    root,
+    path,
+    fileEnvKeys: parsed.envKeys,
+    owned,
+    droppedEnv,
+    fileExists: existing !== null,
+  })
   const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
   const plan = existing ? planSettingsWrite(path, rendered) : null
   logWritePlan(
@@ -296,25 +277,75 @@ export async function settingsRenderWriteCommand(
     presentation.exitCode(1)
     return
   }
-  if (plan === null) {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-    writeNewSettingsFileAtomically(path, rendered)
-    presentation.log(`wrote ${path}`)
-  } else {
-    const result = applySettingsWrite(plan, process.env)
-    if (!result.written) {
-      presentation.log(`unchanged ${path}; no backup written`)
-    } else {
-      presentation.log(`backup: ${result.backup}`)
-      presentation.log(`wrote ${path}`)
-    }
-  }
+  applyRenderWritePlan(plan, path, rendered, presentation.log)
   if (missingEnvironment.length > 0) {
     presentation.log(
       missingSettingsEnvironmentRefusal(userSettingsEnvPath(root), missingEnvironment),
     )
     presentation.exitCode(1)
   }
+}
+
+function selectRenderWriteEnvironment(input: {
+  target: Target
+  root: string
+  path: string
+  fileEnvKeys: string[]
+  owned: OwnedSettings
+  droppedEnv: string[]
+  fileExists: boolean
+}): { environment: Record<string, string> | undefined; missingEnvironment: string[] } {
+  if (input.target.kind === 'project') {
+    if (input.droppedEnv.length > 0) {
+      throw new Error('refusing settings render: --drop-env is user-only')
+    }
+    return { environment: undefined, missingEnvironment: [] }
+  }
+  const secrets = readSettingsEnv(userSettingsEnvPath(input.root))
+  const names = new Set(ownedEnvironmentNames(input.owned))
+  const removed = input.fileEnvKeys.filter((name) => !names.has(name))
+  const unprotected = removed.filter(
+    (name) => !secrets.has(name) && !input.droppedEnv.includes(name),
+  )
+  if (unprotected.length > 0) {
+    throw new Error(
+      `refusing settings write: env key(s) exist only in ${input.path}: ${unprotected.join(', ')}\n` +
+        `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first, or pass ` +
+        unprotected.map((name) => `--drop-env ${name}`).join(' ') +
+        ' to drop deliberately',
+    )
+  }
+  const selection = selectedSettingsEnvironment(secrets, input.owned.envKeys ?? [])
+  return {
+    environment: environmentForSettingsApply(
+      input.owned,
+      selection.selected,
+      selection.missing,
+      input.fileExists,
+    ),
+    missingEnvironment: selection.missing,
+  }
+}
+
+function applyRenderWritePlan(
+  plan: ReturnType<typeof planSettingsWrite> | null,
+  path: string,
+  rendered: string,
+  log: (...values: unknown[]) => void,
+): void {
+  if (plan === null) {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    writeNewSettingsFileAtomically(path, rendered)
+    log(`wrote ${path}`)
+    return
+  }
+  const result = applySettingsWrite(plan, process.env)
+  if (!result.written) {
+    log(`unchanged ${path}; no backup written`)
+    return
+  }
+  log(`backup: ${result.backup}`)
+  log(`wrote ${path}`)
 }
 
 export function settingsRestoreCommand(
