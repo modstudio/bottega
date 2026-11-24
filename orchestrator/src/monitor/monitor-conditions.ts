@@ -24,7 +24,7 @@ import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
 import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
-import { classifyDockerInventorySpawnError } from '../resources/docker-inventory-command.ts'
+import { runBoundedDockerInventoryCommand } from '../resources/docker-inventory-command.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -617,21 +617,21 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  let listed: ReturnType<typeof boundedProcess.startBoundedSync>
-  try {
-    listed = boundedProcess.startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
-      budget: 'docker',
-    })
-  } catch (error) {
-    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
-    return availability.kind === 'docker-absent'
+  const listedCommand = runBoundedDockerInventoryCommand(
+    ['volume', 'ls', '--format', '{{.Name}}'],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!listedCommand.ok) {
+    if (listedCommand.kind === 'fail' && listedCommand.error instanceof BoundExceededError)
+      return { conditions: [], errors: [listedCommand.error.message] }
+    return listedCommand.kind === 'docker-absent'
       ? { conditions: [], errors: [] }
       : {
           conditions: [],
-          errors: [`docker volume inventory unavailable: ${availability.reason}`],
+          errors: [`docker volume inventory unavailable: ${listedCommand.reason}`],
         }
   }
+  const listed = listedCommand.result
   if (listed.exitCode !== 0) {
     return {
       conditions: [],
@@ -645,21 +645,21 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  let inspected: ReturnType<typeof boundedProcess.startBoundedSync>
-  try {
-    inspected = boundedProcess.startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
-      budget: 'docker',
-    })
-  } catch (error) {
-    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
-    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
-    return availability.kind === 'docker-absent'
+  const inspectedCommand = runBoundedDockerInventoryCommand(
+    ['volume', 'inspect', ...candidates],
+    dockerHostEvidenceProbe.gather,
+  )
+  if (!inspectedCommand.ok) {
+    if (inspectedCommand.kind === 'fail' && inspectedCommand.error instanceof BoundExceededError)
+      return { conditions: [], errors: [inspectedCommand.error.message] }
+    return inspectedCommand.kind === 'docker-absent'
       ? { conditions: [], errors: [] }
       : {
           conditions: [],
-          errors: [`docker volume inspection unavailable: ${availability.reason}`],
+          errors: [`docker volume inspection unavailable: ${inspectedCommand.reason}`],
         }
   }
+  const inspected = inspectedCommand.result
   if (inspected.exitCode !== 0) {
     return {
       conditions: [],

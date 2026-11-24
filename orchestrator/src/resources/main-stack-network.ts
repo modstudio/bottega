@@ -1,5 +1,7 @@
 // concern: exact host network destinations exposed by a declared main stack
 
+import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+
 type PublishedPort = {
   host_ip?: unknown
   published?: unknown
@@ -55,7 +57,7 @@ type GateMainStackProject = {
 export function mainStackGateAddresses(project: GateMainStackProject): string[] {
   const declaration = project.settings.mainStack
   if (!declaration?.consumers.includes('gate')) return []
-  const command = ['docker', 'compose', 'config', '--format', 'json']
+  const command = [DOCKER_EXECUTABLE, 'compose', 'config', '--format', 'json']
   let result: ReturnType<typeof Bun.spawnSync>
   try {
     result = Bun.spawnSync(command, {

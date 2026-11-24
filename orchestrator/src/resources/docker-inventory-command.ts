@@ -1,5 +1,8 @@
 // concern: Docker inventory process adapter and availability decision
 
+import * as boundedProcess from '../../../shared/bounded-process.ts'
+import { DOCKER_EXECUTABLE } from './docker-executable.ts'
+
 export type DockerHostEvidence = {
   executablePaths: string[]
   daemonSocketPaths: string[]
@@ -42,6 +45,15 @@ export type DockerInventoryCommandResult =
   | { ok: false; kind: 'docker-absent' }
   | { ok: false; kind: 'fail'; reason: string }
 
+export type BoundedDockerInventoryCommandResult =
+  | { ok: true; result: ReturnType<typeof boundedProcess.startBoundedSync> }
+  | { ok: false; kind: 'docker-absent' }
+  | { ok: false; kind: 'fail'; reason: string; error: unknown }
+
+export function dockerInventoryArgv(args: readonly string[]): string[] {
+  return [DOCKER_EXECUTABLE, ...args]
+}
+
 /** Structurally identify a missing executable without depending on runtime message text. */
 export function executableAbsentFrom(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null | undefined)?.code === 'ENOENT'
@@ -66,13 +78,16 @@ export function classifyDockerInventorySpawnError(
 
 /** Run and structurally classify a Docker inventory command. */
 export function runDockerInventoryCommand(
-  command: string[],
+  args: string[],
   timeoutMs: number,
   gatherEvidence: () => DockerHostEvidence,
+  options: { cwd?: string } = {},
 ): DockerInventoryCommandResult {
+  const command = dockerInventoryArgv(args)
   let result: ReturnType<typeof Bun.spawnSync>
   try {
     result = Bun.spawnSync(command, {
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: timeoutMs,
@@ -97,5 +112,25 @@ export function runDockerInventoryCommand(
     ok: true,
     stdout: result.stdout?.toString() ?? '',
     stderr: result.stderr?.toString() ?? '',
+  }
+}
+
+/** Run one bounded Docker inventory read and structurally classify spawn failure. */
+export function runBoundedDockerInventoryCommand(
+  args: string[],
+  gatherEvidence: () => DockerHostEvidence,
+): BoundedDockerInventoryCommandResult {
+  try {
+    return {
+      ok: true,
+      result: boundedProcess.startBoundedSync(dockerInventoryArgv(args), {
+        budget: DOCKER_EXECUTABLE,
+      }),
+    }
+  } catch (error) {
+    const availability = classifyDockerInventorySpawnError(error, gatherEvidence)
+    return availability.kind === 'fail'
+      ? { ok: false, kind: 'fail', reason: availability.reason, error }
+      : { ok: false, kind: 'docker-absent' }
   }
 }

@@ -722,7 +722,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-lifecycle-boundary',
     'orchestrator/src/recipe/recipe-lifecycle.ts',
-    ['./compose-provision-plan.ts', './recipe-schema.ts', './recipe-step.ts'],
+    [
+      './compose-provision-plan.ts',
+      './recipe-schema.ts',
+      './recipe-step.ts',
+      '../resources/docker-executable.ts',
+    ],
     'Keep lifecycle planning pure and independent of execution, persistence, filesystem, and the register.',
   ),
   boundary(
@@ -745,7 +750,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'recipe-step-boundary',
     'orchestrator/src/recipe/recipe-step.ts',
-    ['node:path', '../worktree/worktree-template.ts', './recipe-schema.ts'],
+    [
+      'node:path',
+      '../worktree/worktree-template.ts',
+      './recipe-schema.ts',
+      '../resources/docker-executable.ts',
+    ],
     'Keep recipe step execution independent of lifecycle, persistence, claims, and register concerns.',
   ),
   ...recordApiBoundaries.slice(0, 1),

@@ -2,6 +2,7 @@
 /** Knows only how to plan and execute one validated recipe step. Must not know recipe ordering, worktree lifecycle, claims, or the project register. */
 import { isAbsolute, relative, resolve } from 'node:path'
 import { expandedSeed } from '../worktree/worktree-template.ts'
+import { DOCKER_EXECUTABLE } from '../resources/docker-executable.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 
 export type Step = TrackedRecipe['create'][number]
@@ -49,7 +50,7 @@ export function executionArgv(
   }
   if (exec?.where === 'container') {
     return [
-      'docker',
+      DOCKER_EXECUTABLE,
       'compose',
       'exec',
       '-T',
