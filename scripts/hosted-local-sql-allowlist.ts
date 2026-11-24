@@ -31,7 +31,7 @@ const REPORT_ONLY_ALLOWED_FILES: readonly {
   expectedSites?: number
 }[] = [
   { file: 'orchestrator/src/board/board-push-service.ts', reason: 'outbox', expectedSites: 5 },
-  { file: 'orchestrator/src/board/board-adoption.ts', reason: 'adoption', expectedSites: 7 },
+  { file: 'orchestrator/src/board/board-adoption.ts', reason: 'adoption', expectedSites: 6 },
   { file: 'orchestrator/src/typed-question/typed-question-backtest.ts', reason: 'backtest' },
   { file: 'orchestrator/src/typed-question/typed-question-report.ts', reason: 'backtest' },
   { file: 'hub/src/task-push.ts', reason: 'outbox' },
