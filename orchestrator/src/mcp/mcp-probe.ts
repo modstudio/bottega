@@ -351,6 +351,7 @@ export function mcpRequestsAnswered(requestIds: JsonRpcId[], messages: unknown[]
   const responseIds = new Set<JsonRpcId>()
   for (const message of messages) {
     if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'id')) continue
+    if (!Object.hasOwn(message, 'result') && !Object.hasOwn(message, 'error')) continue
     const id = (message as { id?: unknown }).id
     if (typeof id === 'string' || typeof id === 'number' || id === null) responseIds.add(id)
   }
