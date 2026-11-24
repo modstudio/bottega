@@ -25,6 +25,7 @@ type Split = { epic: number[]; nonEpic: number[] }
 export type CursorClaimHealth = { unclaimed: Split; ownerNotAlive: Split }
 type OpenStageFact = {
   id: number
+  state: string
   workflow_key: string
   session_id: string | null
   task_flow_record_id: string | null
@@ -74,8 +75,9 @@ export function openKeyedCursorFacts(
       parent_flow_record_id ? [parent_flow_record_id] : [],
     ),
   )
+  const openStates = new Set<string>(TASK_FLOW_OPEN_STAGE_STATES)
   return stages.flatMap((stage): OpenKeyedCursorFact[] =>
-    stage.workflow_key && stage.session_id
+    openStates.has(stage.state) && stage.workflow_key && stage.session_id
       ? [
           {
             project,
@@ -160,17 +162,13 @@ export async function cursorClaimHealthConditions(
         states: [...TASK_FLOW_STAGE_STATES],
         view: 'summary',
       })
-      const openStates = new Set<string>(TASK_FLOW_OPEN_STAGE_STATES)
       const listed = await boardClaimList(project, false, {
         database,
         clock,
         taskCursorAuthority: { mode: 'coverage-read', session: null },
       })
       return {
-        cursors: openKeyedCursorFacts(
-          project,
-          stages.filter(({ state }) => openStates.has(state)),
-        ),
+        cursors: openKeyedCursorFacts(project, stages),
         claims: listed.claims.flatMap((claim): CursorClaimFact[] =>
           claim.live && claim.subject.kind === 'task' && claim.holderSession
             ? [
