@@ -89,7 +89,7 @@ export function refuseMissingAbandonReason(reason: string | undefined): asserts 
   if (!reason?.trim()) throw new Error('--reason is required')
 }
 
-export function persistedAdvanceRenderFailure(input: {
+function persistedAdvanceRenderFailure(input: {
   row: Pick<AdvanceRow, 'id' | 'workflow_slug' | 'project' | 'mode_slug' | 'args'>
   closed: { n: number; slug: string }
   active: { n: number; slug: string }

@@ -50,7 +50,7 @@ export function workflowTextLinkState(row: {
   return row.workflow_key?.trim() ? 'unresolved' : 'keyless'
 }
 
-export function unresolvedWorkflowTextReport(input: {
+function unresolvedWorkflowTextReport(input: {
   linkState: WorkflowTextLinkState
   textIds: readonly string[]
   cursor: number
