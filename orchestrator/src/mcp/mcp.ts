@@ -53,6 +53,7 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
+import type { ListWorkflowNotesPort } from '../workflow/workflow-cursor-compose.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
@@ -89,6 +90,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskLookup?: HubTaskLookup
+  listWorkflowNotes?: ListWorkflowNotesPort
   hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
@@ -578,7 +580,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 }
 
 function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
-  registerWorkflowPrompts(server, ports.hubTaskLookup)
+  registerWorkflowPrompts(server, ports.hubTaskLookup, ports.listWorkflowNotes)
   registerSearchTools(server)
   registerOperatorTools(server, ports.contextMomentPorts)
   registerBoardTools(server)

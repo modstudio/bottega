@@ -4,6 +4,7 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
+import type { ListWorkflowNotesPort } from '../workflow/workflow-cursor-compose.ts'
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
 import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
@@ -183,7 +184,11 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
     ]),
   )
 
-export function registerWorkflowPrompts(server: McpServer, hubTaskLookup?: HubTaskLookup): void {
+export function registerWorkflowPrompts(
+  server: McpServer,
+  hubTaskLookup?: HubTaskLookup,
+  listNotes?: ListWorkflowNotesPort,
+): void {
   for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
     server.registerPrompt(
@@ -232,6 +237,10 @@ export function registerWorkflowPrompts(server: McpServer, hubTaskLookup?: HubTa
                   undefined,
                   {},
                   { resolution: resolved },
+                  undefined,
+                  undefined,
+                  undefined,
+                  listNotes,
                 ),
               ),
             ].join('\n'),

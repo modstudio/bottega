@@ -97,6 +97,8 @@ async function openEpicAtStart(d: Database, session: string) {
         ),
       release: async () => ({ released: 0 }),
     },
+    undefined,
+    async () => [],
   )
   const start = shape.steps.findIndex(({ slug }) => slug === 'start')
   d.query('UPDATE workflow_cursor SET ordinal=?,step_slug=? WHERE number=?').run(

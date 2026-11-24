@@ -34,7 +34,6 @@ modes:
     steps:
       - refresh
       - diagnose
-      - measure-class
       - reproduce
       - implement-fix
       - verify
@@ -55,7 +54,6 @@ modes:
       - refresh
       - cohort-group
       - diagnose
-      - measure-class
       - reproduce
       - implement-fix
       - verify
