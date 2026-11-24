@@ -50,6 +50,10 @@ import {
   userSettingsEnvPath,
 } from './settings-env.ts'
 import {
+  environmentForSettingsApply,
+  missingSettingsEnvironmentRefusal,
+} from './settings-environment-selection.ts'
+import {
   claudeHomeFromEnvironment,
   tryReadSettingsFile,
   userSettingsPath,
@@ -65,11 +69,7 @@ import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import {
-  parseSettingsFile,
-  renderedSettingsEnvironment,
-  renderOwnedSettingsFile,
-} from './settings-render.ts'
+import { parseSettingsFile, renderOwnedSettingsFile } from './settings-render.ts'
 import {
   applySettingsWrite,
   planSettingsWrite,
@@ -213,7 +213,7 @@ function applyUserSettings(
   row: UserSettingsDocuments['settings'],
   check: boolean,
   deps: Dependencies,
-): MachineSettingsApplyResult {
+): MachineSettingsApplyResult[] {
   const home = claudeHomeFromEnvironment(deps.environment)
   const path = userSettingsPath(home)
   const target = `settings ${path}`
@@ -248,8 +248,10 @@ function applyUserSettings(
         ? merged.settings.options?.subagentHooks
         : undefined
     let environment: Record<string, string> | undefined
+    let missingEnvironment: string[] = []
+    let secretsPath = ''
     if (row) {
-      const secretsPath = userSettingsEnvPath(home)
+      secretsPath = userSettingsEnvPath(home)
       const secrets = readSettingsEnv(secretsPath)
       const names = new Set(ownedEnvironmentNames(owned))
       const removed = parsed.envKeys.filter((name) => !names.has(name))
@@ -260,13 +262,17 @@ function applyUserSettings(
             `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
         )
       }
-      environment = renderedSettingsEnvironment(
+      const selection = selectedSettingsEnvironment(secrets, owned.envKeys ?? [])
+      missingEnvironment = selection.missing
+      environment = environmentForSettingsApply(
         owned,
-        selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
+        selection.selected,
+        selection.missing,
+        existing !== null,
       )
     }
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-    return applyRenderedUserSettings({
+    const settingsResult = applyRenderedUserSettings({
       path,
       target,
       rendered,
@@ -282,8 +288,16 @@ function applyUserSettings(
       subagentHooks,
       deps,
     })
+    if (missingEnvironment.length === 0) return [settingsResult]
+    return [
+      settingsResult,
+      refusal(
+        `${target} env`,
+        new Error(missingSettingsEnvironmentRefusal(secretsPath, missingEnvironment)),
+      ),
+    ]
   } catch (error) {
-    return refusal(target, error)
+    return [refusal(target, error)]
   }
 }
 
@@ -514,7 +528,7 @@ export async function applyMachineSettings(
       deps.local,
     )
     return [
-      applyUserSettings(documents.settings, input.check, deps),
+      ...applyUserSettings(documents.settings, input.check, deps),
       ...applyUserCanon(documents.canon, documents.source, input.check, deps),
       ...(await applyClaudeMcpPlacement(input.check, deps)),
     ]

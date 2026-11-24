@@ -41,13 +41,18 @@ describe('settings secrets file', () => {
     expect(() => readSettingsEnv(secrets)).toThrow(/permits group or other access/)
   })
 
-  test('selects exactly the requested names and refuses a missing name', () => {
+  test('selects exactly the requested names and reports every missing name', () => {
     const secrets = join(root, 'settings.env')
     writeFileSync(secrets, 'ALPHA="one"\nBETA="two"\n', { mode: 0o600 })
-    expect(selectedSettingsEnvironment(secrets, ['BETA'])).toEqual({ BETA: 'two' })
-    expect(() => selectedSettingsEnvironment(secrets, ['MISSING'])).toThrow(
-      new RegExp(`MISSING is missing from ${secrets.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
-    )
+    const values = readSettingsEnv(secrets)
+    expect(selectedSettingsEnvironment(values, ['BETA'])).toEqual({
+      selected: { BETA: 'two' },
+      missing: [],
+    })
+    expect(selectedSettingsEnvironment(values, ['MISSING_B', 'ALPHA', 'MISSING_A'])).toEqual({
+      selected: { ALPHA: 'one' },
+      missing: ['MISSING_B', 'MISSING_A'],
+    })
   })
 
   test('parses comments after quoted values and comment-only unquoted values', () => {

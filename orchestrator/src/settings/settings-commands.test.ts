@@ -11,7 +11,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
-import { setDoc } from '../doc/docs.ts'
+import { setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { serializeOwnedSettings } from './settings.ts'
@@ -275,6 +275,38 @@ describe('settings import', () => {
 })
 
 describe('settings render --check', () => {
+  test('json reports drift and every missing per-machine environment name', async () => {
+    const root = fixtureProject('missing-user-environment')
+    const owner = await signedInDocOwner()
+    await setDoc({
+      scope: 'settings',
+      subject: null,
+      owner,
+      slug: 'settings',
+      title: 'settings',
+      body: serializeOwnedSettings({
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run diff *)`] },
+        hooks: {},
+        envKeys: ['MISSING_A', 'MISSING_B'],
+      }),
+      reason: 'seed missing user environment',
+    })
+    const shown = presentation()
+
+    await settingsRenderCheckCommand(
+      shown.flags({ user: true, check: true, json: true }),
+      shown.port(root),
+    )
+
+    const output = shown.logs.join('\n')
+    const parsed = JSON.parse(output)
+    expect(parsed.drifted).toBe(true)
+    expect(parsed.drift).toBeDefined()
+    expect(parsed.missingEnvironment).toEqual(['MISSING_A', 'MISSING_B'])
+    expect(output).not.toContain('"SECRET":"no"')
+    expect(shown.code()).toBe(1)
+  })
+
   test('json output redacts hook command text behind its fingerprint', async () => {
     const root = fixtureProject('json-redaction')
     const sentinel = 'DO_NOT_PRINT_THIS_HOOK_COMMAND'
