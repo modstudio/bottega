@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { jsonBody } from '../../shared/http-json.ts'
 import { recordNoDestinationWrite } from '../../shared/record/no-destination-write-store.ts'
 import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
@@ -131,10 +132,12 @@ export async function taskSpaceIdentity(
   } catch (cause) {
     return { kind: 'unavailable', cause: cause instanceof Error ? cause.name : 'Error' }
   }
-  const identityDecision = recordIdentityDecision(
-    response.status,
-    await response.json().catch(() => null),
-  )
+  if (response.status === 401 || response.status === 403) return { kind: 'unauthenticated' }
+  const result = await jsonBody(response, `${base.replace(/\/$/, '')}/v1/whoami`)
+  if (response.ok && !result.ok)
+    return { kind: 'unavailable', cause: `non-json ${response.status}` }
+  const body = result.ok ? result.value : null
+  const identityDecision = recordIdentityDecision(response.status, body)
   if (identityDecision.kind !== 'authenticated') return identityDecision
   const { identity } = identityDecision
   const decision = recordSpaceRequestDecision(

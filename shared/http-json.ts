@@ -1,11 +1,11 @@
-type JsonBodyFailure = {
+export type JsonBodyFailure = {
   ok: false
   url: string
   status: number
   contentType: string
 }
 
-type JsonBodyResult = { ok: true; value: unknown } | JsonBodyFailure
+export type JsonBodyResult = { ok: true; value: unknown } | JsonBodyFailure
 
 const JSON_MEDIA_TYPE = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i
 
@@ -37,4 +37,16 @@ export async function jsonBody(response: Response, url: string): Promise<JsonBod
       contentType,
     }
   }
+}
+
+/** Format the two hosted-response failures callers expose to operators. */
+export function hostedJsonFailureMessage(failure: JsonBodyFailure): string {
+  const source = new URL(failure.url)
+  if (failure.status < 200 || failure.status >= 300)
+    return hostedStatusMessage(failure.url, failure.status)
+  return `hosted response from ${source.host}${source.pathname} was not JSON (status ${failure.status}, content-type ${failure.contentType})`
+}
+
+export function hostedStatusMessage(url: string, status: number): string {
+  return `${new URL(url).host} answered ${status}`
 }

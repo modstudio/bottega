@@ -341,8 +341,7 @@ describe('revision conflict response', () => {
 })
 
 test('transport failures report the request write outcome', async () => {
-  const previousEnv = process.env.NODE_ENV
-  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  const { NODE_ENV: previousEnv, BOTTEGA_RECORD_API_URL: previousUrl } = process.env
   process.env.NODE_ENV = 'development'
   process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
   const authentication = { token: () => 'token', tokenAsync: async () => 'token' }
@@ -366,13 +365,14 @@ test('transport failures report the request write outcome', async () => {
           (async () => new Response('{', { status: 200 })) as unknown as typeof fetch,
         ),
       )
-      const malformedInput = {
-        doc: { scope: 'project', subject: PLATFORM_SLUG },
-        revisions: [],
-      } as never
       await expect(
-        malformed.importDoc(malformedInput, { destinationSpaceId: 'project-space' }),
-      ).rejects.toThrow('the write may have been applied; check before retrying')
+        malformed.importDoc(
+          { doc: { scope: 'project', subject: PLATFORM_SLUG }, revisions: [] } as never,
+          { destinationSpaceId: 'project-space' },
+        ),
+      ).rejects.toThrow(
+        /api\.example\.test[\s\S]*the write may have been applied; check before retrying/,
+      )
     } finally {
       installRecordApiClient(createMemoryRecordApiClient())
     }

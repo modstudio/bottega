@@ -77,6 +77,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     [
       '../../../shared/bounded-fetch.ts',
       '../../../shared/docs.ts',
+      '../../../shared/http-json.ts',
       '../../../shared/record-api-url.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record-request-headers.ts',
@@ -93,6 +94,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-client-context-items.ts',
       './record-api-client-space-agents.ts',
       './record-api-client-error.ts',
+      './record-api-client-hosted-response.ts',
       './record-api-client-paths.ts',
       './record-api-client-response.ts',
       './record-context-items.ts',

@@ -1,3 +1,4 @@
+import { jsonBody } from '../../../shared/http-json.ts'
 import { recordErrorMessage, recordRequest } from './record-request.ts'
 
 export async function signInWithEmail(email: string, password: string) {
@@ -6,9 +7,8 @@ export async function signInWithEmail(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   })
   if (!response.ok) {
-    throw new Error(
-      recordErrorMessage(await response.json().catch(() => null), 'Could not sign in'),
-    )
+    const body = await jsonBody(response, response.url)
+    throw new Error(recordErrorMessage(body.ok ? body.value : null, 'Could not sign in'))
   }
 }
 
@@ -33,8 +33,7 @@ export async function signOutFromRecord() {
     method: 'POST',
   })
   if (!response.ok) {
-    throw new Error(
-      recordErrorMessage(await response.json().catch(() => null), 'Could not sign out'),
-    )
+    const body = await jsonBody(response, response.url)
+    throw new Error(recordErrorMessage(body.ok ? body.value : null, 'Could not sign out'))
   }
 }
