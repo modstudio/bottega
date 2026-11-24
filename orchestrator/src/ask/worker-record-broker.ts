@@ -33,7 +33,7 @@ type RunScopeRow = {
 export type WorkerTaskRead<Detail extends WorkerHostedTaskDetail = WorkerHostedTaskDetail> =
   Detail & { tracker_notice?: string }
 
-export type RunScopeFacts = WorkerRecordScopeFacts & {
+type RunScopeFacts = WorkerRecordScopeFacts & {
   project: string
   keepsOwnTracker: boolean
 }
