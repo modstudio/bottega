@@ -93,7 +93,12 @@ export async function assertPlanTaskNoteProvenance(
 }
 
 export async function refuseLocalComposeBranch(
-  composition: Composition,
+  composition: {
+    project: string
+    workflow: { slug: string }
+    mode: { slug: string }
+    arguments: Record<string, string>
+  },
   context: WorkflowCursorContext,
   database: Database,
   commitCount: CommitCountPort,

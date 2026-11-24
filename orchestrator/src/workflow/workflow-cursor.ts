@@ -210,15 +210,12 @@ export async function composeWorkflowWithCursor(
   const handedOff =
     start === 'reuse'
       ? undefined
-      : await handoffGraduatingExplore(
-          composition,
-          context,
-          d,
+      : await handoffGraduatingExplore(composition, context, d, {
           live,
           commitCount,
           taskClaimPorts,
           listNotes,
-        )
+        })
   let row!: CursorRow
   if (handedOff) row = handedOff.row
   else if (existing && start === 'reuse')

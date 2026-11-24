@@ -361,6 +361,30 @@ function serveNotices(input: {
     .join('\n')
 }
 
+async function servedWorkflowStep(
+  prepared: Awaited<ReturnType<typeof refreshStepServe>>,
+  row: CursorRow,
+  decision: Extract<ReturnType<typeof decideCursorTransition>, { action: 'serve' }>,
+  live: LiveCursorAutonomy | undefined,
+  context: WorkflowCursorContext,
+  database: Database,
+) {
+  return withWorkflowTextFacts(
+    await getWorkflowStep(
+      prepared.composition.workflow.slug,
+      prepared.composition.project,
+      decision.slug,
+      prepared.input.effectiveArgs,
+      database,
+      prepared.input.selection,
+      cursorAutonomy(row, live),
+    ),
+    row.record_id,
+    database,
+    context.taskFlowClient,
+  )
+}
+
 async function serveWorkflowStepWithCursor(
   slug: string,
   project: string,
@@ -416,34 +440,14 @@ async function serveWorkflowStepWithCursor(
     listNotes,
   )
   let { row } = prepared
-  const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
+  const { opensCursor, composition, requested, index, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)
   if (!row) {
     refuseMissingWorkflowArguments(composition)
-    row = await openWorkflowCursor(
-      composition,
-      context,
-      database,
-      autonomy,
-      commitCount,
-      listNotes,
-    )
+    row = await openWorkflowCursor(composition, context, database, autonomy, commitCount, listNotes)
   }
   await applyServeTransition(row, decision, context, database, resolvedArguments)
-  const served = await withWorkflowTextFacts(
-    await getWorkflowStep(
-      slug,
-      project,
-      decision.slug,
-      input.effectiveArgs,
-      database,
-      input.selection,
-      cursorAutonomy(row, live),
-    ),
-    row.record_id,
-    database,
-    context.taskFlowClient,
-  )
+  const served = await servedWorkflowStep(prepared, row, decision, live, context, database)
   const flow = (JSON.parse(row.closed) as CursorTrailEntry[]).filter(isClosedStep)
   return {
     ...served,

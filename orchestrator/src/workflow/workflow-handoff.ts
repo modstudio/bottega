@@ -347,10 +347,12 @@ export async function handoffGraduatingExplore(
   composition: ReturnType<typeof composeWorkflow>,
   context: WorkflowCursorContext,
   database: Database,
-  live: LiveCursorAutonomy,
-  commitCount: CommitCountPort,
-  taskClaimPorts?: TaskCursorClaimPorts,
-  listNotes?: ListWorkflowNotesPort,
+  ports: {
+    live: LiveCursorAutonomy
+    commitCount: CommitCountPort
+    taskClaimPorts?: TaskCursorClaimPorts
+    listNotes?: ListWorkflowNotesPort
+  },
 ) {
   const source = await graduatingExploreCursor({
     project: composition.project,
@@ -367,12 +369,12 @@ export async function handoffGraduatingExplore(
     args: composition.arguments,
     reason: `graduated to ${composition.workflow.slug}`,
     context,
-    live,
+    live: ports.live,
     database,
-    commitCount,
-    taskClaimPorts,
+    commitCount: ports.commitCount,
+    taskClaimPorts: ports.taskClaimPorts,
     graduatingUntouchedExplore: true,
-    listNotes,
+    listNotes: ports.listNotes,
   })
   const row = await taskFlowReadStore(database, context.taskFlowClient).stageByHandle(
     composition.project,
