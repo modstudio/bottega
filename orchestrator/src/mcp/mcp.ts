@@ -53,7 +53,6 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import type { ListWorkflowNotesPort } from '../workflow/workflow-cursor-compose.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
@@ -76,7 +75,7 @@ import { scopeMcpToolCallers, wrapMcpToolHandlers } from './mcp-caller.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
-import { registerWorkflowPrompts } from './mcp-prompts.ts'
+import { registerWorkflowPrompts, type WorkflowPromptNoteReader } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
@@ -90,7 +89,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskLookup?: HubTaskLookup
-  listWorkflowNotes?: ListWorkflowNotesPort
+  listWorkflowNotes?: WorkflowPromptNoteReader
   hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts

@@ -4,7 +4,6 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
-import type { ListWorkflowNotesPort } from '../workflow/workflow-cursor-compose.ts'
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
 import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
@@ -12,6 +11,7 @@ import { composeWorkflow, type WorkflowDefinition } from '../workflow/workflows.
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
+export type WorkflowPromptNoteReader = NonNullable<Parameters<typeof composeWorkflowWithCursor>[11]>
 
 export type WorkflowPromptDefinition = {
   name: string
@@ -187,7 +187,7 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
 export function registerWorkflowPrompts(
   server: McpServer,
   hubTaskLookup?: HubTaskLookup,
-  listNotes?: ListWorkflowNotesPort,
+  listNotes?: WorkflowPromptNoteReader,
 ): void {
   for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
