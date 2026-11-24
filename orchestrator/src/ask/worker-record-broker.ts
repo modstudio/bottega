@@ -4,8 +4,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectKeepsOwnTracker } from '../../../shared/trackers.ts'
 import { db } from '../database/db.ts'
-import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { parseProjectSettings } from '../project/project-read.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import type { ShownWorkflowText } from '../workflow/workflow-text-commands.ts'
 import { strictlyAuthenticatedWorkerRun } from './worker-auth.ts'
 import {
@@ -31,7 +31,8 @@ type RunScopeRow = {
 }
 
 type WorkerReadDependencies = { client?: WorkerRecordClient }
-export type WorkerTaskRead = WorkerHostedTaskDetail & { tracker_notice?: string }
+export type WorkerTaskRead<Detail extends WorkerHostedTaskDetail = WorkerHostedTaskDetail> =
+  Detail & { tracker_notice?: string }
 
 type RunScopeFacts = WorkerRecordScopeFacts & { project: string; keepsOwnTracker: boolean }
 
@@ -106,10 +107,7 @@ function targetFor(
   }
 }
 
-function requireProject(
-  facts: RunScopeFacts,
-  project?: string,
-): void {
+function requireProject(facts: RunScopeFacts, project?: string): void {
   if (project !== undefined && project !== facts.project)
     throw new Error(
       `read refused: requested project ${project} is outside run project ${facts.project} and ${workerRecordScopeName(facts)}`,

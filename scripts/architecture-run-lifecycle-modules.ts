@@ -91,7 +91,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/trackers.ts',
     '../database/db.ts',
-    '../project/projects.ts',
+    '../project/project-read.ts',
     '../project-space-cache.ts',
     './worker-auth.ts',
     './worker-record-client.ts',
