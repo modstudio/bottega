@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
-import { dockerHostEvidenceProbe } from '../resources/docker-inventory-command.ts'
+import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideOrphanDockerVolumeRemoval,

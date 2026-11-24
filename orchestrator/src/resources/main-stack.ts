@@ -13,6 +13,7 @@ import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import { runDockerInventoryCommand } from './docker-inventory-command.ts'
 import {
   classifyServedWorktree,
@@ -261,7 +262,11 @@ function runningMainStackPaths(): DockerInventoryResult {
     '--format',
     '{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  const result = runDockerInventoryCommand(command, MAIN_STACK_COMMAND_TIMEOUT_MS)
+  const result = runDockerInventoryCommand(
+    command,
+    MAIN_STACK_COMMAND_TIMEOUT_MS,
+    dockerHostEvidenceProbe.gather,
+  )
   if (!result.ok) {
     return result.kind === 'docker-absent'
       ? { kind: 'docker-absent' }

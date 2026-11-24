@@ -5,6 +5,7 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import {
   classifyDockerInventorySpawnError,
   runDockerInventoryCommand,
@@ -96,7 +97,7 @@ function list(
           '--format',
           `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
         ]
-  const p = runDockerInventoryCommand(args, timeout)
+  const p = runDockerInventoryCommand(args, timeout, dockerHostEvidenceProbe.gather)
   if (!p.ok) {
     if (p.kind === 'docker-absent') return { ascertainable: true, rows: [], dockerAbsent: true }
     return {
@@ -307,6 +308,39 @@ function unattributedComposeNetworks(
   })
 }
 
+function absentDockerInventory(): Extract<DockerInventory, { ascertainable: true }> {
+  return {
+    ascertainable: true,
+    resources: [],
+    unattributable: [],
+    unattributedComposeResources: [],
+    composeContainerProjects: [],
+    composeContainers: [],
+    dockerAbsent: true,
+  }
+}
+
+type ListedRows = Extract<ReturnType<typeof list>, { ascertainable: true }>['rows']
+
+function listedDockerInventory():
+  | { complete: true; rows: Record<'container' | 'volume', ListedRows> }
+  | { complete: false; inventory: DockerInventory } {
+  const rows = {} as Record<'container' | 'volume', ListedRows>
+  const configuredTimeout = dockerInventoryTimeoutMs()
+  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  for (const kind of ['container', 'volume'] as const) {
+    let found = list(kind, configuredTimeout)
+    // The idle-machine default gets one materially longer chance under load.
+    // An explicit bound remains exact for the test gate and other callers.
+    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out'))
+      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
+    if (!found.ascertainable) return { complete: false, inventory: found }
+    if (found.dockerAbsent) return { complete: false, inventory: absentDockerInventory() }
+    rows[kind] = found.rows
+  }
+  return { complete: true, rows }
+}
+
 /** Inventory only resources created for orchestrator run worktrees. Never mutates Docker. */
 export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInventory {
   const rows: DockerResource[] = []
@@ -315,28 +349,11 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const composeContainerProjects = new Set<string>()
   const composeContainers: ComposeContainerFact[] = []
   const observed: { workingDir: string | null; composeProject: string | null }[] = []
-  const configuredTimeout = dockerInventoryTimeoutMs()
-  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  const listed = listedDockerInventory()
+  if (!listed.complete) return listed.inventory
   for (const kind of ['container', 'volume'] as const) {
-    let found = list(kind, configuredTimeout)
-    // The idle-machine default gets one materially longer chance under load.
-    // An explicit bound remains exact for the test gate and other callers.
-    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out')) {
-      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
-    }
-    if (!found.ascertainable) return found
-    if (found.dockerAbsent) {
-      return {
-        ascertainable: true,
-        resources: [],
-        unattributable: [],
-        unattributedComposeResources: [],
-        composeContainerProjects: [],
-        composeContainers: [],
-        dockerAbsent: true,
-      }
-    }
-    const compose = listedComposeFacts(kind, found.rows)
+    const found = listed.rows[kind]
+    const compose = listedComposeFacts(kind, found)
     observed.push(...compose.observed)
     compose.containerProjects.forEach((project) => {
       composeContainerProjects.add(project)
@@ -344,7 +361,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
     unattributedComposeResources.push(...compose.unattributed)
     if (kind === 'container') {
       composeContainers.push(
-        ...found.rows.flatMap(({ name, labels }): ComposeContainerFact[] => {
+        ...found.flatMap(({ name, labels }): ComposeContainerFact[] => {
           const composeProject = labels['com.docker.compose.project']
           if (!composeProject) return []
           const workingDir = labels['com.docker.compose.project.working_dir'] ?? null
@@ -360,23 +377,13 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
         }),
       )
     }
-    const classified = classifyListedRows(kind, found.rows)
+    const classified = classifyListedRows(kind, found)
     rows.push(...classified.resources)
     unattributable.push(...classified.unattributable)
   }
   const networks = dockerNetworkInventory()
   if (!networks.ascertainable) return networks
-  if (networks.dockerAbsent) {
-    return {
-      ascertainable: true,
-      resources: [],
-      unattributable: [],
-      unattributedComposeResources: [],
-      composeContainerProjects: [],
-      composeContainers: [],
-      dockerAbsent: true,
-    }
-  }
+  if (networks.dockerAbsent) return absentDockerInventory()
   const networkRows = classifyNetworkRows(networks.networks)
   observed.push(...networks.networks)
   rows.push(...networkRows.resources)
@@ -420,7 +427,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       budget: 'docker',
     })
   } catch (error) {
-    const availability = classifyDockerInventorySpawnError(error)
+    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
     if (availability.kind === 'docker-absent')
       return { ascertainable: true, networks: [], dockerAbsent: true }
     return {
@@ -446,7 +453,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       budget: 'docker',
     })
   } catch (error) {
-    const availability = classifyDockerInventorySpawnError(error)
+    const availability = classifyDockerInventorySpawnError(error, dockerHostEvidenceProbe.gather)
     if (availability.kind === 'docker-absent')
       return { ascertainable: true, networks: [], dockerAbsent: true }
     return {

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { Project } from '../project/projects.ts'
-import { dockerHostEvidenceProbe } from './docker-inventory-command.ts'
+import { dockerHostEvidenceProbe } from './docker-host-evidence.ts'
 import {
   ensureMainStackStarted,
   MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT,

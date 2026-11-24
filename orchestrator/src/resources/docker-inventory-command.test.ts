@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
+import { gatherDockerHostEvidence } from './docker-host-evidence.ts'
 import {
   decideDockerInventoryAvailability,
   executableAbsentFrom,
-  gatherDockerHostEvidence,
 } from './docker-inventory-command.ts'
 
 test('Docker executable absence is classified structurally', () => {
