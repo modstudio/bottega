@@ -842,6 +842,12 @@ async function collectSlowSourceLegs(
         async () => {
           trackerResults =
             due?.size === 0 ? [] : await ingestTrackers(due, hostedTrackerCandidates())
+          for (const result of trackerResults) {
+            if (result.project === 'backfill' || result.skipped) continue
+            const source = `tasks:${result.project}`
+            if (result.error) recordCollectorLegFailure(source, result.error, nowIso())
+            else recordCollectorLegSuccess(source, nowIso())
+          }
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)

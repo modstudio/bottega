@@ -11,7 +11,6 @@ import {
   type TrackerTask,
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
-import { recordCollectorLegFailure, recordCollectorLegSuccess } from '../collector-leg-state.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { resolveHostedUrl } from '../hosted-url.ts'
 import { hostedWriteMode } from '../hosted-write-mode.ts'
@@ -1151,15 +1150,6 @@ async function collectTracker(
     }
   } finally {
     await m.close()
-  }
-  const source = `tasks:${s.project}`
-  try {
-    if (collected.result.error) recordCollectorLegFailure(source, collected.result.error, nowIso())
-    else recordCollectorLegSuccess(source, nowIso())
-  } catch (stateError) {
-    console.error(
-      `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
-    )
   }
   return collected
 }

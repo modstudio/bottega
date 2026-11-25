@@ -247,6 +247,9 @@ async function migrateHubDatabase(): Promise<void> {
   )
 }
 
+const consecutiveFailureText = (count: number | undefined) =>
+  count === undefined ? '' : ` (${count} consecutive failures)`
+
 function registerCollectionCommands(program: Command): void {
   program
     .command('collector-legs')
@@ -275,10 +278,7 @@ function registerCollectionCommands(program: Command): void {
       else {
         for (const leg of collectorLegs) {
           const error = leg.status === 'failing' && leg.lastError ? `: ${leg.lastError}` : ''
-          const failures =
-            leg.consecutiveFailures === undefined
-              ? ''
-              : ` (${leg.consecutiveFailures} consecutive failures)`
+          const failures = consecutiveFailureText(leg.consecutiveFailures)
           console.log(`${leg.source}: ${leg.status}${failures}${error}`)
         }
       }
