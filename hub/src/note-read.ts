@@ -7,6 +7,7 @@ import { db } from './db.ts'
 import type { HostedAcknowledgement } from './hosted-notes.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
+import { parseSlimNoteReference } from './identity/note-reference.ts'
 import {
   hostedGetNote,
   hostedListNoteCandidates,
@@ -19,7 +20,6 @@ import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
-import { parseSlimNoteReference } from './identity/identity.ts'
 import { normalizeSpecialSlimListFilters } from './note-slim-list-filter.ts'
 import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
@@ -143,7 +143,7 @@ function listLocalFilteredRows<Row extends { text: string }>(
       clauses.push('lower(note.record_id) = ?')
       values.push(reference.recordId)
     } else {
-      clauses.push('note.project = ? AND note.number = ?')
+      clauses.push('(note.project,note.number) = (?,?)')
       values.push(reference.project, reference.number)
     }
   }

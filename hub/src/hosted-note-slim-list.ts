@@ -4,7 +4,7 @@
 import type { SQL } from 'bun'
 import { formatNoteLabel } from '../../shared/note-label.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
-import { parseSlimNoteReference } from './identity/identity.ts'
+import { parseSlimNoteReference } from './identity/note-reference.ts'
 import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type HostedSlimNoteListFilters = {
@@ -53,7 +53,7 @@ export async function listHostedSlimNotes(
         AND (${filters.reference ?? null}::text IS NULL
           OR (${recordId}::text IS NOT NULL AND lower(id::text)=${recordId})
           OR (${label?.project ?? null}::text IS NOT NULL
-            AND project=${label?.project ?? null} AND number=${label?.number ?? null}))
+            AND (project,number)=(${label?.project ?? null},${label?.number ?? null})))
         AND (${filters.text ?? null}::text IS NULL
           OR position(lower(${filters.text ?? ''}) in lower(text)) > 0)
         AND (${sessions.length === 0} OR EXISTS (

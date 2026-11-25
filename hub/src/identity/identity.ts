@@ -2,7 +2,6 @@
 /** Resolves hub-owned numbered identities and guards their natural-key uniqueness. */
 
 import type { Database } from 'bun:sqlite'
-import { parseNoteLabel } from '../../../shared/note-label.ts'
 import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import {
   malformedReferenceRefusal,
@@ -13,16 +12,6 @@ import {
 } from '../../../shared/reference-refusal.ts'
 
 export class NoteReferenceNotVisibleError extends Error {}
-
-export type SlimNoteReference = { project: string; number: number } | { recordId: string }
-
-export function parseSlimNoteReference(reference: string): SlimNoteReference {
-  try {
-    return parseNoteLabel(reference)
-  } catch {
-    return { recordId: reference.toLowerCase() }
-  }
-}
 
 export function resolveNoteIdentity(
   database: Database,
