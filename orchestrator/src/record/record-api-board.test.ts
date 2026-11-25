@@ -126,6 +126,58 @@ test('board claim list accepts only the true open-only query value', async () =>
   expect(inputs.map(({ openOnly }) => openOnly)).toEqual([true, false])
 })
 
+test('board session claim release validates its strict body and destination space', async () => {
+  const calls: Array<{ holderSession: string; spaceId: string; userId: string }> = []
+  const app = appWith(identity, {
+    releaseBoardSessionClaims: async (input: {
+      holderSession: string
+      spaceId: string
+      userId: string
+    }) => {
+      calls.push(input)
+      return { released: 2 }
+    },
+  })
+  const request = (body: unknown, destination = true) =>
+    app.request('/v1/board/claims/release-session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(destination ? { 'x-record-space': 'space-a' } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+
+  const released = await request({ holderSession: 'session-a' })
+  expect(released.status).toBe(200)
+  expect(await released.json()).toEqual({ released: 2 })
+  expect(calls).toEqual([
+    expect.objectContaining({ holderSession: 'session-a', spaceId: 'space-a', userId: 'user-a' }),
+  ])
+
+  for (const body of [{}, { holderSession: '' }, { holderSession: 'session-a', extra: true }]) {
+    const invalid = await request(body)
+    expect(invalid.status).toBe(400)
+    expect(await invalid.json()).toEqual({ error: 'invalid board claim release-session' })
+  }
+  const machineSession = await request({
+    holderSession: 'operator:01990000-0000-7000-8000-000000026401',
+  })
+  expect(machineSession.status).toBe(400)
+  expect(await machineSession.json()).toEqual({
+    error:
+      'a machine-derived operator session is shared by every terminal session on the machine and cannot be released',
+    remedy: 'pass the harness session id that took the claims, or release each claim by its id',
+  })
+  const noSpace = await request({ holderSession: 'session-a' }, false)
+  expect(noSpace.status).toBe(409)
+  expect(await noSpace.json()).toEqual({
+    error: 'write request names no destination space',
+    remedy: 'send the destination space in the x-record-space header, then retry',
+  })
+  expect(calls).toHaveLength(1)
+})
+
 test('board post refuses an invalid body at the route edge', async () => {
   const app = appWith(identity)
   const response = await app.request('/v1/board/messages', {

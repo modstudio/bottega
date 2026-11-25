@@ -24,6 +24,7 @@ import { listHostedBoardChanges, readHostedBoardHead } from './record-board-chan
 import {
   listHostedBoardClaims,
   releaseHostedBoardClaim,
+  releaseHostedBoardSessionClaims,
   releaseHostedBoardTaskClaims,
   renewHostedBoardClaim,
   takeHostedBoardClaim,
@@ -496,6 +497,7 @@ function recordBoardDependencies() {
     releaseBoardClaim: releaseHostedBoardClaim,
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
+    releaseBoardSessionClaims: releaseHostedBoardSessionClaims,
   }
 }
 

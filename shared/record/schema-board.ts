@@ -209,6 +209,9 @@ export const boardClaim = pgTable.withRLS(
         .on(table.projectId, table.subjectKind, table.subjectValue)
         .where(sql`${table.closedAt} IS NULL`),
       index('board_claim_run_idx').on(table.runId, table.closedAt),
+      index('board_claim_holder_session_open_idx')
+        .on(table.holderUserId, table.holderSession)
+        .where(sql`${table.closedAt} IS NULL AND ${table.holderSession} IS NOT NULL`),
       index('board_claim_superseded_idx').on(table.supersededByClaimId),
       check(
         'board_claim_subject_kind_check',

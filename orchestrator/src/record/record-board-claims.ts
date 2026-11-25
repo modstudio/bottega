@@ -137,6 +137,25 @@ async function loadClaim(tx: SQL, id: string): Promise<ClaimRow | null> {
   return rows[0] ? (rows[0] as ClaimRow) : null
 }
 
+async function closeClaimRows(
+  tx: SQL,
+  rows: ClaimRow[],
+  at: string,
+  reason: ClaimCloseReason,
+): Promise<number> {
+  let closed = 0
+  for (const row of rows) {
+    const updated = (await tx`
+      UPDATE board_claim
+      SET closed_at=${at}::timestamptz, close_reason=${reason}
+      WHERE id=${String(row.id)}::uuid AND closed_at IS NULL
+      RETURNING id
+    `) as unknown[]
+    closed += updated.length
+  }
+  return closed
+}
+
 async function projectNameById(tx: SQL, projectId: string): Promise<string> {
   const rows = await tx`SELECT name FROM project WHERE id=${projectId}::uuid`
   if (!rows[0]) throw new RecordBoardError(`unknown or invisible board project ${projectId}`, 400)
@@ -664,11 +683,7 @@ export async function releaseHostedBoardClaim(
         403,
       )
     }
-    await tx`
-      UPDATE board_claim
-      SET closed_at=${new Date(clock).toISOString()}::timestamptz, close_reason=${'released' satisfies ClaimCloseReason}
-      WHERE id=${input.id}::uuid
-    `
+    await closeClaimRows(tx, [row], new Date(clock).toISOString(), 'released')
     const name = await projectNameById(tx, String(row.project_id))
     return singleClaimView(tx, (await loadClaim(tx, input.id))!, clock, name)
   })
@@ -727,14 +742,27 @@ export async function releaseHostedBoardTaskClaims(
     const closable = rows.filter(
       (row) => String(row.holder_user_id) === input.userId || !hostedLive(row, clock),
     )
-    const at = new Date(clock).toISOString()
-    for (const row of closable) {
-      await tx`
-        UPDATE board_claim
-        SET closed_at=${at}::timestamptz, close_reason=${'task-closed' satisfies ClaimCloseReason}
-        WHERE id=${String(row.id)}::uuid
-      `
-    }
+    await closeClaimRows(tx, closable, new Date(clock).toISOString(), 'task-closed')
     return { released: closable.length }
+  })
+}
+
+export async function releaseHostedBoardSessionClaims(
+  input: BoardTenant & { holderSession: string },
+): Promise<{ released: number }> {
+  if (!input.holderSession.trim()) throw new RecordBoardError('holder session is required', 400)
+  const clock = Date.now()
+  return withBoardTenant(input, false, async (tx) => {
+    const rows = (await tx`
+      SELECT claim.*,
+        ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
+      FROM board_claim claim
+      WHERE claim.holder_session=${input.holderSession}
+        AND claim.holder_user_id=${input.userId}::uuid
+        AND claim.closed_at IS NULL
+    `) as ClaimRow[]
+    const closable = rows.filter((row) => hostedLive(row, clock))
+    const released = await closeClaimRows(tx, closable, new Date(clock).toISOString(), 'released')
+    return { released }
   })
 }

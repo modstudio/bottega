@@ -1606,6 +1606,17 @@
     "status": 200
   },
   {
+    "sample": "record.releaseBoardSessionClaims",
+    "method": "POST",
+    "path": "/v1/board/claims/release-session",
+    "query": [],
+    "body": {
+      "holderSession": "sample-session"
+    },
+    "recordSpace": true,
+    "status": 200
+  },
+  {
     "sample": "record.releaseBoardTaskClaims",
     "method": "POST",
     "path": "/v1/board/claims/release-task",

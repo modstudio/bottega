@@ -6,7 +6,7 @@ import {
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-const contractRoutes = ['PUT /v1/board/claims'] as const
+const contractRoutes = ['PUT /v1/board/claims', 'POST /v1/board/claims/release-session'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024580'
 const MACHINE = '01990000-0000-7000-8000-000000024581'
@@ -84,4 +84,24 @@ test('a task claim is admitted only for the session that owns its open stage', a
     holderSession: 'owner-session',
     subject: { kind: 'task', value: 'DEV-2424' },
   })
+})
+
+test('a session releases its live hosted claims through the record contract', async () => {
+  const holderSession = 'release-session'
+  await fixture.client.takeBoardClaim(
+    {
+      id: '01990000-0000-7000-8000-000000024590',
+      project: 'contract-project',
+      projectId: PROJECT,
+      subject: 'resource:contract-release',
+      holderSession,
+    },
+    { destinationSpaceId: RECORD_CONTRACT_SPACE_A },
+  )
+  expect(
+    await fixture.client.releaseBoardSessionClaims(
+      { holderSession },
+      { destinationSpaceId: RECORD_CONTRACT_SPACE_A },
+    ),
+  ).toEqual({ released: 1 })
 })

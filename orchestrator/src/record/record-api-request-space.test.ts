@@ -426,6 +426,7 @@ POST /v1/board/messages/:id/filing-lease
 PUT /v1/board/receipts
 PUT /v1/board/claims
 POST /v1/board/claims/release-task
+POST /v1/board/claims/release-session
 POST /v1/board/claims/:id/renew
 POST /v1/board/claims/:id/release
 POST /v1/config/machine-keys/:keyId/claim-challenge

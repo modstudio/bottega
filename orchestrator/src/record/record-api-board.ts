@@ -155,6 +155,7 @@ const releaseTaskSchema = z
     key: z.string().min(1),
   })
   .strict()
+const releaseSessionSchema = z.object({ holderSession: z.string().min(1) }).strict()
 const claimListSchema = z.object({
   project: z.string().min(1),
   projectId: idSchema,
@@ -231,6 +232,9 @@ export type RecordBoardDeps = {
   ): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(
     input: BoardTenant & { project: string; projectId?: string | null; key: string },
+  ): Promise<{ released: number }>
+  releaseBoardSessionClaims(
+    input: BoardTenant & { holderSession: string },
   ): Promise<{ released: number }>
 }
 
@@ -384,6 +388,96 @@ function registerBoardCoordinationRoutes(
   })
 }
 
+function registerBoardClaimRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: RecordBoardDeps,
+  helpers: { noSpace(context: BoardRouteContext, refusal?: WriteSpaceRefusal | null): Response },
+  tenantOf: (context: BoardRouteContext) => BoardRequestTenant,
+  writeError: (context: BoardRouteContext, error: unknown) => Response | Promise<Response>,
+): void {
+  app.put('/v1/board/claims', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const body = takeClaimSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board claim take' }, 400)
+    try {
+      return context.json(await deps.takeBoardClaim({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/claims/release-task', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const body = releaseTaskSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board claim release-task' }, 400)
+    try {
+      return context.json(await deps.releaseBoardTaskClaims({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/claims/release-session', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const body = releaseSessionSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board claim release-session' }, 400)
+    if (body.data.holderSession.startsWith('operator:')) {
+      return context.json(
+        {
+          error:
+            'a machine-derived operator session is shared by every terminal session on the machine and cannot be released',
+          remedy:
+            'pass the harness session id that took the claims, or release each claim by its id',
+        },
+        400,
+      )
+    }
+    try {
+      return context.json(await deps.releaseBoardSessionClaims({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/claims/:id/renew', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const id = idSchema.safeParse(context.req.param('id'))
+    const body = holderBody.safeParse((await readJson(context)) ?? {})
+    if (!id.success || !body.success)
+      return context.json({ error: 'invalid board claim renew' }, 400)
+    try {
+      return context.json(await deps.renewBoardClaim({ ...tenant, id: id.data, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/claims/:id/release', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const id = idSchema.safeParse(context.req.param('id'))
+    const body = holderBody.safeParse((await readJson(context)) ?? {})
+    if (!id.success || !body.success)
+      return context.json({ error: 'invalid board claim release' }, 400)
+    try {
+      return context.json(await deps.releaseBoardClaim({ ...tenant, id: id.data, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.get('/v1/board/claims', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const query = claimListSchema.safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid board claim list query' }, 400)
+    try {
+      return context.json(await deps.listBoardClaims({ ...tenant, ...query.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
@@ -401,6 +495,7 @@ export function registerRecordBoardRoutes(
 
   registerBoardStreamRoute(app, deps)
   registerBoardCoordinationRoutes(app, deps, helpers, tenantOf, writeError)
+  registerBoardClaimRoutes(app, deps, helpers, tenantOf, writeError)
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
@@ -508,65 +603,6 @@ export function registerRecordBoardRoutes(
     if (!body.success) return context.json({ error: 'invalid board receipt' }, 400)
     try {
       return context.json(await deps.putBoardReceipt({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.put('/v1/board/claims', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
-    const body = takeClaimSchema.safeParse(await readJson(context))
-    if (!body.success) return context.json({ error: 'invalid board claim take' }, 400)
-    try {
-      return context.json(await deps.takeBoardClaim({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/board/claims/release-task', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
-    const body = releaseTaskSchema.safeParse(await readJson(context))
-    if (!body.success) return context.json({ error: 'invalid board claim release-task' }, 400)
-    try {
-      return context.json(await deps.releaseBoardTaskClaims({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/board/claims/:id/renew', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
-    const id = idSchema.safeParse(context.req.param('id'))
-    const body = holderBody.safeParse((await readJson(context)) ?? {})
-    if (!id.success || !body.success)
-      return context.json({ error: 'invalid board claim renew' }, 400)
-    try {
-      return context.json(await deps.renewBoardClaim({ ...tenant, id: id.data, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/board/claims/:id/release', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
-    const id = idSchema.safeParse(context.req.param('id'))
-    const body = holderBody.safeParse((await readJson(context)) ?? {})
-    if (!id.success || !body.success)
-      return context.json({ error: 'invalid board claim release' }, 400)
-    try {
-      return context.json(await deps.releaseBoardClaim({ ...tenant, id: id.data, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.get('/v1/board/claims', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
-    const query = claimListSchema.safeParse(context.req.query())
-    if (!query.success) return context.json({ error: 'invalid board claim list query' }, 400)
-    try {
-      return context.json(await deps.listBoardClaims({ ...tenant, ...query.data }))
     } catch (error) {
       return writeError(context, error)
     }

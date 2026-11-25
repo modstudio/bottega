@@ -350,7 +350,13 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordApiClient',
     ['board_claim'],
-    ['releaseBoardClaim', 'releaseBoardTaskClaims', 'renewBoardClaim', 'takeBoardClaim'],
+    [
+      'releaseBoardClaim',
+      'releaseBoardSessionClaims',
+      'releaseBoardTaskClaims',
+      'renewBoardClaim',
+      'takeBoardClaim',
+    ],
   ),
   ...writeEntries(
     'orchestrator',
