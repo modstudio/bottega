@@ -10,7 +10,7 @@ import {
   outboxHeldUnknownColumns,
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
-import { isSupersedableOutboxRow } from '../record/outbox-supersession.ts'
+import { isSupersedableOutboxKind, isSupersedableOutboxRow } from '../record/outbox-supersession.ts'
 import { type AddressedMonitorCondition, boundToChars } from './monitor-types.ts'
 
 export const QUARANTINE_ERROR_SUMMARY_CHARS = 256
@@ -30,9 +30,10 @@ function quarantinedParentRemedy(id: number): string {
 
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
   return quarantinedOutboxRows(database).map((row) => {
-    const automaticRetirement = isSupersedableOutboxRow(row.kind, row.payload)
-      ? `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise `
-      : ''
+    const automaticRetirement =
+      isSupersedableOutboxKind(row.kind) && isSupersedableOutboxRow(row.kind, row.payload)
+        ? `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise `
+        : ''
     const scoreWarning =
       row.kind === 'score' ? '; retrying it would overwrite a newer hosted verdict' : ''
     return {

@@ -436,6 +436,7 @@ export const monitorModules: MonitorModule[] = [
     '../record/outbox-held-contract.ts',
     '../record/outbox-held.ts',
     '../record/outbox-quarantine.ts',
+    '../record/outbox-supersession.ts',
     './monitor-types.ts',
   ]),
 ]

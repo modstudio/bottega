@@ -6,8 +6,8 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { outboxRowWaitsForParent } from './outbox-dependency.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
-  type OtherOutboxRow,
   isSupersedableOutboxKind,
+  type OtherOutboxRow,
   retireSupersededQuarantinedOutboxRows,
   supersedingOutboxRow,
 } from './outbox-supersession.ts'
@@ -73,8 +73,7 @@ describe('score outbox supersession decision', () => {
 
   test('equal verdict time supersedes only with a higher id', () => {
     expect(
-      supersedingOutboxRow(quarantined, [candidate({ id: 8, payload: scorePayload(STAMP) })])
-        ?.id,
+      supersedingOutboxRow(quarantined, [candidate({ id: 8, payload: scorePayload(STAMP) })])?.id,
     ).toBe(8)
     expect(
       supersedingOutboxRow(quarantined, [candidate({ id: 6, payload: scorePayload(STAMP) })]),
@@ -171,18 +170,7 @@ function insertOutboxRows(
     'verdict refused',
     'verdict refused',
   )
-  insert.run(
-    newRecordId(),
-    8,
-    kind,
-    'run-record-id',
-    laterPayload,
-    LATER,
-    LATER,
-    null,
-    null,
-    null,
-  )
+  insert.run(newRecordId(), 8, kind, 'run-record-id', laterPayload, LATER, LATER, null, null, null)
   return database
 }
 
@@ -226,7 +214,9 @@ test('sync does not retire a non-supersedable contract kind', async () => {
   })
   expect(
     database
-      .query("SELECT count(*) AS rows FROM outbox_quarantine_audit WHERE outbox_id=7 AND disposition='retire'")
+      .query(
+        "SELECT count(*) AS rows FROM outbox_quarantine_audit WHERE outbox_id=7 AND disposition='retire'",
+      )
       .get(),
   ).toEqual({ rows: 0 })
   database.close()
@@ -252,7 +242,9 @@ test('sync retires the same run pair when the quarantined row carries no action'
   const result = await syncRecord(options(database, fakePostgres()))
 
   expect(result.superseded).toBe(1)
-  expect(database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get()).toEqual({
+  expect(
+    database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get(),
+  ).toEqual({
     retired_at: STAMP,
     retirement_reason: 'superseded by run outbox row 8',
   })

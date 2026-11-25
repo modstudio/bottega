@@ -36,8 +36,8 @@ import {
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
 import {
-  quarantinedOutboxRows,
   quarantinedOutboxRowSummary,
+  quarantinedOutboxRows,
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'

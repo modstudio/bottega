@@ -43,13 +43,7 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'score','record-9',?,'2026-09-28T00:00:00.000Z')`,
     )
     .run(newRecordId(), payload)
-  quarantineOutboxRow(
-    database,
-    9,
-    payload,
-    'verdict refused',
-    '2026-09-28T00:01:00.000Z',
-  )
+  quarantineOutboxRow(database, 9, payload, 'verdict refused', '2026-09-28T00:01:00.000Z')
   expect(outboxQuarantineConditions(database)).toEqual([
     expect.objectContaining({
       kind: 'outbox-quarantined',
