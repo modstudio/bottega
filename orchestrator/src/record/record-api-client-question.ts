@@ -5,6 +5,7 @@ import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
 } from '../question-store/run-question-write-guard.ts'
+import { HOSTED_API_RELEASE_COMMAND } from './outbox-held-contract.ts'
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -20,6 +21,33 @@ type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
+
+type QuestionReadResponse = {
+  items: Record<string, unknown>[]
+  cursor?: string
+  more?: boolean
+  reset?: boolean
+}
+
+function questionReadResponseSchema(input: QuestionReadInput, body: unknown): QuestionReadResponse {
+  const response = body as QuestionReadResponse
+  if (input.read !== 'open-for-session') return response
+  const valid =
+    Array.isArray(response?.items) &&
+    response.items.every(
+      (row) =>
+        row !== null &&
+        typeof row === 'object' &&
+        Array.isArray(row.step_actions) &&
+        row.step_actions.every((action) => typeof action === 'string'),
+    )
+  if (!valid) {
+    throw new Error(
+      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RELEASE_COMMAND}`,
+    )
+  }
+  return response
+}
 
 function isOwnerNotLiveResponse(error: unknown): error is { status: 409; code: string } {
   return (
@@ -37,18 +65,8 @@ export type RecordQuestionClient = {
   readQuestions?(
     input: QuestionReadInput,
     destination?: RecordRequestDestination,
-  ): Promise<{
-    items: Record<string, unknown>[]
-    cursor?: string
-    more?: boolean
-    reset?: boolean
-  }>
-  readMembershipQuestions?(input: QuestionReadInput): Promise<{
-    items: Record<string, unknown>[]
-    cursor?: string
-    more?: boolean
-    reset?: boolean
-  }>
+  ): Promise<QuestionReadResponse>
+  readMembershipQuestions?(input: QuestionReadInput): Promise<QuestionReadResponse>
   writeQuestion?(
     intent: QuestionLiveIntent,
     input: QuestionWriteBody,
@@ -109,7 +127,7 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
       const query = searchParams(input)
       return request(`/v1/questions?${query}`, {
         ...destination,
-        schema: readResponse,
+        schema: (body) => questionReadResponseSchema(input, body),
       })
     },
     readMembershipQuestions: async (input: QuestionReadInput) => {
