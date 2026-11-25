@@ -76,6 +76,21 @@ function keychainFailureWithFileRemedy(error: unknown): Error {
   return new Error(`${message}; or ${FILE_REMEDY}`)
 }
 
+/** Explain why a legacy store token cannot be migrated by a read-only caller. */
+export function legacyRecordSessionReadOnlyRefusal(): Error {
+  return new Error(
+    renderRefusal(
+      refusal(
+        "the record session token is still in the store's legacy row and cannot be migrated through a read-only connection",
+        {
+          kind: 'edit',
+          text: `from the main checkout, run ${PLATFORM_SLUG} record whoami once, so it migrates the record session token`,
+        },
+      ),
+    ),
+  )
+}
+
 function withKeychainRemedy<T>(operation: () => T): T {
   try {
     return operation()

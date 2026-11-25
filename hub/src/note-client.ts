@@ -3,6 +3,7 @@ import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.t
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { processMemo } from '../../shared/process-memo.ts'
+import type { HostedNoteCandidate } from './hosted-note-candidates.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import {
@@ -228,6 +229,10 @@ export async function hostedListNotes(
     if (!page.more) return { notes, acknowledgements }
     cursor = page.cursor
   }
+}
+export function hostedListNoteCandidates(project: string, text: string, options: NoteReadOptions) {
+  const query = new URLSearchParams({ project, text })
+  return request<HostedNoteCandidate[]>(`/v1/notes/candidates?${query}`, options)
 }
 export async function hostedListSlimNotes(
   filters: {

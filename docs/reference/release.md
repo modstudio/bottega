@@ -28,9 +28,13 @@ releases and rungs
 
 ## bottega release check
 
-**Synopsis:** `bottega release check <tag>`
+**Synopsis:** `bottega release check <tag> [--skip-client-contract-drift]`
 
-validate the tag, tracked rungs, and release binary working-directory isolation
+validate the tag, released client contract, tracked rungs, and release binary working-directory isolation
+
+### Options
+
+- `--skip-client-contract-drift`: skip comparing the released and current client contracts
 
 ### Related
 
@@ -75,9 +79,13 @@ run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, an
 
 ## bottega release run check
 
-**Synopsis:** `bottega release run check <tag>`
+**Synopsis:** `bottega release run check <tag> [--skip-client-contract-drift]`
 
-validate the tag, tracked rungs, and release binary working-directory isolation
+validate the tag, released client contract, tracked rungs, and release binary working-directory isolation
+
+### Options
+
+- `--skip-client-contract-drift`: skip comparing the released and current client contracts
 
 ### Related
 

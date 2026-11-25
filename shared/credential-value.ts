@@ -56,21 +56,26 @@ export async function resolveHostedCredential(
   client: ConfigClient = configClient(),
 ) {
   const who = await client.whoami()
-  const destinationRows = await listCredentials(address.destinationSpaceId, client)
   const personalSpaceId = who.personalSpaceId ?? null
-  const accountRows =
+  const destinationRowsPromise = listCredentials(address.destinationSpaceId, client)
+  const accountRowsPromise =
     personalSpaceId === null
-      ? []
+      ? Promise.resolve([] as CredentialRow[])
       : personalSpaceId === address.destinationSpaceId
-        ? destinationRows
-        : await listCredentials(personalSpaceId, client)
+        ? destinationRowsPromise
+        : listCredentials(personalSpaceId, client)
+  const preferencesPromise = client.listCredentialPreferences({
+    destinationSpaceId: address.destinationSpaceId,
+  })
+  const [destinationRows, accountRows, preferences] = await Promise.all([
+    destinationRowsPromise,
+    accountRowsPromise,
+    preferencesPromise,
+  ])
   const destinationCandidates =
     personalSpaceId === address.destinationSpaceId
       ? destinationRows.filter((row) => !isAccountCredentialRow(row))
       : destinationRows
-  const preferences = await client.listCredentialPreferences({
-    destinationSpaceId: address.destinationSpaceId,
-  })
   const candidates: Array<CredentialCandidate & { row: CredentialRow }> = [
     ...destinationCandidates.map((row) => ({
       row,

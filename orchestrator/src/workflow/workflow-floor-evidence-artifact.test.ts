@@ -335,3 +335,56 @@ test('notes and attached text must be written during the active step', async () 
   d.query('UPDATE workflow_step_text SET created_at=? WHERE record_id=?').run('2026-09-02', textId)
   await expect(gather(d, { artifacts: [`attached-text:${textId}`] })).resolves.toBeDefined()
 })
+
+test('only a note promoted to the cursor task on its task-open-with-notes floor is freshness-exempt', async () => {
+  const d = database()
+  const noteId = newRecordId()
+  const closeFloor = [
+    {
+      kind: 'task-open-with-notes' as const,
+      deferrable: false,
+      expectedExitCode: 0,
+      expectedStatus: 'done',
+      requirePullRequest: false,
+      operatorRuling: false,
+    },
+  ]
+  const staleNote = (promotedTask: string | null) => async () => ({
+    recordId: noteId,
+    label: 'fixture#1',
+    promotedTask,
+    staleAt: null,
+    writtenAt: '2026-08-01',
+  })
+
+  await expect(
+    gather(
+      d,
+      { artifacts: [`note:${noteId}`] },
+      { readNote: staleNote('DEV-977') },
+      identity,
+      closeFloor,
+    ),
+  ).resolves.toBeDefined()
+  await expect(
+    gather(
+      d,
+      { artifacts: [`note:${noteId}`] },
+      { readNote: staleNote(null) },
+      identity,
+      closeFloor,
+    ),
+  ).rejects.toThrow('note record time is 2026-08-01, before step activation 2026-09-01')
+  await expect(
+    gather(
+      d,
+      { artifacts: [`note:${noteId}`] },
+      { readNote: staleNote('DEV-978') },
+      identity,
+      closeFloor,
+    ),
+  ).rejects.toThrow('note record time is 2026-08-01, before step activation 2026-09-01')
+  await expect(
+    gather(d, { artifacts: [`note:${noteId}`] }, { readNote: staleNote('DEV-977') }),
+  ).rejects.toThrow('note record time is 2026-08-01, before step activation 2026-09-01')
+})

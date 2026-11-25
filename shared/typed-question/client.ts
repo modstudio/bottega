@@ -113,6 +113,11 @@ const clientDependencies = typedQuestionClientDependencies(
   (input, init) => hostedApiFetch(input, init),
 )
 
+/** Begin the process-memoized credential read so later typed questions can share it. */
+export function startTypedQuestionCredentialResolution(): void {
+  void clientDependencies.resolveCredential().catch(() => undefined)
+}
+
 type ActiveSpaceCredentialResolver = typeof resolveActiveSpaceCredentialValue
 
 export async function resolveTypesafeCredential(

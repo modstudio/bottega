@@ -96,6 +96,7 @@ export const CHECK_LEGS = [
   {
     name: 'hub',
     directory: 'hub',
+    isolateTests: true,
     ciJob: 'hub',
     testDirectories: ['hub'],
     testPatterns: [],
@@ -221,7 +222,15 @@ export const CHECK_LEGS = [
   },
 ] as const
 
+export type CheckLeg = (typeof CHECK_LEGS)[number]
+export type IsolatedTestLeg = CheckLeg & { isolateTests: true }
+
+export function legIsolatesTests(leg: CheckLeg): leg is IsolatedTestLeg {
+  return 'isolateTests' in leg && leg.isolateTests === true
+}
+
 export const ROOT_TEST_FILES = [
+  'scripts/check-hosted-release-parity.test.ts',
   'scripts/check-review-change-comparisons.test.ts',
   'scripts/check-refusal-remedy.test.ts',
   'scripts/check-remedy-text.test.ts',
@@ -273,6 +282,7 @@ export const ROOT_TEST_FILES = [
   'scripts/record-rehearse.test.ts',
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',
+  'scripts/check-test-isolation.test.ts',
   'scripts/check-test-reach.test.ts',
   'scripts/check-typecheck-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
@@ -310,7 +320,6 @@ export const ROOT_TEST_FILES = [
   'scripts/check-register-task-reads.test.ts',
   'scripts/check-record-route-contracts.test.ts',
   'scripts/record-client-contract.test.ts',
-  'scripts/check-release-client-contract.test.ts',
   'scripts/check-destructive-test-guards.test.ts',
   'scripts/check-hosted-secret-writers.test.ts',
   'scripts/check-hosted-local-sql.test.ts',

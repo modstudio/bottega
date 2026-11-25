@@ -48,6 +48,7 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release,smoke-release-install}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/record-client-contract.ts!",
         "scripts/record-migration-set.ts!",
         "scripts/record-rehearse.ts!",
         "scripts/affected-tests.ts!",

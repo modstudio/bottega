@@ -9,6 +9,7 @@ import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
 import {
   hostedGetNote,
+  hostedListNoteCandidates,
   hostedListNotes,
   hostedListSlimNotes,
   isMissingHostedNote,
@@ -200,6 +201,15 @@ function hostedReadFailure(cause: unknown): Error {
   return new Error(message.endsWith(readRemedy) ? message : `${message}. ${readRemedy}`)
 }
 
+function hostedUrlWithoutUserinfo(hosted: NoteClientOptions | undefined): string {
+  const resolved = hosted?.baseUrl ?? resolveHostedUrl()
+  if (!resolved) throw new Error('hosted hub is not configured')
+  const url = new URL(resolved)
+  url.username = ''
+  url.password = ''
+  return url.toString()
+}
+
 class NoteNotFoundError extends Error {
   constructor(recordId: string) {
     super(`no note ${recordId}`)
@@ -386,6 +396,38 @@ export async function listNotes(
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
     return listHostedNoteRows(normalized, hosted)
   return listLocalNotes(normalized)
+}
+
+export async function listNoteDuplicateCandidates(
+  project: string,
+  text: string,
+  hosted: NoteClientOptions | undefined,
+  dependencies: { startCredentialResolution: () => void },
+) {
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) !== 'hosted-configured')
+    return listLocalNotes(normalizeNoteFilters({ project, actionable: true }))
+  dependencies.startCredentialResolution()
+  const spaces = await noteReadSpaces(project, hosted ?? {})
+  try {
+    const results = await Promise.all(
+      spaces.map(async (recordSpace) => {
+        const options = { ...hosted, recordSpace }
+        try {
+          return await hostedListNoteCandidates(project, text, options)
+        } catch (cause) {
+          if (isMissingHostedNote(cause))
+            throw new Error(
+              `the record at ${hostedUrlWithoutUserinfo(hosted)} has no note candidate route; it is older than this client. Retry after the hosted-hub rung deploys`,
+              { cause },
+            )
+          throw spaceReadFailure(recordSpace, project, cause)
+        }
+      }),
+    )
+    return results.flat()
+  } catch (cause) {
+    throw hostedReadFailure(cause)
+  }
 }
 
 export function listActionableNotes(

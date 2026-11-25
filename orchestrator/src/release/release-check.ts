@@ -11,6 +11,10 @@ import {
   RELEASE_REQUIRE_PINNED_BUN_ENV,
 } from './release-binary-autoload-check.ts'
 import {
+  readReleaseClientContract,
+  releaseClientContractContentsRefusal,
+} from './release-client-contract.ts'
+import {
   releaseRungsDriftDecision,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
@@ -56,14 +60,27 @@ export type ReleaseCheckResult = {
   rungsComparison: string
 }
 
+export type ReleaseCheckOptions = {
+  skipClientContractDrift?: boolean
+}
+
 /** Validate local tag inputs; the tag-only workflow separately probes every hosted rung. */
 export async function checkRelease(
   tag: string,
   fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,
+  options: ReleaseCheckOptions = {},
 ): Promise<ReleaseCheckResult> {
   const root = releaseCheckoutRoot(fromDirectory, environment)
   const checked = validateReleaseTagVersion(tag, root)
+  const contract = readReleaseClientContract(root, checked.reportedVersion)
+  const contractRefusal = releaseClientContractContentsRefusal(
+    contract.version,
+    contract.snapshot,
+    contract.current,
+    { checkDrift: !options.skipClientContractDrift },
+  )
+  if (contractRefusal) throw new Error(contractRefusal)
   const drift = releaseRungsDriftDecision(readTrackedReleaseRungs(root), registeredReleaseRungs())
   if (drift.status === 'different') throw new Error(drift.message)
   const bunVersionFile = join(root, BUN_VERSION_FILE)

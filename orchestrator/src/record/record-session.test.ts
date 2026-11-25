@@ -1,7 +1,14 @@
-import { describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
-import { db } from '../database/db.ts'
+import { db, openReadOnlyDatabase } from '../database/db.ts'
+import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RECORD_SESSION_KEY } from './record-auth.ts'
 import {
   currentRecordSession,
@@ -103,6 +110,45 @@ describe('legacy record session migration', () => {
         .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
         .get(RECORD_SESSION_KEY)?.value,
     ).toBe('legacy-fixture-token')
+  })
+
+  describe('through a read-only database', () => {
+    let stateHome: string
+    const originalStateHome = process.env[STATE_HOME_ENV]
+    const originalKeyStore = process.env.BOTTEGA_KEYSTORE
+
+    beforeEach(() => {
+      stateHome = mkdtempSync(join(tmpdir(), 'record-token-state-'))
+      process.env[STATE_HOME_ENV] = stateHome
+      process.env.BOTTEGA_KEYSTORE = 'file'
+    })
+
+    afterEach(() => {
+      rmSync(stateHome, { recursive: true, force: true })
+      if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+      else process.env[STATE_HOME_ENV] = originalStateHome
+      if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
+      else process.env.BOTTEGA_KEYSTORE = originalKeyStore
+    })
+
+    test('refuses legacy token migration and names the main-checkout remedy', () => {
+      const store = join(stateHome, 'legacy-store.db')
+      writeMigratedTestDatabase(store)
+      const writable = new Database(store)
+      writable
+        .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+        .run(RECORD_SESSION_KEY, 'legacy-fixture-token')
+      writable.close()
+
+      const readonly = openReadOnlyDatabase(store)
+      try {
+        expect(() => storedRecordToken(readonly, undefined, true)).toThrow(
+          `the record session token is still in the store's legacy row and cannot be migrated through a read-only connection\ncleared by: from the main checkout, run ${PLATFORM_SLUG} record whoami once, so it migrates the record session token`,
+        )
+      } finally {
+        readonly.close()
+      }
+    })
   })
 })
 

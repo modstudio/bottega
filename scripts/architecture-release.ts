@@ -8,9 +8,14 @@ export const releaseModules = [
       'shared/install-root.ts',
       'shared/refusal.ts',
       'orchestrator/src/release/release-binary-autoload-check.ts',
+      'orchestrator/src/release/release-client-contract.ts',
       'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/release-rungs.ts',
     ],
+  },
+  {
+    file: 'orchestrator/src/release/release-client-contract.ts',
+    allowed: ['node:fs', 'node:path', 'shared/refusal.ts'],
   },
   {
     file: 'orchestrator/src/release/release-rungs.ts',

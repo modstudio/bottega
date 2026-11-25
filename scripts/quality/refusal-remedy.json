@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/release/release-client-contract.ts#readReleaseClientContract": {
+      "test": "orchestrator/src/release/release-client-contract.test.ts: writing the current contract clears the missing-current refusal named by the update remedy"
+    },
     "orchestrator/src/settings/settings.ts#assertPlainSettingsEnvSet": {
       "test": "orchestrator/src/settings/settings.test.ts: set refuses a secret-shaped value without printing it"
     },

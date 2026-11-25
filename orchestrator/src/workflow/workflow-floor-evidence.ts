@@ -50,6 +50,7 @@ import {
   flagForFloor,
   floorGuidance,
   floorsAcceptCommandArtifact,
+  floorsIncludeTaskOpenWithNotes,
   floorsIncludeTrackerTransition,
   githubPullRequestUrlIn,
   hasGateFloor,
@@ -927,6 +928,8 @@ async function gatherArtifactEntry(
           offeredArtifact,
           input.identity.project,
           input.identity.stepActivatedAt,
+          input.identity.workflowKey,
+          floorsIncludeTaskOpenWithNotes(input.floors),
           ports,
         )
       : undefined
@@ -1021,7 +1024,7 @@ export async function gatherValidatedEvidenceBase(
   if (
     !gathered.notes?.length &&
     input.identity.workflowKey &&
-    input.floors.some((floor) => floor.kind === 'task-open-with-notes')
+    floorsIncludeTaskOpenWithNotes(input.floors)
   )
     gathered.promotedNotes = await gatherPromotedNotes(
       input.identity.project,

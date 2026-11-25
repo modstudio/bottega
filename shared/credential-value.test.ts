@@ -98,3 +98,47 @@ test('hosted resolution lists the personal space once and tags its row as accoun
     ownerSpaceId: destinationSpaceId,
   })
 })
+
+test('hosted resolution starts destination, personal, and preference reads together', async () => {
+  const started: string[] = []
+  const gate = Promise.withResolvers<void>()
+  const client = {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'personal-space-a',
+      memberships: [],
+    }),
+    listSecrets: async (_environment: string, destination: { destinationSpaceId: string }) => {
+      started.push(destination.destinationSpaceId)
+      await gate.promise
+      return []
+    },
+    listCredentialPreferences: async () => {
+      started.push('preferences')
+      await gate.promise
+      return []
+    },
+  } as unknown as ConfigClient
+  const pending = resolveHostedCredential(
+    {
+      provider: 'typesafe',
+      name: null,
+      type: 'api-key',
+      mode: 'default',
+      environment: 'local',
+      projectId: null,
+      spaceName: 'team',
+      destinationSpaceId: 'space-a',
+    },
+    client,
+  )
+
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(started).toContain('space-a')
+  expect(started).toContain('personal-space-a')
+  expect(started).toContain('preferences')
+  gate.resolve()
+  expect(await pending).toMatchObject({ kind: 'refused' })
+})

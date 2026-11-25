@@ -17,16 +17,20 @@ type TransportedRecordClientRequest = <T>(
   },
   authentication?: RecordApiAuthentication,
   transport?: typeof fetch,
+  preflight?: () => void,
+  origin?: string,
+  database?: Parameters<typeof storedRecordToken>[0],
 ) => Promise<T>
 
 function recordIdentityMemoRequest(
   request: RecordClientRequest,
   baseUrl: () => string,
   transport: typeof fetch,
+  database?: Parameters<typeof storedRecordToken>[0],
 ): RecordClientRequest {
   return async <T>(path: string, init = {}): Promise<T> => {
     if (path === RECORD_WHOAMI_ROUTE) {
-      const token = storedRecordToken()
+      const token = storedRecordToken(database)
       if (token)
         return ((init as { schema?: (body: unknown) => T }).schema ?? recordIdentityResponse)(
           await memoizedConfigRead(
@@ -49,9 +53,10 @@ export function selectRecordApiTransport(
   realRequest: TransportedRecordClientRequest,
   baseUrl: () => string,
   transport: typeof fetch,
+  database?: Parameters<typeof storedRecordToken>[0],
 ): RecordClientRequest {
   if (request !== realRequest) return request
   const transportedRequest: RecordClientRequest = (path, init) =>
-    realRequest(path, init, undefined, transport)
-  return recordIdentityMemoRequest(transportedRequest, baseUrl, transport)
+    realRequest(path, init, undefined, transport, undefined, undefined, database)
+  return recordIdentityMemoRequest(transportedRequest, baseUrl, transport, database)
 }
