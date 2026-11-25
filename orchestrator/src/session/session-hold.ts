@@ -80,7 +80,8 @@ export async function sessionHold(
 
   const messageIdentifier = (input.on ?? input.release)!.trim()
   if (!messageIdentifier) throw new Error('board message id must not be empty')
-  // Release skips the board-mode check because a hold row already stores a record id.
+  // Release skips the board-mode refusal because a hold row already stores a record id. On an
+  // adopted install that id still resolves hosted, and release uses only the record id.
   const validateHosted = input.release === undefined
   const resolved = resolveBoardMessageIdentifier(
     database,

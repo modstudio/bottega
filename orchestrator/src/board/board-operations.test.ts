@@ -781,7 +781,7 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
   ).toBe(0)
 })
 
-test('machine writes stay local after adoption while a shared read stops at the local-read guard', async () => {
+test('machine writes stay local after adoption while their UUID reads resolve through hosted', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const client = createMemoryRecordApiClient()
   const local = await boardPost(
@@ -790,11 +790,11 @@ test('machine writes stay local after adoption while a shared read stops at the 
   )
   expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
   await expect(boardThread(local.recordId, { env, client })).rejects.toThrow(
-    /requireLocalBoardRead stopped a local board read; a hosted install reads the board through the hosted reader/,
+    /hosted board is unused in this fixture/,
   )
 })
 
-test('an adopted install routes every positive-integer id only to the local service', async () => {
+test('an adopted install refuses every positive-integer board-message id', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   let hostedCalls = 0
   const hostedUnexpected = async (): Promise<never> => {
@@ -815,13 +815,13 @@ test('an adopted install routes every positive-integer id only to the local serv
   }
   const localId = '999999'
   const operations: [() => Promise<unknown>, RegExp][] = [
-    [() => boardReply(localId, 'reply', { env, client }), /no board message has number/],
-    [() => boardThread(localId, { env, client }), /no board message has number/],
-    [() => boardWithdraw(localId, { env, client }), /no board message has number/],
-    [() => boardAcknowledge(localId, { env, client }), /no board message has number/],
-    [() => boardStatus(localId, { env, client }), /no board message has number/],
-    [() => boardAccept(localId, localId, { env, client }), /no board message has number/],
-    [() => boardFileNote(localId, { env, client }), /no board message has number/],
+    [() => boardReply(localId, 'reply', { env, client }), /record id \(UUID\)/],
+    [() => boardThread(localId, { env, client }), /record id \(UUID\)/],
+    [() => boardWithdraw(localId, { env, client }), /record id \(UUID\)/],
+    [() => boardAcknowledge(localId, { env, client }), /record id \(UUID\)/],
+    [() => boardStatus(localId, { env, client }), /record id \(UUID\)/],
+    [() => boardAccept(localId, localId, { env, client }), /record id \(UUID\)/],
+    [() => boardFileNote(localId, { env, client }), /record id \(UUID\)/],
     [() => boardClaimRenew(localId, { env, client }), /invalid board claim identifier/],
     [() => boardClaimRelease(localId, { env, client }), /invalid board claim identifier/],
   ]

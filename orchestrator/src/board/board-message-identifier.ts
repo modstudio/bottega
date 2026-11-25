@@ -2,6 +2,7 @@
 /** Resolves a human-facing board-message number or UUID once, at the edge. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { BOARD_READ_REFRESH_BUDGET_MS, refreshHostedBoard } from './board-hosted-cache.ts'
 import { cachedHostedBoardMessageKind } from './board-hosted-cache-readers.ts'
@@ -9,9 +10,13 @@ import {
   HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardModeForId } from './board-mode.ts'
+import { boardHasAdoptedHosted, boardMode, boardModeForId } from './board-mode.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
+const HOSTED_MESSAGE_ID_REMEDY = `pass the board-message record id (UUID); use ${PLATFORM_SLUG} board thread or a board read verb to find it`
+
+export const hostedBoardMessageNotFoundMessage = (recordId: string): string =>
+  `board message ${recordId} is not on the hosted board; find the hosted message id with ${PLATFORM_SLUG} board thread or a board read verb`
 
 export type BoardIdentifierResolution = {
   source: 'local' | 'hosted'
@@ -73,6 +78,28 @@ function hosted(
   return { source: 'hosted', recordId }
 }
 
+function hostedMessageResolution(given: string): BoardIdentifierResolution {
+  if (/^[0-9]+$/.test(given))
+    throw new Error(`board message number ${given} is local-only; ${HOSTED_MESSAGE_ID_REMEDY}`)
+  if (!hasRecordIdShape(given))
+    throw new Error(
+      `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
+    )
+  return { source: 'hosted', recordId: given.toLowerCase() }
+}
+
+function boardIdentifierMode(
+  database: Database,
+  environment: Environment,
+  validateHosted: boolean,
+): 'local' | 'hosted' {
+  return validateHosted
+    ? boardMode('shared', environment, database)
+    : boardHasAdoptedHosted(database)
+      ? 'hosted'
+      : 'local'
+}
+
 export function resolveBoardMessageIdentifier(
   database: Database,
   input: string | number,
@@ -80,6 +107,8 @@ export function resolveBoardMessageIdentifier(
   validateHosted = true,
 ): BoardIdentifierResolution {
   const given = String(input)
+  const mode = boardIdentifierMode(database, environment, validateHosted)
+  if (mode === 'hosted') return hostedMessageResolution(given)
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (!Number.isSafeInteger(number) || number < 1)
@@ -117,6 +146,8 @@ export function resolveBoardClaimIdentifier(
       `invalid board claim identifier ${JSON.stringify(input)}: expected a full board claim UUID`,
     )
   const recordId = input.toLowerCase()
+  const mode = boardIdentifierMode(database, environment, validateHosted)
+  if (mode === 'hosted') return { source: 'hosted', recordId }
   const row = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM board_claim WHERE record_id=?')
     .get(recordId)

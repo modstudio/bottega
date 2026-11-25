@@ -45,6 +45,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-message-identifier.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     './board-hosted-cache.ts',
     './board-hosted-cache-readers.ts',
@@ -59,6 +60,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-local-read-guard.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     './board-mode.ts',
   ]),

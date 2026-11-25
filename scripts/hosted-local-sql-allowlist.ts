@@ -316,6 +316,23 @@ const DOC_REVISION_PLANNED_SITES: readonly B2ReasonedSite[] = [
   },
 ]
 
+const BOARD_REACH_PLANNED_SITES: readonly B2ReasonedSite[] = [
+  {
+    file: 'orchestrator/src/board/board-reach.ts',
+    functionName: 'boardMessageTitle',
+    expectedSites: 4,
+    detail:
+      "the read only feeds the reach report and reaches only message_source='local' rows from before adoption; architect ruling note 01a21090",
+  },
+  {
+    file: 'orchestrator/src/board/board-reach.ts',
+    functionName: 'boardReachReport',
+    expectedSites: 1,
+    detail:
+      "the read only feeds the reach report and reaches only message_source='local' rows from before adoption; architect ruling note 01a21090",
+  },
+]
+
 export type HostedLocalSqlAllowedFile = {
   pattern: RegExp
   functionName?: string
@@ -464,6 +481,14 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     reportOnly: true as const,
   })),
   ...DOC_REVISION_PLANNED_SITES.map(({ file, functionName, expectedSites, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    functionName,
+    reason: 'planned' as const,
+    detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
+  ...BOARD_REACH_PLANNED_SITES.map(({ file, functionName, expectedSites, detail }) => ({
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
     functionName,
     reason: 'planned' as const,

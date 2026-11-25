@@ -106,7 +106,10 @@ const HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES = [
 export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
   const refused = new Set<string>(HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES)
   return hits.flatMap((hit) =>
-    hit.kind === 'read' && hit.path === 'hosted-reachable' && refused.has(hit.table)
+    hit.kind === 'read' &&
+    hit.path === 'hosted-reachable' &&
+    hit.exclusionReason !== 'planned' &&
+    refused.has(hit.table)
       ? [
           `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; branch through boardMode/boardModeForId and the hosted board reader`,
         ]
@@ -160,11 +163,16 @@ export function hostedDocLocalReadFailures(hits: readonly HostedLocalReadHit[]):
 }
 
 const WRITE_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
-const HOSTED_SELECTORS = [
+const MODE_SELECTORS = [
   'boardMode',
   'boardModeForId',
+  'boardIdentifierMode',
   'hostedWriteMode',
   'writeMode',
+] as const
+const MODE_SELECTOR_PATTERN = MODE_SELECTORS.join('|')
+const HOSTED_SELECTORS = [
+  ...MODE_SELECTORS,
   'requireLocalBoardRead',
   'hostedRecordOwnsHostedTables',
 ] as const
@@ -287,9 +295,11 @@ function siteOffset(source: string, line: number): number {
 
 function selectorVariables(functionText: string): Map<string, 'mode' | 'hosted'> {
   const result = new Map<string, 'mode' | 'hosted'>()
-  for (const match of functionText.matchAll(
-    /\bconst\s+(\w+)\s*=\s*(?:writeMode|hostedWriteMode)\s*\([^;\n]+/g,
-  ))
+  const assignment = new RegExp(
+    `\\bconst\\s+(\\w+)\\s*=\\s*(?:${MODE_SELECTOR_PATTERN})\\s*\\([^;\\n]+`,
+    'g',
+  )
+  for (const match of functionText.matchAll(assignment))
     result.set(match[1] ?? '', /hosted-configured/.test(match[0]) ? 'hosted' : 'mode')
   for (const [modeName, kind] of result) {
     if (kind !== 'mode') continue
@@ -306,7 +316,7 @@ function conditionMode(
   condition: string,
   variables: ReadonlyMap<string, 'mode' | 'hosted'>,
 ): 'local' | 'hosted' | null {
-  const direct = /\b(?:writeMode|hostedWriteMode)\s*\(/.test(condition)
+  const direct = new RegExp(`\\b(?:${MODE_SELECTOR_PATTERN})\\s*\\(`).test(condition)
   const mode = [...variables].find(
     ([name, kind]) => kind === 'mode' && new RegExp(`\\b${name}\\b`).test(condition),
   )
@@ -316,8 +326,150 @@ function conditionMode(
   if (!direct && !mode && !hosted) return null
   if (hosted) return new RegExp(`!\\s*${hosted[0]}\\b`).test(condition) ? 'local' : 'hosted'
   const notEqual = /!==?/.test(condition)
-  if (/['"]local-authoritative['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
-  if (/['"]hosted-configured['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
+  for (const [literal, equalMode] of [
+    ['local-authoritative', 'local'],
+    ['hosted-configured', 'hosted'],
+    ['local', 'local'],
+    ['hosted', 'hosted'],
+  ] as const)
+    if (new RegExp(`['"]${literal}['"]`).test(condition))
+      return notEqual ? (equalMode === 'local' ? 'hosted' : 'local') : equalMode
+  return null
+}
+
+type DelimiterDepths = { brace: number; paren: number; bracket: number }
+
+function advanceDepths(depths: DelimiterDepths, char: string): void {
+  if (char === '{') depths.brace += 1
+  else if (char === '}') depths.brace -= 1
+  else if (char === '(') depths.paren += 1
+  else if (char === ')') depths.paren -= 1
+  else if (char === '[') depths.bracket += 1
+  else if (char === ']') depths.bracket -= 1
+}
+
+function isTopLevel(depths: DelimiterDepths): boolean {
+  return depths.brace === 0 && depths.paren === 0 && depths.bracket === 0
+}
+
+function hasNegativeDepth(depths: DelimiterDepths): boolean {
+  return depths.brace < 0 || depths.paren < 0 || depths.bracket < 0
+}
+
+function statementPrefixFacts(
+  text: string,
+  token: number,
+): { depths: DelimiterDepths; start: number } {
+  const depths = { brace: 0, paren: 0, bracket: 0 }
+  let start = 0
+  for (let index = 0; index < token; index += 1) {
+    const char = text[index] ?? ''
+    advanceDepths(depths, char)
+    if ((char === '}' || char === ';' || char === '\n') && isTopLevel(depths)) start = index + 1
+  }
+  return { depths, start }
+}
+
+function bracelessControlHeaderBefore(text: string, statementStart: number): boolean {
+  const prefix = text.slice(0, statementStart).trimEnd()
+  if (/\b(?:else|do)$/.test(prefix)) return true
+  if (!prefix.endsWith(')')) return false
+  let depth = 0
+  for (let index = prefix.length - 1; index >= 0; index -= 1) {
+    if (prefix[index] === ')') depth += 1
+    if (prefix[index] !== '(' || --depth !== 0) continue
+    return /\b(?:if|for|while)\s*$/.test(prefix.slice(0, index))
+  }
+  return true
+}
+
+function exitConsumesRemainder(remainder: string): boolean {
+  const depths = { brace: 0, paren: 0, bracket: 0 }
+  for (let index = 0; index < remainder.length; index += 1) {
+    const char = remainder[index] ?? ''
+    advanceDepths(depths, char)
+    if (char === ';' && isTopLevel(depths)) return remainder.slice(index + 1).trim().length === 0
+    if (char === '\n' && isTopLevel(depths) && remainder.slice(index + 1).trim()) return false
+  }
+  return true
+}
+
+function endsInUnconditionalExit(statementText: string): boolean | null {
+  let uncertain = false
+  for (const match of statementText.matchAll(/\b(?:return|throw)\b/g)) {
+    const token = match.index ?? 0
+    const prefix = statementPrefixFacts(statementText, token)
+    const finalTopLevelStatement =
+      isTopLevel(prefix.depths) &&
+      !statementText.slice(prefix.start, token).trim() &&
+      exitConsumesRemainder(statementText.slice(token))
+    if (!finalTopLevelStatement) continue
+    if (bracelessControlHeaderBefore(statementText, prefix.start)) uncertain = true
+    else return true
+  }
+  return uncertain ? null : false
+}
+
+function matchingTernaryColon(source: string, question: number): number {
+  const depths = { brace: 0, paren: 0, bracket: 0 }
+  let nestedTernaries = 0
+  for (let index = question + 1; index < source.length; index += 1) {
+    const char = source[index] ?? ''
+    advanceDepths(depths, char)
+    if (hasNegativeDepth(depths)) return -1
+    if (!isTopLevel(depths)) continue
+    if (char === '?') nestedTernaries += 1
+    if (char === ':' && nestedTernaries > 0) nestedTernaries -= 1
+    else if (char === ':') return index
+    if ((char === ';' || char === '\n') && nestedTernaries === 0) return -1
+  }
+  return -1
+}
+
+function ternaryExpressionEnd(source: string, colon: number): number {
+  const depths = { brace: 0, paren: 0, bracket: 0 }
+  let nestedTernaries = 0
+  for (let index = colon + 1; index < source.length; index += 1) {
+    const char = source[index] ?? ''
+    if (isTopLevel(depths) && (char === ')' || char === ']' || char === '}')) return index
+    advanceDepths(depths, char)
+    if (!isTopLevel(depths)) continue
+    if (char === '?') nestedTernaries += 1
+    if (char === ':' && nestedTernaries > 0) nestedTernaries -= 1
+    if ((char === ';' || char === '\n' || char === ',') && nestedTernaries === 0) return index
+  }
+  return source.length
+}
+
+function isTopLevelInRange(source: string, start: number, site: number): boolean {
+  const depths = { brace: 0, paren: 0, bracket: 0 }
+  for (let index = start; index < site; index += 1) {
+    advanceDepths(depths, source[index] ?? '')
+    if (hasNegativeDepth(depths)) return false
+  }
+  return isTopLevel(depths)
+}
+
+function selectorTernaryPath(
+  body: string,
+  site: number,
+  variables: ReadonlyMap<string, 'mode' | 'hosted'>,
+): 'local' | 'hosted' | null {
+  const ternary = new RegExp(
+    `((?:(?:${MODE_SELECTOR_PATTERN})\\s*\\([^?\\n]+\\)|\\w+)\\s*(?:={2,3}|!={1,2})\\s*['"](?:local|hosted)['"])\\s*\\?`,
+    'g',
+  )
+  for (const match of body.matchAll(ternary)) {
+    const question = (match.index ?? 0) + match[0].lastIndexOf('?')
+    const colon = matchingTernaryColon(body, question)
+    if (colon < 0) continue
+    const end = ternaryExpressionEnd(body, colon)
+    const mode = conditionMode(match[1] ?? '', variables)
+    if (!mode) continue
+    if (question < site && site < colon && isTopLevelInRange(body, question + 1, site)) return mode
+    if (colon < site && site < end && isTopLevelInRange(body, colon + 1, site))
+      return mode === 'local' ? 'hosted' : 'local'
+  }
   return null
 }
 
@@ -344,7 +496,23 @@ function selectorIfPath(input: {
     statement.start + (statement.braced ? 1 : 0),
     statement.end,
   )
-  return /\b(?:return|throw)\b/.test(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+  const exits = endsInUnconditionalExit(statementText)
+  if (exits === null) return null
+  return exits && input.mode === 'hosted' ? 'local' : 'hosted'
+}
+
+function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
+  for (const match of body.slice(0, site).matchAll(/\brequireLocalBoardRead\s*\(/g)) {
+    const token = match.index ?? 0
+    const prefix = statementPrefixFacts(body, token)
+    if (
+      isTopLevel(prefix.depths) &&
+      !body.slice(prefix.start, token).trim() &&
+      !bracelessControlHeaderBefore(body, prefix.start)
+    )
+      return true
+  }
+  return false
 }
 
 function functionSitePath(
@@ -355,6 +523,9 @@ function functionSitePath(
   const body = source.slice(range.start + 1, range.end)
   const site = offset - range.start - 1
   const variables = selectorVariables(body)
+  if (hasUnconditionalLocalBoardGuard(body, site)) return 'local'
+  const ternary = selectorTernaryPath(body, site, variables)
+  if (ternary) return ternary
   for (const match of body.matchAll(/\bif\s*\(/g)) {
     const ifStart = match.index ?? 0
     const parenStart = ifStart + match[0].lastIndexOf('(')

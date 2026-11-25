@@ -13,6 +13,7 @@ import {
   renewClaim,
   takeClaim,
 } from './board-claim-service.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { BOARD_POST_RATE_LIMIT } from './board-policy.ts'
 import { claimNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
@@ -270,6 +271,32 @@ test('a foreign architect cannot release, and release-task closes only that task
     expect.objectContaining({ recordId: first.recordId, closeReason: 'task-closed' }),
     expect.objectContaining({ subject: { kind: 'task', value: 'DEV-2' }, live: true }),
   ])
+})
+
+test('hosted installs refuse local claim renewal and release without changing the claim', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  const claim = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
+  const before = db()
+    .query('SELECT renewed_at,closed_at,close_reason FROM board_claim WHERE record_id=?')
+    .get(claim.recordId)
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const hostedEnv = {
+    ...env('holder'),
+    BOTTEGA_RECORD_API_URL: 'https://record.example.test',
+  }
+
+  expect(() => renewClaim(claim.recordId, hostedEnv, clock + 1)).toThrow(
+    new RegExp(`${PLATFORM_SLUG} board claim renew`),
+  )
+  expect(() => releaseClaim(claim.recordId, hostedEnv, clock + 2)).toThrow(
+    new RegExp(`${PLATFORM_SLUG} board claim release`),
+  )
+  expect(
+    db()
+      .query('SELECT renewed_at,closed_at,close_reason FROM board_claim WHERE record_id=?')
+      .get(claim.recordId),
+  ).toEqual(before)
 })
 
 test('an architect environment may release task claims', () => {

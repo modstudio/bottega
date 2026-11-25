@@ -1,8 +1,9 @@
 // concern: board-delivery-seams
 /** Refreshes hosted state within each caller's budget, then combines it with local delivery. */
 
+import type { Database } from 'bun:sqlite'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
-import { db } from '../database/db.ts'
+import { db, writableDb } from '../database/db.ts'
 
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
@@ -17,7 +18,10 @@ import {
   HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
+import {
+  hostedBoardMessageNotFoundMessage,
+  resolveBoardDeliveryIdentifier,
+} from './board-message-identifier.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
 import {
@@ -54,11 +58,12 @@ type BoardDeliveryNotice = {
 const splitBoardIds = (
   sourceIds: Array<string | number>,
   env: Record<string, string | undefined> = process.env,
+  database: Database = db(),
 ) => {
   const local: string[] = []
   const hosted: string[] = []
   for (const sourceId of sourceIds) {
-    const resolved = resolveBoardDeliveryIdentifier(db(), sourceId, env)
+    const resolved = resolveBoardDeliveryIdentifier(database, sourceId, env)
     if (!resolved) continue
     if (resolved.source === 'local') local.push(resolved.recordId)
     else hosted.push(resolved.recordId)
@@ -216,10 +221,33 @@ export async function markRunBoardNoticesDelivered(
 export async function markBoardNoticesDelivered(
   sourceIds: Array<string | number>,
   env: Record<string, string | undefined> = process.env,
+  input: {
+    database?: Database
+    refresh?: typeof refreshHostedBoard
+  } = {},
 ): Promise<void> {
-  const ids = splitBoardIds(sourceIds, env)
-  if (ids.local.length) markNoticesDelivered(ids.local, env)
-  if (ids.hosted.length) await markCachedHostedDelivered(sessionReader(env), ids.hosted)
+  const database = input.database ?? writableDb()
+  const ids = splitBoardIds(sourceIds, env, database)
+  if (ids.hosted.length) {
+    const refreshed = await (input.refresh ?? refreshHostedBoard)({
+      budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+      env,
+      database,
+    })
+    if (refreshed.status !== 'success')
+      throw new Error(
+        hostedBoardStoppedMessage('read', refreshed, HOSTED_BOARD_PRODUCT_STOPPED_REMEDY),
+      )
+    for (const id of ids.hosted) {
+      const cached = database
+        .query('SELECT 1 FROM hosted_board_message_cache WHERE id=? LIMIT 1')
+        .get(id)
+      if (!cached) throw new Error(hostedBoardMessageNotFoundMessage(id))
+    }
+  }
+  if (ids.local.length) markNoticesDelivered(ids.local, env, Date.now(), database)
+  if (ids.hosted.length)
+    await markCachedHostedDelivered(sessionReader(env), ids.hosted, { database })
 }
 
 export async function markBoardDeliveriesDelivered(
