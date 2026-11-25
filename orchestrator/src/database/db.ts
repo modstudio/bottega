@@ -1058,6 +1058,20 @@ export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Da
   }
 }
 
+/** Give a synchronous diagnostic a short-lived, SQLite-enforced read-only handle. */
+export function withSynchronousReadOnlyDatabase<T>(
+  action: (database: Database) => T,
+  path = DB_PATH,
+): T {
+  const database = openReadOnlyDatabase(path)
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return action(database)
+  } finally {
+    database.close()
+  }
+}
+
 /** One-time maintenance pass for roots whose original caller prompt remains on disk. */
 export function backfillSpecSha(): { updated: number; missing: number } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(DB_PATH))

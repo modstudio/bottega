@@ -1,8 +1,12 @@
-import type { Database } from 'bun:sqlite'
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { withSynchronousReadOnlyDatabase } from '../database/db.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import {
   loadWorkflowHistoryParity,
@@ -10,27 +14,33 @@ import {
   workflowHistoryParityDoctorDiagnosis,
 } from './doctor-record.ts'
 
-test('workflow-history parity uses the maintenance handle beside a guarded hosted store', async () => {
-  const database = migratedTestDatabase()
-  const guarded = guardHostedTables(database)
-  const maintenanceHandle = <T>(action: (handle: Database) => T): T => {
-    // The hosted install's ordinary handle is guarded; maintenance opens the same store raw.
+test('workflow-history parity uses a read-only handle beside a guarded hosted store', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'doctor-record-parity-'))
+  const path = join(root, 'orchestrator.db')
+  writeMigratedTestDatabase(path)
+  const guarded = guardHostedTables(new Database(path, { readonly: true }))
+  const doctorHandle = <T>(action: (handle: Database) => T): T => {
+    // The hosted install's ordinary handle is guarded; doctor opens the same store read-only.
     void guarded
-    return action(database)
+    return withSynchronousReadOnlyDatabase((handle) => {
+      expect(() => handle.exec('CREATE TABLE doctor_write_probe (id TEXT)')).toThrow(/read-?only/i)
+      return action(handle)
+    }, path)
   }
   try {
     const times = [10, 10]
-    const diagnosis = await workflowHistoryParityDoctorDiagnosis(() =>
-      loadWorkflowHistoryParity(maintenanceHandle, async (input) => ({
-        obligationIds: input.obligationIds ?? [],
-        textIds: input.textIds ?? [],
-        textCopyIds: input.textCopyIds ?? [],
-        questionAuditIds: input.questionAuditIds ?? [],
-        questionIds: input.questionIds ?? [],
-        stageIds: input.stageIds ?? [],
-        flowIds: input.flowIds ?? [],
-        questionAuditIdentities: [],
-      })),
+    const diagnosis = await workflowHistoryParityDoctorDiagnosis(
+      () =>
+        loadWorkflowHistoryParity(doctorHandle, async (input) => ({
+          obligationIds: input.obligationIds ?? [],
+          textIds: input.textIds ?? [],
+          textCopyIds: input.textCopyIds ?? [],
+          questionAuditIds: input.questionAuditIds ?? [],
+          questionIds: input.questionIds ?? [],
+          stageIds: input.stageIds ?? [],
+          flowIds: input.flowIds ?? [],
+          questionAuditIdentities: [],
+        })),
       () => times.shift()!,
     )
 
@@ -40,7 +50,8 @@ test('workflow-history parity uses the maintenance handle beside a guarded hoste
     expect(diagnosis.lines).toContain('workflow history parity: pass in 0 ms')
     expect(diagnosis.failed).toBe(false)
   } finally {
-    database.close()
+    guarded.close()
+    rmSync(root, { recursive: true, force: true })
   }
 })
 

@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, withSynchronousDatabaseForMigrationStep } from '../database/db.ts'
+import { db, withSynchronousReadOnlyDatabase } from '../database/db.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
@@ -65,7 +65,7 @@ export async function reportActiveSpaceDoctor(
 }
 
 export async function loadWorkflowHistoryParity(
-  withDatabase: SynchronousDatabaseProvider = withSynchronousDatabaseForMigrationStep,
+  withDatabase: SynchronousDatabaseProvider = withSynchronousReadOnlyDatabase,
   presenceReader: ReturnType<typeof recordApiClient>['readTaskFlowPresence'] = recordApiClient()
     .readTaskFlowPresence,
 ) {
