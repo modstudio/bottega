@@ -49,7 +49,7 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
       subject: 'outbox:9',
       detail: expect.stringContaining('verdict refused'),
       action: expect.stringContaining(
-        `next ${PLATFORM_SLUG} record sync; do not retry it, which would overwrite a newer hosted verdict`,
+        `pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync`,
       ),
     }),
   ])
@@ -76,7 +76,7 @@ test('a quarantined outbox condition excludes the stored SQL head', () => {
     'run outbox row 9 is quarantined: [42501] new row violates row-level security policy (USING expression) for table "run"',
   )
   expect(condition?.detail).not.toContain('Failed query')
-  expect(condition?.action).toContain(`${PLATFORM_SLUG} record outbox retry orch:9`)
+  expect(condition?.action).toContain('a later run row for this identity')
   database.close()
 })
 

@@ -34,10 +34,7 @@ export function outboxQuarantineConditions(database: Database): AddressedMonitor
     since: row.quarantinedAt,
     ageMs: null,
     detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
-    action:
-      row.kind === 'score'
-        ? `a later score for this run retires it automatically on the next ${PLATFORM_SLUG} record sync; do not retry it, which would overwrite a newer hosted verdict; ${PLATFORM_SLUG} record outbox shows the full error and payload`
-        : `run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with an audited reason; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
+    action: `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; do not retry it, which could overwrite newer hosted state; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
     ownerSession: null,
   }))
 }
