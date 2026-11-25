@@ -331,38 +331,150 @@ function conditionMode(
   return null
 }
 
-function statementPrefixFacts(text: string, token: number): { depth: number; start: number } {
-  let depth = 0
+function statementPrefixFacts(
+  text: string,
+  token: number,
+): { braceDepth: number; parenDepth: number; bracketDepth: number; start: number } {
+  let braceDepth = 0
+  let parenDepth = 0
+  let bracketDepth = 0
   let start = 0
   for (let index = 0; index < token; index += 1) {
-    if (text[index] === '{') depth += 1
-    if (text[index] === '}' && --depth === 0) start = index + 1
-    if ((text[index] === ';' || text[index] === '\n') && depth === 0) start = index + 1
+    if (text[index] === '{') braceDepth += 1
+    if (text[index] === '}' && --braceDepth === 0 && parenDepth === 0 && bracketDepth === 0)
+      start = index + 1
+    if (text[index] === '(') parenDepth += 1
+    if (text[index] === ')') parenDepth -= 1
+    if (text[index] === '[') bracketDepth += 1
+    if (text[index] === ']') bracketDepth -= 1
+    if (
+      (text[index] === ';' || text[index] === '\n') &&
+      braceDepth === 0 &&
+      parenDepth === 0 &&
+      bracketDepth === 0
+    )
+      start = index + 1
   }
-  return { depth, start }
+  return { braceDepth, parenDepth, bracketDepth, start }
 }
 
-function exitConsumesRemainder(remainder: string): boolean {
+function bracelessControlHeaderBefore(text: string, statementStart: number): boolean {
+  const prefix = text.slice(0, statementStart).trimEnd()
+  if (/\b(?:else|do)$/.test(prefix)) return true
+  if (!prefix.endsWith(')')) return false
   let depth = 0
-  for (let index = 0; index < remainder.length; index += 1) {
-    if (remainder[index] === '{') depth += 1
-    if (remainder[index] === '}') depth -= 1
-    if (remainder[index] === ';' && depth === 0)
-      return remainder.slice(index + 1).trim().length === 0
+  for (let index = prefix.length - 1; index >= 0; index -= 1) {
+    if (prefix[index] === ')') depth += 1
+    if (prefix[index] !== '(' || --depth !== 0) continue
+    return /\b(?:if|for|while)\s*$/.test(prefix.slice(0, index))
   }
   return true
 }
 
-function endsInUnconditionalExit(statementText: string): boolean {
-  return [...statementText.matchAll(/\b(?:return|throw)\b/g)].some((match) => {
+function exitConsumesRemainder(remainder: string): boolean {
+  let braceDepth = 0
+  let parenDepth = 0
+  let bracketDepth = 0
+  for (let index = 0; index < remainder.length; index += 1) {
+    if (remainder[index] === '{') braceDepth += 1
+    if (remainder[index] === '}') braceDepth -= 1
+    if (remainder[index] === '(') parenDepth += 1
+    if (remainder[index] === ')') parenDepth -= 1
+    if (remainder[index] === '[') bracketDepth += 1
+    if (remainder[index] === ']') bracketDepth -= 1
+    const topLevel = braceDepth === 0 && parenDepth === 0 && bracketDepth === 0
+    if (remainder[index] === ';' && topLevel)
+      return remainder.slice(index + 1).trim().length === 0
+    if (remainder[index] === '\n' && topLevel && remainder.slice(index + 1).trim()) return false
+  }
+  return true
+}
+
+function endsInUnconditionalExit(statementText: string): boolean | null {
+  let uncertain = false
+  for (const match of statementText.matchAll(/\b(?:return|throw)\b/g)) {
     const token = match.index ?? 0
     const prefix = statementPrefixFacts(statementText, token)
-    return (
-      prefix.depth === 0 &&
+    const finalTopLevelStatement =
+      prefix.braceDepth === 0 &&
+      prefix.parenDepth === 0 &&
+      prefix.bracketDepth === 0 &&
       !statementText.slice(prefix.start, token).trim() &&
       exitConsumesRemainder(statementText.slice(token))
-    )
-  })
+    if (!finalTopLevelStatement) continue
+    if (bracelessControlHeaderBefore(statementText, prefix.start)) uncertain = true
+    else return true
+  }
+  return uncertain ? null : false
+}
+
+function matchingTernaryColon(source: string, question: number): number {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let braceDepth = 0
+  let nestedTernaries = 0
+  for (let index = question + 1; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '(') parenDepth += 1
+    if (char === ')') parenDepth -= 1
+    if (char === '[') bracketDepth += 1
+    if (char === ']') bracketDepth -= 1
+    if (char === '{') braceDepth += 1
+    if (char === '}') braceDepth -= 1
+    if (parenDepth < 0 || bracketDepth < 0 || braceDepth < 0) return -1
+    if (parenDepth !== 0 || bracketDepth !== 0 || braceDepth !== 0) continue
+    if (char === '?') nestedTernaries += 1
+    if (char === ':' && nestedTernaries > 0) nestedTernaries -= 1
+    else if (char === ':') return index
+    if ((char === ';' || char === '\n') && nestedTernaries === 0) return -1
+  }
+  return -1
+}
+
+function ternaryExpressionEnd(source: string, colon: number): number {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let braceDepth = 0
+  let nestedTernaries = 0
+  for (let index = colon + 1; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '(') parenDepth += 1
+    if (char === ')') {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index
+      parenDepth -= 1
+    }
+    if (char === '[') bracketDepth += 1
+    if (char === ']') {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index
+      bracketDepth -= 1
+    }
+    if (char === '{') braceDepth += 1
+    if (char === '}') {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) return index
+      braceDepth -= 1
+    }
+    if (parenDepth !== 0 || bracketDepth !== 0 || braceDepth !== 0) continue
+    if (char === '?') nestedTernaries += 1
+    if (char === ':' && nestedTernaries > 0) nestedTernaries -= 1
+    if ((char === ';' || char === '\n' || char === ',') && nestedTernaries === 0) return index
+  }
+  return source.length
+}
+
+function isTopLevelInRange(source: string, start: number, site: number): boolean {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let braceDepth = 0
+  for (let index = start; index < site; index += 1) {
+    if (source[index] === '(') parenDepth += 1
+    if (source[index] === ')') parenDepth -= 1
+    if (source[index] === '[') bracketDepth += 1
+    if (source[index] === ']') bracketDepth -= 1
+    if (source[index] === '{') braceDepth += 1
+    if (source[index] === '}') braceDepth -= 1
+    if (parenDepth < 0 || bracketDepth < 0 || braceDepth < 0) return false
+  }
+  return parenDepth === 0 && bracketDepth === 0 && braceDepth === 0
 }
 
 function selectorTernaryPath(
@@ -374,13 +486,14 @@ function selectorTernaryPath(
     /((?:boardMode(?:ForId)?\s*\([^?\n]+\)|\w+)\s*(?:={2,3}|!={1,2})\s*['"](?:local|hosted)['"])\s*\?/g
   for (const match of body.matchAll(ternary)) {
     const question = (match.index ?? 0) + match[0].lastIndexOf('?')
-    const colon = body.indexOf(':', question + 1)
+    const colon = matchingTernaryColon(body, question)
     if (colon < 0) continue
-    const end = body.indexOf('\n', colon + 1)
+    const end = ternaryExpressionEnd(body, colon)
     const mode = conditionMode(match[1] ?? '', variables)
     if (!mode) continue
-    if (question < site && site < colon) return mode
-    if (colon < site && (end < 0 || site < end)) return mode === 'local' ? 'hosted' : 'local'
+    if (question < site && site < colon && isTopLevelInRange(body, question + 1, site)) return mode
+    if (colon < site && site < end && isTopLevelInRange(body, colon + 1, site))
+      return mode === 'local' ? 'hosted' : 'local'
   }
   return null
 }
@@ -408,17 +521,23 @@ function selectorIfPath(input: {
     statement.start + (statement.braced ? 1 : 0),
     statement.end,
   )
-  return endsInUnconditionalExit(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+  const exits = endsInUnconditionalExit(statementText)
+  if (exits === null) return null
+  return exits && input.mode === 'hosted' ? 'local' : 'hosted'
 }
 
 function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
   for (const match of body.slice(0, site).matchAll(/\brequireLocalBoardRead\s*\(/g)) {
-    let depth = 0
-    for (let index = 0; index < (match.index ?? 0); index += 1) {
-      if (body[index] === '{') depth += 1
-      if (body[index] === '}') depth -= 1
-    }
-    if (depth === 0) return true
+    const token = match.index ?? 0
+    const prefix = statementPrefixFacts(body, token)
+    if (
+      prefix.braceDepth === 0 &&
+      prefix.parenDepth === 0 &&
+      prefix.bracketDepth === 0 &&
+      !body.slice(prefix.start, token).trim() &&
+      !bracelessControlHeaderBefore(body, prefix.start)
+    )
+      return true
   }
   return false
 }
