@@ -949,9 +949,17 @@ function hasNewStoreSeedMarker(database: Database): boolean {
 export function seedCurrentProjectSchema(
   database: Database,
   seedPending: boolean,
-  sessionPresent = registeredOpenHooks().recordSessionPresent?.(database) ?? false,
+  sessionPresent?: boolean,
 ): void {
-  initializeDefaultLocalProject(database, seedPending, sessionPresent)
+  let recordSessionPresent = sessionPresent ?? false
+  if (seedPending && sessionPresent === undefined) {
+    try {
+      recordSessionPresent = registeredOpenHooks().recordSessionPresent?.(database) ?? false
+    } catch {
+      recordSessionPresent = false
+    }
+  }
+  initializeDefaultLocalProject(database, seedPending, recordSessionPresent)
   seedProjects(database)
   if (seedPending) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
 }

@@ -48,7 +48,7 @@ function standardStoreAccess(database: Parameters<NonNullable<OpenHooks['access'
 
 /** The standard lifecycle composition, exported so diagnostics replay the production hooks. */
 export const STANDARD_OPEN_HOOKS: OpenHooks = {
-  recordSessionPresent,
+  recordSessionPresent: (database) => recordSessionPresent(database, false),
   ...(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS.length > 0 ? { access: standardStoreAccess } : {}),
   // Shared-output exclusion is a backfill: run-keyed output names cannot collide, and its
   // two whole-table scans would otherwise run on every writable open.

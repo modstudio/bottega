@@ -71,8 +71,8 @@ export function recordUserSessionFromMemberships<
   }
 }
 
-export function recordSessionPresent(local?: Database): boolean {
-  return storedRecordToken(local) !== null
+export function recordSessionPresent(local?: Database, mayMigrate = true): boolean {
+  return storedRecordToken(local, undefined, mayMigrate) !== null
 }
 
 export async function currentRecordUserSession(

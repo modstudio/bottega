@@ -3,7 +3,11 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createDatabasePrivately, seedCurrentProjectSchema } from './db.ts'
+import {
+  createDatabasePrivately,
+  registerOpenHooks,
+  seedCurrentProjectSchema,
+} from './db.ts'
 import { applyMigrations } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 
@@ -29,6 +33,48 @@ test('fresh-store seeding clears its marker with and without a record session', 
     expect(
       database.query("SELECT value FROM schema_meta WHERE key='new_store_seed_pending'").get(),
     ).toBeNull()
+    database.close()
+  }
+})
+
+test('an existing store open does not inspect the record session', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  let calls = 0
+  const restore = registerOpenHooks({
+    recordSessionPresent: () => {
+      calls++
+      return true
+    },
+  })
+  try {
+    seedCurrentProjectSchema(database, false)
+    expect(calls).toBe(0)
+  } finally {
+    restore()
+    database.close()
+  }
+})
+
+test('a failed record session check does not prevent a fresh-store seed', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  database.query("INSERT INTO schema_meta(key,value) VALUES ('new_store_seed_pending','1')").run()
+  const restore = registerOpenHooks({
+    recordSessionPresent: () => {
+      throw new Error('injected session read failure')
+    },
+  })
+  try {
+    expect(() => seedCurrentProjectSchema(database, true)).not.toThrow()
+    expect(database.query("SELECT name FROM project WHERE name='tasks'").all()).toEqual([
+      { name: 'tasks' },
+    ])
+    expect(
+      database.query("SELECT value FROM schema_meta WHERE key='new_store_seed_pending'").get(),
+    ).toBeNull()
+  } finally {
+    restore()
     database.close()
   }
 })
