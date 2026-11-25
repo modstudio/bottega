@@ -78,6 +78,10 @@ export function floorsIncludeTrackerTransition(floors: ReadonlyArray<{ kind: str
   return floors.some((floor) => floor.kind === 'tracker-transition')
 }
 
+export function floorsIncludeTaskOpenWithNotes(floors: ReadonlyArray<{ kind: string }>): boolean {
+  return floors.some((floor) => floor.kind === 'task-open-with-notes')
+}
+
 export const DEFAULT_EXPECTED_EXIT_CODE = 0
 export const DEFAULT_EXPECTED_STATUS = 'done'
 

@@ -12,10 +12,10 @@ import {
 
 function noteArtifactNeedsFreshness(
   promotedTask: string | null,
-  cursorKey: string,
+  workflowKey: string,
   isTaskOpenWithNotesFloor: boolean,
 ): boolean {
-  return !isTaskOpenWithNotesFloor || promotedTask !== cursorKey
+  return !isTaskOpenWithNotesFloor || promotedTask !== workflowKey
 }
 
 export async function gatherNoteArtifactEvidence(
@@ -23,7 +23,7 @@ export async function gatherNoteArtifactEvidence(
   offeredArtifact: string,
   project: string,
   stepActivatedAt: string,
-  cursorKey: string,
+  workflowKey: string,
   isTaskOpenWithNotesFloor: boolean,
   ports: FloorEvidencePorts,
 ): Promise<{
@@ -49,7 +49,7 @@ export async function gatherNoteArtifactEvidence(
   }
   if (
     evidence.recordId &&
-    noteArtifactNeedsFreshness(evidence.promotedTask, cursorKey, isTaskOpenWithNotesFloor)
+    noteArtifactNeedsFreshness(evidence.promotedTask, workflowKey, isTaskOpenWithNotesFloor)
   ) {
     const sightingReference = evidence.label ?? parsed.reference
     requireMutableArtifactFreshness(
