@@ -21,7 +21,7 @@ import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
 import {
   machineUpdateCommand as lockedMachineUpdateCommand,
-  machineUpdateCommandUnderLock as machineUpdateCommand,
+  machineUpdateCommandUnderLock as runMachineUpdateCommand,
 } from './machine-update.ts'
 import {
   clearMachineUpdateIntent,
@@ -112,9 +112,26 @@ const NO_BUILD_OR_REFRESH = {
   runLaunchAgentsRefreshVerb: () => {},
 }
 
+function machineUpdateCommand(
+  presentation: Parameters<typeof runMachineUpdateCommand>[0],
+  deps: Parameters<typeof runMachineUpdateCommand>[1] = {},
+  requestedVersion?: string,
+) {
+  return runMachineUpdateCommand(
+    presentation,
+    {
+      storeAttachedToHostedRecord: () => false,
+      recordSessionPresent: () => false,
+      ...deps,
+    },
+    requestedVersion,
+  )
+}
+
 function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
   return {
     cwd: dir,
+    callerCwd: dir,
     authorityRefusal: () => null,
     project: () => ({
       name: 'migration-update-fixture',
@@ -893,29 +910,7 @@ test('machine update defaults the target to the installation root', async () => 
 
 test('machine update does not name the checkout when the caller is already there', async () => {
   const lines: string[] = []
-  await machineUpdateCommand(
-    { log: (line) => lines.push(line) },
-    {
-      cwd: dir,
-      callerCwd: dir,
-      authorityRefusal: () => null,
-      project: () => ({
-        name: 'migration-update-fixture',
-        path: dir,
-        settings: { trunk: 'main' },
-      }),
-      git: (_cwd, args) =>
-        args[0] === 'branch'
-          ? 'main'
-          : args[0] === 'show'
-            ? JSON.stringify({ entries: migrationJournal() })
-            : '',
-      migrate: () => {},
-      syncWorkflows: () => {},
-      buildCli: () => {},
-      runLaunchAgentsRefreshVerb: () => {},
-    },
-  )
+  await machineUpdateCommand({ log: (line) => lines.push(line) }, successfulMachineUpdateDeps())
   expect(lines).toHaveLength(2)
   expect(lines[0]).toBe('outbox released 0 payloads; backlog remains no')
   expect(lines[1]).toMatch(
@@ -929,33 +924,40 @@ test('machine update keeps its successful result when store maintenance fails', 
     machineUpdateCommand(
       { log: (line) => lines.push(line) },
       {
-        cwd: dir,
-        callerCwd: dir,
-        authorityRefusal: () => null,
-        project: () => ({
-          name: 'migration-update-fixture',
-          path: dir,
-          settings: { trunk: 'main' },
-        }),
-        git: (_cwd, args) =>
-          args[0] === 'branch'
-            ? 'main'
-            : args[0] === 'show'
-              ? JSON.stringify({ entries: migrationJournal() })
-              : '',
-        migrate: () => {},
-        syncWorkflows: () => {},
+        ...successfulMachineUpdateDeps(),
         maintainStore: () => {
           throw new Error('store busy')
         },
-        buildCli: () => {},
-        runLaunchAgentsRefreshVerb: () => {},
       },
     ),
   ).resolves.toBeUndefined()
   expect(lines).toEqual([
     `incremental vacuum setup skipped: store busy; retry with ${PLATFORM_SLUG} machine update`,
   ])
+})
+
+test('successful machine updates invoke default-project retirement', async () => {
+  for (const deps of [
+    successfulMachineUpdateDeps(),
+    Object.assign(successfulMachineUpdateDeps(), {
+      identity: { kind: 'distribution' as const, root: dir, manifest: {} as never },
+      updateDistribution: async () => {},
+    }),
+  ]) {
+    const lines: string[] = []
+    let retirements = 0
+    await machineUpdateCommand(
+      { log: (line) => lines.push(line) },
+      {
+        ...deps,
+        recordSessionPresent: () => true,
+        releaseHostedRows: async () => {},
+        retireUnusedDefaultLocalProject: async () => Boolean(++retirements),
+      },
+    )
+    expect(retirements).toBe(1)
+    expect(lines).toContain('retired unused default local project tasks')
+  }
 })
 
 test('checkout update refreshes through deps.cwd when the running identity root differs', async () => {

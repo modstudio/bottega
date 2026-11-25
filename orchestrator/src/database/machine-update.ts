@@ -23,6 +23,7 @@ import {
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
+import { recordSessionPresent } from '../record/record-session.ts'
 import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
@@ -34,7 +35,10 @@ import {
   migrationAuthorityRefusal,
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
-import { releaseHostedRowsAfterUpdate } from './hosted-row-release.ts'
+import {
+  releaseHostedRowsAfterUpdate,
+  retireDefaultProjectAfterUpdate,
+} from './hosted-row-release.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -240,6 +244,9 @@ type UpdateDependencies = {
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
   releaseHostedRows?: (presentation: Presentation) => Promise<void>
+  retireUnusedDefaultLocalProject?: () => Promise<boolean>
+  storeAttachedToHostedRecord?: () => boolean
+  recordSessionPresent?: () => boolean
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
@@ -669,6 +676,11 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   verifyMainCheckout(target, branch, runGit)
   await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
+  await retireDefaultProjectAfterUpdate(presentation, {
+    recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
+    retire: deps.retireUnusedDefaultLocalProject,
+    storeAttached: deps.storeAttachedToHostedRecord,
+  })
 }
 
 export async function machineUpdateCommandUnderLock(
@@ -703,6 +715,11 @@ export async function machineUpdateCommandUnderLock(
     const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
     refreshLaunchAgents(realpathSync(process.execPath))
     await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
+    await retireDefaultProjectAfterUpdate(presentation, {
+      recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
+      retire: deps.retireUnusedDefaultLocalProject,
+      storeAttached: deps.storeAttachedToHostedRecord,
+    })
     return
   }
   await updateCheckout(presentation, deps)

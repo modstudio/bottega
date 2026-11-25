@@ -16,6 +16,11 @@ const ttyPorts = () => ({
   outputIsTTY: process.stdout.isTTY === true,
 })
 
+const retireUnusedDefaultLocalProjectAfterBind = async () =>
+  (
+    await import('../project/default-local-project-retirement.ts')
+  ).attemptDefaultLocalProjectRetirement({ log })
+
 export function registerMachineJoinCommands(machine: Command, selectSpace: SelectSpace): void {
   machine
     .command('join')
@@ -29,6 +34,7 @@ export function registerMachineJoinCommands(machine: Command, selectSpace: Selec
       const client = hostedConfigClient()
       const selected = await selectSpace('machine join', options.space, client)
       const approved = await machineJoin(selected, { client, env: process.env, output: log })
+      await retireUnusedDefaultLocalProjectAfterBind()
       log(`approved by ${approved.label} (${approved.keyId})`)
     })
   machine

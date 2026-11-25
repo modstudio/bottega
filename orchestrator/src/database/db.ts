@@ -109,6 +109,7 @@ export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
   afterInitialize?: OpenHook[]
   access?: (database: Database) => Database
+  recordSessionPresent?: (database: Database) => boolean
 }
 let openHooks: OpenHooks | null = null
 export function registerOpenHooks(hooks: OpenHooks): () => void {
@@ -945,8 +946,20 @@ function hasNewStoreSeedMarker(database: Database): boolean {
   )
 }
 
-function seedCurrentProjectSchema(database: Database, seedPending: boolean): void {
-  initializeDefaultLocalProject(database, seedPending)
+export function seedCurrentProjectSchema(
+  database: Database,
+  seedPending: boolean,
+  sessionPresent?: boolean,
+): void {
+  let recordSessionPresent = sessionPresent ?? false
+  if (seedPending && sessionPresent === undefined) {
+    try {
+      recordSessionPresent = openHooks?.recordSessionPresent?.(database) ?? false
+    } catch {
+      recordSessionPresent = false
+    }
+  }
+  initializeDefaultLocalProject(database, seedPending, recordSessionPresent)
   seedProjects(database)
   if (seedPending) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
 }

@@ -26,6 +26,7 @@ import {
   decideHostedRowRelease,
   HOSTED_ROW_RELEASE_ARCHIVE_KEEP,
   releaseHostedRowsAfterUpdate,
+  retireDefaultProjectAfterUpdate,
   writeHostedRowReleaseArchive,
 } from './hosted-row-release.ts'
 import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from './hosted-table-guard.ts'
@@ -577,4 +578,60 @@ test('hosted row release reports a presence failure and returns normally', async
     'kept all local workflow history: record presence read failed: record unavailable',
   ])
   database.close()
+})
+
+test('post-update retirement runs on an attached or signed-in install', async () => {
+  for (const facts of [
+    { attached: true, session: false },
+    { attached: false, session: true },
+  ]) {
+    const output: string[] = []
+    let retired = 0
+    await retireDefaultProjectAfterUpdate(
+      { log: (line) => output.push(line) },
+      {
+        storeAttached: () => facts.attached,
+        recordSessionPresent: () => facts.session,
+        retire: async () => {
+          retired += 1
+          return true
+        },
+      },
+    )
+    expect(retired).toBe(1)
+    expect(output).toEqual(['retired unused default local project tasks'])
+  }
+})
+
+test('post-update retirement skips a local unsigned install', async () => {
+  let retired = 0
+  await retireDefaultProjectAfterUpdate(
+    { log: () => {} },
+    {
+      storeAttached: () => false,
+      recordSessionPresent: () => false,
+      retire: async () => {
+        retired += 1
+        return false
+      },
+    },
+  )
+  expect(retired).toBe(0)
+})
+
+test('post-update retirement logs failure and returns normally', async () => {
+  const output: string[] = []
+  await expect(
+    retireDefaultProjectAfterUpdate(
+      { log: (line) => output.push(line) },
+      {
+        storeAttached: () => true,
+        recordSessionPresent: () => false,
+        retire: async () => {
+          throw new Error('retirement fixture failure')
+        },
+      },
+    ),
+  ).resolves.toBeUndefined()
+  expect(output).toEqual(['default local project retirement failed: retirement fixture failure'])
 })

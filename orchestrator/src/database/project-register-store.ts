@@ -93,9 +93,10 @@ export function mirrorProjectRegisterRow(
 export function initializeDefaultLocalProject(
   database: Database,
   seedPending: boolean,
+  recordSessionPresent: boolean,
   environment: StateEnvironment = process.env,
 ): void {
-  if (!seedPending) return
+  if (!seedPending || recordSessionPresent) return
   const exists = database
     .query('SELECT 1 FROM project WHERE name = ?')
     .get(DEFAULT_LOCAL_PROJECT_NAME)

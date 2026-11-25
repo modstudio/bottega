@@ -24,6 +24,8 @@ type DefaultLocalProjectRetirementFacts = {
   taskCount: number
 }
 
+type Presentation = { log(value: string): void }
+
 function shouldRetireDefaultLocalProject(facts: DefaultLocalProjectRetirementFacts): boolean {
   return (
     facts.projectName === DEFAULT_LOCAL_PROJECT_NAME &&
@@ -77,4 +79,18 @@ export async function retireUnusedDefaultLocalProject(
   const removed = deleteProjectRegisterRow(database, project.recordId)
   if (removed) removeEmptyDirectory(project.path)
   return removed
+}
+
+export async function attemptDefaultLocalProjectRetirement(
+  presentation: Presentation,
+  retire: () => Promise<boolean> = retireUnusedDefaultLocalProject,
+): Promise<void> {
+  try {
+    if (await retire())
+      presentation.log(`retired unused default local project ${DEFAULT_LOCAL_PROJECT_NAME}`)
+  } catch (error) {
+    presentation.log(
+      `default local project retirement failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }

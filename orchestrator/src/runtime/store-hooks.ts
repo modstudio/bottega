@@ -7,6 +7,7 @@ import {
 } from '../database/hosted-table-guard.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
+import { recordSessionPresent } from '../record/record-session.ts'
 import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import { backfillReviewRounds } from '../review/review-round-backfill.ts'
 import { reapStale } from '../run/run-liveness.ts'
@@ -45,6 +46,7 @@ function standardStoreAccess(database: Parameters<NonNullable<OpenHooks['access'
 
 /** The standard lifecycle composition, exported so diagnostics replay the production hooks. */
 export const STANDARD_OPEN_HOOKS: OpenHooks = {
+  recordSessionPresent: (database) => recordSessionPresent(database, false),
   ...(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS.length > 0 ? { access: standardStoreAccess } : {}),
   // Shared-output exclusion is a backfill: run-keyed output names cannot collide, and its
   // two whole-table scans would otherwise run on every writable open.
