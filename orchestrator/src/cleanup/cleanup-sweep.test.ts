@@ -452,6 +452,7 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
      VALUES (?,?,?,1,'clear',1,0,0,0)`,
   )
   const insertSeen = database.query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
+  const selectSweptAt = database.query('SELECT swept_at FROM session_close_out WHERE session_id=?')
   const addSessions = (count = 3) =>
     Array.from({ length: count }, () => {
       const session = newRecordId()
@@ -569,26 +570,12 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
       }),
     ).toBe(true)
     expect(conflictCalls).toEqual(conflictSessions)
-    expect(
-      database
-        .query(
-          `SELECT session_id, swept_at FROM session_close_out
-           WHERE session_id IN (?,?) ORDER BY session_id`,
-        )
-        .all(...conflictSessions),
-    ).toEqual(
-      conflictSessions
-        .map((session, index) => ({
-          session_id: session,
-          swept_at: index === 0 ? null : new Date(clock).toISOString(),
-        }))
-        .sort((left, right) => left.session_id.localeCompare(right.session_id)),
-    )
+    expect(selectSweptAt.get(conflictCalls[0])).toEqual({ swept_at: null })
+    expect(selectSweptAt.get(conflictCalls[1])).toEqual({ swept_at: new Date(clock).toISOString() })
     expect(conflictLines).toContain(
       `could not release hosted board claims of closed session ${conflictCalls[0]}: fixture conflict; retry: ${PLATFORM_SLUG} machine sweep`,
     )
 
-    const callsBeforeDryRun = refusedCalls.length
     expect(
       await sweepSessionCloseOutRecords({
         enabled: true,
@@ -598,14 +585,12 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
         presentation: presentation(refusedLines, () => {}),
         adapters: {
           release: async (session) => closeOutReport(session, true),
-          releaseHostedClaims: async (session) => {
-            refusedCalls.push(session)
-            return 0
+          releaseHostedClaims: async () => {
+            throw new Error('dry-run called hosted adapter')
           },
         },
       }),
     ).toBe(false)
-    expect(refusedCalls).toHaveLength(callsBeforeDryRun)
     expect(refusedLines).toContain(
       `would release hosted board claims of closed session ${conflictCalls[0]}`,
     )
