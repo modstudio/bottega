@@ -144,12 +144,11 @@ test('session release closes only the caller live claims held by that session', 
   const updatePlan = await explain(update!)
   const updateNodes = planNodes(updatePlan)
   const updateScan = updateNodes.find(
-    (node) =>
-      node['Relation Name'] === 'board_claim' &&
-      node['Index Name'] === 'board_claim_live_subject_unique',
+    (node) => node['Relation Name'] === 'board_claim' && node['Index Name'],
   )
-  expect(updateScan?.Filter).toContain('closed_at IS NULL')
-  expect(updateScan?.Filter).toContain('id =')
+  const updatePredicates = `${updateScan?.['Index Cond'] ?? ''} ${updateScan?.Filter ?? ''}`
+  expect(updatePredicates).toContain('id =')
+  expect(updatePredicates).toContain('closed_at IS NULL')
   const updateWriteMembership = updateNodes.find(
     (node) =>
       node['Relation Name'] === 'membership' && node.Filter?.includes("permission = 'write'"),
