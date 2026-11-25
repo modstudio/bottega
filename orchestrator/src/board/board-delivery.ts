@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb } from '../database/db.ts'
 
 import {
@@ -19,7 +18,10 @@ import {
   HOSTED_BOARD_SIDE_CHANNEL_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
+import {
+  hostedBoardMessageNotFoundMessage,
+  resolveBoardDeliveryIdentifier,
+} from './board-message-identifier.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
 import {
@@ -240,10 +242,7 @@ export async function markBoardNoticesDelivered(
       const cached = database
         .query('SELECT 1 FROM hosted_board_message_cache WHERE id=? LIMIT 1')
         .get(id)
-      if (!cached)
-        throw new Error(
-          `board message ${id} is not on the hosted board; find the hosted message id with ${PLATFORM_SLUG} board thread or a board read verb`,
-        )
+      if (!cached) throw new Error(hostedBoardMessageNotFoundMessage(id))
     }
   }
   if (ids.local.length) markNoticesDelivered(ids.local, env, Date.now(), database)
