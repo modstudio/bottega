@@ -105,6 +105,63 @@ test.each([
     }`,
     path: 'local-only',
   },
+  {
+    name: 'a read after an unconditional local board guard',
+    source: `function read() {
+      requireLocalBoardRead(env, db)
+      db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read before a local board guard',
+    source: `function read() {
+      db.query(\`SELECT * FROM hosted_row\`)
+      requireLocalBoardRead(env, db)
+    }`,
+    path: 'cannot-tell',
+  },
+  {
+    name: 'a read after a returning hosted board arm',
+    source: `function read() {
+      const mode = boardMode('shared', env, db)
+      if (mode === 'hosted') return hostedRead()
+      db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a read after a fall-through hosted board arm',
+    source: `function read() {
+      if (boardModeForId(id, 'board id', env, db) === 'hosted') {
+        if (refreshFailed) throw new Error('refresh failed')
+      }
+      db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'hosted-reachable',
+  },
+  {
+    name: 'a helper called from the local arm of a board mode ternary',
+    source: `function localRead() {
+      db.query(\`SELECT * FROM hosted_row\`)
+    }
+    function read() {
+      const mode = boardMode('shared', env, db)
+      return mode === 'local' ? localRead() : hostedRead()
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a helper called from the hosted arm of a board mode ternary',
+    source: `function hostedRead() {
+      db.query(\`SELECT * FROM hosted_row\`)
+    }
+    function read() {
+      const mode = boardMode('shared', env, db)
+      return mode === 'local' ? localRead() : hostedRead()
+    }`,
+    path: 'hosted-reachable',
+  },
 ] as const)('classifies selector control flow for $name', ({ source, path }) => {
   const hit = classifyHostedLocalReadSites({
     candidates: candidates('hub/src/fixture.ts', source).map((candidate) => ({
@@ -158,6 +215,7 @@ test('refuses only hosted-reachable reads of B1 board tables', () => {
   expect(
     hostedBoardLocalReadFailures([
       { ...hit, path: 'cannot-tell' },
+      { ...hit, exclusionReason: 'planned' },
       { ...hit, kind: 'write' },
       { ...hit, table: 'doc_revision' },
       { ...hit, table: 'session_board_hold' },

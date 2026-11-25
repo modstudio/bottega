@@ -108,6 +108,7 @@ export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]
   return hits.flatMap((hit) =>
     hit.kind === 'read' &&
     hit.path === 'hosted-reachable' &&
+    hit.exclusionReason !== 'planned' &&
     refused.has(hit.table) &&
     hit.file !== 'orchestrator/src/board/board-suggestions.ts'
       ? [
@@ -291,7 +292,7 @@ function siteOffset(source: string, line: number): number {
 function selectorVariables(functionText: string): Map<string, 'mode' | 'hosted'> {
   const result = new Map<string, 'mode' | 'hosted'>()
   for (const match of functionText.matchAll(
-    /\bconst\s+(\w+)\s*=\s*(?:writeMode|hostedWriteMode)\s*\([^;\n]+/g,
+    /\bconst\s+(\w+)\s*=\s*(?:boardMode|boardModeForId|writeMode|hostedWriteMode)\s*\([^;\n]+/g,
   ))
     result.set(match[1] ?? '', /hosted-configured/.test(match[0]) ? 'hosted' : 'mode')
   for (const [modeName, kind] of result) {
@@ -309,7 +310,7 @@ function conditionMode(
   condition: string,
   variables: ReadonlyMap<string, 'mode' | 'hosted'>,
 ): 'local' | 'hosted' | null {
-  const direct = /\b(?:writeMode|hostedWriteMode)\s*\(/.test(condition)
+  const direct = /\b(?:boardMode|boardModeForId|writeMode|hostedWriteMode)\s*\(/.test(condition)
   const mode = [...variables].find(
     ([name, kind]) => kind === 'mode' && new RegExp(`\\b${name}\\b`).test(condition),
   )
@@ -321,6 +322,53 @@ function conditionMode(
   const notEqual = /!==?/.test(condition)
   if (/['"]local-authoritative['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
   if (/['"]hosted-configured['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
+  if (/['"]local['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
+  if (/['"]hosted['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
+  return null
+}
+
+function endsInUnconditionalExit(statementText: string): boolean {
+  for (const match of statementText.matchAll(/\b(?:return|throw)\b/g)) {
+    const token = match.index ?? 0
+    let depth = 0
+    let statementStart = 0
+    for (let index = 0; index < token; index += 1) {
+      if (statementText[index] === '{') depth += 1
+      if (statementText[index] === '}' && --depth === 0) statementStart = index + 1
+      if (statementText[index] === ';' && depth === 0) statementStart = index + 1
+      if (statementText[index] === '\n' && depth === 0) statementStart = index + 1
+    }
+    if (depth !== 0 || statementText.slice(statementStart, token).trim()) continue
+    const remainder = statementText.slice(token)
+    let nested = 0
+    for (let index = 0; index < remainder.length; index += 1) {
+      if (remainder[index] === '{') nested += 1
+      if (remainder[index] === '}') nested -= 1
+      if (remainder[index] === ';' && nested === 0)
+        return remainder.slice(index + 1).trim().length === 0
+    }
+    return true
+  }
+  return false
+}
+
+function selectorTernaryPath(
+  body: string,
+  site: number,
+  variables: ReadonlyMap<string, 'mode' | 'hosted'>,
+): 'local' | 'hosted' | null {
+  const ternary =
+    /((?:boardMode(?:ForId)?\s*\([^?\n]+\)|\w+)\s*(?:={2,3}|!={1,2})\s*['"](?:local|hosted)['"])\s*\?/g
+  for (const match of body.matchAll(ternary)) {
+    const question = (match.index ?? 0) + match[0].lastIndexOf('?')
+    const colon = body.indexOf(':', question + 1)
+    if (colon < 0) continue
+    const end = body.indexOf('\n', colon + 1)
+    const mode = conditionMode(match[1] ?? '', variables)
+    if (!mode) continue
+    if (question < site && site < colon) return mode
+    if (colon < site && (end < 0 || site < end)) return mode === 'local' ? 'hosted' : 'local'
+  }
   return null
 }
 
@@ -347,7 +395,19 @@ function selectorIfPath(input: {
     statement.start + (statement.braced ? 1 : 0),
     statement.end,
   )
-  return /\b(?:return|throw)\b/.test(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+  return endsInUnconditionalExit(statementText) && input.mode === 'hosted' ? 'local' : 'hosted'
+}
+
+function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
+  for (const match of body.slice(0, site).matchAll(/\brequireLocalBoardRead\s*\(/g)) {
+    let depth = 0
+    for (let index = 0; index < (match.index ?? 0); index += 1) {
+      if (body[index] === '{') depth += 1
+      if (body[index] === '}') depth -= 1
+    }
+    if (depth === 0) return true
+  }
+  return false
 }
 
 function functionSitePath(
@@ -358,6 +418,9 @@ function functionSitePath(
   const body = source.slice(range.start + 1, range.end)
   const site = offset - range.start - 1
   const variables = selectorVariables(body)
+  if (hasUnconditionalLocalBoardGuard(body, site)) return 'local'
+  const ternary = selectorTernaryPath(body, site, variables)
+  if (ternary) return ternary
   for (const match of body.matchAll(/\bif\s*\(/g)) {
     const ifStart = match.index ?? 0
     const parenStart = ifStart + match[0].lastIndexOf('(')

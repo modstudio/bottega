@@ -11,3 +11,14 @@ export function requireLocalBoardRead(
     'requireLocalBoardRead stopped a local board read; a hosted install reads the board through the hosted reader',
   )
 }
+
+export function requireLocalBoardWrite(
+  verb: 'claim release' | 'claim renew',
+  environment: Record<string, string | undefined> = process.env,
+  database: Database = db(),
+): void {
+  if (boardMode('shared', environment, database) === 'local') return
+  throw new Error(
+    `a hosted install cannot change a local board claim; use bottega board ${verb} with the hosted claim UUID`,
+  )
+}

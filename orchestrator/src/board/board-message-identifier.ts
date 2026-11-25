@@ -9,9 +9,11 @@ import {
   HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardModeForId } from './board-mode.ts'
+import { boardHasAdoptedHosted, boardMode, boardModeForId } from './board-mode.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
+const HOSTED_MESSAGE_ID_REMEDY =
+  'pass the board-message record id (UUID); use bottega board thread or a board read verb to find it'
 
 export type BoardIdentifierResolution = {
   source: 'local' | 'hosted'
@@ -80,6 +82,24 @@ export function resolveBoardMessageIdentifier(
   validateHosted = true,
 ): BoardIdentifierResolution {
   const given = String(input)
+  if (validateHosted && boardMode('shared', environment, database) === 'hosted') {
+    if (/^[0-9]+$/.test(given))
+      throw new Error(`board message number ${given} is local-only; ${HOSTED_MESSAGE_ID_REMEDY}`)
+    if (!hasRecordIdShape(given))
+      throw new Error(
+        `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
+      )
+    return { source: 'hosted', recordId: given.toLowerCase() }
+  }
+  if (!validateHosted && boardHasAdoptedHosted(database)) {
+    if (/^[0-9]+$/.test(given))
+      throw new Error(`board message number ${given} is local-only; ${HOSTED_MESSAGE_ID_REMEDY}`)
+    if (!hasRecordIdShape(given))
+      throw new Error(
+        `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
+      )
+    return { source: 'hosted', recordId: given.toLowerCase() }
+  }
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (!Number.isSafeInteger(number) || number < 1)
@@ -117,6 +137,9 @@ export function resolveBoardClaimIdentifier(
       `invalid board claim identifier ${JSON.stringify(input)}: expected a full board claim UUID`,
     )
   const recordId = input.toLowerCase()
+  if (validateHosted && boardMode('shared', environment, database) === 'hosted')
+    return { source: 'hosted', recordId }
+  if (!validateHosted && boardHasAdoptedHosted(database)) return { source: 'hosted', recordId }
   const row = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM board_claim WHERE record_id=?')
     .get(recordId)

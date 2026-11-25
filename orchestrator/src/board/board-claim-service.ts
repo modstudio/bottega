@@ -20,7 +20,7 @@ import {
   parseClaimSubject,
   sameClaimHolder,
 } from './board-claim-policy.ts'
-import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
 import { postNoticeInTransaction } from './board-service.ts'
 import {
   BoardPostRateLimitError,
@@ -424,8 +424,9 @@ export function renewClaim(
   env: Environment = process.env,
   clock = Date.now(),
 ): ClaimView {
-  const actor = claimActor(env)
   const database = writableDb()
+  requireLocalBoardWrite('claim renew', env, database)
+  const actor = claimActor(env)
   return writeTransaction(() => {
     const row = claimByRecordId(recordId, database)
     if (!rowLive(row, clock, database))
@@ -449,8 +450,9 @@ export function releaseClaim(
   env: Environment = process.env,
   clock = Date.now(),
 ): ClaimView {
-  const actor = claimActor(env)
   const database = writableDb()
+  requireLocalBoardWrite('claim release', env, database)
+  const actor = claimActor(env)
   return writeTransaction(() => {
     const row = claimByRecordId(recordId, database)
     if (!rowLive(row, clock, database))
