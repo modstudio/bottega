@@ -1,10 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  closeDatabaseForFixture,
-  db,
-  withSynchronousReadOnlyDatabase,
-} from '../database/db.ts'
+import { closeDatabaseForFixture, db, withSynchronousReadOnlyDatabase } from '../database/db.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import {
   loadWorkflowHistoryParity,
