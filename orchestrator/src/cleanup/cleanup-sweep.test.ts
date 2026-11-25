@@ -21,10 +21,10 @@ import { getContextItem } from '../doc/context-item-store.ts'
 import { sessionResumeBriefState } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
-import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
 import {
@@ -493,10 +493,10 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
         )
         .get(...outageSessions),
     ).toEqual({ count: 0 })
-    expect(outageLines.filter((line) => line.startsWith('skipped hosted claim release'))).toHaveLength(
-      2,
-    )
-    expect(outageLines.join('\n')).toContain('retry: bottega machine sweep')
+    expect(
+      outageLines.filter((line) => line.startsWith('skipped hosted claim release')),
+    ).toHaveLength(2)
+    expect(outageLines.join('\n')).toContain(`retry: ${PLATFORM_SLUG} machine sweep`)
 
     for (const session of outageSessions)
       database
@@ -534,7 +534,7 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
         .get(...refusedSessions),
     ).toEqual({ count: 2 })
     expect(refusedLines).toContain(
-      `could not release hosted board claims of closed session ${refusedCalls[0]}: fixture refused; retry: bottega machine sweep`,
+      `could not release hosted board claims of closed session ${refusedCalls[0]}: fixture refused; retry: ${PLATFORM_SLUG} machine sweep`,
     )
 
     const callsBeforeDryRun = refusedCalls.length

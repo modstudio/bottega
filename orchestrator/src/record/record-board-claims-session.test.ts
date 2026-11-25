@@ -13,6 +13,15 @@ const secondSpaceId = '01990000-0000-7000-8000-000000026430'
 const secondProjectId = '01990000-0000-7000-8000-000000026431'
 const fixtureUrl = 'postgres://board-claim-session.test/record'
 const holderSession = 'session-to-release'
+const cursorIds = {
+  machine: '01990000-0000-7000-8000-000000026434',
+  flow: '01990000-0000-7000-8000-000000026435',
+  stage: '01990000-0000-7000-8000-000000026436',
+  workflow: '01990000-0000-7000-8000-000000026437',
+  workflowVersion: '01990000-0000-7000-8000-000000026438',
+  catalogue: '01990000-0000-7000-8000-000000026439',
+  catalogueVersion: '01990000-0000-7000-8000-000000026440',
+} as const
 
 const claimIds = {
   callerLive: '01990000-0000-7000-8000-000000026425',
@@ -78,13 +87,41 @@ beforeAll(async () => {
     VALUES
       ('${projectId}','${spaceId}','claim-session',ARRAY['DEV'],now()),
       ('${secondProjectId}','${secondSpaceId}','claim-session-second',ARRAY['SECOND'],now());
+    INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+    VALUES ('${cursorIds.machine}','${userId}','Claim session machine',now(),now());
+    INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
+    VALUES ('${cursorIds.workflow}','${spaceId}','claim-session',now(),now());
+    INSERT INTO workflow_version
+      (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
+    VALUES ('${cursorIds.workflowVersion}','${spaceId}','${cursorIds.workflow}',1,'production','{}',
+      'test','claim session',now(),now());
+    INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at)
+    VALUES ('${cursorIds.catalogue}','${spaceId}','claim-session',now(),now());
+    INSERT INTO step_catalogue_version
+      (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,updated_at)
+    VALUES ('${cursorIds.catalogueVersion}','${spaceId}','${cursorIds.catalogue}',1,'production','{}',
+      'test','claim session',now(),now());
+    INSERT INTO task_flow
+      (id,space_id,project_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
+    VALUES ('${cursorIds.flow}','${spaceId}','${projectId}','open','${cursorIds.machine}',
+      '${cursorIds.machine}',1,now(),now());
+    INSERT INTO task_flow_stage
+      (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,session_id,
+       workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,
+       closed_step_notes,enforcement,total_steps,opened_machine_id,last_advanced_machine_id,
+       revision,created_at,updated_at)
+    VALUES ('${cursorIds.stage}','${spaceId}','${cursorIds.flow}','${projectId}',1,
+      'claim-session','default','DEV-CURSOR','${holderSession}','${cursorIds.workflowVersion}',
+      '${cursorIds.catalogueVersion}','{}',0,'implementation','running','[]','signed',1,
+      '${cursorIds.machine}','${cursorIds.machine}',1,now(),now());
+    UPDATE task_flow SET open_stage_record_id='${cursorIds.stage}' WHERE id='${cursorIds.flow}';
     INSERT INTO board_claim
       (id,project_id,subject_kind,subject_value,holder_user_id,holder_session,duration_ms,
        taken_at,renewed_at,lapses_at)
     VALUES
       ('${claimIds.callerLive}','${projectId}','resource','caller-live','${userId}',
        '${holderSession}',60000,now(),now(),now() + interval '1 hour'),
-      ('${claimIds.callerLapsed}','${projectId}','resource','caller-lapsed','${userId}',
+      ('${claimIds.callerLapsed}','${projectId}','task','DEV-CURSOR','${userId}',
        '${holderSession}',60000,now() - interval '2 hours',now() - interval '2 hours',
        now() - interval '1 hour'),
       ('${claimIds.anotherSession}','${projectId}','resource','another-session','${userId}',
@@ -110,10 +147,12 @@ test('session release closes only the caller live claims held by that session', 
       url: fixtureUrl,
       userId,
       spaceId,
+      spaceIds: [spaceId, secondSpaceId],
       holderSession,
     }),
-  ).resolves.toEqual({ released: 2 })
+  ).resolves.toEqual({ released: 3 })
 
+  await database.exec('RESET ROLE')
   const result = await database.query<{
     id: string
     closed_at: Date | null
@@ -121,11 +160,17 @@ test('session release closes only the caller live claims held by that session', 
   }>(`SELECT id, closed_at, close_reason FROM board_claim ORDER BY id`)
   expect(result.rows).toEqual([
     { id: claimIds.callerLive, closed_at: expect.any(Date), close_reason: 'released' },
-    { id: claimIds.callerLapsed, closed_at: null, close_reason: null },
+    { id: claimIds.callerLapsed, closed_at: expect.any(Date), close_reason: 'released' },
     { id: claimIds.anotherSession, closed_at: null, close_reason: null },
     { id: claimIds.anotherUser, closed_at: null, close_reason: null },
     { id: claimIds.crossSpace, closed_at: expect.any(Date), close_reason: 'released' },
   ])
+  await database.exec(`
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId},${secondSpaceId}',false);
+  `)
 
   const selection = capturedQueries.find(
     ({ statement }) =>

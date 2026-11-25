@@ -2,14 +2,10 @@
 /** Replays session release, expires machine liveness and claims, and retains its close-out record. */
 
 import type { Database } from 'bun:sqlite'
-import { boundedFetch } from '../../../shared/bounded-fetch.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { releaseSessionClaims } from '../board/board-claim-service.ts'
 import { boardModeDecision } from '../board/board-mode.ts'
-import { boardWriteDestination } from '../board/board-write-destination.ts'
 import { db, expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
-import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 import { KEEP_RUN_FILES_DAYS } from '../run/run-artifact-limits.ts'
 import {
   releaseSessionResources,
@@ -24,21 +20,15 @@ import {
 } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideSessionCloseOutSweep } from './cleanup-sweep-session-close-out-decision.ts'
+import {
+  hostedRecordUnreachable,
+  releaseHostedClaims,
+} from './cleanup-sweep-session-close-out-hosted.ts'
 
 type SweepAdapters = {
   release: (session: string) => Promise<SessionCloseOutReport>
   releaseClaims: (session: string, now: number, database: Database) => number
   releaseHostedClaims: (session: string, database: Database) => Promise<number>
-}
-
-async function releaseHostedClaims(session: string, database: Database): Promise<number> {
-  const presence = database
-    .query<{ project: string | null }, [string]>('SELECT project FROM presence WHERE session_id=?')
-    .get(session)
-  const client = recordApiClient(undefined, boundedFetch('hosted-close-out'))
-  const destination = await boardWriteDestination(client, presence?.project ?? null, database)
-  const result = await client.releaseBoardSessionClaims({ holderSession: session }, destination)
-  return result.released
 }
 
 const defaultAdapters: SweepAdapters = {
@@ -51,13 +41,6 @@ class SessionResumedDuringSweep extends Error {}
 class SessionCloseOutAlreadySwept extends Error {}
 
 type HostedReleaseState = { unreachable: boolean }
-
-function hostedRecordUnreachable(cause: unknown): boolean {
-  return (
-    cause instanceof BoundExceededError ||
-    (cause instanceof RecordApiRequestError && cause.kind === 'unreachable')
-  )
-}
 
 function rowDecision(row: SessionCloseOutRow, lastSeen: string | null = row.last_seen) {
   return decideSessionCloseOutSweep({
@@ -83,6 +66,37 @@ function reportUncleanReplay(
     )
 }
 
+async function releaseHostedClaimsForRow(input: {
+  row: SessionCloseOutRow
+  database: Database
+  adapters: SweepAdapters
+  presentation: CleanupPresentation
+  enabled: boolean
+  state: HostedReleaseState
+}): Promise<boolean> {
+  if (!input.enabled) return false
+  if (input.state.unreachable) {
+    input.presentation.error(
+      `skipped hosted claim release for closed session ${input.row.session_id}: the record was unreachable earlier in this sweep; retry: ${PLATFORM_SLUG} machine sweep`,
+    )
+    return true
+  }
+  try {
+    const released = await input.adapters.releaseHostedClaims(input.row.session_id, input.database)
+    if (released > 0)
+      input.presentation.log(
+        `released ${released} hosted board claims of closed session ${input.row.session_id}`,
+      )
+    return false
+  } catch (cause) {
+    if (hostedRecordUnreachable(cause)) input.state.unreachable = true
+    input.presentation.error(
+      `could not release hosted board claims of closed session ${input.row.session_id}: ${cause instanceof Error ? cause.message : String(cause)}; retry: ${PLATFORM_SLUG} machine sweep`,
+    )
+    return true
+  }
+}
+
 async function sweepCloseOutRow(input: {
   row: SessionCloseOutRow
   database: Database
@@ -104,30 +118,17 @@ async function sweepCloseOutRow(input: {
       reportUncleanReplay(input.row.session_id, report, input.presentation)
       return true
     }
-    if (input.releaseHostedClaims) {
-      if (input.hostedReleaseState.unreachable) {
-        input.presentation.error(
-          `skipped hosted claim release for closed session ${input.row.session_id}: the record was unreachable earlier in this sweep; retry: bottega machine sweep`,
-        )
-        return true
-      }
-      try {
-        const released = await input.adapters.releaseHostedClaims(
-          input.row.session_id,
-          input.database,
-        )
-        if (released > 0)
-          input.presentation.log(
-            `released ${released} hosted board claims of closed session ${input.row.session_id}`,
-          )
-      } catch (cause) {
-        if (hostedRecordUnreachable(cause)) input.hostedReleaseState.unreachable = true
-        input.presentation.error(
-          `could not release hosted board claims of closed session ${input.row.session_id}: ${cause instanceof Error ? cause.message : String(cause)}; retry: bottega machine sweep`,
-        )
-        return true
-      }
-    }
+    if (
+      await releaseHostedClaimsForRow({
+        row: input.row,
+        database: input.database,
+        adapters: input.adapters,
+        presentation: input.presentation,
+        enabled: input.releaseHostedClaims,
+        state: input.hostedReleaseState,
+      })
+    )
+      return true
     writeTransaction(() => {
       const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
       if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()

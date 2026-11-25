@@ -15,9 +15,11 @@ function localReleaseGates(file: SourceFile): { name: string; line: number }[] {
   const visit = (node: ts.Node): void => {
     if (ts.isIfStatement(node)) {
       const inspectCondition = (condition: ts.Node): void => {
-        const name =
-          (ts.isIdentifier(condition) && condition.text) ||
-          (ts.isPropertyAccessExpression(condition) && condition.name.text)
+        const name = ts.isIdentifier(condition)
+          ? condition.text
+          : ts.isPropertyAccessExpression(condition)
+            ? condition.name.text
+            : null
         if (name?.match(/^releaseLocal[A-Z]/)) {
           const { line } = source.getLineAndCharacterOfPosition(condition.getStart(source))
           gates.push({ name, line: line + 1 })
@@ -39,7 +41,8 @@ function hasHostedReleaseCall(text: string, hostedName: string, path: string): b
     if (
       ts.isCallExpression(node) &&
       ((ts.isIdentifier(node.expression) && node.expression.text === hostedName) ||
-        (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === hostedName))
+        (ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === hostedName))
     )
       found = true
     if (!found) ts.forEachChild(node, visit)
@@ -61,7 +64,7 @@ export function hostedReleaseParityViolations(files: SourceFile[]): string[] {
   })
 }
 
-export function run(): number {
+function run(): number {
   const startedAt = performance.now()
   const files = PRODUCTION_ROOTS.flatMap((sourceRoot) =>
     [...new Bun.Glob('**/*.ts').scanSync({ cwd: join(ROOT, sourceRoot), onlyFiles: true })].map(
