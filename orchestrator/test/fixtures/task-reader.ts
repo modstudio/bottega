@@ -1,4 +1,29 @@
-import { installTaskReader, type TaskLookupRow } from '../../src/workflow/task-read-port.ts'
+import {
+  installTaskReader,
+  type TaskLookupRow,
+  type TaskReadPort,
+} from '../../src/workflow/task-read-port.ts'
+
+/** Install list-only task reads for a test and return a restoration closure. */
+export function installTaskListReaders(
+  readers: Pick<TaskReadPort, 'list' | 'listLocal'>,
+): () => void {
+  const previous = installTaskReader({
+    ...readers,
+    lookup: async () => [],
+    duplicates: async () => [],
+    show: async () => {
+      throw new Error('task-list fixture does not show tasks')
+    },
+    documents: async () => [],
+    document: async () => {
+      throw new Error('task-list fixture does not read task documents')
+    },
+  })
+  return () => {
+    installTaskReader(previous)
+  }
+}
 
 /** Install the smallest task read model needed by cross-surface hook-path fixtures. */
 export function installTaskRows(rows: readonly TaskLookupRow[] | null): void {

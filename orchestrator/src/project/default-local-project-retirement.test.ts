@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import { installTaskListReaders } from '../../test/fixtures/task-reader.ts'
 import {
   DEFAULT_LOCAL_PROJECT_SETTINGS,
   defaultLocalProjectPath,
@@ -11,7 +12,6 @@ import {
 } from '../database/project-register-store.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { STANDARD_OPEN_HOOKS } from '../runtime/store-hooks.ts'
-import { installTaskReader, type TaskReadPort } from '../workflow/task-read-port.ts'
 import { retireUnusedDefaultLocalProject } from './default-local-project-retirement.ts'
 import {
   PROJECT_REFERENCE_REPORT,
@@ -99,7 +99,7 @@ describe('hosted-configured sign-in', () => {
      VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
     ).run(process.env.BOTTEGA_RECORD_API_URL!)
     const guarded = STANDARD_OPEN_HOOKS.access!(d)
-    const taskReader: TaskReadPort = {
+    const restoreTaskReader = installTaskListReaders({
       list: async () => {
         throw new Error('project tasks has no declared record space')
       },
@@ -107,24 +107,14 @@ describe('hosted-configured sign-in', () => {
         expect(filters).toEqual({ project: 'tasks' })
         return []
       },
-      lookup: async () => [],
-      duplicates: async () => [],
-      show: async () => {
-        throw new Error('not used')
-      },
-      documents: async () => [],
-      document: async () => {
-        throw new Error('not used')
-      },
-    }
-    const previousTaskReader = installTaskReader(taskReader)
+    })
     try {
       expect(
         await retireUnusedDefaultLocalProject(guarded, environment, undefined, noReferences),
       ).toBe(true)
       expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
     } finally {
-      installTaskReader(previousTaskReader)
+      restoreTaskReader()
     }
   })
 
