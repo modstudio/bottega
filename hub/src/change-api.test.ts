@@ -423,6 +423,22 @@ test('push client accepts one outcome per requested id and refuses a malformed s
         Response.json([{ id: intervalId, status: 'rejected', reason: 'conflict', conflict }]),
     }),
   ).toEqual([{ id: intervalId, status: 'rejected', reason: 'conflict', conflict }])
+  expect(
+    await hostedPushChanges([{ table: 'hub_day', id: intervalId, op: 'delete' }], {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () =>
+        Response.json([
+          {
+            id: intervalId,
+            status: 'rejected',
+            reason: 'future conflict',
+            conflict: { code: 'future-conflict', detail: 'new server field' },
+          },
+        ]),
+    }),
+  ).toEqual([{ id: intervalId, status: 'rejected', reason: 'future conflict' }])
   await expect(
     hostedPushChanges([{ table: 'hub_day', id: intervalId, op: 'delete' }], {
       baseUrl: 'https://hub.example.test',

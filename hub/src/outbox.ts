@@ -383,22 +383,22 @@ function recordOutcome(
   const adoption = decideDayIdAdoption(item.change, outcome, machineId)
   if (adoption.action === 'adopt') {
     const changed = writeTransaction((conn) => {
-      const requeued = conn
-        .query(
-          `UPDATE hosted_outbox SET id=?,row_id=?,queued_at=?,generation=generation+1,
-           attempts=0,last_error=NULL,quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL
-           WHERE id=? AND generation=?`,
-        )
-        .run(adoption.hostedId, adoption.hostedId, at, entry.id, entry.generation).changes
-      if (requeued === 0) return 0
-      const adoptedDay = conn
+      const currentEntry = conn
+        .query<{ generation: number }, [string]>(`SELECT generation FROM hosted_outbox WHERE id=?`)
+        .get(entry.id)
+      if (!currentEntry || currentEntry.generation !== entry.generation) return 0
+      const currentDay = conn
+        .query<{ present: number }, [string]>(`SELECT 1 present FROM day WHERE record_id=?`)
+        .get(item.change.id)
+      if (!currentDay) return 0
+      conn
         .query(`UPDATE day SET record_id=? WHERE record_id=?`)
-        .run(adoption.hostedId, item.change.id).changes
-      if (adoptedDay !== 1) throw new Error('day identity adoption lost its local row')
+        .run(adoption.hostedId, item.change.id)
+      adoptPendingHostedRow(conn, HOSTED_DAY_TABLE, item.change.id, adoption.hostedId)
       traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
-      return requeued
+      return 1
     })
-    return changed > 0 ? 'retry' : null
+    return changed > 0 ? 'adopted' : null
   }
   const decision = decideOutboxLifecycle(
     entry.attempts,
@@ -559,7 +559,7 @@ function recordBatchOutcomes(
     if (!outcome) continue
     const action = recordOutcome(item, outcome, clock(), processKind)
     if (action === 'sent') report.sent++
-    else if (action) {
+    else if (action && action !== 'adopted') {
       report.rejected++
       if (action === 'quarantine') report.quarantined++
     }

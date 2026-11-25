@@ -56,7 +56,44 @@ test('a structured natural-key refusal adopts the hosted day id and requeues', a
     clock: () => '2026-11-21T00:00:00.000Z',
   })
 
-  expect(report).toMatchObject({ rejected: 1, quarantined: 0 })
+  expect(report).toMatchObject({ rejected: 0, quarantined: 0 })
+  expect(db().query(`SELECT record_id FROM day WHERE day=?`).get(day)).toEqual({
+    record_id: hostedId,
+  })
+  expect(listHostedOutbox()).toEqual([
+    expect.objectContaining({
+      id: localId,
+      row_id: hostedId,
+      operation: 'upsert',
+      attempts: 0,
+      quarantined_at: null,
+    }),
+  ])
+  expect(listOutboxTrace()).toEqual([
+    expect.objectContaining({ row_id: localId, outcome: 'rejected' }),
+  ])
+})
+
+test('an adoption merges an entry already queued under the hosted day id', async () => {
+  const report = await drainHostedOutbox({
+    identity: async () => identity,
+    registered: () => [],
+    personalSpace: async () => 'space-one',
+    push: async () => {
+      writeTransaction((conn) => {
+        conn
+          .query(
+            `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at,attempts)
+             VALUES (?,?,?,?,?,?)`,
+          )
+          .run(hostedId, HOSTED_DAY_TABLE, hostedId, 'upsert', '2026-11-20T00:00:00.000Z', 1)
+      })
+      return [rejected(machineId)]
+    },
+    clock: () => '2026-11-21T00:00:00.000Z',
+  })
+
+  expect(report).toMatchObject({ rejected: 0, quarantined: 0 })
   expect(db().query(`SELECT record_id FROM day WHERE day=?`).get(day)).toEqual({
     record_id: hostedId,
   })
@@ -68,9 +105,6 @@ test('a structured natural-key refusal adopts the hosted day id and requeues', a
       attempts: 0,
       quarantined_at: null,
     }),
-  ])
-  expect(listOutboxTrace()).toEqual([
-    expect.objectContaining({ row_id: localId, outcome: 'rejected' }),
   ])
 })
 
