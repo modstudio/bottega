@@ -596,6 +596,7 @@ function completedSyncResult(input: {
   pushed: number
   failed: number
   retired: number
+  superseded: number
   local: Database
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
@@ -624,6 +625,7 @@ function completedSyncResult(input: {
     failed: input.failed,
     pending: pendingCount(input.local),
     ...(input.retired ? { retired: input.retired } : {}),
+    ...(input.superseded ? { superseded: input.superseded } : {}),
     configured: true,
     ...(input.cachePull?.routingPool ? { routingPool: input.cachePull.routingPool } : {}),
     ...(input.cachePull?.projectRegister
@@ -739,11 +741,11 @@ function syncIdentity(options: RecordSyncOptions) {
 
 function beginSyncPass(local: Database, requestedNow?: () => string) {
   const now = requestedNow ?? nowIso
+  const at = now()
   return {
     now,
-    retired:
-      retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, now()) +
-      retireSupersededQuarantinedScoreRows(local, now()),
+    retired: retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, at),
+    superseded: retireSupersededQuarantinedScoreRows(local, at),
   }
 }
 
@@ -755,7 +757,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const { now, retired } = beginSyncPass(writableLocal, options.now)
+  const { now, retired, superseded } = beginSyncPass(writableLocal, options.now)
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const backfill = options.backfill ? syncBackfill(writableLocal, identity.id) : undefined
@@ -818,6 +820,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     pushed,
     failed,
     retired,
+    superseded,
     local: writableLocal,
     blocked,
     held,

@@ -39,6 +39,7 @@ export type RecordSyncResult = {
   failed: number
   pending: number
   retired?: number
+  superseded?: number
   configured: boolean
   routingPool?: RoutingPoolPullResult
   projectRegister?: ProjectRegisterPullResult

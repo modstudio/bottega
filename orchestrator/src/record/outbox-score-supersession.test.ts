@@ -3,47 +3,63 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { options, STAMP } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { supersedingScoreOutboxRow } from './outbox-score-supersession.ts'
+import { type OtherScoreRow, supersedingScoreOutboxRow } from './outbox-score-supersession.ts'
 import { syncRecord } from './record-sync.ts'
 
 const EARLIER = '2026-09-15T00:59:00.000Z'
 const LATER = '2026-09-15T01:02:00.000Z'
 
 describe('score outbox supersession decision', () => {
-  const quarantined = { id: 7, scoredAt: STAMP }
+  const quarantined = { id: 7, rowId: 'run-record-id', scoredAt: STAMP }
+  const candidate = (overrides: Partial<OtherScoreRow> = {}): OtherScoreRow => ({
+    id: 8,
+    rowId: quarantined.rowId,
+    scoredAt: LATER,
+    quarantined: false,
+    retired: false,
+    ...overrides,
+  })
 
-  test('names a later row', () => {
-    expect(
-      supersedingScoreOutboxRow(quarantined, [{ id: 8, scoredAt: LATER, retired: false }]),
-    ).toBe(8)
+  test('names a later verdict even when retry refreshed a lower-id row in place', () => {
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ id: 6 })])).toBe(6)
   })
 
   test('does not supersede without a later row', () => {
-    expect(
-      supersedingScoreOutboxRow(quarantined, [{ id: 6, scoredAt: LATER, retired: false }]),
-    ).toBeNull()
+    expect(supersedingScoreOutboxRow(quarantined, [])).toBeNull()
   })
 
-  test('does not supersede with an earlier score', () => {
-    expect(
-      supersedingScoreOutboxRow(quarantined, [{ id: 8, scoredAt: EARLIER, retired: false }]),
-    ).toBeNull()
+  test('does not supersede with an earlier verdict despite a higher id', () => {
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ scoredAt: EARLIER })])).toBeNull()
   })
 
   test('does not supersede with a retired row', () => {
-    expect(
-      supersedingScoreOutboxRow(quarantined, [{ id: 8, scoredAt: LATER, retired: true }]),
-    ).toBeNull()
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ retired: true })])).toBeNull()
   })
 
-  test('names the highest qualifying id', () => {
+  test('names the greatest verdict time and breaks ties with the highest id', () => {
     expect(
       supersedingScoreOutboxRow(quarantined, [
-        { id: 9, scoredAt: LATER, retired: false },
-        { id: 11, scoredAt: LATER, retired: false },
-        { id: 10, scoredAt: LATER, retired: false },
+        candidate({ id: 12, scoredAt: '2026-09-15T01:01:00.000Z' }),
+        candidate({ id: 9 }),
+        candidate({ id: 11 }),
+        candidate({ id: 10 }),
       ]),
     ).toBe(11)
+  })
+
+  test('does not name another quarantined row', () => {
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ quarantined: true })])).toBeNull()
+  })
+
+  test('does not name a score row from another run', () => {
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ rowId: 'another-run' })])).toBeNull()
+  })
+
+  test('equal verdict time supersedes only with a higher id', () => {
+    expect(supersedingScoreOutboxRow(quarantined, [candidate({ id: 8, scoredAt: STAMP })])).toBe(8)
+    expect(
+      supersedingScoreOutboxRow(quarantined, [candidate({ id: 6, scoredAt: STAMP })]),
+    ).toBeNull()
   })
 })
 
@@ -85,7 +101,8 @@ test('sync retires and audits a quarantined score superseded by a later score', 
   const database = insertOutboxRows('score')
   const result = await syncRecord(options(database, fakePostgres()))
 
-  expect(result.retired).toBe(1)
+  expect(result.retired).toBeUndefined()
+  expect(result.superseded).toBe(1)
   expect(
     database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get(),
   ).toEqual({
@@ -112,6 +129,7 @@ test('sync leaves a quarantined row of another kind visible', async () => {
   const result = await syncRecord(options(database, fakePostgres()))
 
   expect(result.retired).toBeUndefined()
+  expect(result.superseded).toBeUndefined()
   expect(
     database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get(),
   ).toEqual({ retired_at: null, retirement_reason: null })
@@ -123,5 +141,37 @@ test('sync leaves a quarantined row of another kind visible', async () => {
       )
       .get(),
   ).toEqual({ count: 0 })
+  database.close()
+})
+
+test('sync skips a score row retired between the supersession scan and write', async () => {
+  const database = insertOutboxRows('score')
+  const originalQuery = database.query.bind(database)
+  const mutable = database as unknown as { query: typeof database.query }
+  mutable.query = ((sql: string) => {
+    const statement = originalQuery(sql)
+    if (!sql.includes("WHERE kind='score'") || !sql.includes('AND row_id=?')) return statement
+    const originalAll = statement.all.bind(statement)
+    statement.all = ((...parameters: unknown[]) => {
+      const rows = originalAll(...parameters)
+      originalQuery('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=7').run(
+        STAMP,
+        'disposed concurrently',
+      )
+      return rows
+    }) as typeof statement.all
+    return statement
+  }) as typeof database.query
+
+  const result = await syncRecord(options(database, fakePostgres()))
+
+  expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 0 })
+  expect(result.superseded).toBeUndefined()
+  expect(
+    database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get(),
+  ).toEqual({
+    retired_at: STAMP,
+    retirement_reason: 'disposed concurrently',
+  })
   database.close()
 })
