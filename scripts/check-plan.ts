@@ -222,6 +222,13 @@ export const CHECK_LEGS = [
   },
 ] as const
 
+export type CheckLeg = (typeof CHECK_LEGS)[number]
+export type IsolatedTestLeg = CheckLeg & { isolateTests: true }
+
+export function legIsolatesTests(leg: CheckLeg): leg is IsolatedTestLeg {
+  return 'isolateTests' in leg && leg.isolateTests === true
+}
+
 export const ROOT_TEST_FILES = [
   'scripts/check-review-change-comparisons.test.ts',
   'scripts/check-refusal-remedy.test.ts',
