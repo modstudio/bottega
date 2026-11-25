@@ -8,7 +8,7 @@ import { QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 
 export type QuarantinedOutboxRow = {
   id: number
-  kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS
+  kind: string
   rowId: string
   scoredAt: string | null
 }
@@ -55,7 +55,8 @@ export function supersedingOutboxRow(
   others: readonly OtherOutboxRow[],
 ): OtherOutboxRow | null {
   if (quarantined.kind === 'score' && quarantined.scoredAt === null) return null
-  const compare = OUTBOX_ROW_COMPARATORS[quarantined.kind]
+  if (!Object.hasOwn(OUTBOX_ROW_COMPARATORS, quarantined.kind)) return null
+  const compare = OUTBOX_ROW_COMPARATORS[quarantined.kind as keyof typeof OUTBOX_ROW_COMPARATORS]
   let superseding: OtherOutboxRow | null = null
   for (const row of others) {
     if (
@@ -74,7 +75,7 @@ export function supersedingOutboxRow(
 
 type StoredOutboxRow = {
   id: number
-  kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS
+  kind: string
   row_id: string
   payload: string
   quarantined_at: string | null

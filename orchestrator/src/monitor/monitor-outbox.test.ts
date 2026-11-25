@@ -77,6 +77,7 @@ test('a quarantined outbox condition excludes the stored SQL head', () => {
   )
   expect(condition?.detail).not.toContain('Failed query')
   expect(condition?.action).toContain('a later run row for this identity')
+  expect(condition?.action).toContain(`${PLATFORM_SLUG} record outbox retry orch:9`)
   database.close()
 })
 

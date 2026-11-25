@@ -111,6 +111,25 @@ describe('non-score outbox supersession decision', () => {
   })
 })
 
+test('a kind without a comparator is not superseded', () => {
+  const quarantined: OtherOutboxRow = {
+    id: 7,
+    kind: 'question',
+    rowId: 'question-record-id',
+    scoredAt: null,
+    quarantined: true,
+    retired: false,
+  }
+  const later = {
+    ...quarantined,
+    id: 8,
+    quarantined: false,
+    retired: false,
+  }
+
+  expect(supersedingOutboxRow(quarantined, [later])).toBeNull()
+})
+
 const OUTBOX_KINDS = Object.keys(
   OUTBOX_PAYLOAD_CONTRACTS,
 ) as (keyof typeof OUTBOX_PAYLOAD_CONTRACTS)[]

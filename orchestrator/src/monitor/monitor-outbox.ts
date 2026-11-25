@@ -28,15 +28,19 @@ function quarantinedParentRemedy(id: number): string {
 }
 
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
-  return quarantinedOutboxRows(database).map((row) => ({
-    kind: 'outbox-quarantined',
-    subject: `outbox:${row.id}`,
-    since: row.quarantinedAt,
-    ageMs: null,
-    detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
-    action: `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; do not retry it, which could overwrite newer hosted state; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
-    ownerSession: null,
-  }))
+  return quarantinedOutboxRows(database).map((row) => {
+    const scoreWarning =
+      row.kind === 'score' ? '; retrying it would overwrite a newer hosted verdict' : ''
+    return {
+      kind: 'outbox-quarantined',
+      subject: `outbox:${row.id}`,
+      since: row.quarantinedAt,
+      ageMs: null,
+      detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
+      action: `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text>${scoreWarning}; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
+      ownerSession: null,
+    }
+  })
 }
 
 export function outboxRetiredParentConditions(database: Database): AddressedMonitorCondition[] {
