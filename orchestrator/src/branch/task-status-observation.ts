@@ -1,7 +1,7 @@
 // concern: branch lifecycle evidence
 /** Reads one task's status through the installed task reader. */
 
-import { TASK_STATUSES } from '../../../shared/trackers.ts'
+import { TASK_STATUSES } from '../../../shared/tracker-status-category.ts'
 import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
 import {

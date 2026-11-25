@@ -1,7 +1,7 @@
 // concern: project task list read
 /** Owns the expensive project-wide task list read reserved for declared list surfaces. */
 
-import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/trackers.ts'
+import { LIVE_TASK_STATUS_CATEGORIES } from '../../../shared/tracker-status-category.ts'
 import { taskReader } from './task-read-port.ts'
 import { type HubTaskReference, taskReference } from './workflow-task-reference.ts'
 

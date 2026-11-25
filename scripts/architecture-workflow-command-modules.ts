@@ -28,7 +28,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-trail.ts',
   ]),
   module('orchestrator/src/workflow/project-task-list.ts', [
-    '../../../shared/trackers.ts',
+    '../../../shared/tracker-status-category.ts',
     './task-read-port.ts',
     './workflow-task-reference.ts',
   ]),

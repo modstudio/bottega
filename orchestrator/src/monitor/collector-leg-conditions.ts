@@ -2,10 +2,12 @@
 /** Reads the hub-owned observation and decides which sustained failures the monitor reports. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isTrackerLegSource } from '../../../shared/collector-leg-source.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export const COLLECTOR_LEG_FAILURE_WARN_MS = 10 * 60_000
+export const TRACKER_CONSECUTIVE_FAILURE_THRESHOLD = 2
 
 type CollectorLegObservation = {
   source: string
@@ -13,6 +15,7 @@ type CollectorLegObservation = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  consecutiveFailures?: number
   status: 'current' | 'failing' | 'stale' | 'unreadable'
   ageMs: number | null
   quarantinedRows?: number
@@ -99,6 +102,10 @@ function parsedObservations(value: unknown): {
       !nullableString(row.lastError) ||
       !nullableString(row.lastErrorAt) ||
       !nullableString(row.failingSince) ||
+      !(
+        row.consecutiveFailures === undefined ||
+        (Number.isInteger(row.consecutiveFailures) && row.consecutiveFailures >= 0)
+      ) ||
       !validStatus ||
       !(row.ageMs === null || (typeof row.ageMs === 'number' && Number.isFinite(row.ageMs)))
     ) {
@@ -134,7 +141,10 @@ export function collectorLegFailureDecision(
       continue
     }
     const ageMs = Math.max(0, now - since)
-    if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
+    const trackerThresholdReached =
+      isTrackerLegSource(leg.source) &&
+      (leg.consecutiveFailures ?? 0) >= TRACKER_CONSECUTIVE_FAILURE_THRESHOLD
+    if (!trackerThresholdReached && ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
     failures.push({
       source: leg.source,
       failingSince: leg.failingSince,
@@ -147,7 +157,9 @@ export function collectorLegFailureDecision(
       subject: leg.source,
       since: leg.failingSince,
       ageMs,
-      detail: `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
+      detail: trackerThresholdReached
+        ? `${leg.source} collection failed ${leg.consecutiveFailures} consecutive reads (${ageMinutes} minutes since the first): ${leg.lastError ?? 'error unavailable'}`
+        : `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
       action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
     })
   }

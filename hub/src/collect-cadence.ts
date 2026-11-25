@@ -7,3 +7,4 @@
  */
 export const FAST_MS = 20_000
 export const SLOW_MS = 5 * 60_000
+export const QUIET_MAX_MS = 15 * 60_000

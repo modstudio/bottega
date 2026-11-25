@@ -7,9 +7,9 @@ import {
 } from './tracker-actions.ts'
 import { createTrackerTask, trackerCreatedTaskKey } from './tracker-create.ts'
 import type { ToolCaller } from './tracker-list-scope.ts'
+import { categoryForTrackerRead } from './tracker-status-category.ts'
 import { TrackerLookupUnverifiable } from './tracker-task-text.ts'
 import {
-  categoryForTrackerRead,
   MAX_PAGES,
   resolveTrackerWriteState,
   type TrackerProject,
