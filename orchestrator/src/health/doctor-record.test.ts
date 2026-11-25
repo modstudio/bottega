@@ -1,12 +1,98 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { reportRecordDoctor, workflowHistoryParityDoctorDiagnosis } from './doctor-record.ts'
 
 test('workflow-history parity is not run without an active hosted space', async () => {
   const lines: string[] = []
   const exitCodes: number[] = []
-  let whoamiCalls = 0
-  let parityCalled = false
+  await reportRecordDoctor(
+    {
+      log: (line) => lines.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    }),
+    async () => ({ lines: [], failed: true }),
+    () => false,
+  )
+
+  expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
+    'workflow history parity: not run — no active hosted space',
+  ])
+  expect(exitCodes).toEqual([])
+})
+
+const activeIdentity = {
+  user: { id: 'user-a' },
+  activeSpaceId: 'space-a',
+  personalSpaceId: null,
+  memberships: [
+    {
+      space_id: 'space-a',
+      name: 'Alpha',
+      slug: 'alpha',
+      role: 'owner',
+      permission: 'write',
+    },
+  ],
+}
+
+test('attached workflow-history parity logs a failing diagnosis and exits 1', async () => {
+  const lines: string[] = []
+  const exitCodes: number[] = []
+
+  await reportRecordDoctor(
+    {
+      log: (line) => lines.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => activeIdentity,
+    async () => ({
+      lines: [
+        'workflow history task_flow: 1 local; 0 on the record — missing from the record',
+        'workflow history parity: fail in 4 ms',
+      ],
+      failed: true,
+    }),
+    () => true,
+  )
+
+  expect(lines).toContain(
+    'workflow history task_flow: 1 local; 0 on the record — missing from the record',
+  )
+  expect(lines).toContain('workflow history parity: fail in 4 ms')
+  expect(exitCodes).toEqual([1])
+})
+
+test('attached workflow-history parity leaves the exit code unchanged when passing', async () => {
+  const lines: string[] = []
+  const exitCodes: number[] = []
+
+  await reportRecordDoctor(
+    {
+      log: (line) => lines.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => activeIdentity,
+    async () => ({
+      lines: ['workflow history parity: pass in 2 ms'],
+      failed: false,
+    }),
+    () => true,
+  )
+
+  expect(lines).toContain('workflow history parity: pass in 2 ms')
+  expect(exitCodes).toEqual([])
+})
+
+test('attached workflow history fails with the sign-in remedy when signed out', async () => {
+  const lines: string[] = []
+  const exitCodes: number[] = []
 
   await reportRecordDoctor(
     {
@@ -14,26 +100,17 @@ test('workflow-history parity is not run without an active hosted space', async 
       exitCode: (code) => exitCodes.push(code),
     },
     async () => {
-      whoamiCalls += 1
-      return {
-        user: { id: 'user-a' },
-        activeSpaceId: null,
-        personalSpaceId: null,
-        memberships: [],
-      }
+      throw new Error(RECORD_SIGN_IN_REMEDY)
     },
-    async () => {
-      parityCalled = true
-      return { lines: [], failed: true }
-    },
+    async () => ({ lines: [], failed: false }),
+    () => true,
   )
 
   expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
-    'workflow history parity: not run — no active hosted space',
+    `workflow history: could not establish: ${RECORD_SIGN_IN_REMEDY}`,
+    expect.stringMatching(/^workflow history parity: fail in \d+ ms$/),
   ])
-  expect(exitCodes).toEqual([])
-  expect(whoamiCalls).toBe(1)
-  expect(parityCalled).toBe(false)
+  expect(exitCodes).toEqual([1])
 })
 
 test('workflow-history presence read failure reports the reason, remedy, and failure timing', async () => {

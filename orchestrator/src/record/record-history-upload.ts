@@ -30,7 +30,7 @@ import {
   HOSTED_ROW_TABLES,
   type HostedRowTable,
   hostedRowIdsAreEmpty,
-  questionAuditIdentity,
+  questionAuditIsPresent,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
@@ -556,13 +556,14 @@ function questionIsAbsent(
     !present.question.has(String(history.row.record_id)) ||
     history.audits.some(
       (audit) =>
-        !present.question_mutation_audit.has(String(audit.id)) &&
-        !present.questionAuditIdentities.has(
-          questionAuditIdentity({
+        !questionAuditIsPresent(
+          String(audit.id),
+          {
             questionId: String(history.row.record_id),
             action: String(audit.action),
             at: String(audit.at),
-          }),
+          },
+          present,
         ),
     )
   )

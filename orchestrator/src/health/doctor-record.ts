@@ -5,9 +5,9 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
+import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
-  WORKFLOW_HISTORY_PARITY_TABLES,
   type WorkflowHistoryParityDiagnosis,
   workflowHistoryParityDiagnosis,
 } from '../record/record-history-parity.ts'
@@ -63,20 +63,6 @@ export async function reportActiveSpaceDoctor(
   if (diagnosis.failed) presentation.exitCode(1)
 }
 
-function rowStates(database: Database, table: 'workflow_cursor' | 'task_flow') {
-  const rows =
-    table === 'workflow_cursor'
-      ? database
-          .query<{ record_id: string; state: string }, []>(
-            'SELECT record_id,state FROM workflow_cursor',
-          )
-          .all()
-      : database
-          .query<{ record_id: string; state: string }, []>('SELECT record_id,state FROM task_flow')
-          .all()
-  return new Map(rows.map((row) => [row.record_id, row.state]))
-}
-
 async function loadWorkflowHistoryParity(database: Database = db()) {
   const state = collectHostedRowState(database)
   const read = recordApiClient().readTaskFlowPresence
@@ -96,19 +82,14 @@ async function loadWorkflowHistoryParity(database: Database = db()) {
     })
   const present = await readHostedRowPresence(state.ids, read)
   return workflowHistoryParityDiagnosis({
-    local: Object.fromEntries(
-      WORKFLOW_HISTORY_PARITY_TABLES.map((table) => [table, state.ids[table]]),
-    ) as Pick<typeof state.ids, (typeof WORKFLOW_HISTORY_PARITY_TABLES)[number]>,
+    local: state.ids,
     present,
     references: state.references,
     heldFlowIds: readHeldFlowIds(database),
     heldQuestionIds: readHeldQuestionIds(database),
     storedFingerprint: storedHistoryUploadFingerprint(database),
     currentFingerprint: historyUploadFingerprint(database),
-    states: {
-      workflow_cursor: rowStates(database, 'workflow_cursor'),
-      task_flow: rowStates(database, 'task_flow'),
-    },
+    states: state.states,
   })
 }
 
@@ -143,16 +124,34 @@ export async function reportRecordDoctor(
   presentation: DoctorReporter,
   whoami: IdentityLoader = () => recordApiClient().whoami(),
   historyParity: () => Promise<WorkflowHistoryParityDiagnosis> = workflowHistoryParityDoctorDiagnosis,
+  hasAttachedToHostedRecord: () => boolean = () => storeHasAttachedToHostedRecord(db()),
 ): Promise<void> {
   let identity: Awaited<ReturnType<IdentityLoader>> | undefined
+  let identityFailure: unknown
   await reportActiveSpaceDoctor(presentation, () =>
     activeSpaceDoctorDiagnosis(async () => {
-      identity = await whoami()
-      return identity
+      try {
+        identity = await whoami()
+        return identity
+      } catch (error) {
+        identityFailure = error
+        throw error
+      }
     }),
   )
-  if (!identity?.activeSpaceId) {
+  if (!hasAttachedToHostedRecord()) {
     presentation.log('workflow history parity: not run — no active hosted space')
+    return
+  }
+  if (!identity?.activeSpaceId) {
+    const parity = await workflowHistoryParityDoctorDiagnosis(async () => {
+      throw (
+        identityFailure ??
+        new Error(`no active hosted space; run \`${PLATFORM_SLUG} record doctor\``)
+      )
+    })
+    for (const line of parity.lines) presentation.log(line)
+    presentation.exitCode(1)
     return
   }
   const parity = await historyParity()

@@ -453,12 +453,6 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 15,
   },
   {
-    pattern: /^orchestrator\/src\/health\/doctor-record\.ts$/,
-    reason: 'adoption',
-    detail: 'Machine doctor compares local workflow-history state with hosted presence',
-    expectedSites: 2,
-  },
-  {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
     reason: 'hosted-record',
     detail:

@@ -3,13 +3,14 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideHistoryUploadPass, type HistoryUploadFingerprint } from './record-history-upload.ts'
-import type {
-  HostedRowPresence,
-  HostedRowReferences,
-  HostedRowTable,
+import {
+  type HostedRowPresence,
+  type HostedRowReferences,
+  type HostedRowTable,
+  questionAuditIsPresent,
 } from './record-hosted-row-presence.ts'
 
-export const WORKFLOW_HISTORY_PARITY_TABLES = [
+const WORKFLOW_HISTORY_PARITY_TABLES = [
   'workflow_step_text',
   'workflow_text_copy',
   'question_mutation_audit',
@@ -19,6 +20,7 @@ export const WORKFLOW_HISTORY_PARITY_TABLES = [
 
 type ParityTable = (typeof WORKFLOW_HISTORY_PARITY_TABLES)[number]
 type ParityIds = Record<ParityTable, ReadonlySet<string>>
+type ParityPresence = Pick<HostedRowPresence, ParityTable | 'questionAuditIdentities'>
 type LocalStates = {
   workflow_cursor: ReadonlyMap<string, string>
   task_flow: ReadonlyMap<string, string>
@@ -26,7 +28,7 @@ type LocalStates = {
 
 export type WorkflowHistoryParityInput = {
   local: ParityIds
-  present: Pick<HostedRowPresence, ParityTable>
+  present: ParityPresence
   references: HostedRowReferences
   heldFlowIds: ReadonlySet<string>
   heldQuestionIds: ReadonlySet<string>
@@ -98,7 +100,10 @@ export function workflowHistoryParityDiagnosis(
 
   for (const table of WORKFLOW_HISTORY_PARITY_TABLES) {
     const local = input.local[table]
-    const missing = [...local].filter((id) => !input.present[table].has(id))
+    const missing = [...local].filter((id) => {
+      if (table !== 'question_mutation_audit') return !input.present[table].has(id)
+      return !questionAuditIsPresent(id, input.references.auditIdentity.get(id), input.present)
+    })
     lines.push(
       `workflow history ${table}: ${local.size} local; ${local.size - missing.length} on the record — ${missing.length ? 'missing from the record' : 'ok'}`,
     )

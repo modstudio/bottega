@@ -22,6 +22,7 @@ export const healthModules = [
       'shared/brand.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/active-space-invariant.ts',
+      'orchestrator/src/record/install-binding.ts',
       'orchestrator/src/record/record-api-client.ts',
       'orchestrator/src/record/record-history-upload.ts',
       'orchestrator/src/record/record-history-parity.ts',

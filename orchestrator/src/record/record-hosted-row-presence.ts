@@ -32,12 +32,30 @@ export type HostedRowReferences = {
   cursorHandoff: ReadonlyMap<string, string>
   flowOpenCursor: ReadonlyMap<string, string>
 }
-export type HostedRowState = { ids: HostedRowIds; references: HostedRowReferences }
+export type HostedRowState = {
+  ids: HostedRowIds
+  references: HostedRowReferences
+  states: {
+    workflow_cursor: ReadonlyMap<string, string>
+    task_flow: ReadonlyMap<string, string>
+  }
+}
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
 
 export function questionAuditIdentity(input: QuestionAuditIdentity): string {
   return `${input.questionId}|${input.action}|${Date.parse(input.at)}`
+}
+
+export function questionAuditIsPresent(
+  id: string,
+  identity: QuestionAuditIdentity | undefined,
+  present: Pick<HostedRowPresence, 'question_mutation_audit' | 'questionAuditIdentities'>,
+): boolean {
+  return (
+    present.question_mutation_audit.has(id) ||
+    (identity !== undefined && present.questionAuditIdentities.has(questionAuditIdentity(identity)))
+  )
 }
 
 const PRESENCE_FIELDS = {
@@ -120,6 +138,10 @@ export function collectHostedRowState(database: Database): HostedRowState {
       cursorFlow: referenceMap(collected.workflow_cursor, 'task_flow_record_id'),
       cursorHandoff: referenceMap(collected.workflow_cursor, 'handed_off_from_record_id'),
       flowOpenCursor: referenceMap(collected.task_flow, 'open_stage_cursor_record_id'),
+    },
+    states: {
+      workflow_cursor: referenceMap(collected.workflow_cursor, 'state'),
+      task_flow: referenceMap(collected.task_flow, 'state'),
     },
   }
 }

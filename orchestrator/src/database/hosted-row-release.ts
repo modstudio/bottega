@@ -22,7 +22,7 @@ import {
   type HostedRowTable,
   hostedRowIdsAreEmpty,
   type PresenceReader,
-  questionAuditIdentity,
+  questionAuditIsPresent,
   readHostedRowPresence,
 } from '../record/record-hosted-row-presence.ts'
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
@@ -111,8 +111,7 @@ export function decideHostedRowRelease(
       if (table !== 'question_mutation_audit') return true
       const questionId = references.auditQuestion.get(id)
       if (questionId && heldQuestionIds.has(questionId)) return false
-      const identity = references.auditIdentity.get(id)
-      return !identity || !present.questionAuditIdentities.has(questionAuditIdentity(identity))
+      return !questionAuditIsPresent(id, references.auditIdentity.get(id), present)
     })
     if (!absent.length) continue
     for (const id of local[table]) kept[table].add(id)
