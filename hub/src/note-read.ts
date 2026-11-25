@@ -404,11 +404,20 @@ export async function listNoteDuplicateCandidates(
   const spaces = await noteReadSpaces(project, hosted ?? {})
   try {
     const results = await Promise.all(
-      spaces.map((recordSpace) =>
-        hostedListNoteCandidates(project, text, { ...hosted, recordSpace }).catch((cause) => {
-          throw spaceReadFailure(recordSpace, project, cause)
-        }),
-      ),
+      spaces.map(async (recordSpace) => {
+        const options = { ...hosted, recordSpace }
+        try {
+          return await hostedListNoteCandidates(project, text, options)
+        } catch (cause) {
+          if (!isMissingHostedNote(cause)) throw spaceReadFailure(recordSpace, project, cause)
+          const { notes } = await hostedListNotes({ project, actionable: true }, options).catch(
+            (fallbackCause) => {
+              throw spaceReadFailure(recordSpace, project, fallbackCause)
+            },
+          )
+          return notes.map(noteRowFromHosted)
+        }
+      }),
     )
     return results.flat()
   } catch (cause) {
