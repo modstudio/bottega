@@ -407,6 +407,54 @@ test('push client accepts one outcome per requested id and refuses a malformed s
       fetch: async () => Response.json([{ id: intervalId, status: 'applied', replacedId }]),
     }),
   ).toEqual([{ id: intervalId, status: 'applied', replacedId }])
+  const conflict = {
+    code: 'day-identity-conflict' as const,
+    day: '2026-11-20',
+    incomingId: intervalId,
+    existingId: replacedId,
+    machineId: '01990000-0000-7000-8000-000000001302',
+  }
+  expect(
+    await hostedPushChanges([{ table: 'hub_day', id: intervalId, op: 'delete' }], {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () =>
+        Response.json([{ id: intervalId, status: 'rejected', reason: 'conflict', conflict }]),
+    }),
+  ).toEqual([{ id: intervalId, status: 'rejected', reason: 'conflict', conflict }])
+  expect(
+    await hostedPushChanges([{ table: 'hub_day', id: intervalId, op: 'delete' }], {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () =>
+        Response.json([
+          {
+            id: intervalId,
+            status: 'rejected',
+            reason: 'future conflict',
+            conflict: { code: 'future-conflict', detail: 'new server field' },
+          },
+        ]),
+    }),
+  ).toEqual([{ id: intervalId, status: 'rejected', reason: 'future conflict' }])
+  await expect(
+    hostedPushChanges([{ table: 'hub_day', id: intervalId, op: 'delete' }], {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () =>
+        Response.json([
+          {
+            id: intervalId,
+            status: 'rejected',
+            reason: 'conflict',
+            conflict: { ...conflict, existingId: 1 },
+          },
+        ]),
+    }),
+  ).rejects.toThrow('malformed push outcome')
   await expect(
     hostedPushChanges(body, {
       baseUrl: 'https://hub.example.test',

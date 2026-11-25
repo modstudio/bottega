@@ -11,6 +11,7 @@ import {
   applyDayChangeInTransaction,
   applyIntervalChangeInTransaction,
   type DayEvidence,
+  DayIdentityConflictError,
   hostedDayWrite,
   hostedIntervalWrite,
   type IntervalEvidence,
@@ -25,7 +26,11 @@ const interval = {
   start_at: '2026-10-08T00:00:00.000Z',
 } as IntervalEvidence
 
-const day = { id: 'client-id', day: '2026-10-08' } as DayEvidence
+const day = {
+  id: 'client-id',
+  day: '2026-10-08',
+  machine_id: 'machine-id',
+} as DayEvidence
 
 test('an unknown interval id with an existing tuple replaces it', () => {
   expect(hostedIntervalWrite(newerIntervalId, false, olderIntervalId)).toBe('replace')
@@ -36,9 +41,22 @@ test('an older interval id is superseded by the newer tuple holder', () => {
 })
 
 test('an unknown day id with an existing date names both ids and the date', () => {
-  expect(() => hostedDayWrite(day, null, 'hosted-id')).toThrow(
-    'day identity conflict: date 2026-10-08 belongs to UUID hosted-id, not incoming UUID client-id',
-  )
+  try {
+    hostedDayWrite(day, null, 'hosted-id')
+    throw new Error('expected a day identity conflict')
+  } catch (error) {
+    expect(error).toBeInstanceOf(DayIdentityConflictError)
+    expect(error).toMatchObject({
+      code: 'day-identity-conflict',
+      day: '2026-10-08',
+      incomingId: 'client-id',
+      existingId: 'hosted-id',
+      machineId: 'machine-id',
+    })
+    expect((error as Error).message).toBe(
+      'day identity conflict: date 2026-10-08 belongs to UUID hosted-id, not incoming UUID client-id',
+    )
+  }
 })
 
 test('a known interval and day id update', () => {
