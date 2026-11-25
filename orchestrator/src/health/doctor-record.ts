@@ -18,6 +18,7 @@ import {
 import { readHeldFlowIds, readHeldQuestionIds } from '../record/record-history-upload-state.ts'
 import {
   collectHostedRowState,
+  hostedRowIdsAreEmpty,
   readHostedRowPresence,
 } from '../record/record-hosted-row-presence.ts'
 import { recordMembershipsFromIdentity } from '../record/record-space.ts'
@@ -80,6 +81,16 @@ async function loadWorkflowHistoryParity(database: Database = db()) {
     throw new Error(
       `record API lacks workflow-history presence support; release the hosted API, then retry \`${PLATFORM_SLUG} machine doctor\``,
     )
+  if (hostedRowIdsAreEmpty(state.ids))
+    await read({
+      obligationIds: [],
+      textIds: [],
+      textCopyIds: [],
+      questionAuditIds: [],
+      questionIds: [],
+      stageIds: [],
+      flowIds: [],
+    })
   const present = await readHostedRowPresence(state.ids, read)
   return workflowHistoryParityDiagnosis({
     local: Object.fromEntries(
