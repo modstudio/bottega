@@ -153,10 +153,7 @@ test('question audit identity on the record counts an audit stored under another
       references: {
         ...input().references,
         auditIdentity: new Map([
-          [
-            'audit',
-            { questionId: 'question', action: 'rule', at: '2025-11-25T00:00:00.000Z' },
-          ],
+          ['audit', { questionId: 'question', action: 'rule', at: '2025-11-25T00:00:00.000Z' }],
         ]),
       },
     }),

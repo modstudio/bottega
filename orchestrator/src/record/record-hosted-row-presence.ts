@@ -43,7 +43,7 @@ export type HostedRowState = {
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
 
-export function questionAuditIdentity(input: QuestionAuditIdentity): string {
+function questionAuditIdentity(input: QuestionAuditIdentity): string {
   return `${input.questionId}|${input.action}|${Date.parse(input.at)}`
 }
 
