@@ -458,14 +458,17 @@ export function resumeLaunchForRoot(rootId: string): ResumeLaunchOptions {
   return resumeLaunchFromStored(row)
 }
 
+type ContinuationLaunchContext = Pick<
+  ContinueRunDependencies,
+  'binding' | 'continuedWithFindings'
+> & { project: Project | null }
+
 function continuationLaunch(
   inherited: ResumeLaunchOptions,
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  context: Pick<ContinueRunDependencies, 'binding' | 'continuedWithFindings'> & {
-    project: Project | null
-  },
+  context: ContinuationLaunchContext,
 ): ResumeLaunchOptions & Pick<ContinueRunDependencies, 'binding' | 'continuedWithFindings'> {
   return {
     ...inherited,
@@ -485,7 +488,7 @@ function continuationLaunch(
 const continuationLaunchContext = (
   project: Project | null,
   dependencies: ContinueRunDependencies,
-) => ({
+): ContinuationLaunchContext => ({
   project,
   binding: dependencies.binding,
   continuedWithFindings: dependencies.continuedWithFindings,

@@ -77,7 +77,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_obligation.operator_ruling',
     'brief_injection.over_cap',
   ]),
-  ...manifest('orchestrator', 'boolean flag', RUN_BOOLEAN_VALUES),
+  ...RUN_BOOLEAN_VALUES,
   ...manifest('orchestrator', 'count, ordinal, version, handle, or measurement', [
     'collect_change_counter.value',
     'agent.max_concurrent',

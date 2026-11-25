@@ -62,7 +62,7 @@ export function continuationLineageHasMeasuredRound(
 }
 
 /** Whether any review in the branch lineage has a finding that remains to be applied. */
-export function continuationLineageHasAcceptedFindings(
+export function continuationLineageHasUnappliedFindings(
   database: Database,
   group: ChangeGroup,
 ): boolean {
@@ -182,7 +182,7 @@ function selectedFindings(
 }
 
 /** Whether the same current round rendered by --findings contains anything to apply. */
-export function continuationRoundHasAcceptedFindings(
+export function continuationRoundHasUnappliedFindings(
   database: Database,
   group: ChangeGroup,
 ): boolean {
