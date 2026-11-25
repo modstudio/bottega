@@ -176,13 +176,14 @@ export function prepareChainTreeAttachment(input: {
     () =>
       withWorktreeCreateLock(input.projectPath, () => {
         const current = requireAttachDecision(input)
-        if (current.decision.action !== 'attach' || current.decision.path !== selectedPath) {
+        const decision = current.decision
+        if (decision.action !== 'attach' || decision.path !== selectedPath) {
           throw new Error(
             `run ${input.rootId} chain tree selection changed while attachment waited; ` +
               `then retry ${input.retryCommand}`,
           )
         }
-        if (current.decision.switchToBranch) git(['switch', input.branch], selectedPath)
+        if (decision.switchToBranch) git(['switch', input.branch], selectedPath)
         const branch = branchOf(selectedPath)
         const head = gitContext(selectedPath, 'rev-parse', '--verify', 'HEAD^{commit}')
         if (branch !== input.branch || head !== input.branchTip) {
@@ -192,7 +193,7 @@ export function prepareChainTreeAttachment(input: {
               `then retry ${input.retryCommand}`,
           )
         }
-        const owner = current.rows.find((row) => row.record_id === current.decision.ownerRunId)!
+        const owner = current.rows.find((row) => row.record_id === decision.ownerRunId)!
         return {
           ownerRunId: owner.record_id,
           worktree: {
