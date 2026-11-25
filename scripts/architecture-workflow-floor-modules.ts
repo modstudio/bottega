@@ -233,6 +233,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-class-measurement-execs.ts', [
     'bun:sqlite',
+    './probe-identifier.ts',
     './workflow-class-measured-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-refs.ts', [

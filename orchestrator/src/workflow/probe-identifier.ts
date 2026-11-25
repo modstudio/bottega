@@ -23,6 +23,14 @@ export type ParsedProbeArtifact = {
 const ACCEPTED_PROBE_IDENTIFIERS =
   'a positive decimal probe number, name/number, or a full probe UUID'
 
+export function probeRecordIdForNumber(
+  database: ProbeDatabase,
+  number: number,
+): string | undefined {
+  const query = database.query('SELECT record_id FROM probe WHERE number=?') as ProbeRecordIdQuery
+  return query.get(number)?.record_id
+}
+
 function parseProbeIdentifier(
   input: string | number,
   names: MachineIdentifierNames | null = storedMachineNames(),
@@ -58,9 +66,8 @@ export function resolveProbeIdentifier(
 ): string {
   const parsed = parseProbeIdentifier(input, names)
   if (parsed.kind === 'number') {
-    const query = database.query('SELECT record_id FROM probe WHERE number=?') as ProbeRecordIdQuery
-    const row = query.get(parsed.number)
-    if (row) return row.record_id
+    const recordId = probeRecordIdForNumber(database, parsed.number)
+    if (recordId) return recordId
     throw new Error(`no probe has number ${parsed.number}; pass ${ACCEPTED_PROBE_IDENTIFIERS}`)
   }
   const query = database.query(

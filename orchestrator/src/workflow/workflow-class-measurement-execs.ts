@@ -1,7 +1,8 @@
 // concern: workflows
-/** Reads workflow exec facts used to verify a post-implement class measurement. */
+/** Reads class-measurement exec facts: post-implement candidates and the measure exec's cwd. */
 
 import type { Database } from 'bun:sqlite'
+import { probeRecordIdForNumber } from './probe-identifier.ts'
 import { renderClassMeasurementCommand } from './workflow-class-measured-floor.ts'
 
 export type ClassMeasurementExec = {
@@ -10,6 +11,14 @@ export type ClassMeasurementExec = {
   output: string
   exitCode: number
   createdAt: string
+}
+
+export function classMeasurementExecCwd(database: Database, execId: number): string | undefined {
+  const recordId = probeRecordIdForNumber(database, execId)
+  if (!recordId) return undefined
+  return database
+    .query<{ cwd: string }, [string]>("SELECT cwd FROM probe WHERE kind='exec' AND record_id=?")
+    .get(recordId)?.cwd
 }
 
 function structuredArgv(raw: string, withheld: boolean): string[] | null {

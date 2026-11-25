@@ -13,7 +13,10 @@ import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { classMeasurementExecsForSession } from '../workflow/workflow-class-measurement-execs.ts'
+import {
+  classMeasurementExecCwd,
+  classMeasurementExecsForSession,
+} from '../workflow/workflow-class-measurement-execs.ts'
 import { classMeasurementFromClosedSteps } from '../workflow/workflow-class-measurement-trail.ts'
 import { closedStepsFromTrail } from '../workflow/workflow-cursor-trail.ts'
 import type { StepLandAction } from '../workflow/workflow-step-action.ts'
@@ -206,6 +209,10 @@ export async function assertPullRequestTaskCursorAdmission(
     input.branch,
     readTree,
   )
+  const recordedMeasurementCwd =
+    measurement.execId === undefined
+      ? undefined
+      : classMeasurementExecCwd(database, measurement.execId)
   const classGuard = decidePullRequestClassGuard({
     body: input.body ?? '',
     measurement,
@@ -216,6 +223,7 @@ export async function assertPullRequestTaskCursorAdmission(
     })),
     worktree,
     checkoutRoots: input.checkoutRoots,
+    measurementCwd: recordedMeasurementCwd ? realpathOrLexical(recordedMeasurementCwd) : undefined,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

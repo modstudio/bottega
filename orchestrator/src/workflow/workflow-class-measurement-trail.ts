@@ -16,6 +16,7 @@ export type TrailClassMeasurement = {
   className: string
   command: string
   count: number
+  execId?: number
   implementClosedAt?: string
 }
 
@@ -33,6 +34,14 @@ export function classMeasurementFromClosedSteps(
   if (!className || !command || !countValue || !/^\d+$/.test(countValue)) return null
   const count = Number(countValue)
   if (!Number.isSafeInteger(count)) return null
+  const execIdValue = values[CLASS_MEASUREMENT_EVIDENCE.execId]
+  const execId = execIdValue && /^\d+$/.test(execIdValue) ? Number(execIdValue) : undefined
   const implementClosedAt = closed.findLast((step) => step.slug === IMPLEMENT_FIX_STEP)?.at
-  return { className, command, count, ...(implementClosedAt ? { implementClosedAt } : {}) }
+  return {
+    className,
+    command,
+    count,
+    ...(execId !== undefined && Number.isSafeInteger(execId) ? { execId } : {}),
+    ...(implementClosedAt ? { implementClosedAt } : {}),
+  }
 }

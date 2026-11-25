@@ -61,6 +61,7 @@ test('round-trips persisted floor evidence into a trail class measurement', () =
     className: 'reader leak',
     command: "'sh' '-c' 'rg leak | wc -l'",
     count: 3,
+    execId: 7,
     implementClosedAt: '2026-11-24T11:00:00Z',
   })
 })
