@@ -19,16 +19,10 @@ import {
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import {
-  attemptDefaultLocalProjectRetirement,
-  retireUnusedDefaultLocalProject,
-} from '../project/default-local-project-retirement.ts'
-import {
   returnMainCheckoutToTrunkCommand,
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
-import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
-import { recordSessionPresent } from '../record/record-session.ts'
 import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
@@ -40,7 +34,10 @@ import {
   migrationAuthorityRefusal,
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
-import { releaseHostedRowsAfterUpdate } from './hosted-row-release.ts'
+import {
+  releaseHostedRowsAndRetireDefaultProject,
+  type UpdateRetirementDependencies,
+} from './machine-update-retirement.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -231,7 +228,7 @@ function applyImmediateUpdate(input: { migration: string | null; apply: () => vo
   )
 }
 
-type UpdateDependencies = {
+type UpdateDependencies = UpdateRetirementDependencies & {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   lockWaitMs?: number
@@ -245,10 +242,6 @@ type UpdateDependencies = {
   syncWorkflows?: (cwd: string, since: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
-  releaseHostedRows?: (presentation: Presentation) => Promise<void>
-  retireDefaultLocalProject?: () => Promise<boolean>
-  storeAttachedToHostedRecord?: () => boolean
-  recordSessionPresent?: () => boolean
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
@@ -286,26 +279,6 @@ function maintainStoreAfterUpdate(
     const message = error instanceof Error ? error.message : String(error)
     presentation.log(
       `incremental vacuum setup skipped: ${message}; retry with ${PLATFORM_SLUG} machine update`,
-    )
-  }
-}
-
-async function retireDefaultLocalProjectAfterUpdate(
-  presentation: Presentation,
-  deps: UpdateDependencies,
-): Promise<void> {
-  try {
-    const attached =
-      deps.storeAttachedToHostedRecord?.() ??
-      withSynchronousDatabaseForMigrationStep(storeHasAttachedToHostedRecord)
-    if (!attached && !(deps.recordSessionPresent ?? recordSessionPresent)()) return
-    await attemptDefaultLocalProjectRetirement(
-      presentation,
-      deps.retireDefaultLocalProject ?? retireUnusedDefaultLocalProject,
-    )
-  } catch (error) {
-    presentation.log(
-      `default local project retirement failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
 }
@@ -697,8 +670,7 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   verifyMainCheckout(target, branch, runGit)
-  await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
-  await retireDefaultLocalProjectAfterUpdate(presentation, deps)
+  await releaseHostedRowsAndRetireDefaultProject(presentation, deps)
 }
 
 export async function machineUpdateCommandUnderLock(
@@ -732,8 +704,7 @@ export async function machineUpdateCommandUnderLock(
     maintainStoreAfterUpdate(presentation, maintainStore)
     const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
     refreshLaunchAgents(realpathSync(process.execPath))
-    await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
-    await retireDefaultLocalProjectAfterUpdate(presentation, deps)
+    await releaseHostedRowsAndRetireDefaultProject(presentation, deps)
     return
   }
   await updateCheckout(presentation, deps)
