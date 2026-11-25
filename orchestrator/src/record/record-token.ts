@@ -2,6 +2,7 @@
 /** Owns access to the locally stored record token. Must not know hosted authentication. */
 import type { Database } from 'bun:sqlite'
 import {
+  legacyRecordSessionReadOnlyRefusal,
   readRecordSessionToken,
   readRecordSessionTokenAsync,
   type SecurityRunner,
@@ -21,10 +22,15 @@ export function storedRecordToken(
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
     .get(RECORD_SESSION_KEY)?.value
   if (!legacy) return null
-  writeTransaction(() => {
-    writeRecordSessionToken(legacy, runner)
-    local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
-  }, local)
+  try {
+    writeTransaction(() => {
+      writeRecordSessionToken(legacy, runner)
+      local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
+    }, local)
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'SQLITE_READONLY') throw error
+    throw legacyRecordSessionReadOnlyRefusal()
+  }
   return legacy
 }
 

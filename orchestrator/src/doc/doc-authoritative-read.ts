@@ -180,8 +180,13 @@ function docFromHosted(row: HostedRow): Doc {
   }
 }
 
-async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
-  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
+async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
+  const client = await hostedDocClient(
+    filters.scope ?? 'global',
+    filters.subject ?? null,
+    undefined,
+    database,
+  )
   const page = await listAllHostedDocs(client.listDocs, {
     scope: filters.scope,
     subject: filters.subject,
@@ -285,12 +290,13 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
   })
 }
 
-export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
+export function readDocs(filters: DocListFilters = {}, database?: Database): Promise<Doc[]> {
   const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
-  return applyRecordReadAuthority({
-    local: () => listDocsStore(resolvedFilters(localFilters)),
-    hosted: () => withReadRemedy(() => hostedRows(filters)),
-  })
+  const actions = {
+    local: () => listDocsStore(resolvedFilters(localFilters), database),
+    hosted: () => withReadRemedy(() => hostedRows(filters, database)),
+  }
+  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {

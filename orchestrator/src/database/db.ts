@@ -1058,11 +1058,7 @@ export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Da
   }
 }
 
-/** Give a synchronous diagnostic a short-lived, SQLite-enforced read-only handle. */
-export function withSynchronousReadOnlyDatabase<T>(
-  action: (database: Database) => T,
-  path = DB_PATH,
-): T {
+function openFencedReadOnlyDatabase(path: string): Database {
   refuseStoreAfterCheckoutMove()
   const database = openReadOnlyDatabase(path)
   try {
@@ -1070,7 +1066,34 @@ export function withSynchronousReadOnlyDatabase<T>(
     const migrationWindow = migrationWindowRefusal(database)
     if (migrationWindow.refusal) throw new Error(migrationWindow.refusal)
     if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
+    return database
+  } catch (cause) {
+    database.close()
+    throw cause
+  }
+}
+
+/** Give a synchronous diagnostic a short-lived, SQLite-enforced read-only handle. */
+export function withSynchronousReadOnlyDatabase<T>(
+  action: (database: Database) => T,
+  path = DB_PATH,
+): T {
+  const database = openFencedReadOnlyDatabase(path)
+  try {
     return action(database)
+  } finally {
+    database.close()
+  }
+}
+
+/** Give an asynchronous diagnostic a short-lived, SQLite-enforced read-only handle. */
+export async function withReadOnlyDatabase<T>(
+  action: (database: Database) => Promise<T>,
+  path = DB_PATH,
+): Promise<T> {
+  const database = openFencedReadOnlyDatabase(path)
+  try {
+    return await action(database)
   } finally {
     database.close()
   }

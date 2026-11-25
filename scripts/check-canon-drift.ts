@@ -24,7 +24,7 @@ import {
 } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
 import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
-import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import { DB_PATH, withReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { migrationRefusal } from '../orchestrator/src/database/migrations.ts'
 import {
   type GateFacts,
@@ -83,7 +83,7 @@ export async function readCanonGateInput(
   database: Database,
 ): Promise<{ project: Project; rows: Awaited<ReturnType<typeof storedRepositoryCanonRows>> }> {
   const project = registeredProjectAt(checkout, database)
-  return { project, rows: await storedRepositoryCanonRows(project.name) }
+  return { project, rows: await storedRepositoryCanonRows(project.name, database) }
 }
 
 function readCanonGateFactsInput(
@@ -182,23 +182,17 @@ async function checkCanonDrift(
   facts?: GateFacts,
 ): Promise<HydrationDrift[]> {
   if (facts) return canonDriftFromInput(checkout, readCanonGateFactsInput(checkout, facts))
-  let database: Database
   try {
-    database = openReadOnlyDatabase(databasePath)
-  } catch (cause) {
-    refuse(
-      `cannot establish read-only access to the project register and canon store: ${String((cause as Error).message ?? cause)}`,
+    const input = await withReadOnlyDatabase(
+      (database) => readCanonGateInput(checkout, database),
+      databasePath,
     )
-  }
-  try {
-    return canonDriftFromInput(checkout, await readCanonGateInput(checkout, database))
+    return canonDriftFromInput(checkout, input)
   } catch (cause) {
     if (String((cause as Error).message ?? cause).includes('\nremedy: ')) throw cause
     refuse(
       `cannot read the project register or stored canon through a read-only connection: ${String((cause as Error).message ?? cause)}`,
     )
-  } finally {
-    database.close()
   }
 }
 
