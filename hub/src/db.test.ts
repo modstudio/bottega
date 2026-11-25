@@ -9,6 +9,7 @@ import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { realPathForPotentialPath } from '../../shared/state-directory.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
+  assertTestHubDatabasePathForTestProcess,
   closeDatabaseForFixture,
   DB_PATH,
   db,
@@ -25,6 +26,26 @@ import {
 } from './db.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
+
+test('production openers apply the test-store guard only under the test runtime', () => {
+  const originalNodeEnvironment = process.env.NODE_ENV
+  let calls = 0
+  const recordGuardCall = () => {
+    calls += 1
+  }
+  try {
+    process.env.NODE_ENV = 'test'
+    assertTestHubDatabasePathForTestProcess(recordGuardCall)
+    process.env.NODE_ENV = 'production'
+    assertTestHubDatabasePathForTestProcess(recordGuardCall)
+    delete process.env.NODE_ENV
+    assertTestHubDatabasePathForTestProcess(recordGuardCall)
+    expect(calls).toBe(1)
+  } finally {
+    if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = originalNodeEnvironment
+  }
+})
 
 test('hosted delivery requires the installation store real path', () => {
   expect(hostedDeliveryAllowed('/state/hub/hub.db', '/state/hub/hub.db')).toBeTrue()

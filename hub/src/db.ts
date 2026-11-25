@@ -75,6 +75,13 @@ export const DB_PATH = livePath
 export const NON_INSTALLATION_STORE_DELIVERY_REASON =
   'hosted delivery is off because this store is not the installation store'
 
+/** Apply the test-store question only when a production opener is running under the test runtime. */
+export function assertTestHubDatabasePathForTestProcess(
+  assertSafe: () => void = assertTestHubDatabasePath,
+): void {
+  if (process.env.NODE_ENV === 'test') assertSafe()
+}
+
 /** Decide hosted delivery from already-resolved store identities. */
 export function hostedDeliveryAllowed(
   openStoreRealPath: string,
@@ -278,7 +285,7 @@ function commandReadOnlyDatabase(): Database {
   if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
-  assertTestHubDatabasePath()
+  assertTestHubDatabasePathForTestProcess()
   if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
   const access = hubStoreAccess(restrictedActor, DB_PATH)
   const opened = openReadOnlyHubStore(access.openMode === 'read-only-immutable')
@@ -295,8 +302,7 @@ function commandReadOnlyDatabase(): Database {
 export function db(): Database {
   if (databaseAccess.active()) return commandReadOnlyDatabase()
   if (handle) return refuseOrReloadStaleSchema(handle, false)
-  // bun test sets NODE_ENV=test; an unset BOTTEGA_HUB_DB must not fall back to the live store.
-  assertTestHubDatabasePath()
+  assertTestHubDatabasePathForTestProcess()
   requireDatabase()
   const access = hubStoreAccess(restrictedActor, DB_PATH)
   const d =
