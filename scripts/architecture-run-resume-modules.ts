@@ -14,6 +14,7 @@ export const runResumeModuleSpecs = [
   {
     file: 'orchestrator/src/run/chain-tree-service.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'node:fs',
       '../database/db.ts',
       '../git/checkout-identity.ts',

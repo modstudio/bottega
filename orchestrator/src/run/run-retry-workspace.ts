@@ -9,10 +9,7 @@ import { gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import {
-  prepareChainTreeAttachment,
-  refuseMissingChainTreeDatabase,
-} from './chain-tree-service.ts'
+import { prepareChainTreeAttachment, refuseMissingChainTreeDatabase } from './chain-tree-service.ts'
 import { latestCheckpoint } from './checkpoint.ts'
 import { retryLaunchDecision } from './continuation-tree-decision.ts'
 import {
@@ -34,6 +31,26 @@ export type WritingRetryWorkspace = {
   worktree: Worktree | null
   recordedWorktreeOwnerRunId?: string
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
+}
+
+export function writingRetryResumeOptions(input: {
+  workspace: WritingRetryWorkspace
+  rootId: string
+  agent: string
+  retireAsking: boolean
+  sessionId: string | null
+}): RunResumeOptions {
+  return {
+    kind: 'retry-root',
+    parent: input.rootId,
+    agent: input.agent,
+    retireAsking: input.retireAsking,
+    turn: 1,
+    sessionId: input.sessionId,
+    worktree: input.workspace.worktree,
+    recordedWorktreeOwnerRunId: input.workspace.recordedWorktreeOwnerRunId,
+    treePlan: input.workspace.treePlan,
+  }
 }
 
 export function resolveRetryLaunch(input: {
@@ -150,6 +167,40 @@ type WritingRetryWorkspaceInput = {
   strandedRecordOnly: boolean
 }
 
+function retryChainTree(
+  input: WritingRetryWorkspaceInput,
+  projectPath: string,
+  branch: string,
+  tip: string | null,
+) {
+  return prepareChainTreeAttachment({
+    rootId: input.rootId,
+    projectPath,
+    branch,
+    branchTip: tip,
+    retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
+  })
+}
+
+function retryResumeTreePlan(
+  input: WritingRetryWorkspaceInput,
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  branch: string,
+  liveTip: string,
+  recordedTip: string,
+) {
+  const worktreeTool = resolvedWorktreeTool(project)
+  return resumeTreePlan({
+    rootId: input.rootId,
+    branch,
+    recordedTreeMatches: false,
+    hasCreate: Boolean(worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath),
+    branchTip: liveTip,
+    retainedTip: null,
+    recordedTip,
+  })
+}
+
 export function resolveWritingRetryWorkspace(
   input: WritingRetryWorkspaceInput,
 ): WritingRetryWorkspace {
@@ -180,13 +231,7 @@ export function resolveWritingRetryWorkspace(
   }
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
   const relation = branchTipRelation(project.path, recordedTip, liveTip)
-  const attachedTree = prepareChainTreeAttachment({
-    rootId: input.rootId,
-    projectPath: project.path,
-    branch,
-    branchTip: liveTip,
-    retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
-  })
+  const attachedTree = retryChainTree(input, project.path, branch, liveTip)
   const decision = decideWritingRetryWorkspace({
     treeExists: Boolean(attachedTree),
     treeLive:
@@ -238,21 +283,13 @@ export function resolveWritingRetryWorkspace(
       recordedWorktreeOwnerRunId: attachedTree!.ownerRunId,
     }
   }
-  const worktreeTool = resolvedWorktreeTool(project)
-  const plan = resumeTreePlan({
-    rootId: input.rootId,
-    branch,
-    recordedTreeMatches: false,
-    hasCreate: Boolean(worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath),
-    branchTip: liveTip,
-    retainedTip: null,
-    recordedTip,
-  })
+  const plan = retryResumeTreePlan(input, project, branch, liveTip, recordedTip)
   if (plan.action === 'attach-recorded' || plan.action === 'refuse') {
     throw new Error(`run ${input.id} could not prepare branch ${branch} for retry`)
   }
   refuseMissingChainTreeDatabase(input.rootId)
   refuseHeldContinuationBranch(input.id, project.path, latest.worktree, plan)
+  const worktreeTool = resolvedWorktreeTool(project)
   if (worktreeTool?.create && !worktreeTool.recipe && !worktreeTool.recipePath) {
     throw new Error(
       `run ${input.id} cannot reopen branch ${branch}: its command-template lifecycle cannot open an existing branch; ` +

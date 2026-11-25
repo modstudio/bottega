@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  type ChainTreeCandidate,
-  decideChainTreeAttach,
-} from './chain-tree-attach.ts'
+import { type ChainTreeCandidate, decideChainTreeAttach } from './chain-tree-attach.ts'
 
 const candidate: ChainTreeCandidate = {
   path: '/trees/older',
@@ -31,9 +28,27 @@ describe('chain tree attach decision', () => {
     ['earlier tree on branch', {}, 'attach', undefined, false],
     ['detached at tip', { checkedOutBranch: null }, 'attach', undefined, true],
     ['dirty', { clean: false }, 'refuse', 'dirty', undefined],
-    ['head ahead', { checkedOutBranch: null, relation: 'head-ahead' }, 'refuse', 'fast-forward-branch', undefined],
-    ['tip ahead', { checkedOutBranch: null, relation: 'tip-ahead' }, 'refuse', 'choose-work', undefined],
-    ['diverged', { checkedOutBranch: null, relation: 'diverged' }, 'refuse', 'choose-work', undefined],
+    [
+      'head ahead',
+      { checkedOutBranch: null, relation: 'head-ahead' },
+      'refuse',
+      'fast-forward-branch',
+      undefined,
+    ],
+    [
+      'tip ahead',
+      { checkedOutBranch: null, relation: 'tip-ahead' },
+      'refuse',
+      'choose-work',
+      undefined,
+    ],
+    [
+      'diverged',
+      { checkedOutBranch: null, relation: 'diverged' },
+      'refuse',
+      'choose-work',
+      undefined,
+    ],
     ['live run', { liveRunId: 'live-run' }, 'refuse', 'wait-or-stop', undefined],
   ] as const)('%s', (_name, overrides, action, remedyKind, switchToBranch) => {
     const result = decide(overrides)
@@ -61,6 +76,10 @@ describe('chain tree attach decision', () => {
       { ...candidate, path: '/trees/newest', ownerRunId: 'newest-run' },
       { ...candidate, path: '/trees/older', ownerRunId: 'older-run' },
     ])
-    expect(result).toMatchObject({ action: 'attach', path: '/trees/newest', ownerRunId: 'newest-run' })
+    expect(result).toMatchObject({
+      action: 'attach',
+      path: '/trees/newest',
+      ownerRunId: 'newest-run',
+    })
   })
 })

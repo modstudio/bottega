@@ -7,11 +7,11 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
+import type { ChainTreeAttachRemedy } from './chain-tree-attach.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import type { ClaimTreePlanRuling } from './run-claim-plan.ts'
 import { runLeaseState } from './run-lease.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
-import type { ChainTreeAttachRemedy } from './chain-tree-attach.ts'
 
 export const CHAIN_TREE_COMMIT_LIST_CAP = 5
 

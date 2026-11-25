@@ -86,6 +86,7 @@ import {
   resolveRetryLaunch,
   resolveRetryTree,
   resolveWritingRetryWorkspace,
+  writingRetryResumeOptions,
 } from './run-retry-workspace.ts'
 import { type RenewTaskClaim, renewTaskClaimBestEffort } from './run-task-claim-renewal.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
@@ -648,8 +649,7 @@ export async function retryRun(
     .get(id) as RetryRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   assertAgentWorkRun(id, row.job, 'retried')
-  // A writing retry would wrap the prompt and cut a fresh tree beside the partial edit.
-  // Continue the same conversation in the same tree instead.
+  // Continue a writing retry in its conversation tree instead of cutting one beside the partial edit.
   const recordedRulings = await recordedRulingsForRetry(row.root_record_id)
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
@@ -688,7 +688,6 @@ export async function retryRun(
     rootRepo: row.repo,
   })
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
-  // An explicit replacement gets a fresh vendor conversation with the retained writing workspace.
   const workspace = writingRetryWorkspace(
     id,
     row,
@@ -718,8 +717,7 @@ export async function retryRun(
       sessionId: retryAuthority.owner,
     }),
   )
-  // Dispatch the retry through the detached coordinator. Reporting below
-  // decides whether the command follows that coordinator.
+  // Dispatch detached; reporting below decides whether the command follows the coordinator.
   const originalPrompt = readFileSync(row.prompt_path, 'utf8')
   const renderedRulings = recordedRulings.length ? rulingPrompt(recordedRulings) : null
   const retryPrompt = workspace
@@ -772,17 +770,13 @@ export async function retryRun(
         deliverables: dispatchState.deliverables,
         timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
         resume: workspace
-          ? {
-              kind: 'retry-root',
-              parent: row.root_record_id,
+          ? writingRetryResumeOptions({
+              workspace,
+              rootId: row.root_record_id,
               agent: agent!,
               retireAsking: recordedRulings.length > 0 && latestTurn.status === 'asking',
-              turn: 1,
               sessionId: retryAuthority.owner,
-              worktree: workspace.worktree,
-              recordedWorktreeOwnerRunId: workspace.recordedWorktreeOwnerRunId,
-              treePlan: workspace.treePlan,
-            }
+            })
           : retryTree.resume,
       },
       agent,

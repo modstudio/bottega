@@ -153,6 +153,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './continuation-provision-service.ts',
       './continuation-tree-decision.ts',
       './continuation-tree-service.ts',
+      './chain-tree-service.ts',
       './held-branch-remedy.ts',
       './resume-tree.ts',
       './run-resume-prompt.ts',

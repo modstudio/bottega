@@ -20,6 +20,7 @@ export const runRetryModuleSpecs = [
       '../project/projects.ts',
       '../worktree/worktree-types.ts',
       './branch-owner-guard.ts',
+      './chain-tree-service.ts',
       './checkpoint.ts',
       './continuation-tree-decision.ts',
       './continuation-tree-service.ts',

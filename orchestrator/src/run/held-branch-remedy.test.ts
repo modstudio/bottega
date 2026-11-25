@@ -54,11 +54,13 @@ test('an idle dirty holder names switch --detach and says changes are kept', () 
 })
 
 test('choose-work names both tips, caps commit lists, and prescribes no destructive command', () => {
-  const headOnly = Array.from({ length: CHAIN_TREE_COMMIT_LIST_CAP + 2 }, (_, index) =>
-    `head-${index}`,
+  const headOnly = Array.from(
+    { length: CHAIN_TREE_COMMIT_LIST_CAP + 2 },
+    (_, index) => `head-${index}`,
   )
-  const tipOnly = Array.from({ length: CHAIN_TREE_COMMIT_LIST_CAP + 1 }, (_, index) =>
-    `tip-${index}`,
+  const tipOnly = Array.from(
+    { length: CHAIN_TREE_COMMIT_LIST_CAP + 1 },
+    (_, index) => `tip-${index}`,
   )
   const message = renderChainTreeAttachRefusal({
     path,

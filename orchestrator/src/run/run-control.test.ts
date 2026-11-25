@@ -502,9 +502,11 @@ describe('run continuation', () => {
     await expect(
       continueRun(root, 'finish the rebase and land the slice', limit, undefined),
     ).rejects.toThrow(`commit or discard the uncommitted changes in ${repository}`)
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual({
-      n: 0,
-    })
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
   })
 
   test('a dirty same-chain tree refuses before reading a reaped prompt file', async () => {

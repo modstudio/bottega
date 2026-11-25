@@ -2,15 +2,10 @@
 /** Gathers chain-owned worktree facts and safely prepares the selected tree for attachment. */
 
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
-import {
-  branchOf,
-  git,
-  gitContext,
-  gitOk,
-  worktreeListPorcelain,
-} from '../git/git-environment.ts'
+import { branchOf, git, gitContext, gitOk, worktreeListPorcelain } from '../git/git-environment.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -119,7 +114,7 @@ function chainTreeRows(rootId: string): ChainTreeRow[] {
   })
 }
 
-export function gatherChainTreeDecision(input: {
+function gatherChainTreeDecision(input: {
   rootId: string
   projectPath: string
   branch: string
@@ -129,8 +124,7 @@ export function gatherChainTreeDecision(input: {
   const candidates = rows.map((row) => candidateFacts(row, input.branchTip))
   const chainPaths = new Set(candidates.map((candidate) => canonicalPath(candidate.path)))
   const holder = parseWorktreeList(worktreeListPorcelain(input.projectPath)).find(
-    (tree) =>
-      tree.branch === input.branch && !chainPaths.has(canonicalPath(tree.path)),
+    (tree) => tree.branch === input.branch && !chainPaths.has(canonicalPath(tree.path)),
   )
   return {
     decision: decideChainTreeAttach({
@@ -234,7 +228,7 @@ export function refuseMissingChainTreeDatabase(rootId: string): void {
     .join(', ')
   throw new Error(
     `run ${rootId} cannot recreate its missing tree because it still holds database ${details}; ` +
-      'this is leaked state to report to the architect (note bottega#3141: no verb releases a ' +
+      `this is leaked state to report to the architect (note ${PLATFORM_SLUG}#3141: no verb releases a ` +
       'chain database while keeping its branch)',
   )
 }
@@ -283,7 +277,7 @@ export function continuationChainTree(input: {
           projectPath: input.project.path,
           branch,
           branchTip,
-          retryCommand: `bottega run continue ${input.rootId}`,
+          retryCommand: `${PLATFORM_SLUG} run continue ${input.rootId}`,
         })
       : null
   const worktreeTool = input.project ? resolvedWorktreeTool(input.project) : null

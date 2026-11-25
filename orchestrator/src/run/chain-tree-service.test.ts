@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
@@ -8,10 +9,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import { branchOf, git } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
-import {
-  prepareChainTreeAttachment,
-  refuseMissingChainTreeDatabase,
-} from './chain-tree-service.ts'
+import { prepareChainTreeAttachment, refuseMissingChainTreeDatabase } from './chain-tree-service.ts'
 import { claimRun } from './run-claim.ts'
 import { runProjectAttribution } from './run-project-attribution.ts'
 
@@ -89,7 +87,7 @@ test('continue attaches an earlier detached chain tree and records it on the new
     projectPath: repository,
     branch,
     branchTip: tip,
-    retryCommand: `bottega run continue ${root}`,
+    retryCommand: `${PLATFORM_SLUG} run continue ${root}`,
   })!
   const reserved = addRun({
     agent: '(pending)',
