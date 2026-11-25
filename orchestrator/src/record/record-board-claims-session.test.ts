@@ -151,7 +151,8 @@ test('session release closes only the caller live claims held by that session', 
   expect(updateScan?.Filter).toContain('closed_at IS NULL')
   expect(updateScan?.Filter).toContain('id =')
   const updateWriteMembership = updateNodes.find(
-    (node) => node['Relation Name'] === 'membership' && node.Filter?.includes("permission = 'write'"),
+    (node) =>
+      node['Relation Name'] === 'membership' && node.Filter?.includes("permission = 'write'"),
   )
   expect(updateWriteMembership).toBeDefined()
 

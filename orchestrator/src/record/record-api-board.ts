@@ -3,7 +3,6 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { isOperatorSession } from '../../../shared/caller-classification.ts'
 import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
 import type { WriteSpaceRefusal } from '../../../shared/record-remedies.ts'
 import { recordRequestNature } from '../../../shared/record-space-request.ts'
@@ -423,7 +422,7 @@ function registerBoardClaimRoutes(
     if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = releaseSessionSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board claim release-session' }, 400)
-    if (isOperatorSession(body.data.holderSession)) {
+    if (body.data.holderSession.startsWith('operator:')) {
       return context.json(
         {
           error:
