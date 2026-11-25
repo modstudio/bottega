@@ -40,6 +40,59 @@ test('allows a post-implement measurement from the worktree', () =>
       execs: [{ ...base.execs[0]!, cwd: '/main' }, base.execs[0]!],
     }),
   ).toEqual({ kind: 'allow' }))
+
+test('allows a post-implement measurement from inside the worktree', () =>
+  expect(
+    decidePullRequestClassGuard({
+      ...base,
+      measurementCwd: '/main/orchestrator',
+      execs: [{ ...base.execs[0]!, cwd: '/tree/orchestrator' }],
+      checkoutRoots: ['/main'],
+    }),
+  ).toEqual({ kind: 'allow' }))
+
+test('refuses a post-implement measurement from the same directory in the main checkout', () => {
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurementCwd: '/main/orchestrator',
+    execs: [{ ...base.execs[0]!, cwd: '/main/orchestrator' }],
+    checkoutRoots: ['/main'],
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining('/tree/orchestrator'),
+  })
+})
+
+test('refuses a post-implement measurement from a path sharing only the worktree prefix', () => {
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    execs: [{ ...base.execs[0]!, cwd: '/tree-other' }],
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining('did not run in worktree'),
+  })
+})
+
+test('the rerun remedy uses the recorded measure directory and falls back when it is unknown', () => {
+  const known = decidePullRequestClassGuard({
+    ...base,
+    measurementCwd: '/main/orchestrator',
+    execs: [],
+    checkoutRoots: ['/main'],
+  })
+  expect(known).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining("--cwd '/tree/orchestrator'"),
+  })
+
+  const unknown = decidePullRequestClassGuard({ ...base, measurementCwd: undefined, execs: [] })
+  expect(unknown).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining("--cwd '/tree'"),
+  })
+})
 test('refuses a cursor with no worktree', () => {
   const decision = decidePullRequestClassGuard({ ...base, worktree: undefined })
   expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining('--arg worktree') })

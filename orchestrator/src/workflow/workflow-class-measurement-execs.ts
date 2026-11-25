@@ -12,6 +12,17 @@ export type ClassMeasurementExec = {
   createdAt: string
 }
 
+export function classMeasurementExecCwd(
+  database: Database,
+  execId: number,
+): string | undefined {
+  return database
+    .query<{ cwd: string }, [number]>(
+      "SELECT cwd FROM probe WHERE kind='exec' AND number=?",
+    )
+    .get(execId)?.cwd
+}
+
 function structuredArgv(raw: string, withheld: boolean): string[] | null {
   if (withheld) return null
   try {

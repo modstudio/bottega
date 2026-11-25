@@ -1,6 +1,7 @@
 // concern: pull-request
 /** Pure admission for the class guard declared by a measured defect fix. */
 
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
@@ -22,6 +23,28 @@ export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: 
 const rerun = (worktree: string, command: string) =>
   `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(worktree)} -- ${command}`
 
+function relativePathInside(root: string, candidate: string): string | null {
+  const path = relative(root, candidate)
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
+    ? path
+    : null
+}
+
+function measurementRerunCwd(input: {
+  measurementCwd?: string
+  worktree: string
+  checkoutRoots: readonly string[]
+}): string {
+  const measurementCwd = input.measurementCwd
+  if (!measurementCwd) return input.worktree
+  const containingRoots = [...input.checkoutRoots, input.worktree]
+    .map((root) => ({ root, relative: relativePathInside(root, measurementCwd) }))
+    .filter((entry): entry is { root: string; relative: string } => entry.relative !== null)
+    .sort((left, right) => right.root.length - left.root.length)
+  const directory = containingRoots[0]?.relative
+  return directory ? join(input.worktree, directory) : input.worktree
+}
+
 export function decidePullRequestClassGuard(input: {
   body: string
   measurement?: ClassGuardMeasurement
@@ -29,6 +52,7 @@ export function decidePullRequestClassGuard(input: {
   execs: readonly ClassGuardExec[]
   worktree?: string
   checkoutRoots: readonly string[]
+  measurementCwd?: string
 }): ClassGuardDecision {
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
@@ -58,27 +82,33 @@ export function decidePullRequestClassGuard(input: {
       kind: 'refuse',
       message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
     }
+  const worktree = input.worktree
   const creditedCommands = creditedMeasurementCommands(measurement.command, input.checkoutRoots)
   const rerunCommand = creditedCommands.at(-1)!
+  const rerunCwd = measurementRerunCwd({
+    measurementCwd: input.measurementCwd,
+    worktree,
+    checkoutRoots: input.checkoutRoots,
+  })
   const matchingExecs = input.execs.filter(
     (entry) =>
       creditedCommands.includes(entry.command) &&
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
-  const afterExec = matchingExecs.find((entry) => entry.cwd === input.worktree)
+  const afterExec = matchingExecs.find((entry) => relativePathInside(worktree, entry.cwd) !== null)
   if (!afterExec)
     return {
       kind: 'refuse',
       message: matchingExecs.length
-        ? `the Class guard post-implement measurement did not run in worktree ${input.worktree}; run \`${rerun(input.worktree, rerunCommand)}\``
-        : `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, rerunCommand)}\``,
+        ? `the Class guard post-implement measurement did not run in worktree ${worktree}; run \`${rerun(rerunCwd, rerunCommand)}\``
+        : `the Class guard has no successful post-implement measurement; run \`${rerun(rerunCwd, rerunCommand)}\``,
     }
   const afterCount = measuredCountFromOutput(afterExec.output)
   if (afterCount === null || Number(parsed[3]) !== afterCount)
     return {
       kind: 'refuse',
-      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(input.worktree, rerunCommand)}\` and update the line`,
+      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(rerunCwd, rerunCommand)}\` and update the line`,
     }
   return { kind: 'allow' }
 }
