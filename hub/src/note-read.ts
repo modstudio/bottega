@@ -9,11 +9,13 @@ import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
 import {
   hostedGetNote,
+  hostedListNoteCandidates,
   hostedListNotes,
   hostedListSlimNotes,
   isMissingHostedNote,
   type NoteClientOptions,
 } from './note-client.ts'
+import { startNoteDuplicateCredentialResolution } from './note-duplicate-question.ts'
 import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
@@ -386,6 +388,32 @@ export async function listNotes(
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
     return listHostedNoteRows(normalized, hosted)
   return listLocalNotes(normalized)
+}
+
+export async function listNoteDuplicateCandidates(
+  project: string,
+  text: string,
+  hosted?: NoteClientOptions,
+  dependencies: { startCredentialResolution?: () => void } = {},
+) {
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) !== 'hosted-configured')
+    return listLocalNotes(normalizeNoteFilters({ project, actionable: true }))
+  const startCredentialResolution =
+    dependencies.startCredentialResolution ?? startNoteDuplicateCredentialResolution
+  startCredentialResolution()
+  const spaces = await noteReadSpaces(project, hosted ?? {})
+  try {
+    const results = await Promise.all(
+      spaces.map((recordSpace) =>
+        hostedListNoteCandidates(project, text, { ...hosted, recordSpace }).catch((cause) => {
+          throw spaceReadFailure(recordSpace, project, cause)
+        }),
+      ),
+    )
+    return results.flat()
+  } catch (cause) {
+    throw hostedReadFailure(cause)
+  }
 }
 
 export function listActionableNotes(

@@ -88,3 +88,25 @@ test('same-as skips both candidate and credential reads', async () => {
   expect(result).toEqual([])
   expect(credentialStarts).toBe(0)
 })
+
+test('hosted candidate read failures carry the note read remedy', async () => {
+  await expect(
+    duplicateCandidatesForNewNote('alpha beta', 'gamma', undefined, {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input) => {
+        if (new URL(input).pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user-1',
+            activeSpaceId: 'space-a',
+            memberships: [
+              { spaceId: 'space-a', slug: 'active', permission: 'write' },
+              { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
+            ],
+            capabilities: { targetSpaceNotes: true },
+          })
+        return Response.json({ error: 'record unavailable' }, { status: 500 })
+      },
+    }),
+  ).rejects.toThrow('run `bottega record doctor`, then retry')
+})

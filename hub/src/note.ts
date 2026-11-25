@@ -23,7 +23,6 @@ import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
 import {
   hostedCreateNote,
-  hostedListNoteCandidates,
   hostedPromoteNote,
   type NoteClientOptions,
 } from './note-client.ts'
@@ -32,7 +31,6 @@ import {
   jevOnlyDuplicateCandidates,
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
-  startNoteDuplicateCredentialResolution,
 } from './note-duplicate-question.ts'
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
@@ -53,6 +51,7 @@ import {
 import {
   getNote,
   listActionableNotes,
+  listNoteDuplicateCandidates,
   listNoteAcknowledgements,
   listNotes,
   localNoteAcknowledgementSightings,
@@ -401,12 +400,7 @@ export async function duplicateCandidatesForNewNote(
   } = {},
 ): Promise<NoteCandidate[]> {
   if (sameAs) return []
-  const hostedMode = hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-  if (hostedMode)
-    (dependencies.startCredentialResolution ?? startNoteDuplicateCredentialResolution)()
-  const notes = hostedMode
-    ? await hostedListNoteCandidates(project, text, await noteDestinationOptions(project, hosted))
-    : await listNotes({ project, actionable: true }, hosted)
+  const notes = await listNoteDuplicateCandidates(project, text, hosted, dependencies)
   const lexicalCandidates = noteCandidates(notes, text)
   const asked = await askNoteDuplicateQuestions(notes, project, text, dependencies.ask)
   return [
