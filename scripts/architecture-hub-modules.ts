@@ -105,6 +105,14 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
+    file: 'hub/src/ingest/tracker-read-state.ts',
+    allowed: ['../../../shared/trackers.ts', '../db.ts', './tracker-read-mode.ts'],
+  },
+  {
+    file: 'hub/src/ingest/tracker-result.ts',
+    allowed: ['../db.ts', './tracker-read-mode.ts'],
+  },
+  {
     file: 'hub/src/ingest/tracker-observation-times.ts',
     allowed: ['../../../shared/trackers.ts'],
   },
@@ -168,6 +176,8 @@ export const hubModuleSpecs = [
       '../task-row.ts',
       '../task-write-destination.ts',
       './tracker-read-mode.ts',
+      './tracker-read-state.ts',
+      './tracker-result.ts',
       './tracker-hosted-collector.ts',
       './tracker-local-collector.ts',
       './tracker-observation-times.ts',
