@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { db } from '../database/db.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { projectByRecordId } from '../project/projects.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
@@ -286,15 +285,13 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
   })
 }
 
-export function readDocs(filters: DocListFilters = {}, database: Database = db()): Promise<Doc[]> {
+export function readDocs(filters: DocListFilters = {}, database?: Database): Promise<Doc[]> {
   const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
-  return applyRecordReadAuthority(
-    {
-      local: () => listDocsStore(resolvedFilters(localFilters), database),
-      hosted: () => withReadRemedy(() => hostedRows(filters)),
-    },
-    database,
-  )
+  const actions = {
+    local: () => listDocsStore(resolvedFilters(localFilters), database),
+    hosted: () => withReadRemedy(() => hostedRows(filters)),
+  }
+  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
