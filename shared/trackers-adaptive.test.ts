@@ -111,9 +111,7 @@ describe('adaptive tracker paging', () => {
       team: index >= 24 && index <= 35 ? 'Other' : 'Platform',
     }))
     const fetched = await source.fetch({
-      listTools: async () => [
-        { name: 'list-tasks-tool', inputSchema: { properties: {} } },
-      ],
+      listTools: async () => [{ name: 'list-tasks-tool', inputSchema: { properties: {} } }],
       async callTool(_name, args) {
         const pageSize = args.per_page as number
         const start = ((args.page as number) - 1) * pageSize
