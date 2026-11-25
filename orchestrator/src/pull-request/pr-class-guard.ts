@@ -8,6 +8,7 @@ import { measuredCountFromOutput } from '../workflow/workflow-class-measured-flo
 export type ClassGuardMeasurement = { className: string; command: string; count: number }
 export type ClassGuardExec = {
   command: string
+  cwd: string
   output: string
   exitCode: number
   createdAt: string
@@ -23,7 +24,7 @@ export function decidePullRequestClassGuard(input: {
   measurement?: ClassGuardMeasurement
   implementClosedAt?: string
   execs: readonly ClassGuardExec[]
-  worktree: string
+  worktree?: string
 }): ClassGuardDecision {
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
@@ -48,16 +49,24 @@ export function decidePullRequestClassGuard(input: {
       kind: 'refuse',
       message: `the Class guard before count must equal the measure-class count ${measurement.count}`,
     }
-  const afterExec = input.execs.find(
+  if (!input.worktree)
+    return {
+      kind: 'refuse',
+      message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
+    }
+  const matchingExecs = input.execs.filter(
     (entry) =>
       entry.command === measurement.command &&
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
+  const afterExec = matchingExecs.find((entry) => entry.cwd === input.worktree)
   if (!afterExec)
     return {
       kind: 'refuse',
-      message: `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, measurement.command)}\``,
+      message: matchingExecs.length
+        ? `the Class guard post-implement measurement did not run in worktree ${input.worktree}; run \`${rerun(input.worktree, measurement.command)}\``
+        : `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, measurement.command)}\``,
     }
   const afterCount = measuredCountFromOutput(afterExec.output)
   if (afterCount === null || Number(parsed[3]) !== afterCount)

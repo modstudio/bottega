@@ -1,5 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
@@ -195,6 +198,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
   database.run(`CREATE TABLE probe (
     command TEXT NOT NULL,
     command_withheld INTEGER NOT NULL DEFAULT 0,
+    cwd TEXT NOT NULL,
     output_tail TEXT NOT NULL,
     exit_code INTEGER NOT NULL,
     created_at TEXT NOT NULL,
@@ -203,12 +207,17 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
   )`)
   const argv = ['sh', '-c', 'rg leak | wc -l']
   const command = renderClassMeasurementCommand(argv)!
+  const temp = mkdtempSync(join(tmpdir(), 'class-guard-admission-'))
+  const worktree = join(temp, 'worktree')
+  const linkedWorktree = join(temp, 'linked-worktree')
+  mkdirSync(worktree)
+  symlinkSync(worktree, linkedWorktree)
   database
     .query(
-      `INSERT INTO probe (command,output_tail,exit_code,created_at,kind,session_id)
-       VALUES (?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
+      `INSERT INTO probe (command,cwd,output_tail,exit_code,created_at,kind,session_id)
+       VALUES (?,?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
     )
-    .run(JSON.stringify(argv))
+    .run(JSON.stringify(argv), linkedWorktree)
   const closed = JSON.stringify([
     {
       n: 1,
@@ -224,7 +233,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
   const held = {
     ...cursor(1212, 'open-pr', ['pr-create']),
     closed,
-    args: JSON.stringify({ worktree: '/tree with space' }),
+    args: JSON.stringify({ worktree }),
   }
   const admission = (body: string) =>
     assertPullRequestTaskCursorAdmission(
@@ -238,9 +247,51 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
       },
       async () => [held],
     )
+  const fallbackAdmission = (
+    cwd: string,
+    facts: { topLevel: string | null; mainCheckout: string | null; branch: string | null },
+  ) =>
+    assertPullRequestTaskCursorAdmission(
+      {
+        command: 'pr create',
+        project,
+        branch: 'DEV-2387-change',
+        env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
+        database,
+        body: 'Summary\nClass guard: architecture check (before 3, after 0)',
+        cwd,
+      },
+      async () => [{ ...held, args: '{}' }],
+      () => facts,
+    )
 
-  await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
-  await expect(
-    admission('Summary\nClass guard: architecture check (before 3, after 0)'),
-  ).resolves.toBeUndefined()
+  try {
+    await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
+    await expect(
+      admission('Summary\nClass guard: architecture check (before 3, after 0)'),
+    ).resolves.toBeUndefined()
+    await expect(
+      fallbackAdmission('/caller/right', {
+        topLevel: linkedWorktree,
+        mainCheckout: join(temp, 'main'),
+        branch: 'DEV-2387-change',
+      }),
+    ).resolves.toBeUndefined()
+    await expect(
+      fallbackAdmission('/caller/wrong-branch', {
+        topLevel: linkedWorktree,
+        mainCheckout: join(temp, 'main'),
+        branch: 'DEV-999-other',
+      }),
+    ).rejects.toThrow(`run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`)
+    await expect(
+      fallbackAdmission('/caller/main', {
+        topLevel: linkedWorktree,
+        mainCheckout: worktree,
+        branch: 'DEV-2387-change',
+      }),
+    ).rejects.toThrow(`run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`)
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
+  }
 })

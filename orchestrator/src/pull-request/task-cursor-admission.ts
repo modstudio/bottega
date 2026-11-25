@@ -2,11 +2,13 @@
 /** Requires harness pull-request work to run on the task cursor named by its branch. */
 
 import type { Database } from 'bun:sqlite'
+import { realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
+import { gitContext, gitToplevel, repoRootOf } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
@@ -29,6 +31,42 @@ type HeldTaskCursor = {
 }
 
 export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
+
+type PullRequestTreeFacts = {
+  topLevel: string | null
+  mainCheckout: string | null
+  branch: string | null
+}
+
+type ReadPullRequestTree = (cwd: string) => PullRequestTreeFacts
+
+function realpathOrLexical(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+const readPullRequestTree: ReadPullRequestTree = (cwd) => ({
+  topLevel: gitToplevel(cwd),
+  mainCheckout: repoRootOf(cwd),
+  branch: gitContext(cwd, 'symbolic-ref', '--quiet', '--short', 'HEAD'),
+})
+
+function resolvedClassGuardWorktree(
+  recordedWorktree: string | undefined,
+  createCwd: string | undefined,
+  branch: string,
+  readTree: ReadPullRequestTree,
+): string | undefined {
+  if (recordedWorktree) return realpathOrLexical(recordedWorktree)
+  if (!createCwd) return undefined
+  const tree = readTree(createCwd)
+  if (!tree.topLevel || !tree.mainCheckout || tree.branch !== branch) return undefined
+  const topLevel = realpathOrLexical(tree.topLevel)
+  return topLevel === realpathOrLexical(tree.mainCheckout) ? undefined : topLevel
+}
 
 export function decidePullRequestTaskCursorAdmission(input: {
   command: 'pr create' | 'pr merge'
@@ -105,6 +143,7 @@ export async function assertPullRequestTaskCursorAdmission(
     env?: Record<string, string | undefined>
     systemJob?: string | null
     body?: string
+    cwd?: string
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
@@ -125,6 +164,7 @@ export async function assertPullRequestTaskCursorAdmission(
         }
       }),
     ),
+  readTree: ReadPullRequestTree = readPullRequestTree,
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
@@ -159,12 +199,21 @@ export async function assertPullRequestTaskCursorAdmission(
   const measurement = classMeasurementFromClosedSteps(closed)
   if (!measurement) return
   const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
+  const worktree = resolvedClassGuardWorktree(
+    args.worktree?.trim() || undefined,
+    input.cwd,
+    input.branch,
+    readTree,
+  )
   const classGuard = decidePullRequestClassGuard({
     body: input.body ?? '',
     measurement,
     implementClosedAt: measurement.implementClosedAt,
-    execs: classMeasurementExecsForSession(database, harnessSession ?? ''),
-    worktree: args.worktree ?? '<worktree>',
+    execs: classMeasurementExecsForSession(database, harnessSession ?? '').map((entry) => ({
+      ...entry,
+      cwd: realpathOrLexical(entry.cwd),
+    })),
+    worktree,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

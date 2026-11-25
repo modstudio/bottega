@@ -489,6 +489,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../git/commit-resolution.ts',
     '../gate/gate-identifier.ts',
     '../project/projects.ts',
+    '../project/project-read.ts',
     '../review/review-group.ts',
     '../review/review-identifier.ts',
     '../review/review-lineage-store.ts',

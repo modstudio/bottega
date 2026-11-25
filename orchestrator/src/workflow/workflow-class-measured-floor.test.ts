@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import {
   decideClassMeasuredFloor,
@@ -24,19 +25,21 @@ const artifact = (overrides: Record<string, unknown> = {}): ValidatedArtifactEvi
   },
 })
 
+const checkoutRoot = '/Users/shmuel/Projects/stopal'
+const decide = (artifacts: readonly ValidatedArtifactEvidence[], checkoutRoots: string[] = []) =>
+  decideClassMeasuredFloor({ className: 'reader leak', artifacts, checkoutRoots })
+
 describe('class-measured floor', () => {
   test('records the class, command, exec and count', () => {
-    expect(decideClassMeasuredFloor({ className: 'reader leak', artifacts: [artifact()] })).toEqual(
-      {
-        met: true,
-        measurement: {
-          className: 'reader leak',
-          command: "'sh' '-c' 'rg defect | wc -l'",
-          execId: 7,
-          count: 3,
-        },
+    expect(decide([artifact()])).toEqual({
+      met: true,
+      measurement: {
+        className: 'reader leak',
+        command: "'sh' '-c' 'rg defect | wc -l'",
+        execId: 7,
+        count: 3,
       },
-    )
+    })
   })
 
   test.each([
@@ -54,17 +57,52 @@ describe('class-measured floor', () => {
     ],
     ['non-integer count', 'reader leak', [artifact({ output: 'many\n' })], 'non-negative integer'],
   ])('%s refuses', (_name, className, artifacts, message) => {
-    const decision = decideClassMeasuredFloor({ className, artifacts })
+    const decision = decideClassMeasuredFloor({ className, artifacts, checkoutRoots: [] })
     expect(decision.met ? '' : decision.message).toContain(message)
   })
 
   test('refuses a secret-shaped class without echoing it', () => {
     const secret = 'ghp_123456789012345678901234567890123456'
-    const decision = decideClassMeasuredFloor({ className: secret, artifacts: [artifact()] })
+    const decision = decideClassMeasuredFloor({
+      className: secret,
+      artifacts: [artifact()],
+      checkoutRoots: [],
+    })
     expect(decision.met).toBe(false)
     if (!decision.met) {
       expect(decision.message).toContain('secret-shaped')
       expect(decision.message).not.toContain(secret)
+    }
+  })
+
+  test.each([
+    ['bare root', ['bash', '/tmp/measure.sh', checkoutRoot]],
+    [
+      'worktree under root',
+      ['bash', `${checkoutRoot}/.claude/worktrees/STO-1389/scripts/measure.ts`],
+    ],
+    ['flag value', ['bun', `--cwd=${checkoutRoot}/scripts`]],
+    ['shell command', ['sh', '-c', `bun ${checkoutRoot}/scripts/measure.ts`]],
+  ])('refuses a checkout path in a %s argument', (_name, argv) => {
+    const decision = decide([artifact({ argv })], [checkoutRoot])
+    expect(decision.met).toBe(false)
+  })
+
+  test.each([
+    ['sibling prefix', ['bash', `${checkoutRoot}2/scripts/measure.ts`]],
+    ['executable', [`${checkoutRoot}/bin/${PLATFORM_SLUG}`, 'workflow', 'class-audit']],
+    ['relative argument', ['bash', 'scripts/measure.sh', '.']],
+  ])('allows a %s path', (_name, argv) => {
+    expect(decide([artifact({ argv })], [checkoutRoot]).met).toBe(true)
+  })
+
+  test('checkout-path refusal names the absolute and tree-relative paths', () => {
+    const absolute = `${checkoutRoot}/scripts/measure.ts`
+    const decision = decide([artifact({ argv: ['bun', `--script=${absolute}`] })], [checkoutRoot])
+    expect(decision.met).toBe(false)
+    if (!decision.met) {
+      expect(decision.message).toContain(absolute)
+      expect(decision.message).toContain('scripts/measure.ts')
     }
   })
 

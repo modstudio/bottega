@@ -3,11 +3,13 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/task-cursor-admission.ts',
     allowed: [
       'bun:sqlite',
+      'node:fs',
       '../../../shared/brand.ts',
       '../../../shared/refusal.ts',
       '../branch/other-branch-state.ts',
       '../caller-classification.ts',
       '../database/db.ts',
+      '../git/git-environment.ts',
       '../project/projects.ts',
       '../question-store/question-store-read.ts',
       '../run/synthetic-lifecycle-job.ts',

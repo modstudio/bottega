@@ -6,6 +6,7 @@ import { renderClassMeasurementCommand } from './workflow-class-measured-floor.t
 
 export type ClassMeasurementExec = {
   command: string
+  cwd: string
   output: string
   exitCode: number
   createdAt: string
@@ -30,13 +31,14 @@ export function classMeasurementExecsForSession(
       {
         command: string
         command_withheld: number
+        cwd: string
         output_tail: string
         exit_code: number
         created_at: string
       },
       [string]
     >(
-      "SELECT command,command_withheld,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
+      "SELECT command,command_withheld,cwd,output_tail,exit_code,created_at FROM probe WHERE kind='exec' AND session_id=? ORDER BY created_at DESC",
     )
     .all(session)
     .flatMap((row) => {
@@ -44,7 +46,15 @@ export function classMeasurementExecsForSession(
         structuredArgv(row.command, row.command_withheld === 1),
       )
       return command
-        ? [{ command, output: row.output_tail, exitCode: row.exit_code, createdAt: row.created_at }]
+        ? [
+            {
+              command,
+              cwd: row.cwd,
+              output: row.output_tail,
+              exitCode: row.exit_code,
+              createdAt: row.created_at,
+            },
+          ]
         : []
     })
 }
