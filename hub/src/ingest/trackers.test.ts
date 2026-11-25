@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { clearRecordSessionToken, writeRecordSessionToken } from '../../../shared/record-session.ts'
-import { resolveAssigneeIds, type TrackerSource } from '../../../shared/trackers.ts'
+import { ToolCallRefused } from '../../../shared/tracker-list-scope.ts'
+import {
+  resolveAssigneeIds,
+  type TrackerSource,
+  trackerSourceFor,
+} from '../../../shared/trackers.ts'
 import { declareFixtureProjectSpace } from '../../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
@@ -410,6 +415,47 @@ describe('tracker register', () => {
     expect(storedTrackerPageSize('page-size-small', 'full')).toBe(40)
     expect(storedTrackerPageSize('page-size-large', 'full')).toBe(100)
     expect(storedTrackerPageSize('page-size-missing', 'full')).toBe(100)
+  })
+
+  test('a successful adaptive read stores its working page size for the next incremental read', async () => {
+    const adaptive = trackerSourceFor({
+      name: 'alpha',
+      settings: {
+        tracker: {
+          protocol: 'cursor-mcp',
+          envPrefix: 'FIXTURE',
+          openStatuses: ['todo'],
+          states: { todo: 'open' },
+          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+        },
+      },
+    })!
+    const pageSizes: number[] = []
+
+    await collectTrackerSource(
+      { project: 'alpha', prefixes: ['ALP'], source: adaptive },
+      [],
+      '2026-11-20T10:00:00.000Z',
+      {
+        listTools: async () => [
+          { name: 'task_list', inputSchema: { properties: { projectId: {} } } },
+        ],
+        async callTool(_name, args) {
+          const pageSize = args.limit as number
+          pageSizes.push(pageSize)
+          if (pageSize > 3) throw new ToolCallRefused('fixture page too large')
+          return {
+            data: {
+              items: [{ id: 'adaptive-row', humanKey: 'ALP-ADAPTIVE', status: 'todo' }],
+            },
+          }
+        },
+      } as never,
+    )
+
+    expect(pageSizes).toEqual([100, 50, 25, 12, 6, 3])
+    expect(settingValue('collect.tracker.alpha.page-size')).toBe('3')
+    expect(storedTrackerPageSize('alpha', 'incremental')).toBe(3)
   })
 
   test('a failed list still backfills, records incomplete, and leaves retirements untouched', async () => {
