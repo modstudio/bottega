@@ -841,6 +841,7 @@ export const importBoundaries: ImportBoundary[] = [
       './outbox-dependency.ts',
       './outbox-quarantine.ts',
       './outbox-read.ts',
+      './outbox-score-supersession.ts',
       './record-cache.ts',
       './record-api-client.ts',
       './record-built-ins-identity.ts',

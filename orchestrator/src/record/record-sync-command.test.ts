@@ -62,6 +62,31 @@ test('sync reports retired direct-write outbox rows', async () => {
   expect(output).toContain('retired 2 direct-write outbox rows')
 })
 
+test('sync reports superseded quarantined score rows separately', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 0,
+          retired: 2,
+          superseded: 3,
+          quarantined: [],
+          blocked: [],
+        }) as never,
+      boardAdoption: { database: db(), hostedConfigured: () => false, signedIn: () => false },
+    },
+  )
+
+  expect(output).toContain('retired 2 direct-write outbox rows')
+  expect(output).toContain('retired 3 superseded quarantined score rows')
+})
+
 test('sync reports each row deferred by a pending parent', async () => {
   const output: string[] = []
   await syncCommand(

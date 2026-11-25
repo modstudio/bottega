@@ -96,6 +96,9 @@ test('installing the CLI adapter leaves hub unloaded until the first read', asyn
   expect(await taskReader().list()).toContainEqual(
     expect.objectContaining({ record_id: recordId, key: 'ALP-2451', project: 'alpha' }),
   )
+  expect(await taskReader().listLocal({ project: 'alpha' })).toContainEqual(
+    expect.objectContaining({ record_id: recordId, key: 'ALP-2451', project: 'alpha' }),
+  )
   expect(await taskReader().duplicates('alpha', 'In-process reads')).toContainEqual(
     expect.objectContaining({ key: 'ALP-2451', title: 'In-process reads' }),
   )

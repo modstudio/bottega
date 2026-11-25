@@ -52,6 +52,7 @@ import {
 import { trackerCapabilities } from './tracker-capabilities.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
+export { listLocalTasks } from './task-local-read.ts'
 export type { TaskChanges, TaskComment } from './task-types.ts'
 
 export type DuplicateCandidate = {

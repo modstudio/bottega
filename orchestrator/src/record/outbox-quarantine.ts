@@ -7,7 +7,10 @@ import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { signalRecordSyncAfterWriteCommit } from './outbox-enqueue.ts'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
-import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
+import {
+  PENDING_OUTBOX_PREDICATE_SQL,
+  QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL,
+} from './outbox-read.ts'
 export type QuarantinedOutboxRow = {
   id: number
   kind: string
@@ -18,7 +21,7 @@ export type QuarantinedOutboxRow = {
 }
 
 export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
-  FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`
+  FROM outbox WHERE ${QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL} ORDER BY id`
 
 type OutboxIdentity = {
   id: number
@@ -240,19 +243,38 @@ export function retireOutboxRow(
         `outbox row ${rowId} is not quarantined, held for upgrade, or blocked by a retired parent; run \`${PLATFORM_SLUG} record sync\` and retire only a reported row`,
       )
     }
-    const row = candidate
-    audit(
-      database,
-      row,
-      'retire',
-      row.quarantine_reason ?? row.last_error,
-      trimmed,
-      actorSession,
-      at,
-    )
-    database
-      .query('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=?')
-      .run(at, trimmed, rowId)
+    retireOutboxIdentity(database, candidate, trimmed, at, actorSession)
+  }, database)
+}
+
+function retireOutboxIdentity(
+  database: Database,
+  row: OutboxIdentity,
+  reason: string,
+  at: string,
+  actorSession: string | null,
+): void {
+  audit(database, row, 'retire', row.quarantine_reason ?? row.last_error, reason, actorSession, at)
+  database
+    .query('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=?')
+    .run(at, reason, row.id)
+}
+
+/** Automatically retires a still-quarantined row, skipping concurrent disposal. */
+export function retireQuarantinedOutboxRowIfEligible(
+  rowId: number,
+  reason: string,
+  database: Database,
+  at = nowIso(),
+  actorSession: string | null = null,
+): boolean {
+  const trimmed = reason.trim()
+  if (!trimmed) throw new Error('retiring an outbox row requires a non-empty reason')
+  return writeTransaction(() => {
+    const candidate = outboxRow(database, rowId)
+    if (candidate.retired_at || !candidate.quarantined_at) return false
+    retireOutboxIdentity(database, candidate, trimmed, at, actorSession)
+    return true
   }, database)
 }
 

@@ -109,8 +109,7 @@ export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]
     hit.kind === 'read' &&
     hit.path === 'hosted-reachable' &&
     hit.exclusionReason !== 'planned' &&
-    refused.has(hit.table) &&
-    hit.file !== 'orchestrator/src/board/board-suggestions.ts'
+    refused.has(hit.table)
       ? [
           `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; branch through boardMode/boardModeForId and the hosted board reader`,
         ]

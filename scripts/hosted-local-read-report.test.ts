@@ -15,11 +15,13 @@ import {
   hostedLocalReadScan,
   hostedLocalReadSourceFacts,
 } from './hosted-local-read-report.ts'
+import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 import { extractSqlFromSource } from './hosted-sql-schema.ts'
 
 const tables = [
   { table: 'hosted_row', cache: false },
   { table: 'task', cache: false },
+  { table: 'board_message', cache: false },
   { table: 'hosted_cache', cache: true },
   {
     table: 'declared_cache',
@@ -261,6 +263,11 @@ test('refuses only hosted-reachable reads of B1 board tables', () => {
     expect.stringContaining('new-reader.ts:17: hosted install can read board_message'),
   ])
   expect(
+    hostedBoardLocalReadFailures([{ ...hit, file: 'orchestrator/src/board/board-suggestions.ts' }]),
+  ).toEqual([
+    expect.stringContaining('board-suggestions.ts:17: hosted install can read board_message'),
+  ])
+  expect(
     hostedBoardLocalReadFailures([
       { ...hit, path: 'cannot-tell' },
       { ...hit, exclusionReason: 'planned' },
@@ -268,9 +275,29 @@ test('refuses only hosted-reachable reads of B1 board tables', () => {
       { ...hit, table: 'doc_revision' },
       { ...hit, table: 'session_board_hold' },
       { ...hit, table: 'typed_question_answer' },
-      { ...hit, file: 'orchestrator/src/board/board-suggestions.ts' },
     ]),
   ).toEqual([])
+})
+
+test('classifies only the reasoned board suggestion function as local-only', () => {
+  const source = `function suggestBoardPost() {
+    db.query(\`SELECT * FROM board_message\`)
+  }
+  function newHostedBoardReader() {
+    db.query(\`SELECT * FROM board_message\`)
+  }`
+  const hits = classifyHostedLocalReadSites({
+    candidates: candidates('orchestrator/src/board/board-suggestions.ts', source),
+    tables,
+    allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  })
+  expect(hits.map(({ functionName, path }) => ({ functionName, path }))).toEqual([
+    { functionName: 'suggestBoardPost', path: 'local-only' },
+    { functionName: 'newHostedBoardReader', path: 'hosted-reachable' },
+  ])
+  expect(hostedBoardLocalReadFailures(hits)).toEqual([
+    expect.stringContaining('hosted install can read board_message'),
+  ])
 })
 
 test('refuses hosted-reachable and cannot-tell reads of B2 hub tables', () => {

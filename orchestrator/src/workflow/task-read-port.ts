@@ -48,7 +48,14 @@ type TaskReadDuplicateCandidate = {
 }
 
 export type TaskReadPort = {
+  /** Read through the install's configured mode: hosted routing when hosted, local otherwise. */
   list(filters?: { project?: string; status?: string; parent?: string }): Promise<TaskReadRow[]>
+  /** Always read the local hub store for a project without a record space, such as the built-in default project. */
+  listLocal(filters?: {
+    project?: string
+    status?: string
+    parent?: string
+  }): Promise<TaskReadRow[]>
   lookup(project: string, keys: string[]): Promise<TaskLookupRow[]>
   duplicates(project: string, title: string): Promise<TaskReadDuplicateCandidate[]>
   show(key: string, scope?: { project?: string; recordId?: string }): Promise<TaskReadShow>

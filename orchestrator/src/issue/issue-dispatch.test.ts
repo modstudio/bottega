@@ -28,6 +28,7 @@ test('filed-issue queue reads only the three live status categories', async () =
     opened_at: null,
   }))
   installTaskReader({
+    listLocal: async () => [],
     async list(filters = {}) {
       calls.push({ project: filters.project ?? '', status: filters.status })
       if (!filters.status) throw new Error('unfiltered project task scan on a hook path')

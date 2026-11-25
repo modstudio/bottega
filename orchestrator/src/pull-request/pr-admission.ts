@@ -9,7 +9,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { type Project, projectAt } from '../project/projects.ts'
+import { type Project, projectAt, registeredCheckoutRoots } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
@@ -812,12 +812,15 @@ export async function createPullRequest(
   cwd = process.cwd(),
 ): Promise<{ output: string; overrideId: string | null }> {
   const change = preparePullRequestCreate(options, cwd)
+  const database = db()
   await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,
     branch: change.branch,
     body: options.body,
     cwd,
+    database,
+    checkoutRoots: registeredCheckoutRoots(database),
   })
   return createPullRequestAdmittedChange(
     args,

@@ -24,6 +24,7 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/branch-name.ts', []),
+  module('orchestrator/src/project/worktree-directory.ts', []),
   module('orchestrator/src/project/project-list-json.ts', [
     './declared-project-space.ts',
     './projects.ts',

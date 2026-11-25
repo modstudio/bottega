@@ -188,6 +188,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-outbox-insert-site.ts', run),
   script('scripts/check-record-request-headers.ts', run),
   script('scripts/check-task-single-read.ts', run),
+  script('scripts/check-register-task-reads.ts', run),
   script('scripts/check-record-route-contracts.ts', run),
   script('scripts/check-hosted-secret-writers.ts', run),
   script('scripts/check-hosted-local-sql.ts', run),
