@@ -223,9 +223,7 @@ export async function assertPullRequestTaskCursorAdmission(
     })),
     worktree,
     checkoutRoots: input.checkoutRoots,
-    measurementCwd: recordedMeasurementCwd
-      ? realpathOrLexical(recordedMeasurementCwd)
-      : undefined,
+    measurementCwd: recordedMeasurementCwd ? realpathOrLexical(recordedMeasurementCwd) : undefined,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }
