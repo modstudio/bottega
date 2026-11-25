@@ -22,6 +22,7 @@ import {
   hostedBoardMessageNotFoundMessage,
   resolveBoardDeliveryIdentifier,
 } from './board-message-identifier.ts'
+import { boardHasAdoptedHosted } from './board-mode.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
 import {
@@ -33,6 +34,7 @@ import {
   readNotices,
   runReaderIdentity,
 } from './board-service.ts'
+import { machineMessageRows, messageRows } from './board-store.ts'
 
 export const BOARD_PUSH_REFRESH_SECONDS = 15
 export const BOARD_PUSH_REMIND_SECONDS = 300
@@ -63,13 +65,16 @@ const splitBoardIds = (
   const local: string[] = []
   const hosted: string[] = []
   for (const sourceId of sourceIds) {
-    const resolved = resolveBoardDeliveryIdentifier(database, sourceId, env)
+    const resolved = resolveBoardDeliveryIdentifier(database, sourceId, env, true)
     if (!resolved) continue
     if (resolved.source === 'local') local.push(resolved.recordId)
     else hosted.push(resolved.recordId)
   }
   return { local, hosted }
 }
+
+const localDeliveryRows = (database: Database) =>
+  boardHasAdoptedHosted(database) ? machineMessageRows(database) : messageRows(database)
 
 const deliveryNotice = (notice: {
   id?: number | string
@@ -212,9 +217,11 @@ export async function markRunBoardNoticesDelivered(
   runId: string,
   sourceIds: Array<string | number>,
 ): Promise<void> {
-  const ids = splitBoardIds(sourceIds)
+  const database = writableDb()
+  const ids = splitBoardIds(sourceIds, process.env, database)
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
-  if (ids.local.length) markRunNoticesDelivered(runId, ids.local)
+  if (ids.local.length)
+    markRunNoticesDelivered(runId, ids.local, Date.now(), localDeliveryRows(database))
   if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted, { readerRunRecordId })
 }
 
@@ -245,7 +252,8 @@ export async function markBoardNoticesDelivered(
       if (!cached) throw new Error(hostedBoardMessageNotFoundMessage(id))
     }
   }
-  if (ids.local.length) markNoticesDelivered(ids.local, env, Date.now(), database)
+  if (ids.local.length)
+    markNoticesDelivered(ids.local, env, Date.now(), database, localDeliveryRows(database))
   if (ids.hosted.length)
     await markCachedHostedDelivered(sessionReader(env), ids.hosted, { database })
 }

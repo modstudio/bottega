@@ -50,6 +50,7 @@ import {
   addressed,
   boardOrigin,
   boardReaderBeganAt,
+  machineMessageRows,
   messageRows,
   originText,
   rowIsLive,
@@ -301,8 +302,9 @@ function localPendingAcknowledgements(
   beganAt: string | null,
   clock: number,
   database: Database,
+  sourceRows = messageRows(database),
 ): BoardDelivery[] {
-  const candidates = messageRows(database)
+  const candidates = sourceRows
     .filter((row) => {
       const receipt = receiptAt(database, 'local', row.record_id, session)
       return (
@@ -459,6 +461,24 @@ const unavailableBoardDelivery = (warning: string): PendingBoardDelivery => ({
   stopped: true,
 })
 
+async function claimPendingPushes(
+  input: DeliveryInput,
+  database: Database,
+  clock: number,
+  localMode: boolean,
+  claimReplySuccessors: boolean,
+) {
+  const env = { CLAUDE_CODE_SESSION_ID: input.session }
+  const localRows = localMode ? messageRows(database) : machineMessageRows(database)
+  return {
+    localRows,
+    localPush: claimPushNotices(false, env, clock, database, claimReplySuccessors, localRows),
+    hostedPush: localMode
+      ? null
+      : await claimCachedHostedForPush(input.session, false, clock, database, claimReplySuccessors),
+  }
+}
+
 export async function pendingBoardDelivery(input: DeliveryInput): Promise<PendingBoardDelivery> {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
@@ -466,15 +486,15 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
   const refresh = await refreshForPendingBoardDelivery(input, database)
   if (refresh.warning) return unavailableBoardDelivery(refresh.warning)
   const localMode = refresh.localMode
-  const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
   const claimReplySuccessors = input.claimReplySuccessors ?? true
-  const localPush = localMode
-    ? claimPushNotices(false, env, clock, database, claimReplySuccessors)
-    : null
-  const hostedPush = localMode
-    ? null
-    : await claimCachedHostedForPush(input.session, false, clock, database, claimReplySuccessors)
+  const { localRows, localPush, hostedPush } = await claimPendingPushes(
+    input,
+    database,
+    clock,
+    localMode,
+    claimReplySuccessors,
+  )
   const unread: BoardDelivery[] = [
     ...(localPush?.notices ?? []).map((message) => ({
       id: String(message.number),
@@ -498,7 +518,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
       })),
   ]
   const pendingAcknowledgements = [
-    ...(localMode ? localPendingAcknowledgements(input.session, beganAt, clock, database) : []),
+    ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows),
     ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
   ]
   const withdrawals = pendingWithdrawals(
@@ -580,15 +600,13 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const mode = boardMode('shared', input.env ?? process.env, database)
-  const messages = mode === 'local' ? messageRows(database) : []
+  const messages = mode === 'local' ? messageRows(database) : machineMessageRows(database)
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
-    if (mode === 'hosted') {
+    const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env, true)
+    if (mode === 'hosted' && identifier?.source === 'hosted')
       boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
-      return [{ source: 'hosted' as const, recordId: id }]
-    }
-    const identifier = resolveBoardDeliveryIdentifier(database, id)
     return identifier ? [identifier] : []
   })
   const requestedLocal = new Set(

@@ -11,6 +11,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { boardHasAdoptedHosted, boardMode, boardModeForId } from './board-mode.ts'
+import { machineMessageRows } from './board-store.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
 const HOSTED_MESSAGE_ID_REMEDY = `pass the board-message record id (UUID); use ${PLATFORM_SLUG} board thread or a board read verb to find it`
@@ -105,10 +106,27 @@ export function resolveBoardMessageIdentifier(
   input: string | number,
   environment: Environment = process.env,
   validateHosted = true,
+  allowLocalMachineScoped = false,
 ): BoardIdentifierResolution {
   const given = String(input)
   const mode = boardIdentifierMode(database, environment, validateHosted)
-  if (mode === 'hosted') return hostedMessageResolution(given)
+  if (mode === 'hosted') {
+    if (allowLocalMachineScoped) {
+      const rows = machineMessageRows(database)
+      if (/^[0-9]+$/.test(given)) {
+        const number = Number(given)
+        const row = Number.isSafeInteger(number)
+          ? rows.find((candidate) => candidate.number === number)
+          : undefined
+        if (row) return { source: 'local', recordId: row.record_id }
+      } else if (hasRecordIdShape(given)) {
+        const recordId = given.toLowerCase()
+        const row = rows.find((candidate) => candidate.record_id === recordId)
+        if (row) return { source: 'local', recordId: row.record_id }
+      }
+    }
+    return hostedMessageResolution(given)
+  }
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (!Number.isSafeInteger(number) || number < 1)
@@ -172,9 +190,16 @@ export function resolveBoardDeliveryIdentifier(
   database: Database,
   input: string | number,
   environment: Environment = process.env,
+  allowLocalMachineScoped = false,
 ): BoardIdentifierResolution | null {
   try {
-    return resolveBoardMessageIdentifier(database, input, environment, false)
+    return resolveBoardMessageIdentifier(
+      database,
+      input,
+      environment,
+      false,
+      allowLocalMachineScoped,
+    )
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('invalid board-message identifier '))
       return null

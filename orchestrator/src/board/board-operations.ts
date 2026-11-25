@@ -57,7 +57,7 @@ import {
   resolveBoardClaimIdentifier,
   resolveBoardMessageIdentifier,
 } from './board-message-identifier.ts'
-import { boardMode } from './board-mode.ts'
+import { boardHasAdoptedHosted, boardMode } from './board-mode.ts'
 import {
   type BoardClaimResult,
   type BoardPostResult,
@@ -720,8 +720,10 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
 
 export async function boardAcknowledge(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
-  if (resolved.source === 'local') acknowledgeNotice(resolved.recordId, c.env, c.clock)
+  const database = db()
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  if (resolved.source === 'local')
+    acknowledgeNotice(resolved.recordId, c.env, c.clock, boardHasAdoptedHosted(database))
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.
