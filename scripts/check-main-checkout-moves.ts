@@ -56,6 +56,13 @@ const ADMITTED_NON_MAIN_MOVES: readonly AdmittedMove[] = [
     command: 'reset --hard',
     reason: 'restoreResumeIfNeeded targets only a freshly created run tree',
   },
+  {
+    file: 'orchestrator/src/run/chain-tree-service.ts',
+    functionName: 'prepareChainTreeAttachment',
+    command: 'switch',
+    reason:
+      'switches only a chain-recorded disposable run worktree while holding its artifact lease and the worktree creation lock',
+  },
 ]
 
 export type BranchMoveCall = {

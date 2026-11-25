@@ -76,9 +76,14 @@ export function continuationBranchAvailability(
   branch: string,
   recordedTreePath: string | null,
   worktrees: readonly WorktreeCheckout[],
+  chainTreePaths: readonly string[] = [],
 ): ContinuationBranchAvailability {
+  const chainPaths = new Set(chainTreePaths)
   const holder = worktrees.find(
-    (worktree) => worktree.branch === branch && worktree.path !== recordedTreePath,
+    (worktree) =>
+      worktree.branch === branch &&
+      worktree.path !== recordedTreePath &&
+      !chainPaths.has(worktree.path),
   )
   return holder ? { action: 'refuse', holdingPath: holder.path } : { action: 'continue' }
 }

@@ -8,6 +8,37 @@ export const runResumeModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/chain-tree-attach.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/chain-database-guard.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      'node:fs',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../recipe/tracked-recipe.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/run/chain-tree-service.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      'node:fs',
+      '../database/db.ts',
+      '../git/checkout-identity.ts',
+      '../git/git-environment.ts',
+      '../project/project-lock.ts',
+      '../project/projects.ts',
+      '../worktree/worktree-types.ts',
+      './chain-database-guard.ts',
+      './chain-tree-attach.ts',
+      './held-branch-remedy.ts',
+      './resume-tree.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/run/run-resume-kind.ts',
     allowed: [],
   },
