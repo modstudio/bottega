@@ -9,6 +9,7 @@ export const pullRequestModuleSpecs = [
       '../branch/other-branch-state.ts',
       '../caller-classification.ts',
       '../database/db.ts',
+      '../git/git-environment.ts',
       '../project/projects.ts',
       '../question-store/question-store-read.ts',
       '../run/synthetic-lifecycle-job.ts',

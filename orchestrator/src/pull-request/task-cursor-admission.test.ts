@@ -283,14 +283,14 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         mainCheckout: join(temp, 'main'),
         branch: 'DEV-999-other',
       }),
-    ).rejects.toThrow('run `bottega pr create` from the branch\'s worktree')
+    ).rejects.toThrow(`run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`)
     await expect(
       fallbackAdmission('/caller/main', {
         topLevel: linkedWorktree,
         mainCheckout: worktree,
         branch: 'DEV-2387-change',
       }),
-    ).rejects.toThrow('run `bottega pr create` from the branch\'s worktree')
+    ).rejects.toThrow(`run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`)
   } finally {
     rmSync(temp, { recursive: true, force: true })
   }

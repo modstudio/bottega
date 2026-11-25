@@ -52,8 +52,7 @@ export function decidePullRequestClassGuard(input: {
   if (!input.worktree)
     return {
       kind: 'refuse',
-      message:
-        'the Class guard rerun location cannot be established; compose the fix-defect cursor with `--arg worktree=<path>`, or run `bottega pr create` from the branch\'s worktree',
+      message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
     }
   const matchingExecs = input.execs.filter(
     (entry) =>

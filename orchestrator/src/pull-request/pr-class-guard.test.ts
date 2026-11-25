@@ -39,7 +39,9 @@ test('refuses a cursor with no worktree', () => {
   expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining('--arg worktree') })
   expect(decision).toEqual({
     kind: 'refuse',
-    message: expect.stringContaining('run `bottega pr create` from the branch\'s worktree'),
+    message: expect.stringContaining(
+      `run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
+    ),
   })
 })
 test('does not apply without a class measurement', () => {
