@@ -71,7 +71,7 @@ export function recordUserSessionFromMemberships<
   }
 }
 
-export function recordSessionPresent(local?: Database, mayMigrate = true): boolean {
+export function recordSessionPresent(local?: Database, mayMigrate?: boolean): boolean {
   return storedRecordToken(local, undefined, mayMigrate) !== null
 }
 

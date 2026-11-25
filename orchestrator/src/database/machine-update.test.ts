@@ -21,7 +21,7 @@ import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
 import {
   machineUpdateCommand as lockedMachineUpdateCommand,
-  machineUpdateCommandUnderLock as machineUpdateCommand,
+  machineUpdateCommandUnderLock as runMachineUpdateCommand,
 } from './machine-update.ts'
 import {
   clearMachineUpdateIntent,
@@ -112,6 +112,22 @@ const NO_BUILD_OR_REFRESH = {
   runLaunchAgentsRefreshVerb: () => {},
 }
 
+function machineUpdateCommand(
+  presentation: Parameters<typeof runMachineUpdateCommand>[0],
+  deps: Parameters<typeof runMachineUpdateCommand>[1] = {},
+  requestedVersion?: string,
+) {
+  return runMachineUpdateCommand(
+    presentation,
+    {
+      storeAttachedToHostedRecord: () => false,
+      recordSessionPresent: () => false,
+      ...deps,
+    },
+    requestedVersion,
+  )
+}
+
 function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
   return {
     cwd: dir,
@@ -129,8 +145,6 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
     },
     migrate,
     syncWorkflows: () => {},
-    storeAttachedToHostedRecord: () => false,
-    recordSessionPresent: () => false,
     ...NO_BUILD_OR_REFRESH,
   }
 }
