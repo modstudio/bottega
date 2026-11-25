@@ -150,11 +150,17 @@ export function register(program: Command): void {
 
   release
     .command('check <tag>')
-    .description('validate the tag, tracked rungs, and release binary working-directory isolation')
+    .description(
+      'validate the tag, released client contract, tracked rungs, and release binary working-directory isolation',
+    )
+    .option(
+      '--skip-client-contract-drift',
+      'skip comparing the released and current client contracts',
+    )
     .allowExcessArguments(false)
-    .action(async (tag) => {
+    .action(async (tag, options: { skipClientContractDrift?: boolean }) => {
       const { checkRelease } = await import('../release/release-check.ts')
-      const checked = await checkRelease(tag)
+      const checked = await checkRelease(tag, undefined, process.env, options)
       if (checked.runtimeConfigGuardSkip) log(checked.runtimeConfigGuardSkip)
       log(checked.rungsComparison)
       log(`reported version ${checked.reportedVersion} matches release tag ${checked.tag}`)
