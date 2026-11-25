@@ -192,6 +192,16 @@ test.each([
     path: 'hosted-reachable',
   },
   {
+    name: 'a helper called from the local arm of a write mode ternary',
+    source: `function localRead() {
+      db.query(\`SELECT * FROM hosted_row\`)
+    }
+    function read() {
+      return writeMode(project) === 'hosted' ? hostedRead() : localRead()
+    }`,
+    path: 'local-only',
+  },
+  {
     name: 'a helper after an object colon in the hosted arm of a board mode ternary',
     source: `function localRead() { db.query(\`SELECT * FROM hosted_row\`) }
     function read() {
@@ -342,6 +352,7 @@ test('refuses unplanned hosted doc revision reads and permits planned ones', () 
 test.each([
   'boardMode',
   'boardModeForId',
+  'boardIdentifierMode',
   'hostedWriteMode',
   'writeMode',
   'requireLocalBoardRead',

@@ -85,6 +85,18 @@ function hostedMessageResolution(given: string): BoardIdentifierResolution {
   return { source: 'hosted', recordId: given.toLowerCase() }
 }
 
+function boardIdentifierMode(
+  database: Database,
+  environment: Environment,
+  validateHosted: boolean,
+): 'local' | 'hosted' {
+  return validateHosted
+    ? boardMode('shared', environment, database)
+    : boardHasAdoptedHosted(database)
+      ? 'hosted'
+      : 'local'
+}
+
 export function resolveBoardMessageIdentifier(
   database: Database,
   input: string | number,
@@ -92,10 +104,8 @@ export function resolveBoardMessageIdentifier(
   validateHosted = true,
 ): BoardIdentifierResolution {
   const given = String(input)
-  if (validateHosted) {
-    const mode = boardMode('shared', environment, database)
-    if (mode === 'hosted') return hostedMessageResolution(given)
-  } else if (boardHasAdoptedHosted(database)) return hostedMessageResolution(given)
+  const mode = boardIdentifierMode(database, environment, validateHosted)
+  if (mode === 'hosted') return hostedMessageResolution(given)
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (!Number.isSafeInteger(number) || number < 1)
@@ -133,10 +143,8 @@ export function resolveBoardClaimIdentifier(
       `invalid board claim identifier ${JSON.stringify(input)}: expected a full board claim UUID`,
     )
   const recordId = input.toLowerCase()
-  if (validateHosted) {
-    const mode = boardMode('shared', environment, database)
-    if (mode === 'hosted') return { source: 'hosted', recordId }
-  } else if (boardHasAdoptedHosted(database)) return { source: 'hosted', recordId }
+  const mode = boardIdentifierMode(database, environment, validateHosted)
+  if (mode === 'hosted') return { source: 'hosted', recordId }
   const row = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM board_claim WHERE record_id=?')
     .get(recordId)

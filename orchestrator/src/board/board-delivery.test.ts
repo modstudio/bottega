@@ -111,6 +111,7 @@ test('board read and read --claim use hosted cache instead of differing local ro
   await markBoardNoticesDelivered(
     claimed.notices.map((row) => row.id),
     env,
+    { refresh: refreshed },
   )
   expect(
     db()
@@ -134,6 +135,37 @@ test('board read and read --claim use hosted cache instead of differing local ro
   expect(read.notices.map((row) => row.id)).toEqual([hostedRead.id])
   expect(String(localRead.number)).not.toBe(hostedRead.id)
   expect((await readBoardNotices(false, { env, refresh: refreshed })).notices).toEqual([])
+})
+
+test('hand-typed stayed local message refuses before marking on an adopted install', async () => {
+  const env = {
+    CLAUDE_CODE_SESSION_ID: 'delivery-reader',
+    BOTTEGA_RECORD_API_URL: 'https://record.test',
+  }
+  const local = postNotice(
+    { audience: 'session:delivery-reader', title: 'Stayed local', body: 'local body' },
+    {},
+    Date.parse(createdAt),
+  )
+  db()
+    .query(
+      `INSERT INTO board_hosted_adoption_ledger
+       (source_record_id,local_kind,state,refusal,created_at,updated_at)
+       VALUES (?,'notice','refused','stayed local',?,?)`,
+    )
+    .run(local.recordId, createdAt, createdAt)
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  await expect(
+    markBoardNoticesDelivered([local.recordId], env, {
+      refresh: async () => ({ status: 'success', applied: 0 }),
+    }),
+  ).rejects.toThrow(new RegExp(`${local.recordId}.*board thread`))
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=?')
+      .get(local.recordId),
+  ).toBeNull()
 })
 
 test('a second chain turn claims and marks hosted and local notices through its root reader', async () => {

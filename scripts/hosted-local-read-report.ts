@@ -164,11 +164,16 @@ export function hostedDocLocalReadFailures(hits: readonly HostedLocalReadHit[]):
 }
 
 const WRITE_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
-const HOSTED_SELECTORS = [
+const MODE_SELECTORS = [
   'boardMode',
   'boardModeForId',
+  'boardIdentifierMode',
   'hostedWriteMode',
   'writeMode',
+] as const
+const MODE_SELECTOR_PATTERN = MODE_SELECTORS.join('|')
+const HOSTED_SELECTORS = [
+  ...MODE_SELECTORS,
   'requireLocalBoardRead',
   'hostedRecordOwnsHostedTables',
 ] as const
@@ -291,9 +296,11 @@ function siteOffset(source: string, line: number): number {
 
 function selectorVariables(functionText: string): Map<string, 'mode' | 'hosted'> {
   const result = new Map<string, 'mode' | 'hosted'>()
-  for (const match of functionText.matchAll(
-    /\bconst\s+(\w+)\s*=\s*(?:boardMode|boardModeForId|writeMode|hostedWriteMode)\s*\([^;\n]+/g,
-  ))
+  const assignment = new RegExp(
+    `\\bconst\\s+(\\w+)\\s*=\\s*(?:${MODE_SELECTOR_PATTERN})\\s*\\([^;\\n]+`,
+    'g',
+  )
+  for (const match of functionText.matchAll(assignment))
     result.set(match[1] ?? '', /hosted-configured/.test(match[0]) ? 'hosted' : 'mode')
   for (const [modeName, kind] of result) {
     if (kind !== 'mode') continue
@@ -310,7 +317,7 @@ function conditionMode(
   condition: string,
   variables: ReadonlyMap<string, 'mode' | 'hosted'>,
 ): 'local' | 'hosted' | null {
-  const direct = /\b(?:boardMode|boardModeForId|writeMode|hostedWriteMode)\s*\(/.test(condition)
+  const direct = new RegExp(`\\b(?:${MODE_SELECTOR_PATTERN})\\s*\\(`).test(condition)
   const mode = [...variables].find(
     ([name, kind]) => kind === 'mode' && new RegExp(`\\b${name}\\b`).test(condition),
   )
@@ -449,8 +456,10 @@ function selectorTernaryPath(
   site: number,
   variables: ReadonlyMap<string, 'mode' | 'hosted'>,
 ): 'local' | 'hosted' | null {
-  const ternary =
-    /((?:boardMode(?:ForId)?\s*\([^?\n]+\)|\w+)\s*(?:={2,3}|!={1,2})\s*['"](?:local|hosted)['"])\s*\?/g
+  const ternary = new RegExp(
+    `((?:(?:${MODE_SELECTOR_PATTERN})\\s*\\([^?\\n]+\\)|\\w+)\\s*(?:={2,3}|!={1,2})\\s*['"](?:local|hosted)['"])\\s*\\?`,
+    'g',
+  )
   for (const match of body.matchAll(ternary)) {
     const question = (match.index ?? 0) + match[0].lastIndexOf('?')
     const colon = matchingTernaryColon(body, question)
