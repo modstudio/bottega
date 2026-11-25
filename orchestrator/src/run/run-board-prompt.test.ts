@@ -136,6 +136,16 @@ test('dispatch and later-turn injection use hosted instead of differing local ro
     ackDeadline: null,
   })
   const firstHosted = hosted()
+  const firstLocal = postNotice(
+    { audience: `run:${root.id}`, title: 'Local prompt', body: 'local prompt body' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    Date.parse(createdAt),
+  )
+  const laterLocal = postNotice(
+    { audience: `run:${root.id}`, title: 'Local later', body: 'local later body' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    Date.parse(createdAt) + 1_000,
+  )
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
@@ -165,11 +175,6 @@ test('dispatch and later-turn injection use hosted instead of differing local ro
       throw new Error('receipt offline')
     },
   })
-  const firstLocal = postNotice(
-    { audience: `run:${root.id}`, title: 'Local prompt', body: 'local prompt body' },
-    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-    Date.parse(createdAt),
-  )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
   expect(initial.noticeIds).toEqual([firstHosted.id])
   expect(initial.noticeIds).not.toContain(String(firstLocal.number))
@@ -185,11 +190,6 @@ test('dispatch and later-turn injection use hosted instead of differing local ro
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(laterHosted.id, laterHosted.kind, null, laterHosted.revision, JSON.stringify(laterHosted))
-  const laterLocal = postNotice(
-    { audience: `run:${root.id}`, title: 'Local later', body: 'local later body' },
-    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-    Date.parse(createdAt) + 1_000,
-  )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')
   expect(later.notices.map((row) => row.id)).toEqual([laterHosted.id])
   expect(later.notices.map((row) => row.id)).not.toContain(String(laterLocal.number))

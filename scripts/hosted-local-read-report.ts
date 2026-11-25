@@ -31,6 +31,7 @@ import {
   type StateClassDeclaration,
   type TableStateClassDeclaration,
 } from './identity-state-classes.ts'
+import { typescriptCallArguments } from './typescript-call-arguments.ts'
 
 const HOSTED_LOCAL_READ_KINDS = ['read', 'write'] as const
 const HOSTED_LOCAL_READ_PATHS = [
@@ -95,28 +96,6 @@ export type HostedLocalReadScan = {
   }
 }
 
-const HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES = [
-  'board_message',
-  'board_claim',
-  'board_receipt',
-  'board_message_tag',
-  'board_withdrawal_delivery',
-] as const
-
-export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
-  const refused = new Set<string>(HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES)
-  return hits.flatMap((hit) =>
-    hit.kind === 'read' &&
-    hit.path === 'hosted-reachable' &&
-    hit.exclusionReason !== 'planned' &&
-    refused.has(hit.table)
-      ? [
-          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; branch through boardMode/boardModeForId and the hosted board reader`,
-        ]
-      : [],
-  )
-}
-
 const HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES = [
   'task',
   'task_document',
@@ -174,6 +153,7 @@ const MODE_SELECTOR_PATTERN = MODE_SELECTORS.join('|')
 const HOSTED_SELECTORS = [
   ...MODE_SELECTORS,
   'requireLocalBoardRead',
+  'requireLocalBoardWrite',
   'hostedRecordOwnsHostedTables',
 ] as const
 const OWNERSHIP_SELECTOR = 'hostedRecordOwnsHostedTables'
@@ -502,8 +482,15 @@ function selectorIfPath(input: {
 }
 
 function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
-  for (const match of body.slice(0, site).matchAll(/\brequireLocalBoardRead\s*\(/g)) {
+  for (const match of body.slice(0, site).matchAll(/\brequireLocalBoard(?:Read|Write)\s*\(/g)) {
     const token = match.index ?? 0
+    const open = token + match[0].lastIndexOf('(')
+    const close = matchingDelimiter(body, open, '(', ')')
+    if (close < 0 || close >= site) continue
+    const args = typescriptCallArguments(body, open, close)
+    const locality = args[match[0].includes('Write') ? 3 : 2]
+    const literal = locality?.match(/^(['"])(.*)\1$/)
+    if (literal && literal[2] !== 'shared') continue
     const prefix = statementPrefixFacts(body, token)
     if (
       isTopLevel(prefix.depths) &&
@@ -890,14 +877,15 @@ function hostedLocalReadConfiguration(root: string) {
   }
 }
 
-function scanHostedLocalReadConcern(input: {
-  root: string
+export function scanHostedLocalReadSource(input: {
+  file: string
+  sourceText: string
   concern: 'orchestrator' | 'hub'
-  validReadCaches: ReadonlySet<string>
-  gate: HostedLocalReadScan['gate']
+  validReadCaches?: ReadonlySet<string>
+  gate?: HostedLocalReadScan['gate']
 }): HostedLocalReadHit[] {
-  const { root, concern, validReadCaches, gate } = input
-  if (!existsSync(resolve(root, concern))) return []
+  const { file, sourceText, concern, gate } = input
+  const validReadCaches = input.validReadCaches ?? new Set<string>()
   const tables = STATE_CLASSES.flatMap((item) =>
     'table' in item && item.store === concern && item.class === 'hosted'
       ? [
@@ -913,66 +901,83 @@ function scanHostedLocalReadConcern(input: {
       : [],
   )
   const tableNames = tables.map(({ table }) => table)
+  const { sourceSelector, sourceUsesPostgres, sourceUsesSqlite } =
+    hostedLocalReadSourceFacts(sourceText)
+  const gateUnresolved: HostedSqlUnresolvedSite[] = []
+  const extracted = extractSqlFromSource({
+    sourceText,
+    file,
+    renderedUnresolvedRisk: (sql) =>
+      hostedTableInSql(sql, tableNames) !== null || /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql),
+    ...(concern === 'orchestrator' && gate
+      ? {
+          gateRenderedUnresolvedRisk: (sql: string) =>
+            hostedTableInSql(sql, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS) !== null ||
+            /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql),
+          gateUnresolvedSink: gateUnresolved,
+        }
+      : {}),
+  })
+  if (concern === 'orchestrator' && gate) {
+    gate.sites.push(...extracted.sites)
+    gate.unresolved.push(...gateUnresolved)
+    gate.cannotJudge.push(...extracted.cannotJudge)
+  }
+  const candidates: HostedLocalReadCandidate[] = [
+    ...extracted.sites.map((site) => ({
+      ...site,
+      sourceText,
+      sourceSelector,
+      sourceUsesPostgres,
+      sourceUsesSqlite,
+    })),
+    ...extracted.unresolved.map((site) => ({
+      ...site,
+      sourceText,
+      sourceSelector,
+      sourceUsesPostgres,
+      sourceUsesSqlite,
+    })),
+    ...extracted.cannotJudge.map((site) => ({
+      ...site,
+      sourceText,
+      dynamicTable: true,
+      sourceSelector,
+      sourceUsesPostgres,
+      sourceUsesSqlite,
+    })),
+  ]
+  return classifyHostedLocalReadSites({
+    candidates,
+    tables,
+    allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  })
+}
+
+function scanHostedLocalReadConcern(input: {
+  root: string
+  concern: 'orchestrator' | 'hub'
+  validReadCaches: ReadonlySet<string>
+  gate: HostedLocalReadScan['gate']
+}): HostedLocalReadHit[] {
+  const { root, concern, validReadCaches, gate } = input
+  if (!existsSync(resolve(root, concern))) return []
   const testDirectory = `${resolve(root, concern, 'test')}/`
   const files = productionTypeScriptFiles(resolve(root, concern)).filter(
     (file) =>
       !file.startsWith(testDirectory) &&
       (concern !== 'hub' || !file.startsWith(resolve(root, 'hub/web/'))),
   )
-  const candidates = files.flatMap((file): HostedLocalReadCandidate[] => {
+  return files.flatMap((file) => {
     const sourceText = readFileSync(file, 'utf8')
     const path = relative(root, file)
-    const { sourceSelector, sourceUsesPostgres, sourceUsesSqlite } =
-      hostedLocalReadSourceFacts(sourceText)
-    const gateUnresolved: HostedSqlUnresolvedSite[] = []
-    const extracted = extractSqlFromSource({
+    return scanHostedLocalReadSource({
       sourceText,
       file: path,
-      renderedUnresolvedRisk: (sql) =>
-        hostedTableInSql(sql, tableNames) !== null || /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql),
-      ...(concern === 'orchestrator'
-        ? {
-            gateRenderedUnresolvedRisk: (sql: string) =>
-              hostedTableInSql(sql, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS) !== null ||
-              /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql),
-            gateUnresolvedSink: gateUnresolved,
-          }
-        : {}),
+      concern,
+      validReadCaches,
+      gate,
     })
-    if (concern === 'orchestrator') {
-      gate.sites.push(...extracted.sites)
-      gate.unresolved.push(...gateUnresolved)
-      gate.cannotJudge.push(...extracted.cannotJudge)
-    }
-    return [
-      ...extracted.sites.map((site) => ({
-        ...site,
-        sourceText,
-        sourceSelector,
-        sourceUsesPostgres,
-        sourceUsesSqlite,
-      })),
-      ...extracted.unresolved.map((site) => ({
-        ...site,
-        sourceText,
-        sourceSelector,
-        sourceUsesPostgres,
-        sourceUsesSqlite,
-      })),
-      ...extracted.cannotJudge.map((site) => ({
-        ...site,
-        sourceText,
-        dynamicTable: true,
-        sourceSelector,
-        sourceUsesPostgres,
-        sourceUsesSqlite,
-      })),
-    ]
-  })
-  return classifyHostedLocalReadSites({
-    candidates,
-    tables,
-    allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
   })
 }
 

@@ -304,6 +304,129 @@ test('closed session sweep acts only on current clean rows and retains resumed o
   expect(lines).not.toContain(`swept closed session ${alreadySwept}`)
 })
 
+test('closed session sweep releases local claims but leaves adopted local history open', async () => {
+  const clock = Date.parse('2026-11-09T12:02:00.000Z')
+  const localSession = newRecordId()
+  const hostedSession = newRecordId()
+  const localClaim = newRecordId()
+  const hostedClaim = newRecordId()
+  const database = db()
+  const insertCloseOut = database.query(
+    `INSERT INTO session_close_out
+     (record_id,session_id,closed_at,clean,recommendation,mechanical_count,process_count,error_count,warning_count)
+     VALUES (?,?,?,1,'clear',1,0,0,0)`,
+  )
+  const insertSeen = database.query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
+  const insertClaim = database.query(
+    `INSERT INTO board_claim
+     (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at)
+     VALUES (?,?,'task',?,'architect',?,60000,?,?,?)`,
+  )
+  const closedAt = '2026-11-09T12:00:00.000Z'
+  const lapsesAt = '2026-11-09T12:03:00.000Z'
+  insertCloseOut.run(newRecordId(), localSession, closedAt)
+  insertSeen.run(localSession, closedAt)
+  insertClaim.run(
+    localClaim,
+    PLATFORM_SLUG,
+    `DEV-${localClaim}`,
+    localSession,
+    closedAt,
+    closedAt,
+    lapsesAt,
+  )
+  const release = async (session: string) => closeOutReport(session, true)
+  const lines: string[] = []
+  expect(
+    await sweepSessionCloseOutRecords({
+      enabled: true,
+      dryRun: false,
+      database,
+      now: clock,
+      presentation: presentation(lines, () => {}),
+      adapters: { release },
+    }),
+  ).toBe(false)
+  expect(
+    database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(localClaim),
+  ).toEqual({ closed_at: new Date(clock).toISOString() })
+
+  insertCloseOut.run(newRecordId(), hostedSession, closedAt)
+  insertSeen.run(hostedSession, closedAt)
+  insertClaim.run(
+    hostedClaim,
+    PLATFORM_SLUG,
+    `DEV-${hostedClaim}`,
+    hostedSession,
+    closedAt,
+    closedAt,
+    lapsesAt,
+  )
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const prior = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  try {
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(lines, () => {}),
+        adapters: { release },
+      }),
+    ).toBe(false)
+    expect(
+      database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(hostedClaim),
+    ).toEqual({ closed_at: null })
+    expect(
+      database
+        .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
+        .get(hostedSession),
+    ).toEqual({ swept_at: new Date(clock).toISOString() })
+
+    const refusedSession = newRecordId()
+    const refusedClaim = newRecordId()
+    insertCloseOut.run(newRecordId(), refusedSession, closedAt)
+    insertSeen.run(refusedSession, closedAt)
+    insertClaim.run(
+      refusedClaim,
+      PLATFORM_SLUG,
+      `DEV-${refusedClaim}`,
+      refusedSession,
+      closedAt,
+      closedAt,
+      lapsesAt,
+    )
+    delete process.env.BOTTEGA_RECORD_API_URL
+    await expect(
+      sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(lines, () => {}),
+        adapters: { release },
+      }),
+    ).resolves.toBe(false)
+    expect(
+      database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(refusedClaim),
+    ).toEqual({ closed_at: null })
+    expect(
+      database
+        .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
+        .get(refusedSession),
+    ).toEqual({ swept_at: new Date(clock).toISOString() })
+    expect(lines.filter((line) => line.includes('BOTTEGA_RECORD_API_URL'))).toHaveLength(1)
+  } finally {
+    database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+    if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = prior
+  }
+})
+
 test('session context sweep logs and drops each item for a gone owner', async () => {
   const session = newRecordId()
   ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[

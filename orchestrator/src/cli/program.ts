@@ -20,6 +20,7 @@ import {
 } from '../../../shared/store-write-lock.ts'
 import { AGENT_COMMAND_VERBS } from '../agent/agent-commands.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
+import { register as registerBoardHead } from '../commands/board-head.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
 import { register as registerCode } from '../commands/code.ts'
@@ -85,6 +86,7 @@ registerSubjects(program)
 registerRunListing(program)
 registerRunTaskLinking(program)
 registerHealth(program)
+registerBoardHead(program)
 registerHubImport(program)
 registerInbox(program)
 registerCleanup(program)

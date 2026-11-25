@@ -12,7 +12,8 @@ import {
   HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardMode } from './board-mode.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import { type BoardLocality, boardMode } from './board-mode.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
@@ -150,7 +151,12 @@ function projectConcern(project: string | null, readerProject: string): BoardRea
   return project === readerProject ? 'concerned' : 'not-concerned'
 }
 
-function localMessageFacts(id: string, database: Database): MessageFacts | null {
+function localMessageFacts(
+  id: string,
+  database: Database,
+  locality: BoardLocality,
+): MessageFacts | null {
+  requireLocalBoardRead(process.env, database, locality)
   const row = database
     .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE record_id=?`)
     .get(id) as MessageRow | null
@@ -200,8 +206,9 @@ function hostedMessageFacts(id: string, database: Database): MessageFacts | null
 export function prepareBoardReach(
   input: BoardReachRecordingInput,
   database: Database,
+  locality: BoardLocality,
 ): PreparedBoardReach {
-  const mode = boardMode('shared', process.env, database)
+  const mode = boardMode(locality, process.env, database)
   if (mode !== input.messageSource)
     throw new Error(
       `${input.messageSource} board reach is unavailable while the board is ${mode}; retry through the ${mode} board path`,
@@ -214,7 +221,7 @@ export function prepareBoardReach(
   if (!presence) throw new Error(`no presence for pushed board reader ${input.session}`)
   const message =
     input.messageSource === 'local'
-      ? localMessageFacts(input.messageId, database)
+      ? localMessageFacts(input.messageId, database, locality)
       : hostedMessageFacts(input.messageId, database)
   if (!message) throw new Error(`no ${input.messageSource} board message ${input.messageId}`)
   const audience = parseAudience(message.audience)
@@ -410,6 +417,7 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
 })
 
 function localReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
+  requireLocalBoardRead(process.env, database)
   return (
     database
       .query(

@@ -50,6 +50,7 @@ import {
   addressed,
   boardOrigin,
   boardReaderBeganAt,
+  type MessageRow,
   machineMessageRows,
   messageRows,
   originText,
@@ -72,6 +73,10 @@ type DeliveryInput = {
 export { deliveryWarning }
 
 type ReceiptSource = 'local' | 'hosted'
+
+function localRowLocality(localMode: boolean): 'shared' | 'machine-audience' {
+  return localMode ? 'shared' : 'machine-audience'
+}
 
 type ReceiptRow = {
   delivered_at: string | null
@@ -303,6 +308,7 @@ function localPendingAcknowledgements(
   clock: number,
   database: Database,
   sourceRows = messageRows(database),
+  locality: 'shared' | 'machine-audience' = 'shared',
 ): BoardDelivery[] {
   const candidates = sourceRows
     .filter((row) => {
@@ -312,7 +318,7 @@ function localPendingAcknowledgements(
         row.ack_required === 1 &&
         row.author_session !== session &&
         rowIsLive(row, clock) &&
-        addressed(row, session, clock) &&
+        addressed(row, session, clock, database, locality) &&
         receipt.acknowledged_at === null
       )
     })
@@ -479,6 +485,21 @@ async function claimPendingPushes(
   }
 }
 
+function pendingAcknowledgements(
+  input: DeliveryInput,
+  beganAt: string | null,
+  clock: number,
+  database: Database,
+  localRows: MessageRow[],
+  localMode: boolean,
+) {
+  const locality = localRowLocality(localMode)
+  return [
+    ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows, locality),
+    ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
+  ]
+}
+
 export async function pendingBoardDelivery(input: DeliveryInput): Promise<PendingBoardDelivery> {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
@@ -517,10 +538,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
         purpose: message.purpose,
       })),
   ]
-  const pendingAcknowledgements = [
-    ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows),
-    ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
-  ]
+  const pending = pendingAcknowledgements(input, beganAt, clock, database, localRows, localMode)
   const withdrawals = pendingWithdrawals(
     input.session,
     clock,
@@ -535,12 +553,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
     deliveredAt: item.deliveredAt,
     purpose: item.purpose,
   }))
-  const candidates = pendingDeliveryCandidates(
-    input,
-    unread,
-    withdrawalDeliveries,
-    pendingAcknowledgements,
-  )
+  const candidates = pendingDeliveryCandidates(input, unread, withdrawalDeliveries, pending)
   const selected = boundedBoardDelivery(
     input.excludeAcknowledgementRequired
       ? candidates.filter((message) => !message.requiresAcknowledgement)
@@ -549,7 +562,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
   return {
     delivery: selected.messages,
     overflow: selected.overflow,
-    pendingAcknowledgements,
+    pendingAcknowledgements: pending,
     stopped: false,
     warning: deliveryWarning(
       localPush?.warning ?? null,
@@ -600,11 +613,12 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const mode = boardMode('shared', input.env ?? process.env, database)
+  const localLocality = localRowLocality(mode === 'local')
   const messages = localBoardRows(database)
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
-    const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env, true)
+    const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env)
     if (mode === 'hosted' && (!identifier || identifier.source === 'hosted'))
       boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
     return identifier ? [identifier] : []
@@ -612,15 +626,13 @@ export async function markBoardDeliveryDelivered(input: {
   const requestedLocal = new Set(
     resolved.flatMap((identifier) => (identifier.source === 'local' ? [identifier.recordId] : [])),
   )
-  const local = messages
-    .filter(
-      (row) =>
-        requestedLocal.has(row.record_id) &&
-        row.author_session !== input.session &&
-        rowIsLive(row, clock, database) &&
-        deliverableTo(row, input.session, clock, database),
-    )
-    .map((row) => row)
+  const local = messages.filter(
+    (row) =>
+      requestedLocal.has(row.record_id) &&
+      row.author_session !== input.session &&
+      rowIsLive(row, clock, database) &&
+      deliverableTo(row, input.session, clock, database, localLocality),
+  )
   const hosted = resolved
     .filter((identifier) => identifier.source === 'hosted')
     .map(({ recordId }) => ({
@@ -649,6 +661,7 @@ export async function markBoardDeliveryDelivered(input: {
               recordedAt: deliveredAt,
             },
             database,
+            item.source === 'local' ? localLocality : 'shared',
           ),
         )
       } catch {

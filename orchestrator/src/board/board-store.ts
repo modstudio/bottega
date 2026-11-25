@@ -19,7 +19,7 @@ import { projectAt, projects } from '../project/projects.ts'
 import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
-import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import { type BoardLocality, requireLocalBoardRead } from './board-local-read-guard.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -27,6 +27,7 @@ import {
   architectsPostingRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
+  boardAudienceLocality,
   messageIsLive,
   OPERATOR_READER,
   type PresenceFact,
@@ -543,7 +544,9 @@ export function authorWindowDecision(
   clock: number,
   duplicate: boolean,
   database: ReturnType<typeof writableDb>,
+  locality: BoardLocality = 'shared',
 ) {
+  requireLocalBoardRead(process.env, database, locality)
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const recentPosts = (
     database
@@ -633,6 +636,11 @@ function duplicateRoot(
   })
 }
 
+function rootMessageLocality(input: PostNoticeInput, audience: string): BoardLocality {
+  if (input.suggestingRunId) return 'suggestion'
+  return boardAudienceLocality(audience)
+}
+
 export function insertRootMessage(
   kind: 'notice' | 'question',
   input: PostNoticeInput,
@@ -648,6 +656,7 @@ export function insertRootMessage(
     input.audience,
     postingMachine,
   )
+  const locality = rootMessageLocality(input, audienceExpression)
   validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd, database)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
@@ -671,7 +680,7 @@ export function insertRootMessage(
     clock,
     senderTags,
   })
-  const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
+  const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database, locality)
   if (decision === 'drop-duplicate') {
     const reached = (
       database
@@ -772,27 +781,40 @@ function insertRootRow(
   return { recordId, number }
 }
 
-export function messageRows(database = db()): MessageRow[] {
-  requireLocalBoardRead(process.env, database)
+export function messageRows(database = db(), locality: BoardLocality = 'shared'): MessageRow[] {
+  requireLocalBoardRead(process.env, database, locality)
   return selectMessageRows(database)
 }
 
 function selectMessageRows(database: ReturnType<typeof db>, machineScoped = false): MessageRow[] {
   return database
     .query(
-      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message${machineScoped ? " WHERE audience LIKE 'machine:%'" : ''} ORDER BY number`,
+      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message${
+        machineScoped
+          ? " WHERE audience LIKE 'machine:%' OR thread_root_record_id IN (SELECT record_id FROM board_message WHERE audience LIKE 'machine:%')"
+          : ''
+      } ORDER BY number`,
     )
     .all() as MessageRow[]
 }
 
-/** Machine-audience messages stay local after the shared board is adopted. */
+/** Machine-audience threads stay local after the shared board is adopted. */
 export function machineMessageRows(database = db()): MessageRow[] {
-  return selectMessageRows(database, true).filter(
-    (row) => row.audience !== null && parseAudience(row.audience).kind === 'machine',
-  )
+  const rows = selectMessageRows(database, true)
+  return rows.filter((row) => {
+    const root = row.thread_root_record_id
+      ? rows.find((candidate) => candidate.record_id === row.thread_root_record_id)
+      : row
+    return root?.audience != null && parseAudience(root.audience).kind === 'machine'
+  })
 }
 
-export function messageTags(messageRecordId: string, database = db()): BoardTag[] {
+export function messageTags(
+  messageRecordId: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+): BoardTag[] {
+  requireLocalBoardRead(process.env, database, locality)
   return database
     .query(
       'SELECT kind,value,origin FROM board_message_tag WHERE message_record_id=? ORDER BY rowid',
@@ -805,13 +827,14 @@ export function addressed(
   reader: string,
   clock: number,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
   return (
     message.audience !== null &&
     recipients(
       message.audience,
       clock,
-      messageTags(message.record_id, database),
+      messageTags(message.record_id, database, locality),
       database,
       presenceFacts(database, clock),
       message.author_project,
@@ -836,7 +859,13 @@ export function rowIsLive(message: MessageRow, clock: number, database = db()): 
   )
 }
 
-export function hasReceipt(messageRecordId: string, reader: string, database = db()): boolean {
+export function hasReceipt(
+  messageRecordId: string,
+  reader: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+): boolean {
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query('SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=?')
@@ -848,7 +877,9 @@ export function holdsReplySuccessor(
   messageRecordId: string,
   reader: string,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query(
@@ -863,7 +894,9 @@ export function hasNonSuccessorReceipt(
   messageRecordId: string,
   reader: string,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query(

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { releaseSessionClaims } from '../board/board-claim-service.ts'
+import { boardModeDecision } from '../board/board-mode.ts'
 import { db, expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
 import { KEEP_RUN_FILES_DAYS } from '../run/run-artifact-limits.ts'
 import {
@@ -62,6 +63,7 @@ async function sweepCloseOutRow(input: {
   now: number
   adapters: SweepAdapters
   presentation: CleanupPresentation
+  releaseLocalClaims: boolean
 }): Promise<boolean> {
   try {
     const beforeRelease = rowDecision(
@@ -77,7 +79,8 @@ async function sweepCloseOutRow(input: {
     writeTransaction(() => {
       const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
       if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()
-      input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
+      if (input.releaseLocalClaims)
+        input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
       expireSessionSeen(input.row.session_id, input.database)
       const marked = markSessionCloseOutSwept(
         input.row.record_id,
@@ -107,12 +110,15 @@ export async function sweepSessionCloseOutRecords(input: {
   presentation: CleanupPresentation
   database?: Database
   now?: number
-  adapters?: SweepAdapters
+  adapters?: Partial<SweepAdapters>
 }): Promise<boolean> {
   if (!input.enabled) return false
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   const now = input.now ?? Date.now()
-  const adapters = input.adapters ?? defaultAdapters
+  const adapters = { ...defaultAdapters, ...input.adapters }
+  const boardDecision = boardModeDecision('shared', process.env, database)
+  if (boardDecision.mode === 'refused') input.presentation.error(boardDecision.reason)
+  const releaseLocalClaims = boardDecision.mode === 'local'
   const rows = newestSessionCloseOutRecords(database)
   let failed = false
   for (const row of rows) {
@@ -122,7 +128,16 @@ export async function sweepSessionCloseOutRecords(input: {
       input.presentation.log(`would sweep closed session ${row.session_id}`)
       continue
     }
-    if (await sweepCloseOutRow({ row, database, now, adapters, presentation: input.presentation }))
+    if (
+      await sweepCloseOutRow({
+        row,
+        database,
+        now,
+        adapters,
+        presentation: input.presentation,
+        releaseLocalClaims,
+      })
+    )
       failed = true
   }
   if (!input.dryRun) {

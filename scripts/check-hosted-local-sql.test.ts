@@ -215,6 +215,17 @@ test('the project check does not report a rendered template naming a non-hosted 
   expect(checkHostedLocalSql(root).failures.some((failure) => failure.includes(file))).toBe(false)
 })
 
+test('the project check refuses an unheaded production board write', () => {
+  const file = 'orchestrator/src/board/unsafe-write.ts'
+  const root = temporaryProductionFile(
+    file,
+    "export function write(database) { database.query('UPDATE board_message SET title=?') }",
+  )
+  expect(checkHostedLocalSql(root).failures).toContainEqual(
+    expect.stringContaining(`${file}:1: local board_message write has no proven local-board head`),
+  )
+})
+
 test('an interpolated table is refused as cannot-judge', () => {
   const extracted = extractSqlFromSource({
     sourceText: 'db.query(`SELECT 1 FROM ${table} WHERE id=?`)',

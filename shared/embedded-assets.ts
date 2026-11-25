@@ -209,6 +209,7 @@ export type RuntimeAsset = {
 
 const executableHooks = new Set([
   'block-agent.py',
+  'board-head-guard.py',
   'git-guard.py',
   'heartbeat-guard.py',
   'heartbeat-remind.py',
@@ -222,12 +223,14 @@ const executableHooks = new Set([
 
 const runtimeHookFiles = [
   'block-agent.py',
+  'board-head-guard.py',
   'board-ack-guard.py',
   'board-interrupt.py',
   'board_hook_common.py',
   'bun-cache-guard.py',
   'context-precompact.py',
   'context-review.py',
+  'editor_tool_judge.py',
   'git-guard.py',
   'heartbeat-board-observation.py',
   'heartbeat-decision.py',

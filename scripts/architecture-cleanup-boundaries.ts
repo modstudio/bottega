@@ -663,6 +663,7 @@ export const cleanupBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../board/board-claim-service.ts',
+      '../board/board-mode.ts',
       '../database/db.ts',
       '../run/run-artifact-limits.ts',
       '../session/session-close-out.ts',

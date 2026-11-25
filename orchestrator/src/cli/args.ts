@@ -467,6 +467,7 @@ export const CLI_COMMANDS = new Set([
   'mcp-reader-proxy',
   'blockers',
   'board',
+  'board-head',
   'branches',
   'canon',
   'check',

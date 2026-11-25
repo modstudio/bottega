@@ -10,9 +10,9 @@ import {
   HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { hostedLocalBoardHitFailures } from './hosted-local-board-head-check.ts'
 import {
   type HostedLocalReadHit,
-  hostedBoardLocalReadFailures,
   hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
   hostedLocalReadScan,
@@ -421,7 +421,7 @@ export function checkHostedLocalSql(root: string): {
     failures: [
       ...scan.configurationFailures,
       ...reportOnlyAllowedFileBudgetFailures(scan.report.hits, HOSTED_LOCAL_SQL_ALLOWED_FILES),
-      ...hostedBoardLocalReadFailures(scan.report.hits),
+      ...hostedLocalBoardHitFailures(scan.report.hits),
       ...hostedHubLocalReadFailures(scan.report.hits),
       ...hostedDocLocalReadFailures(scan.report.hits),
       ...hostedLocalSqlViolations({

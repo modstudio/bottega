@@ -200,6 +200,7 @@ export const ROUTES = (
     route('gate check', 'orch', 'check'),
     route('gate ratchet', 'orch', 'ratchet'),
     route('gate enforcement', 'orch', 'enforcement'),
+    route('gate board-head', 'orch', 'board-head'),
     route('gate test-substance', 'orch', 'test-substance'),
     route('gate hub-import', 'orch', 'hub-import'),
     route('gate', 'orch', 'gate'),

@@ -64,7 +64,7 @@ const splitBoardIds = (
   const local: string[] = []
   const hosted: string[] = []
   for (const sourceId of sourceIds) {
-    const resolved = resolveBoardDeliveryIdentifier(database, sourceId, env, true)
+    const resolved = resolveBoardDeliveryIdentifier(database, sourceId, env)
     if (!resolved) continue
     if (resolved.source === 'local') local.push(resolved.recordId)
     else hosted.push(resolved.recordId)

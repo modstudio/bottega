@@ -40,6 +40,7 @@ export const SCRIPT_FILES = [
   'session-start.py',
   'context-precompact.py',
   'context-review.py',
+  'board-head-guard.py',
   'test-substance-guard.py',
   'hub-import-guard.py',
 ] as const
@@ -95,6 +96,11 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     event: 'PreToolUse',
     matcher: 'Write|Edit|NotebookEdit',
     script: 'protect-main-checkout.py',
+  },
+  {
+    event: 'PreToolUse',
+    matcher: 'Write|Edit|MultiEdit',
+    script: 'board-head-guard.py',
   },
   {
     event: 'PreToolUse',

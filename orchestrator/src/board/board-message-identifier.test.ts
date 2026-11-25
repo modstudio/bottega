@@ -13,6 +13,9 @@ const configured = { BOTTEGA_RECORD_API_URL: 'https://record.example.test' }
 function adoptedDatabase(): Database {
   const database = new Database(':memory:')
   database.run('CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+  database.run(
+    'CREATE TABLE board_message (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL, audience TEXT)',
+  )
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -22,7 +25,9 @@ function adoptedDatabase(): Database {
 function localDatabase(messageId: string, claimId: string): Database {
   const database = new Database(':memory:')
   database.run('CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-  database.run('CREATE TABLE board_message (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL)')
+  database.run(
+    'CREATE TABLE board_message (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL, audience TEXT)',
+  )
   database.run('CREATE TABLE board_claim (record_id TEXT PRIMARY KEY)')
   database.run(
     'CREATE TABLE board_hosted_adoption_ledger (source_record_id TEXT, local_kind TEXT, state TEXT)',
