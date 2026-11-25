@@ -26,6 +26,39 @@ type B2ReasonedSite = {
   detail: string
 }
 
+const BOARD_SUGGESTION_LOCAL_ONLY_SITES = [
+  {
+    functionName: 'suggestBoardPost',
+    expectedSites: 5,
+    detail:
+      'The worker suggestion rate count, duplicate check and sender-tag read, and the suggestion and sender-tag inserts act on worker suggestion rows that exist only in the local store because the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal and workers cannot post notices through board-store.ts boardActor',
+  },
+  {
+    functionName: 'suggestion',
+    expectedSites: 1,
+    detail:
+      'Reads one worker suggestion row by id for post and decline; that row exists only in the local store because the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal and workers cannot post notices through board-store.ts boardActor',
+  },
+  {
+    functionName: 'senderDefaults',
+    expectedSites: 1,
+    detail:
+      'Reads the sender tags of a local worker suggestion; that suggestion exists only in the local store because the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal and workers cannot post notices through board-store.ts boardActor',
+  },
+  {
+    functionName: 'postBoardSuggestion',
+    expectedSites: 1,
+    detail:
+      'Marks the local worker suggestion row withdrawn after promotion; that row exists only in the local store because the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal and workers cannot post notices through board-store.ts boardActor',
+  },
+  {
+    functionName: 'declineBoardSuggestion',
+    expectedSites: 1,
+    detail:
+      'Marks the local worker suggestion row withdrawn after decline; that row exists only in the local store because the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal and workers cannot post notices through board-store.ts boardActor',
+  },
+] as const
+
 const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
   {
     file: 'hub/src/task-local-read.ts',
@@ -434,6 +467,14 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
     functionName,
     reason: 'planned' as const,
+    detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
+  ...BOARD_SUGGESTION_LOCAL_ONLY_SITES.map(({ functionName, expectedSites, detail }) => ({
+    pattern: /^orchestrator\/src\/board\/board-suggestions\.ts$/,
+    functionName,
+    reason: 'local-only' as const,
     detail,
     expectedSites,
     reportOnly: true as const,
