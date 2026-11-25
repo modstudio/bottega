@@ -170,6 +170,7 @@ test('the adapter reads the harness cursors before admitting a keyed branch', as
       project,
       branch: 'DEV-2387-change',
       env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
+      checkoutRoots: [],
     },
     async (_database, session) => {
       sessions.push(session)
@@ -187,6 +188,7 @@ test('the adapter refuses a keyed branch when the harness has no cursor', async 
         project,
         branch: 'DEV-2387-change',
         env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
+        checkoutRoots: [],
       },
       async () => [],
     ),
@@ -245,10 +247,9 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
         database,
         body,
+        checkoutRoots: [project.path],
       },
       async () => [held],
-      undefined,
-      () => [project.path],
     )
   const fallbackAdmission = (
     cwd: string,
@@ -263,10 +264,10 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         database,
         body: 'Summary\nClass guard: architecture check (before 3, after 0)',
         cwd,
+        checkoutRoots: [project.path],
       },
       async () => [{ ...held, args: '{}' }],
       () => facts,
-      () => [project.path],
     )
 
   try {

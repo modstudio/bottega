@@ -9,7 +9,7 @@ import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
 import { gitContext, gitToplevel, repoRootOf } from '../git/git-environment.ts'
-import { type Project, projects } from '../project/projects.ts'
+import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { canonMirrorBranchName, isSystemLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
@@ -39,7 +39,6 @@ type PullRequestTreeFacts = {
 }
 
 type ReadPullRequestTree = (cwd: string) => PullRequestTreeFacts
-type ReadCheckoutRoots = (database: Database) => readonly string[]
 
 function realpathOrLexical(path: string): string {
   try {
@@ -54,15 +53,6 @@ const readPullRequestTree: ReadPullRequestTree = (cwd) => ({
   mainCheckout: repoRootOf(cwd),
   branch: gitContext(cwd, 'symbolic-ref', '--quiet', '--short', 'HEAD'),
 })
-
-const readCheckoutRoots: ReadCheckoutRoots = (database) => [
-  ...new Set(
-    projects(undefined, database).flatMap((project) => [
-      project.path,
-      realpathOrLexical(project.path),
-    ]),
-  ),
-]
 
 function resolvedClassGuardWorktree(
   recordedWorktree: string | undefined,
@@ -154,6 +144,7 @@ export async function assertPullRequestTaskCursorAdmission(
     systemJob?: string | null
     body?: string
     cwd?: string
+    checkoutRoots: readonly string[]
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
@@ -175,7 +166,6 @@ export async function assertPullRequestTaskCursorAdmission(
       }),
     ),
   readTree: ReadPullRequestTree = readPullRequestTree,
-  readRegisteredCheckoutRoots: ReadCheckoutRoots = readCheckoutRoots,
 ): Promise<void> {
   const caller = classifyCaller(input.env ?? process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
@@ -225,7 +215,7 @@ export async function assertPullRequestTaskCursorAdmission(
       cwd: realpathOrLexical(entry.cwd),
     })),
     worktree,
-    checkoutRoots: readRegisteredCheckoutRoots(database),
+    checkoutRoots: input.checkoutRoots,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

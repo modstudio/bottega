@@ -255,6 +255,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       project,
       branch,
       database,
+      checkoutRoots: [],
     })
   },
   releasePreflight: runReleasePreflight,

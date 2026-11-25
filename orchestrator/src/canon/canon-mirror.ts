@@ -270,6 +270,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
       project,
       branch,
       systemJob: CANON_MIRROR_JOB,
+      checkoutRoots: [],
     }),
   openPullRequest: (path, title, bodyFile, policy) => {
     createPullRequestAdmittedWithPolicy(

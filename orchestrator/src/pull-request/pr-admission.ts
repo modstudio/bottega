@@ -1,6 +1,7 @@
 // concern: pull-request-admission
 /** Resolves the caller's exact change, applies triage policy, and records admission evidence. */
 import type { Database } from 'bun:sqlite'
+import { realpathSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv, CALL_BUDGETS } from '../../../shared/call-budgets.ts'
@@ -9,7 +10,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { type Project, projectAt } from '../project/projects.ts'
+import { type Project, projectAt, projects } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
@@ -62,6 +63,25 @@ import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 
 type Git = (cwd: string, args: string[]) => string
+
+function realpathOrLexical(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+function registeredCheckoutRoots(database: Database): string[] {
+  return [
+    ...new Set(
+      projects(undefined, database).flatMap((project) => [
+        project.path,
+        realpathOrLexical(project.path),
+      ]),
+    ),
+  ]
+}
 
 export type PullRequestChange = {
   project: Project
@@ -812,12 +832,15 @@ export async function createPullRequest(
   cwd = process.cwd(),
 ): Promise<{ output: string; overrideId: string | null }> {
   const change = preparePullRequestCreate(options, cwd)
+  const database = db()
   await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,
     branch: change.branch,
     body: options.body,
     cwd,
+    database,
+    checkoutRoots: registeredCheckoutRoots(database),
   })
   return createPullRequestAdmittedChange(
     args,
