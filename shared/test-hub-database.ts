@@ -121,9 +121,8 @@ export function adoptTestHubDatabase(configuredPath: string | undefined): void {
   }
 }
 
-/** Refuse a test store unless this process's preload minted that exact non-live path. */
+/** Refuse a store unless this process's test preload minted that exact non-live path. */
 export function assertTestHubDatabasePath(): void {
-  if (process.env.NODE_ENV !== 'test') return
   const currentPath = process.env.BOTTEGA_HUB_DB ? canonicalPath(process.env.BOTTEGA_HUB_DB) : null
   const refusal = testHubDatabasePathRefusal(
     mintedHubDatabase?.database ?? null,
@@ -133,7 +132,7 @@ export function assertTestHubDatabasePath(): void {
   if (refusal) throw new Error(refusal)
 }
 
-/** Guard fixture resets with the same minted-store assertion used by hub startup. */
+/** Return the strict minted-store guard for destructive test infrastructure. */
 export function createTestHubDatabaseGuard(): () => void {
   return assertTestHubDatabasePath
 }

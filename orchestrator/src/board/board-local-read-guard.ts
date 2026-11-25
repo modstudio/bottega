@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import type { BoardLocality } from '../../../shared/board-mode.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { boardMode } from './board-mode.ts'
@@ -6,8 +7,9 @@ import { boardMode } from './board-mode.ts'
 export function requireLocalBoardRead(
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),
+  locality: BoardLocality = 'shared',
 ): void {
-  if (boardMode('shared', environment, database) === 'local') return
+  if (boardMode(locality, environment, database) === 'local') return
   throw new Error(
     'requireLocalBoardRead stopped a local board read; a hosted install reads the board through the hosted reader',
   )
@@ -28,8 +30,9 @@ export function requireLocalBoardWrite(
     | 'answer accept',
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),
+  locality: BoardLocality = 'shared',
 ): void {
-  if (boardMode('shared', environment, database) === 'local') return
+  if (boardMode(locality, environment, database) === 'local') return
   const commands: Partial<Record<typeof verb, string>> = {
     'claim release': `${PLATFORM_SLUG} board claim release with the hosted claim UUID`,
     'claim renew': `${PLATFORM_SLUG} board claim renew with the hosted claim UUID`,

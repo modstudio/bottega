@@ -492,6 +492,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../branch/task-branch.ts',
     '../database/db.ts',
     '../git/checkout-identity.ts',
+    './chain-tree-attach.ts',
     './run-alive.ts',
     './run-claim-plan.ts',
     './run-lease.ts',

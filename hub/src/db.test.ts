@@ -20,11 +20,18 @@ import {
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
   resolveHubRuntime,
+  testStoreQuestionApplies,
   unauthorizedHubMigrationMessage,
   withReadOnlyDatabaseAccess,
 } from './db.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
+
+test('the test-store question applies only under the test runtime', () => {
+  expect(testStoreQuestionApplies('test')).toBeTrue()
+  expect(testStoreQuestionApplies('production')).toBeFalse()
+  expect(testStoreQuestionApplies(undefined)).toBeFalse()
+})
 
 test('hosted delivery requires the installation store real path', () => {
   expect(hostedDeliveryAllowed('/state/hub/hub.db', '/state/hub/hub.db')).toBeTrue()

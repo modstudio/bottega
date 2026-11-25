@@ -331,6 +331,7 @@ export const hubModuleSpecs = [
     allowed: ['../../shared/task-source.ts', '../../shared/trackers.ts'],
   },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
+  { file: 'hub/src/day-id-adoption.ts', allowed: ['./push-contract.ts'] },
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
   { file: 'hub/src/collect-cadence.ts', allowed: [] },
   {

@@ -1,9 +1,11 @@
 // concern: pull-request
 /** Pure admission for the class guard declared by a measured defect fix. */
 
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
+  checkoutRelativePath,
   creditedMeasurementCommands,
   measuredCountFromOutput,
 } from '../workflow/workflow-class-measured-floor.ts'
@@ -19,8 +21,28 @@ export type ClassGuardExec = {
 
 export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
-const rerun = (worktree: string, command: string) =>
-  `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(worktree)} -- ${command}`
+const rerun = (cwd: string, command: string) =>
+  `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(cwd)} -- ${command}`
+
+function isPathInside(root: string, candidate: string): boolean {
+  const path = relative(root, candidate)
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
+}
+
+function measurementRerunCwd(input: {
+  measurementCwd?: string
+  worktree: string
+  checkoutRoots: readonly string[]
+}): string {
+  const measurementCwd = input.measurementCwd
+  if (!measurementCwd) return input.worktree
+  const containingRoot = [...input.checkoutRoots, input.worktree]
+    .filter((root) => isPathInside(root, measurementCwd))
+    .sort((left, right) => right.length - left.length)[0]
+  if (!containingRoot) return input.worktree
+  const directory = checkoutRelativePath(measurementCwd, containingRoot)
+  return directory === '.' ? input.worktree : join(input.worktree, directory)
+}
 
 export function decidePullRequestClassGuard(input: {
   body: string
@@ -29,6 +51,7 @@ export function decidePullRequestClassGuard(input: {
   execs: readonly ClassGuardExec[]
   worktree?: string
   checkoutRoots: readonly string[]
+  measurementCwd?: string
 }): ClassGuardDecision {
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
@@ -58,27 +81,33 @@ export function decidePullRequestClassGuard(input: {
       kind: 'refuse',
       message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
     }
+  const worktree = input.worktree
   const creditedCommands = creditedMeasurementCommands(measurement.command, input.checkoutRoots)
   const rerunCommand = creditedCommands.at(-1)!
+  const rerunCwd = measurementRerunCwd({
+    measurementCwd: input.measurementCwd,
+    worktree,
+    checkoutRoots: input.checkoutRoots,
+  })
   const matchingExecs = input.execs.filter(
     (entry) =>
       creditedCommands.includes(entry.command) &&
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
-  const afterExec = matchingExecs.find((entry) => entry.cwd === input.worktree)
+  const afterExec = matchingExecs.find((entry) => entry.cwd === rerunCwd)
   if (!afterExec)
     return {
       kind: 'refuse',
       message: matchingExecs.length
-        ? `the Class guard post-implement measurement did not run in worktree ${input.worktree}; run \`${rerun(input.worktree, rerunCommand)}\``
-        : `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, rerunCommand)}\``,
+        ? `the Class guard post-implement measurement did not run in worktree ${worktree}; run \`${rerun(rerunCwd, rerunCommand)}\``
+        : `the Class guard has no successful post-implement measurement; run \`${rerun(rerunCwd, rerunCommand)}\``,
     }
   const afterCount = measuredCountFromOutput(afterExec.output)
   if (afterCount === null || Number(parsed[3]) !== afterCount)
     return {
       kind: 'refuse',
-      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(input.worktree, rerunCommand)}\` and update the line`,
+      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(rerunCwd, rerunCommand)}\` and update the line`,
     }
   return { kind: 'allow' }
 }

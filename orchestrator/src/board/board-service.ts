@@ -21,7 +21,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
-import { boardMode } from './board-mode.ts'
+import { boardHasAdoptedHosted, boardMode } from './board-mode.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -50,6 +50,7 @@ import {
   holdsReplySuccessor,
   insertRootMessage,
   type MessageRow,
+  machineMessageRows,
   messageRows,
   messageTags,
   originText,
@@ -69,6 +70,11 @@ export { requireRealSession } from './board-policy.ts'
 
 export type { PostNoticeInput, PostNoticeResult }
 export { boardActor }
+
+/** Local board rows remain machine-scoped after this store adopts the hosted board. */
+export function localBoardRows(database: Database = db()): MessageRow[] {
+  return boardHasAdoptedHosted(database) ? machineMessageRows(database) : messageRows(database)
+}
 
 function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
@@ -141,7 +147,12 @@ export function postNotice(
   cwd = process.cwd(),
 ): PostNoticeResult {
   const database = writableDb()
-  requireLocalBoardWrite('notice post', env, database)
+  requireLocalBoardWrite(
+    'notice post',
+    env,
+    database,
+    parseAudience(input.audience).kind === 'machine' ? 'machine-audience' : 'shared',
+  )
   return writeTransaction(() => postNoticeInTransaction(input, env, clock, cwd, database), database)
 }
 
@@ -393,10 +404,15 @@ export function claimRunPushNotices(
   }
 }
 
-export function markRunNoticesDelivered(runId: string, ids: string[], clock = Date.now()): void {
+export function markRunNoticesDelivered(
+  runId: string,
+  ids: string[],
+  clock = Date.now(),
+  sourceRows: MessageRow[] = messageRows(),
+): void {
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
   const idSet = new Set(ids)
-  const rows = messageRows().filter(
+  const rows = sourceRows.filter(
     (row) =>
       row.kind === 'notice' &&
       idSet.has(row.record_id) &&
@@ -425,6 +441,7 @@ export function claimNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
+  sourceRows: MessageRow[] = messageRows(database),
 ): ({
   number: number
   recordId: string
@@ -438,7 +455,7 @@ export function claimNotices(
   threadTitle?: string
 } & ReplySuccessorNoticeState)[] {
   const reader = boardReader(env)
-  const rows = messageRows(database).filter(
+  const rows = sourceRows.filter(
     (row) =>
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
@@ -469,6 +486,7 @@ export function claimPushNotices(
   clock = Date.now(),
   database: Database = writableDb(),
   claimReplySuccessors = true,
+  sourceRows: MessageRow[] = messageRows(database),
 ): {
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
@@ -481,13 +499,13 @@ export function claimPushNotices(
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
   const selected = selectPushNotices(
     beganAt,
-    claimNotices(all, env, clock, database),
+    claimNotices(all, env, clock, database, sourceRows),
     clock,
     claimReplySuccessors,
   )
   const notices = selected.notices.filter((notice) => {
     if (!notice.reportReplySuccessor) return true
-    const row = messageRows(database).find((item) => item.record_id === notice.recordId)
+    const row = sourceRows.find((item) => item.record_id === notice.recordId)
     return row !== undefined && takeReportReplySuccessor(row, reader, clock, database)
   })
   return {
@@ -508,16 +526,25 @@ export function markNoticesDelivered(
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
+  sourceRows: MessageRow[] = messageRows(database),
 ): void {
-  requireLocalBoardWrite('notice delivery', env, database)
   const reader = boardReader(env)
   const idSet = new Set(ids)
-  const rows = messageRows(database).filter(
+  const rows = sourceRows.filter(
     (row) =>
       idSet.has(row.record_id) &&
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
       deliverableTo(row, reader, clock, database),
+  )
+  if (!rows.length) return
+  requireLocalBoardWrite(
+    'notice delivery',
+    env,
+    database,
+    rows.every((row) => row.audience && parseAudience(row.audience).kind === 'machine')
+      ? 'machine-audience'
+      : 'shared',
   )
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
@@ -580,13 +607,24 @@ export async function boardRequestCountForSession(
   }
 }
 
-export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
-  requireLocalBoardWrite('notice acknowledge', env)
+export function acknowledgeNotice(
+  id: string,
+  env: Environment = process.env,
+  clock = Date.now(),
+  sourceRows: MessageRow[] = messageRows(),
+) {
   const reader = boardReader(env)
-  const row = messageRows().find((candidate) => candidate.record_id === id)
+  const row = sourceRows.find((candidate) => candidate.record_id === id)
   if (!row || !rowIsLive(row, clock) || !addressed(row, reader, clock))
     throw new Error(`live board notice ${id} is not addressed to this reader`)
-  writableDb()
+  const database = writableDb()
+  requireLocalBoardWrite(
+    'notice acknowledge',
+    env,
+    database,
+    row.audience && parseAudience(row.audience).kind === 'machine' ? 'machine-audience' : 'shared',
+  )
+  database
     .query(
       `INSERT INTO board_receipt
        (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)

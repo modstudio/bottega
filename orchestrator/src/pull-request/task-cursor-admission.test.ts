@@ -198,6 +198,8 @@ test('the adapter refuses a keyed branch when the harness has no cursor', async 
 test('the adapter enforces the class guard from a held fix-defect cursor', async () => {
   const database = new Database(':memory:')
   database.run(`CREATE TABLE probe (
+    record_id TEXT,
+    number INTEGER,
     command TEXT NOT NULL,
     command_withheld INTEGER NOT NULL DEFAULT 0,
     cwd TEXT NOT NULL,
@@ -217,8 +219,8 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
   symlinkSync(worktree, linkedWorktree)
   database
     .query(
-      `INSERT INTO probe (command,cwd,output_tail,exit_code,created_at,kind,session_id)
-       VALUES (?,?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
+      `INSERT INTO probe (record_id,number,command,cwd,output_tail,exit_code,created_at,kind,session_id)
+       VALUES ('exec-record',7,?,?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
     )
     .run(JSON.stringify(rerunArgv), linkedWorktree)
   const closed = JSON.stringify([

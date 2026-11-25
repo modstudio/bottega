@@ -68,6 +68,17 @@ describe('continuation branch availability', () => {
     ).toEqual({ action: 'continue' })
   })
 
+  test("allows another turn's recorded tree to hold the continuation branch", () => {
+    expect(
+      continuationBranchAvailability(
+        'DEV-878-orch-5931',
+        '/projects/workshop/.claude/worktrees/latest',
+        worktrees.slice(0, 2),
+        ['/projects/workshop/.claude/worktrees/orch-5931'],
+      ),
+    ).toEqual({ action: 'continue' })
+  })
+
   test('allows a continuation branch that is not checked out', () => {
     expect(
       continuationBranchAvailability(

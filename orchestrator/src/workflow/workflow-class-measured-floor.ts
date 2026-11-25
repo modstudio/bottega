@@ -37,7 +37,7 @@ type NamedCheckoutPath = { path: string; relative: string }
 
 type CheckoutPathMatch = NamedCheckoutPath & { start: number; end: number }
 
-function checkoutRelativePath(path: string, root: string): string {
+export function checkoutRelativePath(path: string, root: string): string {
   const relative = path.slice(root.length).replace(/^\/+/, '')
   const segments = relative.split('/')
   const worktreePrefixMatches = MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS.every(

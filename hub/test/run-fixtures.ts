@@ -12,10 +12,9 @@ export const at = (iso: string) => new Date(iso).getTime()
 export const fixtureRecordId = (id: number) =>
   `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 
-export function resetFixtureStore(assertSafe?: () => void) {
+export function resetFixtureStore() {
   refreshKeyPrefixes()
-  const guard = assertSafe ?? createTestHubDatabaseGuard()
-  guard()
+  createTestHubDatabaseGuard()()
   const database = new Database(process.env.BOTTEGA_HUB_DB!)
   try {
     database.exec('PRAGMA query_only = OFF; PRAGMA foreign_keys = OFF')

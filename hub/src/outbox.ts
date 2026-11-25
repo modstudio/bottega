@@ -1,7 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
+import { decideDayIdAdoption } from './day-id-adoption.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import { hostedQueueRefusal } from './hosted-queue-decision.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -377,6 +379,27 @@ function recordOutcome(
   trace?: { operation: 'upsert' | 'delete'; destination: string | null },
 ) {
   const { entry } = item
+  const machineId = outcome.status === 'rejected' && outcome.conflict ? storedMachineId() : null
+  const adoption = decideDayIdAdoption(item.change, outcome, machineId)
+  if (adoption.action === 'adopt') {
+    const changed = writeTransaction((conn) => {
+      const currentEntry = conn
+        .query<{ generation: number }, [string]>(`SELECT generation FROM hosted_outbox WHERE id=?`)
+        .get(entry.id)
+      if (!currentEntry || currentEntry.generation !== entry.generation) return 0
+      const currentDay = conn
+        .query<{ present: number }, [string]>(`SELECT 1 present FROM day WHERE record_id=?`)
+        .get(item.change.id)
+      if (!currentDay) return 0
+      conn
+        .query(`UPDATE day SET record_id=? WHERE record_id=?`)
+        .run(adoption.hostedId, item.change.id)
+      adoptPendingHostedRow(conn, HOSTED_DAY_TABLE, item.change.id, adoption.hostedId)
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      return 1
+    })
+    return changed > 0 ? 'adopted' : null
+  }
   const decision = decideOutboxLifecycle(
     entry.attempts,
     outcome.status === 'rejected'
@@ -536,7 +559,7 @@ function recordBatchOutcomes(
     if (!outcome) continue
     const action = recordOutcome(item, outcome, clock(), processKind)
     if (action === 'sent') report.sent++
-    else if (action) {
+    else if (action && action !== 'adopted') {
       report.rejected++
       if (action === 'quarantine') report.quarantined++
     }

@@ -7,10 +7,13 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
+import type { ChainTreeAttachRemedy } from './chain-tree-attach.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import type { ClaimTreePlanRuling } from './run-claim-plan.ts'
 import { runLeaseState } from './run-lease.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
+
+export const CHAIN_TREE_COMMIT_LIST_CAP = 5
 
 export type HeldBranchRemedyFacts = {
   path: string
@@ -47,8 +50,49 @@ export function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): 
   return `git -C ${path} switch --detach; this keeps uncommitted changes`
 }
 
-/** Gather the local run-table fact, decide, and render the release for one held tree. */
-export function heldBranchRemedy(path: string): string {
+function cappedCommitList(commits: readonly string[]): string {
+  const shown = commits.slice(0, CHAIN_TREE_COMMIT_LIST_CAP)
+  const remaining = commits.length - shown.length
+  return [...shown, ...(remaining > 0 ? [`…and ${remaining} more`] : [])].join(', ') || '(none)'
+}
+
+/** Render a refusal for a chain-owned tree, preserving every commit and local change. */
+export function renderChainTreeAttachRefusal(input: {
+  path: string
+  branch: string
+  remedy: ChainTreeAttachRemedy
+  retryCommand: string
+}): string {
+  const { path, branch, remedy, retryCommand } = input
+  let instruction: string
+  switch (remedy.kind) {
+    case 'wait-or-stop':
+      instruction = renderHeldBranchRemedy(path, {
+        action: 'wait-or-stop',
+        runId: remedy.runId,
+      })
+      break
+    case 'fast-forward-branch':
+      instruction =
+        `the tree's HEAD ${remedy.head} already contains every commit on ${branch} (${remedy.tip}); ` +
+        `move the branch with git -C ${path} branch -f ${branch} HEAD`
+      break
+    case 'choose-work':
+      instruction =
+        `the tree's HEAD is ${remedy.head} and ${branch} is ${remedy.tip}; ` +
+        `only HEAD has: ${cappedCommitList(remedy.headOnly)}; ` +
+        `only ${branch} has: ${cappedCommitList(remedy.tipOnly)}; ` +
+        'a choice of which work to keep is needed'
+      break
+    case 'held-outside-chain':
+      instruction = `release branch ${branch} from ${remedy.holder} with ${heldBranchRemedy(remedy.holder)}`
+      break
+  }
+  return `run cannot attach chain tree ${path}: ${instruction}, then retry ${retryCommand}`
+}
+
+/** Return the id of the live run recorded on this tree, or null. */
+export function liveRunOnTree(path: string): string | null {
   const canonicalPath = realpathOrSpelled(path)
   const liveRun = (
     db()
@@ -75,9 +119,14 @@ export function heldBranchRemedy(path: string): string {
         ),
       }),
   )
+  return liveRun?.record_id ?? null
+}
+
+/** Gather the local run-table fact, decide, and render the release for one held tree. */
+export function heldBranchRemedy(path: string): string {
   return renderHeldBranchRemedy(
     path,
-    decideHeldBranchRemedy({ path, liveRunId: liveRun?.record_id ?? null }),
+    decideHeldBranchRemedy({ path, liveRunId: liveRunOnTree(path) }),
   )
 }
 
