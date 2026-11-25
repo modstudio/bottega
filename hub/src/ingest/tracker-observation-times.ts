@@ -1,4 +1,5 @@
-import type { StatusCategory, TrackerTask } from '../../../shared/trackers.ts'
+import type { StatusCategory } from '../../../shared/tracker-status-category.ts'
+import type { TrackerTask } from '../../../shared/trackers.ts'
 
 export type ExistingTrackerTask = {
   external_id: string | null

@@ -2,6 +2,7 @@
 /** Persists collector-leg outcomes and projects their freshness for public read surfaces. */
 
 import type { CollectorLegHealth } from '@bottega/hub-views/work-summary'
+import { isTrackerLegSource, trackerLegSource } from '../../shared/collector-leg-source.ts'
 import { collectionStaleness, trackerCollectionStaleness } from './collect-slow-health.ts'
 import { db, writeTransaction } from './db.ts'
 import type { HostedChangeQuarantineSummary } from './hosted-change-quarantine.ts'
@@ -115,17 +116,35 @@ export function recordTrackerCollectorState(result: {
   project: string
   error?: string
   skipped?: string
-}): void {
+}, at = new Date().toISOString()): void {
   if (result.project === 'backfill' || result.skipped) return
-  const source = `tasks:${result.project}`
+  const source = trackerLegSource(result.project)
   try {
-    if (result.error) recordCollectorLegFailure(source, result.error, new Date().toISOString())
-    else recordCollectorLegSuccess(source, new Date().toISOString())
+    if (result.error) recordCollectorLegFailure(source, result.error, at)
+    else recordCollectorLegSuccess(source, at)
   } catch (stateError) {
     console.error(
       `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
     )
   }
+}
+
+export function dropUnregisteredTrackerCollectorStates(
+  registeredProjects: readonly string[],
+): void {
+  const registeredSources = new Set(registeredProjects.map(trackerLegSource))
+  const keys = db()
+    .query<{ key: string }, [string]>('SELECT key FROM setting WHERE key LIKE ?')
+    .all(`${SETTING_PREFIX}%`)
+    .filter((row) => {
+      const source = sourceFromSettingKey(row.key)
+      return isTrackerLegSource(source) && !registeredSources.has(source)
+    })
+  if (!keys.length) return
+  writeTransaction((conn) => {
+    const remove = conn.query('DELETE FROM setting WHERE key=?')
+    for (const row of keys) remove.run(row.key)
+  })
 }
 
 export function collectorLegStates(): CollectorLegObservation[] {
@@ -160,7 +179,7 @@ export function collectorLegView(
         ageMs: null,
       }
     }
-    const staleness = state.source.startsWith('tasks:')
+    const staleness = isTrackerLegSource(state.source)
       ? trackerCollectionStaleness(now, state.lastSuccessAt)
       : collectionStaleness(now, state.lastSuccessAt)
     const quarantine =
@@ -192,10 +211,9 @@ export function collectorLegView(
     leg.lastSuccessAt === null ? [] : [leg.lastSuccessAt],
   )
   return {
-    collectedAt:
-      successes.length === collectorLegs.length && successes.length > 0
-        ? successes.reduce((oldest, value) => (value < oldest ? value : oldest))
-        : null,
+    collectedAt: successes.length
+      ? successes.reduce((oldest, value) => (value < oldest ? value : oldest))
+      : null,
     collectorLegs,
   }
 }

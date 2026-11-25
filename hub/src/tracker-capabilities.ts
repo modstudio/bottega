@@ -1,7 +1,7 @@
 import type { TaskSource } from '../../shared/task-source.ts'
+import { TASK_STATUSES } from '../../shared/tracker-status-category.ts'
 import {
   cursorScopeRefusal,
-  TASK_STATUSES,
   type TrackerProject,
   trackerSourceFor,
   workspaceScopeRefusal,

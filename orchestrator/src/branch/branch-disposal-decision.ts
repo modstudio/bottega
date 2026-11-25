@@ -1,7 +1,10 @@
 // concern: branch disposal
 /** Pure eligibility ruling for reversible disposal of unique, unproved branch work. */
 
-import { type StatusCategory, TASK_STATUSES } from '../../../shared/trackers.ts'
+import {
+  type StatusCategory,
+  TASK_STATUSES,
+} from '../../../shared/tracker-status-category.ts'
 import type { TaskStatusObservation } from './task-status-observation.ts'
 
 export const BRANCH_DISPOSAL_REASONS = ['abandoned', 'superseded', 'throwaway'] as const

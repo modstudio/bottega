@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { TRACKER_PROTOCOLS } from '../../shared/tracker-actions.ts'
+import { TASK_STATUSES } from '../../shared/tracker-status-category.ts'
 import {
   CURSOR_CREATE_REFUSAL,
-  TASK_STATUSES,
   type TrackerProject,
   trackerSourceFor,
 } from '../../shared/trackers.ts'

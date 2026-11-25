@@ -114,7 +114,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/ingest/tracker-observation-times.ts',
-    allowed: ['../../../shared/trackers.ts'],
+    allowed: ['../../../shared/tracker-status-category.ts', '../../../shared/trackers.ts'],
   },
   {
     file: 'hub/src/ingest/tracker-hosted-collector.ts',
@@ -160,6 +160,7 @@ export const hubModuleSpecs = [
       '../../../shared/tracker-list-scope.ts',
       '../../../shared/tracker-task-text.ts',
       '../../../shared/trackers.ts',
+      '../collector-leg-state.ts',
       '../db.ts',
       '../hosted-change-sender.ts',
       '../hosted-url.ts',
@@ -338,7 +339,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/task-row.ts',
-    allowed: ['../../shared/task-source.ts', '../../shared/trackers.ts'],
+    allowed: ['../../shared/task-source.ts', '../../shared/tracker-status-category.ts'],
   },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   { file: 'hub/src/day-id-adoption.ts', allowed: ['./push-contract.ts'] },
@@ -348,6 +349,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/collector-leg-state.ts',
     allowed: [
       '@bottega/hub-views/work-summary',
+      '../../shared/collector-leg-source.ts',
       './collect-slow-health.ts',
       './db.ts',
       './hosted-change-quarantine.ts',
@@ -355,7 +357,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/collect-tracker-counts.ts',
-    allowed: ['../../shared/brand.ts', './ingest/trackers.ts'],
+    allowed: ['../../shared/brand.ts', './ingest/tracker-result.ts'],
   },
   { file: 'hub/src/collect-watch-schedule.ts', allowed: [] },
   { file: 'hub/src/collect-slow-health.ts', allowed: ['./collect-cadence.ts'] },

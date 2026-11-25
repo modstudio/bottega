@@ -52,6 +52,8 @@ describe('collector leg failure decision', () => {
         kind: 'collector-leg-failure',
         subject: 'tasks:stopal',
         since: recent,
+        detail:
+          'tasks:stopal collection failed 2 consecutive reads (0 minutes since the first): ruling read unavailable',
       }),
     ])
   })

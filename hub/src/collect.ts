@@ -32,13 +32,9 @@ export { resolveHostedUrl }
 import type { IngestReport } from './ingest/batches.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
-import {
-  ingestTrackers,
-  type TrackerResult,
-  trackerLegError,
-  trackerProjects,
-  trackerProjectsReadSince,
-} from './ingest/trackers.ts'
+import { trackerProjectsReadSince } from './ingest/tracker-read-state.ts'
+import { type TrackerResult, trackerLegError } from './ingest/tracker-result.ts'
+import { ingestTrackers, trackerProjects } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
@@ -838,9 +834,7 @@ async function collectSlowSourceLegs(
       (await settleTimedLeg(
         'tasks',
         async () => {
-          const trackerResults =
-            due?.size === 0 ? [] : await ingestTrackers(due, hostedTrackerCandidates())
-          for (const result of trackerResults) collectorLegState.recordTrackerCollectorState(result)
+          const trackerResults = await ingestTrackers(due, hostedTrackerCandidates())
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)

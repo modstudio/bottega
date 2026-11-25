@@ -15,12 +15,22 @@ const refusal = (
   pageIndex: number,
   rowsRead: number,
   status: string | undefined,
+  cause: ToolCallRefused,
 ) =>
-  `${protocol} page index ${pageIndex} after ${rowsRead} rows in status ${status ?? 'all'} was refused at page size 1`
+  `${protocol} page index ${pageIndex} after ${rowsRead} rows in status ${status ?? 'all'} was refused at page size 1: ${cause.message}`
+
+const rowBound = (
+  project: string,
+  protocol: 'cursor-mcp' | 'workspace-mcp',
+  status: string | undefined,
+  maxRows: number,
+) =>
+  `${project} ${protocol} status ${status ?? 'all'} reached the row bound of ${maxRows} before the read completed`
 
 export async function readAdaptiveCursorPages<Row>(input: {
   startingPageSize: number
-  maxPages: number
+  maxRows: number
+  project: string
   status: string | undefined
   read: (
     cursor: string | undefined,
@@ -35,10 +45,11 @@ export async function readAdaptiveCursorPages<Row>(input: {
   let lastSuccessfulPageSize: number | undefined
   let cursor: string | undefined
   let rowsRead = 0
-  while (pages.length < input.maxPages) {
+  while (rowsRead < input.maxRows) {
+    const requestedPageSize = Math.min(pageSize, input.maxRows - rowsRead)
     let reply: { rows: Row[]; nextCursor?: string }
     try {
-      reply = await input.read(cursor, pageSize)
+      reply = await input.read(cursor, requestedPageSize)
     } catch (cause) {
       if (!(cause instanceof ToolCallRefused)) throw cause
       if (pageSize === 1)
@@ -47,12 +58,12 @@ export async function readAdaptiveCursorPages<Row>(input: {
           complete: false,
           pageSize: lastSuccessfulPageSize,
           nextPageSize: pageSize,
-          error: refusal('cursor-mcp', pages.length, rowsRead, input.status),
+          error: refusal('cursor-mcp', pages.length, rowsRead, input.status, cause),
         }
       pageSize = smallerPageSize(pageSize)
       continue
     }
-    lastSuccessfulPageSize = pageSize
+    lastSuccessfulPageSize = requestedPageSize
     pages.push(reply.rows)
     rowsRead += reply.rows.length
     cursor = reply.nextCursor
@@ -63,12 +74,16 @@ export async function readAdaptiveCursorPages<Row>(input: {
     complete: !cursor,
     pageSize: lastSuccessfulPageSize,
     nextPageSize: pageSize,
+    ...(cursor
+      ? { error: rowBound(input.project, 'cursor-mcp', input.status, input.maxRows) }
+      : {}),
   }
 }
 
 export async function readAdaptiveWorkspacePages<Row>(input: {
   startingPageSize: number
-  maxPages: number
+  maxRows: number
+  project: string
   status: string | undefined
   read: (page: number, pageSize: number) => Promise<{ rows: Row[]; lastPage?: number }>
 }): Promise<PageRead<Row>> {
@@ -76,7 +91,15 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
   let pageSize = input.startingPageSize
   let lastSuccessfulPageSize: number | undefined
   let rowOffset = 0
-  while (pages.length < input.maxPages) {
+  while (rowOffset < input.maxRows) {
+    if (rowOffset + pageSize > input.maxRows)
+      return {
+        pages,
+        complete: false,
+        pageSize: lastSuccessfulPageSize,
+        nextPageSize: pageSize,
+        error: rowBound(input.project, 'workspace-mcp', input.status, input.maxRows),
+      }
     const pageIndex = Math.floor(rowOffset / pageSize)
     const pageStart = pageIndex * pageSize
     const page = pageIndex + 1
@@ -91,7 +114,7 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
           complete: false,
           pageSize: lastSuccessfulPageSize,
           nextPageSize: pageSize,
-          error: refusal('workspace-mcp', pageIndex, rowOffset, input.status),
+          error: refusal('workspace-mcp', pageIndex, rowOffset, input.status, cause),
         }
       pageSize = smallerPageSize(pageSize)
       continue
@@ -102,5 +125,11 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
       return { pages, complete: true, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
     rowOffset = pageStart + pageSize
   }
-  return { pages, complete: false, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
+  return {
+    pages,
+    complete: false,
+    pageSize: lastSuccessfulPageSize,
+    nextPageSize: pageSize,
+    error: rowBound(input.project, 'workspace-mcp', input.status, input.maxRows),
+  }
 }

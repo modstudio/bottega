@@ -2,6 +2,7 @@
 /** Reads the hub-owned observation and decides which sustained failures the monitor reports. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isTrackerLegSource } from '../../../shared/collector-leg-source.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
@@ -141,7 +142,7 @@ export function collectorLegFailureDecision(
     }
     const ageMs = Math.max(0, now - since)
     const trackerThresholdReached =
-      leg.source.startsWith('tasks:') &&
+      isTrackerLegSource(leg.source) &&
       (leg.consecutiveFailures ?? 0) >= TRACKER_CONSECUTIVE_FAILURE_THRESHOLD
     if (!trackerThresholdReached && ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
     failures.push({
@@ -156,7 +157,9 @@ export function collectorLegFailureDecision(
       subject: leg.source,
       since: leg.failingSince,
       ageMs,
-      detail: `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
+      detail: trackerThresholdReached
+        ? `${leg.source} collection failed ${leg.consecutiveFailures} consecutive reads (${ageMinutes} minutes since the first): ${leg.lastError ?? 'error unavailable'}`
+        : `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
       action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
     })
   }

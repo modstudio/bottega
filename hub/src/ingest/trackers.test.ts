@@ -11,7 +11,9 @@ import {
   storedTrackerPageSize,
   storedTrackerReadMode,
   trackerReadPassComplete,
+  trackerProjectsReadSince,
 } from './tracker-read-state.ts'
+import { trackerLegError } from './tracker-result.ts'
 import {
   collectTrackerSource,
   dropDeletedTrackerTasks,
@@ -23,8 +25,6 @@ import {
   trackerCredentials,
   trackerKeyInScope,
   trackerKeyPrefix,
-  trackerLegError,
-  trackerProjectsReadSince,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
@@ -538,6 +538,7 @@ describe('tracker register', () => {
         { result: { project: 'skipped', tasks: 0, changed: 0, skipped: 'no key' }, filled: 0 },
       ],
       at,
+      ['fresh', 'failed', 'skipped'],
     )
     writeTransaction((conn) =>
       conn

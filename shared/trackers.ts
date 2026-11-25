@@ -10,7 +10,13 @@ import {
 import { readAdaptiveCursorPages, readAdaptiveWorkspacePages } from './tracker-adaptive-pages.ts'
 import { scopedRows, type ToolCaller, toolDeclaresInput } from './tracker-list-scope.ts'
 import { decodeTrackerText as decode, reportedParentKey } from './tracker-read-fields.ts'
-import * as trackerCategory from './tracker-status-category.ts'
+import {
+  categoryForTrackerRead,
+  categoryOf,
+  fullReadCategory,
+  type StatusCategory,
+  TASK_STATUSES,
+} from './tracker-status-category.ts'
 import {
   arrayStatusPayload,
   cursorStatusPayload,
@@ -26,14 +32,6 @@ import {
   type TrackerTaskText,
 } from './tracker-task-text.ts'
 
-export {
-  LIVE_TASK_STATUS_CATEGORIES,
-  type StatusCategory,
-  TASK_STATUSES,
-} from './tracker-status-category.ts'
-
-type StatusCategory = trackerCategory.StatusCategory
-const TASK_STATUSES = trackerCategory.TASK_STATUSES
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
   'workspace-mcp',
   'cursor-mcp',
@@ -345,6 +343,7 @@ export type TrackerFetchResult = {
  */
 export const MAX_PAGES = 40
 export const TRACKER_DEFAULT_PAGE_SIZE = 100
+export const TRACKER_STATUS_ROW_LIMIT = MAX_PAGES * TRACKER_DEFAULT_PAGE_SIZE
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
@@ -446,7 +445,7 @@ async function mappedWorkspaceTask(
     parentKey: reportedParentKey(hit, 'short_id'),
     title: decode(hit.summary ?? ''),
     status: hit.status ?? '',
-    category: trackerCategory.categoryOf(
+    category: categoryOf(
       hit.status ?? '',
       hit.status_category ?? 'completed',
       states,
@@ -537,7 +536,7 @@ function appendWorkspaceTasks(
     if (!task.short_id) continue
     // An incremental read also returns closed rows, so a status that establishes no category
     // cannot default to open; the read is partial and the next one is full.
-    const category = trackerCategory.categoryForTrackerRead(
+    const category = categoryForTrackerRead(
       updatedSince !== undefined,
       task.status,
       task.status_category,
@@ -587,7 +586,8 @@ async function fetchWorkspaceStatus(
   const refs: AssigneeRef[] = []
   const fetched = await readAdaptiveWorkspacePages({
     startingPageSize,
-    maxPages: MAX_PAGES,
+    maxRows: TRACKER_STATUS_ROW_LIMIT,
+    project,
     status,
     async read(page, pageSize) {
       const reply = (await m.callTool(searchAction, {
@@ -693,7 +693,7 @@ function workspaceSource(
           `workspace-mcp status confirmation for task ${task.key} returned no status after category ${category} was requested`,
         )
       }
-      const confirmedCategory = trackerCategory.categoryOf(
+      const confirmedCategory = categoryOf(
         normalized.status,
         normalized.status_category ?? '',
         states,
@@ -748,7 +748,7 @@ function appendCursorTasks(
       continue
     }
     if (!task.humanKey) continue
-    const category = trackerCategory.categoryForTrackerRead(
+    const category = categoryForTrackerRead(
       incremental,
       task.status,
       task.status,
@@ -807,7 +807,7 @@ async function lookupCursorTask(
     parentKey: reportedParentKey(task, 'humanKey'),
     title: decode(task.title ?? ''),
     status: task.status ?? '',
-    category: trackerCategory.categoryOf(task.status ?? '', task.status ?? 'done', states),
+    category: categoryOf(task.status ?? '', task.status ?? 'done', states),
     updatedAt: task.updatedAt ?? null,
     assignee: task.assigneeName?.trim() || null,
   }
@@ -833,7 +833,8 @@ async function fetchCursorPages(input: {
   for (const status of input.statuses) {
     const fetched = await readAdaptiveCursorPages({
       startingPageSize: pageSize,
-      maxPages: MAX_PAGES,
+      maxRows: TRACKER_STATUS_ROW_LIMIT,
+      project: input.project,
       status,
       async read(cursor, limit) {
         const reply = (await input.m.callTool(input.searchAction, {
@@ -933,7 +934,7 @@ function cursorMcpSource(
         )
       }
       const observedStatus = confirmed
-      const observedCategory = trackerCategory.categoryOf(observedStatus, observedStatus, states)
+      const observedCategory = categoryOf(observedStatus, observedStatus, states)
       return {
         status: observedStatus,
         category: observedCategory,
@@ -993,7 +994,7 @@ function arrayMcpSource(
             parentKey: reportedParentKey(t, 'key'),
             title: decode(t.title ?? ''),
             status: t.status ?? status,
-            category: trackerCategory.fullReadCategory(t.status, t.status, status, states),
+            category: fullReadCategory(t.status, t.status, status, states),
             updatedAt: null,
             assignee: t.assigneeName?.trim() || null,
           })
@@ -1012,7 +1013,7 @@ function arrayMcpSource(
       const observedStatus = confirmed ?? status
       return {
         status: observedStatus,
-        category: confirmed ? trackerCategory.categoryOf(confirmed, confirmed, states) : category,
+        category: confirmed ? categoryOf(confirmed, confirmed, states) : category,
         ...(observedStatus === status
           ? {}
           : {
@@ -1039,7 +1040,7 @@ function arrayMcpSource(
         parentKey: reportedParentKey(hit, 'key'),
         title: decode(hit.title ?? ''),
         status: hit.status ?? '',
-        category: trackerCategory.categoryOf(hit.status ?? '', hit.status ?? 'done', states),
+        category: categoryOf(hit.status ?? '', hit.status ?? 'done', states),
         updatedAt: hit.updatedAt ?? null,
         assignee: hit.assigneeName?.trim() || null,
       }

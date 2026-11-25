@@ -11,6 +11,10 @@ import {
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
+import {
+  dropUnregisteredTrackerCollectorStates,
+  recordTrackerCollectorState,
+} from '../collector-leg-state.ts'
 import { resolveHostedUrl } from '../hosted-url.ts'
 import { hostedWriteMode } from '../hosted-write-mode.ts'
 import { credentials, Mcp } from '../mcp.ts'
@@ -43,14 +47,15 @@ import {
   trackerReadKey,
   trackerReadPassComplete,
 } from './tracker-read-state.ts'
-import * as trackerResult from './tracker-result.ts'
+import {
+  BACKFILL_RESULT,
+  successfulTrackerRead,
+  type TrackerResult,
+  trackerLegError,
+} from './tracker-result.ts'
 import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
-export { trackerProjectsReadSince } from './tracker-read-state.ts'
-export { successfulTrackerRead, type TrackerResult, trackerLegError } from './tracker-result.ts'
-
-type TrackerResult = trackerResult.TrackerResult
 
 async function resolveCached(
   namespace: string,
@@ -809,12 +814,15 @@ function recentIntervalsNeedingTracker(conn: Database) {
 export function finishTrackerResults(
   results: { result: TrackerResult; filled: number }[],
   at: string,
+  registeredProjects: readonly Project[],
 ): TrackerResult[] {
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
   if (filled)
-    out.push({ project: trackerResult.BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
-  const successfulProjects = out.filter(trackerResult.successfulTrackerRead)
+    out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
+  for (const result of out) recordTrackerCollectorState(result, at)
+  dropUnregisteredTrackerCollectorStates(registeredProjects)
+  const successfulProjects = out.filter(successfulTrackerRead)
   if (successfulProjects.length)
     writeTransaction((conn) => {
       const write = conn.query(
@@ -823,7 +831,7 @@ export function finishTrackerResults(
       )
       for (const result of successfulProjects) write.run(trackerReadKey(result.project), at)
     })
-  if (!trackerResult.trackerLegError(out))
+  if (!trackerLegError(out))
     writeTransaction((conn) =>
       conn
         .query(
@@ -836,10 +844,15 @@ export function finishTrackerResults(
 }
 
 function trackerIngestInputs(only: ReadonlySet<Project> | null) {
-  const trackers = trackerRegistrations(projects()).filter(
+  const registeredTrackers = trackerRegistrations(projects())
+  const trackers = registeredTrackers.filter(
     (tracker) => !only || only.has(tracker.project),
   )
-  return { trackers, missing: recentIntervalsNeedingTracker(db()) }
+  return {
+    trackers,
+    registeredProjects: registeredTrackers.map((tracker) => tracker.project),
+    missing: recentIntervalsNeedingTracker(db()),
+  }
 }
 
 type CollectedTracker = { result: TrackerResult; filled: number }
@@ -1045,11 +1058,12 @@ export async function ingestTrackers(
   listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ) {
   const at = nowIso()
-  const { trackers, missing } = trackerIngestInputs(only)
+  const { trackers, registeredProjects, missing } = trackerIngestInputs(only)
   return finishTrackerResults(
     await Promise.all(
       trackers.map((tracker) => collectTracker(tracker, missing, at, listHostedTrackerCandidates)),
     ),
     at,
+    registeredProjects,
   )
 }

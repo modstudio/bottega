@@ -148,7 +148,56 @@ describe('adaptive tracker paging', () => {
     expect(fetched.tasks.map((task) => task.key)).toEqual(['STO-1'])
     expect(fetched.complete).toBeFalse()
     expect(fetched.error).toBe(
-      'cursor-mcp page index 1 after 1 rows in status todo was refused at page size 1',
+      'cursor-mcp page index 1 after 1 rows in status todo was refused at page size 1: fixture row too large',
+    )
+  })
+
+  test('a one-row cursor page still reads more than the old page-count ceiling', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    const fetched = await source.fetch({
+      listTools: scopeTools,
+      async callTool(_name, args) {
+        if ((args.limit as number) > 1) throw new ToolCallRefused('fixture page too large')
+        const index = Number(args.cursor ?? 0)
+        return {
+          data: {
+            items: [{ id: `row-${index}`, humanKey: `STO-${index + 1}`, status: 'todo' }],
+            ...(index < 57 ? { nextCursor: String(index + 1) } : {}),
+          },
+        }
+      },
+    })
+
+    expect(fetched.tasks).toHaveLength(58)
+    expect(fetched.complete).toBeTrue()
+    expect(fetched.error).toBeUndefined()
+    expect(fetched.pageSize).toBe(1)
+  })
+
+  test('cursor paging reports a project and status error when the row bound is reached', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    const fetched = await source.fetch({
+      listTools: scopeTools,
+      async callTool(_name, args) {
+        const start = Number(args.cursor ?? 0)
+        const limit = args.limit as number
+        return {
+          data: {
+            items: Array.from({ length: limit }, (_, index) => ({
+              id: `row-${start + index}`,
+              humanKey: `STO-${start + index + 1}`,
+              status: 'todo',
+            })),
+            nextCursor: String(start + limit),
+          },
+        }
+      },
+    })
+
+    expect(fetched.tasks).toHaveLength(4_000)
+    expect(fetched.complete).toBeFalse()
+    expect(fetched.error).toBe(
+      'stopal cursor-mcp status todo reached the row bound of 4000 before the read completed',
     )
   })
 })

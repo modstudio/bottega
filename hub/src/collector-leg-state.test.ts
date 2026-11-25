@@ -6,8 +6,10 @@ import {
   type CollectorLegState,
   collectorLegStates,
   collectorLegView,
+  dropUnregisteredTrackerCollectorStates,
   recordCollectorLegFailure,
   recordCollectorLegSuccess,
+  recordTrackerCollectorState,
 } from './collector-leg-state.ts'
 import { writeTransaction } from './db.ts'
 import type { HostedOutboxReport } from './outbox.ts'
@@ -73,6 +75,53 @@ describe('collector leg state', () => {
     ).toEqual(failed)
   })
 
+  test('tracker results record per-project failures and success while skipped results stay untouched', () => {
+    recordTrackerCollectorState(
+      { project: 'alpha', error: 'task_list refused' },
+      '2026-11-20T11:00:00.000Z',
+    )
+    recordTrackerCollectorState(
+      { project: 'alpha', error: 'task_list refused again' },
+      '2026-11-20T11:05:00.000Z',
+    )
+    recordTrackerCollectorState(
+      { project: 'skipped', skipped: 'no credentials' },
+      '2026-11-20T11:05:00.000Z',
+    )
+    recordTrackerCollectorState({ project: 'backfill' }, '2026-11-20T11:05:00.000Z')
+
+    expect(collectorLegStates()).toEqual([
+      expect.objectContaining({
+        source: 'tasks:alpha',
+        failingSince: '2026-11-20T11:00:00.000Z',
+        consecutiveFailures: 2,
+      }),
+    ])
+
+    recordTrackerCollectorState({ project: 'alpha' }, '2026-11-20T11:10:00.000Z')
+    expect(collectorLegStates()).toEqual([
+      expect.objectContaining({
+        source: 'tasks:alpha',
+        lastSuccessAt: '2026-11-20T11:10:00.000Z',
+        failingSince: null,
+        consecutiveFailures: 0,
+      }),
+    ])
+  })
+
+  test('removed tracker projects lose their leg state while registered and skipped trackers stay', () => {
+    recordCollectorLegFailure('tasks:removed', 'down', '2026-11-20T11:00:00.000Z')
+    recordCollectorLegFailure('tasks:registered', 'down', '2026-11-20T11:00:00.000Z')
+    recordCollectorLegFailure('runs', 'down', '2026-11-20T11:00:00.000Z')
+
+    dropUnregisteredTrackerCollectorStates(['registered'])
+
+    expect(collectorLegStates().map((state) => ('unreadable' in state ? state.key : state.source))).toEqual([
+      'runs',
+      'tasks:registered',
+    ])
+  })
+
   test('a quiet tracker stays current through its next scheduled slow cadence', () => {
     const now = Date.parse('2026-11-20T12:00:00.000Z')
     const atAge = (ageMs: number) => new Date(now - ageMs).toISOString()
@@ -122,6 +171,31 @@ describe('collector leg state', () => {
       expect.objectContaining({ source: 'runs', status: 'failing' }),
       expect.objectContaining({ source: 'transcripts', status: 'current' }),
     ])
+  })
+
+  test('a leg without a first success does not blank the oldest recorded success', () => {
+    const view = collectorLegView(
+      [
+        {
+          source: 'runs',
+          lastSuccessAt: '2026-11-20T11:00:00.000Z',
+          lastError: null,
+          lastErrorAt: null,
+          failingSince: null,
+        },
+        {
+          source: 'tasks:alpha',
+          lastSuccessAt: null,
+          lastError: 'task_list refused',
+          lastErrorAt: '2026-11-20T11:05:00.000Z',
+          failingSince: '2026-11-20T11:05:00.000Z',
+        },
+      ],
+      Date.parse('2026-11-20T12:00:00.000Z'),
+      { count: 0, oldest: null },
+    )
+
+    expect(view.collectedAt).toBe('2026-11-20T11:00:00.000Z')
   })
 
   test('a skipped fast tick leaves an existing failure streak untouched', async () => {
