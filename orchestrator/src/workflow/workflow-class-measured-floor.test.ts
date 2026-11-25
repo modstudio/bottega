@@ -136,18 +136,32 @@ describe('class-measured floor', () => {
     ).toEqual(['bun', `${checkoutRoot}2/scripts/measure.ts`])
   })
 
+  test('rewrites a checkout root with trailing slashes to dot', () => {
+    expect(treeRelativeArgv(['bun', `${checkoutRoot}/`], [checkoutRoot])).toEqual(['bun', '.'])
+  })
+
+  test('does not rewrite a checkout path embedded in a path word', () => {
+    const embedded = `x${checkoutRoot}/scripts/measure.ts`
+    expect(treeRelativeArgv(['bun', embedded], [checkoutRoot])).toEqual(['bun', embedded])
+    expect(decide([artifact({ argv: ['bun', embedded] })], [checkoutRoot]).met).toBe(true)
+  })
+
+  test('rewrites a checkout path after a flag delimiter', () => {
+    expect(treeRelativeArgv(['bun', `--root=${checkoutRoot}/docs`], [checkoutRoot])).toEqual([
+      'bun',
+      '--root=docs',
+    ])
+  })
+
   test('credits only the recorded command when it names no checkout', () => {
     const command = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', '.'])!
     expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([command])
   })
 
-  test('credits the recorded and tree-relative commands when it names a checkout', () => {
+  test('credits only the tree-relative command when the recorded command names a checkout', () => {
     const command = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', checkoutRoot])!
     const treeRelativeCommand = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', '.'])!
-    expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([
-      command,
-      treeRelativeCommand,
-    ])
+    expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([treeRelativeCommand])
   })
 
   test('floor satisfaction does not add its measurement to the input evidence', async () => {

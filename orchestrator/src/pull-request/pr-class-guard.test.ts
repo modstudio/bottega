@@ -97,6 +97,20 @@ test('allows a tree-relative rerun of a recorded command that names a checkout',
   ).toEqual({ kind: 'allow' })
 })
 
+test('refuses an absolute recorded command rerun when a tree-relative form exists', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurement: { ...base.measurement, command: recorded, count: 4 },
+    body: 'Class guard: example class (before 4, after 0)',
+    execs: [{ ...base.execs[0]!, command: recorded }],
+    checkoutRoots: [checkout],
+  })
+  expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining("'.'") })
+  if (decision.kind === 'refuse') expect(decision.message).not.toContain(checkout)
+})
+
 test('refuses a tree-relative rerun outside the worktree', () => {
   const checkout = '/Users/shmuel/Projects/bottega'
   const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!

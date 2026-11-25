@@ -41,16 +41,19 @@ function checkoutPathMatch(
   root: string,
   start: number,
 ): CheckoutPathMatch | null {
+  const beforeRoot = argument[start - 1]
+  if (beforeRoot !== undefined && /[A-Za-z0-9._\/-]/.test(beforeRoot)) return null
   const afterRoot = argument[start + root.length]
   if (afterRoot !== undefined && afterRoot !== '/') return null
   let end = start + root.length
   while (end < argument.length && !/[\s"'`;&|<>()]/.test(argument[end]!)) end += 1
   const path = argument.slice(start, end)
+  const relative = path.slice(root.length).replace(/^\/+/, '')
   return {
     start,
     end,
     path,
-    relative: path === root ? '.' : path.slice(root.length + 1),
+    relative: relative || '.',
   }
 }
 
@@ -104,7 +107,7 @@ export function creditedMeasurementCommands(
   if (!argv) return [command]
   const rewritten = treeRelativeArgv(argv, checkoutRoots)
   if (rewritten.every((argument, index) => argument === argv[index])) return [command]
-  return [command, renderClassMeasurementCommand(rewritten)!]
+  return [renderClassMeasurementCommand(rewritten)!]
 }
 
 export function decideClassMeasuredFloor(input: {

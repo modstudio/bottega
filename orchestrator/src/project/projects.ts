@@ -23,7 +23,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -127,6 +127,21 @@ export { projectByName, projectByRecordId, projectRowByName, projects }
 /** Every registered project, including retired rows. */
 export function projectsIncludingRetired(database: Database = db()): Project[] {
   return [...projects({}, database), ...projects({ retired: true }, database)]
+}
+
+/** Recorded and resolved roots of every registered checkout. */
+export function registeredCheckoutRoots(database: Database = db()): string[] {
+  return [
+    ...new Set(
+      projects(undefined, database).flatMap((project) => {
+        try {
+          return [project.path, realpathSync(project.path)]
+        } catch {
+          return [project.path]
+        }
+      }),
+    ),
+  ]
 }
 
 /** The sole registered project declaring the task key's prefix, when there is one. */

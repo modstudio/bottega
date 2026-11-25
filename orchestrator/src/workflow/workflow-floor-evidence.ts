@@ -13,8 +13,7 @@ import { db } from '../database/db.ts'
 import { readDocReference } from '../doc/doc-authoritative-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { projects } from '../project/project-read.ts'
-import { projectByName } from '../project/projects.ts'
+import { projectByName, registeredCheckoutRoots } from '../project/projects.ts'
 import {
   questionForWorkflowCursorByNumber,
   questionRuleAuditReasons,
@@ -1027,13 +1026,6 @@ export async function gatherValidatedEvidenceBase(
     input.floors.some((floor) => floor.kind === 'class-measured') ||
     (gathered.satisfy?.found && gathered.satisfy.floor.kind === 'class-measured')
   )
-    gathered.registeredCheckoutRoots = [
-      ...new Set(
-        projects(undefined, d).flatMap((project) => [
-          project.path,
-          realpathIfPresent(project.path) ?? project.path,
-        ]),
-      ),
-    ]
+    gathered.registeredCheckoutRoots = registeredCheckoutRoots(d)
   return gathered
 }
