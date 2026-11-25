@@ -1,4 +1,8 @@
-import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
+import {
+  DAY_IDENTITY_CONFLICT_CODE,
+  type HostedPushChange,
+  type HostedPushOutcome,
+} from './push-contract.ts'
 
 export type DayIdAdoptionDecision = { action: 'adopt'; hostedId: string } | { action: 'none' }
 
@@ -11,7 +15,7 @@ export function decideDayIdAdoption(
     return { action: 'none' }
   const conflict = outcome.conflict
   if (
-    conflict?.code !== 'day-identity-conflict' ||
+    conflict?.code !== DAY_IDENTITY_CONFLICT_CODE ||
     conflict.existingId === change.id ||
     conflict.day !== change.row.day ||
     conflict.machineId === null ||

@@ -18,10 +18,11 @@ import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
 } from './operator-waiting-email-contract.ts'
-import type {
-  HostedPushChange,
-  HostedPushOutcome,
-  PushableHubChangeTable,
+import {
+  DAY_IDENTITY_CONFLICT_CODE,
+  type HostedPushChange,
+  type HostedPushOutcome,
+  type PushableHubChangeTable,
 } from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task client refuses a real hosted URL unless a stub is injected in tests`
@@ -498,7 +499,7 @@ function validatedDayIdentityConflict(value: unknown): Record<string, unknown> |
   if (value === undefined) return undefined
   if (value === null || typeof value !== 'object' || Array.isArray(value)) malformedPushOutcome()
   const conflict = value as Record<string, unknown>
-  if (conflict.code !== 'day-identity-conflict') return undefined
+  if (conflict.code !== DAY_IDENTITY_CONFLICT_CODE) return undefined
   if (
     typeof conflict.day !== 'string' ||
     !/^\d{4}-\d{2}-\d{2}$/.test(conflict.day) ||

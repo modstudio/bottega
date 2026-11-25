@@ -338,6 +338,8 @@ export type ParsedHostedPushChange = HostedPushGuards &
     | { table: DeleteAcceptingTable; id: string; op: 'delete' }
   )
 
+export const DAY_IDENTITY_CONFLICT_CODE = 'day-identity-conflict' as const
+
 export type HostedPushOutcome =
   | {
       id: string
@@ -351,7 +353,7 @@ export type HostedPushOutcome =
       status: 'rejected'
       reason: string
       conflict?: {
-        code: 'day-identity-conflict'
+        code: typeof DAY_IDENTITY_CONFLICT_CODE
         day: string
         incomingId: string
         existingId: string

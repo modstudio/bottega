@@ -1,13 +1,13 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
-import type { PushedDay, PushedInterval } from './push-contract.ts'
+import { DAY_IDENTITY_CONFLICT_CODE, type PushedDay, type PushedInterval } from './push-contract.ts'
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
 export type DayEvidence = PushedDay
 
 export class DayIdentityConflictError extends Error {
-  readonly code = 'day-identity-conflict' as const
+  readonly code = DAY_IDENTITY_CONFLICT_CODE
   readonly day: string
   readonly incomingId: string
   readonly existingId: string
