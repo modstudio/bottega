@@ -4,15 +4,36 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
 import {
   installLevelDispatchDecision,
+  namesRecordedRunTree,
   preflight,
   sourceIsRegisteredMain,
 } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
+
+test('resume preflight accepts the attached tree recorded by an earlier owning turn', () => {
+  const root = addRun({ agent: 'codex', job: 'implement' })
+  const owner = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+  const path = '/worktrees/DEV-2644-attached'
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(path, owner)
+
+  expect(
+    namesRecordedRunTree({
+      cwd: path,
+      resume: {
+        parent: root,
+        worktree: { path },
+        recordedWorktreeOwnerRunId: owner,
+      },
+    }),
+  ).toBe(true)
+})
 
 test('record install level refuses dispatch and full allows it', () => {
   expect(installLevelDispatchDecision('record', 'implement')).toEqual({

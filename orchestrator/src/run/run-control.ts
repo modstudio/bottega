@@ -13,17 +13,17 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
-import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
+import { worktreeListPorcelain } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
-import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
+import type { Project } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import {
+  continuationChainTree,
   prepareChainTreeAttachment,
-  refuseMissingChainTreeDatabase,
 } from './chain-tree-service.ts'
 import {
   type ContinuationCheckpointContext,
@@ -42,10 +42,8 @@ import { displayRunQuestion } from './question-display-probe.ts'
 import { openChainQuestions } from './question-open.ts'
 import {
   continuationBranchAvailability,
-  continuationBranchPlan,
   parseWorktreeList,
   type ResumeTreePlan,
-  resumeTreePlan,
 } from './resume-tree.ts'
 import {
   adoptRunMutation,
@@ -462,76 +460,6 @@ export function resumeLaunchForRoot(rootId: string): ResumeLaunchOptions {
   return resumeLaunchFromStored(row)
 }
 
-function continuationTree(
-  id: string,
-  row: { branch_kept: string | null; branch_kept_tip: string | null },
-  latest: ChainTurn,
-  project: Project | null,
-) {
-  const runRecordId = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(id)?.record_id
-  if (!runRecordId) throw new Error(`no run ${id}`)
-  const latestBranchTip =
-    latest.branch && project
-      ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
-      : null
-  const branchPlan = continuationBranchPlan({
-    latestBranch: latest.branch,
-    latestBranchTip,
-    rootBranch: row.branch_kept,
-  })
-  const recordedBranch = branchPlan.branch
-  const branchTip =
-    branchPlan.tip ??
-    (recordedBranch && project
-      ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${recordedBranch}^{commit}`)
-      : null)
-  const attachedTree =
-    recordedBranch && project
-      ? prepareChainTreeAttachment({
-          rootId: id,
-          projectPath: project.path,
-          branch: recordedBranch,
-          branchTip,
-          retryCommand: `${PLATFORM_SLUG} run continue ${id}`,
-        })
-      : null
-  const recordedTreeMatches = Boolean(attachedTree)
-  const worktreeTool = project ? resolvedWorktreeTool(project) : null
-  const plan =
-    recordedBranch && project
-      ? resumeTreePlan({
-          rootId: id,
-          branch: recordedBranch,
-          recordedTreeMatches,
-          hasCreate: Boolean(
-            worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath,
-          ),
-          branchTip,
-          retainedTip: gitContext(
-            project.path,
-            'rev-parse',
-            '--verify',
-            `refs/orch/retained/${runRecordId}^{commit}`,
-          ),
-          recordedTip: row.branch_kept_tip,
-        })
-      : null
-  if (plan?.action === 'refuse')
-    throw new Error(
-      `run ${id} cannot recreate its continuation tree for branch ${recordedBranch}: ` +
-        `no retained tip exists`,
-    )
-  if (
-    !attachedTree &&
-    (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
-  ) {
-    refuseMissingChainTreeDatabase(id)
-  }
-  return { project, recordedTreeMatches, plan, branchSource: branchPlan.source, attachedTree }
-}
-
 function continuationLaunch(
   inherited: ResumeLaunchOptions,
   id: string,
@@ -670,7 +598,7 @@ function recreatedTreePlan(
 
 function recordContinuationTreeSource(
   childId: string,
-  branchSource: ReturnType<typeof continuationBranchPlan>['source'],
+  branchSource: ReturnType<typeof continuationChainTree>['branchSource'],
   treePlan: ResumeTreePlan | null,
 ): void {
   let text = `continuation tree source: ${branchSource}; no repository branch`
@@ -685,7 +613,7 @@ function recordContinuationTreeSource(
 async function reportAndRecordTree(
   childId: string,
   jobName: string,
-  branchSource: ReturnType<typeof continuationBranchPlan>['source'],
+  branchSource: ReturnType<typeof continuationChainTree>['branchSource'],
   treePlan: ResumeTreePlan | null,
   dependencies: ContinueRunDependencies,
 ): Promise<boolean> {
@@ -831,7 +759,13 @@ export async function continueRun(
     plan: treePlan,
     branchSource,
     attachedTree,
-  } = continuationTree(id, row, latest, checkout.project)
+  } = continuationChainTree({
+    rootId: id,
+    rootBranch: row.branch_kept,
+    rootBranchTip: row.branch_kept_tip,
+    latest,
+    project: checkout.project,
+  })
   refuseHeldContinuationBranch(
     id,
     project?.path ?? null,

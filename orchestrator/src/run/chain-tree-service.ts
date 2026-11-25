@@ -12,6 +12,7 @@ import {
   worktreeListPorcelain,
 } from '../git/git-environment.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
+import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type ChainTreeAttachDecision,
@@ -20,7 +21,12 @@ import {
   decideChainTreeAttach,
 } from './chain-tree-attach.ts'
 import { liveRunOnTree, renderChainTreeAttachRefusal } from './held-branch-remedy.ts'
-import { parseWorktreeList } from './resume-tree.ts'
+import {
+  continuationBranchPlan,
+  parseWorktreeList,
+  type ResumeTreePlan,
+  resumeTreePlan,
+} from './resume-tree.ts'
 
 type ChainTreeRow = {
   record_id: string
@@ -231,4 +237,92 @@ export function refuseMissingChainTreeDatabase(rootId: string): void {
       'this is leaked state to report to the architect (note bottega#3141: no verb releases a ' +
       'chain database while keeping its branch)',
   )
+}
+
+/** Resolve the continuation branch, attach a chain tree when possible, and otherwise plan recovery. */
+export function continuationChainTree(input: {
+  rootId: string
+  rootBranch: string | null
+  rootBranchTip: string | null
+  latest: {
+    record_id: string
+    branch: string | null
+  }
+  project: Project | null
+}): {
+  project: Project | null
+  recordedTreeMatches: boolean
+  plan: ResumeTreePlan | null
+  branchSource: ReturnType<typeof continuationBranchPlan>['source']
+  attachedTree: PreparedChainTree | null
+} {
+  const latestBranchTip =
+    input.latest.branch && input.project
+      ? gitContext(
+          input.project.path,
+          'rev-parse',
+          '--verify',
+          `refs/heads/${input.latest.branch}^{commit}`,
+        )
+      : null
+  const branchPlan = continuationBranchPlan({
+    latestBranch: input.latest.branch,
+    latestBranchTip,
+    rootBranch: input.rootBranch,
+  })
+  const branch = branchPlan.branch
+  const branchTip =
+    branchPlan.tip ??
+    (branch && input.project
+      ? gitContext(input.project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
+      : null)
+  const attachedTree =
+    branch && input.project
+      ? prepareChainTreeAttachment({
+          rootId: input.rootId,
+          projectPath: input.project.path,
+          branch,
+          branchTip,
+          retryCommand: `bottega run continue ${input.rootId}`,
+        })
+      : null
+  const worktreeTool = input.project ? resolvedWorktreeTool(input.project) : null
+  const plan =
+    branch && input.project
+      ? resumeTreePlan({
+          rootId: input.rootId,
+          branch,
+          recordedTreeMatches: Boolean(attachedTree),
+          hasCreate: Boolean(
+            worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath,
+          ),
+          branchTip,
+          retainedTip: gitContext(
+            input.project.path,
+            'rev-parse',
+            '--verify',
+            `refs/orch/retained/${input.rootId}^{commit}`,
+          ),
+          recordedTip: input.rootBranchTip,
+        })
+      : null
+  if (plan?.action === 'refuse') {
+    throw new Error(
+      `run ${input.rootId} cannot recreate its continuation tree for branch ${branch}: ` +
+        'no retained tip exists',
+    )
+  }
+  if (
+    !attachedTree &&
+    (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
+  ) {
+    refuseMissingChainTreeDatabase(input.rootId)
+  }
+  return {
+    project: input.project,
+    recordedTreeMatches: Boolean(attachedTree),
+    plan,
+    branchSource: branchPlan.source,
+    attachedTree,
+  }
 }

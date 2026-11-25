@@ -19,6 +19,7 @@ export const runResumeModuleSpecs = [
       '../git/checkout-identity.ts',
       '../git/git-environment.ts',
       '../project/project-lock.ts',
+      '../project/projects.ts',
       '../worktree/worktree-types.ts',
       './chain-tree-attach.ts',
       './held-branch-remedy.ts',
