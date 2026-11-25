@@ -6,8 +6,10 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import {
   type NoteFloorEvidence,
   pullRequestRequirement,
+  type TaskOpenWithNotesEvidence,
   taskOpenWithNotesFailures,
   taskOpenWithNotesMet,
+  taskOpenWithNotesRemedy,
 } from './workflow-task-open-with-notes-floor.ts'
 
 export { type ArtifactRef, parseArtifactRef } from './workflow-artifact-reference.ts'
@@ -148,6 +150,7 @@ export type ValidatedEvidence = {
     trackerStates: TrackerStates
   }
   notes?: NoteFloorEvidence[]
+  promotedNotes?: TaskOpenWithNotesEvidence['promotedNotes']
   descendants?: Array<{ key: string; status: string | null; statusCategory: string | null }>
   deferReason?: string
   satisfy?: ValidatedSatisfy
@@ -200,7 +203,8 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
   if (kind === 'class-measured') return '--artifact exec:<id> and --class "<class name>"'
   if (kind === 'tracker-transition' || kind === 'descendants-closed') return '--task <KEY>'
-  if (kind === 'task-open-with-notes') return '--task <KEY> and --artifact note:<record-id|label>'
+  if (kind === 'task-open-with-notes')
+    return '--task <KEY>, plus --artifact note:<record-id|label> when a live note is promoted to that task'
   if (kind === 'review-owed')
     return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``
   throw new Error(`unknown floor kind "${String(kind)}"`)
@@ -679,7 +683,7 @@ function taskOpenWithNotesUnmetMessage(
     floor.requirePullRequest,
     PLATFORM_SLUG,
   )
-  return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY> and --artifact note:<record-id|label> for every note named`
+  return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY>${taskOpenWithNotesRemedy(evidence, workflowKey)}`
 }
 
 function pullRequestUnmetMessage(

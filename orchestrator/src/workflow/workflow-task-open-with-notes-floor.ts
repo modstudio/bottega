@@ -44,6 +44,13 @@ export type NoteFloorEvidence = {
   writtenAt?: string
 }
 
+type PromotedNotesEvidence =
+  | {
+      known: true
+      notes: Pick<NoteFloorEvidence, 'recordId' | 'label' | 'staleAt'>[]
+    }
+  | { known: false; reason: string }
+
 export type TaskOpenWithNotesEvidence = {
   task?: {
     key: string
@@ -53,6 +60,22 @@ export type TaskOpenWithNotesEvidence = {
     pullRequestUnavailable?: PullRequestUnavailable
   }
   notes?: NoteFloorEvidence[]
+  promotedNotes?: PromotedNotesEvidence
+}
+
+function hasLivePromotedNotes(evidence: TaskOpenWithNotesEvidence): boolean {
+  return evidence.promotedNotes?.known === true
+    ? evidence.promotedNotes.notes.some((note) => note.staleAt === null)
+    : true
+}
+
+export function taskOpenWithNotesRemedy(
+  evidence: TaskOpenWithNotesEvidence,
+  workflowKey?: string,
+): string {
+  return hasLivePromotedNotes(evidence)
+    ? ` and --artifact note:<record-id|label> naming a live note promoted to ${workflowKey ?? 'the cursor task'}`
+    : `; no note artifact is needed because no live note is promoted to ${workflowKey ?? 'the cursor task'}`
 }
 
 function taskFailures(
@@ -82,7 +105,13 @@ export function taskOpenWithNotesFailures(
 ): string[] {
   const failures = taskFailures(evidence.task, requirePullRequest, platformSlug)
   if (!workflowKey) failures.push('the cursor has no task key')
-  if (!evidence.notes?.length) failures.push('no note artifact was named')
+  if (!evidence.notes?.length && hasLivePromotedNotes(evidence)) {
+    const unreadable =
+      evidence.promotedNotes?.known === false
+        ? `; the notes promoted to ${workflowKey ?? 'the cursor task'} could not be read: ${evidence.promotedNotes.reason}`
+        : ''
+    failures.push(`no note artifact was named${unreadable}`)
+  }
   for (const note of evidence.notes ?? []) {
     const name = note.label ?? note.reference
     if (!note.recordId) failures.push(`${name} does not exist`)

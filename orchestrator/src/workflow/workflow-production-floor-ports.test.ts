@@ -68,3 +68,38 @@ test('note evidence refuses an old note with the sighting command', async () => 
     list.mockRestore()
   }
 })
+
+test('promoted note evidence returns only notes promoted to the cursor task', async () => {
+  const promotedRecordId = newRecordId()
+  const otherRecordId = newRecordId()
+  const list = spyOn(hubNotes, 'listHubNotes').mockResolvedValue([
+    {
+      record_id: promotedRecordId,
+      label: 'fixture#1',
+      text: 'promoted note',
+      stale_at: null,
+      stale_reason: null,
+      promoted_task: 'DEV-977',
+      created_at: '2026-08-01T00:00:00.000Z',
+      last_seen_at: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      record_id: otherRecordId,
+      label: 'fixture#2',
+      text: 'other note',
+      stale_at: '2026-09-01T00:00:00.000Z',
+      stale_reason: 'gone',
+      promoted_task: 'DEV-978',
+      created_at: '2026-08-01T00:00:00.000Z',
+      last_seen_at: '2026-08-01T00:00:00.000Z',
+    },
+  ])
+
+  try {
+    await expect(
+      productionWorkflowFloorPorts().listPromotedNotes?.('fixture', 'DEV-977'),
+    ).resolves.toEqual([{ recordId: promotedRecordId, label: 'fixture#1', staleAt: null }])
+  } finally {
+    list.mockRestore()
+  }
+})

@@ -515,6 +515,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-note-evidence.ts',
     './workflow-floor-pull-request-evidence.ts',
     './workflow-floor-evidence-passing-gate.ts',
+    './workflow-floor-promoted-notes-evidence.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-artifact-evidence.ts',
     './workflow-obligation-floor.ts',
@@ -527,6 +528,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-artifact-evidence.ts',
     './workflow-artifact-reference.ts',
     './workflow-floor-artifact-freshness.ts',
+    './workflow-floor-evidence-replay.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-promoted-notes-evidence.ts', [
+    './workflow-floor.ts',
     './workflow-floor-evidence-replay.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-pull-request-evidence.ts', [

@@ -70,6 +70,7 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
+import { gatherPromotedNotes } from './workflow-floor-promoted-notes-evidence.ts'
 import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
@@ -1017,6 +1018,16 @@ export async function gatherValidatedEvidenceBase(
     gathered.run = await gatherRun(run, input.identity, input.cursorId, d)
   }
   await gatherArtifactEvidence(input, gathered, d, ports, resolveCheckout)
+  if (
+    !gathered.notes?.length &&
+    input.identity.workflowKey &&
+    input.floors.some((floor) => floor.kind === 'task-open-with-notes')
+  )
+    gathered.promotedNotes = await gatherPromotedNotes(
+      input.identity.project,
+      input.identity.workflowKey,
+      ports,
+    )
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()

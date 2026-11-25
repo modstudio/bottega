@@ -28,5 +28,15 @@ export const productionWorkflowFloorPorts = (): FloorEvidencePorts => ({
         }
       : null
   },
+  listPromotedNotes: async (project, taskKey) => {
+    const notes = await listHubNotes(project, { cwd: process.cwd() })
+    return notes
+      .filter((note) => note.promoted_task === taskKey)
+      .map((note) => ({
+        recordId: note.record_id,
+        label: note.label,
+        staleAt: note.stale_at,
+      }))
+  },
   reviewOwed: productionReviewOwedFloor,
 })
