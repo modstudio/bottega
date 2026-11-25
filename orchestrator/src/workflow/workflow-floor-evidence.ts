@@ -990,15 +990,6 @@ export async function gatherValidatedEvidenceBase(
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
-  if (
-    input.identity.workflowKey &&
-    input.floors.some((floor) => floor.kind === 'task-open-with-notes')
-  )
-    gathered.promotedNotes = await gatherPromotedNotes(
-      input.identity.project,
-      input.identity.workflowKey,
-      ports,
-    )
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
@@ -1027,6 +1018,16 @@ export async function gatherValidatedEvidenceBase(
     gathered.run = await gatherRun(run, input.identity, input.cursorId, d)
   }
   await gatherArtifactEvidence(input, gathered, d, ports, resolveCheckout)
+  if (
+    !gathered.notes?.length &&
+    input.identity.workflowKey &&
+    input.floors.some((floor) => floor.kind === 'task-open-with-notes')
+  )
+    gathered.promotedNotes = await gatherPromotedNotes(
+      input.identity.project,
+      input.identity.workflowKey,
+      ports,
+    )
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()

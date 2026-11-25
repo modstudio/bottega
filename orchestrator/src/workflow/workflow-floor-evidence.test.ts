@@ -72,6 +72,39 @@ const commandExitFloor = {
   kind: 'command-exit',
   operatorRuling: false,
 } as const
+const taskOpenWithNotesFloor = {
+  ...operatorRulingFloor,
+  kind: 'task-open-with-notes',
+  operatorRuling: false,
+} as const
+
+test('does not gather promoted notes when a note artifact was offered', async () => {
+  const noteId = newRecordId()
+  let calls = 0
+  const gathered = await gather(
+    database(),
+    { artifacts: [`note:${noteId}`] },
+    {
+      readNote: async () => ({
+        recordId: noteId,
+        label: 'fixture#1',
+        promotedTask: 'DEV-977',
+        staleAt: null,
+        writtenAt: '2026-09-02',
+      }),
+      listPromotedNotes: async () => {
+        calls += 1
+        return []
+      },
+    },
+    identity,
+    [taskOpenWithNotesFloor],
+  )
+
+  expect(gathered.notes).toHaveLength(1)
+  expect(gathered).not.toHaveProperty('promotedNotes')
+  expect(calls).toBe(0)
+})
 
 test('gathers the stranded-question remedy through operator-floor evidence', async () => {
   const d = database()

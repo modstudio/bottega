@@ -203,7 +203,8 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
   if (kind === 'class-measured') return '--artifact exec:<id> and --class "<class name>"'
   if (kind === 'tracker-transition' || kind === 'descendants-closed') return '--task <KEY>'
-  if (kind === 'task-open-with-notes') return '--task <KEY> and --artifact note:<record-id|label>'
+  if (kind === 'task-open-with-notes')
+    return '--task <KEY>, plus --artifact note:<record-id|label> when a live note is promoted to that task'
   if (kind === 'review-owed')
     return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``
   throw new Error(`unknown floor kind "${String(kind)}"`)

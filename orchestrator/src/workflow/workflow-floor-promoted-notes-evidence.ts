@@ -1,4 +1,4 @@
-// concern: workflow-floor-adapter
+// concern: workflow-floor-promoted-notes-evidence
 /** Gathers the promoted-note set without deciding whether the floor is met. */
 
 import type { ValidatedEvidence } from './workflow-floor.ts'
