@@ -662,6 +662,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/cleanup/cleanup-sweep-session-close-out.ts',
     allowed: [
       'bun:sqlite',
+      '../../../shared/brand.ts',
       '../board/board-claim-service.ts',
       '../board/board-mode.ts',
       '../database/db.ts',
@@ -670,10 +671,25 @@ export const cleanupBoundarySpecs = [
       '../session/session-close-out-store.ts',
       './cleanup.ts',
       './cleanup-sweep-session-close-out-decision.ts',
+      './cleanup-sweep-session-close-out-hosted.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite', './cleanup.ts'],
     reason:
       'Finish a recorded clean session through the existing release and state-owner services.',
+  },
+  {
+    name: 'cleanup-sweep-session-close-out-hosted-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-session-close-out-hosted.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/bounded-fetch.ts',
+      '../../../shared/call-budgets.ts',
+      '../board/board-write-destination.ts',
+      '../record/record-api-client.ts',
+      '../record/record-api-client-response.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep hosted closed-session claim release behind one bounded record adapter.',
   },
   {
     name: 'cleanup-sweep-context-boundary',

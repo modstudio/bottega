@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
@@ -20,6 +21,7 @@ import { getContextItem } from '../doc/context-item-store.ts'
 import { sessionResumeBriefState } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 import { dockerHostEvidenceProbe } from '../resources/docker-host-evidence.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
@@ -304,7 +306,7 @@ test('closed session sweep acts only on current clean rows and retains resumed o
   expect(lines).not.toContain(`swept closed session ${alreadySwept}`)
 })
 
-test('closed session sweep releases local claims but leaves adopted local history open', async () => {
+test('closed session sweep releases local claims and hosted claims but leaves adopted local history open', async () => {
   const clock = Date.parse('2026-11-09T12:02:00.000Z')
   const localSession = newRecordId()
   const hostedSession = newRecordId()
@@ -368,6 +370,7 @@ test('closed session sweep releases local claims but leaves adopted local histor
   const prior = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   try {
+    const hostedReleases: string[] = []
     expect(
       await sweepSessionCloseOutRecords({
         enabled: true,
@@ -375,9 +378,16 @@ test('closed session sweep releases local claims but leaves adopted local histor
         database,
         now: clock,
         presentation: presentation(lines, () => {}),
-        adapters: { release },
+        adapters: {
+          release,
+          releaseHostedClaims: async (session) => {
+            hostedReleases.push(session)
+            return 1
+          },
+        },
       }),
     ).toBe(false)
+    expect(hostedReleases).toEqual([hostedSession])
     expect(
       database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(hostedClaim),
     ).toEqual({ closed_at: null })
@@ -410,7 +420,7 @@ test('closed session sweep releases local claims but leaves adopted local histor
         presentation: presentation(lines, () => {}),
         adapters: { release },
       }),
-    ).resolves.toBe(false)
+    ).resolves.toBe(true)
     expect(
       database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(refusedClaim),
     ).toEqual({ closed_at: null })
@@ -418,8 +428,174 @@ test('closed session sweep releases local claims but leaves adopted local histor
       database
         .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
         .get(refusedSession),
-    ).toEqual({ swept_at: new Date(clock).toISOString() })
-    expect(lines.filter((line) => line.includes('BOTTEGA_RECORD_API_URL'))).toHaveLength(1)
+    ).toEqual({ swept_at: null })
+    expect(
+      lines.filter((line) => line.startsWith('this install has adopted the hosted board')),
+    ).toHaveLength(1)
+    expect(lines).toContain(
+      `deferred closed session ${refusedSession}: hosted board claims cannot be released while this install has adopted the hosted board but BOTTEGA_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`,
+    )
+  } finally {
+    database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+    if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = prior
+  }
+})
+
+test('hosted claim release bounds an outage and retries per-session refusals', async () => {
+  const database = db()
+  const clock = Date.parse('2026-11-09T12:02:00.000Z')
+  const closedAt = '2026-11-09T12:00:00.000Z'
+  const insertCloseOut = database.query(
+    `INSERT INTO session_close_out
+     (record_id,session_id,closed_at,clean,recommendation,mechanical_count,process_count,error_count,warning_count)
+     VALUES (?,?,?,1,'clear',1,0,0,0)`,
+  )
+  const insertSeen = database.query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
+  const selectSweptAt = database.query('SELECT swept_at FROM session_close_out WHERE session_id=?')
+  const addSessions = (count = 3) =>
+    Array.from({ length: count }, () => {
+      const session = newRecordId()
+      insertCloseOut.run(newRecordId(), session, closedAt)
+      insertSeen.run(session, closedAt)
+      return session
+    })
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const prior = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  try {
+    const outageSessions = addSessions()
+    const outageCalls: string[] = []
+    const outageLines: string[] = []
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(outageLines, () => {}),
+        adapters: {
+          release: async (session) => closeOutReport(session, true),
+          releaseHostedClaims: async (session) => {
+            outageCalls.push(session)
+            throw new BoundExceededError(
+              'https://record.test/v1/board/claims/release-session',
+              'hosted-close-out',
+              'deadline',
+              2_000,
+            )
+          },
+        },
+      }),
+    ).toBe(true)
+    expect(outageCalls).toHaveLength(1)
+    expect(
+      database
+        .query(
+          `SELECT COUNT(*) count FROM session_close_out
+           WHERE session_id IN (?,?,?) AND swept_at IS NOT NULL`,
+        )
+        .get(...outageSessions),
+    ).toEqual({ count: 0 })
+    expect(
+      outageLines.filter((line) => line.startsWith('skipped hosted claim release')),
+    ).toHaveLength(2)
+    expect(outageLines.join('\n')).toContain(`retry: ${PLATFORM_SLUG} machine sweep`)
+
+    for (const session of outageSessions)
+      database
+        .query('UPDATE session_close_out SET swept_at=? WHERE session_id=?')
+        .run(new Date(clock).toISOString(), session)
+
+    const refusedSessions = addSessions()
+    const refusedCalls: string[] = []
+    const refusedLines: string[] = []
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(refusedLines, () => {}),
+        adapters: {
+          release: async (session) => closeOutReport(session, true),
+          releaseHostedClaims: async (session) => {
+            refusedCalls.push(session)
+            if (refusedCalls.length === 1)
+              throw new RecordApiRequestError('fixture refused', 'refused', 404)
+            return 0
+          },
+        },
+      }),
+    ).toBe(true)
+    expect(refusedCalls).toHaveLength(3)
+    expect(
+      database
+        .query(
+          `SELECT COUNT(*) count FROM session_close_out
+           WHERE session_id IN (?,?,?) AND swept_at IS NOT NULL`,
+        )
+        .get(...refusedSessions),
+    ).toEqual({ count: 2 })
+    expect(refusedLines).toContain(
+      `could not release hosted board claims of closed session ${refusedCalls[0]}: fixture refused; retry: ${PLATFORM_SLUG} machine sweep`,
+    )
+
+    for (const session of refusedSessions)
+      database
+        .query('UPDATE session_close_out SET swept_at=? WHERE session_id=?')
+        .run(new Date(clock).toISOString(), session)
+
+    const conflictSessions = addSessions(2)
+    const conflictCalls: string[] = []
+    const conflictLines: string[] = []
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(conflictLines, () => {}),
+        adapters: {
+          release: async (session) => closeOutReport(session, true),
+          releaseHostedClaims: async (session) => {
+            conflictCalls.push(session)
+            if (conflictCalls.length === 1)
+              throw new RecordApiRequestError('fixture conflict', 'refused', 409)
+            return 0
+          },
+        },
+      }),
+    ).toBe(true)
+    expect(conflictCalls).toEqual(conflictSessions)
+    expect(selectSweptAt.get(conflictCalls[0]!)).toEqual({ swept_at: null })
+    expect(selectSweptAt.get(conflictCalls[1]!)).toEqual({
+      swept_at: new Date(clock).toISOString(),
+    })
+    expect(conflictLines).toContain(
+      `could not release hosted board claims of closed session ${conflictCalls[0]}: fixture conflict; retry: ${PLATFORM_SLUG} machine sweep`,
+    )
+
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: true,
+        database,
+        now: clock,
+        presentation: presentation(refusedLines, () => {}),
+        adapters: {
+          release: async (session) => closeOutReport(session, true),
+          releaseHostedClaims: async () => {
+            throw new Error('dry-run called hosted adapter')
+          },
+        },
+      }),
+    ).toBe(false)
+    expect(refusedLines).toContain(
+      `would release hosted board claims of closed session ${conflictCalls[0]}`,
+    )
   } finally {
     database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
     if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL
