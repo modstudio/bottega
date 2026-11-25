@@ -36,6 +36,7 @@ import {
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
+import type { ListWorkflowNotesPort } from './workflow-cursor-compose.ts'
 import {
   resolveCompositionLiveAutonomy,
   resolveCursorLiveAutonomy,
@@ -95,7 +96,6 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
-import type { ListWorkflowNotesPort } from './workflow-cursor-compose.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void
