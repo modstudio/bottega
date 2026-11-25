@@ -20,6 +20,7 @@ export const healthModules = [
     allowed: [
       'bun:sqlite',
       'shared/brand.ts',
+      'shared/record-remedies.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/active-space-invariant.ts',
       'orchestrator/src/record/install-binding.ts',

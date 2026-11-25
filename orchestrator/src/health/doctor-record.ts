@@ -160,9 +160,7 @@ export async function reportRecordDoctor(
   }
   if (!identity?.activeSpaceId) {
     const parity = await workflowHistoryParityDoctorDiagnosis(async () => {
-      throw (
-        identityFailure ?? new Error(RECORD_ACTIVE_SPACE_REMEDY)
-      )
+      throw identityFailure ?? new Error(RECORD_ACTIVE_SPACE_REMEDY)
     })
     for (const line of parity.lines) presentation.log(line)
     presentation.exitCode(1)
