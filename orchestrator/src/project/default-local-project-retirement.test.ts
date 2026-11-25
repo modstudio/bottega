@@ -11,6 +11,7 @@ import {
 } from '../database/project-register-store.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { STANDARD_OPEN_HOOKS } from '../runtime/store-hooks.ts'
+import { installTaskReader, type TaskReadPort } from '../workflow/task-read-port.ts'
 import { retireUnusedDefaultLocalProject } from './default-local-project-retirement.ts'
 import {
   PROJECT_REFERENCE_REPORT,
@@ -88,6 +89,43 @@ describe('hosted-configured sign-in', () => {
     )
     expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
     expect(existsSync(path)).toBe(false)
+  })
+
+  test('uses the default local task reader for a project without a record space', async () => {
+    const d = database()
+    const { environment } = registerDefault(d, 'orch-default-hosted-local-reader-')
+    d.query(
+      `INSERT INTO record_install_binding(id,bound_at,record_origin)
+     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
+    ).run(process.env.BOTTEGA_RECORD_API_URL!)
+    const guarded = STANDARD_OPEN_HOOKS.access!(d)
+    const taskReader: TaskReadPort = {
+      list: async () => {
+        throw new Error('project tasks has no declared record space')
+      },
+      listLocal: async (filters) => {
+        expect(filters).toEqual({ project: 'tasks' })
+        return []
+      },
+      lookup: async () => [],
+      duplicates: async () => [],
+      show: async () => {
+        throw new Error('not used')
+      },
+      documents: async () => [],
+      document: async () => {
+        throw new Error('not used')
+      },
+    }
+    const previousTaskReader = installTaskReader(taskReader)
+    try {
+      expect(
+        await retireUnusedDefaultLocalProject(guarded, environment, undefined, noReferences),
+      ).toBe(true)
+      expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
+    } finally {
+      installTaskReader(previousTaskReader)
+    }
   })
 
   test('keeps the built-in project when its local hub store holds a task', async () => {
