@@ -14,6 +14,7 @@ export type CollectorLegState = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  consecutiveFailures?: number
 }
 
 type UnreadableCollectorLegState = {
@@ -47,7 +48,11 @@ function parseState(value: string): CollectorLegState {
     !nullableString(row.lastSuccessAt) ||
     !nullableString(row.lastError) ||
     !nullableString(row.lastErrorAt) ||
-    !nullableString(row.failingSince)
+    !nullableString(row.failingSince) ||
+    !(
+      row.consecutiveFailures === undefined ||
+      (Number.isInteger(row.consecutiveFailures) && row.consecutiveFailures >= 0)
+    )
   )
     throw new Error(`collector leg state for ${row.source ?? 'unknown'} had invalid fields`)
   return row as CollectorLegState
@@ -88,6 +93,7 @@ export function recordCollectorLegFailure(
     lastError: error,
     lastErrorAt: at,
     failingSince: previous?.failingSince ?? at,
+    consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
   })
   return { logFailure: previous?.failingSince == null || previous.lastError !== error }
 }
@@ -100,6 +106,7 @@ export function recordCollectorLegSuccess(source: string, at: string): { logReco
     lastError: previous?.lastError ?? null,
     lastErrorAt: previous?.lastErrorAt ?? null,
     failingSince: null,
+    consecutiveFailures: 0,
   })
   return { logRecovery: previous?.failingSince != null }
 }

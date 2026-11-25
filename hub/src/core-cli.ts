@@ -275,7 +275,11 @@ function registerCollectionCommands(program: Command): void {
       else {
         for (const leg of collectorLegs) {
           const error = leg.status === 'failing' && leg.lastError ? `: ${leg.lastError}` : ''
-          console.log(`${leg.source}: ${leg.status}${error}`)
+          const failures =
+            leg.consecutiveFailures === undefined
+              ? ''
+              : ` (${leg.consecutiveFailures} consecutive failures)`
+          console.log(`${leg.source}: ${leg.status}${failures}${error}`)
         }
       }
     })

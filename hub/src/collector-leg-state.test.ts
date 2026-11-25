@@ -5,6 +5,8 @@ import {
   type CollectorLegState,
   collectorLegStates,
   collectorLegView,
+  recordCollectorLegFailure,
+  recordCollectorLegSuccess,
 } from './collector-leg-state.ts'
 import { writeTransaction } from './db.ts'
 import type { HostedOutboxReport } from './outbox.ts'
@@ -34,6 +36,7 @@ describe('collector leg state', () => {
       expect(collectorLegStates()[0]).toMatchObject({
         failingSince: first.failingSince,
         lastError: 'ruling read unavailable',
+        consecutiveFailures: 2,
       })
       expect(error).toHaveBeenCalledTimes(1)
 
@@ -47,11 +50,26 @@ describe('collector leg state', () => {
         lastError: 'ruling read unavailable',
         lastErrorAt: expect.any(String),
         failingSince: null,
+        consecutiveFailures: 0,
       })
       expect(error).toHaveBeenLastCalledWith('hub: runs collect recovered')
     } finally {
       error.mockRestore()
     }
+  })
+
+  test('a pass that does not read a failed tracker leaves its streak intact', () => {
+    recordCollectorLegFailure('tasks:alpha', 'task_list refused', '2026-11-20T11:00:00.000Z')
+    const failed = collectorLegStates().find(
+      (state) => !('unreadable' in state) && state.source === 'tasks:alpha',
+    )
+    recordCollectorLegSuccess('tasks', '2026-11-20T11:05:00.000Z')
+
+    expect(
+      collectorLegStates().find(
+        (state) => !('unreadable' in state) && state.source === 'tasks:alpha',
+      ),
+    ).toEqual(failed)
   })
 
   test('a failing leg remains visible beside a successful leg and governs freshness', () => {

@@ -7,7 +7,12 @@ import {
   type TrackerProtocol,
   trackerWireAction,
 } from './tracker-actions.ts'
-import { scopedRows, type ToolCaller, toolDeclaresInput } from './tracker-list-scope.ts'
+import {
+  scopedRows,
+  type ToolCaller,
+  ToolCallRefused,
+  toolDeclaresInput,
+} from './tracker-list-scope.ts'
 import {
   arrayStatusPayload,
   cursorStatusPayload,
@@ -296,7 +301,7 @@ export type TrackerSource = {
   env: string
   /** The register declares that this source accepts its protocol's updated-since filter. */
   supportsUpdatedSince: boolean
-  fetch: (m: ToolCaller, updatedSince?: string) => Promise<TrackerFetchResult>
+  fetch: (m: ToolCaller, updatedSince?: string, pageSize?: number) => Promise<TrackerFetchResult>
   /** Present only when this protocol has a status-write payload proven against its live server. */
   writeStatus?: (
     m: ToolCaller,
@@ -328,6 +333,9 @@ export type TrackerFetchResult = {
   tasks: TrackerTask[]
   complete: boolean
   deletedKeys: string[]
+  /** The paging size of the most recent successful list call. Absent for unpaged sources. */
+  pageSize?: number
+  error?: string
 }
 
 /**
@@ -336,6 +344,7 @@ export type TrackerFetchResult = {
  * nothing spins.
  */
 export const MAX_PAGES = 40
+export const TRACKER_DEFAULT_PAGE_SIZE = 100
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
@@ -389,14 +398,15 @@ function categoryOf(
   return establishedCategory(rawStatus, category, states) ?? 'open'
 }
 
-async function readTrackerPages(
-  readPage: (pageIndex: number) => Promise<boolean>,
-): Promise<{ complete: boolean }> {
-  for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex++) {
-    if (!(await readPage(pageIndex))) return { complete: true }
-  }
-  return { complete: false }
-}
+const smallerPageSize = (pageSize: number) => Math.max(1, Math.floor(pageSize / 2))
+
+const refusedPageError = (
+  protocol: 'cursor-mcp' | 'workspace-mcp',
+  pageIndex: number,
+  rowsRead: number,
+  status: string | undefined,
+) =>
+  `${protocol} page index ${pageIndex} after ${rowsRead} rows in status ${status ?? 'all'} was refused at page size 1`
 
 const ENTITIES: Record<string, string> = {
   '&amp;': '&',
@@ -640,18 +650,47 @@ async function fetchWorkspaceStatus(
   searchAction: string,
   team: string,
   sendsScope: boolean,
-): Promise<{ tasks: TrackerTask[]; refs: AssigneeRef[]; complete: boolean }> {
+  startingPageSize: number,
+): Promise<{
+  tasks: TrackerTask[]
+  refs: AssigneeRef[]
+  complete: boolean
+  pageSize?: number
+  nextPageSize: number
+  error?: string
+}> {
   const tasks: TrackerTask[] = []
   const refs: AssigneeRef[] = []
   let complete = true
-  const pages = await readTrackerPages(async (pageIndex) => {
+  let pageSize = startingPageSize
+  let lastSuccessfulPageSize: number | undefined
+  let rowOffset = 0
+  for (let pagesRead = 0; pagesRead < MAX_PAGES; ) {
+    const pageIndex = Math.floor(rowOffset / pageSize)
     const page = pageIndex + 1
-    const reply = (await m.callTool(searchAction, {
-      ...(updatedSince === undefined ? { status } : { updated_since: updatedSince }),
-      ...(sendsScope ? { team_id: team } : {}),
-      page,
-      per_page: 100,
-    })) as { tasks?: WorkspaceTask[]; last_page?: number }
+    let reply: { tasks?: WorkspaceTask[]; last_page?: number }
+    try {
+      reply = (await m.callTool(searchAction, {
+        ...(updatedSince === undefined ? { status } : { updated_since: updatedSince }),
+        ...(sendsScope ? { team_id: team } : {}),
+        page,
+        per_page: pageSize,
+      })) as typeof reply
+    } catch (cause) {
+      if (!(cause instanceof ToolCallRefused)) throw cause
+      if (pageSize === 1)
+        return {
+          tasks,
+          refs,
+          complete: false,
+          pageSize: lastSuccessfulPageSize,
+          nextPageSize: pageSize,
+          error: refusedPageError('workspace-mcp', pageIndex, rowOffset, status),
+        }
+      pageSize = smallerPageSize(pageSize)
+      continue
+    }
+    lastSuccessfulPageSize = pageSize
     const rows = sendsScope
       ? (reply.tasks ?? [])
       : scopedRows(
@@ -661,10 +700,18 @@ async function fetchWorkspaceStatus(
           `workspace-mcp collect refused for project ${project}: search schema has no team_id and returned rows carry no team scope`,
         )
     complete &&= appendWorkspaceTasks(tasks, refs, rows, project, status, updatedSince, states)
-    return Boolean(reply.last_page && page < reply.last_page)
-  })
-  complete &&= pages.complete
-  return { tasks, refs, complete }
+    pagesRead++
+    if (!(reply.last_page && page < reply.last_page))
+      return { tasks, refs, complete, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
+    rowOffset += pageSize
+  }
+  return {
+    tasks,
+    refs,
+    complete: false,
+    pageSize: lastSuccessfulPageSize,
+    nextPageSize: pageSize,
+  }
 }
 
 function workspaceSource(
@@ -686,7 +733,7 @@ function workspaceSource(
     project,
     env,
     supportsUpdatedSince,
-    async fetch(m, updatedSince) {
+    async fetch(m, updatedSince, startingPageSize = TRACKER_DEFAULT_PAGE_SIZE) {
       if (!team) {
         throw new Error(workspaceScopeRefusal('collect', project))
       }
@@ -694,6 +741,9 @@ function workspaceSource(
       const out: TrackerTask[] = []
       const refs: AssigneeRef[] = []
       let complete = true
+      let pageSize = startingPageSize
+      let lastSuccessfulPageSize: number | undefined
+      let error: string | undefined
       for (const status of updatedSince === undefined ? openStatuses : [undefined]) {
         const fetched = await fetchWorkspaceStatus(
           m,
@@ -704,16 +754,29 @@ function workspaceSource(
           searchAction,
           team,
           sendsScope,
+          pageSize,
         )
         out.push(...fetched.tasks)
         refs.push(...fetched.refs)
         complete &&= fetched.complete
+        pageSize = fetched.nextPageSize
+        if (fetched.pageSize !== undefined) lastSuccessfulPageSize = fetched.pageSize
+        if (fetched.error) {
+          error = fetched.error
+          break
+        }
       }
       const names = await assignees(m, refs)
       out.forEach((task, index) => {
         task.assignee = names[index] ?? null
       })
-      return { tasks: out, complete, deletedKeys: [] }
+      return {
+        tasks: out,
+        complete,
+        deletedKeys: [],
+        pageSize: lastSuccessfulPageSize,
+        ...(error ? { error } : {}),
+      }
     },
     async writeStatus(m, task, status, category) {
       await m.callTool(statusAction, workspaceStatusPayload(statusAction, task.key, status))
@@ -838,10 +901,83 @@ async function lookupCursorTask(
   }
 }
 
-/**
- * Underscore tool names (`task_list`) with a `{data:{items,nextCursor}}` envelope,
- * paged by cursor.
- */
+async function fetchCursorPages(input: {
+  m: ToolCaller
+  project: string
+  projectId: string
+  searchAction: string
+  sendsScope: boolean
+  statuses: (string | undefined)[]
+  states: TrackerSettings['states']
+  updatedSince?: string
+  startingPageSize: number
+}): Promise<TrackerFetchResult> {
+  const out: TrackerTask[] = []
+  let complete = true
+  const deletedKeys: string[] = []
+  let pageSize = input.startingPageSize
+  let lastSuccessfulPageSize: number | undefined
+  let error: string | undefined
+  for (const status of input.statuses) {
+    let cursor: string | undefined
+    let rowsRead = 0
+    let pagesRead = 0
+    for (; pagesRead < MAX_PAGES; ) {
+      let r: { data?: { items?: CursorTask[]; nextCursor?: string } }
+      try {
+        r = (await input.m.callTool(input.searchAction, {
+          ...(input.updatedSince === undefined ? { status } : { updatedSince: input.updatedSince }),
+          ...(input.sendsScope ? { projectId: input.projectId } : {}),
+          limit: pageSize,
+          ...(cursor ? { cursor } : {}),
+        })) as typeof r
+      } catch (cause) {
+        if (!(cause instanceof ToolCallRefused)) throw cause
+        if (pageSize === 1) {
+          complete = false
+          error = refusedPageError('cursor-mcp', pagesRead, rowsRead, status)
+          break
+        }
+        pageSize = smallerPageSize(pageSize)
+        continue
+      }
+      lastSuccessfulPageSize = pageSize
+      const rows = input.sendsScope
+        ? (r.data?.items ?? [])
+        : scopedRows(
+            (r.data?.items ?? []) as (CursorTask & Record<string, unknown>)[],
+            'projectId',
+            input.projectId,
+            `cursor-mcp collect refused for project ${input.project}: search schema has no projectId and returned rows carry no projectId scope`,
+          )
+      const appended = appendCursorTasks(
+        out,
+        rows,
+        input.project,
+        status,
+        input.updatedSince !== undefined,
+        input.states,
+      )
+      deletedKeys.push(...appended.deletedKeys)
+      complete &&= appended.complete
+      cursor = r.data?.nextCursor
+      rowsRead += rows.length
+      pagesRead++
+      if (!cursor) break
+    }
+    if (pagesRead === MAX_PAGES && cursor) complete = false
+    if (error) break
+  }
+  return {
+    tasks: out,
+    complete,
+    deletedKeys,
+    pageSize: lastSuccessfulPageSize,
+    ...(error ? { error } : {}),
+  }
+}
+
+/** Underscore tool names with a `{data:{items,nextCursor}}` envelope, paged by cursor. */
 function cursorMcpSource(
   project: string,
   env: string,
@@ -860,52 +996,22 @@ function cursorMcpSource(
     project,
     env,
     supportsUpdatedSince,
-    async fetch(m, updatedSince) {
+    async fetch(m, updatedSince, startingPageSize = TRACKER_DEFAULT_PAGE_SIZE) {
       if (!projectId) {
         throw new Error(cursorScopeRefusal('collect', project))
       }
       const sendsScope = await toolDeclaresInput(m, searchAction, 'projectId')
-      const out: TrackerTask[] = []
-      let complete = true
-      const deletedKeys: string[] = []
-      for (const status of updatedSince === undefined ? openStatuses : [undefined]) {
-        let cursor: string | undefined
-        const pages = await readTrackerPages(async () => {
-          const r = (await m.callTool(searchAction, {
-            ...(updatedSince === undefined ? { status } : { updatedSince }),
-            ...(sendsScope ? { projectId } : {}),
-            limit: 100,
-            ...(cursor ? { cursor } : {}),
-          })) as {
-            data?: {
-              items?: CursorTask[]
-              nextCursor?: string
-            }
-          }
-          const rows = sendsScope
-            ? (r.data?.items ?? [])
-            : scopedRows(
-                (r.data?.items ?? []) as (CursorTask & Record<string, unknown>)[],
-                'projectId',
-                projectId,
-                `cursor-mcp collect refused for project ${project}: search schema has no projectId and returned rows carry no projectId scope`,
-              )
-          const appended = appendCursorTasks(
-            out,
-            rows,
-            project,
-            status,
-            updatedSince !== undefined,
-            states,
-          )
-          deletedKeys.push(...appended.deletedKeys)
-          complete &&= appended.complete
-          cursor = r.data?.nextCursor
-          return Boolean(cursor)
-        })
-        complete &&= pages.complete
-      }
-      return { tasks: out, complete, deletedKeys }
+      return fetchCursorPages({
+        m,
+        project,
+        projectId,
+        searchAction,
+        sendsScope,
+        statuses: updatedSince === undefined ? openStatuses : [undefined],
+        states,
+        updatedSince,
+        startingPageSize,
+      })
     },
     async writeStatus(m, task, status, _category) {
       if (!task.externalId) {

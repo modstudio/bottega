@@ -5,11 +5,13 @@ import { TrackerLookupUnverifiable } from '../../../shared/tracker-task-text.ts'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
+  TRACKER_DEFAULT_PAGE_SIZE,
   type TrackerFetchResult,
   type TrackerSource,
   type TrackerTask,
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
+import { recordCollectorLegFailure, recordCollectorLegSuccess } from '../collector-leg-state.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { resolveHostedUrl } from '../hosted-url.ts'
 import { hostedWriteMode } from '../hosted-write-mode.ts'
@@ -167,6 +169,8 @@ const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
 const trackerSinceKey = (project: Project) => `collect.tracker.${project}.since`
 const trackerFullReadKey = (project: Project) => `collect.tracker.${project}.full-at`
 const trackerForceFullKey = (project: Project) => `collect.tracker.${project}.force-full`
+/** Machine-local cache; losing this value only costs re-probing the tracker's reply limit. */
+const trackerPageSizeKey = (project: Project) => `collect.tracker.${project}.page-size`
 
 function trackerSetting(key: string): string | null {
   return (
@@ -193,6 +197,24 @@ export function storedTrackerReadMode(
     }),
     since,
   }
+}
+
+export function storedTrackerPageSize(project: Project, mode: TrackerReadMode): number {
+  const value = Number(trackerSetting(trackerPageSizeKey(project)))
+  const remembered =
+    Number.isInteger(value) && value >= 1 && value <= TRACKER_DEFAULT_PAGE_SIZE
+      ? value
+      : TRACKER_DEFAULT_PAGE_SIZE
+  return mode === 'full' ? Math.min(TRACKER_DEFAULT_PAGE_SIZE, remembered * 2) : remembered
+}
+
+function recordTrackerPageSize(project: Project, pageSize: number | undefined): void {
+  if (pageSize === undefined) return
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)`)
+      .run(trackerPageSizeKey(project), String(pageSize)),
+  )
 }
 
 export function recordTrackerReadState(
@@ -685,10 +707,12 @@ export async function fetchTrackerTasks(
   listHostedTrackerCandidates?: (
     project: string,
   ) => Promise<Array<Pick<TaskRow, 'key' | 'source' | 'status_category'>>>,
+  pageSize?: number,
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
     mode === 'incremental' ? (since ?? undefined) : undefined,
+    pageSize,
   )
   const tasks = fetched.tasks
   if (mode === 'incremental') return fetched
@@ -936,7 +960,66 @@ function trackerIngestInputs(only: ReadonlySet<Project> | null) {
 
 type CollectedTracker = { result: TrackerResult; filled: number }
 
-async function collectTrackerSource(
+function hostedCollectorPorts(prefixes: readonly string[], at: string) {
+  return {
+    conn: db(),
+    planTask: (task: TrackerTask) => planTrackerTaskOn(db(), task, at),
+    applyPlans: (plans: TrackerTaskRowPlan[]) =>
+      writeTransaction((conn) => {
+        for (const plan of plans) applyTrackerPlanOn(conn, plan)
+      }),
+    inScope: (key: string) => trackerKeyInScope(key, prefixes),
+    prefix: trackerKeyPrefix,
+  }
+}
+
+async function collectAfterFetchFailure(input: {
+  source: TrackerSource
+  missing: { task_key: string; project: string }[]
+  at: string
+  startedAt: string
+  client: Mcp
+  prefixes: readonly string[]
+  hosted: boolean
+  hostedBackfill: TrackerTask[]
+  read: { mode: TrackerReadMode }
+  error: string
+}): Promise<CollectedTracker> {
+  const applied = input.hosted
+    ? await applyHostedCollectorPass({
+        source: input.source,
+        tasks: [],
+        deletedKeys: [],
+        backfillTasks: input.hostedBackfill,
+        prefixes: [],
+        at: input.at,
+        ports: hostedCollectorPorts(input.prefixes, input.at),
+      })
+    : null
+  const backfill =
+    applied?.backfill ??
+    (await backfillTrackerTasks(
+      input.source,
+      input.client,
+      input.missing,
+      input.at,
+      input.prefixes,
+    ))
+  recordTrackerReadState(input.source.project, input.read.mode, input.startedAt, false)
+  return {
+    result: {
+      project: input.source.project,
+      tasks: 0,
+      changed: 0,
+      activity: backfill.activity,
+      mode: input.read.mode,
+      error: input.error,
+    },
+    filled: backfill.filled,
+  }
+}
+
+export async function collectTrackerSource(
   tracker: Extract<TrackerRegistration, { source: TrackerSource }>,
   missing: { task_key: string; project: string }[],
   at: string,
@@ -947,17 +1030,42 @@ async function collectTrackerSource(
   const startedAt = nowIso()
   const read = storedTrackerReadMode(s, startedAt)
   const prefixes = tracker.prefixes
-  const fetched = await fetchTrackerTasks(
-    s,
-    m,
-    read.mode,
-    read.since,
-    prefixes,
-    listHostedTrackerCandidates,
-  )
+  let fetched: TrackerFetchResult
+  try {
+    fetched = await fetchTrackerTasks(
+      s,
+      m,
+      read.mode,
+      read.since,
+      prefixes,
+      listHostedTrackerCandidates,
+      storedTrackerPageSize(s.project, read.mode),
+    )
+  } catch (cause) {
+    fetched = {
+      tasks: [],
+      complete: false,
+      deletedKeys: [],
+      error: cause instanceof Error ? cause.message : String(cause),
+    }
+  }
+  recordTrackerPageSize(s.project, fetched.pageSize)
   const unique = scopedTrackerTasks(fetched.tasks, prefixes)
   const hosted = hostedWriteMode(resolveHostedUrl()) === 'hosted-configured'
   const hostedBackfill = hosted ? await hostedBackfillReads(s, m, missing, prefixes) : []
+  if (fetched.error)
+    return collectAfterFetchFailure({
+      source: s,
+      missing,
+      at,
+      startedAt,
+      client: m,
+      prefixes,
+      hosted,
+      hostedBackfill,
+      read,
+      error: fetched.error,
+    })
   const applied = hosted
     ? await applyHostedCollectorPass({
         source: s,
@@ -966,16 +1074,7 @@ async function collectTrackerSource(
         backfillTasks: hostedBackfill,
         prefixes,
         at,
-        ports: {
-          conn: db(),
-          planTask: (task) => planTrackerTaskOn(db(), task, at),
-          applyPlans: (plans) =>
-            writeTransaction((conn) => {
-              for (const plan of plans) applyTrackerPlanOn(conn, plan)
-            }),
-          inScope: (key) => trackerKeyInScope(key, prefixes),
-          prefix: trackerKeyPrefix,
-        },
+        ports: hostedCollectorPorts(prefixes, at),
       })
     : null
   const observations = applied?.observations ?? writeTrackerCache(unique.values(), at, prefixes)
@@ -1041,17 +1140,28 @@ async function collectTracker(
       filled: 0,
     }
   const m = new Mcp(resolved.credentials.url, resolved.credentials.token)
+  let collected: CollectedTracker
   try {
     await m.initialize()
-    return await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
+    collected = await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
   } catch (cause) {
-    return {
+    collected = {
       result: { project: s.project, tasks: 0, changed: 0, error: String((cause as Error).message) },
       filled: 0,
     }
   } finally {
     await m.close()
   }
+  const source = `tasks:${s.project}`
+  try {
+    if (collected.result.error) recordCollectorLegFailure(source, collected.result.error, nowIso())
+    else recordCollectorLegSuccess(source, nowIso())
+  } catch (stateError) {
+    console.error(
+      `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
+    )
+  }
+  return collected
 }
 
 /** Snapshot every reachable tracker into the task table, recording transitions. */

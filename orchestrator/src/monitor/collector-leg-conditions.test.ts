@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   COLLECTOR_LEG_FAILURE_WARN_MS,
   collectorLegFailureDecision,
+  TRACKER_CONSECUTIVE_FAILURE_THRESHOLD,
 } from './collector-leg-conditions.ts'
 
 const now = Date.parse('2026-11-20T12:00:00.000Z')
@@ -34,6 +35,25 @@ describe('collector leg failure decision', () => {
       }),
     ])
     expect(collectorLegFailureDecision([leg(null)], now).conditions).toEqual([])
+  })
+
+  test('fires for two consecutive tracker failures regardless of elapsed time', () => {
+    const recent = new Date(now - 1_000).toISOString()
+    const tracker = {
+      ...leg(recent),
+      source: 'tasks:stopal',
+      consecutiveFailures: TRACKER_CONSECUTIVE_FAILURE_THRESHOLD,
+    }
+    expect(
+      collectorLegFailureDecision([{ ...tracker, consecutiveFailures: 1 }], now).conditions,
+    ).toEqual([])
+    expect(collectorLegFailureDecision([tracker], now).conditions).toEqual([
+      expect.objectContaining({
+        kind: 'collector-leg-failure',
+        subject: 'tasks:stopal',
+        since: recent,
+      }),
+    ])
   })
 
   test('reports unreadable observations as an observation error', () => {

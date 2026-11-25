@@ -6,6 +6,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export const COLLECTOR_LEG_FAILURE_WARN_MS = 10 * 60_000
+export const TRACKER_CONSECUTIVE_FAILURE_THRESHOLD = 2
 
 type CollectorLegObservation = {
   source: string
@@ -13,6 +14,7 @@ type CollectorLegObservation = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  consecutiveFailures?: number
   status: 'current' | 'failing' | 'stale' | 'unreadable'
   ageMs: number | null
   quarantinedRows?: number
@@ -99,6 +101,10 @@ function parsedObservations(value: unknown): {
       !nullableString(row.lastError) ||
       !nullableString(row.lastErrorAt) ||
       !nullableString(row.failingSince) ||
+      !(
+        row.consecutiveFailures === undefined ||
+        (Number.isInteger(row.consecutiveFailures) && row.consecutiveFailures >= 0)
+      ) ||
       !validStatus ||
       !(row.ageMs === null || (typeof row.ageMs === 'number' && Number.isFinite(row.ageMs)))
     ) {
@@ -134,7 +140,10 @@ export function collectorLegFailureDecision(
       continue
     }
     const ageMs = Math.max(0, now - since)
-    if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
+    const trackerThresholdReached =
+      leg.source.startsWith('tasks:') &&
+      (leg.consecutiveFailures ?? 0) >= TRACKER_CONSECUTIVE_FAILURE_THRESHOLD
+    if (!trackerThresholdReached && ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
     failures.push({
       source: leg.source,
       failingSince: leg.failingSince,

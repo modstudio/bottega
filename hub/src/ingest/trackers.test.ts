@@ -7,12 +7,14 @@ import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import { trackerObservationTimes } from './tracker-observation-times.ts'
 import {
+  collectTrackerSource,
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
   finishTrackerResults,
   ingestTrackers,
   recordTrackerReadState,
   retireOutOfScopeTrackerTasks,
+  storedTrackerPageSize,
   storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
@@ -390,6 +392,65 @@ describe('tracker register', () => {
         )
         .get()?.value,
     ).toBe(first)
+  })
+
+  test('full reads probe at double the remembered page size capped at the protocol default', () => {
+    writeTransaction((conn) => {
+      const write = conn.query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
+      write.run('collect.tracker.page-size-small.page-size', '20')
+      write.run('collect.tracker.page-size-large.page-size', '80')
+    })
+    expect(storedTrackerPageSize('page-size-small', 'incremental')).toBe(20)
+    expect(storedTrackerPageSize('page-size-small', 'full')).toBe(40)
+    expect(storedTrackerPageSize('page-size-large', 'full')).toBe(100)
+    expect(storedTrackerPageSize('page-size-missing', 'full')).toBe(100)
+  })
+
+  test('a failed list still backfills, records incomplete, and leaves retirements untouched', async () => {
+    const project = 'failed-list'
+    const existing = { ...trackerTask, externalId: 'existing', key: 'FL-1', project }
+    cacheTrackerTask(existing, '2026-11-20T10:00:00.000Z')
+    const source: TrackerSource = {
+      project,
+      env: 'FIXTURE',
+      supportsUpdatedSince: false,
+      fetch: async () => {
+        throw new Error('list unavailable')
+      },
+      lookup: async (_client, key) => ({
+        ...trackerTask,
+        externalId: 'backfilled',
+        key,
+        project,
+      }),
+    }
+
+    const collected = await collectTrackerSource(
+      { project, prefixes: ['FL'], source },
+      [{ task_key: 'FL-2', project }],
+      '2026-11-20T11:00:00.000Z',
+      { callTool: async () => ({}) } as never,
+    )
+
+    expect(collected).toMatchObject({
+      result: { project, tasks: 0, changed: 0, error: 'list unavailable' },
+      filled: 1,
+    })
+    expect(
+      db()
+        .query<{ key: string; status_category: string }, [string]>(
+          'SELECT key,status_category FROM task WHERE project=? ORDER BY key',
+        )
+        .all(project),
+    ).toEqual([
+      { key: 'FL-1', status_category: 'active' },
+      { key: 'FL-2', status_category: 'active' },
+    ])
+    expect(
+      db()
+        .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+        .get(`collect.tracker.${project}.force-full`),
+    ).toEqual({ value: '1' })
   })
 
   test('a refused hosted change keeps the cursor and forces the next read to be full', () => {
