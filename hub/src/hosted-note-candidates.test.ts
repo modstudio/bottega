@@ -54,22 +54,6 @@ beforeAll(async () => {
       ('${otherProjectId}','${spaceId}','delta','${at}'),
       ('${hiddenProjectId}','${otherSpaceId}','gamma','${at}');
   `)
-  await insertNote({
-    id: id(2010),
-    space: spaceId,
-    projectId,
-    project: 'gamma',
-    number: 1,
-    text: 'alpha beta',
-  })
-  await insertNote({
-    id: id(2011),
-    space: spaceId,
-    projectId,
-    project: 'gamma',
-    number: 2,
-    text: 'alpha beta',
-  })
   for (let index = 0; index < NOTE_DUPLICATE_CANDIDATES + 5; index += 1)
     await insertNote({
       id: id(2020 + index),
@@ -78,6 +62,15 @@ beforeAll(async () => {
       project: 'gamma',
       number: index + 3,
       text: `alpha filler${index}`,
+    })
+  for (let index = 0; index < NOTE_DUPLICATE_CANDIDATES; index += 1)
+    await insertNote({
+      id: id(3000 + index),
+      space: spaceId,
+      projectId,
+      project: 'gamma',
+      number: 100 + index,
+      text: 'alpha beta',
     })
   await insertNote({
     id: id(2100),
@@ -129,16 +122,18 @@ test('candidate read ranks and caps actionable project notes inside the caller t
   )
 
   expect(rows).toHaveLength(NOTE_DUPLICATE_CANDIDATES)
-  expect(rows.slice(0, 2).map((row) => row.record_id)).toEqual([id(2010), id(2011)])
+  expect(rows.map((row) => row.record_id)).toEqual(
+    Array.from({ length: NOTE_DUPLICATE_CANDIDATES }, (_, index) => id(3000 + index)),
+  )
   expect(rows.every((row) => row.project === 'gamma' && row.stale_at === null)).toBe(true)
   expect(rows.map((row) => row.record_id)).not.toContain(id(2100))
   expect(rows.map((row) => row.record_id)).not.toContain(id(2101))
   expect(rows.map((row) => row.record_id)).not.toContain(id(2102))
   expect(rows.map((row) => row.record_id)).not.toContain(id(2103))
   expect(rows[0]).toEqual({
-    record_id: id(2010),
-    number: 1,
-    label: 'gamma#1',
+    record_id: id(3000),
+    number: 100,
+    label: 'gamma#100',
     project: 'gamma',
     text: 'alpha beta',
     stale_at: null,
