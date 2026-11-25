@@ -2,8 +2,7 @@
 /** Persists collector-leg outcomes and projects their freshness for public read surfaces. */
 
 import type { CollectorLegHealth } from '@bottega/hub-views/work-summary'
-import { QUIET_MAX_MS, SLOW_MS } from './collect-cadence.ts'
-import { collectionStaleness } from './collect-slow-health.ts'
+import { collectionStaleness, trackerCollectionStaleness } from './collect-slow-health.ts'
 import { db, writeTransaction } from './db.ts'
 import type { HostedChangeQuarantineSummary } from './hosted-change-quarantine.ts'
 
@@ -161,11 +160,9 @@ export function collectorLegView(
         ageMs: null,
       }
     }
-    const staleness = collectionStaleness(
-      now,
-      state.lastSuccessAt,
-      state.source.startsWith('tasks:') ? QUIET_MAX_MS + SLOW_MS : undefined,
-    )
+    const staleness = state.source.startsWith('tasks:')
+      ? trackerCollectionStaleness(now, state.lastSuccessAt)
+      : collectionStaleness(now, state.lastSuccessAt)
     const quarantine =
       state.source === 'hosted changes'
         ? {

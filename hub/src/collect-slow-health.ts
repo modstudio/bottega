@@ -1,4 +1,4 @@
-import { SLOW_MS } from './collect-cadence.ts'
+import { QUIET_MAX_MS, SLOW_MS } from './collect-cadence.ts'
 
 export const SLOW_COLLECTION_STALE_CADENCES = 3
 
@@ -26,4 +26,12 @@ export function collectionStaleness(
 /** Decide collection health from the clock and the last completed slow pass. */
 export function slowCollectionHealth(now: number, lastSlowAt: string | null): SlowCollectionHealth {
   return collectionStaleness(now, lastSlowAt)
+}
+
+/** A quiet tracker may wait through its maximum delay plus one slow cadence. */
+export function trackerCollectionStaleness(
+  now: number,
+  completedAtIso: string | null,
+): SlowCollectionHealth {
+  return collectionStaleness(now, completedAtIso, QUIET_MAX_MS + SLOW_MS)
 }

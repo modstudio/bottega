@@ -87,11 +87,7 @@ describe('adaptive tracker paging', () => {
       async callTool(_name, args) {
         const pageSize = args.per_page as number
         const start = ((args.page as number) - 1) * pageSize
-        if (
-          pageSize > 25 ||
-          (start >= 25 && pageSize === 25) ||
-          (start >= 36 && pageSize > 1)
-        )
+        if (pageSize > 25 || (start >= 25 && pageSize === 25) || (start >= 36 && pageSize > 1))
           throw new ToolCallRefused('fixture page too large')
         return {
           tasks: allRows.slice(start, start + pageSize),
