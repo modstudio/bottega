@@ -1,9 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
+  canonDriftStoreSource,
   classifyStore,
   liveStorePath,
   localGateRegistration,
+  migrateStore,
+  snapshotStore,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
@@ -50,6 +53,16 @@ function run(argv: string[], cwd: string): { exitCode: number; stdout: string; s
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString().trim(),
   }
+}
+
+function runWithStore(store: string): number {
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], {
+    budget: 'self-cli',
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store },
+  })
+  process.stdout.write(child.stdout)
+  process.stderr.write(child.stderr)
+  return child.exitCode
 }
 
 function refuse(condition: string, namedRemedy = remedy): never {
@@ -198,34 +211,44 @@ if (import.meta.main) {
     }
     if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
-    const findings = await (storeKind === 'ahead'
-      ? withBranchStoreScratch('canon-drift', (dir) =>
-          withMainGateFactsSnapshot(
-            storeKind,
-            dir,
-            (snapshotError) => {
-              const database = new Database(live!, { readonly: true })
-              try {
-                throw new Error(
-                  `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+    const source = canonDriftStoreSource(storeKind)
+    if (source.kind === 'migrated-scratch') {
+      const code = withBranchStoreScratch('canon-drift', (dir) => {
+        const snapshot = snapshotStore(live!, dir)
+        migrateStore(snapshot)
+        return runWithStore(snapshot)
+      })
+      process.exitCode = code
+    } else {
+      const findings = await (source.kind === 'gate-facts'
+        ? withBranchStoreScratch('canon-drift', (dir) =>
+            withMainGateFactsSnapshot(
+              storeKind,
+              dir,
+              (snapshotError) => {
+                const database = new Database(live!, { readonly: true })
+                try {
+                  throw new Error(
+                    `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+                  )
+                } finally {
+                  database.close()
+                }
+              },
+              (snapshot) => {
+                console.log(
+                  `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
                 )
-              } finally {
-                database.close()
-              }
-            },
-            (snapshot) => {
-              console.log(
-                `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
-              )
-              return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
-            },
-          ),
-        )
-      : checkCanonDrift(root))
-    for (const finding of findings) {
-      console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
+                return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+              },
+            ),
+          )
+        : checkCanonDrift(root))
+      for (const finding of findings) {
+        console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
+      }
+      if (findings.length) process.exitCode = 1
     }
-    if (findings.length) process.exitCode = 1
   } catch (cause) {
     console.error(String((cause as Error).message ?? cause))
     process.exitCode = 1

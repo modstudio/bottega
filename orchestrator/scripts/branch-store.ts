@@ -119,6 +119,18 @@ export function gateStoreSource(
   return snapshotAvailable ? { kind: 'gate-facts' } : { kind: 'refuse' }
 }
 
+export type CanonDriftStoreSource =
+  | { kind: 'direct' }
+  | { kind: 'migrated-scratch' }
+  | { kind: 'gate-facts' }
+
+/** Pure policy for the store source used by the canon-drift gate leg. */
+export function canonDriftStoreSource(storeKind: BranchStoreKind): CanonDriftStoreSource {
+  if (storeKind === 'behind') return { kind: 'migrated-scratch' }
+  if (storeKind === 'ahead') return { kind: 'gate-facts' }
+  return { kind: 'direct' }
+}
+
 export function classifyStore(path: string | null, folder = MIGRATIONS_FOLDER): BranchStoreKind {
   if (!path || !existsSync(path)) return 'absent'
   const database = new Database(path, { readonly: true })
