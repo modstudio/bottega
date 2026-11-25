@@ -24,6 +24,7 @@ import {
   type Audience,
   acknowledgementRefusal,
   architectIdentity,
+  boardAudienceLocality,
   architectsPostingRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
@@ -637,7 +638,7 @@ function duplicateRoot(
 
 function rootMessageLocality(input: PostNoticeInput, audience: string): BoardLocality {
   if (input.suggestingRunId) return 'suggestion'
-  return parseAudience(audience).kind === 'machine' ? 'machine-audience' : 'shared'
+  return boardAudienceLocality(audience)
 }
 
 export function insertRootMessage(
@@ -788,16 +789,24 @@ export function messageRows(database = db(), locality: BoardLocality = 'shared')
 function selectMessageRows(database: ReturnType<typeof db>, machineScoped = false): MessageRow[] {
   return database
     .query(
-      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message${machineScoped ? " WHERE audience LIKE 'machine:%'" : ''} ORDER BY number`,
+      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message${
+        machineScoped
+          ? " WHERE audience LIKE 'machine:%' OR thread_root_record_id IN (SELECT record_id FROM board_message WHERE audience LIKE 'machine:%')"
+          : ''
+      } ORDER BY number`,
     )
     .all() as MessageRow[]
 }
 
-/** Machine-audience messages stay local after the shared board is adopted. */
+/** Machine-audience threads stay local after the shared board is adopted. */
 export function machineMessageRows(database = db()): MessageRow[] {
-  return selectMessageRows(database, true).filter(
-    (row) => row.audience !== null && parseAudience(row.audience).kind === 'machine',
-  )
+  const rows = selectMessageRows(database, true)
+  return rows.filter((row) => {
+    const root = row.thread_root_record_id
+      ? rows.find((candidate) => candidate.record_id === row.thread_root_record_id)
+      : row
+    return root?.audience != null && parseAudience(root.audience).kind === 'machine'
+  })
 }
 
 export function messageTags(

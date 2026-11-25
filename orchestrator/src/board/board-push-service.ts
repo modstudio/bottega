@@ -74,6 +74,10 @@ export { deliveryWarning }
 
 type ReceiptSource = 'local' | 'hosted'
 
+function localRowLocality(localMode: boolean): 'shared' | 'machine-audience' {
+  return localMode ? 'shared' : 'machine-audience'
+}
+
 type ReceiptRow = {
   delivered_at: string | null
   acknowledged_at: string | null
@@ -489,7 +493,7 @@ function pendingAcknowledgements(
   localRows: MessageRow[],
   localMode: boolean,
 ) {
-  const locality = localMode ? 'shared' : 'machine-audience'
+  const locality = localRowLocality(localMode)
   return [
     ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows, locality),
     ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
@@ -609,12 +613,12 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const mode = boardMode('shared', input.env ?? process.env, database)
-  const localLocality = mode === 'hosted' ? 'machine-audience' : 'shared'
+  const localLocality = localRowLocality(mode === 'local')
   const messages = localBoardRows(database)
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
-    const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env, true)
+    const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env)
     if (mode === 'hosted' && (!identifier || identifier.source === 'hosted'))
       boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
     return identifier ? [identifier] : []

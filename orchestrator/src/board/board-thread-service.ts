@@ -41,6 +41,7 @@ import {
   hasReceipt,
   insertRootMessage,
   localBoardDuplicateLiveSql,
+  machineMessageRows,
   type MessageRow,
   messageRows,
   messageTags,
@@ -70,6 +71,17 @@ function message(recordId: string, sourceRows: MessageRow[] = messageRows()): Me
 function threadRoot(recordId: string, sourceRows: MessageRow[] = messageRows()): MessageRow {
   const row = message(recordId, sourceRows)
   return row.kind === 'reply' ? message(row.thread_root_record_id!, sourceRows) : row
+}
+
+function messageLocality(row: MessageRow): BoardLocality {
+  return row.audience ? boardAudienceLocality(row.audience) : 'shared'
+}
+
+function localMessageRows(recordId: string, database: ReturnType<typeof writableDb>): MessageRow[] {
+  const machineRows = machineMessageRows(database)
+  return machineRows.some((row) => row.record_id === recordId)
+    ? machineRows
+    : messageRows(database)
 }
 
 function replyingProject(actor: ReturnType<typeof boardActor>, cwd: string) {
@@ -112,7 +124,7 @@ function addReplyReceipts(
   facts: ReturnType<typeof replyAudienceFacts>,
   database: ReturnType<typeof writableDb>,
 ): number {
-  requireLocalBoardWrite('reply post', process.env, database)
+  requireLocalBoardWrite('reply post', process.env, database, messageLocality(root))
   const recipients = resolveReplyReaders({
     rootAuthor: authorReader(root),
     threadAuthors: facts.threadAuthors,
@@ -205,13 +217,14 @@ export function replyToThread(
   cwd = process.cwd(),
   audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
-  requireLocalBoardWrite('reply post', env)
   validateReplyBody(body)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
+  const root = threadRoot(recordId, localMessageRows(recordId, database))
+  const locality = messageLocality(root)
+  requireLocalBoardWrite('reply post', env, database, locality)
   return writeTransaction(() => {
-    const root = threadRoot(recordId)
     const facts = replyAudienceFacts(root, database)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
@@ -223,8 +236,10 @@ export function replyToThread(
         live: rowIsLive(root, clock),
         accepted: root.accepted_reply_record_id !== null,
       },
-      addressed: addressed(root, reader, clock),
-      hasReceipt: hasReceipt(root.record_id, reader) || facts.loopedInSessions.includes(reader),
+      addressed: addressed(root, reader, clock, database, locality),
+      hasReceipt:
+        hasReceipt(root.record_id, reader, database, locality) ||
+        facts.loopedInSessions.includes(reader),
     })
     if (refusal) throw new Error(refusal)
     const storedAudience = audience === null ? null : replyAudienceValue(audience)
@@ -245,7 +260,7 @@ export function replyToThread(
         storedAudience,
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
       ) as { record_id: string; number: number } | null
-    const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
+    const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database, locality)
     if (decision === 'drop-duplicate') {
       const reached = (
         database
@@ -388,9 +403,11 @@ function takeFilingLease(
   clock: number,
 ): { question: MessageRow; reply: MessageRow; startedAt: string } {
   const database = writableDb()
-  requireLocalBoardWrite('answer accept', process.env, database)
+  const guardQuestion = message(questionId, localMessageRows(questionId, database))
+  const locality = messageLocality(guardQuestion)
+  requireLocalBoardWrite('answer accept', process.env, database, locality)
   return writeTransaction(() => {
-    const current = message(questionId)
+    const current = message(questionId, messageRows(database, locality))
     const refusal = filingLeaseRefusal(current, clock)
     if (refusal) throw new Error(refusal)
     const startedAt = new Date(clock).toISOString()
@@ -403,14 +420,18 @@ function takeFilingLease(
       )
       .run(startedAt, questionId, staleBefore)
     if (taken.changes !== 1) {
-      const raced = message(questionId)
+      const raced = message(questionId, messageRows(database, locality))
       throw new Error(
         filingLeaseRefusal(raced, clock) ??
           `board question ${questionId} note filing is in progress; retry with ${PLATFORM_SLUG} board file-note ${questionId}`,
       )
     }
-    const question = message(questionId)
-    return { question, reply: message(question.accepted_reply_record_id!), startedAt }
+    const question = message(questionId, messageRows(database, locality))
+    return {
+      question,
+      reply: message(question.accepted_reply_record_id!, messageRows(database, locality)),
+      startedAt,
+    }
   }, database)
 }
 
@@ -426,8 +447,9 @@ async function filePendingNote(
   notePendingError: string | null
   retry: string | null
 }> {
-  requireLocalBoardWrite('answer accept')
   const { question, reply, startedAt } = takeFilingLease(questionId, clock)
+  const database = writableDb()
+  requireLocalBoardWrite('answer accept', process.env, database, messageLocality(question))
   try {
     const filed = await filer(
       {
@@ -443,7 +465,6 @@ async function filePendingNote(
     )
     if (filed.noteRecordId === null || filed.noteLabel === null)
       throw new Error('hub did not report the filed note identity')
-    const database = writableDb()
     writeTransaction(() => {
       database
         .query(
@@ -461,7 +482,6 @@ async function filePendingNote(
     }
   } catch (error) {
     const detail = prepareFailure(error instanceof Error ? error.message : String(error))
-    const database = writableDb()
     writeTransaction(() => {
       database
         .query(
@@ -489,12 +509,15 @@ export async function acceptAnswer(
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
   prepareFailure?: (detail: string) => string,
 ) {
-  requireLocalBoardWrite('answer accept', env)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
+  const guardQuestion = message(questionId, localMessageRows(questionId, database))
+  const locality = messageLocality(guardQuestion)
+  requireLocalBoardWrite('answer accept', env, database, locality)
   const { question, reply } = writeTransaction(() => {
-    const question = message(questionId)
+    const sourceRows = messageRows(database, locality)
+    const question = message(questionId, sourceRows)
     const refusal = acceptRefusal({
       actor: { kind: actor.kind, reader },
       questionId: question.number,
@@ -504,7 +527,7 @@ export async function acceptAnswer(
       live: rowIsLive(question, clock),
     })
     if (refusal) throw new Error(refusal)
-    const reply = message(replyId)
+    const reply = message(replyId, sourceRows)
     if (reply.kind !== 'reply' || reply.thread_root_record_id !== question.record_id)
       throw new Error(`board reply ${replyId} does not belong to board question ${questionId}`)
     database
@@ -519,7 +542,7 @@ export async function acceptAnswer(
         `note filing has not completed; retry with ${PLATFORM_SLUG} board file-note ${question.number}`,
         question.record_id,
       )
-    return { question: message(question.record_id), reply }
+    return { question: message(question.record_id, messageRows(database, locality)), reply }
   }, database)
   const note = await filePendingNote(question.record_id, cwd, filer, clock, prepareFailure)
   return { accepted: reply.record_id, questionId: question.record_id, ...note }
@@ -533,9 +556,10 @@ export async function fileAnswerNote(
   clock = Date.now(),
   prepareFailure?: (detail: string) => string,
 ) {
-  requireLocalBoardWrite('answer accept', env)
   const actor = boardActor(env)
-  const question = message(questionId)
+  const database = writableDb()
+  const question = message(questionId, localMessageRows(questionId, database))
+  requireLocalBoardWrite('answer accept', env, database, messageLocality(question))
   if (question.kind !== 'question' || question.accepted_reply_record_id === null)
     throw new Error(`board question ${questionId} has no accepted answer to file`)
   if (actor.kind !== 'operator' && actor.session !== question.author_session)

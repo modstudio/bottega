@@ -573,6 +573,17 @@ test('write-time board head judgment refuses an unheaded site and accepts a head
       }`,
     }),
   ).toEqual([])
+  expect(
+    hostedLocalBoardHeadFailures({
+      file,
+      sourceText: `function write(database) {
+        requireLocalBoardWrite('notice post', process.env, database, 'machine-audience')
+        database.query(\`UPDATE board_message SET title='changed'\`)
+      }`,
+    }),
+  ).toEqual([
+    expect.stringContaining(`${file}:3: local board_message write has no proven local-board head`),
+  ])
 })
 
 test('write-time board head judgment does not judge test-file SQL fixtures', () => {

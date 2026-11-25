@@ -85,7 +85,7 @@ export function localBoardRowsFor(
   if (source === 'hosted') return [[], 'shared']
   const rows = localBoardRows(database)
   const row = rows.find((candidate) => candidate.record_id === recordId)
-  return [rows, row?.audience ? boardAudienceLocality(row.audience) : 'shared']
+  return [rows, row ? rowLocality(row) : 'shared']
 }
 
 function boardReader(env: Environment = process.env): string {

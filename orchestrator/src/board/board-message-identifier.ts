@@ -54,7 +54,8 @@ export function boardMessageKind(
   source: 'local' | 'hosted',
 ): 'root' | 'reply' | 'missing' {
   if (source === 'hosted') return cachedHostedBoardMessageKind(recordId, database)
-  requireLocalBoardRead(process.env, database)
+  const locality = localMessageIsMachineScoped(database, recordId) ? 'machine-audience' : 'shared'
+  requireLocalBoardRead(process.env, database, locality)
   const row = database
     .query<{ thread_root_record_id: string | null }, [string]>(
       `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
@@ -113,10 +114,18 @@ function boardIdentifierMode(
 function localMessageIsMachineScoped(database: Database, recordId: string): boolean {
   const row = database
     .query<{ audience: string | null }, [string]>(
-      'SELECT audience FROM board_message WHERE record_id=?',
+      `SELECT COALESCE(root.audience,message.audience) AS audience
+       FROM board_message AS message
+       LEFT JOIN board_message AS root ON root.record_id=message.thread_root_record_id
+       WHERE message.record_id=?`,
     )
     .get(recordId)
-  return row?.audience != null && parseAudience(row.audience).kind === 'machine'
+  if (row?.audience == null) return false
+  try {
+    return parseAudience(row.audience).kind === 'machine'
+  } catch {
+    return false
+  }
 }
 
 export function resolveBoardMessageIdentifier(
@@ -124,15 +133,10 @@ export function resolveBoardMessageIdentifier(
   input: string | number,
   environment: Environment = process.env,
   validateHosted = true,
-  allowLocalMachineScoped = false,
 ): BoardIdentifierResolution {
   const given = String(input)
   const mode = boardIdentifierMode(database, environment, validateHosted)
-  const identity = boardMessageIdentity(
-    database,
-    given,
-    mode === 'local' || allowLocalMachineScoped,
-  )
+  const identity = boardMessageIdentity(database, given, true)
   if (mode === 'hosted') {
     if (identity.row && localMessageIsMachineScoped(database, identity.row.record_id))
       return { source: 'local', recordId: identity.row.record_id }
@@ -194,16 +198,9 @@ export function resolveBoardDeliveryIdentifier(
   database: Database,
   input: string | number,
   environment: Environment = process.env,
-  allowLocalMachineScoped = false,
 ): BoardIdentifierResolution | null {
   try {
-    return resolveBoardMessageIdentifier(
-      database,
-      input,
-      environment,
-      false,
-      allowLocalMachineScoped,
-    )
+    return resolveBoardMessageIdentifier(database, input, environment, false)
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('invalid board-message identifier '))
       return null

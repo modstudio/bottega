@@ -558,7 +558,7 @@ export async function boardReply(
 export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const database = db()
-  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env)
   const [rows, rowLocality] = localBoardRowsFor(resolved.recordId, resolved.source, database)
   const thread =
     resolved.source === 'local'
@@ -706,7 +706,7 @@ export async function boardFileNote(questionId: string, inputContext?: Context) 
 export async function boardWithdraw(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const database = db()
-  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env)
   if (resolved.source === 'local')
     withdrawNotice(resolved.recordId, c.env, c.clock, database, localBoardRows(database))
   else
@@ -719,7 +719,7 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
 export async function boardAcknowledge(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const database = db()
-  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env)
   if (resolved.source === 'local')
     acknowledgeNotice(resolved.recordId, c.env, c.clock, localBoardRows(database))
   else {
@@ -758,7 +758,7 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
 export async function boardStatus(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const database = db()
-  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env)
   return resolved.source === 'hosted'
     ? await hostedClient(c)
         .getBoardStatus(resolved.recordId)
