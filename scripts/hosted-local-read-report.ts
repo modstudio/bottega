@@ -128,30 +128,37 @@ const HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES = [
   'operator_waiting_email',
 ] as const
 
-export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
-  const refused = new Set<string>(HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES)
+function hostedRecordLocalReadFailures(
+  hits: readonly HostedLocalReadHit[],
+  tables: readonly string[],
+  remedy: string,
+): string[] {
+  const refused = new Set<string>(tables)
   return hits.flatMap((hit) =>
     hit.kind === 'read' &&
     (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
     hit.exclusionReason !== 'planned' &&
     refused.has(hit.table)
       ? [
-          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; read the hosted record through the hub client on a hosted install`,
+          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; ${remedy}`,
         ]
       : [],
   )
 }
 
+export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
+  return hostedRecordLocalReadFailures(
+    hits,
+    HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES,
+    'read the hosted record through the hub client on a hosted install',
+  )
+}
+
 export function hostedDocLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
-  return hits.flatMap((hit) =>
-    hit.kind === 'read' &&
-    (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
-    hit.exclusionReason !== 'planned' &&
-    hit.table === 'doc_revision'
-      ? [
-          `${hit.file}:${hit.line}: hosted install can read doc_revision from the local SQLite store; read revisions through the hosted doc client on a hosted install`,
-        ]
-      : [],
+  return hostedRecordLocalReadFailures(
+    hits,
+    ['doc_revision'],
+    'read revisions through the hosted doc client on a hosted install',
   )
 }
 

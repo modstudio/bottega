@@ -105,7 +105,7 @@ export async function userCanonImportCommand(
   })
   if (collision) throw new Error(collision)
   const currentRows = allUserRows.filter((row) => row.status === 'current')
-  const hasHistory = await authoritativeCanonImportHistory({ kind: 'user', owner }, allUserRows)
+  const hasHistory = await authoritativeCanonImportHistory({ kind: 'user', owner })
   const global = (await listDocs({ scope: 'canon', subject: null, status: 'current' })).map(
     ({ slug, body }) => ({
       slug,

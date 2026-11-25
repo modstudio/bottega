@@ -294,11 +294,11 @@ export function commitHostedDocRestore(
 
 function commitDocRestoreMirror(
   input: RestoreInput & { recordId: string; revisionId: string },
-  compareExpectedRevision: boolean,
+  enforceLocalRevisionPolicy: boolean,
 ): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    if (compareExpectedRevision) {
+    if (enforceLocalRevisionPolicy) {
       assertLocalRevisionWrite(
         input,
         currentDocRevision(input.scope, input.subject, input.slug, input.owner),

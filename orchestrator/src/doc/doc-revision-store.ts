@@ -120,9 +120,11 @@ export function currentDocRevision(
   return row?.record_id ?? null
 }
 
-export function hasCanonImportHistory(
-  address: { kind: 'user'; owner: string } | { kind: 'project'; subject: string },
-): boolean {
+export type CanonImportPlanAddress =
+  | { kind: 'user'; owner: string }
+  | { kind: 'project'; subject: string }
+
+export function hasCanonImportHistory(address: CanonImportPlanAddress): boolean {
   const subject = address.kind === 'project' ? address.subject : null
   const owner = address.kind === 'user' ? address.owner : null
   return (

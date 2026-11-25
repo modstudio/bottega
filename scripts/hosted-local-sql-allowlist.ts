@@ -235,7 +235,7 @@ const DOC_REVISION_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
     functionName: 'hasCanonImportHistory',
     expectedSites: 1,
     detail:
-      'authoritativeCanonImportHistory calls this helper only from applyRecordReadAuthority local-authoritative handling; hosted project and user plans use their unfiltered hosted canon rows',
+      'both callers are local-authoritative arms: authoritativeCanonImportHistory under applyRecordReadAuthority local handling, and localCanonImportResult in canon-import.ts under applyRecordWriteAuthority local handling',
   },
   {
     file: 'orchestrator/src/doc/doc-revision-store.ts',
@@ -273,7 +273,7 @@ const DOC_REVISION_PLANNED_SITES: readonly B2ReasonedSite[] = [
     functionName: 'getStoredDocRevision',
     expectedSites: 3,
     detail:
-      'filed ruling refs in commands/rulings.ts and mcp/mcp-operator-tools.ts need revision.number, which the hosted record has no column for; held for Shmuel Barkin ruling on a record revision-number column or ruling-ref format change, task DEV-2634',
+      'the one doc_revision read serves filed ruling refs in commands/rulings.ts and mcp/mcp-operator-tools.ts that need revision.number, which the hosted record has no column for; the other two budgeted sites are subject reads that retain declared-cache classification; held for Shmuel Barkin ruling on a record revision-number column or ruling-ref format change, task DEV-2634',
   },
 ]
 

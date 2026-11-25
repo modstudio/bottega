@@ -186,13 +186,10 @@ async function projectCanonImportPlan(
   })
   if (collision) throw new Error(collision)
   const projectRows = allProjectRows.filter((row) => row.status === 'current')
-  const hasHistory = await authoritativeCanonImportHistory(
-    {
-      kind: 'project',
-      subject: project.name,
-    },
-    allProjectRows,
-  )
+  const hasHistory = await authoritativeCanonImportHistory({
+    kind: 'project',
+    subject: project.name,
+  })
   const plan = planCanonImport({
     address: { kind: 'project' },
     current: projectRows.map(({ slug, body }) => ({ slug, body })),

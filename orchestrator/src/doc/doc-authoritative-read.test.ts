@@ -42,23 +42,52 @@ const hostedRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-test('canon import history follows the selected authority', async () => {
+test('canon import history follows authority and includes removed hosted rows', async () => {
   let localReads = 0
   const address = { kind: 'user' as const, owner: newRecordId() }
   const local = () => {
     localReads++
     return false
   }
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  const calls: Array<Parameters<typeof client.listDocs>[0]> = []
+  installRecordApiClient({
+    ...client,
+    listDocs: async (query) => {
+      calls.push(query)
+      return {
+        items: query.includeDeleted
+          ? [hostedRow({ scope: 'canon', owner: address.owner, deletedAt: '2026-11-23' })]
+          : [],
+        nextCursor: null,
+      }
+    },
+  })
 
   expect(
-    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
+    await authoritativeCanonImportHistory(address, local, undefined, (actions) =>
       Promise.resolve(actions.hosted()),
     ),
   ).toBe(true)
   expect(localReads).toBe(0)
+  expect(calls).toEqual([
+    {
+      scope: 'canon',
+      subject: null,
+      owner: address.owner,
+      includeDeleted: true,
+      limit: 1,
+    },
+  ])
   expect(
-    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
-      Promise.resolve(actions.local()),
+    await authoritativeCanonImportHistory(
+      address,
+      local,
+      async () => {
+        throw new Error('hosted history should not be read')
+      },
+      (actions) => Promise.resolve(actions.local()),
     ),
   ).toBe(false)
   expect(localReads).toBe(1)

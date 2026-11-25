@@ -32,6 +32,7 @@ import {
   listDocsStore,
 } from './doc-read-store.ts'
 import {
+  type CanonImportPlanAddress,
   diffStoredDocRevisions,
   getStoredDocRevision,
   hasCanonImportHistory,
@@ -45,18 +46,35 @@ export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
 
+/**
+ * A hosted address has canon import history when any hosted canon row exists there,
+ * including a removed row. This matches the record's revision check because every
+ * hosted canon write records a revision.
+ */
 export function authoritativeCanonImportHistory(
-  address: { kind: 'user'; owner: string } | { kind: 'project'; subject: string },
-  hostedRows: readonly unknown[],
+  address: CanonImportPlanAddress,
   localHistory: () => boolean = () => hasCanonImportHistory(address),
+  hostedHistory: () => Promise<boolean> = async () => {
+    const subject = address.kind === 'project' ? address.subject : null
+    const owner = address.kind === 'user' ? address.owner : null
+    const client = await hostedDocClient('canon', subject)
+    const page = await client.listDocs({
+      scope: 'canon',
+      subject,
+      owner,
+      includeDeleted: true,
+      limit: 1,
+    })
+    return page.items.length > 0
+  },
   readAuthority: (actions: {
     local(): boolean
-    hosted(): boolean
+    hosted(): Promise<boolean>
   }) => Promise<boolean> = applyRecordReadAuthority,
 ): Promise<boolean> {
   return readAuthority({
     local: localHistory,
-    hosted: () => hostedRows.length > 0,
+    hosted: () => withReadRemedy(hostedHistory),
   })
 }
 
