@@ -115,4 +115,26 @@ describe('chain tree attach decision', () => {
       ownerRunId: 'newest-run',
     })
   })
+
+  test.each([
+    ['clean', true],
+    ['dirty', false],
+  ] as const)('an older tree on the branch wins over a newer detached %s tree', (_name, clean) => {
+    const result = decide({}, [
+      {
+        ...candidate,
+        path: '/trees/newest-detached',
+        ownerRunId: 'newest-run',
+        checkedOutBranch: null,
+        clean,
+      },
+      { ...candidate, path: '/trees/older-on-branch', ownerRunId: 'older-run' },
+    ])
+    expect(result).toEqual({
+      action: 'attach',
+      path: '/trees/older-on-branch',
+      ownerRunId: 'older-run',
+      switchToBranch: false,
+    })
+  })
 })

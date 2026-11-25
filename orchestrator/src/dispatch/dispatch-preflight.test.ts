@@ -21,6 +21,7 @@ test('resume preflight accepts the attached tree recorded by an earlier owning t
   const root = addRun({ agent: 'codex', job: 'implement' })
   const owner = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
   const path = '/worktrees/DEV-2644-attached'
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/worktrees/root-tree', root)
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run(path, owner)
 
   expect(

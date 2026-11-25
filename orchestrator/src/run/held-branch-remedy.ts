@@ -91,7 +91,7 @@ export function renderChainTreeAttachRefusal(input: {
   return `run cannot attach chain tree ${path}: ${instruction}, then retry ${retryCommand}`
 }
 
-/** Gather the local run-table fact, decide, and render the release for one held tree. */
+/** Return the id of the live run recorded on this tree, or null. */
 export function liveRunOnTree(path: string): string | null {
   const canonicalPath = realpathOrSpelled(path)
   const liveRun = (

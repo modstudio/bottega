@@ -12,6 +12,16 @@ export const runResumeModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/chain-database-guard.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      'node:fs',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../recipe/tracked-recipe.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/run/chain-tree-service.ts',
     allowed: [
       '../../../shared/brand.ts',
@@ -21,8 +31,8 @@ export const runResumeModuleSpecs = [
       '../git/git-environment.ts',
       '../project/project-lock.ts',
       '../project/projects.ts',
-      '../recipe/tracked-recipe.ts',
       '../worktree/worktree-types.ts',
+      './chain-database-guard.ts',
       './chain-tree-attach.ts',
       './held-branch-remedy.ts',
       './resume-tree.ts',

@@ -8,7 +8,6 @@ import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-id
 import { branchOf, git, gitContext, gitOk, worktreeListPorcelain } from '../git/git-environment.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
-import { readSnapshot } from '../recipe/tracked-recipe.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type ChainTreeAttachDecision,
@@ -16,6 +15,7 @@ import {
   type ChainTreeRelation,
   decideChainTreeAttach,
 } from './chain-tree-attach.ts'
+import { dirtyChainTreePath, refuseMissingChainTreeDatabase } from './chain-database-guard.ts'
 import { liveRunOnTree, renderChainTreeAttachRefusal } from './held-branch-remedy.ts'
 import {
   continuationBranchPlan,
@@ -34,12 +34,6 @@ type ChainTreeRow = {
 export type PreparedChainTree = {
   worktree: Worktree
   ownerRunId: string
-}
-
-type HeldDatabaseClaim = {
-  allocation_key: string
-  run_record_id: string
-  state: 'claimed' | 'retained'
 }
 
 function canonicalPath(path: string): string {
@@ -113,6 +107,11 @@ function chainTreeRows(rootId: string): ChainTreeRow[] {
     seen.add(path)
     return true
   })
+}
+
+/** Canonical paths recorded by any turn in the chain, including paths now missing from disk. */
+export function chainTreePaths(rootId: string): string[] {
+  return chainTreeRows(rootId).map((row) => canonicalPath(row.worktree))
 }
 
 function gatherChainTreeDecision(input: {
@@ -210,56 +209,6 @@ export function prepareChainTreeAttachment(input: {
   )
 }
 
-/** Refuse reprovisioning into database state whose owning chain tree is gone. */
-function recipeReusesDatabase(rootId: string): boolean {
-  const databases = readSnapshot(rootId).snapshot?.recipe.allocate?.databases ?? {}
-  return Object.values(databases).some((database) => database.provision?.reuse === true)
-}
-
-export function dirtyChainTreePath(rootId: string, branchTip: string | null): string | null {
-  return (
-    chainTreeRows(rootId)
-      .map((row) => candidateFacts(row, branchTip))
-      .find((candidate) => candidate.exists && !candidate.clean)?.path ?? null
-  )
-}
-
-export function refuseMissingChainTreeDatabase(
-  rootId: string,
-  options: { dirtyTreePath?: string | null; retryCommand?: string } = {},
-): void {
-  if (recipeReusesDatabase(rootId)) return
-  const claims = db()
-    .query(
-      `SELECT allocation_key,run_record_id,state
-         FROM resource_claim
-        WHERE root_run_record_id=? AND kind='database' AND state IN ('claimed','retained')
-        ORDER BY claimed_at,record_id`,
-    )
-    .all(rootId) as HeldDatabaseClaim[]
-  if (!claims.length) return
-  const details = claims
-    .map((claim) => {
-      const separator = claim.allocation_key.indexOf(':')
-      const databaseName =
-        separator >= 0 ? claim.allocation_key.slice(separator + 1) : claim.allocation_key
-      return `${databaseName} (owning turn ${claim.run_record_id}, resource_claim state ${claim.state})`
-    })
-    .join(', ')
-  if (options.dirtyTreePath) {
-    throw new Error(
-      `run ${rootId} cannot recreate its tree because it still holds database ${details}; ` +
-        `commit or discard the uncommitted changes in ${options.dirtyTreePath}, then retry ` +
-        `${options.retryCommand ?? `${PLATFORM_SLUG} run continue ${rootId}`}`,
-    )
-  }
-  throw new Error(
-    `run ${rootId} cannot recreate its missing tree because it still holds database ${details}; ` +
-      `this is leaked state to report to the architect (note ${PLATFORM_SLUG}#3141: no verb releases a ` +
-      'chain database while keeping its branch)',
-  )
-}
-
 /** Resolve the continuation branch, attach a chain tree when possible, and otherwise plan recovery. */
 export function continuationChainTree(input: {
   rootId: string
@@ -277,6 +226,7 @@ export function continuationChainTree(input: {
   plan: ResumeTreePlan | null
   branchSource: ReturnType<typeof continuationBranchPlan>['source']
   attachedTree: PreparedChainTree | null
+  candidatePaths: string[]
 } {
   const latestBranchTip =
     input.latest.branch && input.project
@@ -340,7 +290,7 @@ export function continuationChainTree(input: {
     (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
   ) {
     refuseMissingChainTreeDatabase(input.rootId, {
-      dirtyTreePath: dirtyChainTreePath(input.rootId, branchTip),
+      dirtyTreePath: dirtyChainTreePath(input.rootId),
       retryCommand: `${PLATFORM_SLUG} run continue ${input.rootId}`,
     })
   }
@@ -350,5 +300,6 @@ export function continuationChainTree(input: {
     plan,
     branchSource: branchPlan.source,
     attachedTree,
+    candidatePaths: chainTreePaths(input.rootId),
   }
 }

@@ -558,6 +558,7 @@ export function refuseHeldContinuationBranch(
   projectPath: string | null,
   recordedTreePath: string | null,
   plan: ResumeTreePlan | null,
+  chainTreePaths: readonly string[] = [],
 ): void {
   if (!plan || !projectPath) return
   const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
@@ -566,10 +567,12 @@ export function refuseHeldContinuationBranch(
     ...worktree,
     path: canonicalPath(worktree.path),
   }))
+  const canonicalChainTreePaths = chainTreePaths.map(canonicalPath)
   const availability = continuationBranchAvailability(
     plan.branch,
     recordedTreePath ? canonicalPath(recordedTreePath) : null,
     canonicalWorktrees,
+    canonicalChainTreePaths,
   )
   if (availability.action === 'continue') return
   const holdingPath =
@@ -713,6 +716,7 @@ function continuationWorkspace(input: {
     tree.project?.path ?? null,
     tree.attachedTree?.worktree.path ?? input.latest.worktree,
     tree.plan,
+    tree.candidatePaths,
   )
   const checkpoint = continuationCheckpointContext({
     database: db(),

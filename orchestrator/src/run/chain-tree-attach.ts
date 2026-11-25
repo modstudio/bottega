@@ -48,6 +48,24 @@ export function decideChainTreeAttach(input: {
       switchToBranch: false,
     }
   }
+  const branchHolder = input.candidates.find(
+    (item) => item.exists && item.checkedOutBranch === input.branch,
+  )
+  if (branchHolder) {
+    if (branchHolder.liveRunId) {
+      return {
+        action: 'refuse',
+        path: branchHolder.path,
+        remedy: { kind: 'wait-or-stop', runId: branchHolder.liveRunId },
+      }
+    }
+    return {
+      action: 'attach',
+      path: branchHolder.path,
+      ownerRunId: branchHolder.ownerRunId,
+      switchToBranch: false,
+    }
+  }
   const candidate = input.candidates.find((item) => item.exists)
   if (!candidate) return { action: 'none' }
   if (candidate.liveRunId) {
@@ -55,14 +73,6 @@ export function decideChainTreeAttach(input: {
       action: 'refuse',
       path: candidate.path,
       remedy: { kind: 'wait-or-stop', runId: candidate.liveRunId },
-    }
-  }
-  if (candidate.checkedOutBranch === input.branch) {
-    return {
-      action: 'attach',
-      path: candidate.path,
-      ownerRunId: candidate.ownerRunId,
-      switchToBranch: false,
     }
   }
   if (!candidate.clean) return { action: 'none' }

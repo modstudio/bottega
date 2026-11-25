@@ -9,11 +9,8 @@ import { gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import {
-  dirtyChainTreePath,
-  prepareChainTreeAttachment,
-  refuseMissingChainTreeDatabase,
-} from './chain-tree-service.ts'
+import { dirtyChainTreePath, refuseMissingChainTreeDatabase } from './chain-database-guard.ts'
+import { chainTreePaths, prepareChainTreeAttachment } from './chain-tree-service.ts'
 import { latestCheckpoint } from './checkpoint.ts'
 import { retryLaunchDecision } from './continuation-tree-decision.ts'
 import {
@@ -293,10 +290,16 @@ export function resolveWritingRetryWorkspace(
     throw new Error(`run ${input.id} could not prepare branch ${branch} for retry`)
   }
   refuseMissingChainTreeDatabase(input.rootId, {
-    dirtyTreePath: dirtyChainTreePath(input.rootId, liveTip),
+    dirtyTreePath: dirtyChainTreePath(input.rootId),
     retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
   })
-  refuseHeldContinuationBranch(input.id, project.path, latest.worktree, plan)
+  refuseHeldContinuationBranch(
+    input.id,
+    project.path,
+    latest.worktree,
+    plan,
+    chainTreePaths(input.rootId),
+  )
   const worktreeTool = resolvedWorktreeTool(project)
   if (worktreeTool?.create && !worktreeTool.recipe && !worktreeTool.recipePath) {
     throw new Error(
