@@ -13,12 +13,7 @@ export class DayIdentityConflictError extends Error {
   readonly existingId: string
   readonly machineId: string | null
 
-  constructor(
-    day: string,
-    incomingId: string,
-    existingId: string,
-    machineId: string | null,
-  ) {
+  constructor(day: string, incomingId: string, existingId: string, machineId: string | null) {
     super(
       `day identity conflict: date ${day} belongs to UUID ${existingId}, not incoming UUID ${incomingId}`,
     )
