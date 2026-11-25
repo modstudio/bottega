@@ -87,6 +87,23 @@ describe('record doctor decisions', () => {
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
   })
 
+  test('quarantined score rows direct the operator to automatic sync retirement', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      quarantinedOutboxRows: [
+        { id: 7, kind: 'score', reason: 'verdict refused' },
+        { id: 8, kind: 'run', reason: 'write refused' },
+      ],
+    })
+    const detail = checks.find((check) => check.name === 'local outbox quarantined rows')?.detail
+
+    expect(detail).toContain(
+      `7 score (verdict refused); a later score for this run retires it automatically on the next \`${PLATFORM_SLUG} record sync\`; do not retry it`,
+    )
+    expect(detail).toContain(`${PLATFORM_SLUG} record outbox retry orch:8`)
+    expect(detail).not.toContain(`${PLATFORM_SLUG} record outbox retry orch:7`)
+  })
+
   test('destination-less writes are grouped by route and cause without failing doctor', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,

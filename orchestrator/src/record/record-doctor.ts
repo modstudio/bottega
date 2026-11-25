@@ -68,6 +68,14 @@ async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<
 export type { RecordDoctorCheck } from './record-doctor-check.ts'
 
 type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
+
+function quarantinedDoctorRowDetail(row: QuarantinedDoctorRow): string {
+  const remedy =
+    row.kind === 'score'
+      ? `a later score for this run retires it automatically on the next \`${PLATFORM_SLUG} record sync\`; do not retry it, which would overwrite a newer hosted verdict`
+      : `run \`${PLATFORM_SLUG} record outbox retry orch:${row.id}\` or \`${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text>\``
+  return `${row.id} ${row.kind} (${row.reason}); ${remedy}`
+}
 export type RecordDoctorFacts = {
   apiConfigured: boolean
   apiReachable: boolean
@@ -324,7 +332,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
       ? {
           name: 'local outbox quarantined rows',
           status: 'fail',
-          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`${PLATFORM_SLUG} record outbox retry orch:<row-id>\` or \`${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>\``,
+          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map(quarantinedDoctorRowDetail).join(', ')}`,
           section: 'customer',
         }
       : {

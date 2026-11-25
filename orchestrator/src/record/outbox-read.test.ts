@@ -6,6 +6,7 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { PENDING_OUTBOX_ROWS_WITH_PAYLOAD_SQL } from './outbox-dependency.ts'
 import { QUARANTINED_OUTBOX_ROWS_SQL } from './outbox-quarantine.ts'
 import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
+import { QUARANTINED_SCORE_ROWS_SQL } from './outbox-score-supersession.ts'
 import { PENDING_OUTBOX_COUNT_SQL } from './record-sync.ts'
 
 function productionSql(file: string, includes: string): string {
@@ -47,6 +48,9 @@ test('outbox reads use selective indexes', () => {
     )
   }
   expect(queryPlan(database, QUARANTINED_OUTBOX_ROWS_SQL)).toEqual(
+    expect.arrayContaining([expect.stringContaining('outbox_quarantined_live')]),
+  )
+  expect(queryPlan(database, QUARANTINED_SCORE_ROWS_SQL)).toEqual(
     expect.arrayContaining([expect.stringContaining('outbox_quarantined_live')]),
   )
   database.close()
