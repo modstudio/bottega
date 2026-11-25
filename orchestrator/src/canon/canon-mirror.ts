@@ -31,7 +31,12 @@ import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
-import { type Project, projects, stackAt } from '../project/projects.ts'
+import {
+  type Project,
+  projects,
+  registeredCheckoutRoots,
+  stackAt,
+} from '../project/projects.ts'
 import { createPullRequestAdmittedWithPolicy } from '../pull-request/pr-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-cursor-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
@@ -270,7 +275,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
       project,
       branch,
       systemJob: CANON_MIRROR_JOB,
-      checkoutRoots: [],
+      checkoutRoots: registeredCheckoutRoots(),
     }),
   openPullRequest: (path, title, bodyFile, policy) => {
     createPullRequestAdmittedWithPolicy(
