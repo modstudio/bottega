@@ -10,6 +10,7 @@ import {
   outboxHeldUnknownColumns,
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
+import { isSupersedableOutboxKind, isSupersedableOutboxRow } from '../record/outbox-supersession.ts'
 import { type AddressedMonitorCondition, boundToChars } from './monitor-types.ts'
 
 export const QUARANTINE_ERROR_SUMMARY_CHARS = 256
@@ -28,18 +29,23 @@ function quarantinedParentRemedy(id: number): string {
 }
 
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
-  return quarantinedOutboxRows(database).map((row) => ({
-    kind: 'outbox-quarantined',
-    subject: `outbox:${row.id}`,
-    since: row.quarantinedAt,
-    ageMs: null,
-    detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
-    action:
-      row.kind === 'score'
-        ? `a later score for this run retires it automatically on the next ${PLATFORM_SLUG} record sync; do not retry it, which would overwrite a newer hosted verdict; ${PLATFORM_SLUG} record outbox shows the full error and payload`
-        : `run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with an audited reason; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
-    ownerSession: null,
-  }))
+  return quarantinedOutboxRows(database).map((row) => {
+    const automaticRetirement =
+      isSupersedableOutboxKind(row.kind) && isSupersedableOutboxRow(row.kind, row.payload)
+        ? `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise `
+        : ''
+    const scoreWarning =
+      row.kind === 'score' ? '; retrying it would overwrite a newer hosted verdict' : ''
+    return {
+      kind: 'outbox-quarantined',
+      subject: `outbox:${row.id}`,
+      since: row.quarantinedAt,
+      ageMs: null,
+      detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
+      action: `${automaticRetirement}run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text>${scoreWarning}; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
+      ownerSession: null,
+    }
+  })
 }
 
 export function outboxRetiredParentConditions(database: Database): AddressedMonitorCondition[] {

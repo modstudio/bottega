@@ -36,12 +36,13 @@ import {
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
 import {
+  quarantinedOutboxRowSummary,
   quarantinedOutboxRows,
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
 import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
-import { retireSupersededQuarantinedScoreRows } from './outbox-score-supersession.ts'
+import { retireSupersededQuarantinedOutboxRows } from './outbox-supersession.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -632,7 +633,7 @@ function completedSyncResult(input: {
       ? { projectRegister: input.cachePull.projectRegister }
       : {}),
     ...input.cachePull,
-    quarantined: quarantinedOutboxRows(input.local),
+    quarantined: quarantinedOutboxRows(input.local).map(quarantinedOutboxRowSummary),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.historyUploadLines?.length ? { historyUploadLines: input.historyUploadLines } : {}),
@@ -745,7 +746,7 @@ function beginSyncPass(local: Database, requestedNow?: () => string) {
   return {
     now,
     retired: retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, at),
-    superseded: retireSupersededQuarantinedScoreRows(local, at),
+    superseded: retireSupersededQuarantinedOutboxRows(local, at),
   }
 }
 

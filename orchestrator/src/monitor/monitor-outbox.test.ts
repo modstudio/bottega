@@ -37,19 +37,20 @@ test('bounds the first line of a multi-line plain outbox error', () => {
 
 test('a quarantined outbox row is a clearing monitor condition', () => {
   const database = migratedTestDatabase()
+  const payload = JSON.stringify({ scoredAt: '2026-09-28T00:00:00.000Z' })
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'score','record-9','{}','2026-09-28T00:00:00.000Z')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'score','record-9',?,'2026-09-28T00:00:00.000Z')`,
     )
-    .run(newRecordId())
-  quarantineOutboxRow(database, 9, '{}', 'verdict refused', '2026-09-28T00:01:00.000Z')
+    .run(newRecordId(), payload)
+  quarantineOutboxRow(database, 9, payload, 'verdict refused', '2026-09-28T00:01:00.000Z')
   expect(outboxQuarantineConditions(database)).toEqual([
     expect.objectContaining({
       kind: 'outbox-quarantined',
       subject: 'outbox:9',
       detail: expect.stringContaining('verdict refused'),
       action: expect.stringContaining(
-        `next ${PLATFORM_SLUG} record sync; do not retry it, which would overwrite a newer hosted verdict`,
+        `pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync`,
       ),
     }),
   ])
@@ -76,7 +77,27 @@ test('a quarantined outbox condition excludes the stored SQL head', () => {
     'run outbox row 9 is quarantined: [42501] new row violates row-level security policy (USING expression) for table "run"',
   )
   expect(condition?.detail).not.toContain('Failed query')
+  expect(condition?.action).toContain('a later run row for this identity')
   expect(condition?.action).toContain(`${PLATFORM_SLUG} record outbox retry orch:9`)
+  database.close()
+})
+
+test.each([
+  ['brief_injection', '{}'],
+  ['run', JSON.stringify({ evidenceUnvoid: { note: 'mistaken void' } })],
+])('a quarantined %s row that cannot be superseded gives only manual remedies', (kind, payload) => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,?, 'record-9',?,'2026-09-28T00:00:00.000Z')`,
+    )
+    .run(newRecordId(), kind, payload)
+  quarantineOutboxRow(database, 9, payload, 'delivery refused', '2026-09-28T00:01:00.000Z')
+
+  const [condition] = outboxQuarantineConditions(database)
+  expect(condition?.action).not.toContain('retires it automatically')
+  expect(condition?.action).toContain(`${PLATFORM_SLUG} record outbox retry orch:9`)
+  expect(condition?.action).toContain(`${PLATFORM_SLUG} record outbox shows`)
   database.close()
 })
 

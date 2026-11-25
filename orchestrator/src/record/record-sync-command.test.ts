@@ -62,7 +62,7 @@ test('sync reports retired direct-write outbox rows', async () => {
   expect(output).toContain('retired 2 direct-write outbox rows')
 })
 
-test('sync reports superseded quarantined score rows separately', async () => {
+test('sync reports superseded quarantined outbox rows separately', async () => {
   const output: string[] = []
   await syncCommand(
     { backfill: false },
@@ -84,7 +84,7 @@ test('sync reports superseded quarantined score rows separately', async () => {
   )
 
   expect(output).toContain('retired 2 direct-write outbox rows')
-  expect(output).toContain('retired 3 superseded quarantined score rows')
+  expect(output).toContain('retired 3 superseded quarantined outbox rows')
 })
 
 test('sync reports each row deferred by a pending parent', async () => {
