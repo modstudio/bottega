@@ -275,6 +275,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     worker: run,
   },
   script('scripts/check-test-fixtures.ts', run),
+  script('scripts/check-destructive-test-guards.ts', run),
   script('scripts/check-test-placement.ts', run),
   script('scripts/check-test-reach.ts', run, {
     extra: (qualityBase) => [qualityBase],

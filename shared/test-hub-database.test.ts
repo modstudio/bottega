@@ -1,16 +1,46 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from './brand.ts'
 import {
   assertTestHubDatabasePath,
+  createTestHubDatabaseGuard,
   mintTestHubDatabase,
   testHubDatabaseAdoptionRefusal,
   testHubDatabasePathRefusal,
 } from './test-hub-database.ts'
 
+let originalHubDatabase: string | undefined
+let originalNodeEnvironment: string | undefined
+let unmintedHubDatabase: string
+let unmintedHubDirectory: string
+
+beforeEach(() => {
+  originalHubDatabase = process.env.BOTTEGA_HUB_DB
+  originalNodeEnvironment = process.env.NODE_ENV
+  unmintedHubDirectory = mkdtempSync(join(tmpdir(), 'hub-test-unminted-'))
+  unmintedHubDatabase = join(realpathSync(unmintedHubDirectory), FROZEN_STATE_NAMES.hubDatabase)
+})
+
+afterEach(() => {
+  if (originalHubDatabase === undefined) delete process.env.BOTTEGA_HUB_DB
+  else process.env.BOTTEGA_HUB_DB = originalHubDatabase
+  if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV
+  else process.env.NODE_ENV = originalNodeEnvironment
+  rmSync(unmintedHubDirectory, { recursive: true, force: true })
+})
+
 describe('hub test database provenance rule', () => {
+  test('strict guard refuses an unminted store when NODE_ENV is unset', () => {
+    process.env.BOTTEGA_HUB_DB = unmintedHubDatabase
+    delete process.env.NODE_ENV
+
+    expect(() => createTestHubDatabaseGuard()()).toThrow(
+      `test process refuses hub database: BOTTEGA_HUB_DB resolved ${unmintedHubDatabase}`,
+    )
+  })
+
   test('refuses a store when no preload minted one', () => {
     expect(testHubDatabasePathRefusal(null, '/tmp/other/hub.db', [])).toContain(
       'preload minted <none minted>',
