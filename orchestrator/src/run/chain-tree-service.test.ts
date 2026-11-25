@@ -9,10 +9,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import { branchOf, git } from '../git/git-environment.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
-import {
-  continuationChainTree,
-  prepareChainTreeAttachment,
-} from './chain-tree-service.ts'
+import { continuationChainTree, prepareChainTreeAttachment } from './chain-tree-service.ts'
 import { claimRun } from './run-claim.ts'
 import { runProjectAttribution } from './run-project-attribution.ts'
 import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
@@ -186,14 +183,32 @@ test('an older tree on the branch wins over a newer dirty detached chain tree', 
   const projectId = newRecordId()
   const projectName = `chain-tree-order-${newRecordId()}`
   upsertProject({ recordId: projectId, name: projectName, path: repository })
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: projectName, projectRecordId: projectId })
-  const latest = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent: root, turn: 2, repo: projectName, projectRecordId: projectId })
-  db().query(
-    `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
-  ).run(olderTree, olderTree, branch, tip, root)
-  db().query(
-    `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
-  ).run(newerTree, newerTree, branch, tip, latest)
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    repo: projectName,
+    projectRecordId: projectId,
+  })
+  const latest = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+    repo: projectName,
+    projectRecordId: projectId,
+  })
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
+    )
+    .run(olderTree, olderTree, branch, tip, root)
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
+    )
+    .run(newerTree, newerTree, branch, tip, latest)
 
   const prepared = prepareChainTreeAttachment({
     rootId: root,
@@ -410,14 +425,18 @@ test('a writing continuation refuses leaked database state before recreating a m
     repo: projectName,
     projectRecordId: projectId,
   })
-  db().query(
-    `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
-  ).run(missingTree, missingTree, branch, tip, root)
-  db().query(
-    `INSERT INTO resource_claim
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
+    )
+    .run(missingTree, missingTree, branch, tip, root)
+  db()
+    .query(
+      `INSERT INTO resource_claim
      (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
-  ).run(newRecordId(), root, root, nowIso())
+    )
+    .run(newRecordId(), root, root, nowIso())
 
   expect(() =>
     continuationChainTree({

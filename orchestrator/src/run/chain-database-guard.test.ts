@@ -7,12 +7,20 @@ import { refuseMissingChainTreeDatabase } from './chain-database-guard.ts'
 
 test('recreate refuses a held database as leaked state without prescribing cleanup', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent: root, turn: 2 })
-  db().query(
-    `INSERT INTO resource_claim
+  const owner = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query(
+      `INSERT INTO resource_claim
      (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
-  ).run(newRecordId(), root, owner, nowIso())
+    )
+    .run(newRecordId(), root, owner, nowIso())
 
   expect(() => refuseMissingChainTreeDatabase(root)).toThrow(
     `stopal_orch_3 (owning turn ${owner}, resource_claim state retained)`,
@@ -28,12 +36,20 @@ test('recreate refuses a held database as leaked state without prescribing clean
 
 test('a dirty detached chain tree with a held database gets the dirty remedy', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent: root, turn: 2 })
-  db().query(
-    `INSERT INTO resource_claim
+  const owner = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query(
+      `INSERT INTO resource_claim
      (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
-  ).run(newRecordId(), root, owner, nowIso())
+    )
+    .run(newRecordId(), root, owner, nowIso())
 
   expect(() =>
     refuseMissingChainTreeDatabase(root, {
@@ -55,33 +71,37 @@ test('a dirty detached chain tree without a held database does not refuse recrea
 
 test('database collision pre-check is skipped for a recipe that declares reuse', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  db().query('UPDATE run SET recipe_snapshot=? WHERE record_id=?').run(
-    JSON.stringify({
-      source: { path: `.${PLATFORM_SLUG}/worktree.jsonc`, commit: 'a'.repeat(40) },
-      recipe: {
-        create: [],
-        allocate: {
-          databases: {
-            app: {
-              engine: 'postgres',
-              name: 'stopal_orch_3',
-              provision: {
-                from: 'stopal_base',
-                connection: { key: 'DATABASE_URL' },
-                reuse: true,
+  db()
+    .query('UPDATE run SET recipe_snapshot=? WHERE record_id=?')
+    .run(
+      JSON.stringify({
+        source: { path: `.${PLATFORM_SLUG}/worktree.jsonc`, commit: 'a'.repeat(40) },
+        recipe: {
+          create: [],
+          allocate: {
+            databases: {
+              app: {
+                engine: 'postgres',
+                name: 'stopal_orch_3',
+                provision: {
+                  from: 'stopal_base',
+                  connection: { key: 'DATABASE_URL' },
+                  reuse: true,
+                },
               },
             },
           },
         },
-      },
-    }),
-    root,
-  )
-  db().query(
-    `INSERT INTO resource_claim
+      }),
+      root,
+    )
+  db()
+    .query(
+      `INSERT INTO resource_claim
      (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
-  ).run(newRecordId(), root, root, nowIso())
+    )
+    .run(newRecordId(), root, root, nowIso())
 
   expect(() => refuseMissingChainTreeDatabase(root)).not.toThrow()
 })

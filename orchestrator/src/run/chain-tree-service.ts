@@ -9,13 +9,13 @@ import { branchOf, git, gitContext, gitOk, worktreeListPorcelain } from '../git/
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { dirtyChainTreePath, refuseMissingChainTreeDatabase } from './chain-database-guard.ts'
 import {
   type ChainTreeAttachDecision,
   type ChainTreeCandidate,
   type ChainTreeRelation,
   decideChainTreeAttach,
 } from './chain-tree-attach.ts'
-import { dirtyChainTreePath, refuseMissingChainTreeDatabase } from './chain-database-guard.ts'
 import { liveRunOnTree, renderChainTreeAttachRefusal } from './held-branch-remedy.ts'
 import {
   continuationBranchPlan,
