@@ -101,12 +101,22 @@ test('systemd schedule units render every placeholder and preserve intervals and
   }
   const queue = recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome })
   const expectations = new Map<string, string[]>([
-    ['orch-sweep.service', ['machine sweep', 'Nice=10', 'IOSchedulingClass=idle']],
+    [
+      'orch-sweep.service',
+      [`ExecStart="${values.bottegaBin}" machine sweep`, 'Nice=10', 'IOSchedulingClass=idle'],
+    ],
     ['orch-sweep.timer', ['OnStartupSec=120', 'OnUnitActiveSec=7200']],
     ['orch-record-sync.service', ['record push', 'record publish']],
     ['orch-record-sync.timer', ['OnStartupSec=60', 'OnUnitActiveSec=300']],
     ['orch-record-sync.path', [`DirectoryNotEmpty=${queue}`]],
-    ['hub-collect.service', ['record pull --watch', 'Restart=always', 'WantedBy=default.target']],
+    [
+      'hub-collect.service',
+      [
+        `ExecStart="${values.bottegaBin}" record pull --watch`,
+        'Restart=always',
+        'WantedBy=default.target',
+      ],
+    ],
   ])
 
   expect(SYSTEMD_UNITS['com.user.orch-sweep']).toEqual(['orch-sweep.service', 'orch-sweep.timer'])

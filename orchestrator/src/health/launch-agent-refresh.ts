@@ -12,7 +12,11 @@ import {
   checkoutScheduleOwnerFacts,
   LAUNCHD_TEMPLATE_OWNERS,
 } from '../../../shared/launchd-owners.ts'
-import { isMaintenanceScheduleLabel, scheduleExpectation } from '../../../shared/schedule-policy.ts'
+import {
+  isMaintenanceScheduleLabel,
+  SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL,
+  scheduleExpectation,
+} from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -35,6 +39,10 @@ export type LaunchAgentRefreshPlan = {
   applyMaintenance: boolean
   unverified: Array<{ label: string; detail: string }>
   notReleaseInstalled: string[]
+  notScheduledAtMachineLevel: Array<{
+    label: string
+    reason: typeof SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL
+  }>
 }
 
 function definitionIsDrifted(observation: LaunchAgentDefinitionObservation | undefined): boolean {
@@ -73,6 +81,7 @@ export function decideLaunchAgentRefresh(input: {
       applyMaintenance: false,
       unverified,
       notReleaseInstalled: [],
+      notScheduledAtMachineLevel: [],
     }
   }
   const expectedByInstall = (label: string) =>
@@ -96,8 +105,17 @@ export function decideLaunchAgentRefresh(input: {
     applyMaintenance: releaseOwned.length > 0,
     unverified,
     notReleaseInstalled: drifted
-      .filter(({ label }) => !expectedByInstall(label))
+      .filter(({ label }) => !isMaintenanceScheduleLabel(label) && !expectedByInstall(label))
       .map(({ label }) => label),
+    notScheduledAtMachineLevel: drifted
+      .filter(
+        ({ label }) =>
+          isMaintenanceScheduleLabel(label) &&
+          input.installationKind === 'distribution' &&
+          input.machineLevel !== 'full' &&
+          !expectedByInstall(label),
+      )
+      .map(({ label }) => ({ label, reason: SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL })),
   }
 }
 
@@ -189,6 +207,9 @@ export async function refreshLaunchAgents(
   }
   for (const label of plan.notReleaseInstalled) {
     presentation.log(`${label} ${NOT_INSTALLED_BY_RELEASE_INSTALL}`)
+  }
+  for (const { label, reason } of plan.notScheduledAtMachineLevel) {
+    presentation.log(`${label} ${reason}`)
   }
   const runInstaller = deps.runCheckoutInstaller ?? runCheckoutInstaller
   for (const command of plan.checkoutCommands) runInstaller(identity.root, command)

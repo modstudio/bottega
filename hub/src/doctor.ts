@@ -1,7 +1,11 @@
 import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
 import { checkoutScheduleOwnerFacts, launchdOwnerCommand } from '../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../shared/machine-config.ts'
-import { type ScheduleExpectation, scheduleExpectation } from '../../shared/schedule-policy.ts'
+import {
+  COLLECT_SCHEDULE_LABEL,
+  type ScheduleExpectation,
+  scheduleExpectation,
+} from '../../shared/schedule-policy.ts'
 import { type SlowCollectionHealth, slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -14,9 +18,8 @@ import { formatServiceRevisionDoctor } from './service-revision.ts'
 import { readSettingStamp } from './setting-stamp.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
-const hubCollectLaunchAgentLabel = 'com.user.hub-collect'
 const hubCollectCheckoutOwners = checkoutScheduleOwnerFacts([
-  { label: hubCollectLaunchAgentLabel, command: launchdOwnerCommand('hub') },
+  { label: COLLECT_SCHEDULE_LABEL, command: launchdOwnerCommand('hub') },
 ])
 
 export const INTERVAL_UNLINKED_KEY_LIMIT = 10
@@ -109,7 +112,7 @@ export async function hubDoctorLines(
 ): Promise<string[]> {
   const outbox = await hostedOutboxDoctorLines()
   const collectExpectation = scheduleExpectation(
-    hubCollectLaunchAgentLabel,
+    COLLECT_SCHEDULE_LABEL,
     scheduleFacts.platform,
     scheduleFacts.installationKind,
     scheduleFacts.machineLevel,

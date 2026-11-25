@@ -1,10 +1,12 @@
 // concern: schedule-policy
 /** Pure schedule identities and installation expectations shared across concerns. */
 
+export const COLLECT_SCHEDULE_LABEL = 'com.user.hub-collect' as const
+
 export const MAINTENANCE_SCHEDULE_LABELS = [
   'com.user.orch-sweep',
   'com.user.orch-record-sync',
-  'com.user.hub-collect',
+  COLLECT_SCHEDULE_LABEL,
 ] as const
 
 export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
@@ -12,7 +14,7 @@ export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[numb
 export const LAUNCHD_TEMPLATE_PATHS: Record<MaintenanceScheduleLabel, string> = {
   'com.user.orch-sweep': 'ops/launchd/com.user.orch-sweep.plist.template',
   'com.user.orch-record-sync': 'ops/launchd/com.user.orch-record-sync.plist.template',
-  'com.user.hub-collect': 'hub/launchd/com.user.hub-collect.plist.template',
+  [COLLECT_SCHEDULE_LABEL]: 'hub/launchd/com.user.hub-collect.plist.template',
 }
 
 export const SYSTEMD_TEMPLATE_DIRECTORY = 'ops/systemd'
@@ -26,7 +28,7 @@ export const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> 
     'orch-record-sync.timer',
     'orch-record-sync.path',
   ],
-  'com.user.hub-collect': ['hub-collect.service'],
+  [COLLECT_SCHEDULE_LABEL]: ['hub-collect.service'],
 }
 
 export function systemdActivationUnits(label: MaintenanceScheduleLabel): string[] {
@@ -50,6 +52,8 @@ export function isMaintenanceScheduleLabel(label: string): label is MaintenanceS
 }
 
 export const NOT_SCHEDULED_BY_THIS_INSTALL = 'not scheduled by this install' as const
+export const SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL =
+  'this install schedules it only at machine level full' as const
 export const SCHEDULED_BY_THIS_INSTALL = { scheduled: true, reason: null } as const
 
 export const MAINTENANCE_SCHEDULE_DESCRIPTION =
@@ -64,6 +68,20 @@ export type ScheduleExpectation =
   | { scheduled: true; reason: null }
   | { scheduled: false; reason: typeof NOT_SCHEDULED_BY_THIS_INSTALL }
 
+/** Answer whether this install owns a label through a checkout-only darwin installer. */
+export function checkoutOnlyOwnerOwnsLabel(
+  label: string,
+  platform: NodeJS.Platform,
+  installationKind: 'distribution' | 'checkout' | null,
+  checkoutOwners: readonly CheckoutScheduleOwnerFact[],
+): boolean {
+  return (
+    installationKind === 'checkout' &&
+    platform === 'darwin' &&
+    checkoutOwners.some((owner) => owner.label === label && owner.checkoutOnly)
+  )
+}
+
 /** Answer whether this installation owns a schedule on this platform. */
 export function scheduleExpectation(
   label: string,
@@ -76,9 +94,7 @@ export function scheduleExpectation(
     schedulePlatformSupported(platform) &&
     (installationKind === 'distribution'
       ? machineLevel === 'full' && isMaintenanceScheduleLabel(label)
-      : installationKind === 'checkout' &&
-        platform === 'darwin' &&
-        checkoutOwners.some((owner) => owner.label === label && owner.checkoutOnly))
+      : checkoutOnlyOwnerOwnsLabel(label, platform, installationKind, checkoutOwners))
   return scheduled
     ? SCHEDULED_BY_THIS_INSTALL
     : { scheduled: false, reason: NOT_SCHEDULED_BY_THIS_INSTALL }

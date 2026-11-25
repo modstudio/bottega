@@ -33,7 +33,10 @@ import {
   isCheckoutOnlyLaunchAgentInstaller,
 } from '../../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
-import { isMaintenanceScheduleLabel, scheduleExpectation } from '../../../shared/schedule-policy.ts'
+import {
+  checkoutOnlyOwnerOwnsLabel,
+  isMaintenanceScheduleLabel,
+} from '../../../shared/schedule-policy.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -79,7 +82,6 @@ export type LaunchAgentDoctorDecision = {
 function unloadedOwnerDecision(input: {
   owners: readonly InstalledPlistOwner[]
   installationKind: InstallationKind | null
-  machineLevel: MachineLevel
   skipReasons: Readonly<Record<string, string | null>>
   loadedLabels: ReadonlySet<string>
 }): Pick<LaunchAgentDoctorDecision, 'findings' | 'informational'> {
@@ -93,27 +95,26 @@ function unloadedOwnerDecision(input: {
     )
     .map((owner) => ({
       ...owner,
-      expectation: scheduleExpectation(
+      ownedByCheckoutInstall: checkoutOnlyOwnerOwnsLabel(
         owner.label,
         'darwin',
         input.installationKind,
-        input.machineLevel,
         checkoutOwners,
       ),
     }))
   return {
     informational: classified
       .filter(
-        ({ command, expectation }) =>
+        ({ command, ownedByCheckoutInstall }) =>
           input.installationKind !== 'checkout' &&
           isCheckoutOnlyLaunchAgentInstaller(command) &&
-          !expectation.scheduled,
+          !ownedByCheckoutInstall,
       )
       .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const),
     findings: classified
       .filter(
-        ({ command, expectation }) =>
-          expectation.scheduled || !isCheckoutOnlyLaunchAgentInstaller(command),
+        ({ command, ownedByCheckoutInstall }) =>
+          ownedByCheckoutInstall || !isCheckoutOnlyLaunchAgentInstaller(command),
       )
       .map(({ label, command }) => ({ label, command })),
   }
@@ -212,7 +213,6 @@ export function decideLaunchAgentDoctor(input: {
   const unloaded = unloadedOwnerDecision({
     owners: input.owners,
     installationKind: input.installationKind,
-    machineLevel: input.machineLevel,
     skipReasons: input.skipReasons,
     loadedLabels,
   })

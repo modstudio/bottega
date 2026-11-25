@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { InstallationIdentity } from '../../../shared/install-root.ts'
+import { SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL } from '../../../shared/schedule-policy.ts'
 import type { InstalledPlistOwner } from '../setup/launchd-owners.ts'
 import type { LaunchAgentDefinitionObservation } from './launch-agent-doctor.ts'
 import { decideLaunchAgentRefresh, refreshLaunchAgents } from './launch-agent-refresh.ts'
@@ -53,6 +54,7 @@ test('distribution refreshes maintenance drift and leaves checkout-owned drift a
     },
   ])
   expect(plan.notReleaseInstalled).toEqual(['ops-label'])
+  expect(plan.notScheduledAtMachineLevel).toEqual([])
 })
 
 test('record-level distribution does not refresh a release maintenance schedule', () => {
@@ -65,7 +67,13 @@ test('record-level distribution does not refresh a release maintenance schedule'
   })
   expect(plan.applyMaintenance).toBeFalse()
   expect(plan.labels).toEqual([])
-  expect(plan.notReleaseInstalled).toEqual(['com.user.hub-collect'])
+  expect(plan.notReleaseInstalled).toEqual([])
+  expect(plan.notScheduledAtMachineLevel).toEqual([
+    {
+      label: 'com.user.hub-collect',
+      reason: SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL,
+    },
+  ])
 })
 
 test('distribution installs required maintenance labels with no definition', () => {
@@ -113,6 +121,7 @@ test('matching definitions produce an empty refresh plan', () => {
     applyMaintenance: false,
     unverified: [],
     notReleaseInstalled: [],
+    notScheduledAtMachineLevel: [],
   })
 })
 

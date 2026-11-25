@@ -13,6 +13,7 @@ import { hostedRecordOwnsHostedTables } from '../orchestrator/src/record/record-
 import {
   LAUNCHD_TEMPLATE_PATHS,
   MAINTENANCE_SCHEDULE_LABELS,
+  SYSTEMD_TEMPLATE_DIRECTORY,
   SYSTEMD_UNITS,
 } from '../shared/schedule-policy.ts'
 import {
@@ -861,7 +862,9 @@ function hostedLocalReadConfiguration(root: string) {
   const schedules = MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const timer = SYSTEMD_UNITS[label].find((unit) => unit.endsWith('.timer'))
     const launchd = readFileSync(resolve(root, LAUNCHD_TEMPLATE_PATHS[label]), 'utf8')
-    const systemd = timer ? readFileSync(resolve(root, `ops/systemd/${timer}`), 'utf8') : ''
+    const systemd = timer
+      ? readFileSync(resolve(root, SYSTEMD_TEMPLATE_DIRECTORY, timer), 'utf8')
+      : ''
     return {
       label,
       launchdInterval: interval(launchd, /<key>StartInterval<\/key>\s*<integer>([^<]+)<\/integer>/),
