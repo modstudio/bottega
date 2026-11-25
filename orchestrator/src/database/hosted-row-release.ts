@@ -20,6 +20,7 @@ import {
   collectHostedRowState,
   emptyHostedRowIds,
   HOSTED_ROW_TABLES,
+  type HostedRowHeldIds,
   type HostedRowIds,
   type HostedRowPresence,
   type HostedRowReferences,
@@ -107,7 +108,7 @@ function classifyAbsentRows(
   table: HostedRowTable,
   absent: readonly string[],
   references: HostedRowReferences,
-  held: { questions: ReadonlySet<string>; flows: ReadonlySet<string> },
+  held: HostedRowHeldIds,
 ): Pick<KeptTable, 'heldIds' | 'absentIds'> {
   const heldIds: string[] = []
   const absentIds: string[] = []
@@ -121,12 +122,11 @@ export function decideHostedRowRelease(
   local: HostedRowIds,
   present: HostedRowPresence,
   references: HostedRowReferences,
-  held: { questions: ReadonlySet<string>; flows: ReadonlySet<string> } = {
-    questions: new Set(),
+  held: HostedRowHeldIds = {
     flows: new Set(),
+    questions: new Set(),
   },
 ): HostedRowReleaseDecision {
-  const heldQuestionIds = held.questions
   const heldFlowIds = held.flows
   const kept = emptyHostedRowIds()
   const keptTables: HostedRowReleaseDecision['keptTables'] = []
@@ -134,13 +134,16 @@ export function decideHostedRowRelease(
   for (const table of HOSTED_ROW_TABLES) {
     const absent = [...local[table]].filter((id) => {
       if (present[table].has(id)) return false
-      if (table === 'task_flow' && heldFlowIds.has(id)) return false
-      if (table === 'workflow_cursor' && heldFlowIds.has(references.cursorFlow.get(id) ?? ''))
+      const rowIsHeld = hostedRowIsHeld(table, id, references, held)
+      if (
+        rowIsHeld &&
+        (table === 'task_flow' ||
+          table === 'workflow_cursor' ||
+          table === 'question' ||
+          table === 'question_mutation_audit')
+      )
         return false
-      if (table === 'question') return !heldQuestionIds.has(id)
       if (table !== 'question_mutation_audit') return true
-      const questionId = references.auditQuestion.get(id)
-      if (questionId && heldQuestionIds.has(questionId)) return false
       return !questionAuditIsPresent(id, references.auditIdentity.get(id), present)
     })
     if (!absent.length) continue

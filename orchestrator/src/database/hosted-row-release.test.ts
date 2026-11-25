@@ -16,6 +16,7 @@ import {
   type HostedRowIds,
   type HostedRowPresence,
   type HostedRowReferences,
+  hostedRowIsHeld,
   type PresenceReader,
 } from '../record/record-hosted-row-presence.ts'
 import type {
@@ -56,6 +57,20 @@ const noReferences = (): HostedRowReferences => ({
   cursorFlow: new Map(),
   cursorHandoff: new Map(),
   flowOpenCursor: new Map(),
+})
+
+test('an audit under a held flow is not held when its question is not held', () => {
+  const references = noReferences()
+  references.auditQuestion = new Map([['audit', 'question']])
+  references.questionCursor = new Map([['question', 'cursor']])
+  references.cursorFlow = new Map([['cursor', 'flow']])
+
+  expect(
+    hostedRowIsHeld('question_mutation_audit', 'audit', references, {
+      flows: new Set(['flow']),
+      questions: new Set(),
+    }),
+  ).toBe(false)
 })
 
 function presence(
@@ -372,11 +387,12 @@ test('hosted row release deletes a held flow when all child rows are present', a
   database.close()
 })
 
-test('hosted row release reports an absent held-flow step text without a circular remedy', async () => {
+test('hosted row release reports absent held-flow texts without a circular remedy', async () => {
   const database = migratedTestDatabase()
   const ids = seedReleaseRows(database)
   const flowId = [...ids.task_flow][0]!
   const textId = [...ids.workflow_step_text][0]!
+  const textCopyId = [...ids.workflow_text_copy][0]!
   storeHeldFlowIds(database, new Set([flowId]))
   const output: string[] = []
   await releaseHostedRowsAfterUpdate(
@@ -386,6 +402,7 @@ test('hosted row release reports an absent held-flow step text without a circula
       flowIds: [],
       stageIds: [],
       textIds: [],
+      textCopyIds: [],
     })),
   )
   expect(tableCounts(database)).toEqual({
@@ -401,6 +418,10 @@ test('hosted row release reports an absent held-flow step text without a circula
   expect(line).toContain(`held by the record with different content: ${textId}`)
   expect(line).toContain('no command clears this yet')
   expect(line).not.toContain('record sync')
+  const copyLine = output.find((value) => value.includes(`kept local workflow_text_copy: 1 ids`))
+  expect(copyLine).toContain(`held by the record with different content: ${textCopyId}`)
+  expect(copyLine).toContain('no command clears this yet')
+  expect(copyLine).not.toContain('record sync')
   database.close()
 })
 

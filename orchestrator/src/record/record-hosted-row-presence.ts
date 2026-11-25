@@ -1,5 +1,5 @@
-// concern: hosted workflow-history presence
-/** Collects local hosted-history ids and reads their record presence in bounded batches. */
+// concern: hosted workflow-history presence and held-row classification
+/** Collects hosted-history ids, reads record presence, and classifies held local rows. */
 
 import type { Database } from 'bun:sqlite'
 import {
@@ -32,6 +32,10 @@ export type HostedRowReferences = {
   cursorHandoff: ReadonlyMap<string, string>
   flowOpenCursor: ReadonlyMap<string, string>
 }
+export type HostedRowHeldIds = {
+  flows: ReadonlySet<string>
+  questions: ReadonlySet<string>
+}
 export type HostedRowStates = {
   workflow_cursor: ReadonlyMap<string, string>
   task_flow: ReadonlyMap<string, string>
@@ -57,10 +61,7 @@ function hostedRowFlow(
     return references.cursorFlow.get(references.stepTextCursor.get(id) ?? '')
   if (table === 'workflow_text_copy')
     return references.cursorFlow.get(references.textCopyCursor.get(id) ?? '')
-  if (table === 'question') return undefined
-  const question = references.auditQuestion.get(id)
-  const cursor = question ? references.questionCursor.get(question) : undefined
-  return cursor ? references.cursorFlow.get(cursor) : undefined
+  return undefined
 }
 
 /** Classify a local hosted row whose record conflict prevents another upload attempt. */
@@ -68,12 +69,12 @@ export function hostedRowIsHeld(
   table: HostedRowTable,
   id: string,
   references: HostedRowReferences,
-  held: { flows: ReadonlySet<string>; questions: ReadonlySet<string> },
+  held: HostedRowHeldIds,
 ): boolean {
   if (table === 'question') return held.questions.has(id)
   if (table === 'question_mutation_audit') {
     const question = references.auditQuestion.get(id)
-    if (question && held.questions.has(question)) return true
+    return question !== undefined && held.questions.has(question)
   }
   const flow = hostedRowFlow(table, id, references)
   return flow !== undefined && held.flows.has(flow)

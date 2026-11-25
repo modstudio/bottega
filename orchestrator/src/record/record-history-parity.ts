@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideHistoryUploadPass, type HistoryUploadFingerprint } from './record-history-upload.ts'
 import {
+  type HostedRowHeldIds,
   type HostedRowPresence,
   type HostedRowReferences,
   type HostedRowStates,
@@ -29,8 +30,7 @@ export type WorkflowHistoryParityInput = {
   local: ParityIds
   present: ParityPresence
   references: HostedRowReferences
-  heldFlowIds: ReadonlySet<string>
-  heldQuestionIds: ReadonlySet<string>
+  held: HostedRowHeldIds
   storedFingerprint: HistoryUploadFingerprint | null
   currentFingerprint: HistoryUploadFingerprint
   states: HostedRowStates
@@ -62,13 +62,7 @@ function classifyMissingRows(
   const ids = [...input.local[table]].filter((id) => !rowIsPresent(table, id, input))
   const counts = { held: 0, skipped: 0, pending: 0 }
   for (const id of ids) {
-    if (
-      hostedRowIsHeld(table, id, input.references, {
-        flows: input.heldFlowIds,
-        questions: input.heldQuestionIds,
-      })
-    )
-      counts.held += 1
+    if (hostedRowIsHeld(table, id, input.references, input.held)) counts.held += 1
     else if (skipped) counts.skipped += 1
     else counts.pending += 1
   }
