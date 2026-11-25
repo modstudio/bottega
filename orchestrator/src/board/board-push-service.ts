@@ -626,15 +626,13 @@ export async function markBoardDeliveryDelivered(input: {
   const requestedLocal = new Set(
     resolved.flatMap((identifier) => (identifier.source === 'local' ? [identifier.recordId] : [])),
   )
-  const local = messages
-    .filter(
-      (row) =>
-        requestedLocal.has(row.record_id) &&
-        row.author_session !== input.session &&
-        rowIsLive(row, clock, database) &&
-        deliverableTo(row, input.session, clock, database, localLocality),
-    )
-    .map((row) => row)
+  const local = messages.filter(
+    (row) =>
+      requestedLocal.has(row.record_id) &&
+      row.author_session !== input.session &&
+      rowIsLive(row, clock, database) &&
+      deliverableTo(row, input.session, clock, database, localLocality),
+  )
   const hosted = resolved
     .filter((identifier) => identifier.source === 'hosted')
     .map(({ recordId }) => ({
