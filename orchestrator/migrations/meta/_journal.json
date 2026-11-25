@@ -1882,6 +1882,14 @@
       "tag": "0244_resource_claim_settled_by",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 245,
+      "version": "6",
+      "when": 1794758400019,
+      "tag": "0245_run_continued_with_findings",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }
