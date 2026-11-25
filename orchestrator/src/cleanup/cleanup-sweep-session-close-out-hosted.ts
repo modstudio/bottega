@@ -10,7 +10,7 @@ import {
 import { recordApiClient } from '../record/record-api-client.ts'
 import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 
-export class HostedReleaseDestinationRefused extends Error {
+class HostedReleaseDestinationRefused extends Error {
   override readonly name = 'HostedReleaseDestinationRefused'
 }
 
