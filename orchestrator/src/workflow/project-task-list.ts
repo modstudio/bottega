@@ -10,11 +10,20 @@ export type ProjectTaskListReader = (
   filters?: { status?: string; parent?: string },
 ) => Promise<HubTaskReference[]>
 
+/** Read through the install's configured mode: hosted routing when hosted, local otherwise. */
 export async function readProjectTaskList(
   project: string,
   filters: { status?: string; parent?: string } = {},
 ): Promise<HubTaskReference[]> {
   return (await taskReader().list({ project, ...filters })).map(taskReference)
+}
+
+/** Always read the local hub store for a project without a record space, such as the built-in default project. */
+export async function readLocalProjectTasks(
+  project: string,
+  filters: { status?: string; parent?: string } = {},
+): Promise<HubTaskReference[]> {
+  return (await taskReader().listLocal({ project, ...filters })).map(taskReference)
 }
 
 export async function readLiveProjectTasks(

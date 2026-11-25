@@ -1,26 +1,46 @@
 import type { Database } from 'bun:sqlite'
-import { afterEach, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { installTaskListReaders } from '../../test/fixtures/task-reader.ts'
 import {
   DEFAULT_LOCAL_PROJECT_SETTINGS,
   defaultLocalProjectPath,
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { STANDARD_OPEN_HOOKS } from '../runtime/store-hooks.ts'
 import { retireUnusedDefaultLocalProject } from './default-local-project-retirement.ts'
+import {
+  PROJECT_REFERENCE_REPORT,
+  type ProjectReferenceCounts,
+} from './project-reference-counts.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 const database = testDatabaseFixture(() => {})
 const projectDirectories: string[] = []
+let previousRecordApiUrl: string | undefined
+
+beforeEach(() => {
+  previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
+})
 
 afterEach(() => {
   for (const path of projectDirectories.splice(0)) rmSync(path, { recursive: true, force: true })
+  if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
 })
 
 const noTasks = async () => []
+const noReferences = async (): Promise<ProjectReferenceCounts> =>
+  Object.fromEntries(PROJECT_REFERENCE_REPORT.map(([key]) => [key, 0])) as ProjectReferenceCounts
 
 function registerDefault(
   database: Database,
@@ -49,6 +69,94 @@ test('sign-in removes an unused built-in project and its empty directory', async
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
   expect(existsSync(path)).toBe(false)
   expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
+})
+
+describe('hosted-configured sign-in', () => {
+  beforeEach(() => {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  })
+
+  test('removes an unused built-in project without reading hosted tables locally', async () => {
+    const d = database()
+    const { environment, path } = registerDefault(d, 'orch-default-hosted-retire-')
+    d.query(
+      `INSERT INTO record_install_binding(id,bound_at,record_origin)
+     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
+    ).run(process.env.BOTTEGA_RECORD_API_URL!)
+    const guarded = STANDARD_OPEN_HOOKS.access!(d)
+    expect(() => guarded.query('SELECT 1 FROM workflow_cursor')).toThrow(
+      'workflow_cursor is held by the hosted record on this install',
+    )
+
+    expect(await retireUnusedDefaultLocalProject(guarded, environment, noTasks, noReferences)).toBe(
+      true,
+    )
+    expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
+    expect(existsSync(path)).toBe(false)
+  })
+
+  test('uses the hosted reference counter with the default local task reader', async () => {
+    const d = database()
+    const { environment } = registerDefault(d, 'orch-default-hosted-reference-counter-')
+    d.query(
+      `INSERT INTO record_install_binding(id,bound_at,record_origin)
+     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
+    ).run(process.env.BOTTEGA_RECORD_API_URL!)
+    const guarded = STANDARD_OPEN_HOOKS.access!(d)
+    const projectRecordId = '00000000-0000-7000-8000-000000000001'
+    const referenceCountCalls: string[] = []
+    const memoryClient = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...memoryClient,
+      async readTaskFlowProjectReferenceCounts(recordId) {
+        referenceCountCalls.push(recordId)
+        return { stages: 0, flows: 0 }
+      },
+    })
+    const restoreTaskReader = installTaskListReaders({
+      list: async () => {
+        throw new Error('project tasks has no declared record space')
+      },
+      listLocal: async (filters) => {
+        expect(filters).toEqual({ project: 'tasks' })
+        return []
+      },
+    })
+    try {
+      expect(await retireUnusedDefaultLocalProject(guarded, environment)).toBe(true)
+      expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
+      expect(referenceCountCalls).toEqual([projectRecordId])
+    } finally {
+      installRecordApiClient(null)
+      restoreTaskReader()
+    }
+  })
+
+  test('keeps the built-in project when its local hub store holds a task', async () => {
+    const d = database()
+    const { environment } = registerDefault(d, 'orch-default-hosted-task-')
+    d.query(
+      `INSERT INTO record_install_binding(id,bound_at,record_origin)
+     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
+    ).run(process.env.BOTTEGA_RECORD_API_URL!)
+    const guarded = STANDARD_OPEN_HOOKS.access!(d)
+
+    expect(
+      await retireUnusedDefaultLocalProject(
+        guarded,
+        environment,
+        async () => [
+          {
+            key: 'TASK-1',
+            record_id: '00000000-0000-7000-8000-000000000009',
+            project: 'tasks',
+          },
+        ],
+        noReferences,
+      ),
+    ).toBe(false)
+    expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({ name: 'tasks' })
+  })
 })
 
 test('sign-in keeps a built-in project referenced by a run', async () => {

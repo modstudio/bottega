@@ -57,6 +57,7 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
+    listLocal: async () => [],
     lookup: async (_project, keys) => {
       const found = new Map<string, TaskReadRow & { has_children: boolean }>()
       for (const key of keys) {

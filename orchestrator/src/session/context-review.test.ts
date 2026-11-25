@@ -39,6 +39,7 @@ test('reviewContext drives the brief and its own lookup within the task-call bud
     has_children: false,
   }))
   const port: TaskReadPort = {
+    listLocal: async () => [],
     async list(filters = {}) {
       calls.push({ operation: 'list', status: filters.status })
       if (!filters.status) throw new Error('unfiltered project task scan on a hook path')

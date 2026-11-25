@@ -42,6 +42,7 @@ function installGuardReader(tasks: Array<TaskReadRow & { has_children: boolean }
   const calls: Array<{ operation: 'list' | 'lookup'; status?: string }> = []
   const byKey = new Map(tasks.map((row) => [row.key, row]))
   const port: TaskReadPort = {
+    listLocal: async () => [],
     async list(filters = {}) {
       calls.push({ operation: 'list', status: filters.status })
       if (!filters.status) throw new Error('unfiltered project task scan on a hook path')

@@ -27,8 +27,14 @@ type B2ReasonedSite = {
 }
 
 const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
+  {
+    file: 'hub/src/task-local-read.ts',
+    functionName: 'listLocalTasks',
+    expectedSites: 1,
+    detail:
+      'task.ts listTasks returns through listHostedTasks first; TaskReadPort.listLocal calls this local reader directly so default local project retirement can inspect the built-in spaceless project',
+  },
   ...[
-    ['listLocalTasks', 1],
     ['lookupLocalTasks', 2],
     ['showLocalTask', 1],
   ].map(([functionName, expectedSites]) => ({

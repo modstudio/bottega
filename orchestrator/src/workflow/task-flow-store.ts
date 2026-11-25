@@ -317,11 +317,3 @@ export async function openWorkflowQuestionForCursor(
     (question) => question.workflow_cursor_record_id === cursorRecordId,
   )
 }
-
-/** Count local task-flow rows while deciding whether a local project row can be removed. */
-export async function localTaskFlowProjectReferenceCounts(
-  database: Database,
-  projectRecordId: string,
-): Promise<{ workflow_cursor: number; task_flow: number }> {
-  return sqliteTaskFlowReadStore(database).projectReferenceCounts(projectRecordId)
-}

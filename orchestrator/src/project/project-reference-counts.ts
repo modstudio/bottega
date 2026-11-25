@@ -1,8 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import {
-  localTaskFlowProjectReferenceCounts,
-  taskFlowReadStore,
-} from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 
 export const PROJECT_REFERENCES = [
   ['run', 'run', 'project_record_id'],
@@ -59,14 +56,6 @@ export async function projectReferenceCounts(
   projectRecordId: string,
 ): Promise<ProjectReferenceCounts> {
   const taskFlowCounts = await taskFlowReadStore(database).projectReferenceCounts(projectRecordId)
-  return projectReferenceCountsWithTaskFlows(database, projectRecordId, taskFlowCounts)
-}
-
-export async function localProjectReferenceCounts(
-  database: Database,
-  projectRecordId: string,
-): Promise<ProjectReferenceCounts> {
-  const taskFlowCounts = await localTaskFlowProjectReferenceCounts(database, projectRecordId)
   return projectReferenceCountsWithTaskFlows(database, projectRecordId, taskFlowCounts)
 }
 
