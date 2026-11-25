@@ -106,6 +106,7 @@ test('systemd schedule units render every placeholder and preserve intervals and
     ['orch-record-sync.service', ['record push', 'record publish']],
     ['orch-record-sync.timer', ['OnStartupSec=60', 'OnUnitActiveSec=300']],
     ['orch-record-sync.path', [`DirectoryNotEmpty=${queue}`]],
+    ['hub-collect.service', ['record pull --watch', 'Restart=always', 'WantedBy=default.target']],
   ])
 
   expect(SYSTEMD_UNITS['com.user.orch-sweep']).toEqual(['orch-sweep.service', 'orch-sweep.timer'])
@@ -114,7 +115,6 @@ test('systemd schedule units render every placeholder and preserve intervals and
     'orch-record-sync.timer',
     'orch-record-sync.path',
   ])
-  expect(SYSTEMD_UNITS['com.user.hub-collect']).toEqual(['hub-collect.service'])
   for (const units of Object.values(SYSTEMD_UNITS)) {
     for (const name of units) {
       const rendered = renderMaintenanceSchedule(

@@ -76,6 +76,49 @@ export type LaunchAgentDoctorDecision = {
   launchctlUnavailable: null | 'launchctl missing' | 'gui domain unreachable'
 }
 
+function unloadedOwnerDecision(input: {
+  owners: readonly InstalledPlistOwner[]
+  installationKind: InstallationKind | null
+  machineLevel: MachineLevel
+  skipReasons: Readonly<Record<string, string | null>>
+  loadedLabels: ReadonlySet<string>
+}): Pick<LaunchAgentDoctorDecision, 'findings' | 'informational'> {
+  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
+  const classified = input.owners
+    .filter(
+      ({ label }) =>
+        !isMaintenanceScheduleLabel(label) &&
+        !input.skipReasons[label] &&
+        !input.loadedLabels.has(label),
+    )
+    .map((owner) => ({
+      ...owner,
+      expectation: scheduleExpectation(
+        owner.label,
+        'darwin',
+        input.installationKind,
+        input.machineLevel,
+        checkoutOwners,
+      ),
+    }))
+  return {
+    informational: classified
+      .filter(
+        ({ command, expectation }) =>
+          input.installationKind !== 'checkout' &&
+          isCheckoutOnlyLaunchAgentInstaller(command) &&
+          !expectation.scheduled,
+      )
+      .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const),
+    findings: classified
+      .filter(
+        ({ command, expectation }) =>
+          expectation.scheduled || !isCheckoutOnlyLaunchAgentInstaller(command),
+      )
+      .map(({ label, command }) => ({ label, command })),
+  }
+}
+
 export function installerRemedy(
   installationKind: InstallationKind | null,
   ownerCommand: string | null,
@@ -108,10 +151,6 @@ export function decideLaunchAgentDoctor(input: {
     const reason = input.skipReasons[label]
     return reason ? [{ label, reason }] : []
   })
-  const scheduleRemedy = installerRemedy(
-    input.installationKind,
-    input.owners.find(({ label }) => isMaintenanceScheduleLabel(label))?.command ?? null,
-  )
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
   const definitionFindings: LaunchAgentDoctorDecision['definitionFindings'] = []
@@ -144,7 +183,7 @@ export function decideLaunchAgentDoctor(input: {
   }
   const schedules = input.owners
     .filter(({ label }) => isMaintenanceScheduleLabel(label))
-    .map(({ label }) => {
+    .map(({ label, command }) => {
       const loaded = observedLoadedLabels?.has(label) ?? null
       const skipReason = input.skipReasons[label] ?? null
       return {
@@ -153,7 +192,9 @@ export function decideLaunchAgentDoctor(input: {
         lastRun: input.lastRuns[label] ?? 'never',
         skipReason,
         remedy:
-          input.machineLevel === 'full' && loaded === false && !skipReason ? scheduleRemedy : null,
+          input.machineLevel === 'full' && loaded === false && !skipReason
+            ? installerRemedy(input.installationKind, command)
+            : null,
       }
     })
   if (input.loadObservation.kind === 'unavailable') {
@@ -168,25 +209,16 @@ export function decideLaunchAgentDoctor(input: {
     }
   }
   const { loadedLabels } = input.loadObservation
-  const unloaded = input.owners.filter(
-    ({ label }) => !input.skipReasons[label] && !loadedLabels.has(label),
-  )
-  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
-  const informational = unloaded
-    .filter(
-      ({ label, command }) =>
-        input.installationKind !== 'checkout' &&
-        isCheckoutOnlyLaunchAgentInstaller(command) &&
-        !scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled,
-    )
-    .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const)
-  const informationalLabels = new Set(informational.map(({ label }) => label))
+  const unloaded = unloadedOwnerDecision({
+    owners: input.owners,
+    installationKind: input.installationKind,
+    machineLevel: input.machineLevel,
+    skipReasons: input.skipReasons,
+    loadedLabels,
+  })
   return {
     skipped,
-    findings: unloaded.filter(
-      ({ label }) => !isMaintenanceScheduleLabel(label) && !informationalLabels.has(label),
-    ),
-    informational,
+    ...unloaded,
     definitionFindings,
     definitionUnverified,
     schedules,

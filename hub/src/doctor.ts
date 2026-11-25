@@ -1,9 +1,7 @@
 import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
 import { checkoutScheduleOwnerFacts, launchdOwnerCommand } from '../../shared/launchd-owners.ts'
-import {
-  type CheckoutScheduleOwnerFact,
-  scheduleExpectation,
-} from '../../shared/schedule-policy.ts'
+import { type MachineLevel, readMachineValue } from '../../shared/machine-config.ts'
+import { type ScheduleExpectation, scheduleExpectation } from '../../shared/schedule-policy.ts'
 import { type SlowCollectionHealth, slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -84,17 +82,9 @@ function questionCommitTaskLinkDoctor(): string[] {
 }
 
 export function slowCollectionDoctorDecision(
-  installationKind: InstallationKind,
-  platform: NodeJS.Platform,
-  checkoutOwners: readonly CheckoutScheduleOwnerFact[],
+  expectation: ScheduleExpectation,
   health: SlowCollectionHealth,
 ): string {
-  const expectation = scheduleExpectation(
-    hubCollectLaunchAgentLabel,
-    platform,
-    installationKind,
-    checkoutOwners,
-  )
   if (!expectation.scheduled) return `collect slow   ${expectation.reason}`
   if (health.ageMs === null)
     return health.status === 'missing'
@@ -104,33 +94,35 @@ export function slowCollectionDoctorDecision(
   return `collect slow   ${health.status === 'current' ? 'pass' : 'FAIL'} — ${age}`
 }
 
-export function slowCollectionDoctorLine(
-  now = Date.now(),
-  installationKind = runningInstallationKind(import.meta.dir, process.env),
-  platform: NodeJS.Platform = process.platform,
-): string {
-  return slowCollectionDoctorDecision(
-    installationKind,
-    platform,
-    hubCollectCheckoutOwners,
-    slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
-  )
+export type HubDoctorScheduleFacts = {
+  installationKind: InstallationKind
+  platform: NodeJS.Platform
+  machineLevel: MachineLevel
 }
 
-export async function hubDoctorLines(): Promise<string[]> {
+export async function hubDoctorLines(
+  scheduleFacts: HubDoctorScheduleFacts = {
+    installationKind: runningInstallationKind(import.meta.dir, process.env),
+    platform: process.platform,
+    machineLevel: readMachineValue('machine.level') as MachineLevel,
+  },
+): Promise<string[]> {
   const outbox = await hostedOutboxDoctorLines()
-  const installationKind = runningInstallationKind(import.meta.dir, process.env)
   const collectExpectation = scheduleExpectation(
     hubCollectLaunchAgentLabel,
-    process.platform,
-    installationKind,
+    scheduleFacts.platform,
+    scheduleFacts.installationKind,
+    scheduleFacts.machineLevel,
     hubCollectCheckoutOwners,
   )
   return [
     `database       ${DB_PATH}`,
     `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
     `schema version ${schemaVersionLabel(db())}`,
-    slowCollectionDoctorLine(Date.now(), installationKind),
+    slowCollectionDoctorDecision(
+      collectExpectation,
+      slowCollectionHealth(Date.now(), readSettingStamp('collect.slow.at')),
+    ),
     ...formatTaskIdentityDoctor(taskIdentityDoctor()),
     ...intervalTaskLinkDoctor(),
     ...questionCommitTaskLinkDoctor(),

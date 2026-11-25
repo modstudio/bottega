@@ -3,7 +3,10 @@
 
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
-import { schedulePlatformSupported } from '../../../shared/schedule-policy.ts'
+import {
+  MAINTENANCE_SCHEDULE_DESCRIPTION,
+  schedulePlatformSupported,
+} from '../../../shared/schedule-policy.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { developerNodeNotice } from './developer-node.ts'
 import {
@@ -412,7 +415,7 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
     (machine.os?.platform === undefined || !schedulePlatformSupported(machine.os.platform))
   ) {
     notices.push({
-      message: `scheduled sweep, record sync, and hub collection are unsupported on ${machine.os?.platform ?? 'this platform'}`,
+      message: `${MAINTENANCE_SCHEDULE_DESCRIPTION} are unsupported on ${machine.os?.platform ?? 'this platform'}`,
       fix: null,
       blocking: false,
     })

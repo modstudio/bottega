@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { NOT_SCHEDULED_BY_THIS_INSTALL } from '../../shared/schedule-policy.ts'
+import { NOT_SCHEDULED_BY_THIS_INSTALL, scheduleExpectation } from '../../shared/schedule-policy.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import {
   hubDoctorLines,
   INTERVAL_UNLINKED_KEY_LIMIT,
   slowCollectionDoctorDecision,
-  slowCollectionDoctorLine,
 } from './doctor.ts'
 
 beforeEach(resetFixtureStore)
@@ -35,40 +34,61 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
   })
 
   test('reports slow collection age and marks stale collection as failed', () => {
-    const now = Date.parse('2026-11-09T16:00:00.000Z')
-    expect(slowCollectionDoctorLine(now)).toBe('collect slow   FAIL — never completed')
-    writeTransaction((conn) =>
-      conn
-        .query(`INSERT INTO setting(key,value) VALUES ('collect.slow.at', ?)`)
-        .run(JSON.stringify('2026-11-09T15:59:00.000Z')),
+    const scheduled = scheduleExpectation('com.user.hub-collect', 'darwin', 'checkout', 'full', [
+      { label: 'com.user.hub-collect', checkoutOnly: true },
+    ])
+    expect(slowCollectionDoctorDecision(scheduled, { status: 'missing', ageMs: null })).toBe(
+      'collect slow   FAIL — never completed',
     )
-    expect(slowCollectionDoctorLine(now)).toBe('collect slow   pass — 60s old')
-    writeTransaction((conn) =>
-      conn
-        .query(`UPDATE setting SET value=? WHERE key='collect.slow.at'`)
-        .run(JSON.stringify('2026-11-09T15:44:59.999Z')),
+    expect(slowCollectionDoctorDecision(scheduled, { status: 'current', ageMs: 60_000 })).toBe(
+      'collect slow   pass — 60s old',
     )
-    expect(slowCollectionDoctorLine(now)).toBe('collect slow   FAIL — 900s old')
+    expect(slowCollectionDoctorDecision(scheduled, { status: 'stale', ageMs: 900_001 })).toBe(
+      'collect slow   FAIL — 900s old',
+    )
   })
 
   test('includes slow collection health in hub doctor output', async () => {
-    expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
+    expect(
+      await hubDoctorLines({
+        installationKind: 'checkout',
+        platform: 'darwin',
+        machineLevel: 'full',
+      }),
+    ).toContain('collect slow   FAIL — never completed')
   })
 
   test('judges slow collection from platform and installation schedule ownership', () => {
     const missing = { status: 'missing', ageMs: null } as const
     const owners = [{ label: 'com.user.hub-collect', checkoutOnly: true }]
     for (const platform of ['darwin', 'linux'] as const) {
-      expect(slowCollectionDoctorDecision('distribution', platform, owners, missing)).toBe(
-        'collect slow   FAIL — never completed',
-      )
+      expect(
+        slowCollectionDoctorDecision(
+          scheduleExpectation('com.user.hub-collect', platform, 'distribution', 'full', owners),
+          missing,
+        ),
+      ).toBe('collect slow   FAIL — never completed')
+      expect(
+        slowCollectionDoctorDecision(
+          scheduleExpectation('com.user.hub-collect', platform, 'distribution', 'record', owners),
+          missing,
+        ),
+      ).toBe(`collect slow   ${NOT_SCHEDULED_BY_THIS_INSTALL}`)
     }
-    expect(slowCollectionDoctorDecision('checkout', 'darwin', owners, missing)).toBe(
-      'collect slow   FAIL — never completed',
-    )
-    expect(slowCollectionDoctorDecision('checkout', 'linux', owners, missing)).toBe(
-      `collect slow   ${NOT_SCHEDULED_BY_THIS_INSTALL}`,
-    )
+    for (const machineLevel of ['record', 'full'] as const) {
+      expect(
+        slowCollectionDoctorDecision(
+          scheduleExpectation('com.user.hub-collect', 'darwin', 'checkout', machineLevel, owners),
+          missing,
+        ),
+      ).toBe('collect slow   FAIL — never completed')
+      expect(
+        slowCollectionDoctorDecision(
+          scheduleExpectation('com.user.hub-collect', 'linux', 'checkout', machineLevel, owners),
+          missing,
+        ),
+      ).toBe(`collect slow   ${NOT_SCHEDULED_BY_THIS_INSTALL}`)
+    }
   })
 
   test('reports intervals whose task display key has no UUID link', async () => {

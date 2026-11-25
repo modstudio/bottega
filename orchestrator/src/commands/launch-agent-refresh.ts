@@ -17,6 +17,7 @@ export function registerLaunchAgentRefreshCommand(
     .allowExcessArguments(false)
     .action(() =>
       refreshLaunchAgents(process.platform, presentation, {
+        readMachineLevel: () => readMachineValue('machine.level') as MachineLevel,
         requiredMaintenanceLabels: () =>
           requiredMaintenanceLabels(
             gatherLaunchAgentSkipFacts(),

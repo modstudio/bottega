@@ -8,7 +8,10 @@ import {
   pidRecordIdentity,
   processStartTime,
 } from '../../shared/process-identity.ts'
-import type { ScheduleExpectation } from '../../shared/schedule-policy.ts'
+import {
+  SCHEDULED_BY_THIS_INSTALL,
+  type ScheduleExpectation,
+} from '../../shared/schedule-policy.ts'
 import { db, writeTransaction } from './db.ts'
 
 export const REVISION_CHECK_MS = 60_000
@@ -311,8 +314,7 @@ export function formatServiceRevisionDoctor(collectExpectation: ScheduleExpectat
   const current = readInstallHead()
   return (['serve', 'collect'] as const).map((service) => {
     const recorded = readIdentity(service)
-    const expectation: ScheduleExpectation =
-      service === 'collect' ? collectExpectation : { scheduled: true, reason: null }
+    const expectation = service === 'collect' ? collectExpectation : SCHEDULED_BY_THIS_INSTALL
     return formatServiceRevisionDoctorDecision(
       service,
       expectation,

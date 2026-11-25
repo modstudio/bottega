@@ -24,16 +24,24 @@ const identity: ServiceIdentity = {
 describe('service revision comparison', () => {
   test('reports an unscheduled collector from policy instead of as gone', () => {
     const owners = [{ label: 'com.user.hub-collect', checkoutOnly: true }]
-    for (const [platform, installationKind, expected] of [
-      ['darwin', 'distribution', 'collect        gone (no identity recorded)'],
-      ['linux', 'distribution', 'collect        gone (no identity recorded)'],
-      ['darwin', 'checkout', 'collect        gone (no identity recorded)'],
-      ['linux', 'checkout', `collect        ${NOT_SCHEDULED_BY_THIS_INSTALL}`],
+    for (const [platform, installationKind, machineLevel, expected] of [
+      ['darwin', 'distribution', 'full', 'collect        gone (no identity recorded)'],
+      ['linux', 'distribution', 'full', 'collect        gone (no identity recorded)'],
+      ['darwin', 'distribution', 'record', `collect        ${NOT_SCHEDULED_BY_THIS_INSTALL}`],
+      ['linux', 'distribution', 'record', `collect        ${NOT_SCHEDULED_BY_THIS_INSTALL}`],
+      ['darwin', 'checkout', 'record', 'collect        gone (no identity recorded)'],
+      ['linux', 'checkout', 'full', `collect        ${NOT_SCHEDULED_BY_THIS_INSTALL}`],
     ] as const) {
       expect(
         formatServiceRevisionDoctorDecision(
           'collect',
-          scheduleExpectation('com.user.hub-collect', platform, installationKind, owners),
+          scheduleExpectation(
+            'com.user.hub-collect',
+            platform,
+            installationKind,
+            machineLevel,
+            owners,
+          ),
           { status: 'missing' },
           { revision: null, error: 'not read' },
           null,

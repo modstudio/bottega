@@ -53,6 +53,7 @@ function maintenanceDefinitionNeedsRefresh(
 export function decideLaunchAgentRefresh(input: {
   installationKind: InstallationKind
   owners: readonly InstalledPlistOwner[]
+  machineLevel: 'record' | 'full'
   observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>
   requiredMaintenanceLabels: ReadonlySet<string>
 }): LaunchAgentRefreshPlan {
@@ -74,9 +75,12 @@ export function decideLaunchAgentRefresh(input: {
       notReleaseInstalled: [],
     }
   }
+  const expectedByInstall = (label: string) =>
+    scheduleExpectation(label, 'darwin', input.installationKind, input.machineLevel, checkoutOwners)
+      .scheduled
   const releaseOwned = input.owners.filter(
     ({ label }) =>
-      scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled &&
+      expectedByInstall(label) &&
       maintenanceDefinitionNeedsRefresh(
         label,
         input.observations[label],
@@ -92,10 +96,7 @@ export function decideLaunchAgentRefresh(input: {
     applyMaintenance: releaseOwned.length > 0,
     unverified,
     notReleaseInstalled: drifted
-      .filter(
-        ({ label }) =>
-          !scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled,
-      )
+      .filter(({ label }) => !expectedByInstall(label))
       .map(({ label }) => label),
   }
 }
@@ -111,6 +112,7 @@ type RefreshDependencies = {
   runCheckoutInstaller?: (root: string, command: string) => void
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
   requiredMaintenanceLabels?: () => readonly string[]
+  readMachineLevel?: () => 'record' | 'full'
 }
 
 function distributionObservations(
@@ -177,6 +179,7 @@ export async function refreshLaunchAgents(
   )
   const plan = decideLaunchAgentRefresh({
     installationKind: identity.kind,
+    machineLevel: deps.readMachineLevel?.() ?? 'full',
     owners,
     observations,
     requiredMaintenanceLabels,

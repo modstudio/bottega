@@ -3,7 +3,10 @@
 
 import type { Keystore } from '../../../shared/key-store-constants.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
-import { schedulePlatformSupported } from '../../../shared/schedule-policy.ts'
+import {
+  MAINTENANCE_SCHEDULE_DESCRIPTION,
+  schedulePlatformSupported,
+} from '../../../shared/schedule-policy.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
 import { probesWithProject } from './setup-agent-declarations.ts'
@@ -139,7 +142,7 @@ export function setupActionLine(action: SetupAction): string {
     case 'install-verify':
       return 'Render and verify harness settings and user canon'
     case 'install-schedules':
-      return 'Install scheduled sweep and record sync'
+      return `Install ${MAINTENANCE_SCHEDULE_DESCRIPTION}`
     case 'install-harness':
       return `Install ${action.harness}`
     case 'skip-harness-install':

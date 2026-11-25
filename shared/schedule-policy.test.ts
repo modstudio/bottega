@@ -12,19 +12,30 @@ const checkoutOwners = [
 
 for (const label of ['com.user.hub-collect', 'com.user.orch-sweep'] as const) {
   test(`${label} expectation follows platform and installation ownership`, () => {
-    expect(scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled).toBe(
-      true,
-    )
-    expect(scheduleExpectation(label, 'linux', 'distribution', checkoutOwners).scheduled).toBe(true)
-    expect(scheduleExpectation(label, 'darwin', 'checkout', checkoutOwners).scheduled).toBe(true)
-    expect(scheduleExpectation(label, 'linux', 'checkout', checkoutOwners)).toEqual({
+    expect(
+      scheduleExpectation(label, 'darwin', 'distribution', 'full', checkoutOwners).scheduled,
+    ).toBe(true)
+    expect(
+      scheduleExpectation(label, 'linux', 'distribution', 'full', checkoutOwners).scheduled,
+    ).toBe(true)
+    expect(
+      scheduleExpectation(label, 'darwin', 'checkout', 'record', checkoutOwners).scheduled,
+    ).toBe(true)
+    expect(scheduleExpectation(label, 'linux', 'checkout', 'full', checkoutOwners)).toEqual({
       scheduled: false,
       reason: NOT_SCHEDULED_BY_THIS_INSTALL,
     })
-    expect(scheduleExpectation(label, 'win32', 'distribution', checkoutOwners).scheduled).toBe(
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(
+        scheduleExpectation(label, platform, 'distribution', 'record', checkoutOwners),
+      ).toEqual({ scheduled: false, reason: NOT_SCHEDULED_BY_THIS_INSTALL })
+    }
+    expect(
+      scheduleExpectation(label, 'win32', 'distribution', 'full', checkoutOwners).scheduled,
+    ).toBe(false)
+    expect(scheduleExpectation(label, 'win32', 'checkout', 'full', checkoutOwners).scheduled).toBe(
       false,
     )
-    expect(scheduleExpectation(label, 'win32', 'checkout', checkoutOwners).scheduled).toBe(false)
   })
 }
 

@@ -50,6 +50,10 @@ export function isMaintenanceScheduleLabel(label: string): label is MaintenanceS
 }
 
 export const NOT_SCHEDULED_BY_THIS_INSTALL = 'not scheduled by this install' as const
+export const SCHEDULED_BY_THIS_INSTALL = { scheduled: true, reason: null } as const
+
+export const MAINTENANCE_SCHEDULE_DESCRIPTION =
+  'scheduled sweep, record sync, and hub collection' as const
 
 export type CheckoutScheduleOwnerFact = {
   label: string
@@ -64,16 +68,18 @@ export type ScheduleExpectation =
 export function scheduleExpectation(
   label: string,
   platform: NodeJS.Platform,
-  installationKind: 'distribution' | 'checkout',
+  installationKind: 'distribution' | 'checkout' | null,
+  machineLevel: 'record' | 'full',
   checkoutOwners: readonly CheckoutScheduleOwnerFact[],
 ): ScheduleExpectation {
   const scheduled =
     schedulePlatformSupported(platform) &&
     (installationKind === 'distribution'
-      ? isMaintenanceScheduleLabel(label)
-      : platform === 'darwin' &&
+      ? machineLevel === 'full' && isMaintenanceScheduleLabel(label)
+      : installationKind === 'checkout' &&
+        platform === 'darwin' &&
         checkoutOwners.some((owner) => owner.label === label && owner.checkoutOnly))
   return scheduled
-    ? { scheduled: true, reason: null }
+    ? SCHEDULED_BY_THIS_INSTALL
     : { scheduled: false, reason: NOT_SCHEDULED_BY_THIS_INSTALL }
 }

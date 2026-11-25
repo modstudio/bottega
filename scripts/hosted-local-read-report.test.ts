@@ -436,6 +436,13 @@ test.each([
     schedules: [{ label: 'hourly', launchdInterval: '60', systemdInterval: '90' }],
     failure: 'launchd StartInterval 60 disagrees with systemd OnUnitActiveSec 90',
   },
+  {
+    name: 'long-running service schedule',
+    exportedRefreshes: ['orchestrator/src/refresh.ts:refresh'],
+    schedules: [{ label: 'hourly', launchdInterval: null, systemdInterval: null }],
+    failure:
+      'schedule is a long-running service, not an interval schedule; a readCache refresh needs an interval schedule',
+  },
 ] as const)('refuses a read-cache declaration with $name', (fixture) => {
   const result = hostedLocalReadDeclarationValidation({
     stateClasses: [readCacheDeclaration],

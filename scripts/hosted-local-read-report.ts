@@ -811,6 +811,10 @@ export function hostedLocalReadDeclarationValidation(input: {
       failures.push(
         `${name}: schedule label is not in MAINTENANCE_SCHEDULE_LABELS; use a declared maintenance schedule`,
       )
+    else if (!schedule.launchdInterval && !schedule.systemdInterval)
+      failures.push(
+        `${name}: schedule is a long-running service, not an interval schedule; a readCache refresh needs an interval schedule`,
+      )
     else if (!schedule.launchdInterval || !schedule.systemdInterval)
       failures.push(
         `${name}: schedule interval is missing from its launchd or systemd definition; define StartInterval and OnUnitActiveSec`,
