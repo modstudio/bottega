@@ -285,12 +285,15 @@ function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
   })
 }
 
-export function readDocs(filters: DocListFilters = {}): Promise<Doc[]> {
+export function readDocs(filters: DocListFilters = {}, database: Database = db()): Promise<Doc[]> {
   const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
-  return applyRecordReadAuthority({
-    local: () => listDocsStore(resolvedFilters(localFilters)),
-    hosted: () => withReadRemedy(() => hostedRows(filters)),
-  })
+  return applyRecordReadAuthority(
+    {
+      local: () => listDocsStore(resolvedFilters(localFilters), database),
+      hosted: () => withReadRemedy(() => hostedRows(filters)),
+    },
+    database,
+  )
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {

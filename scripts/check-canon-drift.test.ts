@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,15 +7,11 @@ import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-h
 import {
   closeDatabaseForFixture,
   DB_PATH,
-  db,
   openReadOnlyDatabase,
 } from '../orchestrator/src/database/db.ts'
 import { writeMigratedTestDatabase } from '../orchestrator/src/database/test-database.fixture.ts'
-import { registerStandardHooks } from '../orchestrator/src/runtime/store-hooks.ts'
-import {
-  createMemoryRecordApiClient,
-  installRecordApiClient,
-} from '../orchestrator/test/fixtures/record-api.ts'
+import { currentRecordAuthorityFacts } from '../orchestrator/src/record/record-write-authority.ts'
+import { installRecordApiClient } from '../orchestrator/test/fixtures/record-api.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
@@ -30,6 +26,7 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 
 function git(root: string, ...args: string[]): string {
   return runTestGit(root, process.env, ...args)
@@ -46,12 +43,21 @@ function commit(root: string, message: string): string {
   return git(root, 'rev-parse', 'HEAD')
 }
 
+beforeAll(() => {
+  process.env.BOTTEGA_RECORD_API_URL = ''
+})
+
 afterEach(() => {
   installRecordApiClient(null)
   closeDatabaseForFixture()
   scratch = null
   if (originalGithubBase === undefined) delete process.env.GITHUB_BASE_REF
   else process.env.GITHUB_BASE_REF = originalGithubBase
+})
+
+afterAll(() => {
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
 })
 
 describe('canon drift branch gate', () => {
@@ -132,26 +138,37 @@ describe('canon drift branch gate', () => {
     writable
       .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')
       .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main', space: 'fixture' }))
+    writable
+      .query(
+        `INSERT INTO doc
+         (record_id,scope,subject,slug,title,body,delivery,created_at,updated_at,audiences)
+         VALUES (?,'canon',NULL,'AGENTS.md','Fixture canon','Fixture canon body.','inject',?,?,?)`,
+      )
+      .run(newRecordId(), '2026-11-25T00:00:00.000Z', '2026-11-25T00:00:00.000Z', '["technical"]')
+    writable.exec('DELETE FROM record_install_binding')
+    writable
+      .query("INSERT INTO record_local_by_design(record_id,mark) VALUES (?,'local')")
+      .run(newRecordId())
+    expect(writable.query('SELECT COUNT(*) AS count FROM record_install_binding').get()).toEqual({
+      count: 0,
+    })
+    expect(writable.query('SELECT COUNT(*) AS count FROM record_local_by_design').get()).toEqual({
+      count: 1,
+    })
     writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
     writable.close()
-    registerStandardHooks()
-    db().exec('PRAGMA wal_checkpoint(TRUNCATE);')
-    installRecordApiClient({
-      ...createMemoryRecordApiClient(),
-      whoami: async () => ({
-        user: { id: 'fixture-user', name: 'Fixture', email: 'fixture@example.test' },
-        activeSpaceId: 'fixture',
-        personalSpaceId: 'fixture',
-        memberships: [{ space_id: 'fixture', slug: 'fixture', permission: 'write', role: 'owner' }],
-      }),
-    })
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
     const before = digest()
 
     const readonly = openReadOnlyDatabase(store)
+    expect(currentRecordAuthorityFacts(readonly)).toMatchObject({
+      recordApiConfigured: false,
+      installBound: false,
+      localByDesign: true,
+    })
     expect(await readCanonGateInput(root, readonly)).toMatchObject({
       project: { name: 'fixture' },
-      rows: [],
+      rows: [{ slug: 'AGENTS.md', body: 'Fixture canon body.', subject: null }],
     })
     readonly.close()
 
