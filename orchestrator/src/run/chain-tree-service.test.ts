@@ -267,7 +267,7 @@ test('database collision pre-check is skipped for a recipe that declares reuse',
     .query('UPDATE run SET recipe_snapshot=? WHERE record_id=?')
     .run(
       JSON.stringify({
-        source: { path: '.bottega/worktree.jsonc', commit: 'a'.repeat(40) },
+        source: { path: `.${PLATFORM_SLUG}/worktree.jsonc`, commit: 'a'.repeat(40) },
         recipe: {
           create: [],
           allocate: {

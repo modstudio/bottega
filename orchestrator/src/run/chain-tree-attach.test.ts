@@ -25,9 +25,15 @@ function decide(overrides: Partial<ChainTreeCandidate> = {}, candidates?: ChainT
 
 describe('chain tree attach decision', () => {
   test.each([
-    ['earlier tree on branch', {}, 'attach', undefined, false],
+    ['latest tree on branch', {}, 'attach', undefined, false],
     ['detached at tip', { checkedOutBranch: null }, 'attach', undefined, true],
-    ['dirty detached tree falls through', { checkedOutBranch: null, clean: false }, 'none', undefined, undefined],
+    [
+      'dirty detached tree falls through',
+      { checkedOutBranch: null, clean: false },
+      'none',
+      undefined,
+      undefined,
+    ],
     [
       'head ahead',
       { checkedOutBranch: null, relation: 'head-ahead' },
@@ -82,6 +88,14 @@ describe('chain tree attach decision', () => {
     const result = decide({}, [
       { ...candidate, path: '/trees/gone', ownerRunId: 'latest-run', exists: false },
       { ...candidate, clean: false },
+    ])
+    expect(result).toMatchObject({ action: 'attach', path: candidate.path, switchToBranch: false })
+  })
+
+  test('an earlier clean tree on the branch attaches when the latest tree is gone', () => {
+    const result = decide({}, [
+      { ...candidate, path: '/trees/gone', ownerRunId: 'latest-run', exists: false },
+      candidate,
     ])
     expect(result).toMatchObject({ action: 'attach', path: candidate.path, switchToBranch: false })
   })
