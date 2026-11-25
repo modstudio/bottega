@@ -209,7 +209,7 @@ export const ROUTES = (
       'release check',
       'orch',
       'release check',
-      'validate the tag, tracked rungs, and release binary working-directory isolation',
+      'validate the tag, released client contract, tracked rungs, and release binary working-directory isolation',
     ),
     route('release log', 'orch', 'release log'),
     route(

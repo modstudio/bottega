@@ -11,6 +11,10 @@ import {
   RELEASE_REQUIRE_PINNED_BUN_ENV,
 } from './release-binary-autoload-check.ts'
 import {
+  readReleaseClientContract,
+  releaseClientContractContentsRefusal,
+} from './release-client-contract.ts'
+import {
   releaseRungsDriftDecision,
   releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
@@ -64,6 +68,13 @@ export async function checkRelease(
 ): Promise<ReleaseCheckResult> {
   const root = releaseCheckoutRoot(fromDirectory, environment)
   const checked = validateReleaseTagVersion(tag, root)
+  const contract = readReleaseClientContract(root, tag)
+  const contractRefusal = releaseClientContractContentsRefusal(
+    contract.version,
+    contract.snapshot,
+    contract.current,
+  )
+  if (contractRefusal) throw new Error(contractRefusal)
   const drift = releaseRungsDriftDecision(readTrackedReleaseRungs(root), registeredReleaseRungs())
   if (drift.status === 'different') throw new Error(drift.message)
   const bunVersionFile = join(root, BUN_VERSION_FILE)

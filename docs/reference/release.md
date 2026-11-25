@@ -30,7 +30,7 @@ releases and rungs
 
 **Synopsis:** `bottega release check <tag>`
 
-validate the tag, tracked rungs, and release binary working-directory isolation
+validate the tag, released client contract, tracked rungs, and release binary working-directory isolation
 
 ### Related
 

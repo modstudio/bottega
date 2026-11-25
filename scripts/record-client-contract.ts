@@ -7,6 +7,10 @@ import {
 } from '../orchestrator/src/record/record-api-client.ts'
 import { identity } from '../orchestrator/src/record/record-api-identity.fixture.ts'
 import { registerRecordStorageRoute } from '../orchestrator/src/record/record-api-storage.ts'
+import {
+  CURRENT_CONTRACT_REPO_PATH,
+  RELEASED_CONTRACT_REPO_DIRECTORY,
+} from '../orchestrator/src/release/release-client-contract.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
 import { type ConfigClient, configClient } from '../shared/config-client.ts'
@@ -24,8 +28,8 @@ export type RecordClientContractEntry = {
 }
 
 const ROOT = resolve(import.meta.dir, '..')
-export const CURRENT_CONTRACT_PATH = resolve(ROOT, 'scripts/quality/record-client-contract.json')
-export const RELEASED_CONTRACT_DIRECTORY = resolve(ROOT, 'scripts/quality/record-client-contracts')
+export const CURRENT_CONTRACT_PATH = resolve(ROOT, CURRENT_CONTRACT_REPO_PATH)
+export const RELEASED_CONTRACT_DIRECTORY = resolve(ROOT, RELEASED_CONTRACT_REPO_DIRECTORY)
 
 const SAMPLE_ID = '01990000-0000-7000-8000-000000000001'
 const SAMPLE_KEY_ID = 'AAAAAAAAAAAAAAAAAAAAAA'
