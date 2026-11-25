@@ -33,6 +33,10 @@ export type RecordBoardClaimClient = {
     input: { project: string; projectId?: string | null; key: string },
     destination: RecordWriteDestination,
   ): Promise<{ released: number }>
+  releaseBoardSessionClaims(
+    input: { holderSession: string },
+    destination: RecordWriteDestination,
+  ): Promise<{ released: number }>
 }
 
 export function recordBoardClaimClient(request: RecordClientRequest): RecordBoardClaimClient {
@@ -59,6 +63,12 @@ export function recordBoardClaimClient(request: RecordClientRequest): RecordBoar
       request(boardClaimListPath(project, projectId, options)),
     releaseBoardTaskClaims: (input, destination) =>
       request('/v1/board/claims/release-task', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    releaseBoardSessionClaims: (input, destination) =>
+      request('/v1/board/claims/release-session', {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,

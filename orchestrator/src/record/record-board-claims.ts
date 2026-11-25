@@ -738,3 +738,30 @@ export async function releaseHostedBoardTaskClaims(
     return { released: closable.length }
   })
 }
+
+export async function releaseHostedBoardSessionClaims(
+  input: BoardTenant & { holderSession: string },
+): Promise<{ released: number }> {
+  if (!input.holderSession.trim()) throw new RecordBoardError('holder session is required', 400)
+  const clock = Date.now()
+  return withBoardTenant(input, false, async (tx) => {
+    const rows = (await tx`
+      SELECT claim.*,
+        ${tx.unsafe(HOSTED_OPEN_CURSOR_BOUND_SQL)} bound_to_open_cursor
+      FROM board_claim claim
+      WHERE claim.holder_session=${input.holderSession}
+        AND claim.holder_user_id=${input.userId}::uuid
+        AND claim.closed_at IS NULL
+    `) as ClaimRow[]
+    const closable = rows.filter((row) => hostedLive(row, clock))
+    const at = new Date(clock).toISOString()
+    for (const row of closable) {
+      await tx`
+        UPDATE board_claim
+        SET closed_at=${at}::timestamptz, close_reason=${'released' satisfies ClaimCloseReason}
+        WHERE id=${String(row.id)}::uuid
+      `
+    }
+    return { released: closable.length }
+  })
+}

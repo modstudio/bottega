@@ -4,7 +4,10 @@ import { type RecordApiClient, recordApiClientOver } from '../../src/record/reco
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { RecordClientRequest } from '../../src/record/record-api-client-paths.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
-import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
+import {
+  releaseHostedBoardSessionClaims,
+  takeHostedBoardClaim,
+} from '../../src/record/record-board-claims.ts'
 import { countRecordCacheRows } from '../../src/record/record-cache-counts.ts'
 import { countRecordDocs } from '../../src/record/record-docs.ts'
 import { readRecordQuestions } from '../../src/record/record-question-read.ts'
@@ -97,6 +100,7 @@ export async function createRecordContractFixture(
       listTaskFlowStages: listRecordTaskFlowStages,
       writeTaskFlow: writeRecordTaskFlow,
       takeBoardClaim: takeHostedBoardClaim,
+      releaseBoardSessionClaims: releaseHostedBoardSessionClaims,
       countCacheRows: countRecordCacheRows,
       countDocs: countRecordDocs,
     },

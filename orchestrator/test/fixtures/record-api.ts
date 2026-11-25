@@ -116,6 +116,7 @@ function idleBoardDeps(): RecordBoardDeps {
     releaseBoardClaim: unused,
     listBoardClaims: unused,
     releaseBoardTaskClaims: unused,
+    releaseBoardSessionClaims: unused,
   }
 }
 
@@ -269,6 +270,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'releaseBoardClaim'
   | 'listBoardClaims'
   | 'releaseBoardTaskClaims'
+  | 'releaseBoardSessionClaims'
   | 'openBoardStream'
   | 'listProjectSubjects'
   | 'addProjectSubject'
@@ -311,6 +313,7 @@ export function unusedBoardClientMethods(): Pick<
     releaseBoardClaim: unusedBoard,
     listBoardClaims: unusedBoard,
     releaseBoardTaskClaims: unusedBoard,
+    releaseBoardSessionClaims: unusedBoard,
     openBoardStream: unusedBoard,
     listProjectSubjects: async () => ({ items: [], nextCursor: null }),
     addProjectSubject: unusedSubject,

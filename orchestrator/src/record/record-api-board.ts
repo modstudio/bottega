@@ -155,6 +155,7 @@ const releaseTaskSchema = z
     key: z.string().min(1),
   })
   .strict()
+const releaseSessionSchema = z.object({ holderSession: z.string().min(1) }).strict()
 const claimListSchema = z.object({
   project: z.string().min(1),
   projectId: idSchema,
@@ -231,6 +232,9 @@ export type RecordBoardDeps = {
   ): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(
     input: BoardTenant & { project: string; projectId?: string | null; key: string },
+  ): Promise<{ released: number }>
+  releaseBoardSessionClaims(
+    input: BoardTenant & { holderSession: string },
   ): Promise<{ released: number }>
 }
 
@@ -530,6 +534,17 @@ export function registerRecordBoardRoutes(
     if (!body.success) return context.json({ error: 'invalid board claim release-task' }, 400)
     try {
       return context.json(await deps.releaseBoardTaskClaims({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/claims/release-session', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
+    const body = releaseSessionSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board claim release-session' }, 400)
+    try {
+      return context.json(await deps.releaseBoardSessionClaims({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

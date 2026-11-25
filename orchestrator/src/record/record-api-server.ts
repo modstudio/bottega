@@ -25,6 +25,7 @@ import {
   listHostedBoardClaims,
   releaseHostedBoardClaim,
   releaseHostedBoardTaskClaims,
+  releaseHostedBoardSessionClaims,
   renewHostedBoardClaim,
   takeHostedBoardClaim,
 } from './record-board-claims.ts'
@@ -496,6 +497,7 @@ function recordBoardDependencies() {
     releaseBoardClaim: releaseHostedBoardClaim,
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
+    releaseBoardSessionClaims: releaseHostedBoardSessionClaims,
   }
 }
 
