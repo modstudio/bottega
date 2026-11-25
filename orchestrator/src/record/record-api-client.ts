@@ -1,7 +1,6 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { Database } from 'bun:sqlite'
 import { hostedApiFetch as apiFetch } from '../../../shared/bounded-fetch.ts'
 import type {
   DocAudience,
@@ -560,10 +559,9 @@ export async function recordApiRequest<T>(
   transport: typeof fetch = apiFetch,
   preflight?: () => void,
   origin?: string,
-  database?: Database,
+  database?: Parameters<typeof storedRecordToken>[0],
 ): Promise<T> {
-  const enforcePreflight = preflight ?? (() => throwIfRecordApiRequestRefused(database))
-  enforcePreflight()
+  preflight ? preflight() : throwIfRecordApiRequestRefused(database)
   const resolvedOrigin = origin ?? recordApiBaseUrl()
   const readToken = async () =>
     init.signal
@@ -612,11 +610,9 @@ export async function recordApiRequest<T>(
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
-function throwIfRecordApiRequestRefused(database?: Database): void {
+function throwIfRecordApiRequestRefused(database?: Parameters<typeof storedRecordToken>[0]): void {
   const authority = currentRecordWriteDecision(database)
-  if (authority.verdict === 'refused') {
-    throw new RecordApiRequestError(authority.refusal, 'refused')
-  }
+  if (authority.verdict === 'refused') throw new RecordApiRequestError(authority.refusal, 'refused')
 }
 
 async function publicRequest<T>(
@@ -758,7 +754,7 @@ export function authenticatedRecordApiClient(
 export function recordApiClient(
   request = recordApiRequest,
   transport?: typeof fetch,
-  database?: Database,
+  database?: Parameters<typeof storedRecordToken>[0],
 ): RecordApiClient {
   const injected = injectSlot().current
   if (injected) return injected
@@ -766,12 +762,7 @@ export function recordApiClient(
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
     selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch, database),
-    {
-      transport: transport ?? apiFetch,
-      streamTransport: transport,
-      streamToken: database ? () => storedRecordToken(database) : undefined,
-      preflight: database ? () => throwIfRecordApiRequestRefused(database) : undefined,
-    },
+    { transport: transport ?? apiFetch, streamTransport: transport },
   )
 }
 
