@@ -18,7 +18,6 @@ export type ChainTreeCandidate = {
 
 export type ChainTreeAttachRemedy =
   | { kind: 'wait-or-stop'; runId: string }
-  | { kind: 'dirty' }
   | { kind: 'fast-forward-branch'; head: string; tip: string }
   | {
       kind: 'choose-work'

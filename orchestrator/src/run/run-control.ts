@@ -676,6 +676,7 @@ function continuationChainTreeFor(
   row: { branch_kept: string | null; branch_kept_tip: string | null },
   latest: ChainTurn,
   project: Project | null,
+  writesRepo: boolean,
 ) {
   return continuationChainTree({
     rootId: id,
@@ -683,6 +684,7 @@ function continuationChainTreeFor(
     rootBranchTip: row.branch_kept_tip,
     latest,
     project,
+    writesRepo,
   })
 }
 
@@ -699,7 +701,13 @@ function continuationWorkspace(input: {
   readsRepo: boolean
   writesRepo: boolean
 }) {
-  const tree = continuationChainTreeFor(input.id, input.row, input.latest, input.project)
+  const tree = continuationChainTreeFor(
+    input.id,
+    input.row,
+    input.latest,
+    input.project,
+    input.writesRepo,
+  )
   refuseHeldContinuationBranch(
     input.id,
     tree.project?.path ?? null,
@@ -875,26 +883,27 @@ export async function continueRun(
     argvResumeLimit,
   })
   authority = prepareContinuationAuthority(authority, id)
+  const resume = continuationResume({
+    id,
+    nextTurn,
+    owner: authority.owner,
+    continuation,
+    checkpoint,
+    treeDecision,
+    treePlan,
+    latest,
+    projectPath: project?.path ?? null,
+    attachedTree,
+    messageBinding,
+  })
   const childId = await detach(row.job, prompt, {
     cwd:
-      attachedTree?.worktree.path ??
+      resume.worktree?.path ??
       continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
     ...launch,
     transport: chainTransport(id) ?? undefined,
-    resume: continuationResume({
-      id,
-      nextTurn,
-      owner: authority.owner,
-      continuation,
-      checkpoint,
-      treeDecision,
-      treePlan,
-      latest,
-      projectPath: project?.path ?? null,
-      attachedTree,
-      messageBinding,
-    }),
+    resume,
   })
   const reported = await reportAndRecordTree(childId, row.job, branchSource, treePlan, dependencies)
   auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)

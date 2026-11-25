@@ -183,6 +183,7 @@ function retryChainTree(
     branch,
     branchTip: tip,
     retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
+    base: tip ?? undefined,
   })
 }
 
@@ -236,22 +237,22 @@ export function resolveWritingRetryWorkspace(
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
   const relation = branchTipRelation(project.path, recordedTip, liveTip)
   const attachedTree = retryChainTree(input, project.path, branch, liveTip)
+  const latestTreeLive =
+    !input.strandedRecordOnly &&
+    runAlive({
+      status: latest.status,
+      lease: runLeaseState(latest.record_id),
+      pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+      ...recordedRunLivenessFacts(
+        latest,
+        Date.now(),
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(db(), latest.session_id),
+      ),
+    })
   const decision = decideWritingRetryWorkspace({
     treeExists: Boolean(attachedTree),
-    treeLive:
-      !attachedTree &&
-      !input.strandedRecordOnly &&
-      runAlive({
-        status: latest.status,
-        lease: runLeaseState(latest.record_id),
-        pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
-        ...recordedRunLivenessFacts(
-          latest,
-          Date.now(),
-          SESSION_LIVE_MS,
-          recordedOwnerProcess(db(), latest.session_id),
-        ),
-      }),
+    treeLive: attachedTree?.ownerRunId === latest.record_id ? latestTreeLive : false,
     branchTipRelation: relation,
   })
   if (decision.action === 'refuse-branch') {

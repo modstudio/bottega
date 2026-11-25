@@ -72,9 +72,6 @@ export function renderChainTreeAttachRefusal(input: {
         runId: remedy.runId,
       })
       break
-    case 'dirty':
-      instruction = `commit or discard the uncommitted changes in ${path}`
-      break
     case 'fast-forward-branch':
       instruction =
         `the tree's HEAD ${remedy.head} already contains every commit on ${branch} (${remedy.tip}); ` +

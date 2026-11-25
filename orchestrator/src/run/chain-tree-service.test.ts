@@ -8,10 +8,15 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import { branchOf, git } from '../git/git-environment.ts'
-import { upsertProject } from '../project/projects.ts'
-import { prepareChainTreeAttachment, refuseMissingChainTreeDatabase } from './chain-tree-service.ts'
+import { projectByName, upsertProject } from '../project/projects.ts'
+import {
+  continuationChainTree,
+  prepareChainTreeAttachment,
+  refuseMissingChainTreeDatabase,
+} from './chain-tree-service.ts'
 import { claimRun } from './run-claim.ts'
 import { runProjectAttribution } from './run-project-attribution.ts'
+import { resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 
 const trackResidue = trackedTestResidue()
 const priorEnv: Record<string, string | undefined> = {}
@@ -195,6 +200,152 @@ test("the latest turn's dirty tree on the branch remains attachable", () => {
   })
 
   expect(prepared).toMatchObject({ ownerRunId: root, worktree: { path: tree, branch } })
+})
+
+test('retry refuses a live latest turn on its own recorded tree', () => {
+  const repository = trackResidue(join(dir, `chain-tree-live-retry-repo-${newRecordId()}`))
+  const tree = trackResidue(join(dir, `chain-tree-live-retry-held-${newRecordId()}`))
+  const branch = 'DEV-2644-live-retry'
+  mkdirSync(repository)
+  git(['init', '-b', 'main'], repository)
+  git(['config', 'user.email', 'fixture@example.test'], repository)
+  git(['config', 'user.name', 'Fixture'], repository)
+  writeFileSync(join(repository, 'tracked.txt'), 'base\n')
+  git(['add', 'tracked.txt'], repository)
+  git(['commit', '-qm', 'base'], repository)
+  git(['branch', branch], repository)
+  git(['worktree', 'add', '-q', tree, branch], repository)
+  const tip = git(['rev-parse', 'HEAD'], tree)
+
+  const projectId = newRecordId()
+  const projectName = `chain-tree-live-retry-${newRecordId()}`
+  upsertProject({ recordId: projectId, name: projectName, path: repository })
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    session: 'chain-tree-service-test',
+    repo: projectName,
+    projectRecordId: projectId,
+  })
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git',pid=?
+        WHERE record_id=?`,
+    )
+    .run(tree, tree, branch, tip, process.pid, root)
+
+  expect(() =>
+    resolveWritingRetryWorkspace({
+      id: root,
+      rootId: root,
+      job: 'implement',
+      launchKey: 'DEV-2644',
+      repo: projectName,
+      projectId,
+      branchKept: branch,
+      branchKeptTip: tip,
+      strandedRecordOnly: false,
+    }),
+  ).toThrow(
+    `run ${root} still has a live owner on worktree ${tree}; ` +
+      `wait for or stop it, then retry ${PLATFORM_SLUG} run retry ${root}`,
+  )
+})
+
+test("retry records the live branch tip as an attached tree's base", () => {
+  const repository = trackResidue(join(dir, `chain-tree-retry-base-repo-${newRecordId()}`))
+  const tree = trackResidue(join(dir, `chain-tree-retry-base-held-${newRecordId()}`))
+  const branch = 'DEV-2644-retry-base'
+  mkdirSync(repository)
+  git(['init', '-b', 'main'], repository)
+  git(['config', 'user.email', 'fixture@example.test'], repository)
+  git(['config', 'user.name', 'Fixture'], repository)
+  writeFileSync(join(repository, 'tracked.txt'), 'base\n')
+  git(['add', 'tracked.txt'], repository)
+  git(['commit', '-qm', 'base'], repository)
+  const recordedBase = git(['rev-parse', 'HEAD'], repository)
+  git(['branch', branch], repository)
+  git(['worktree', 'add', '-q', tree, branch], repository)
+  writeFileSync(join(tree, 'tracked.txt'), 'advanced\n')
+  git(['commit', '-qam', 'advance branch'], tree)
+  const liveTip = git(['rev-parse', 'HEAD'], tree)
+
+  const projectId = newRecordId()
+  const projectName = `chain-tree-retry-base-${newRecordId()}`
+  upsertProject({ recordId: projectId, name: projectName, path: repository })
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    session: 'chain-tree-service-test',
+    repo: projectName,
+    projectRecordId: projectId,
+  })
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git'
+        WHERE record_id=?`,
+    )
+    .run(tree, tree, branch, recordedBase, root)
+
+  const workspace = resolveWritingRetryWorkspace({
+    id: root,
+    rootId: root,
+    job: 'implement',
+    launchKey: 'DEV-2644',
+    repo: projectName,
+    projectId,
+    branchKept: branch,
+    branchKeptTip: recordedBase,
+    strandedRecordOnly: false,
+  })
+
+  expect(workspace.worktree).toMatchObject({ path: tree, base: liveTip })
+})
+
+test('a non-writing continuation does not switch a detached chain tree', () => {
+  const repository = trackResidue(join(dir, `chain-tree-reader-repo-${newRecordId()}`))
+  const tree = trackResidue(join(dir, `chain-tree-reader-held-${newRecordId()}`))
+  const branch = 'DEV-2644-reader'
+  mkdirSync(repository)
+  git(['init', '-b', 'main'], repository)
+  git(['config', 'user.email', 'fixture@example.test'], repository)
+  git(['config', 'user.name', 'Fixture'], repository)
+  writeFileSync(join(repository, 'tracked.txt'), 'base\n')
+  git(['add', 'tracked.txt'], repository)
+  git(['commit', '-qm', 'base'], repository)
+  git(['branch', branch], repository)
+  git(['worktree', 'add', '-q', tree, branch], repository)
+  const tip = git(['rev-parse', 'HEAD'], tree)
+  git(['switch', '--detach'], tree)
+
+  const projectId = newRecordId()
+  const projectName = `chain-tree-reader-${newRecordId()}`
+  upsertProject({ recordId: projectId, name: projectName, path: repository })
+  const root = addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'failed',
+    session: 'chain-tree-service-test',
+    repo: projectName,
+    projectRecordId: projectId,
+  })
+  db()
+    .query('UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=? WHERE record_id=?')
+    .run(tree, tree, branch, tip, root)
+
+  const result = continuationChainTree({
+    rootId: root,
+    rootBranch: branch,
+    rootBranchTip: tip,
+    latest: { record_id: root, branch },
+    project: projectByName(projectName),
+    writesRepo: false,
+  })
+
+  expect(result.attachedTree).toBeNull()
+  expect(branchOf(tree)).toBeNull()
 })
 
 test('recreate refuses a held database as leaked state without prescribing cleanup', () => {

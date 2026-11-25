@@ -166,6 +166,7 @@ export function prepareChainTreeAttachment(input: {
   branch: string
   branchTip: string | null
   retryCommand: string
+  base?: string
 }): PreparedChainTree | null {
   const initial = requireAttachDecision(input)
   if (initial.decision.action === 'none') return null
@@ -200,7 +201,7 @@ export function prepareChainTreeAttachment(input: {
           worktree: {
             path: selectedPath,
             branch: input.branch,
-            base: owner.base_commit ?? input.branchTip!,
+            base: input.base ?? owner.base_commit ?? input.branchTip!,
             repoRoot: input.projectPath,
             source: owner.worktree_source ?? undefined,
           },
@@ -269,6 +270,7 @@ export function continuationChainTree(input: {
     branch: string | null
   }
   project: Project | null
+  writesRepo: boolean
 }): {
   project: Project | null
   recordedTreeMatches: boolean
@@ -297,7 +299,7 @@ export function continuationChainTree(input: {
       ? gitContext(input.project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
       : null)
   const attachedTree =
-    branch && input.project
+    input.writesRepo && branch && input.project
       ? prepareChainTreeAttachment({
           rootId: input.rootId,
           projectPath: input.project.path,
@@ -333,6 +335,7 @@ export function continuationChainTree(input: {
     )
   }
   if (
+    input.writesRepo &&
     !attachedTree &&
     (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
   ) {
