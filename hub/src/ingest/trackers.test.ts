@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { clearRecordSessionToken, writeRecordSessionToken } from '../../../shared/record-session.ts'
 import { resolveAssigneeIds, type TrackerSource } from '../../../shared/trackers.ts'
+import { declareFixtureProjectSpace } from '../../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
@@ -39,6 +41,8 @@ const trackerTask = {
   updatedAt: null,
   assignee: null,
 }
+
+declareFixtureProjectSpace('alpha', 'fixture-space')
 const storedTrackerTask = {
   external_id: trackerTask.externalId,
   key: trackerTask.key,
@@ -167,15 +171,19 @@ describe('tracker key scope', () => {
 })
 
 const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const hostedUrl = process.env.BOTTEGA_HOSTED_URL
 const keyStore = process.env.BOTTEGA_KEYSTORE
 beforeAll(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_HOSTED_URL
   process.env.BOTTEGA_KEYSTORE = 'file'
   resetFixtureStore()
 })
 afterAll(() => {
   if (recordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = recordApiUrl
+  if (hostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+  else process.env.BOTTEGA_HOSTED_URL = hostedUrl
   if (keyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
   else process.env.BOTTEGA_KEYSTORE = keyStore
 })
@@ -454,6 +462,90 @@ describe('tracker register', () => {
     ).toEqual({ value: '1' })
   })
 
+  describe('hosted list failure', () => {
+    const nodeEnv = process.env.NODE_ENV
+    const originalFetch = globalThis.fetch
+
+    beforeAll(() => {
+      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+      process.env.NODE_ENV = 'development'
+      writeRecordSessionToken('fixture-token')
+    })
+
+    afterAll(() => {
+      delete process.env.BOTTEGA_HOSTED_URL
+      if (nodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = nodeEnv
+      globalThis.fetch = originalFetch
+      clearRecordSessionToken()
+      resetFixtureStore()
+    })
+
+    test('a refused hosted list still applies backfill without retirement and records failure', async () => {
+      const project = 'alpha'
+      resetFixtureStore()
+      delete process.env.BOTTEGA_HOSTED_URL
+      cacheTrackerTask(
+        { ...trackerTask, externalId: 'hosted-existing', key: 'ALP-1', project },
+        '2026-11-20T10:00:00.000Z',
+      )
+      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+      const sent: Array<Record<string, unknown>> = []
+      globalThis.fetch = (async (_input, init) => {
+        const changes = JSON.parse(String(init?.body)) as Array<Record<string, unknown>>
+        sent.push(...changes)
+        return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
+      }) as typeof fetch
+      const source: TrackerSource = {
+        project,
+        env: 'FIXTURE',
+        supportsUpdatedSince: false,
+        fetch: async () => {
+          throw new Error('list refused')
+        },
+        lookup: async (_client, key) => ({
+          ...trackerTask,
+          externalId: 'hosted-backfill',
+          key,
+          project,
+        }),
+      }
+
+      const collected = await collectTrackerSource(
+        { project, prefixes: ['ALP'], source },
+        [{ task_key: 'ALP-2', project }],
+        '2026-11-20T11:00:00.000Z',
+        { callTool: async () => ({}) } as never,
+      )
+      finishTrackerResults([collected], '2026-11-20T11:00:00.000Z', [project])
+
+      expect(
+        db()
+          .query<{ key: string; retired_reason: string | null }, [string]>(
+            'SELECT key,retired_reason FROM task WHERE project=? ORDER BY key',
+          )
+          .all(project),
+      ).toEqual([
+        { key: 'ALP-1', retired_reason: null },
+        { key: 'ALP-2', retired_reason: null },
+      ])
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toMatchObject({ table: 'hub_task', row: { key: 'ALP-2' } })
+      expect(
+        db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(`collect.tracker.${project}.force-full`),
+      ).toEqual({ value: '1' })
+      expect(
+        db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get('collect.leg.tasks%3Aalpha'),
+      ).toEqual({
+        value: expect.stringContaining('"consecutiveFailures":1'),
+      })
+    })
+  })
+
   test('a refused hosted change keeps the cursor and forces the next read to be full', () => {
     const first = '2026-11-06T10:00:00.000Z'
     recordTrackerReadState('refused', 'full', first, true)
@@ -551,6 +643,28 @@ describe('tracker register', () => {
         Date.parse(at) - 1,
       ),
     ).toEqual(new Set(['fresh']))
+  })
+
+  test('a synthetic backfill result records no collector leg and an empty pass records no completion', () => {
+    resetFixtureStore()
+    finishTrackerResults(
+      [{ result: { project: 'alpha', tasks: 0, changed: 0 }, filled: 1 }],
+      '2026-10-01T12:00:00.000Z',
+      ['alpha'],
+    )
+    expect(
+      db()
+        .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+        .get('collect.leg.tasks%3Abackfill'),
+    ).toBeNull()
+
+    resetFixtureStore()
+    finishTrackerResults([], '2026-10-01T13:00:00.000Z', [])
+    expect(
+      db()
+        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.trackers.at'`)
+        .get(),
+    ).toBeNull()
   })
 
   test('only projects that declare a usable tracker are polled', async () => {

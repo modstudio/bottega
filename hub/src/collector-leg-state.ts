@@ -120,7 +120,7 @@ export function recordTrackerCollectorState(
   },
   at = new Date().toISOString(),
 ): void {
-  if (result.project === 'backfill' || result.skipped) return
+  if (result.skipped) return
   const source = trackerLegSource(result.project)
   try {
     if (result.error) recordCollectorLegFailure(source, result.error, at)
@@ -135,9 +135,12 @@ export function recordTrackerCollectorState(
 export function dropUnregisteredTrackerCollectorStates(
   registeredProjects: readonly string[],
 ): void {
+  if (!registeredProjects.length) return
   const registeredSources = new Set(registeredProjects.map(trackerLegSource))
   const keys = db()
-    .query<{ key: string }, [string]>('SELECT key FROM setting WHERE key LIKE ?')
+    .query<{ key: string; value: string }, [string]>(
+      'SELECT key,value FROM setting WHERE key LIKE ?',
+    )
     .all(`${SETTING_PREFIX}%`)
     .filter((row) => {
       const source = sourceFromSettingKey(row.key)
@@ -146,7 +149,17 @@ export function dropUnregisteredTrackerCollectorStates(
   if (!keys.length) return
   writeTransaction((conn) => {
     const remove = conn.query('DELETE FROM setting WHERE key=?')
-    for (const row of keys) remove.run(row.key)
+    for (const row of keys) {
+      const source = sourceFromSettingKey(row.key)
+      let consecutiveFailures = 0
+      try {
+        consecutiveFailures = parseState(row.value).consecutiveFailures ?? 0
+      } catch {}
+      console.error(
+        `hub: removed ${source} collector state with ${consecutiveFailures} consecutive failures`,
+      )
+      remove.run(row.key)
+    }
   })
 }
 

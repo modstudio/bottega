@@ -88,8 +88,6 @@ describe('collector leg state', () => {
       { project: 'skipped', skipped: 'no credentials' },
       '2026-11-20T11:05:00.000Z',
     )
-    recordTrackerCollectorState({ project: 'backfill' }, '2026-11-20T11:05:00.000Z')
-
     expect(collectorLegStates()).toEqual([
       expect.objectContaining({
         source: 'tasks:alpha',
@@ -110,15 +108,34 @@ describe('collector leg state', () => {
   })
 
   test('removed tracker projects lose their leg state while registered and skipped trackers stay', () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
     recordCollectorLegFailure('tasks:removed', 'down', '2026-11-20T11:00:00.000Z')
+    recordCollectorLegFailure('tasks:removed', 'down', '2026-11-20T11:05:00.000Z')
     recordCollectorLegFailure('tasks:registered', 'down', '2026-11-20T11:00:00.000Z')
     recordCollectorLegFailure('runs', 'down', '2026-11-20T11:00:00.000Z')
 
-    dropUnregisteredTrackerCollectorStates(['registered'])
+    try {
+      dropUnregisteredTrackerCollectorStates(['registered'])
 
-    expect(
-      collectorLegStates().map((state) => ('unreadable' in state ? state.key : state.source)),
-    ).toEqual(['runs', 'tasks:registered'])
+      expect(
+        collectorLegStates().map((state) => ('unreadable' in state ? state.key : state.source)),
+      ).toEqual(['runs', 'tasks:registered'])
+      expect(error).toHaveBeenCalledWith(
+        'hub: removed tasks:removed collector state with 2 consecutive failures',
+      )
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  test('an empty registered tracker snapshot does not remove collector state', () => {
+    recordCollectorLegFailure('tasks:alpha', 'down', '2026-11-20T11:00:00.000Z')
+
+    dropUnregisteredTrackerCollectorStates([])
+
+    expect(collectorLegStates()).toEqual([
+      expect.objectContaining({ source: 'tasks:alpha', consecutiveFailures: 1 }),
+    ])
   })
 
   test('a quiet tracker stays current through its next scheduled slow cadence', () => {

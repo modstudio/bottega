@@ -1,6 +1,7 @@
 // concern: tracker read cursor and adaptive page-size cache
 
 import { TRACKER_DEFAULT_PAGE_SIZE, type TrackerSource } from '../../../shared/trackers.ts'
+import { grownPageSize } from '../../../shared/tracker-adaptive-pages.ts'
 import { db, type Project, writeTransaction } from '../db.ts'
 import {
   TRACKER_SINCE_OVERLAP_MS,
@@ -45,7 +46,18 @@ export function storedTrackerPageSize(project: Project, mode: TrackerReadMode): 
     Number.isInteger(value) && value >= 1 && value <= TRACKER_DEFAULT_PAGE_SIZE
       ? value
       : TRACKER_DEFAULT_PAGE_SIZE
-  return mode === 'full' ? Math.min(TRACKER_DEFAULT_PAGE_SIZE, remembered * 2) : remembered
+  return grownPageSize(mode, remembered, TRACKER_DEFAULT_PAGE_SIZE)
+}
+
+export function recordTrackerReads(projects: readonly Project[], at: string): void {
+  if (!projects.length) return
+  writeTransaction((conn) => {
+    const write = conn.query(
+      `INSERT INTO setting (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    for (const project of projects) write.run(trackerReadKey(project), at)
+  })
 }
 
 export function recordTrackerPageSize(project: Project, pageSize: number | undefined): void {

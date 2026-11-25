@@ -10,6 +10,9 @@ type PageRead<Row> = {
 
 const smallerPageSize = (pageSize: number) => Math.max(1, Math.floor(pageSize / 2))
 
+export const grownPageSize = (mode: 'full' | 'incremental', remembered: number, maximum: number) =>
+  mode === 'full' ? Math.min(maximum, remembered * 2) : remembered
+
 const refusal = (
   protocol: 'cursor-mcp' | 'workspace-mcp',
   pageIndex: number,
@@ -64,7 +67,7 @@ export async function readAdaptiveCursorPages<Row>(input: {
       pageSize = smallerPageSize(pageSize)
       continue
     }
-    lastSuccessfulPageSize = requestedPageSize
+    lastSuccessfulPageSize = pageSize
     pages.push(reply.rows)
     rowsRead += reply.rows.length
     positionsRequested += requestedPageSize

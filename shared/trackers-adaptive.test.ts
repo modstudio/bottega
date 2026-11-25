@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ToolCallRefused } from './tracker-list-scope.ts'
+import { grownPageSize } from './tracker-adaptive-pages.ts'
 import { type TrackerProject, trackerSourceFor } from './trackers.ts'
 
 const project = (name: string, protocol: 'cursor-mcp' | 'workspace-mcp'): TrackerProject => ({
@@ -23,6 +24,12 @@ const scopeTools = async () => [
 ]
 
 describe('adaptive tracker paging', () => {
+  test('full reads grow a remembered page size without exceeding the protocol maximum', () => {
+    expect(grownPageSize('incremental', 20, 100)).toBe(20)
+    expect(grownPageSize('full', 20, 100)).toBe(40)
+    expect(grownPageSize('full', 80, 100)).toBe(100)
+  })
+
   test('cursor paging halves refusals at the same cursor and returns the working size', async () => {
     const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
     const calls: Record<string, unknown>[] = []
@@ -199,6 +206,7 @@ describe('adaptive tracker paging', () => {
     expect(fetched.error).toBe(
       'stopal cursor-mcp status todo reached the row bound of 4000 before the read completed',
     )
+    expect(fetched.pageSize).toBe(100)
   })
 
   test('empty cursor pages with a next cursor still consume the row bound', async () => {

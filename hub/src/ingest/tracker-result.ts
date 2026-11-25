@@ -4,7 +4,7 @@ import {
 } from '../collector-leg-state.ts'
 import { type Project, writeTransaction } from '../db.ts'
 import type { TrackerReadMode } from './tracker-read-mode.ts'
-import { trackerReadKey } from './tracker-read-state.ts'
+import { recordTrackerReads } from './tracker-read-state.ts'
 
 const BACKFILL_RESULT = 'backfill'
 
@@ -41,18 +41,17 @@ export function finishTrackerResults(
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
   if (filled) out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
-  for (const result of out) recordTrackerCollectorState(result, at)
+  for (const result of out) {
+    if (result.project === BACKFILL_RESULT) continue
+    recordTrackerCollectorState(result, at)
+  }
   dropUnregisteredTrackerCollectorStates(registeredProjects)
   const successfulProjects = out.filter(successfulTrackerRead)
-  if (successfulProjects.length)
-    writeTransaction((conn) => {
-      const write = conn.query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      for (const result of successfulProjects) write.run(trackerReadKey(result.project), at)
-    })
-  if (!trackerLegError(out))
+  recordTrackerReads(
+    successfulProjects.map((result) => result.project),
+    at,
+  )
+  if (out.length && !trackerLegError(out))
     writeTransaction((conn) =>
       conn
         .query(
