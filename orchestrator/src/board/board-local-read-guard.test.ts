@@ -86,6 +86,12 @@ test('guarded board rows return locally and stop with a hosted-reader remedy aft
     expect(() => messageRows()).toThrow(
       'requireLocalBoardRead stopped a local board read; a hosted install reads the board through the hosted reader',
     )
+    expect(() =>
+      postNotice(
+        { audience: 'machine:host', title: 'Hosted local write', body: 'Must stop.' },
+        { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+      ),
+    ).toThrow(/requireLocalBoardWrite stopped local board notice post/)
   } finally {
     if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = endpoint

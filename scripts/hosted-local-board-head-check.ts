@@ -1,10 +1,10 @@
 import { hostedTableInSql } from '../orchestrator/src/database/hosted-table-guard.ts'
-import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadCandidate,
   hostedLocalReadSourceFacts,
 } from './hosted-local-read-report.ts'
+import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 import { extractSqlFromSource } from './hosted-sql-schema.ts'
 import { STATE_CLASSES } from './identity-state-classes.ts'
 
@@ -17,7 +17,13 @@ export function hostedLocalBoardHeadFailures(input: {
     item.store === 'orchestrator' &&
     item.class === 'hosted' &&
     item.table.startsWith('board_')
-      ? [{ table: item.table, cache: item.cache === true, ...(item.task ? { task: item.task } : {}) }]
+      ? [
+          {
+            table: item.table,
+            cache: item.cache === true,
+            ...(item.task ? { task: item.task } : {}),
+          },
+        ]
       : [],
   )
   const tableNames = tables.map(({ table }) => table)
