@@ -47,13 +47,7 @@ import * as trackerResult from './tracker-result.ts'
 import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
-export {
-  recordTrackerReadState,
-  storedTrackerPageSize,
-  storedTrackerReadMode,
-  trackerProjectsReadSince,
-  trackerReadPassComplete,
-} from './tracker-read-state.ts'
+export { trackerProjectsReadSince } from './tracker-read-state.ts'
 export { successfulTrackerRead, type TrackerResult, trackerLegError } from './tracker-result.ts'
 
 type TrackerResult = trackerResult.TrackerResult

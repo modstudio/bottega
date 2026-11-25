@@ -27,7 +27,6 @@ import {
 } from './tracker-task-text.ts'
 
 export {
-  categoryForTrackerRead,
   LIVE_TASK_STATUS_CATEGORIES,
   type StatusCategory,
   TASK_STATUSES,

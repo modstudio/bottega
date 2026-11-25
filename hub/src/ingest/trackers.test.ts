@@ -7,22 +7,24 @@ import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import { trackerObservationTimes } from './tracker-observation-times.ts'
 import {
+  recordTrackerReadState,
+  storedTrackerPageSize,
+  storedTrackerReadMode,
+  trackerReadPassComplete,
+} from './tracker-read-state.ts'
+import {
   collectTrackerSource,
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
   finishTrackerResults,
   ingestTrackers,
-  recordTrackerReadState,
   retireOutOfScopeTrackerTasks,
-  storedTrackerPageSize,
-  storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
   trackerKeyInScope,
   trackerKeyPrefix,
   trackerLegError,
   trackerProjectsReadSince,
-  trackerReadPassComplete,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
