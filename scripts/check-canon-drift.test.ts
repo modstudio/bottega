@@ -1,8 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
 import {
   closeDatabaseForFixture,
@@ -15,6 +16,11 @@ import { installRecordApiClient } from '../orchestrator/test/fixtures/record-api
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { clearRecordSessionToken, writeRecordSessionToken } from '../shared/record-session.ts'
+import {
+  resolveStateRoot,
+  STATE_HOME_ENV,
+  temporaryStateStoreMigrationAllowed,
+} from '../shared/state-directory.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
 import {
   branchChangedPaths,
@@ -28,6 +34,7 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
 const originalKeyStore = process.env.BOTTEGA_KEYSTORE
+const originalStateHome = process.env[STATE_HOME_ENV]
 const originalTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 const originalFetch = globalThis.fetch
 
@@ -178,8 +185,15 @@ describe('canon drift branch gate', () => {
   })
 
   describe('hosted-authoritative store read', () => {
+    let stateHome: string
+
     beforeEach(() => {
       installRecordApiClient(null)
+      stateHome = mkdtempSync(join(tmpdir(), 'canon-drift-record-state-'))
+      process.env[STATE_HOME_ENV] = stateHome
+      if (!temporaryStateStoreMigrationAllowed(resolveStateRoot(process.env), resolve(tmpdir()))) {
+        throw new Error('hosted canon test state root must be under the OS temporary directory')
+      }
       process.env.BOTTEGA_KEYSTORE = 'file'
       process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = '1'
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
@@ -235,6 +249,9 @@ describe('canon drift branch gate', () => {
 
     afterEach(() => {
       clearRecordSessionToken()
+      rmSync(stateHome, { recursive: true, force: true })
+      if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+      else process.env[STATE_HOME_ENV] = originalStateHome
       globalThis.fetch = originalFetch
       if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
       else process.env.BOTTEGA_KEYSTORE = originalKeyStore
