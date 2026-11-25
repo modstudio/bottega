@@ -105,11 +105,20 @@ describe('pullRequestReleaseNotice', () => {
     expect(
       pullRequestReleaseNotice({
         decision: decided(plan('hosted-hub', 'explicit')),
-        target: 'DEV-2664',
+        target: '2382',
       }),
     ).toBe(
-      `release rung hosted-hub required by this pull request; merge with: ${PLATFORM_SLUG} pr merge DEV-2664 --release-required`,
+      `release rung hosted-hub required by this pull request; merge with: ${PLATFORM_SLUG} pr merge 2382 --release-required`,
     )
+  })
+
+  test('names required rungs without a merge command when the pull request number is unknown', () => {
+    expect(
+      pullRequestReleaseNotice({
+        decision: decided(plan('hosted-hub', 'explicit')),
+        target: null,
+      }),
+    ).toBe('release rung hosted-hub required by this pull request')
   })
 
   test('reports an undecided requirement and says merge decides it again', () => {

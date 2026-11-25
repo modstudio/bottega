@@ -7,7 +7,7 @@ import { requiredMergeCommand } from './pr-post-landing-payload.ts'
 
 export function pullRequestReleaseNotice(input: {
   decision: RequiredRungDecision
-  target: string
+  target: string | null
   depth?: string
 }): string | null {
   if (!input.decision.decided) {
@@ -17,7 +17,10 @@ export function pullRequestReleaseNotice(input: {
     .filter(({ required, requiredBy }) => required && requiredBy === 'explicit')
     .map(({ rung }) => rung)
   if (explicitlyRequired.length === 0) return null
-  return `${
+  const requirement = `${
     explicitlyRequired.length === 1 ? 'release rung' : 'release rungs'
-  } ${explicitlyRequired.join(', ')} required by this pull request; merge with: ${requiredMergeCommand(input.target, input.depth)}`
+  } ${explicitlyRequired.join(', ')} required by this pull request`
+  return input.target
+    ? `${requirement}; merge with: ${requiredMergeCommand(input.target, input.depth)}`
+    : requirement
 }

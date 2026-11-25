@@ -724,22 +724,15 @@ function createPullRequestAdmittedChange(
     return checkedAdmission
   }, database)
 
-  let releaseNotice: string | null
+  let releaseDecision: ReturnType<typeof pullRequestReleaseDecisionAtHead>
   try {
-    const releaseDecision = pullRequestReleaseDecisionAtHead(change.project, cwd, {
+    releaseDecision = pullRequestReleaseDecisionAtHead(change.project, cwd, {
       headCommit: change.tip,
       baseBranch: trunk,
     })
-    releaseNotice = pullRequestReleaseNotice({
-      decision: releaseDecision,
-      target: existing?.number.toString() ?? change.branch,
-    })
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause)
-    releaseNotice = pullRequestReleaseNotice({
-      decision: { decided: false, required: [], rungs: [], error },
-      target: existing?.number.toString() ?? change.branch,
-    })
+    releaseDecision = { decided: false, required: [], rungs: [], error }
   }
 
   let createResult: PullRequestCreateResult | null = null
@@ -779,6 +772,10 @@ function createPullRequestAdmittedChange(
   if (outcome.finalizePullRequestNumber !== null) {
     finalizeTriageIntent(change.project.name, change.branch, outcome.finalizePullRequestNumber)
   }
+  const releaseNotice = pullRequestReleaseNotice({
+    decision: releaseDecision,
+    target: outcome.finalizePullRequestNumber?.toString() ?? null,
+  })
   return {
     output: [outcome.output, releaseNotice].filter(Boolean).join('\n'),
     overrideId: checked.overrideId,
