@@ -1,5 +1,14 @@
 import { expect, test } from 'bun:test'
-import { RELEASE_STARTUP_CEILING_MS, releaseStartupDecision } from './release-startup.ts'
+import {
+  RELEASE_STARTUP_CEILING_MS,
+  releaseStartupDecision,
+  releaseStartupHostDecision,
+} from './release-startup.ts'
+
+test('release startup runs only when the host can execute the target', () => {
+  expect(releaseStartupHostDecision('linux', 'arm64', 'linux-arm64')).toBe('run')
+  expect(releaseStartupHostDecision('darwin', 'arm64', 'linux-arm64')).toBe('skip')
+})
 
 test('release startup allows medians at and under the ceiling', () => {
   expect(releaseStartupDecision([190, 195, RELEASE_STARTUP_CEILING_MS, 200, 200])).toMatchObject({
@@ -9,6 +18,10 @@ test('release startup allows medians at and under the ceiling', () => {
   expect(releaseStartupDecision([1, 2, 3, 4, RELEASE_STARTUP_CEILING_MS])).toMatchObject({
     ok: true,
     medianMs: 3,
+  })
+  expect(releaseStartupDecision([100, 300])).toMatchObject({
+    ok: true,
+    medianMs: RELEASE_STARTUP_CEILING_MS,
   })
 })
 

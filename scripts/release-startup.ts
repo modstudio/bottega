@@ -1,5 +1,7 @@
 import { startBounded } from '../shared/bounded-process.ts'
 import { refusal, renderRefusal } from '../shared/refusal.ts'
+import type { BinaryTarget } from '../shared/release-artifacts.ts'
+import { median } from '../orchestrator/src/state/statistics.ts'
 
 // This catches parse-on-launch regressions with headroom for shared-runner noise.
 export const RELEASE_STARTUP_CEILING_MS = 200
@@ -16,10 +18,17 @@ export type ReleaseStartupMeasurement = ReleaseStartupDecision & {
   samplesMs: number[]
 }
 
+export function releaseStartupHostDecision(
+  hostPlatform: string,
+  hostArch: string,
+  target: BinaryTarget,
+): 'run' | 'skip' {
+  return `${hostPlatform}-${hostArch}` === target ? 'run' : 'skip'
+}
+
 export function releaseStartupDecision(samplesMs: readonly number[]): ReleaseStartupDecision {
   if (samplesMs.length === 0) throw new Error('release startup decision requires samples')
-  const sorted = [...samplesMs].sort((left, right) => left - right)
-  const medianMs = sorted[Math.floor(sorted.length / 2)]!
+  const medianMs = median([...samplesMs])!
   const ok = medianMs <= RELEASE_STARTUP_CEILING_MS
   const measurement = `${medianMs.toFixed(1)} ms median (ceiling ${RELEASE_STARTUP_CEILING_MS} ms)`
   return {
@@ -66,5 +75,12 @@ export async function measureReleaseStartup(
   for (let index = 0; index < RELEASE_STARTUP_SAMPLE_COUNT; index += 1) {
     samplesMs.push(await timedVersionRun(binary, env))
   }
-  return { ...releaseStartupDecision(samplesMs), samplesMs }
+  const decision = releaseStartupDecision(samplesMs)
+  return {
+    ...decision,
+    samplesMs,
+    message: `${decision.message}; samples ${samplesMs
+      .map((sample) => sample.toFixed(1))
+      .join(', ')} ms`,
+  }
 }

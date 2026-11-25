@@ -423,7 +423,7 @@ jobs:
         run: |
           changed=false
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" || "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
-            if ! git diff --quiet "$BASE_SHA" HEAD -- install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/hooks/ orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ orchestrator/src/mcp/mcp-board-tools.ts hub/src/doctor.ts orchestrator/migrations hub/migrations shared/attribution-markers.json shared/embedded-assets.ts shared/heartbeat-guidance.ts shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts shared/runtime-assets.ts shared/secret-shaped-rules.json shared/self-spawn.ts shared/shell-quote.ts shared/store-write-lock.c shared/store-write-lock.ts orchestrator/src/record/record-session.ts; then
+            if ! git diff --quiet "$BASE_SHA" HEAD -- install.sh scripts/smoke-release-install.ts scripts/release-startup.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/hooks/ orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ orchestrator/src/mcp/mcp-board-tools.ts hub/src/doctor.ts orchestrator/migrations hub/migrations shared/attribution-markers.json shared/embedded-assets.ts shared/heartbeat-guidance.ts shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts shared/runtime-assets.ts shared/secret-shaped-rules.json shared/self-spawn.ts shared/shell-quote.ts shared/store-write-lock.c shared/store-write-lock.ts orchestrator/src/record/record-session.ts; then
               changed=true
             fi
           fi

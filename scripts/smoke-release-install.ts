@@ -542,7 +542,7 @@ async function runStartupProof(
     return {
       name: 'startup',
       exitCode: measurement.ok ? 0 : 1,
-      output: `${measurement.message}; samples ${measurement.samplesMs.map((sample) => sample.toFixed(1)).join(', ')} ms`,
+      output: measurement.message,
       stderr: '',
     }
   } catch (error) {
