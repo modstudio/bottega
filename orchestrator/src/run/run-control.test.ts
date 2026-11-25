@@ -478,7 +478,7 @@ describe('run continuation', () => {
     expect(prompt.endsWith(message)).toBe(true)
   })
 
-  test('a worktree stopped mid-rebase refuses until its uncommitted operation is resolved', async () => {
+  test('a worktree stopped mid-rebase with no checkpoint row continues its vendor session', async () => {
     const root = addRun({
       agent: 'codex',
       job: 'implement',
@@ -499,17 +499,45 @@ describe('run continuation', () => {
       db().query('SELECT COUNT(*) n FROM run_checkpoint WHERE run_record_id=?').get(root),
     ).toEqual({ n: 0 })
 
-    await expect(
-      continueRun(root, 'finish the rebase and land the slice', limit, undefined),
-    ).rejects.toThrow(`commit or discard the uncommitted changes in ${repository}`)
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
-      {
-        n: 0,
-      },
+    const resumed = await continueRun(
+      root,
+      'finish the rebase and land the slice',
+      limit,
+      undefined,
     )
+    const child = db()
+      .query(
+        'SELECT prompt_path,vendor_session,parent_run_record_id,turn FROM run WHERE record_id=?',
+      )
+      .get(resumed.childId) as {
+      prompt_path: string
+      vendor_session: string | null
+      parent_run_record_id: string
+      turn: number
+    }
+    trackResidue(child.prompt_path)
+
+    // The resume kind is continue, not fresh-session: only continue passes the
+    // recorded vendor session into the new turn's row (`spec.resume.session`),
+    // and the block below is provenance the worker must clear, not a restart.
+    expect(child.vendor_session).toBe('vendor-session')
+    expect(child.parent_run_record_id).toBe(root)
+    expect(child.turn).toBe(2)
+    // The rebase detached HEAD, so the child is cut a tree at the branch tip and
+    // never sees the operation: the block must not claim the rebase is in it.
+    const prompt = readFileSync(child.prompt_path, 'utf8')
+    expect(prompt).toStartWith(
+      'CHECKPOINT RESUME\n' +
+        `The run's retained tree at ${repository} had a rebase in progress; ` +
+        'this tree starts from the branch tip without it.\n',
+    )
+    expect(prompt).not.toContain('in this worktree')
+    // No checkpoint row, so the turn continues its own session and the block is
+    // context in front of the message; the reaped-spec path below pins that.
+    expect(prompt).not.toContain('ORIGINAL SPEC')
   })
 
-  test('a dirty same-chain tree refuses before reading a reaped prompt file', async () => {
+  test('a continuation with no checkpoint row survives a reaped prompt file', async () => {
     const root = addRun({
       agent: 'codex',
       job: 'implement',
@@ -532,9 +560,25 @@ describe('run continuation', () => {
         root,
       )
 
-    await expect(
-      continueRun(root, 'finish the rebase and land the slice', limit, undefined),
-    ).rejects.toThrow(`commit or discard the uncommitted changes in ${repository}`)
+    const resumed = await continueRun(
+      root,
+      'finish the rebase and land the slice',
+      limit,
+      undefined,
+    )
+    const child = db()
+      .query('SELECT prompt_path,vendor_session FROM run WHERE record_id=?')
+      .get(resumed.childId) as { prompt_path: string; vendor_session: string | null }
+    trackResidue(child.prompt_path)
+
+    expect(child.vendor_session).toBe('vendor-session')
+    const prompt = readFileSync(child.prompt_path, 'utf8')
+    expect(prompt).toBe(
+      'CHECKPOINT RESUME\n' +
+        `The run's retained tree at ${repository} had a rebase in progress; ` +
+        'this tree starts from the branch tip without it.\n\n' +
+        'finish the rebase and land the slice',
+    )
   })
 
   test('a released reader with an unavailable base refuses before creating a turn', async () => {

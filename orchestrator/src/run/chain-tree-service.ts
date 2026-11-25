@@ -8,6 +8,7 @@ import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-id
 import { branchOf, git, gitContext, gitOk, worktreeListPorcelain } from '../git/git-environment.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
+import { readSnapshot } from '../recipe/tracked-recipe.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type ChainTreeAttachDecision,
@@ -209,7 +210,24 @@ export function prepareChainTreeAttachment(input: {
 }
 
 /** Refuse reprovisioning into database state whose owning chain tree is gone. */
-export function refuseMissingChainTreeDatabase(rootId: string): void {
+function recipeReusesDatabase(rootId: string): boolean {
+  const databases = readSnapshot(rootId).snapshot?.recipe.allocate?.databases ?? {}
+  return Object.values(databases).some((database) => database.provision?.reuse === true)
+}
+
+export function dirtyChainTreePath(rootId: string, branchTip: string | null): string | null {
+  return (
+    chainTreeRows(rootId)
+      .map((row) => candidateFacts(row, branchTip))
+      .find((candidate) => candidate.exists && !candidate.clean)?.path ?? null
+  )
+}
+
+export function refuseMissingChainTreeDatabase(
+  rootId: string,
+  options: { dirtyTreePath?: string | null; retryCommand?: string } = {},
+): void {
+  if (recipeReusesDatabase(rootId)) return
   const claims = db()
     .query(
       `SELECT allocation_key,run_record_id,state
@@ -227,6 +245,13 @@ export function refuseMissingChainTreeDatabase(rootId: string): void {
       return `${databaseName} (owning turn ${claim.run_record_id}, resource_claim state ${claim.state})`
     })
     .join(', ')
+  if (options.dirtyTreePath) {
+    throw new Error(
+      `run ${rootId} cannot recreate its tree because it still holds database ${details}; ` +
+        `commit or discard the uncommitted changes in ${options.dirtyTreePath}, then retry ` +
+        `${options.retryCommand ?? `${PLATFORM_SLUG} run continue ${rootId}`}`,
+    )
+  }
   throw new Error(
     `run ${rootId} cannot recreate its missing tree because it still holds database ${details}; ` +
       `this is leaked state to report to the architect (note ${PLATFORM_SLUG}#3141: no verb releases a ` +
@@ -311,7 +336,10 @@ export function continuationChainTree(input: {
     !attachedTree &&
     (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
   ) {
-    refuseMissingChainTreeDatabase(input.rootId)
+    refuseMissingChainTreeDatabase(input.rootId, {
+      dirtyTreePath: dirtyChainTreePath(input.rootId, branchTip),
+      retryCommand: `${PLATFORM_SLUG} run continue ${input.rootId}`,
+    })
   }
   return {
     project: input.project,

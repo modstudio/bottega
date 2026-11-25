@@ -27,7 +27,7 @@ describe('chain tree attach decision', () => {
   test.each([
     ['earlier tree on branch', {}, 'attach', undefined, false],
     ['detached at tip', { checkedOutBranch: null }, 'attach', undefined, true],
-    ['dirty', { clean: false }, 'refuse', 'dirty', undefined],
+    ['dirty detached tree falls through', { checkedOutBranch: null, clean: false }, 'none', undefined, undefined],
     [
       'head ahead',
       { checkedOutBranch: null, relation: 'head-ahead' },
@@ -49,7 +49,13 @@ describe('chain tree attach decision', () => {
       'choose-work',
       undefined,
     ],
-    ['live run', { liveRunId: 'live-run' }, 'refuse', 'wait-or-stop', undefined],
+    [
+      'live run',
+      { checkedOutBranch: null, liveRunId: 'live-run' },
+      'refuse',
+      'wait-or-stop',
+      undefined,
+    ],
   ] as const)('%s', (_name, overrides, action, remedyKind, switchToBranch) => {
     const result = decide(overrides)
     expect(result.action).toBe(action)
@@ -65,6 +71,19 @@ describe('chain tree attach decision', () => {
       branchHolderOutsideChain: '/trees/outside',
     })
     expect(result).toMatchObject({ action: 'refuse', remedy: { kind: 'held-outside-chain' } })
+  })
+
+  test('the latest recorded tree on the branch attaches without cleanliness or liveness checks', () => {
+    const result = decide({ clean: false, liveRunId: 'live-run' })
+    expect(result).toMatchObject({ action: 'attach', switchToBranch: false })
+  })
+
+  test('an earlier dirty tree on the branch attaches', () => {
+    const result = decide({}, [
+      { ...candidate, path: '/trees/gone', ownerRunId: 'latest-run', exists: false },
+      { ...candidate, clean: false },
+    ])
+    expect(result).toMatchObject({ action: 'attach', path: candidate.path, switchToBranch: false })
   })
 
   test('no existing chain tree falls through', () => {

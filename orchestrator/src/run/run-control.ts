@@ -712,6 +712,7 @@ function continuationWorkspace(input: {
     worktree: tree.attachedTree?.worktree.path ?? input.latest.worktree,
     treePlan: tree.plan,
   })
+  const continuation = continuationWorker(input.id, input.latest, checkpoint.hasCheckpoint)
   const treeDecision = requireContinuationTree({
     rootId: input.id,
     projectName: input.row.repo,
@@ -726,7 +727,7 @@ function continuationWorkspace(input: {
   return {
     ...tree,
     checkpoint,
-    continuation: continuationWorker(input.id, input.latest, checkpoint.hasCheckpoint),
+    continuation,
     treeDecision,
   }
 }

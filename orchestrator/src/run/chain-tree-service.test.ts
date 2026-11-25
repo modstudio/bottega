@@ -163,6 +163,40 @@ test('continue attaches an earlier detached chain tree and records it on the new
   })
 })
 
+test("the latest turn's dirty tree on the branch remains attachable", () => {
+  const repository = trackResidue(join(dir, `chain-tree-dirty-repo-${newRecordId()}`))
+  const tree = trackResidue(join(dir, `chain-tree-dirty-held-${newRecordId()}`))
+  const branch = 'DEV-2644-dirty-tree'
+  mkdirSync(repository)
+  git(['init', '-b', 'main'], repository)
+  git(['config', 'user.email', 'fixture@example.test'], repository)
+  git(['config', 'user.name', 'Fixture'], repository)
+  writeFileSync(join(repository, 'tracked.txt'), 'base\n')
+  git(['add', 'tracked.txt'], repository)
+  git(['commit', '-qm', 'base'], repository)
+  git(['branch', branch], repository)
+  git(['worktree', 'add', '-q', tree, branch], repository)
+  writeFileSync(join(tree, 'dirty.txt'), 'uncommitted\n')
+  const tip = git(['rev-parse', 'HEAD'], tree)
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git'
+        WHERE record_id=?`,
+    )
+    .run(tree, tree, branch, tip, root)
+
+  const prepared = prepareChainTreeAttachment({
+    rootId: root,
+    projectPath: repository,
+    branch,
+    branchTip: tip,
+    retryCommand: `${PLATFORM_SLUG} run continue ${root}`,
+  })
+
+  expect(prepared).toMatchObject({ ownerRunId: root, worktree: { path: tree, branch } })
+})
+
 test('recreate refuses a held database as leaked state without prescribing cleanup', () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const owner = addRun({
@@ -190,4 +224,76 @@ test('recreate refuses a held database as leaked state without prescribing clean
     expect(message).toContain('report to the architect')
     expect(message).not.toMatch(/run (?:discard|close-out)|machine sweep/)
   }
+})
+
+test('a dirty detached chain tree with a held database gets the dirty remedy', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const owner = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
+    )
+    .run(newRecordId(), root, owner, nowIso())
+
+  expect(() =>
+    refuseMissingChainTreeDatabase(root, {
+      dirtyTreePath: '/trees/dirty-detached',
+      retryCommand: `${PLATFORM_SLUG} run continue ${root}`,
+    }),
+  ).toThrow(
+    `stopal_orch_3 (owning turn ${owner}, resource_claim state retained); ` +
+      `commit or discard the uncommitted changes in /trees/dirty-detached`,
+  )
+})
+
+test('a dirty detached chain tree without a held database does not refuse recreation', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  expect(() =>
+    refuseMissingChainTreeDatabase(root, { dirtyTreePath: '/trees/dirty-detached' }),
+  ).not.toThrow()
+})
+
+test('database collision pre-check is skipped for a recipe that declares reuse', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  db()
+    .query('UPDATE run SET recipe_snapshot=? WHERE record_id=?')
+    .run(
+      JSON.stringify({
+        source: { path: '.bottega/worktree.jsonc', commit: 'a'.repeat(40) },
+        recipe: {
+          create: [],
+          allocate: {
+            databases: {
+              app: {
+                engine: 'postgres',
+                name: 'stopal_orch_3',
+                provision: {
+                  from: 'stopal_base',
+                  connection: { key: 'DATABASE_URL' },
+                  reuse: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      root,
+    )
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?,?,?,'database','postgres:stopal_orch_3','retained',?)`,
+    )
+    .run(newRecordId(), root, root, nowIso())
+
+  expect(() => refuseMissingChainTreeDatabase(root)).not.toThrow()
 })

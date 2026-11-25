@@ -40,6 +40,15 @@ export function decideChainTreeAttach(input: {
   candidates: readonly ChainTreeCandidate[]
   branchHolderOutsideChain: string | null
 }): ChainTreeAttachDecision {
+  const latest = input.candidates[0]
+  if (latest?.exists && latest.checkedOutBranch === input.branch) {
+    return {
+      action: 'attach',
+      path: latest.path,
+      ownerRunId: latest.ownerRunId,
+      switchToBranch: false,
+    }
+  }
   const candidate = input.candidates.find((item) => item.exists)
   if (!candidate) return { action: 'none' }
   if (candidate.liveRunId) {
@@ -49,9 +58,6 @@ export function decideChainTreeAttach(input: {
       remedy: { kind: 'wait-or-stop', runId: candidate.liveRunId },
     }
   }
-  if (!candidate.clean) {
-    return { action: 'refuse', path: candidate.path, remedy: { kind: 'dirty' } }
-  }
   if (candidate.checkedOutBranch === input.branch) {
     return {
       action: 'attach',
@@ -60,6 +66,7 @@ export function decideChainTreeAttach(input: {
       switchToBranch: false,
     }
   }
+  if (!candidate.clean) return { action: 'none' }
   if (!input.branchTip) return { action: 'none' }
   if (candidate.relation === 'equal') {
     if (input.branchHolderOutsideChain) {

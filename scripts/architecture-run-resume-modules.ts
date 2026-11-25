@@ -21,6 +21,7 @@ export const runResumeModuleSpecs = [
       '../git/git-environment.ts',
       '../project/project-lock.ts',
       '../project/projects.ts',
+      '../recipe/tracked-recipe.ts',
       '../worktree/worktree-types.ts',
       './chain-tree-attach.ts',
       './held-branch-remedy.ts',
