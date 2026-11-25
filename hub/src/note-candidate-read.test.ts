@@ -112,72 +112,33 @@ test('hosted candidate read failures carry the note read remedy', async () => {
   ).rejects.toThrow(`run \`${PLATFORM_SLUG} record doctor\`, then retry`)
 })
 
-test('a server without the candidate route falls back to its actionable note list', async () => {
+test('a server without the candidate route refuses without reading the full note list', async () => {
   const paths: string[] = []
-  const result = await duplicateCandidatesForNewNote(
-    'alpha beta',
-    'gamma',
-    undefined,
-    {
-      baseUrl: 'https://hub.example.test',
-      token: 'test',
-      fetch: async (input) => {
-        const url = new URL(input)
-        paths.push(url.pathname)
-        if (url.pathname === '/v1/tasks/identity')
-          return Response.json({
-            userId: 'user-1',
-            activeSpaceId: 'space-a',
-            memberships: [
-              { spaceId: 'space-a', slug: 'active', permission: 'write' },
-              { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
-            ],
-            capabilities: { targetSpaceNotes: true },
-          })
-        if (url.pathname === '/v1/notes/candidates')
-          return Response.json({ error: 'not found' }, { status: 404 })
-        if (url.pathname === '/v1/notes')
-          return Response.json({
-            notes: [
-              {
-                id: id(5000),
-                number: 1,
-                project: 'gamma',
-                project_name: 'gamma',
-                text: 'alpha beta',
-                area: null,
-                anchors: '[]',
-                sightings: 1,
-                created_at: '2026-11-25T12:00:00.000Z',
-                last_seen_at: '2026-11-25T12:00:00.000Z',
-                stale_at: null,
-                stale_reason: null,
-                promoted_task: null,
-                updated_at: '2026-11-25T12:00:00.000Z',
-                deleted_at: null,
-                revision: '1',
-              },
-            ],
-            acknowledgements: [],
-            cursor: '',
-            more: false,
-          })
-        return Response.json({ error: 'unexpected route' }, { status: 500 })
-      },
+  const candidateRead = duplicateCandidatesForNewNote('alpha beta', 'gamma', undefined, {
+    baseUrl: 'https://fixture-user:fixture-password@hub.example.test',
+    token: 'test',
+    fetch: async (input) => {
+      const url = new URL(input)
+      paths.push(url.pathname)
+      if (url.pathname === '/v1/tasks/identity')
+        return Response.json({
+          userId: 'user-1',
+          activeSpaceId: 'space-a',
+          memberships: [
+            { spaceId: 'space-a', slug: 'active', permission: 'write' },
+            { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
+          ],
+          capabilities: { targetSpaceNotes: true },
+        })
+      if (url.pathname === '/v1/notes/candidates')
+        return Response.json({ error: 'not found' }, { status: 404 })
+      return Response.json({ error: 'unexpected route' }, { status: 500 })
     },
-    { ask: async () => ({ noul: 0 }) },
-  )
+  })
 
+  await expect(candidateRead).rejects.toThrow(
+    'the record at https://hub.example.test/ has no note candidate route; it is older than this client. Retry after the hosted-hub rung deploys',
+  )
   expect(paths.filter((path) => path === '/v1/notes/candidates')).toHaveLength(1)
-  expect(paths.filter((path) => path === '/v1/notes')).toHaveLength(1)
-  expect(result).toEqual([
-    {
-      record_id: id(5000),
-      number: 1,
-      label: 'gamma#1',
-      project: 'gamma',
-      text: 'alpha beta',
-      score: 1,
-    },
-  ])
+  expect(paths.filter((path) => path === '/v1/notes')).toHaveLength(0)
 })

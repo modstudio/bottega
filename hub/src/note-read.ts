@@ -201,6 +201,13 @@ function hostedReadFailure(cause: unknown): Error {
   return new Error(message.endsWith(readRemedy) ? message : `${message}. ${readRemedy}`)
 }
 
+function hostedUrlWithoutUserinfo(hosted: NoteClientOptions | undefined): string {
+  const url = new URL(hosted?.baseUrl ?? resolveHostedUrl())
+  url.username = ''
+  url.password = ''
+  return url.toString()
+}
+
 class NoteNotFoundError extends Error {
   constructor(recordId: string) {
     super(`no note ${recordId}`)
@@ -406,13 +413,12 @@ export async function listNoteDuplicateCandidates(
         try {
           return await hostedListNoteCandidates(project, text, options)
         } catch (cause) {
-          if (!isMissingHostedNote(cause)) throw spaceReadFailure(recordSpace, project, cause)
-          const { notes } = await hostedListNotes({ project, actionable: true }, options).catch(
-            (fallbackCause) => {
-              throw spaceReadFailure(recordSpace, project, fallbackCause)
-            },
-          )
-          return notes.map(noteRowFromHosted)
+          if (isMissingHostedNote(cause))
+            throw new Error(
+              `the record at ${hostedUrlWithoutUserinfo(hosted)} has no note candidate route; it is older than this client. Retry after the hosted-hub rung deploys`,
+              { cause },
+            )
+          throw spaceReadFailure(recordSpace, project, cause)
         }
       }),
     )
