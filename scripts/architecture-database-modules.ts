@@ -35,6 +35,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
     '../jsonl-archive.ts',
+    '../project/default-local-project-retirement.ts',
     '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-hosted-row-presence.ts',

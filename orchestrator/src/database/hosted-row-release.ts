@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
+import {
+  attemptDefaultLocalProjectRetirement,
+  retireUnusedDefaultLocalProject,
+} from '../project/default-local-project-retirement.ts'
 import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -26,6 +30,12 @@ import {
   readHostedRowPresence,
 } from '../record/record-hosted-row-presence.ts'
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
+
+type DefaultProjectRetirementDependencies = {
+  recordSessionPresent(): boolean
+  retire?: () => Promise<boolean>
+  storeAttached?: () => boolean
+}
 
 const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
 export const HOSTED_ROW_RELEASE_ARCHIVE_KEEP = BOUNDED_JSONL_ARCHIVE_KEEP
@@ -292,4 +302,25 @@ export async function releaseHostedRowsAfterUpdate(
     presentation.log(keptTableLine(report.table, report.absentIds))
   if (released)
     presentation.log(`released ${released} local workflow history rows now on the record`)
+}
+
+/** Best-effort retirement after update, limited to installs attached or signed in to the record. */
+export async function retireDefaultProjectAfterUpdate(
+  presentation: Presentation,
+  dependencies: DefaultProjectRetirementDependencies,
+): Promise<void> {
+  try {
+    const attached =
+      dependencies.storeAttached?.() ??
+      withSynchronousDatabaseForMigrationStep(storeHasAttachedToHostedRecord)
+    if (!attached && !dependencies.recordSessionPresent()) return
+    await attemptDefaultLocalProjectRetirement(
+      presentation,
+      dependencies.retire ?? retireUnusedDefaultLocalProject,
+    )
+  } catch (error) {
+    presentation.log(
+      `default local project retirement failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }

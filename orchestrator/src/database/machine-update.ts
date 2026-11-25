@@ -23,6 +23,7 @@ import {
   verifyMainCheckoutInvariant,
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
+import { recordSessionPresent } from '../record/record-session.ts'
 import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
@@ -35,9 +36,9 @@ import {
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
 import {
-  releaseHostedRowsAndRetireDefaultProject,
-  type UpdateRetirementDependencies,
-} from './machine-update-retirement.ts'
+  releaseHostedRowsAfterUpdate,
+  retireDefaultProjectAfterUpdate,
+} from './hosted-row-release.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -228,7 +229,7 @@ function applyImmediateUpdate(input: { migration: string | null; apply: () => vo
   )
 }
 
-type UpdateDependencies = UpdateRetirementDependencies & {
+type UpdateDependencies = {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   lockWaitMs?: number
@@ -242,6 +243,10 @@ type UpdateDependencies = UpdateRetirementDependencies & {
   syncWorkflows?: (cwd: string, since: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
+  releaseHostedRows?: (presentation: Presentation) => Promise<void>
+  retireUnusedDefaultLocalProject?: () => Promise<boolean>
+  storeAttachedToHostedRecord?: () => boolean
+  recordSessionPresent?: () => boolean
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
@@ -670,7 +675,12 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   verifyMainCheckout(target, branch, runGit)
-  await releaseHostedRowsAndRetireDefaultProject(presentation, deps)
+  await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
+  await retireDefaultProjectAfterUpdate(presentation, {
+    recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
+    retire: deps.retireUnusedDefaultLocalProject,
+    storeAttached: deps.storeAttachedToHostedRecord,
+  })
 }
 
 export async function machineUpdateCommandUnderLock(
@@ -704,7 +714,12 @@ export async function machineUpdateCommandUnderLock(
     maintainStoreAfterUpdate(presentation, maintainStore)
     const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
     refreshLaunchAgents(realpathSync(process.execPath))
-    await releaseHostedRowsAndRetireDefaultProject(presentation, deps)
+    await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
+    await retireDefaultProjectAfterUpdate(presentation, {
+      recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
+      retire: deps.retireUnusedDefaultLocalProject,
+      storeAttached: deps.storeAttachedToHostedRecord,
+    })
     return
   }
   await updateCheckout(presentation, deps)

@@ -115,6 +115,7 @@ const NO_BUILD_OR_REFRESH = {
 function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
   return {
     cwd: dir,
+    callerCwd: dir,
     authorityRefusal: () => null,
     project: () => ({
       name: 'migration-update-fixture',
@@ -128,6 +129,8 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
     },
     migrate,
     syncWorkflows: () => {},
+    storeAttachedToHostedRecord: () => false,
+    recordSessionPresent: () => false,
     ...NO_BUILD_OR_REFRESH,
   }
 }
@@ -893,31 +896,7 @@ test('machine update defaults the target to the installation root', async () => 
 
 test('machine update does not name the checkout when the caller is already there', async () => {
   const lines: string[] = []
-  await machineUpdateCommand(
-    { log: (line) => lines.push(line) },
-    {
-      cwd: dir,
-      callerCwd: dir,
-      authorityRefusal: () => null,
-      project: () => ({
-        name: 'migration-update-fixture',
-        path: dir,
-        settings: { trunk: 'main' },
-      }),
-      git: (_cwd, args) =>
-        args[0] === 'branch'
-          ? 'main'
-          : args[0] === 'show'
-            ? JSON.stringify({ entries: migrationJournal() })
-            : '',
-      migrate: () => {},
-      syncWorkflows: () => {},
-      buildCli: () => {},
-      runLaunchAgentsRefreshVerb: () => {},
-      storeAttachedToHostedRecord: () => false,
-      recordSessionPresent: () => false,
-    },
-  )
+  await machineUpdateCommand({ log: (line) => lines.push(line) }, successfulMachineUpdateDeps())
   expect(lines).toHaveLength(2)
   expect(lines[0]).toBe('outbox released 0 payloads; backlog remains no')
   expect(lines[1]).toMatch(
@@ -931,29 +910,10 @@ test('machine update keeps its successful result when store maintenance fails', 
     machineUpdateCommand(
       { log: (line) => lines.push(line) },
       {
-        cwd: dir,
-        callerCwd: dir,
-        authorityRefusal: () => null,
-        project: () => ({
-          name: 'migration-update-fixture',
-          path: dir,
-          settings: { trunk: 'main' },
-        }),
-        git: (_cwd, args) =>
-          args[0] === 'branch'
-            ? 'main'
-            : args[0] === 'show'
-              ? JSON.stringify({ entries: migrationJournal() })
-              : '',
-        migrate: () => {},
-        syncWorkflows: () => {},
+        ...successfulMachineUpdateDeps(),
         maintainStore: () => {
           throw new Error('store busy')
         },
-        buildCli: () => {},
-        runLaunchAgentsRefreshVerb: () => {},
-        storeAttachedToHostedRecord: () => false,
-        recordSessionPresent: () => false,
       },
     ),
   ).resolves.toBeUndefined()
@@ -1035,4 +995,3 @@ test('distribution update refreshes through the installed target and preserves i
   expect(updated).toBeTrue()
   expect(refreshed).toEqual([target])
 })
-
