@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
+import { CHECK_LEGS, CI_ONLY_SUITES, legIsolatesTests, ROOT_TEST_FILES } from './check-plan.ts'
 import { gateTestDirectories, matchesTestPattern, testLegReaches } from './check-test-reach.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -249,6 +249,9 @@ function addSelection(
 }
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {
+  const isolate = CHECK_LEGS.some(
+    (leg) => resolve(root, leg.directory) === directory && legIsolatesTests(leg),
+  )
   const nestedPackageIgnores = packages.flatMap((candidate) =>
     candidate.directory !== directory &&
     beneath(directory, candidate.directory) &&
@@ -262,7 +265,11 @@ function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup 
   // which bun ORs with the selected paths, so the run would not narrow.
   // Every operand is prefixed because bun reads a bare path as a substring filter.
   const operands = paths.map((path) => `./${path}`)
-  return { directory, paths, argv: ['bun', 'test', ...nestedPackageIgnores, ...operands] }
+  return {
+    directory,
+    paths,
+    argv: ['bun', 'test', ...(isolate ? ['--isolate'] : []), ...nestedPackageIgnores, ...operands],
+  }
 }
 
 export function groupFocusedTestPaths(paths: readonly string[]): FocusedTestGroup[] {

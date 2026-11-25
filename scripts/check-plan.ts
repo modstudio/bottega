@@ -96,6 +96,7 @@ export const CHECK_LEGS = [
   {
     name: 'hub',
     directory: 'hub',
+    isolateTests: true,
     ciJob: 'hub',
     testDirectories: ['hub'],
     testPatterns: [],
@@ -221,6 +222,13 @@ export const CHECK_LEGS = [
   },
 ] as const
 
+export type CheckLeg = (typeof CHECK_LEGS)[number]
+export type IsolatedTestLeg = CheckLeg & { isolateTests: true }
+
+export function legIsolatesTests(leg: CheckLeg): leg is IsolatedTestLeg {
+  return 'isolateTests' in leg && leg.isolateTests === true
+}
+
 export const ROOT_TEST_FILES = [
   'scripts/check-review-change-comparisons.test.ts',
   'scripts/check-refusal-remedy.test.ts',
@@ -273,6 +281,7 @@ export const ROOT_TEST_FILES = [
   'scripts/record-rehearse.test.ts',
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',
+  'scripts/check-test-isolation.test.ts',
   'scripts/check-test-reach.test.ts',
   'scripts/check-typecheck-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
