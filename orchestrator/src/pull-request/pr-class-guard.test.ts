@@ -33,7 +33,12 @@ test('refuses a post-implement measurement from the main checkout and names the 
   })
 })
 test('allows a post-implement measurement from the worktree', () =>
-  expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+  expect(
+    decidePullRequestClassGuard({
+      ...base,
+      execs: [{ ...base.execs[0]!, cwd: '/main' }, base.execs[0]!],
+    }),
+  ).toEqual({ kind: 'allow' }))
 test('refuses a cursor with no worktree', () => {
   const decision = decidePullRequestClassGuard({ ...base, worktree: undefined })
   expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining('--arg worktree') })
