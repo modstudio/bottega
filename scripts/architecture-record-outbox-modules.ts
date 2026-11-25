@@ -53,10 +53,11 @@ export const recordOutboxModules: ArchitectureModule[] = [
     ],
   },
   {
-    file: 'orchestrator/src/record/outbox-score-supersession.ts',
+    file: 'orchestrator/src/record/outbox-supersession.ts',
     allowed: [
       'bun:sqlite',
       'orchestrator/src/database/db.ts',
+      'orchestrator/src/record/outbox-payload-contracts.ts',
       'orchestrator/src/record/outbox-quarantine.ts',
       'orchestrator/src/record/outbox-read.ts',
     ],

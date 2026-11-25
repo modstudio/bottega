@@ -64,9 +64,7 @@ describe('score outbox supersession decision', () => {
 
   test('equal verdict time supersedes only with a higher id', () => {
     expect(supersedingOutboxRow(quarantined, [candidate({ id: 8, scoredAt: STAMP })])?.id).toBe(8)
-    expect(
-      supersedingOutboxRow(quarantined, [candidate({ id: 6, scoredAt: STAMP })]),
-    ).toBeNull()
+    expect(supersedingOutboxRow(quarantined, [candidate({ id: 6, scoredAt: STAMP })])).toBeNull()
   })
 })
 
@@ -113,9 +111,9 @@ describe('non-score outbox supersession decision', () => {
   })
 })
 
-const OUTBOX_KINDS = Object.keys(OUTBOX_PAYLOAD_CONTRACTS) as (
-  | keyof typeof OUTBOX_PAYLOAD_CONTRACTS
-)[]
+const OUTBOX_KINDS = Object.keys(
+  OUTBOX_PAYLOAD_CONTRACTS,
+) as (keyof typeof OUTBOX_PAYLOAD_CONTRACTS)[]
 
 function insertOutboxRows(kind: string) {
   const database = migratedTestDatabase()
@@ -227,18 +225,7 @@ test('a superseded parent defers its child on the later live row instead of bloc
     'run refused',
     'run refused',
   )
-  insert.run(
-    newRecordId(),
-    8,
-    'run',
-    'run-record-id',
-    '{}',
-    LATER,
-    null,
-    null,
-    null,
-    null,
-  )
+  insert.run(newRecordId(), 8, 'run', 'run-record-id', '{}', LATER, null, null, null, null)
   const scorePayload = JSON.stringify({ id: 'run-record-id' })
   insert.run(
     newRecordId(),

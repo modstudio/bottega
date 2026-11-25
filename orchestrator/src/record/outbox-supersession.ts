@@ -2,7 +2,7 @@
 /** Retires quarantined mutations once a later whole-state row makes them stale. */
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
+import type { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireQuarantinedOutboxRowIfEligible } from './outbox-quarantine.ts'
 import { QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 
@@ -18,10 +18,7 @@ export type OtherOutboxRow = QuarantinedOutboxRow & {
   retired: boolean
 }
 
-type OutboxRowComparator = (
-  left: QuarantinedOutboxRow,
-  right: QuarantinedOutboxRow,
-) => number
+type OutboxRowComparator = (left: QuarantinedOutboxRow, right: QuarantinedOutboxRow) => number
 
 const byId: OutboxRowComparator = (left, right) => left.id - right.id
 const byScoreTime: OutboxRowComparator = (left, right) => {
