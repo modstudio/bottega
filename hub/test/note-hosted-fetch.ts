@@ -1,6 +1,7 @@
 import { RECORD_SPACE_HEADER_NAME } from '../../shared/record-request-headers.ts'
 import { db } from '../src/db.ts'
 import { resolveNoteReference } from '../src/note.ts'
+import { noteDuplicateQuestionCandidates } from '../src/note-duplicate-candidates.ts'
 import { getNote, listNotes } from '../src/note-read.ts'
 
 type NoteRequestBody = {
@@ -68,6 +69,24 @@ function noteBelongsToRequestedSpace(project: string, init?: RequestInit) {
 }
 
 async function getRoute(url: URL, at: string, init?: RequestInit) {
+  if (url.pathname === '/v1/notes/candidates') {
+    const project = url.searchParams.get('project') ?? ''
+    const notes = await listNotes({ project, actionable: true }, { baseUrl: '' })
+    return Response.json(
+      noteDuplicateQuestionCandidates(
+        notes.filter((note) => noteBelongsToRequestedSpace(note.project, init)),
+        project,
+        url.searchParams.get('text') ?? '',
+      ).map(({ score: _score, ...note }) => ({
+        record_id: note.record_id,
+        number: note.number,
+        label: note.label,
+        project: note.project,
+        text: note.text,
+        stale_at: note.stale_at,
+      })),
+    )
+  }
   if (url.pathname === '/v1/notes/list') {
     const notes = await listNotes(
       {

@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { missingTaskRecordLine } from '../../shared/task-missing.ts'
 import { type StatusCategory, TASK_STATUSES } from '../../shared/tracker-status-category.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { duplicateScore } from './duplicate-score.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import type { HostedTaskLookupRow } from './hosted-tasks.ts'
@@ -85,38 +86,20 @@ export class StaleTaskBodyError extends Error {
   }
 }
 
-const DUPLICATE_STOP_WORDS = new Set(
-  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(
-    ' ',
-  ),
-)
-
 // Provisional, measured against the reports that introduced duplicate detection:
 // known duplicates scored at least 0.227, while the best unrelated result across
 // those searches scored 0.151.
 const DUPLICATE_THRESHOLD = 0.2
 const DUPLICATE_LIMIT = 3
 
-function titleTokens(title: string): Set<string> {
-  return new Set(
-    (title.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
-      (token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token),
-    ),
-  )
-}
+type DuplicateCandidateTask = Pick<TaskRow, 'key' | 'status' | 'title'>
 
-export function duplicateScore(left: string, right: string): number {
-  const a = titleTokens(left)
-  const b = titleTokens(right)
-  if (!a.size || !b.size) return 0
-  let intersection = 0
-  for (const token of a) if (b.has(token)) intersection++
-  return intersection / (a.size + b.size - intersection)
-}
-
-export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateCandidate[] {
+export function duplicateCandidates(
+  tasks: DuplicateCandidateTask[],
+  title: string,
+): DuplicateCandidate[] {
   return tasks
-    .filter((task): task is TaskRow & { title: string } => !!task.title)
+    .filter((task): task is DuplicateCandidateTask & { title: string } => !!task.title)
     .map((task) => ({
       key: task.key,
       status: task.status,

@@ -4,9 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { newRecordId } from '../../shared/record-id.ts'
+import { startTypedQuestionCredentialResolution } from '../../shared/typed-question/client.ts'
 import type { NoulQuestion } from '../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { duplicateScore } from './task.ts'
+import {
+  type DuplicateQuestionNote,
+  noteDuplicateQuestionCandidates,
+  type RankedDuplicateQuestionNote,
+} from './note-duplicate-candidates.ts'
 import { askHubTypedQuestion } from './typed-question-service.ts'
 
 export const NOTE_DUPLICATE_QUESTION: NoulQuestion = {
@@ -18,35 +23,11 @@ export const NOTE_DUPLICATE_QUESTION: NoulQuestion = {
     'These are two one-line engineering observations filed in the same project. Judge whether they report the same underlying problem, so that the second is another sighting of the first.',
 }
 
-export const NOTE_DUPLICATE_CANDIDATES = 20
 export const NOTE_PAIR_SUBJECT_KIND = 'note-pair'
+export const startNoteDuplicateCredentialResolution = startTypedQuestionCredentialResolution
 /** Hex characters of the new text's hash at the end of a note-pair subject ref. */
 const SUBJECT_REF_HASH_HEX = 16
 const NOTE_DUPLICATE_CONCURRENCY = 8
-
-export type DuplicateQuestionNote = {
-  record_id: string
-  project: string
-  text: string
-  stale_at: string | null
-}
-
-export type RankedDuplicateQuestionNote<T extends DuplicateQuestionNote = DuplicateQuestionNote> =
-  T & { score: number }
-
-export function noteDuplicateQuestionCandidates<T extends DuplicateQuestionNote>(
-  notes: readonly T[],
-  project: string,
-  text: string,
-): RankedDuplicateQuestionNote<T>[] {
-  return notes
-    .filter((note) => note.project === project && note.stale_at === null)
-    .map((note) => ({ ...note, score: duplicateScore(note.text, text) }))
-    .sort(
-      (left, right) => right.score - left.score || left.record_id.localeCompare(right.record_id),
-    )
-    .slice(0, NOTE_DUPLICATE_CANDIDATES)
-}
 
 export function noteTextHash(text: string): string {
   return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)

@@ -125,6 +125,40 @@ describe('hosted-only note safety', () => {
     })
   })
 
+  test('the candidate route requires and forwards project and text', async () => {
+    let captured: unknown[] = []
+    const identity = (async () =>
+      Response.json({
+        user: { id: 'user-1' },
+        activeSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+      })) as unknown as typeof fetch
+    const response = await noteApi(
+      new Request('https://hub.example.test/v1/notes/candidates?project=gamma&text=alpha%20beta', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+      }),
+      hostedRouteTestConfig,
+      {
+        fetch: identity,
+        listCandidates: async (...args: unknown[]) => {
+          captured = args.slice(2)
+          return []
+        },
+      },
+    )
+    expect(response?.status).toBe(200)
+    expect(captured).toEqual(['gamma', 'alpha beta'])
+
+    const refused = await noteApi(
+      new Request('https://hub.example.test/v1/notes/candidates?project=gamma', {
+        headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+      }),
+      hostedRouteTestConfig,
+      { fetch: identity },
+    )
+    expect(refused?.status).toBe(400)
+  })
+
   test('the slim list route refuses an invalid limit as caller input', async () => {
     for (const limit of ['abc', '0', '-1', '']) {
       const response = await noteApi(
@@ -154,6 +188,7 @@ describe('hosted-only note safety', () => {
     const routes = [
       ['GET', '/v1/notes'],
       ['GET', '/v1/notes/list'],
+      ['GET', '/v1/notes/candidates?project=gamma&text=note'],
       ['GET', '/v1/notes/counts'],
       ['GET', `/v1/notes/${id}`],
       ['POST', '/v1/notes'],

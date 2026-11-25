@@ -4,6 +4,7 @@ import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
+import { duplicateScore } from './duplicate-score.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -13,7 +14,6 @@ import {
   commentTask,
   createTask,
   duplicateCandidates,
-  duplicateScore,
   listTasks,
   lookupTasks,
   setTask,

@@ -5,6 +5,7 @@ import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixt
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { hostedRequestHandler } from './hosted.ts'
+import { listHostedNoteCandidates } from './hosted-note-candidates.ts'
 import { listHostedNotes } from './hosted-note-list.ts'
 import { createHostedNote, getHostedNote } from './hosted-notes.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
@@ -47,6 +48,7 @@ beforeAll(async () => {
         create: createHostedNote,
         get: getHostedNote,
         list: listHostedNotes,
+        listCandidates: listHostedNoteCandidates,
       },
       changes: { fetch: identityFetch, push: applyHostedPushChanges },
     },
