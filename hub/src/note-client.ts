@@ -239,6 +239,8 @@ export async function hostedListSlimNotes(
     project?: string
     stale?: boolean
     actionable?: boolean
+    promotedTo?: string
+    reference?: string
     sessions?: string[]
     kept?: boolean
     text?: string
@@ -251,6 +253,8 @@ export async function hostedListSlimNotes(
   if (filters.project) query.set('project', filters.project)
   if (filters.stale !== undefined) query.set('stale', String(filters.stale))
   if (filters.actionable !== undefined) query.set('actionable', String(filters.actionable))
+  if (filters.promotedTo !== undefined) query.set('promoted_to', filters.promotedTo)
+  if (filters.reference !== undefined) query.set('reference', filters.reference)
   for (const session of filters.sessions ?? []) query.append('session', session)
   if (filters.kept !== undefined) query.set('kept', String(filters.kept))
   if (filters.text !== undefined) query.set('text', filters.text)

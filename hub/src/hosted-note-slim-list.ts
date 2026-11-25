@@ -10,6 +10,8 @@ export type HostedSlimNoteListFilters = {
   project?: string
   stale?: boolean
   actionable?: boolean
+  promotedTo?: string
+  reference?: string
   sessions?: string[]
   kept?: boolean
   text?: string
@@ -42,6 +44,11 @@ export async function listHostedSlimNotes(
           OR (${filters.stale ?? false} AND stale_at IS NOT NULL)
           OR (NOT ${filters.stale ?? false} AND stale_at IS NULL))
         AND (NOT ${filters.actionable ?? false} OR (stale_at IS NULL AND promoted_task IS NULL))
+        AND (${filters.promotedTo ?? null}::text IS NULL
+          OR promoted_task=${filters.promotedTo ?? null})
+        AND (${filters.reference?.toLowerCase() ?? null}::text IS NULL
+          OR lower(id::text)=${filters.reference?.toLowerCase() ?? null}
+          OR lower(project || '#' || number::text)=${filters.reference?.toLowerCase() ?? null})
         AND (${filters.text ?? null}::text IS NULL
           OR position(lower(${filters.text ?? ''}) in lower(text)) > 0)
         AND (${sessions.length === 0} OR EXISTS (

@@ -93,7 +93,7 @@ describe('hosted-only note safety', () => {
     let captured: unknown
     const response = await noteApi(
       new Request(
-        'https://hub.example.test/v1/notes/list?project=gamma&stale=false&kept=true&session=a&session=b&text=x&limit=3',
+        'https://hub.example.test/v1/notes/list?project=gamma&kept=true&session=a&session=b&text=x&promoted_to=DEV-7&reference=gamma%231&limit=3',
         {
           headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
         },
@@ -116,8 +116,10 @@ describe('hosted-only note safety', () => {
     expect(response?.status).toBe(200)
     expect(captured).toEqual({
       project: 'gamma',
-      stale: false,
+      stale: undefined,
       actionable: false,
+      promotedTo: 'DEV-7',
+      reference: 'gamma#1',
       sessions: ['a', 'b'],
       kept: true,
       text: 'x',
@@ -180,6 +182,31 @@ describe('hosted-only note safety', () => {
       expect(await response?.json()).toEqual({
         error: 'limit must be a positive integer; omit it to list every matching note',
       })
+    }
+  })
+
+  test('the slim list route refuses state filters with promoted-to or reference', async () => {
+    const identity = (async () =>
+      Response.json({
+        user: { id: 'user-1' },
+        activeSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+      })) as unknown as typeof fetch
+    for (const query of [
+      'promoted_to=DEV-7&stale=true',
+      'promoted_to=DEV-7&actionable=true',
+      'reference=gamma%231&stale=true',
+      'reference=gamma%231&actionable=true',
+    ]) {
+      const response = await noteApi(
+        new Request(`https://hub.example.test/v1/notes/list?${query}`, {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        }),
+        hostedRouteTestConfig,
+        { fetch: identity },
+      )
+      expect(response?.status, query).toBe(400)
+      expect((await response?.json()) as { error: string }).toHaveProperty('error')
     }
   })
 

@@ -1,20 +1,14 @@
 // concern: workflow-floor-adapter
 /** Assembles production floor ports at the CLI and MCP composition surfaces. */
 
-import { listHubNotes } from '../mcp/hub-notes.ts'
+import { findHubNote, type HubNoteOutput, listHubNotesPromotedTo } from '../mcp/hub-notes.ts'
 import { type FloorEvidencePorts, productionFloorPorts } from './workflow-floor-evidence.ts'
 import { productionReviewOwedFloor } from './workflow-review-owed-floor.ts'
 
-export const productionWorkflowFloorPorts = (): FloorEvidencePorts => ({
+export const productionWorkflowFloorPorts = (output?: HubNoteOutput): FloorEvidencePorts => ({
   ...productionFloorPorts(),
   readNote: async (project, reference) => {
-    const notes = await listHubNotes(project, { cwd: process.cwd() })
-    const normalized = reference.toLowerCase()
-    const note = notes.find(
-      (candidate) =>
-        candidate.record_id.toLowerCase() === normalized ||
-        candidate.label.toLowerCase() === normalized,
-    )
+    const note = await findHubNote(project, reference, { cwd: process.cwd(), output })
     return note
       ? {
           recordId: note.record_id,
@@ -29,7 +23,10 @@ export const productionWorkflowFloorPorts = (): FloorEvidencePorts => ({
       : null
   },
   listPromotedNotes: async (project, taskKey) => {
-    const notes = await listHubNotes(project, { cwd: process.cwd() })
+    const notes = await listHubNotesPromotedTo(project, taskKey, {
+      cwd: process.cwd(),
+      output,
+    })
     return notes
       .filter((note) => note.promoted_task === taskKey)
       .map((note) => ({

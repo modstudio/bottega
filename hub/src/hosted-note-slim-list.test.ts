@@ -8,6 +8,8 @@ const spaceId = '01990000-0000-7000-8000-000000002600'
 const userId = '01990000-0000-7000-8000-000000002601'
 const otherUserId = '01990000-0000-7000-8000-000000002602'
 const projectId = '01990000-0000-7000-8000-000000002603'
+const otherSpaceId = '01990000-0000-7000-8000-000000002611'
+const otherProjectId = '01990000-0000-7000-8000-000000002612'
 const id = (value: number) => `01990000-0000-7000-8000-${String(value).padStart(12, '0')}`
 let database: PGlite
 
@@ -36,8 +38,32 @@ beforeAll(async () => {
       (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at,author_user_id,hidden_at,hidden_by_user_id,hidden_reason)
     VALUES ('${id(2610)}','${spaceId}','${PLATFORM_NAME}','${projectId}',5,'${PLATFORM_NAME}','Hidden','[]',1,'2026-11-20T09:00:00Z','2026-11-20T15:00:00Z','2026-11-20T15:00:00Z','${otherUserId}','2026-11-20T15:01:00Z','${otherUserId}','spam');
     ALTER TABLE hub_note ENABLE TRIGGER hub_note_hidden_update_guard;
+    UPDATE hub_note SET promoted_task='DEV-7' WHERE id IN ('${id(2604)}','${id(2605)}');
+    UPDATE hub_note SET stale_at='2026-11-20T15:00:00Z' WHERE id='${id(2605)}';
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${otherSpaceId}','Unreadable','unreadable',now());
+    INSERT INTO project(id,space_id,name,created_at)
+    VALUES ('${otherProjectId}','${otherSpaceId}','secret','2026-11-20T09:00:00Z');
+    INSERT INTO hub_note
+      (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at,promoted_task)
+    VALUES
+      ('${id(2613)}','${otherSpaceId}','secret','${otherProjectId}',1,'secret','Unreadable','[]',1,'2026-11-20T09:00:00Z','2026-11-20T17:00:00Z','2026-11-20T17:00:00Z','DEV-7');
     SET ROLE record_actor;
   `)
+})
+
+test('promoted-to and reference return live and stale matches within the caller tenancy', async () => {
+  const sql = pgliteSql(database)
+  const promoted = await listHostedSlimNotes(sql, { userId, spaceId }, { promotedTo: 'DEV-7' })
+  expect(promoted.notes.map((note) => note.record_id)).toEqual([id(2604), id(2605)])
+  expect(promoted.notes[0]?.stale_at).toBeNull()
+  expect(new Date(promoted.notes[1]!.stale_at!).toISOString()).toBe('2026-11-20T15:00:00.000Z')
+  expect(promoted.notes).not.toContainEqual(expect.objectContaining({ project: 'secret' }))
+
+  for (const reference of [id(2605), `${PLATFORM_NAME}#2`]) {
+    const found = await listHostedSlimNotes(sql, { userId, spaceId }, { reference })
+    expect(found.notes.map((note) => note.record_id)).toEqual([id(2605)])
+  }
 })
 
 afterAll(async () => {

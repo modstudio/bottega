@@ -234,3 +234,44 @@ test('local and hosted slim lists have filter and order parity', async () => {
   expect(localUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
   expect(hostedUnicode.notes.map((note) => note.record_id)).toEqual([unicodeId])
 })
+
+test('local and hosted promoted-to and reference filters include live and stale matches', async () => {
+  seedSlimListNotes()
+  const promotedIds = [fixtureRecordId(10_001), fixtureRecordId(10_002)]
+  writeTransaction((conn) => {
+    conn
+      .query('UPDATE note SET promoted_task=? WHERE record_id IN (?,?)')
+      .run('DEV-7', ...promotedIds)
+    conn
+      .query('UPDATE note SET stale_at=? WHERE record_id=?')
+      .run('2026-11-20T04:00:00.000Z', promotedIds[1]!)
+  })
+  const hosted = {
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    fetch: noteHostedFetch,
+  }
+  for (const filters of [
+    { project: 'gamma', promotedTo: 'DEV-7' },
+    { project: 'gamma', reference: promotedIds[1] },
+    { project: 'gamma', reference: 'gamma#2' },
+  ]) {
+    const localResult = await listProjectSlimNotes({ ...filters, hosted: { baseUrl: '' } })
+    const hostedResult = await listProjectSlimNotes({ ...filters, hosted })
+    expect(hostedResult).toEqual(localResult)
+  }
+  expect(
+    (await noteListRows(undefined, { project: 'gamma', promotedTo: 'DEV-7' }, undefined, hosted))
+      .notes,
+  ).toHaveLength(2)
+  await expect(
+    noteListRows(undefined, { project: 'gamma', promotedTo: 'DEV-7', stale: true }, undefined),
+  ).rejects.toThrow('--promoted-to cannot be combined with --stale')
+  await expect(
+    noteListRows(
+      undefined,
+      { project: 'gamma', reference: 'gamma#2', actionable: true },
+      undefined,
+    ),
+  ).rejects.toThrow('--reference cannot be combined with --actionable')
+})

@@ -39,6 +39,8 @@ type NoteOptions = {
   limit?: string
   new?: boolean
   project?: string
+  promotedTo?: string
+  reference?: string
   reason?: string
   sameAs?: string
   scheduled?: boolean
@@ -84,14 +86,17 @@ export async function noteListRows(
   hosted?: Parameters<typeof listProjectSlimNotes>[0]['hosted'],
 ) {
   const explicitLimit = options.limit === undefined ? undefined : Number(options.limit)
+  const filtered = Boolean(options.promotedTo || options.reference)
   return listProjectSlimNotes({
     project: options.project,
-    stale: Boolean(options.stale),
+    stale: options.stale ? true : undefined,
     session,
     kept: Boolean(options.kept),
     actionable: Boolean(options.actionable),
+    promotedTo: options.promotedTo,
+    reference: options.reference,
     text,
-    limit: explicitLimit ?? (options.json ? undefined : NOTE_LIST_DEFAULT_LIMIT),
+    limit: explicitLimit ?? (options.json || filtered ? undefined : NOTE_LIST_DEFAULT_LIMIT),
     hosted,
   })
 }
@@ -384,7 +389,9 @@ export function registerNoteCommands(program: Command): void {
     .argument('[text]', 'list only notes whose text contains this text')
     .description('list notes from the local record')
     .option('--project <X>', 'limit notes to this project')
-    .option('--stale', 'include stale notes')
+    .option('--stale', 'list only stale notes')
+    .option('--promoted-to <key>', 'list notes promoted to this task key')
+    .option('--reference <label|id>', 'find a note by label or record id')
     .addOption(
       repeatable(
         new Option('--session <ID>', 'limit notes to this session').argParser(repeat).default([]),

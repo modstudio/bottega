@@ -26,6 +26,8 @@ export type NoteFilters = {
   stale?: boolean
   session?: string | string[]
   actionable?: boolean
+  promotedTo?: string
+  reference?: string
   kept?: boolean
   text?: string
 }
@@ -129,6 +131,14 @@ function listLocalFilteredRows<Row extends { text: string }>(
     clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
   appendSessionClauses(filters, clauses, values)
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
+  if (filters.promotedTo) {
+    clauses.push('note.promoted_task = ?')
+    values.push(filters.promotedTo)
+  }
+  if (filters.reference) {
+    clauses.push("(lower(note.record_id) = ? OR lower(note.project || '#' || note.number) = ?)")
+    values.push(filters.reference.toLowerCase(), filters.reference.toLowerCase())
+  }
   const rows = db()
     .query<Row, (string | number)[]>(
       `SELECT ${projection} FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
@@ -339,6 +349,8 @@ async function listHostedSlimNoteRows(
             project: filters.project,
             stale: filters.stale,
             actionable: filters.actionable,
+            promotedTo: filters.promotedTo,
+            reference: filters.reference,
             sessions: filters.sessions,
             kept: filters.sessions.length ? Boolean(filters.kept) : undefined,
             text: filters.text,
@@ -456,13 +468,25 @@ export async function listProjectSlimNotes(
   }
   if (filters.actionable && filters.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
+  const specialFilter = filters.promotedTo
+    ? '--promoted-to'
+    : filters.reference
+      ? '--reference'
+      : null
+  if (specialFilter && filters.stale)
+    throw new Error(`${specialFilter} cannot be combined with --stale`)
+  if (specialFilter && filters.actionable)
+    throw new Error(`${specialFilter} cannot be combined with --actionable`)
   if (filters.kept && !filters.session)
     throw new Error(
       `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
     )
   const { hosted, ...localFilters } = filters
+  const stateFilters = specialFilter
+    ? { stale: undefined, actionable: undefined }
+    : { stale: Boolean(filters.stale), actionable: filters.actionable }
   return listSlimNotes(
-    { ...localFilters, stale: Boolean(filters.stale), kept: Boolean(filters.kept), limit },
+    { ...localFilters, ...stateFilters, kept: Boolean(filters.kept), limit },
     hosted,
   )
 }
