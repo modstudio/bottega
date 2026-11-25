@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Text heuristic for register-driven per-project task reads. Local reads of hosted tables are
- * covered at runtime by the hosted-table guard.
+ * File-level text heuristic for register-driven per-project task reads. It flags a file when a
+ * per-project task read and either register selection or a default-project reference both occur.
+ * Local reads of hosted tables are covered at runtime by the hosted-table guard.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

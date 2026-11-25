@@ -4,6 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { installTaskListReaders } from '../../test/fixtures/task-reader.ts'
 import {
   DEFAULT_LOCAL_PROJECT_SETTINGS,
@@ -114,6 +118,43 @@ describe('hosted-configured sign-in', () => {
       ).toBe(true)
       expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
     } finally {
+      restoreTaskReader()
+    }
+  })
+
+  test('uses the hosted reference counter with the default local task reader', async () => {
+    const d = database()
+    const { environment } = registerDefault(d, 'orch-default-hosted-reference-counter-')
+    d.query(
+      `INSERT INTO record_install_binding(id,bound_at,record_origin)
+     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
+    ).run(process.env.BOTTEGA_RECORD_API_URL!)
+    const guarded = STANDARD_OPEN_HOOKS.access!(d)
+    const projectRecordId = '00000000-0000-7000-8000-000000000001'
+    const referenceCountCalls: string[] = []
+    const memoryClient = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...memoryClient,
+      async readTaskFlowProjectReferenceCounts(recordId) {
+        referenceCountCalls.push(recordId)
+        return { stages: 0, flows: 0 }
+      },
+    })
+    const restoreTaskReader = installTaskListReaders({
+      list: async () => {
+        throw new Error('project tasks has no declared record space')
+      },
+      listLocal: async (filters) => {
+        expect(filters).toEqual({ project: 'tasks' })
+        return []
+      },
+    })
+    try {
+      expect(await retireUnusedDefaultLocalProject(guarded, environment)).toBe(true)
+      expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
+      expect(referenceCountCalls).toEqual([projectRecordId])
+    } finally {
+      installRecordApiClient(null)
       restoreTaskReader()
     }
   })
