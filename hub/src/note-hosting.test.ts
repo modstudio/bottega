@@ -117,7 +117,7 @@ describe('hosted-only note safety', () => {
     expect(captured).toEqual({
       project: 'gamma',
       stale: undefined,
-      actionable: false,
+      actionable: undefined,
       promotedTo: 'DEV-7',
       reference: 'gamma#1',
       sessions: ['a', 'b'],
@@ -227,7 +227,11 @@ describe('hosted-only note safety', () => {
       },
     )
     expect(accepted?.status).toBe(200)
-    expect(captured).toMatchObject({ promotedTo: 'DEV-7', stale: false, actionable: false })
+    expect(captured).toMatchObject({
+      promotedTo: 'DEV-7',
+      stale: undefined,
+      actionable: undefined,
+    })
   })
 
   test('every note route refuses a requested space outside the caller memberships', async () => {

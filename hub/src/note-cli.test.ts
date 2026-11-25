@@ -255,6 +255,7 @@ test('local and hosted promoted-to and reference filters include live and stale 
     { project: 'gamma', promotedTo: 'DEV-7' },
     { project: 'gamma', reference: promotedIds[1] },
     { project: 'gamma', reference: 'gamma#2' },
+    { project: 'gamma', reference: 'gamma#n2' },
   ]) {
     const localResult = await listProjectSlimNotes({ ...filters, hosted: { baseUrl: '' } })
     const hostedResult = await listProjectSlimNotes({ ...filters, hosted })

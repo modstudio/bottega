@@ -19,6 +19,8 @@ import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
+import { parseSlimNoteReference } from './identity/identity.ts'
+import { normalizeSpecialSlimListFilters } from './note-slim-list-filter.ts'
 import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type NoteFilters = {
@@ -136,8 +138,14 @@ function listLocalFilteredRows<Row extends { text: string }>(
     values.push(filters.promotedTo)
   }
   if (filters.reference) {
-    clauses.push("(lower(note.record_id) = ? OR lower(note.project || '#' || note.number) = ?)")
-    values.push(filters.reference.toLowerCase(), filters.reference.toLowerCase())
+    const reference = parseSlimNoteReference(filters.reference)
+    if ('recordId' in reference) {
+      clauses.push('lower(note.record_id) = ?')
+      values.push(reference.recordId)
+    } else {
+      clauses.push('note.project = ? AND note.number = ?')
+      values.push(reference.project, reference.number)
+    }
   }
   const rows = db()
     .query<Row, (string | number)[]>(
@@ -449,19 +457,6 @@ export function listActionableNotes(
   return listNotes({ ...filters, actionable: true }, hosted)
 }
 
-function specialSlimListFilter(filters: NoteFilters): '--promoted-to' | '--reference' | null {
-  const specialFilter = filters.promotedTo
-    ? '--promoted-to'
-    : filters.reference
-      ? '--reference'
-      : null
-  if (specialFilter && filters.stale)
-    throw new Error(`${specialFilter} cannot be combined with --stale`)
-  if (specialFilter && filters.actionable)
-    throw new Error(`${specialFilter} cannot be combined with --actionable`)
-  return specialFilter
-}
-
 export async function listProjectSlimNotes(
   filters: NoteFilters & { limit?: number; hosted?: NoteClientOptions },
 ): Promise<{ notes: SlimNote[]; total: number }> {
@@ -487,17 +482,26 @@ export async function listProjectSlimNotes(
   }
   if (filters.actionable && filters.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
-  const specialFilter = specialSlimListFilter(filters)
+  const normalized = normalizeSpecialSlimListFilters({
+    ...filters,
+    stale: Boolean(filters.stale),
+  })
+  if (normalized.kind === 'conflict') {
+    const special = normalized.special === 'promotedTo' ? '--promoted-to' : '--reference'
+    throw new Error(`${special} cannot be combined with --${normalized.state}`)
+  }
   if (filters.kept && !filters.session)
     throw new Error(
       `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
     )
   const { hosted, ...localFilters } = filters
-  const stateFilters = specialFilter
-    ? { stale: undefined, actionable: undefined }
-    : { stale: Boolean(filters.stale), actionable: filters.actionable }
   return listSlimNotes(
-    { ...localFilters, ...stateFilters, kept: Boolean(filters.kept), limit },
+    {
+      ...localFilters,
+      ...normalized.filters,
+      kept: Boolean(filters.kept),
+      limit,
+    },
     hosted,
   )
 }

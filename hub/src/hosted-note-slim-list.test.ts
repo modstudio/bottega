@@ -60,7 +60,7 @@ test('promoted-to and reference return live and stale matches within the caller 
   expect(new Date(promoted.notes[1]!.stale_at!).toISOString()).toBe('2026-11-20T15:00:00.000Z')
   expect(promoted.notes).not.toContainEqual(expect.objectContaining({ project: 'secret' }))
 
-  for (const reference of [id(2605), `${PLATFORM_NAME}#2`]) {
+  for (const reference of [id(2605), `${PLATFORM_NAME}#2`, `${PLATFORM_NAME}#n2`]) {
     const found = await listHostedSlimNotes(sql, { userId, spaceId }, { reference })
     expect(found.notes.map((note) => note.record_id)).toEqual([id(2605)])
   }

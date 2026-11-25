@@ -7,7 +7,6 @@ import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import {
   type HubNote,
-  type HubNoteOutput,
   type HubNoteReadOptions,
   listHubNotesPromotedTo as listPromotedNotesForWorkflow,
 } from '../mcp/hub-notes.ts'
@@ -76,13 +75,12 @@ export type WorkflowComposeInheritance = {
 export async function assertPlanTaskNoteProvenance(
   composition: Composition,
   listNotes: ListWorkflowNotesPort = listPromotedNotesForWorkflow,
-  output?: HubNoteOutput,
 ): Promise<void> {
   const key = workflowKeyOf(composition.arguments)
   if (composition.workflow.slug !== 'plan-task' || !key) return
   let read: Parameters<typeof decidePlanTaskNoteProvenance>[0]['read']
   try {
-    const notes = await listNotes(composition.project, key, { cwd: process.cwd(), output })
+    const notes = await listNotes(composition.project, key, { cwd: process.cwd() })
     read = {
       kind: 'available',
       notes: notes.map((note) => ({ label: note.label, promotedTask: note.promoted_task })),

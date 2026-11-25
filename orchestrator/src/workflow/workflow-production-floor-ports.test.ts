@@ -145,8 +145,8 @@ test('interactive note reads each spawn one filtered slim-list command', async (
         project: 'fixture',
         arguments: { key: 'DEV-977' },
       } as unknown as Parameters<typeof assertPlanTaskNoteProvenance>[0],
-      undefined,
-      output,
+      (project, key, options) =>
+        hubNotes.listHubNotesPromotedTo(project, key, { ...options, output }),
     ),
   ).rejects.toThrow('task DEV-977 was promoted from note fixture#1')
   await expect(hubNotes.hubNoteLabel(liveId, { cwd: process.cwd(), output })).resolves.toBe(

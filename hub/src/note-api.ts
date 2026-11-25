@@ -30,6 +30,7 @@ import {
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 import { HOSTED_PROMOTION_TITLE_REFUSAL, requiredPromotionTitle } from './note-promotion-body.ts'
+import { normalizeSpecialSlimListFilters } from './note-slim-list-filter.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -136,16 +137,16 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
 function slimListFilters(url: URL) {
   const promotedTo = url.searchParams.get('promoted_to')?.trim() || undefined
   const reference = url.searchParams.get('reference')?.trim() || undefined
-  const stateFilter =
-    url.searchParams.get('stale') === 'true'
-      ? 'stale=true'
-      : url.searchParams.get('actionable') === 'true'
-        ? 'actionable=true'
-        : null
-  if ((promotedTo || reference) && stateFilter)
+  const normalized = normalizeSpecialSlimListFilters({
+    promotedTo,
+    reference,
+    stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
+    actionable: url.searchParams.get('actionable') === 'true',
+  })
+  if (normalized.kind === 'conflict')
     return json(
       {
-        error: `${promotedTo ? 'promoted_to' : 'reference'} cannot be combined with ${stateFilter}`,
+        error: `${normalized.special === 'promotedTo' ? 'promoted_to' : 'reference'} cannot be combined with ${normalized.state}=true`,
       },
       400,
     )
@@ -160,10 +161,7 @@ function slimListFilters(url: URL) {
     )
   return {
     project: url.searchParams.get('project') ?? undefined,
-    stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
-    actionable: url.searchParams.get('actionable') === 'true',
-    promotedTo,
-    reference,
+    ...normalized.filters,
     sessions: url.searchParams.getAll('session'),
     kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
     text: url.searchParams.get('text') ?? undefined,

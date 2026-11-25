@@ -21,6 +21,7 @@ export const identityModules = [
   ]),
   module('hub/src/identity/identity.ts', [
     'bun:sqlite',
+    '../../../shared/note-label.ts',
     '../../../shared/reference-refusal.ts',
     '../../../shared/reference.ts',
   ]),
