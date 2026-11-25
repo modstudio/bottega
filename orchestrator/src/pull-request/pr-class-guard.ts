@@ -95,7 +95,7 @@ export function decidePullRequestClassGuard(input: {
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
-  const afterExec = matchingExecs.find((entry) => isPathInside(worktree, entry.cwd))
+  const afterExec = matchingExecs.find((entry) => entry.cwd === rerunCwd)
   if (!afterExec)
     return {
       kind: 'refuse',

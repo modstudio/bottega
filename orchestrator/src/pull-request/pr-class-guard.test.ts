@@ -51,6 +51,19 @@ test('allows a post-implement measurement from inside the worktree', () =>
     }),
   ).toEqual({ kind: 'allow' }))
 
+test('refuses a post-implement measurement from a different directory inside the worktree', () => {
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurementCwd: '/main/orchestrator',
+    execs: [{ ...base.execs[0]!, cwd: '/tree/docs' }],
+    checkoutRoots: ['/main'],
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message: expect.stringContaining("--cwd '/tree/orchestrator'"),
+  })
+})
+
 test('refuses a post-implement measurement from the same directory in the main checkout', () => {
   const decision = decidePullRequestClassGuard({
     ...base,
