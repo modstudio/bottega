@@ -10,6 +10,7 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
+  authoritativeCanonImportHistory,
   readDoc,
   readDocForAudience,
   readDocMetadata,
@@ -39,6 +40,57 @@ const hostedRow = (overrides: Record<string, unknown> = {}) => ({
   createdAt: '2026-11-22T00:00:00.000Z',
   updatedAt: '2026-11-22T00:00:00.000Z',
   ...overrides,
+})
+
+test('canon import history follows authority and includes removed hosted rows', async () => {
+  let localReads = 0
+  const address = { kind: 'user' as const, owner: newRecordId() }
+  const local = () => {
+    localReads++
+    return false
+  }
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const client = createMemoryRecordApiClient()
+  const calls: Array<Parameters<typeof client.listDocs>[0]> = []
+  installRecordApiClient({
+    ...client,
+    listDocs: async (query) => {
+      calls.push(query)
+      return {
+        items: query.includeDeleted
+          ? [hostedRow({ scope: 'canon', owner: address.owner, deletedAt: '2026-11-23' })]
+          : [],
+        nextCursor: null,
+      }
+    },
+  })
+
+  expect(
+    await authoritativeCanonImportHistory(address, local, undefined, (actions) =>
+      Promise.resolve(actions.hosted()),
+    ),
+  ).toBe(true)
+  expect(localReads).toBe(0)
+  expect(calls).toEqual([
+    {
+      scope: 'canon',
+      subject: null,
+      owner: address.owner,
+      includeDeleted: true,
+      limit: 1,
+    },
+  ])
+  expect(
+    await authoritativeCanonImportHistory(
+      address,
+      local,
+      async () => {
+        throw new Error('hosted history should not be read')
+      },
+      (actions) => Promise.resolve(actions.local()),
+    ),
+  ).toBe(false)
+  expect(localReads).toBe(1)
 })
 
 test('a hosted read returns the hosted row and never the local mirror', async () => {

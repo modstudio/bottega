@@ -8,6 +8,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { compilePack } from '../canon/canon.ts'
+import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
@@ -23,6 +24,7 @@ import {
   setDoc,
   setDocStatus,
 } from './docs.ts'
+import { commitDocSet } from './local-doc-write.ts'
 
 const docId = '01990000-0000-7000-8000-000000000101'
 const revisionId = '01990000-0000-7000-8000-000000000102'
@@ -406,7 +408,24 @@ test('consume reaches the hosted resume when the local mirror is empty', async (
   expect(consumes).toContainEqual({ id: docId, expectedRevision: revisionId })
 })
 
-test('restore finds its revision in the hosted record when the local mirror is empty', async () => {
+test('hosted restore mirrors after the local revision becomes stale', async () => {
+  const staleLocalRevision = newRecordId()
+  commitDocSet({
+    scope: 'global',
+    subject: null,
+    owner: null,
+    slug: 'hosted-only',
+    projectId: null,
+    title: 'Stale local title',
+    body: 'Stale local body.',
+    delivery: 'demand',
+    audiences: ['technical'],
+    parentId: null,
+    position: 0,
+    identity: { author: 'fixture', reason: 'seed stale local mirror', session: null },
+    recordId: docId,
+    revisionId: staleLocalRevision,
+  })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const revision: RecordDocRevision = {
     id: restoredRevisionId,
@@ -449,13 +468,19 @@ test('restore finds its revision in the hosted record when the local mirror is e
   client.restoreDoc = async (id, input) => {
     expect(id).toBe(docId)
     expect(input.revisionId).toBe(restoredRevisionId)
+    expect(input.expectedRevision).toBe(revisionId)
     return { id, revisionId: newRecordId() }
   }
   installRecordApiClient(client)
 
   await restoreDoc('global', null, 'hosted-only', restoredRevisionId, {
     reason: 'restore hosted revision',
+    expectedRevision: revisionId,
   })
+  expect(
+    db().query<{ body: string }, [string]>('SELECT body FROM doc WHERE record_id=?').get(docId)
+      ?.body,
+  ).toBe('Earlier body.')
 })
 
 test('doc import uses the hosted revision when the local mirror is empty', async () => {

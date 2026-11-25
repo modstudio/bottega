@@ -120,6 +120,23 @@ export function currentDocRevision(
   return row?.record_id ?? null
 }
 
+export type CanonImportPlanAddress =
+  | { kind: 'user'; owner: string }
+  | { kind: 'project'; subject: string }
+
+export function hasCanonImportHistory(address: CanonImportPlanAddress): boolean {
+  const subject = address.kind === 'project' ? address.subject : null
+  const owner = address.kind === 'user' ? address.owner : null
+  return (
+    db()
+      .query(
+        `SELECT 1 FROM doc_revision
+         WHERE scope='canon' AND subject IS ? AND owner IS ? LIMIT 1`,
+      )
+      .get(subject, owner) !== null
+  )
+}
+
 export function latestStoredDocAuthorSession(
   recordId: string,
   database: Database = db(),
@@ -129,18 +146,6 @@ export function latestStoredDocAuthorSession(
       `SELECT session_id FROM doc_revision
        WHERE doc_record_id=? AND session_id IS NOT NULL AND op <> 'consume'
        ORDER BY number DESC LIMIT 1`,
-    )
-    .get(recordId)
-  return row?.session_id ?? null
-}
-
-export function storedDocRevisionAuthorSession(
-  recordId: string,
-  database: Database = db(),
-): string | null {
-  const row = database
-    .query<{ session_id: string | null }, [string]>(
-      'SELECT session_id FROM doc_revision WHERE record_id=?',
     )
     .get(recordId)
   return row?.session_id ?? null

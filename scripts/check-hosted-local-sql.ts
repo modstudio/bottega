@@ -13,6 +13,7 @@ import {
 import {
   type HostedLocalReadHit,
   hostedBoardLocalReadFailures,
+  hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
   hostedLocalReadScan,
   hostedLocalSqlAllowedFileFailures,
@@ -422,6 +423,7 @@ export function checkHostedLocalSql(root: string): {
       ...reportOnlyAllowedFileBudgetFailures(scan.report.hits, HOSTED_LOCAL_SQL_ALLOWED_FILES),
       ...hostedBoardLocalReadFailures(scan.report.hits),
       ...hostedHubLocalReadFailures(scan.report.hits),
+      ...hostedDocLocalReadFailures(scan.report.hits),
       ...hostedLocalSqlViolations({
         sites,
         unresolved,

@@ -283,13 +283,28 @@ export function executeLocalDocRestore(
 export function commitDocRestore(
   input: RestoreInput & { recordId: string; revisionId: string },
 ): Doc {
+  return commitDocRestoreMirror(input, true)
+}
+
+export function commitHostedDocRestore(
+  input: RestoreInput & { recordId: string; revisionId: string },
+): Doc {
+  return commitDocRestoreMirror(input, false)
+}
+
+function commitDocRestoreMirror(
+  input: RestoreInput & { recordId: string; revisionId: string },
+  enforceLocalRevisionPolicy: boolean,
+): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    assertLocalRevisionWrite(
-      input,
-      currentDocRevision(input.scope, input.subject, input.slug, input.owner),
-      false,
-    )
+    if (enforceLocalRevisionPolicy) {
+      assertLocalRevisionWrite(
+        input,
+        currentDocRevision(input.scope, input.subject, input.slug, input.owner),
+        false,
+      )
+    }
     const at = nowIso()
     if (existing) {
       db()

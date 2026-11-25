@@ -6,9 +6,12 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
-import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { readDocs as listDocs } from '../doc/doc-authoritative-read.ts'
+import {
+  authoritativeCanonImportHistory,
+  readDocs as listDocs,
+} from '../doc/doc-authoritative-read.ts'
 import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
 import {
@@ -183,15 +186,15 @@ async function projectCanonImportPlan(
   })
   if (collision) throw new Error(collision)
   const projectRows = allProjectRows.filter((row) => row.status === 'current')
+  const hasHistory = await authoritativeCanonImportHistory({
+    kind: 'project',
+    subject: project.name,
+  })
   const plan = planCanonImport({
     address: { kind: 'project' },
     current: projectRows.map(({ slug, body }) => ({ slug, body })),
     desired: rows,
-    hasHistory: hasCanonImportHistory({
-      kind: 'project',
-      subject: project.name,
-      projectId: project.recordId,
-    }),
+    hasHistory,
     surroundings: [{ global, project: [] }],
     trackedPaths: collected.trackedPaths,
     packageScripts: collected.packageScripts,

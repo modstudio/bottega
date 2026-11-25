@@ -79,8 +79,8 @@ import { localDocumentLifecycle } from './local-doc-status.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
-  commitDocRestore,
   commitDocSet,
+  commitHostedDocRestore,
   executeLocalDocConsume,
   executeLocalDocRestore,
   executeLocalDocSet,
@@ -1028,7 +1028,7 @@ export async function restoreDoc(
         ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
       })
-      return commitDocRestore({
+      return commitHostedDocRestore({
         scope,
         subject,
         owner,

@@ -9,10 +9,7 @@ import {
 } from '../record/record-write-authority.ts'
 import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
-import {
-  latestStoredDocAuthorSession,
-  storedDocRevisionAuthorSession,
-} from './doc-revision-store.ts'
+import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
 import type { ConsumedDoc, Doc } from './docs.ts'
 
 type ResumeBriefHostedRevision = {
@@ -53,6 +50,5 @@ export async function resumeBriefAuthorSession(
     .filter((revision) => revision.op !== 'consume')
     .sort((left, right) => right.at.localeCompare(left.at))[0]
   if (!latest) return null
-  if (latest.sessionId) return latest.sessionId
-  return storedDocRevisionAuthorSession(latest.id, database)
+  return latest.sessionId
 }
