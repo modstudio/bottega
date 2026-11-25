@@ -612,6 +612,46 @@ test('delivery records its point and the reader project in the reach window', as
   })
 })
 
+test('hosted delivery of a machine notice records reach without preparation failures', async () => {
+  const clock = Date.parse('2026-10-13T13:20:00.000Z')
+  const session = 'hosted-machine-reach-reader'
+  const env = { BOTTEGA_RECORD_API_URL: 'https://record.test' }
+  db()
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','reach-project',(SELECT record_id FROM project WHERE name='reach-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const posted = postNotice(
+    { audience: 'machine:test', title: 'Machine reach', body: 'Record this local push.' },
+    env,
+    clock,
+  )
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = env.BOTTEGA_RECORD_API_URL
+  try {
+    await markBoardDeliveryDelivered({
+      session,
+      ids: [String(posted.number)],
+      emissionId: 'hosted-machine-emission',
+      deliveryPoint: 'after-tool-call',
+      clock: clock + 1,
+      env,
+    })
+  } finally {
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  }
+
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 1 })
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_recording_failure').get()).toEqual({
+    count: 0,
+  })
+})
+
 test('an emission retry records once while a later reminder records twice', async () => {
   const clock = Date.parse('2026-10-13T14:00:00.000Z')
   const session = 'emission-reader'

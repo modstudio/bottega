@@ -663,6 +663,7 @@ export async function markBoardDeliveryDelivered(input: {
               recordedAt: deliveredAt,
             },
             database,
+            item.source === 'local' ? localLocality : 'shared',
           ),
         )
       } catch {
