@@ -876,9 +876,12 @@ function requiresCleanMain(settings: ProjectSettings): boolean {
   return settings.requireCleanMain !== false
 }
 
+/** Relative segments under a registered checkout where Bottega creates disposable trees. */
+export const MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS = ['.claude', 'worktrees'] as const
+
 /** The directory under a registered checkout where Bottega creates disposable trees. */
 export function mainCheckoutWorktreeHint(projectPath: string): string {
-  return join(projectPath, '.claude', 'worktrees')
+  return join(projectPath, ...MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS)
 }
 
 type MainCheckoutInspection = {

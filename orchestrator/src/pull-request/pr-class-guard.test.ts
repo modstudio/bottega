@@ -144,3 +144,27 @@ test('a recorded command naming no checkout keeps its original matching behavior
     decidePullRequestClassGuard({ ...base, execs: [{ ...base.execs[0]!, command: "'other'" }] }),
   ).toEqual({ kind: 'refuse', message: expect.stringContaining(command) })
 })
+
+test('allows only the worktree-relative rerun of a command naming a path inside a worktree', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const absolutePath = `${checkout}/.claude/worktrees/DEV-2627/scripts/measure.ts`
+  const recorded = renderClassMeasurementCommand(['bun', absolutePath])!
+  const relative = renderClassMeasurementCommand(['bun', 'scripts/measure.ts'])!
+  const input = {
+    ...base,
+    measurement: { ...base.measurement, command: recorded },
+    checkoutRoots: [checkout],
+  }
+  expect(
+    decidePullRequestClassGuard({
+      ...input,
+      execs: [{ ...base.execs[0]!, command: relative }],
+    }),
+  ).toEqual({ kind: 'allow' })
+  const decision = decidePullRequestClassGuard({
+    ...input,
+    execs: [{ ...base.execs[0]!, command: recorded }],
+  })
+  expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining(relative) })
+  if (decision.kind === 'refuse') expect(decision.message).not.toContain(absolutePath)
+})

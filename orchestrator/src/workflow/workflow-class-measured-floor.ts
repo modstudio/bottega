@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { parseShellQuoted, shellQuote } from '../../../shared/shell-quote.ts'
+import { MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS } from '../project/projects.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {
@@ -36,6 +37,18 @@ type NamedCheckoutPath = { path: string; relative: string }
 
 type CheckoutPathMatch = NamedCheckoutPath & { start: number; end: number }
 
+function checkoutRelativePath(path: string, root: string): string {
+  const relative = path.slice(root.length).replace(/^\/+/, '')
+  const segments = relative.split('/')
+  const worktreePrefixMatches = MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS.every(
+    (segment, index) => segments[index] === segment,
+  )
+  const worktreeName = segments[MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS.length]
+  if (worktreePrefixMatches && worktreeName)
+    return segments.slice(MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS.length + 1).join('/') || '.'
+  return relative || '.'
+}
+
 function checkoutPathMatch(
   argument: string,
   root: string,
@@ -48,12 +61,11 @@ function checkoutPathMatch(
   let end = start + root.length
   while (end < argument.length && !/[\s"'`;&|<>()]/.test(argument[end]!)) end += 1
   const path = argument.slice(start, end)
-  const relative = path.slice(root.length).replace(/^\/+/, '')
   return {
     start,
     end,
     path,
-    relative: relative || '.',
+    relative: checkoutRelativePath(path, root),
   }
 }
 
