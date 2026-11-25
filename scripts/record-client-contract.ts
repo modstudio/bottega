@@ -10,6 +10,7 @@ import { registerRecordStorageRoute } from '../orchestrator/src/record/record-ap
 import {
   CURRENT_CONTRACT_REPO_PATH,
   RELEASED_CONTRACT_REPO_DIRECTORY,
+  releasedContractSnapshotPath,
 } from '../orchestrator/src/release/release-client-contract.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
@@ -904,7 +905,7 @@ async function main() {
       JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { version: string }
     ).version
     mkdirSync(RELEASED_CONTRACT_DIRECTORY, { recursive: true })
-    const snapshot = resolve(RELEASED_CONTRACT_DIRECTORY, `${version}.json`)
+    const snapshot = releasedContractSnapshotPath(ROOT, version)
     const serialized = serializeRecordClientContract(entries)
     if (existsSync(snapshot) && readFileSync(snapshot, 'utf8') !== serialized)
       throw new Error(

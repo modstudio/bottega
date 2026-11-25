@@ -3,31 +3,47 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 export const CURRENT_CONTRACT_REPO_PATH = 'scripts/quality/record-client-contract.json'
 export const RELEASED_CONTRACT_REPO_DIRECTORY = 'scripts/quality/record-client-contracts'
+
+export function releasedContractSnapshotPath(root: string, version: string): string {
+  return resolve(root, RELEASED_CONTRACT_REPO_DIRECTORY, `${version}.json`)
+}
 
 export function releaseClientContractContentsRefusal(
   version: string,
   snapshot: string | null,
   current: string,
+  options: { checkDrift: boolean } = { checkDrift: true },
 ): string | null {
-  const remedy = 'bun scripts/record-client-contract.ts --snapshot'
-  if (snapshot === null) return `released client contract ${version} is missing; run ${remedy}`
-  if (snapshot !== current)
-    return `released client contract ${version} differs from the current contract; run ${remedy}`
+  if (snapshot === null)
+    return `released client contract ${version} is missing; run bun scripts/record-client-contract.ts --snapshot`
+  if (options.checkDrift && snapshot !== current)
+    return `released client contract ${version} differs from the current contract; bump package.json to a new version, then run bun scripts/record-client-contract.ts --snapshot`
   return null
 }
 
 export function readReleaseClientContract(
   root: string,
-  tag: string,
+  version: string,
 ): { version: string; snapshot: string | null; current: string } {
-  const version = tag.startsWith('v') ? tag.slice(1) : tag
-  const snapshotPath = resolve(root, RELEASED_CONTRACT_REPO_DIRECTORY, `${version}.json`)
+  const snapshotPath = releasedContractSnapshotPath(root, version)
+  const currentPath = resolve(root, CURRENT_CONTRACT_REPO_PATH)
+  if (!existsSync(currentPath)) {
+    throw new Error(
+      renderRefusal(
+        refusal(`current client contract ${CURRENT_CONTRACT_REPO_PATH} is missing`, {
+          kind: 'command',
+          argv: ['bun', 'scripts/record-client-contract.ts', '--update'],
+        }),
+      ),
+    )
+  }
   return {
     version,
     snapshot: existsSync(snapshotPath) ? readFileSync(snapshotPath, 'utf8') : null,
-    current: readFileSync(resolve(root, CURRENT_CONTRACT_REPO_PATH), 'utf8'),
+    current: readFileSync(currentPath, 'utf8'),
   }
 }

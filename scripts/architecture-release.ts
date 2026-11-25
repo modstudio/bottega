@@ -15,7 +15,7 @@ export const releaseModules = [
   },
   {
     file: 'orchestrator/src/release/release-client-contract.ts',
-    allowed: ['node:fs', 'node:path'],
+    allowed: ['node:fs', 'node:path', 'shared/refusal.ts'],
   },
   {
     file: 'orchestrator/src/release/release-rungs.ts',

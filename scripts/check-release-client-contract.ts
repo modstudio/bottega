@@ -3,9 +3,12 @@ import {
   readReleaseClientContract,
   releaseClientContractContentsRefusal,
 } from '../orchestrator/src/release/release-client-contract.ts'
+import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 
 function releaseClientContractRefusal(tag: string): string | null {
-  const contract = readReleaseClientContract(resolve(import.meta.dir, '..'), tag)
+  const version = releaseTagVersion(tag)
+  if (version === null) return `release tag ${tag} is invalid; expected ${RELEASE_TAG_SHAPE}`
+  const contract = readReleaseClientContract(resolve(import.meta.dir, '..'), version)
   return releaseClientContractContentsRefusal(contract.version, contract.snapshot, contract.current)
 }
 

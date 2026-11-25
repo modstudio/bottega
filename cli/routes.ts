@@ -205,12 +205,20 @@ export const ROUTES = (
     route('gate hub-import', 'orch', 'hub-import'),
     route('gate', 'orch', 'gate'),
     route('release run', 'orch', 'release'),
-    route(
-      'release check',
-      'orch',
-      'release check',
-      'validate the tag, released client contract, tracked rungs, and release binary working-directory isolation',
-    ),
+    {
+      ...route(
+        'release check',
+        'orch',
+        'release check',
+        'validate the tag, released client contract, tracked rungs, and release binary working-directory isolation',
+      ),
+      options: [
+        {
+          flags: '--skip-client-contract-drift',
+          description: 'skip comparing the released and current client contracts',
+        },
+      ],
+    },
     route('release log', 'orch', 'release log'),
     route(
       'release rungs',
