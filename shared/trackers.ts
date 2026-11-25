@@ -7,12 +7,10 @@ import {
   type TrackerProtocol,
   trackerWireAction,
 } from './tracker-actions.ts'
-import {
-  scopedRows,
-  type ToolCaller,
-  ToolCallRefused,
-  toolDeclaresInput,
-} from './tracker-list-scope.ts'
+import { readAdaptiveCursorPages, readAdaptiveWorkspacePages } from './tracker-adaptive-pages.ts'
+import { scopedRows, type ToolCaller, toolDeclaresInput } from './tracker-list-scope.ts'
+import { decodeTrackerText as decode, reportedParentKey } from './tracker-read-fields.ts'
+import * as trackerCategory from './tracker-status-category.ts'
 import {
   arrayStatusPayload,
   cursorStatusPayload,
@@ -28,12 +26,15 @@ import {
   type TrackerTaskText,
 } from './tracker-task-text.ts'
 
-export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
-export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
-export const LIVE_TASK_STATUS_CATEGORIES = TASK_STATUSES.filter(
-  (status): status is Exclude<StatusCategory, 'done' | 'dropped'> =>
-    status !== 'done' && status !== 'dropped',
-)
+export {
+  categoryForTrackerRead,
+  LIVE_TASK_STATUS_CATEGORIES,
+  type StatusCategory,
+  TASK_STATUSES,
+} from './tracker-status-category.ts'
+
+type StatusCategory = trackerCategory.StatusCategory
+const TASK_STATUSES = trackerCategory.TASK_STATUSES
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
   'workspace-mcp',
   'cursor-mcp',
@@ -348,86 +349,6 @@ export const TRACKER_DEFAULT_PAGE_SIZE = 100
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
-/** The raw status word wins where it is finer than the tracker's category. */
-/** The category a status establishes, or null when neither the word nor the project's states name one. */
-function establishedCategory(
-  rawStatus: string,
-  category: string,
-  states: TrackerSettings['states'],
-): StatusCategory | null {
-  const w = rawStatus.toLowerCase()
-  if (/review/.test(w)) return 'review'
-  if (/blocked|on hold/.test(w)) return 'review'
-  const normal = (value: string) => value.toLowerCase().replace(/[ -]+/g, '_')
-  const mapped =
-    states?.[rawStatus] ??
-    states?.[normal(rawStatus)] ??
-    states?.[category] ??
-    states?.[normal(category)]
-  return mapped === 'backlog' ? 'open' : (mapped ?? null)
-}
-
-export function categoryForTrackerRead(
-  incremental: boolean,
-  rawStatus: string | undefined,
-  categoryHint: string | undefined,
-  fullReadFallbackHint: string | undefined,
-  states: TrackerSettings['states'],
-): StatusCategory | null {
-  if (incremental) {
-    return rawStatus ? establishedCategory(rawStatus, categoryHint ?? '', states) : null
-  }
-  return fullReadCategory(rawStatus, categoryHint, fullReadFallbackHint, states)
-}
-
-/** A full read lists open work by status, so a row whose status maps nowhere is open. */
-function fullReadCategory(
-  rawStatus: string | undefined,
-  categoryHint: string | undefined,
-  fallbackHint: string | undefined,
-  states: TrackerSettings['states'],
-): StatusCategory {
-  return categoryOf(rawStatus ?? '', categoryHint ?? fallbackHint ?? '', states)
-}
-
-function categoryOf(
-  rawStatus: string,
-  category: string,
-  states: TrackerSettings['states'],
-): StatusCategory {
-  return establishedCategory(rawStatus, category, states) ?? 'open'
-}
-
-const smallerPageSize = (pageSize: number) => Math.max(1, Math.floor(pageSize / 2))
-
-const refusedPageError = (
-  protocol: 'cursor-mcp' | 'workspace-mcp',
-  pageIndex: number,
-  rowsRead: number,
-  status: string | undefined,
-) =>
-  `${protocol} page index ${pageIndex} after ${rowsRead} rows in status ${status ?? 'all'} was refused at page size 1`
-
-const ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&nbsp;': ' ',
-}
-const decode = (s: string) => s.replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m] ?? m)
-
-function reportedParentKey(
-  row: { parent?: unknown },
-  keyField: 'short_id' | 'humanKey' | 'key',
-): string | null | undefined {
-  if (!('parent' in row)) return undefined
-  if (!row.parent || typeof row.parent !== 'object') return null
-  const key = (row.parent as Record<string, unknown>)[keyField]
-  return typeof key === 'string' && key.trim() ? key.toUpperCase() : null
-}
-
 /** Resolve each new id once. A cached null is a known failed resolution, not a miss. */
 export async function resolveAssigneeIds(
   refs: AssigneeRef[],
@@ -526,7 +447,11 @@ async function mappedWorkspaceTask(
     parentKey: reportedParentKey(hit, 'short_id'),
     title: decode(hit.summary ?? ''),
     status: hit.status ?? '',
-    category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
+    category: trackerCategory.categoryOf(
+      hit.status ?? '',
+      hit.status_category ?? 'completed',
+      states,
+    ),
     updatedAt: null,
     assignee: assignee ?? null,
   }
@@ -613,7 +538,7 @@ function appendWorkspaceTasks(
     if (!task.short_id) continue
     // An incremental read also returns closed rows, so a status that establishes no category
     // cannot default to open; the read is partial and the next one is full.
-    const category = categoryForTrackerRead(
+    const category = trackerCategory.categoryForTrackerRead(
       updatedSince !== undefined,
       task.status,
       task.status_category,
@@ -661,56 +586,38 @@ async function fetchWorkspaceStatus(
 }> {
   const tasks: TrackerTask[] = []
   const refs: AssigneeRef[] = []
-  let complete = true
-  let pageSize = startingPageSize
-  let lastSuccessfulPageSize: number | undefined
-  let rowOffset = 0
-  for (let pagesRead = 0; pagesRead < MAX_PAGES; ) {
-    const pageIndex = Math.floor(rowOffset / pageSize)
-    const page = pageIndex + 1
-    let reply: { tasks?: WorkspaceTask[]; last_page?: number }
-    try {
-      reply = (await m.callTool(searchAction, {
+  const fetched = await readAdaptiveWorkspacePages({
+    startingPageSize,
+    maxPages: MAX_PAGES,
+    status,
+    async read(page, pageSize) {
+      const reply = (await m.callTool(searchAction, {
         ...(updatedSince === undefined ? { status } : { updated_since: updatedSince }),
         ...(sendsScope ? { team_id: team } : {}),
         page,
         per_page: pageSize,
-      })) as typeof reply
-    } catch (cause) {
-      if (!(cause instanceof ToolCallRefused)) throw cause
-      if (pageSize === 1)
-        return {
-          tasks,
-          refs,
-          complete: false,
-          pageSize: lastSuccessfulPageSize,
-          nextPageSize: pageSize,
-          error: refusedPageError('workspace-mcp', pageIndex, rowOffset, status),
-        }
-      pageSize = smallerPageSize(pageSize)
-      continue
-    }
-    lastSuccessfulPageSize = pageSize
-    const rows = sendsScope
-      ? (reply.tasks ?? [])
-      : scopedRows(
-          (reply.tasks ?? []) as (WorkspaceTask & Record<string, unknown>)[],
-          'team',
-          team,
-          `workspace-mcp collect refused for project ${project}: search schema has no team_id and returned rows carry no team scope`,
-        )
+      })) as { tasks?: WorkspaceTask[]; last_page?: number }
+      const rows = sendsScope
+        ? (reply.tasks ?? [])
+        : scopedRows(
+            (reply.tasks ?? []) as (WorkspaceTask & Record<string, unknown>)[],
+            'team',
+            team,
+            `workspace-mcp collect refused for project ${project}: search schema has no team_id and returned rows carry no team scope`,
+          )
+      return { rows, lastPage: reply.last_page }
+    },
+  })
+  let complete = fetched.complete
+  for (const rows of fetched.pages)
     complete &&= appendWorkspaceTasks(tasks, refs, rows, project, status, updatedSince, states)
-    pagesRead++
-    if (!(reply.last_page && page < reply.last_page))
-      return { tasks, refs, complete, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
-    rowOffset += pageSize
-  }
   return {
     tasks,
     refs,
-    complete: false,
-    pageSize: lastSuccessfulPageSize,
-    nextPageSize: pageSize,
+    complete,
+    pageSize: fetched.pageSize,
+    nextPageSize: fetched.nextPageSize,
+    ...(fetched.error ? { error: fetched.error } : {}),
   }
 }
 
@@ -787,7 +694,7 @@ function workspaceSource(
           `workspace-mcp status confirmation for task ${task.key} returned no status after category ${category} was requested`,
         )
       }
-      const confirmedCategory = categoryOf(
+      const confirmedCategory = trackerCategory.categoryOf(
         normalized.status,
         normalized.status_category ?? '',
         states,
@@ -842,7 +749,13 @@ function appendCursorTasks(
       continue
     }
     if (!task.humanKey) continue
-    const category = categoryForTrackerRead(incremental, task.status, task.status, status, states)
+    const category = trackerCategory.categoryForTrackerRead(
+      incremental,
+      task.status,
+      task.status,
+      status,
+      states,
+    )
     if (category === null) {
       complete = false
       continue
@@ -895,7 +808,7 @@ async function lookupCursorTask(
     parentKey: reportedParentKey(task, 'humanKey'),
     title: decode(task.title ?? ''),
     status: task.status ?? '',
-    category: categoryOf(task.status ?? '', task.status ?? 'done', states),
+    category: trackerCategory.categoryOf(task.status ?? '', task.status ?? 'done', states),
     updatedAt: task.updatedAt ?? null,
     assignee: task.assigneeName?.trim() || null,
   }
@@ -919,37 +832,32 @@ async function fetchCursorPages(input: {
   let lastSuccessfulPageSize: number | undefined
   let error: string | undefined
   for (const status of input.statuses) {
-    let cursor: string | undefined
-    let rowsRead = 0
-    let pagesRead = 0
-    for (; pagesRead < MAX_PAGES; ) {
-      let r: { data?: { items?: CursorTask[]; nextCursor?: string } }
-      try {
-        r = (await input.m.callTool(input.searchAction, {
+    const fetched = await readAdaptiveCursorPages({
+      startingPageSize: pageSize,
+      maxPages: MAX_PAGES,
+      status,
+      async read(cursor, limit) {
+        const reply = (await input.m.callTool(input.searchAction, {
           ...(input.updatedSince === undefined ? { status } : { updatedSince: input.updatedSince }),
           ...(input.sendsScope ? { projectId: input.projectId } : {}),
-          limit: pageSize,
+          limit,
           ...(cursor ? { cursor } : {}),
-        })) as typeof r
-      } catch (cause) {
-        if (!(cause instanceof ToolCallRefused)) throw cause
-        if (pageSize === 1) {
-          complete = false
-          error = refusedPageError('cursor-mcp', pagesRead, rowsRead, status)
-          break
-        }
-        pageSize = smallerPageSize(pageSize)
-        continue
-      }
-      lastSuccessfulPageSize = pageSize
-      const rows = input.sendsScope
-        ? (r.data?.items ?? [])
-        : scopedRows(
-            (r.data?.items ?? []) as (CursorTask & Record<string, unknown>)[],
-            'projectId',
-            input.projectId,
-            `cursor-mcp collect refused for project ${input.project}: search schema has no projectId and returned rows carry no projectId scope`,
-          )
+        })) as { data?: { items?: CursorTask[]; nextCursor?: string } }
+        const rows = input.sendsScope
+          ? (reply.data?.items ?? [])
+          : scopedRows(
+              (reply.data?.items ?? []) as (CursorTask & Record<string, unknown>)[],
+              'projectId',
+              input.projectId,
+              `cursor-mcp collect refused for project ${input.project}: search schema has no projectId and returned rows carry no projectId scope`,
+            )
+        return { rows, nextCursor: reply.data?.nextCursor }
+      },
+    })
+    pageSize = fetched.nextPageSize
+    if (fetched.pageSize !== undefined) lastSuccessfulPageSize = fetched.pageSize
+    complete &&= fetched.complete
+    for (const rows of fetched.pages) {
       const appended = appendCursorTasks(
         out,
         rows,
@@ -960,13 +868,11 @@ async function fetchCursorPages(input: {
       )
       deletedKeys.push(...appended.deletedKeys)
       complete &&= appended.complete
-      cursor = r.data?.nextCursor
-      rowsRead += rows.length
-      pagesRead++
-      if (!cursor) break
     }
-    if (pagesRead === MAX_PAGES && cursor) complete = false
-    if (error) break
+    if (fetched.error) {
+      error = fetched.error
+      break
+    }
   }
   return {
     tasks: out,
@@ -1028,7 +934,7 @@ function cursorMcpSource(
         )
       }
       const observedStatus = confirmed
-      const observedCategory = categoryOf(observedStatus, observedStatus, states)
+      const observedCategory = trackerCategory.categoryOf(observedStatus, observedStatus, states)
       return {
         status: observedStatus,
         category: observedCategory,
@@ -1088,7 +994,7 @@ function arrayMcpSource(
             parentKey: reportedParentKey(t, 'key'),
             title: decode(t.title ?? ''),
             status: t.status ?? status,
-            category: fullReadCategory(t.status, t.status, status, states),
+            category: trackerCategory.fullReadCategory(t.status, t.status, status, states),
             updatedAt: null,
             assignee: t.assigneeName?.trim() || null,
           })
@@ -1107,7 +1013,7 @@ function arrayMcpSource(
       const observedStatus = confirmed ?? status
       return {
         status: observedStatus,
-        category: confirmed ? categoryOf(confirmed, confirmed, states) : category,
+        category: confirmed ? trackerCategory.categoryOf(confirmed, confirmed, states) : category,
         ...(observedStatus === status
           ? {}
           : {
@@ -1134,7 +1040,7 @@ function arrayMcpSource(
         parentKey: reportedParentKey(hit, 'key'),
         title: decode(hit.title ?? ''),
         status: hit.status ?? '',
-        category: categoryOf(hit.status ?? '', hit.status ?? 'done', states),
+        category: trackerCategory.categoryOf(hit.status ?? '', hit.status ?? 'done', states),
         updatedAt: hit.updatedAt ?? null,
         assignee: hit.assigneeName?.trim() || null,
       }

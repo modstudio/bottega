@@ -111,6 +111,23 @@ export function recordCollectorLegSuccess(source: string, at: string): { logReco
   return { logRecovery: previous?.failingSince != null }
 }
 
+export function recordTrackerCollectorState(result: {
+  project: string
+  error?: string
+  skipped?: string
+}): void {
+  if (result.project === 'backfill' || result.skipped) return
+  const source = `tasks:${result.project}`
+  try {
+    if (result.error) recordCollectorLegFailure(source, result.error, new Date().toISOString())
+    else recordCollectorLegSuccess(source, new Date().toISOString())
+  } catch (stateError) {
+    console.error(
+      `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
+    )
+  }
+}
+
 export function collectorLegStates(): CollectorLegObservation[] {
   return db()
     .query<{ key: string; value: string }, [string]>(

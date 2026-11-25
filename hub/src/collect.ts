@@ -15,7 +15,7 @@ import {
   type WatchTick,
   watchCycleDecision,
 } from './collect-watch-schedule.ts'
-import { recordCollectorLegFailure, recordCollectorLegSuccess } from './collector-leg-state.ts'
+import * as collectorLegState from './collector-leg-state.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -250,7 +250,7 @@ async function settleTimedLeg<T>(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     try {
-      const transition = recordCollectorLegFailure(source, message, nowIso())
+      const transition = collectorLegState.recordCollectorLegFailure(source, message, nowIso())
       if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)
     } catch (stateError) {
       console.error(`hub: ${source} collect failed: ${message}`)
@@ -262,7 +262,7 @@ async function settleTimedLeg<T>(
   }
   if (details === null) return null
   try {
-    const transition = recordCollectorLegSuccess(source, nowIso())
+    const transition = collectorLegState.recordCollectorLegSuccess(source, nowIso())
     if (transition.logRecovery) console.error(`hub: ${source} collect recovered`)
   } catch (stateError) {
     console.error(
@@ -834,20 +834,14 @@ async function collectSlowSourceLegs(
     liveWatcher,
   )
   const due = scheduled ? trackerSchedule.due(registeredTrackers) : selection.only
-  let trackerResults: TrackerResult[] = []
   if (collectTasks) {
     results.push(
       (await settleTimedLeg(
         'tasks',
         async () => {
-          trackerResults =
+          const trackerResults =
             due?.size === 0 ? [] : await ingestTrackers(due, hostedTrackerCandidates())
-          for (const result of trackerResults) {
-            if (result.project === 'backfill' || result.skipped) continue
-            const source = `tasks:${result.project}`
-            if (result.error) recordCollectorLegFailure(source, result.error, nowIso())
-            else recordCollectorLegSuccess(source, nowIso())
-          }
+          for (const result of trackerResults) collectorLegState.recordTrackerCollectorState(result)
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
