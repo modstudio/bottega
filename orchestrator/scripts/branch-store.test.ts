@@ -6,12 +6,20 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../src/database/migrations.ts'
 import {
+  canonDriftStoreSource,
   classifyStore,
   localGateRegistrationDecision,
   migrateStore,
   probeLocalGateRegistration,
   snapshotStore,
 } from './branch-store.ts'
+
+test('chooses the canon-drift store source for every migration state', () => {
+  expect(canonDriftStoreSource('current')).toEqual({ kind: 'direct' })
+  expect(canonDriftStoreSource('behind')).toEqual({ kind: 'migrated-scratch' })
+  expect(canonDriftStoreSource('ahead')).toEqual({ kind: 'gate-facts' })
+  expect(canonDriftStoreSource('absent')).toEqual({ kind: 'direct' })
+})
 
 function writeMigrationFolder(folder: string, entries = migrationJournal().slice(0, -1)): void {
   mkdirSync(join(folder, 'meta'), { recursive: true })

@@ -1,9 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
+  canonDriftStoreSource,
   classifyStore,
   liveStorePath,
   localGateRegistration,
+  migrateStore,
+  snapshotStore,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
@@ -50,6 +53,16 @@ function run(argv: string[], cwd: string): { exitCode: number; stdout: string; s
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString().trim(),
   }
+}
+
+function runWithStore(store: string): number {
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], {
+    budget: 'self-cli',
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store },
+  })
+  process.stdout.write(child.stdout)
+  process.stderr.write(child.stderr)
+  return child.exitCode
 }
 
 function refuse(condition: string, namedRemedy = remedy): never {
@@ -198,7 +211,16 @@ if (import.meta.main) {
     }
     if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
-    const findings = await (storeKind === 'ahead'
+    const source = canonDriftStoreSource(storeKind)
+    if (source.kind === 'migrated-scratch') {
+      const code = withBranchStoreScratch('canon-drift', (dir) => {
+        const snapshot = snapshotStore(live!, dir)
+        migrateStore(snapshot)
+        return runWithStore(snapshot)
+      })
+      process.exit(code)
+    }
+    const findings = await (source.kind === 'gate-facts'
       ? withBranchStoreScratch('canon-drift', (dir) =>
           withMainGateFactsSnapshot(
             storeKind,
