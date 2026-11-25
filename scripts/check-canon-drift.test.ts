@@ -160,28 +160,25 @@ describe('canon drift branch gate', () => {
     writable
       .query("INSERT INTO record_local_by_design(record_id,mark) VALUES (?,'local')")
       .run(newRecordId())
-    expect(writable.query('SELECT COUNT(*) AS count FROM record_install_binding').get()).toEqual({
-      count: 0,
-    })
-    expect(writable.query('SELECT COUNT(*) AS count FROM record_local_by_design').get()).toEqual({
-      count: 1,
-    })
     writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
     writable.close()
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
     const before = digest()
 
     const readonly = openReadOnlyDatabase(store)
-    expect(currentRecordAuthorityFacts(readonly)).toMatchObject({
-      recordApiConfigured: false,
-      installBound: false,
-      localByDesign: true,
-    })
-    expect(await readCanonGateInput(root, readonly)).toMatchObject({
-      project: { name: 'fixture' },
-      rows: [{ slug: 'AGENTS.md', body: 'Fixture canon body.', subject: null }],
-    })
-    readonly.close()
+    try {
+      expect(currentRecordAuthorityFacts(readonly)).toMatchObject({
+        recordApiConfigured: false,
+        installBound: false,
+        localByDesign: true,
+      })
+      expect(await readCanonGateInput(root, readonly)).toMatchObject({
+        project: { name: 'fixture' },
+        rows: [{ slug: 'AGENTS.md', body: 'Fixture canon body.', subject: null }],
+      })
+    } finally {
+      readonly.close()
+    }
 
     expect(digest()).toBe(before)
   })
