@@ -120,6 +120,21 @@ export function currentDocRevision(
   return row?.record_id ?? null
 }
 
+export function hasCanonImportHistory(
+  address: { kind: 'user'; owner: string } | { kind: 'project'; subject: string },
+): boolean {
+  const subject = address.kind === 'project' ? address.subject : null
+  const owner = address.kind === 'user' ? address.owner : null
+  return (
+    db()
+      .query(
+        `SELECT 1 FROM doc_revision
+         WHERE scope='canon' AND subject IS ? AND owner IS ? LIMIT 1`,
+      )
+      .get(subject, owner) !== null
+  )
+}
+
 export function latestStoredDocAuthorSession(
   recordId: string,
   database: Database = db(),

@@ -34,6 +34,7 @@ import {
 import {
   diffStoredDocRevisions,
   getStoredDocRevision,
+  hasCanonImportHistory,
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 
@@ -43,6 +44,21 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+
+export function authoritativeCanonImportHistory(
+  address: { kind: 'user'; owner: string } | { kind: 'project'; subject: string },
+  hostedRows: readonly unknown[],
+  localHistory: () => boolean = () => hasCanonImportHistory(address),
+  readAuthority: (actions: {
+    local(): boolean
+    hosted(): boolean
+  }) => Promise<boolean> = applyRecordReadAuthority,
+): Promise<boolean> {
+  return readAuthority({
+    local: localHistory,
+    hosted: () => hostedRows.length > 0,
+  })
+}
 
 export type ResolvedDocReference = {
   recordId: string

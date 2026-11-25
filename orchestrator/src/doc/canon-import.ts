@@ -4,7 +4,6 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { RecordCanonImportResult } from '../record/record-api-client.ts'
-import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
@@ -12,7 +11,11 @@ import { readDocs } from './doc-authoritative-read.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { getDocStore, listDocsStore } from './doc-read-store.ts'
-import { assertLocalRevisionWrite, insertLocalRevision } from './doc-revision-store.ts'
+import {
+  assertLocalRevisionWrite,
+  hasCanonImportHistory,
+  insertLocalRevision,
+} from './doc-revision-store.ts'
 import {
   addSecretScanWarning,
   defaultDocSecretScanner,
@@ -48,34 +51,6 @@ function hostedProjectId(projectId: string): string {
   return db()
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
     .get(projectId)!.record_id
-}
-
-export function hasCanonImportHistory(address: LocalCanonImportAddress): boolean {
-  const subject = address.kind === 'project' ? address.subject : null
-  const owner = address.kind === 'user' ? address.owner : null
-  return (
-    db()
-      .query(
-        `SELECT 1 FROM doc_revision
-         WHERE scope='canon' AND subject IS ? AND owner IS ? LIMIT 1`,
-      )
-      .get(subject, owner) !== null
-  )
-}
-
-export function authoritativeCanonImportHistory(
-  address: LocalCanonImportAddress,
-  hostedRows: readonly unknown[],
-  localHistory: () => boolean = () => hasCanonImportHistory(address),
-  readAuthority: (actions: {
-    local(): boolean
-    hosted(): boolean
-  }) => Promise<boolean> = applyRecordReadAuthority,
-): Promise<boolean> {
-  return readAuthority({
-    local: localHistory,
-    hosted: () => hostedRows.length > 0,
-  })
 }
 
 function localCanonImportResult(

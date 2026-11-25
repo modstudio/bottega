@@ -10,6 +10,7 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
+  authoritativeCanonImportHistory,
   readDoc,
   readDocForAudience,
   readDocMetadata,
@@ -39,6 +40,28 @@ const hostedRow = (overrides: Record<string, unknown> = {}) => ({
   createdAt: '2026-11-22T00:00:00.000Z',
   updatedAt: '2026-11-22T00:00:00.000Z',
   ...overrides,
+})
+
+test('canon import history follows the selected authority', async () => {
+  let localReads = 0
+  const address = { kind: 'user' as const, owner: newRecordId() }
+  const local = () => {
+    localReads++
+    return false
+  }
+
+  expect(
+    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
+      Promise.resolve(actions.hosted()),
+    ),
+  ).toBe(true)
+  expect(localReads).toBe(0)
+  expect(
+    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
+      Promise.resolve(actions.local()),
+    ),
+  ).toBe(false)
+  expect(localReads).toBe(1)
 })
 
 test('a hosted read returns the hosted row and never the local mirror', async () => {

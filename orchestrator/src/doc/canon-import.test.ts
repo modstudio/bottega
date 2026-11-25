@@ -7,7 +7,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
-import { authoritativeCanonImportHistory, importCanon } from './canon-import.ts'
+import { importCanon } from './canon-import.ts'
 import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
 
 const owner = '01990000-0000-7000-8000-000000000091'
@@ -18,28 +18,6 @@ const scannerHolder = globalThis as typeof globalThis & {
 afterEach(() => {
   scannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({ status: 'clean' })
   delete process.env.BOTTEGA_RECORD_API_URL
-})
-
-test('canon import history follows the selected authority', async () => {
-  let localReads = 0
-  const address = { kind: 'user' as const, owner }
-  const local = () => {
-    localReads++
-    return false
-  }
-
-  expect(
-    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
-      Promise.resolve(actions.hosted()),
-    ),
-  ).toBe(true)
-  expect(localReads).toBe(0)
-  expect(
-    await authoritativeCanonImportHistory(address, [{}], local, (actions) =>
-      Promise.resolve(actions.local()),
-    ),
-  ).toBe(false)
-  expect(localReads).toBe(1)
 })
 
 test('a finding in one row refuses the whole canon import before either store is written', async () => {

@@ -4,9 +4,12 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
-import { authoritativeCanonImportHistory, importCanon } from '../doc/canon-import.ts'
+import { importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { readDocs as listDocs } from '../doc/doc-authoritative-read.ts'
+import {
+  authoritativeCanonImportHistory,
+  readDocs as listDocs,
+} from '../doc/doc-authoritative-read.ts'
 import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
@@ -102,7 +105,10 @@ export async function userCanonImportCommand(
   })
   if (collision) throw new Error(collision)
   const currentRows = allUserRows.filter((row) => row.status === 'current')
-  const hasHistory = await authoritativeCanonImportHistory({ kind: 'user', owner }, allUserRows)
+  const hasHistory = await authoritativeCanonImportHistory(
+    { kind: 'user', owner },
+    allUserRows,
+  )
   const global = (await listDocs({ scope: 'canon', subject: null, status: 'current' })).map(
     ({ slug, body }) => ({
       slug,

@@ -14,7 +14,6 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import { readDocRevision, readDocs } from './doc-authoritative-read.ts'
-import { commitDocSet } from './local-doc-write.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import {
   consumeDoc,
@@ -25,6 +24,7 @@ import {
   setDoc,
   setDocStatus,
 } from './docs.ts'
+import { commitDocSet } from './local-doc-write.ts'
 
 const docId = '01990000-0000-7000-8000-000000000101'
 const revisionId = '01990000-0000-7000-8000-000000000102'

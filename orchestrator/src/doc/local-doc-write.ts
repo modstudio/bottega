@@ -281,15 +281,24 @@ export function executeLocalDocRestore(
 }
 
 export function commitDocRestore(
-  input: RestoreInput & {
-    recordId: string
-    revisionId: string
-    compareExpectedRevision?: boolean
-  },
+  input: RestoreInput & { recordId: string; revisionId: string },
+): Doc {
+  return commitDocRestoreMirror(input, true)
+}
+
+export function commitHostedDocRestore(
+  input: RestoreInput & { recordId: string; revisionId: string },
+): Doc {
+  return commitDocRestoreMirror(input, false)
+}
+
+function commitDocRestoreMirror(
+  input: RestoreInput & { recordId: string; revisionId: string },
+  compareExpectedRevision: boolean,
 ): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    if (input.compareExpectedRevision !== false) {
+    if (compareExpectedRevision) {
       assertLocalRevisionWrite(
         input,
         currentDocRevision(input.scope, input.subject, input.slug, input.owner),
