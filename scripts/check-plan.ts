@@ -222,6 +222,7 @@ export const CHECK_LEGS = [
 ] as const
 
 export const ROOT_TEST_FILES = [
+  'scripts/check-hosted-release-parity.test.ts',
   'scripts/check-review-change-comparisons.test.ts',
   'scripts/check-refusal-remedy.test.ts',
   'scripts/check-remedy-text.test.ts',

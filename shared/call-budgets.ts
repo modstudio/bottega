@@ -9,6 +9,7 @@ export type CallBudgetName =
   | 'release-build'
   | 'machine-update'
   | 'hosted-api'
+  | 'hosted-close-out'
   | 'release-download'
   | 'release-publish'
   | 'agent-cli'
@@ -53,6 +54,12 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'hosted-api': {
     deadlineMs: 30_000,
     totalMs: 60_000,
+    outputBytes: 16 * MIB,
+    graceMs: 0,
+  },
+  'hosted-close-out': {
+    deadlineMs: 2_000,
+    totalMs: 2_000,
     outputBytes: 16 * MIB,
     graceMs: 0,
   },

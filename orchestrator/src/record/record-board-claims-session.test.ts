@@ -9,6 +9,8 @@ const spaceId = '01990000-0000-7000-8000-000000026421'
 const userId = '01990000-0000-7000-8000-000000026422'
 const otherUserId = '01990000-0000-7000-8000-000000026423'
 const projectId = '01990000-0000-7000-8000-000000026424'
+const secondSpaceId = '01990000-0000-7000-8000-000000026430'
+const secondProjectId = '01990000-0000-7000-8000-000000026431'
 const fixtureUrl = 'postgres://board-claim-session.test/record'
 const holderSession = 'session-to-release'
 
@@ -17,6 +19,7 @@ const claimIds = {
   callerLapsed: '01990000-0000-7000-8000-000000026426',
   anotherSession: '01990000-0000-7000-8000-000000026427',
   anotherUser: '01990000-0000-7000-8000-000000026428',
+  crossSpace: '01990000-0000-7000-8000-000000026432',
 } as const
 
 let database: PGlite
@@ -67,8 +70,14 @@ beforeAll(async () => {
     VALUES ('${otherUserId}','other@example.test','Other user',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
     VALUES ('01990000-0000-7000-8000-000000026429','${spaceId}','${otherUserId}','member','write',now());
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${secondSpaceId}','Second space','second-space',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000026433','${secondSpaceId}','${userId}','member','write',now());
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-    VALUES ('${projectId}','${spaceId}','claim-session',ARRAY['DEV'],now());
+    VALUES
+      ('${projectId}','${spaceId}','claim-session',ARRAY['DEV'],now()),
+      ('${secondProjectId}','${secondSpaceId}','claim-session-second',ARRAY['SECOND'],now());
     INSERT INTO board_claim
       (id,project_id,subject_kind,subject_value,holder_user_id,holder_session,duration_ms,
        taken_at,renewed_at,lapses_at)
@@ -81,6 +90,8 @@ beforeAll(async () => {
       ('${claimIds.anotherSession}','${projectId}','resource','another-session','${userId}',
        'another-session',60000,now(),now(),now() + interval '1 hour'),
       ('${claimIds.anotherUser}','${projectId}','resource','another-user','${otherUserId}',
+       '${holderSession}',60000,now(),now(),now() + interval '1 hour'),
+      ('${claimIds.crossSpace}','${secondProjectId}','resource','cross-space','${userId}',
        '${holderSession}',60000,now(),now(),now() + interval '1 hour');
     SET ROLE record_actor;
     SET enable_seqscan=off;
@@ -101,7 +112,7 @@ test('session release closes only the caller live claims held by that session', 
       spaceId,
       holderSession,
     }),
-  ).resolves.toEqual({ released: 1 })
+  ).resolves.toEqual({ released: 2 })
 
   const result = await database.query<{
     id: string
@@ -113,6 +124,7 @@ test('session release closes only the caller live claims held by that session', 
     { id: claimIds.callerLapsed, closed_at: null, close_reason: null },
     { id: claimIds.anotherSession, closed_at: null, close_reason: null },
     { id: claimIds.anotherUser, closed_at: null, close_reason: null },
+    { id: claimIds.crossSpace, closed_at: expect.any(Date), close_reason: 'released' },
   ])
 
   const selection = capturedQueries.find(
