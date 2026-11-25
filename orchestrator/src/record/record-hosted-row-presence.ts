@@ -1,5 +1,5 @@
-// concern: hosted workflow-history presence
-/** Collects local hosted-history ids and reads their record presence in bounded batches. */
+// concern: hosted workflow-history presence and held-row classification
+/** Collects hosted-history ids, reads record presence, and classifies held local rows. */
 
 import type { Database } from 'bun:sqlite'
 import {
@@ -32,6 +32,10 @@ export type HostedRowReferences = {
   cursorHandoff: ReadonlyMap<string, string>
   flowOpenCursor: ReadonlyMap<string, string>
 }
+export type HostedRowHeldIds = {
+  flows: ReadonlySet<string>
+  questions: ReadonlySet<string>
+}
 export type HostedRowStates = {
   workflow_cursor: ReadonlyMap<string, string>
   task_flow: ReadonlyMap<string, string>
@@ -43,6 +47,38 @@ export type HostedRowState = {
 }
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
+
+function hostedRowFlow(
+  table: HostedRowTable,
+  id: string,
+  references: HostedRowReferences,
+): string | undefined {
+  if (table === 'task_flow') return id
+  if (table === 'workflow_cursor') return references.cursorFlow.get(id)
+  if (table === 'workflow_obligation')
+    return references.cursorFlow.get(references.obligationCursor.get(id) ?? '')
+  if (table === 'workflow_step_text')
+    return references.cursorFlow.get(references.stepTextCursor.get(id) ?? '')
+  if (table === 'workflow_text_copy')
+    return references.cursorFlow.get(references.textCopyCursor.get(id) ?? '')
+  return undefined
+}
+
+/** Classify a local hosted row whose record conflict prevents another upload attempt. */
+export function hostedRowIsHeld(
+  table: HostedRowTable,
+  id: string,
+  references: HostedRowReferences,
+  held: HostedRowHeldIds,
+): boolean {
+  if (table === 'question') return held.questions.has(id)
+  if (table === 'question_mutation_audit') {
+    const question = references.auditQuestion.get(id)
+    return question !== undefined && held.questions.has(question)
+  }
+  const flow = hostedRowFlow(table, id, references)
+  return flow !== undefined && held.flows.has(flow)
+}
 
 function questionAuditIdentity(input: QuestionAuditIdentity): string {
   return `${input.questionId}|${input.action}|${Date.parse(input.at)}`

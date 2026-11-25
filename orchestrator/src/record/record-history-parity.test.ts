@@ -38,8 +38,7 @@ function input(patch: Partial<WorkflowHistoryParityInput> = {}): WorkflowHistory
       cursorHandoff: new Map(),
       flowOpenCursor: new Map([['flow', 'cursor']]),
     },
-    heldFlowIds: new Set(),
-    heldQuestionIds: new Set(),
+    held: { flows: new Set(), questions: new Set() },
     storedFingerprint: fingerprint,
     currentFingerprint: fingerprint,
     states: {
@@ -92,7 +91,7 @@ test('held plus skipped warns for held rows and fails for skipped rows', () => {
           ['skipped-cursor', 'other-flow'],
         ]),
       },
-      heldFlowIds: new Set(['held-flow']),
+      held: { ...input().held, flows: new Set(['held-flow']) },
     }),
   )
 
@@ -134,7 +133,7 @@ test('held plus pending warns for held rows and fails for pending rows', () => {
           ['pending-cursor', 'other-flow'],
         ]),
       },
-      heldFlowIds: new Set(['held-flow']),
+      held: { ...input().held, flows: new Set(['held-flow']) },
       storedFingerprint: [{ table: 'workflow_step_text', count: 1, maxRowid: 1 }],
     }),
   )
@@ -155,7 +154,7 @@ test('held-only rows warn without failing or describing the table as failed', ()
         ...input().present,
         workflow_step_text: new Set(),
       },
-      heldFlowIds: new Set(['flow']),
+      held: { ...input().held, flows: new Set(['flow']) },
     }),
   )
 
@@ -199,7 +198,7 @@ test('question audit held by question warns and passes', () => {
         ...input().present,
         question_mutation_audit: new Set(),
       },
-      heldQuestionIds: new Set(['question']),
+      held: { ...input().held, questions: new Set(['question']) },
     }),
   )
 
@@ -209,20 +208,20 @@ test('question audit held by question warns and passes', () => {
   )
 })
 
-test('question audit resolving through its cursor to a held flow warns and passes', () => {
+test('question audit under a held flow remains actionable when its question is not held', () => {
   const diagnosis = workflowHistoryParityDiagnosis(
     input({
       present: {
         ...input().present,
         question_mutation_audit: new Set(),
       },
-      heldFlowIds: new Set(['flow']),
+      held: { ...input().held, flows: new Set(['flow']) },
     }),
   )
 
-  expect(diagnosis.failed).toBe(false)
-  expect(diagnosis.lines).toContain(
-    '  warning: workflow history question_mutation_audit: held 1 (no command clears this yet)',
+  expect(diagnosis.failed).toBe(true)
+  expect(diagnosis.lines.join('\n')).toContain(
+    `causes: skipped 1 (run \`${PLATFORM_SLUG} machine update\`, then \`${PLATFORM_SLUG} record sync\`); pending 0 (run \`${PLATFORM_SLUG} record sync\`)`,
   )
 })
 

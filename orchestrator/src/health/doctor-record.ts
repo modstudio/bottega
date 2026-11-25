@@ -98,8 +98,10 @@ export async function loadWorkflowHistoryParity(
     local: state.ids,
     present,
     references: state.references,
-    heldFlowIds: local.heldFlowIds,
-    heldQuestionIds: local.heldQuestionIds,
+    held: {
+      flows: local.heldFlowIds,
+      questions: local.heldQuestionIds,
+    },
     storedFingerprint: local.storedFingerprint,
     currentFingerprint: local.currentFingerprint,
     states: state.states,

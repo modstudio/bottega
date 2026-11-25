@@ -16,6 +16,7 @@ import {
   type HostedRowIds,
   type HostedRowPresence,
   type HostedRowReferences,
+  hostedRowIsHeld,
   type PresenceReader,
 } from '../record/record-hosted-row-presence.ts'
 import type {
@@ -58,6 +59,20 @@ const noReferences = (): HostedRowReferences => ({
   flowOpenCursor: new Map(),
 })
 
+test('an audit under a held flow is not held when its question is not held', () => {
+  const references = noReferences()
+  references.auditQuestion = new Map([['audit', 'question']])
+  references.questionCursor = new Map([['question', 'cursor']])
+  references.cursorFlow = new Map([['cursor', 'flow']])
+
+  expect(
+    hostedRowIsHeld('question_mutation_audit', 'audit', references, {
+      flows: new Set(['flow']),
+      questions: new Set(),
+    }),
+  ).toBe(false)
+})
+
 function presence(
   values: Partial<Record<(typeof HOSTED_ROW_TABLES)[number], string[]>>,
   questionAuditIdentities: string[] = [],
@@ -94,8 +109,8 @@ test('hosted row release keeps an incomplete table and its referenced parents', 
   const decision = decideHostedRowRelease(local, presence({ question: ['present'] }), refs)
   expect(decision.deleteIds).toEqual(rowIds({}))
   expect(decision.keptTables).toEqual([
-    { table: 'question_mutation_audit', absentIds: ['audit'] },
-    { table: 'question', absentIds: ['missing'] },
+    { table: 'question_mutation_audit', heldIds: [], absentIds: ['audit'] },
+    { table: 'question', heldIds: [], absentIds: ['missing'] },
   ])
 })
 
@@ -372,11 +387,12 @@ test('hosted row release deletes a held flow when all child rows are present', a
   database.close()
 })
 
-test('hosted row release keeps a held flow intact when one child is absent', async () => {
+test('hosted row release reports absent held-flow texts without a circular remedy', async () => {
   const database = migratedTestDatabase()
   const ids = seedReleaseRows(database)
   const flowId = [...ids.task_flow][0]!
   const textId = [...ids.workflow_step_text][0]!
+  const textCopyId = [...ids.workflow_text_copy][0]!
   storeHeldFlowIds(database, new Set([flowId]))
   const output: string[] = []
   await releaseHostedRowsAfterUpdate(
@@ -386,6 +402,7 @@ test('hosted row release keeps a held flow intact when one child is absent', asy
       flowIds: [],
       stageIds: [],
       textIds: [],
+      textCopyIds: [],
     })),
   )
   expect(tableCounts(database)).toEqual({
@@ -397,9 +414,14 @@ test('hosted row release keeps a held flow intact when one child is absent', asy
     workflow_cursor: 1,
     task_flow: 1,
   })
-  expect(output.some((line) => line.includes(`workflow_step_text`) && line.includes(textId))).toBe(
-    true,
-  )
+  const line = output.find((value) => value.includes(`kept local workflow_step_text: 1 ids`))
+  expect(line).toContain(`held by the record with different content: ${textId}`)
+  expect(line).toContain('no command clears this yet')
+  expect(line).not.toContain('record sync')
+  const copyLine = output.find((value) => value.includes(`kept local workflow_text_copy: 1 ids`))
+  expect(copyLine).toContain(`held by the record with different content: ${textCopyId}`)
+  expect(copyLine).toContain('no command clears this yet')
+  expect(copyLine).not.toContain('record sync')
   database.close()
 })
 
