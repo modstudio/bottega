@@ -167,6 +167,7 @@ test('board session claim release validates its strict body and destination spac
   expect(await machineSession.json()).toEqual({
     error:
       'a machine-derived operator session is shared by every terminal session on the machine and cannot be released',
+    remedy: 'pass the harness session id that took the claims, or release each claim by its id',
   })
   const noSpace = await request({ holderSession: 'session-a' }, false)
   expect(noSpace.status).toBe(409)

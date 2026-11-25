@@ -427,6 +427,8 @@ function registerBoardClaimRoutes(
         {
           error:
             'a machine-derived operator session is shared by every terminal session on the machine and cannot be released',
+          remedy:
+            'pass the harness session id that took the claims, or release each claim by its id',
         },
         400,
       )
