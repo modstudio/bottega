@@ -30,7 +30,7 @@ import {
   HOSTED_ROW_TABLES,
   type HostedRowTable,
   hostedRowIdsAreEmpty,
-  questionAuditIdentity,
+  questionAuditIsPresent,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
@@ -78,7 +78,7 @@ export function decideHistoryUploadPass(input: {
     : 'upload'
 }
 
-function historyUploadFingerprint(database: Database): HistoryUploadFingerprint {
+export function historyUploadFingerprint(database: Database): HistoryUploadFingerprint {
   const result = (table: string, row: { count: number; maxRowid: number | null }) => {
     return { table, count: row.count, maxRowid: row.maxRowid ?? 0 }
   }
@@ -100,7 +100,9 @@ function historyUploadFingerprint(database: Database): HistoryUploadFingerprint 
   )
 }
 
-function storedHistoryUploadFingerprint(database: Database): HistoryUploadFingerprint | null {
+export function storedHistoryUploadFingerprint(
+  database: Database,
+): HistoryUploadFingerprint | null {
   const row = database
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
     .get(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY)
@@ -554,13 +556,14 @@ function questionIsAbsent(
     !present.question.has(String(history.row.record_id)) ||
     history.audits.some(
       (audit) =>
-        !present.question_mutation_audit.has(String(audit.id)) &&
-        !present.questionAuditIdentities.has(
-          questionAuditIdentity({
+        !questionAuditIsPresent(
+          String(audit.id),
+          {
             questionId: String(history.row.record_id),
             action: String(audit.action),
             at: String(audit.at),
-          }),
+          },
+          present,
         ),
     )
   )
