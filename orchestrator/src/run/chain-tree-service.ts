@@ -18,6 +18,7 @@ import {
 } from './chain-tree-attach.ts'
 import { liveRunOnTree, renderChainTreeAttachRefusal } from './held-branch-remedy.ts'
 import {
+  continuationBranchAvailability,
   continuationBranchPlan,
   parseWorktreeList,
   type ResumeTreePlan,
@@ -123,15 +124,21 @@ function gatherChainTreeDecision(input: {
   const rows = chainTreeRows(input.rootId)
   const candidates = rows.map((row) => candidateFacts(row, input.branchTip))
   const chainPaths = new Set(candidates.map((candidate) => canonicalPath(candidate.path)))
-  const holder = parseWorktreeList(worktreeListPorcelain(input.projectPath)).find(
-    (tree) => tree.branch === input.branch && !chainPaths.has(canonicalPath(tree.path)),
+  const availability = continuationBranchAvailability(
+    input.branch,
+    null,
+    parseWorktreeList(worktreeListPorcelain(input.projectPath)).map((tree) => ({
+      ...tree,
+      path: canonicalPath(tree.path),
+    })),
+    [...chainPaths],
   )
   return {
     decision: decideChainTreeAttach({
       branch: input.branch,
       branchTip: input.branchTip,
       candidates,
-      branchHolderOutsideChain: holder?.path ?? null,
+      branchHolderOutsideChain: availability.action === 'refuse' ? availability.holdingPath : null,
     }),
     rows,
   }

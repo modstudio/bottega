@@ -7,6 +7,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, git } from '../git/git-environment.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { continuationChainTree, prepareChainTreeAttachment } from './chain-tree-service.ts'
@@ -221,6 +222,42 @@ test('an older tree on the branch wins over a newer dirty detached chain tree', 
   expect(prepared).toMatchObject({ ownerRunId: root, worktree: { path: olderTree, branch } })
   expect(branchOf(olderTree)).toBe(branch)
   expect(branchOf(newerTree)).toBeNull()
+})
+
+test('a tree outside the chain holding the branch blocks a detached chain tree', () => {
+  const repository = trackResidue(join(dir, `chain-tree-outside-repo-${newRecordId()}`))
+  const chainTree = trackResidue(join(dir, `chain-tree-outside-chain-${newRecordId()}`))
+  const outsideTree = trackResidue(join(dir, `chain-tree-outside-holder-${newRecordId()}`))
+  const branch = 'DEV-2644-outside-holder'
+  mkdirSync(repository)
+  git(['init', '-b', 'main'], repository)
+  git(['config', 'user.email', 'fixture@example.test'], repository)
+  git(['config', 'user.name', 'Fixture'], repository)
+  writeFileSync(join(repository, 'tracked.txt'), 'base\n')
+  git(['add', 'tracked.txt'], repository)
+  git(['commit', '-qm', 'base'], repository)
+  git(['branch', branch], repository)
+  git(['worktree', 'add', '-q', outsideTree, branch], repository)
+  git(['worktree', 'add', '-q', '--detach', chainTree, branch], repository)
+  const tip = git(['rev-parse', 'HEAD'], chainTree)
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  db()
+    .query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
+    )
+    .run(chainTree, chainTree, branch, tip, root)
+
+  expect(() =>
+    prepareChainTreeAttachment({
+      rootId: root,
+      projectPath: repository,
+      branch,
+      branchTip: tip,
+      retryCommand: `${PLATFORM_SLUG} run continue ${root}`,
+    }),
+  ).toThrow(`release branch ${branch} from ${realpathOrSpelled(outsideTree)}`)
+  expect(branchOf(chainTree)).toBeNull()
+  expect(branchOf(outsideTree)).toBe(branch)
 })
 
 test("the latest turn's dirty tree on the branch remains attachable", () => {
