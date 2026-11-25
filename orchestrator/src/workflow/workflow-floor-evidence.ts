@@ -669,6 +669,32 @@ function gatherTask(
   }
 }
 
+async function gatherPromotedNotes(
+  project: string,
+  taskKey: string,
+  ports: FloorEvidencePorts,
+): Promise<NonNullable<ValidatedEvidence['promotedNotes']>> {
+  try {
+    const notes = await invokeFloorEvidencePort(
+      ports,
+      'listPromotedNotes',
+      async () => {
+        throw new Error('floor evidence port listPromotedNotes has no implementation')
+      },
+      project,
+      taskKey,
+    )
+    return { known: true, notes }
+  } catch (error) {
+    rethrowFloorEvidencePortMiss(error)
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      known: false,
+      reason: detail.split(/\r?\n/, 1)[0]?.trim() || 'promoted note read failed',
+    }
+  }
+}
+
 async function gatherSatisfy(
   id: string,
   cursorId: string,
@@ -989,6 +1015,15 @@ export async function gatherValidatedEvidenceBase(
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
+  if (
+    input.identity.workflowKey &&
+    input.floors.some((floor) => floor.kind === 'task-open-with-notes')
+  )
+    gathered.promotedNotes = await gatherPromotedNotes(
+      input.identity.project,
+      input.identity.workflowKey,
+      ports,
+    )
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)

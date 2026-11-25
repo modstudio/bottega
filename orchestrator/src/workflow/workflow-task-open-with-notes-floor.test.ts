@@ -175,6 +175,82 @@ test('task-open-with-notes requires an open task and every named note to be live
   )
 })
 
+test('task-open-with-notes requires a named note only when the task has a live promoted note', () => {
+  const task = {
+    key: 'DEV-977',
+    status: 'open',
+    statusCategory: 'open',
+    mergedPullRequest: null,
+    trackerStates: {},
+  }
+  const note = {
+    reference: `${PLATFORM_SLUG}#2817`,
+    recordId: '00000000-0000-4000-8000-000000000014',
+    label: `${PLATFORM_SLUG}#2817`,
+    promotedTask: 'DEV-977',
+    staleAt: null,
+  }
+  const promotedNote = {
+    recordId: note.recordId,
+    label: note.label,
+    staleAt: note.staleAt,
+  }
+  const result = (evidence: ValidatedEvidence) =>
+    decideFloorSatisfaction({
+      floors: [taskOpenWithNotes],
+      evidence,
+      workflowKey: 'DEV-977',
+      enforcement: 'floors',
+      finishing: false,
+      openObligations: [],
+    })
+
+  expect(result({ task, notes: [], promotedNotes: { known: true, notes: [] } }).action).toBe(
+    'allow',
+  )
+  expect(
+    result({ task, notes: [], promotedNotes: { known: true, notes: [promotedNote] } }),
+  ).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining('no note artifact was named'),
+  })
+  expect(
+    result({ task, notes: [note], promotedNotes: { known: true, notes: [promotedNote] } }).action,
+  ).toBe('allow')
+  expect(
+    result({
+      task,
+      notes: [note],
+      promotedNotes: {
+        known: true,
+        notes: [promotedNote, { ...promotedNote, recordId: 'second-note' }],
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    result({
+      task,
+      notes: [],
+      promotedNotes: {
+        known: true,
+        notes: [{ ...promotedNote, staleAt: '2026-11-20T00:00:00.000Z' }],
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    result({
+      task,
+      notes: [],
+      promotedNotes: { known: false, reason: 'hub unavailable' },
+    }),
+  ).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining(
+      'the notes promoted to DEV-977 could not be read: hub unavailable',
+    ),
+  })
+})
+
 test('task-open-with-notes requiring a pull request accepts only a merged pull request', () => {
   const requiredFloor = { ...taskOpenWithNotes, requirePullRequest: true }
   const task = {

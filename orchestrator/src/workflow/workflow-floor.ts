@@ -4,8 +4,10 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import {
+  hasLivePromotedNotes,
   type NoteFloorEvidence,
   pullRequestRequirement,
+  type TaskOpenWithNotesEvidence,
   taskOpenWithNotesFailures,
   taskOpenWithNotesMet,
 } from './workflow-task-open-with-notes-floor.ts'
@@ -148,6 +150,7 @@ export type ValidatedEvidence = {
     trackerStates: TrackerStates
   }
   notes?: NoteFloorEvidence[]
+  promotedNotes?: TaskOpenWithNotesEvidence['promotedNotes']
   descendants?: Array<{ key: string; status: string | null; statusCategory: string | null }>
   deferReason?: string
   satisfy?: ValidatedSatisfy
@@ -679,7 +682,10 @@ function taskOpenWithNotesUnmetMessage(
     floor.requirePullRequest,
     PLATFORM_SLUG,
   )
-  return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY> and --artifact note:<record-id|label> for every note named`
+  const noteRemedy = hasLivePromotedNotes(evidence)
+    ? ` and --artifact note:<record-id|label> naming a live note promoted to ${workflowKey ?? 'the cursor task'}`
+    : `; no note artifact is needed because no live note is promoted to ${workflowKey ?? 'the cursor task'}`
+  return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY>${noteRemedy}`
 }
 
 function pullRequestUnmetMessage(

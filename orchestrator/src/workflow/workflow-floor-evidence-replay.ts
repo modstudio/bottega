@@ -22,6 +22,10 @@ export type FloorEvidencePorts = {
     NoteFloorEvidence,
     'recordId' | 'label' | 'promotedTask' | 'staleAt' | 'writtenAt'
   > | null>
+  listPromotedNotes?: (
+    project: string,
+    taskKey: string,
+  ) => Promise<Pick<NoteFloorEvidence, 'recordId' | 'label' | 'staleAt'>[]>
   resolveCheckout?: (
     cwd: string,
     headCommit: string | null,
@@ -104,6 +108,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
     'readTask',
     'readTaskDocument',
     'readNote',
+    'listPromotedNotes',
     'resolveCheckout',
     'viewPullRequest',
     'resolveCommit',

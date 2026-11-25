@@ -25,7 +25,7 @@ export const floorGuidance = {
   'class-measured': `run the class-wide command with \`${PLATFORM_SLUG} workflow exec -- <command>\`, then pass exactly one \`--artifact exec:<id>\` and \`--class "<class name>"\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
   'task-open-with-notes':
-    'leave the task open, then pass `--task <KEY>` and at least one `--artifact note:<record-id|label>` for an open note attached to that task',
+    'leave the task open and pass `--task <KEY>`; when a live note is promoted to that task, also pass at least one `--artifact note:<record-id|label>` naming a live promoted note',
   'descendants-closed':
     'finish or drop every descendant, move the epic to done, and pass `--task <KEY>`',
   'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
