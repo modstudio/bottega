@@ -336,6 +336,7 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]
     if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
+    for (const reason of result.notApplicable) lines.push(`not applicable: ${reason}`)
     if (result.conditions.length || result.errors.length) {
       lines.push(
         ...formatMonitorPass(

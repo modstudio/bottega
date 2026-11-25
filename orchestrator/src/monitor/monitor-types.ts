@@ -110,6 +110,7 @@ export type MonitorResult = {
   trigger: 'invoked' | 'backstop'
   conditions: MonitorCondition[]
   errors: string[]
+  notApplicable: string[]
   canon: { findings: number; docs: number }
   hostLoad: MonitorHostLoad
   hostPressure: MonitorHostPressure

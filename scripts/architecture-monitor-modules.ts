@@ -420,6 +420,8 @@ export const monitorModules: MonitorModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-retrieval-pins.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
     '../../../shared/self-spawn.ts',
     './monitor-types.ts',
     '../../../shared/bounded-process.ts',

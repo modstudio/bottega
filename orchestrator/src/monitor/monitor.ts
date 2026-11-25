@@ -130,6 +130,7 @@ async function initialMonitorObservations(
 ): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
+  notApplicable: string[]
   hostPressure: MonitorResult['hostPressure']
   unobservedStandingKinds: Set<StandingConditionUnobservedKind>
 }> {
@@ -151,6 +152,7 @@ async function initialMonitorObservations(
       ...(await cursorClaimHealthConditions(database, clock)),
     ],
     errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
+    notApplicable: [],
     hostPressure: hostPressure.report,
     unobservedStandingKinds: new Set([
       ...(diskPressure.errors.length ? (['disk-pressure'] as const) : []),
@@ -681,6 +683,17 @@ function appendObserved(
   for (const kind of observation.unobservedKinds) unobserved.add(kind)
 }
 
+function appendMonitorObservation(
+  conditions: MonitorCondition[],
+  errors: string[],
+  notApplicable: string[],
+  observation: { conditions: MonitorCondition[]; errors: string[]; notApplicable: string[] },
+): void {
+  conditions.push(...observation.conditions)
+  errors.push(...observation.errors)
+  notApplicable.push(...observation.notApplicable)
+}
+
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -691,7 +704,7 @@ export async function monitor(
     startedAt,
   )
   const load = sampleMonitorHostLoad(database, invocationRecordId)
-  const { conditions, errors, hostPressure, unobservedStandingKinds } =
+  const { conditions, errors, notApplicable, hostPressure, unobservedStandingKinds } =
     await initialMonitorObservations(database, clock)
   const canon = await monitorCanonSummary()
   type ConditionInput =
@@ -939,9 +952,7 @@ export async function monitor(
   const hub = reconcileHub(clock)
   conditions.push(...hub.conditions)
   errors.push(...hub.errors)
-  const retrievalPins = observeRetrievalPins()
-  conditions.push(...retrievalPins.conditions)
-  errors.push(...retrievalPins.errors)
+  appendMonitorObservation(conditions, errors, notApplicable, observeRetrievalPins())
   const rulings = rulingConditions(clock)
   conditions.push(...rulings.conditions)
   errors.push(...rulings.errors)
@@ -1030,6 +1041,7 @@ export async function monitor(
     trigger,
     conditions,
     errors,
+    notApplicable,
     canon,
     load,
     hostPressure,
