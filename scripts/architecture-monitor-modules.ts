@@ -306,6 +306,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-standing-condition-announcement.ts',
     './monitor-customer-guides.ts',
     './monitor-notices.ts',
+    './monitor-observation.ts',
     './monitor-outbox.ts',
     './monitor-types.ts',
     './orphan-compose-observation.ts',
@@ -420,10 +421,14 @@ export const monitorModules: MonitorModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-retrieval-pins.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../../../shared/refusal.ts',
     '../../../shared/self-spawn.ts',
     './monitor-types.ts',
     '../../../shared/bounded-process.ts',
   ]),
+  module('orchestrator/src/monitor/monitor-observation.ts', ['./monitor-types.ts']),
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
     '../../../shared/process-identity.ts',
     '../../../shared/store-write-lock.ts',

@@ -328,25 +328,31 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   if (!result) return
   if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
-    const failing = failingCanonEvalSlugs(),
-      lines = [
-        formatHostLoadLine(result.hostLoad, result.runHostCapacity),
-        formatHostAdmissionsLine(result.hostAdmissions),
-        formatHostPressureLine(result.hostPressure),
-        `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
-      ]
-    if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
-    if (result.conditions.length || result.errors.length) {
-      lines.push(
-        ...formatMonitorPass(
-          `monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`,
-          result.conditions,
-        ),
-      )
+    const lines = monitorPassLines(result, failingCanonEvalSlugs())
+    if (result.conditions.length || result.errors.length)
       for (const error of result.errors) presentation.error(`  observation failed: ${error}`)
-    }
     await presentation.write(`${lines.join('\n')}\n`)
   }
   if (result.errors.length) presentation.setExitCode(1)
   else if (result.conditions.length) presentation.setExitCode(2)
+}
+
+export function monitorPassLines(result: MonitorResult, failingSlugs: readonly string[]): string[] {
+  const lines = [
+    formatHostLoadLine(result.hostLoad, result.runHostCapacity),
+    formatHostAdmissionsLine(result.hostAdmissions),
+    formatHostPressureLine(result.hostPressure),
+    `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
+  ]
+  if (failingSlugs.length)
+    lines.push(`canon evals: ${failingSlugs.length} failing (${failingSlugs.join(', ')})`)
+  for (const reason of result.notApplicable) lines.push(`not applicable: ${reason}`)
+  if (result.conditions.length || result.errors.length)
+    lines.push(
+      ...formatMonitorPass(
+        `monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`,
+        result.conditions,
+      ),
+    )
+  return lines
 }

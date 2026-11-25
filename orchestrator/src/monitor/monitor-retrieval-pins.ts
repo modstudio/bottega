@@ -2,8 +2,14 @@
 /** Runs the model-free retrieval pin report and translates stale pins into monitor conditions. */
 
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import type { MonitorCondition } from './monitor-types.ts'
+import type { MonitorCondition, MonitorObservation } from './monitor-types.ts'
+
+type CheckoutRootLookup = () => string | null
+type ChildRunner = typeof startBoundedSync
 
 type PinReport = {
   pins: Array<{
@@ -50,24 +56,56 @@ export function staleRetrievalPinConditions(report: PinReport): MonitorCondition
     }))
 }
 
-export function observeRetrievalPins(): { conditions: MonitorCondition[]; errors: string[] } {
+function childErrorTail(stderr: string, exitCode: number): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return lines.at(-1) ?? `exit ${exitCode}`
+}
+
+export function observeRetrievalPins(
+  checkoutRoot: CheckoutRootLookup = () => optionalCheckoutRoot(import.meta.dir, process.env),
+  runChild: ChildRunner = startBoundedSync,
+): MonitorObservation {
   try {
-    const child = startBoundedSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], {
+    if (checkoutRoot() === null) {
+      return {
+        conditions: [],
+        errors: [],
+        notApplicable: [
+          'retrieval benchmark pin observation not applicable: this install has no source checkout, and document pin checking needs its benchmark fixtures',
+        ],
+      }
+    }
+    const child = runChild([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], {
       budget: 'self-cli',
     })
-    const stdout = child.stdout
-    const stderr = child.stderr.trim()
-    if (child.exitCode !== 0 && child.exitCode !== 1) {
-      throw new Error(stderr || `exit ${child.exitCode}`)
+    let value: unknown
+    try {
+      value = JSON.parse(child.stdout) as unknown
+    } catch {
+      throw new Error(
+        renderRefusal(
+          refusal(childErrorTail(child.stderr, child.exitCode), {
+            kind: 'command',
+            argv: [PLATFORM_SLUG, '__retrieval-search', '--check-doc-pins'],
+          }),
+        ),
+      )
     }
-    const report = parsePinReport(JSON.parse(stdout) as unknown)
-    return { conditions: staleRetrievalPinConditions(report), errors: [] }
+    if (child.exitCode !== 0 && child.exitCode !== 1) {
+      throw new Error(childErrorTail(child.stderr, child.exitCode))
+    }
+    const report = parsePinReport(value)
+    return { conditions: staleRetrievalPinConditions(report), errors: [], notApplicable: [] }
   } catch (cause) {
     return {
       conditions: [],
       errors: [
         `retrieval benchmark pin observation unavailable: ${String((cause as Error).message ?? cause)}`,
       ],
+      notApplicable: [],
     }
   }
 }

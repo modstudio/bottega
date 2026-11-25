@@ -75,6 +75,7 @@ import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { checkHostedHealth } from './monitor-hosted-health.ts'
 import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
 import { fileUnavailableMonitorIssues } from './monitor-issue-filing.ts'
+import { appendMonitorObservation } from './monitor-observation.ts'
 import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
@@ -92,6 +93,7 @@ import {
   type HumanMonitorCondition,
   type MonitorCondition,
   type MonitorNoticeKind,
+  type MonitorObservation,
   type MonitorResult,
   type UnaddressedMonitorCondition,
 } from './monitor-types.ts'
@@ -127,12 +129,12 @@ function monitorBranchReclaimActions(
 async function initialMonitorObservations(
   database: ReturnType<typeof writableDb>,
   clock: number,
-): Promise<{
-  conditions: MonitorCondition[]
-  errors: string[]
-  hostPressure: MonitorResult['hostPressure']
-  unobservedStandingKinds: Set<StandingConditionUnobservedKind>
-}> {
+): Promise<
+  MonitorObservation & {
+    hostPressure: MonitorResult['hostPressure']
+    unobservedStandingKinds: Set<StandingConditionUnobservedKind>
+  }
+> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
@@ -151,6 +153,7 @@ async function initialMonitorObservations(
       ...(await cursorClaimHealthConditions(database, clock)),
     ],
     errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
+    notApplicable: [],
     hostPressure: hostPressure.report,
     unobservedStandingKinds: new Set([
       ...(diskPressure.errors.length ? (['disk-pressure'] as const) : []),
@@ -691,7 +694,7 @@ export async function monitor(
     startedAt,
   )
   const load = sampleMonitorHostLoad(database, invocationRecordId)
-  const { conditions, errors, hostPressure, unobservedStandingKinds } =
+  const { conditions, errors, notApplicable, hostPressure, unobservedStandingKinds } =
     await initialMonitorObservations(database, clock)
   const canon = await monitorCanonSummary()
   type ConditionInput =
@@ -939,9 +942,7 @@ export async function monitor(
   const hub = reconcileHub(clock)
   conditions.push(...hub.conditions)
   errors.push(...hub.errors)
-  const retrievalPins = observeRetrievalPins()
-  conditions.push(...retrievalPins.conditions)
-  errors.push(...retrievalPins.errors)
+  appendMonitorObservation(conditions, errors, notApplicable, observeRetrievalPins())
   const rulings = rulingConditions(clock)
   conditions.push(...rulings.conditions)
   errors.push(...rulings.errors)
@@ -1030,6 +1031,7 @@ export async function monitor(
     trigger,
     conditions,
     errors,
+    notApplicable,
     canon,
     load,
     hostPressure,
