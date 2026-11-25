@@ -463,15 +463,10 @@ function continuationLaunch(
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  context: {
+  context: Pick<ContinueRunDependencies, 'binding' | 'continuedWithFindings'> & {
     project: Project | null
-    binding: ContinueRunDependencies['binding']
-    continuedWithFindings: boolean | undefined
   },
-): ResumeLaunchOptions & {
-  binding?: ContinueRunDependencies['binding']
-  continuedWithFindings?: boolean
-} {
+): ResumeLaunchOptions & Pick<ContinueRunDependencies, 'binding' | 'continuedWithFindings'> {
   return {
     ...inherited,
     binding: context.binding,
@@ -486,6 +481,15 @@ function continuationLaunch(
     }).seed,
   }
 }
+
+const continuationLaunchContext = (
+  project: Project | null,
+  dependencies: ContinueRunDependencies,
+) => ({
+  project,
+  binding: dependencies.binding,
+  continuedWithFindings: dependencies.continuedWithFindings,
+})
 
 function continuationLensInputs(rootId: string) {
   const row = db()
@@ -878,17 +882,12 @@ export async function continueRun(
     readsRepo: Boolean(jobNeeds.readsRepo),
     writesRepo: Boolean(jobNeeds.writesRepo),
   })
-  const inheritedLaunch = resumeLaunchForRoot(id)
   const launch = continuationLaunch(
-    inheritedLaunch,
+    resumeLaunchForRoot(id),
     id,
     treeDecision,
     Boolean(jobNeeds.writesRepo),
-    {
-      project,
-      binding: dependencies.binding,
-      continuedWithFindings: dependencies.continuedWithFindings,
-    },
+    continuationLaunchContext(project, dependencies),
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({

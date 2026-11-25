@@ -21,9 +21,10 @@ import {
   setMigrationDrain,
 } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
-import { claimRun, prepareReadOnlyRunTemp } from './run-claim.ts'
+import { claimRun } from './run-claim.ts'
 import { harnessAgent } from './run-harness-launch.ts'
 import { runProjectAttribution } from './run-project-attribution.ts'
+import { prepareReadOnlyRunTemp } from './run-read-only-temp.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('read-only run temp is private and refuses paths that are not real directories', () => {
