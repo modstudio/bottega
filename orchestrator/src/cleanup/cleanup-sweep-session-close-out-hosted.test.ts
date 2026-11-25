@@ -216,3 +216,56 @@ test('hosted claim release falls back from an undeclared presence project', asyn
   ).resolves.toBe(2)
   expect(destinations).toEqual(['undeclared-project', null])
 })
+
+test('a refused personal fallback is final and does not retry the row adapter', async () => {
+  const { database, addSession, restore } = hostedFixture()
+  const session = addSession()
+  database
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+       VALUES (?,'codex','architect','fixture','undeclared-project','/tmp',NULL,?)`,
+    )
+    .run(session, new Date().toISOString())
+  let releaseCalls = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    releaseBoardSessionClaims: async () => {
+      releaseCalls += 1
+      return { released: 0 }
+    },
+  })
+  const resolverProjects: Array<string | null | undefined> = []
+  let adapterCalls = 0
+  const lines: string[] = []
+  try {
+    const sweep = () =>
+      sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(lines),
+        adapters: {
+          release: async (releasedSession) => closeOutReport(releasedSession),
+          releaseHostedClaims: async (releasedSession, sweepDatabase) => {
+            adapterCalls += 1
+            return releaseHostedClaims(releasedSession, sweepDatabase, async (_client, project) => {
+              resolverProjects.push(project)
+              throw new RecordApiRequestError('destination refused', 'refused', 409)
+            })
+          },
+        },
+      })
+    await expect(sweep()).resolves.toBe(false)
+    await expect(sweep()).resolves.toBe(false)
+    expect(adapterCalls).toBe(1)
+    expect(releaseCalls).toBe(0)
+    expect(resolverProjects).toEqual(['undeclared-project', null])
+    expect(
+      database.query('SELECT swept_at FROM session_close_out WHERE session_id=?').get(session),
+    ).toEqual({ swept_at: new Date(clock).toISOString() })
+    expect(lines.join('\n')).toContain('destination refused; they are left to lapse')
+  } finally {
+    restore()
+  }
+})
