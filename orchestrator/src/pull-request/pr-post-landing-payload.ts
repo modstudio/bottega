@@ -11,8 +11,12 @@ import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
 
-export function requiredMergeCommand(target: string, depth?: string | null): string {
-  return `${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
+export function requiredMergeCommand(
+  target: string,
+  depth?: string | null,
+  releaseRequired = true,
+): string {
+  return `${PLATFORM_SLUG} pr merge ${target}${releaseRequired ? ' --release-required' : ''}${releaseDepthFlag(depth)}`
 }
 
 export function postLandingRecovery(target: string, depth?: string | null): string {

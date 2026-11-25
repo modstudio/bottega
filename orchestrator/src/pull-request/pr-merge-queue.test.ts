@@ -31,6 +31,7 @@ const pullRequest: PullRequestMergeFacts = {
   mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 }
+const pathSet = ['orchestrator/src/pull-request/pr-merge.ts']
 
 function registerProject(requiredChecks: string[]): void {
   db()
@@ -71,6 +72,7 @@ function adapter(input: {
   return {
     repository: () => 'example/repository',
     view: () => pullRequest,
+    releaseDecision: () => ({ decided: true, required: [], rungs: [], error: null }),
     checks: () =>
       input.checks ?? [
         { name: 'ci', bucket: 'pass', state: 'SUCCESS', link: 'https://checks.example/ci' },
@@ -78,7 +80,11 @@ function adapter(input: {
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: () => true,
     admission: () => ({
-      change: { branch: pullRequest.headBranch, base: 'base' } as PullRequestChange,
+      change: {
+        branch: pullRequest.headBranch,
+        base: 'base',
+        group: { pathSet },
+      } as PullRequestChange,
       decision: {
         kind: 'measured',
         complete: true,
@@ -88,7 +94,12 @@ function adapter(input: {
       } as EvaluatedAdmission,
     }),
     recordAdmission: () => null,
-    postMergeChange: () => ({ branch: pullRequest.headBranch, base: 'base' }) as PullRequestChange,
+    postMergeChange: () =>
+      ({
+        branch: pullRequest.headBranch,
+        base: 'base',
+        group: { pathSet },
+      }) as PullRequestChange,
     merge: () => 'unexpected-direct-merge',
     mergeCommit: () => 'unexpected-direct-merge-commit',
     queueState: () => {

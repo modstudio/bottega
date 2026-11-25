@@ -24,6 +24,7 @@ export const identityModules = [
     '../../../shared/reference-refusal.ts',
     '../../../shared/reference.ts',
   ]),
+  module('hub/src/identity/note-reference.ts', ['../../../shared/note-label.ts']),
   module('hub/src/identity/hosted-identity.ts', ['bun']),
   module('orchestrator/src/identity/identity.ts', [
     'bun:sqlite',

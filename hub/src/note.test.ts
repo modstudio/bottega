@@ -92,9 +92,17 @@ describe('suggestion notes', () => {
   })
 
   test('an outside project list supports only text filtering', async () => {
+    const remedy =
+      "outside project 'outside-project' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept, --actionable, --promoted-to and --reference"
     await expect(listProjectSlimNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
-      "outside project 'outside-project' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable",
+      remedy,
     )
+    await expect(
+      listProjectSlimNotes({ project: 'outside-project', promotedTo: 'DEV-7' }),
+    ).rejects.toThrow(remedy)
+    await expect(
+      listProjectSlimNotes({ project: 'outside-project', reference: 'outside-project#7' }),
+    ).rejects.toThrow(remedy)
   })
 
   test('an outside note cannot use same-as', async () => {

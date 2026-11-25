@@ -93,6 +93,8 @@ async function getRoute(url: URL, at: string, init?: RequestInit) {
         project: url.searchParams.get('project') ?? undefined,
         stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
         actionable: url.searchParams.get('actionable') === 'true',
+        promotedTo: url.searchParams.get('promoted_to') ?? undefined,
+        reference: url.searchParams.get('reference') ?? undefined,
         session: url.searchParams.getAll('session'),
         kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
         text: url.searchParams.get('text') ?? undefined,

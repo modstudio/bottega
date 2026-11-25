@@ -116,14 +116,16 @@ Options are documented by `--help`.
 
 ## bottega note list
 
-**Synopsis:** `bottega note list [text] [--project <X>] [--stale] [--session <ID>] [--actionable] [--kept] [--limit <n>] [--json] [--new]`
+**Synopsis:** `bottega note list [text] [--project <X>] [--stale] [--promoted-to <key>] [--reference <label|id>] [--session <ID>] [--actionable] [--kept] [--limit <n>] [--json] [--new]`
 
 list notes from the local record
 
 ### Options
 
 - `--project <X>`: limit notes to this project
-- `--stale`: include stale notes
+- `--stale`: list only stale notes
+- `--promoted-to <key>`: list notes promoted to this task key
+- `--reference <label|id>`: find a note by label or record id
 - `--session <ID>`: limit notes to this session
 - `--actionable`: list notes ready for disposition
 - `--kept`: list notes acknowledged by the selected sessions

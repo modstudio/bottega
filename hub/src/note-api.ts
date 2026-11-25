@@ -30,6 +30,7 @@ import {
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 import { HOSTED_PROMOTION_TITLE_REFUSAL, requiredPromotionTitle } from './note-promotion-body.ts'
+import { normalizeSpecialSlimListFilters } from './note-slim-list-filter.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -134,6 +135,21 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
 }
 
 function slimListFilters(url: URL) {
+  const promotedTo = url.searchParams.get('promoted_to')?.trim() || undefined
+  const reference = url.searchParams.get('reference')?.trim() || undefined
+  const normalized = normalizeSpecialSlimListFilters({
+    promotedTo,
+    reference,
+    stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
+    actionable: url.searchParams.get('actionable') === 'true',
+  })
+  if (normalized.kind === 'conflict')
+    return json(
+      {
+        error: `${normalized.special === 'promotedTo' ? 'promoted_to' : 'reference'} cannot be combined with ${normalized.state}=true`,
+      },
+      400,
+    )
   const limitValue = url.searchParams.get('limit')
   const limit = limitValue === null ? undefined : Number(limitValue)
   if (limit !== undefined && (!Number.isSafeInteger(limit) || limit <= 0))
@@ -145,8 +161,7 @@ function slimListFilters(url: URL) {
     )
   return {
     project: url.searchParams.get('project') ?? undefined,
-    stale: url.searchParams.has('stale') ? url.searchParams.get('stale') === 'true' : undefined,
-    actionable: url.searchParams.get('actionable') === 'true',
+    ...normalized.filters,
     sessions: url.searchParams.getAll('session'),
     kept: url.searchParams.has('kept') ? url.searchParams.get('kept') === 'true' : undefined,
     text: url.searchParams.get('text') ?? undefined,

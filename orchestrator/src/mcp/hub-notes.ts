@@ -22,6 +22,8 @@ const noteRowsSchema = z.array(
 )
 
 export type HubNote = z.infer<typeof noteRowsSchema>[number]
+export type HubNoteOutput = (args: string[], cwd: string) => Promise<string>
+export type HubNoteReadOptions = { cwd: string; output?: HubNoteOutput }
 
 export type FiledNoteAnchor = NoteAnchorWire
 
@@ -103,9 +105,12 @@ export function parseFiledNoteOutput(output: string) {
   }
 }
 
-export async function listHubNotes(project: string, options: { cwd: string }): Promise<HubNote[]> {
+export async function listHubNotes(
+  project: string,
+  options: HubNoteReadOptions,
+): Promise<HubNote[]> {
   const list = async (stale: boolean) => {
-    const output = await hubOutput(
+    const output = await (options.output ?? hubOutput)(
       ['note', 'list', '--project', project, ...(stale ? ['--stale'] : []), '--json'],
       options.cwd,
     )
@@ -115,17 +120,49 @@ export async function listHubNotes(project: string, options: { cwd: string }): P
   return [...live, ...stale]
 }
 
-export async function hubNoteLabel(recordId: string, options: { cwd: string }): Promise<string> {
-  const list = async (stale: boolean) => {
-    const output = await hubOutput(
-      ['note', 'list', ...(stale ? ['--stale'] : []), '--json'],
-      options.cwd,
-    )
-    return noteRowsSchema.parse(JSON.parse(output) as unknown)
-  }
-  const notes = [...(await list(false)), ...(await list(true))]
-  const note = notes.find((candidate) => candidate.record_id === recordId)
-  if (!note)
+export async function listHubNotesPromotedTo(
+  project: string,
+  key: string,
+  options: HubNoteReadOptions,
+): Promise<HubNote[]> {
+  const output = await (options.output ?? hubOutput)(
+    ['note', 'list', '--project', project, '--promoted-to', key, '--json'],
+    options.cwd,
+  )
+  return noteRowsSchema.parse(JSON.parse(output) as unknown)
+}
+
+export async function findHubNote(
+  project: string | undefined,
+  reference: string,
+  options: HubNoteReadOptions,
+): Promise<HubNote | null> {
+  const output = await (options.output ?? hubOutput)(
+    [
+      'note',
+      'list',
+      ...(project ? ['--project', project] : []),
+      '--reference',
+      reference,
+      '--json',
+    ],
+    options.cwd,
+  )
+  const normalized = reference.toLowerCase()
+  return (
+    noteRowsSchema
+      .parse(JSON.parse(output) as unknown)
+      .find(
+        (candidate) =>
+          candidate.record_id.toLowerCase() === normalized ||
+          candidate.label.toLowerCase() === normalized,
+      ) ?? null
+  )
+}
+
+export async function hubNoteLabel(recordId: string, options: HubNoteReadOptions): Promise<string> {
+  const note = await findHubNote(undefined, recordId, options)
+  if (!note || note.record_id !== recordId)
     throw new Error(`hub cannot resolve note ${recordId}; run \`${PLATFORM_SLUG} note list\``)
   return note.label
 }

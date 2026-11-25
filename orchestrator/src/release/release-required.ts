@@ -34,6 +34,12 @@ export type RequiredReleaseRung = {
   entryPoints?: readonly string[]
 }
 
+export function rungsCanBeExplicitlyRequired(rungs: readonly RequiredReleaseRung[]): boolean {
+  return rungs.some(
+    (rung) => rung.requiredWhenChanged !== undefined || (rung.entryPoints?.length ?? 0) > 0,
+  )
+}
+
 export function decideRequiredRungs(
   rungs: readonly RequiredReleaseRung[],
   changedPaths: readonly string[],
