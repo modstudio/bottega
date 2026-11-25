@@ -2,7 +2,7 @@
 /** Reads workflow exec facts used to verify a post-implement class measurement. */
 
 import type { Database } from 'bun:sqlite'
-import { resolveProbeIdentifier } from './probe-identifier.ts'
+import { probeRecordIdForNumber } from './probe-identifier.ts'
 import { renderClassMeasurementCommand } from './workflow-class-measured-floor.ts'
 
 export type ClassMeasurementExec = {
@@ -14,13 +14,8 @@ export type ClassMeasurementExec = {
 }
 
 export function classMeasurementExecCwd(database: Database, execId: number): string | undefined {
-  let recordId: string
-  try {
-    recordId = resolveProbeIdentifier(database, execId)
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('no probe has number ')) return undefined
-    throw error
-  }
+  const recordId = probeRecordIdForNumber(database, execId)
+  if (!recordId) return undefined
   return database
     .query<{ cwd: string }, [string]>("SELECT cwd FROM probe WHERE kind='exec' AND record_id=?")
     .get(recordId)?.cwd

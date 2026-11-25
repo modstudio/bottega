@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
+  checkoutRelativePath,
   creditedMeasurementCommands,
   measuredCountFromOutput,
 } from '../workflow/workflow-class-measured-floor.ts'
@@ -20,14 +21,12 @@ export type ClassGuardExec = {
 
 export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
-const rerun = (worktree: string, command: string) =>
-  `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(worktree)} -- ${command}`
+const rerun = (cwd: string, command: string) =>
+  `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(cwd)} -- ${command}`
 
-function relativePathInside(root: string, candidate: string): string | null {
+function isPathInside(root: string, candidate: string): boolean {
   const path = relative(root, candidate)
   return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
-    ? path
-    : null
 }
 
 function measurementRerunCwd(input: {
@@ -37,12 +36,12 @@ function measurementRerunCwd(input: {
 }): string {
   const measurementCwd = input.measurementCwd
   if (!measurementCwd) return input.worktree
-  const containingRoots = [...input.checkoutRoots, input.worktree]
-    .map((root) => ({ root, relative: relativePathInside(root, measurementCwd) }))
-    .filter((entry): entry is { root: string; relative: string } => entry.relative !== null)
-    .sort((left, right) => right.root.length - left.root.length)
-  const directory = containingRoots[0]?.relative
-  return directory ? join(input.worktree, directory) : input.worktree
+  const containingRoot = [...input.checkoutRoots, input.worktree]
+    .filter((root) => isPathInside(root, measurementCwd))
+    .sort((left, right) => right.length - left.length)[0]
+  if (!containingRoot) return input.worktree
+  const directory = checkoutRelativePath(measurementCwd, containingRoot)
+  return directory === '.' ? input.worktree : join(input.worktree, directory)
 }
 
 export function decidePullRequestClassGuard(input: {
@@ -96,7 +95,7 @@ export function decidePullRequestClassGuard(input: {
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
-  const afterExec = matchingExecs.find((entry) => relativePathInside(worktree, entry.cwd) !== null)
+  const afterExec = matchingExecs.find((entry) => isPathInside(worktree, entry.cwd))
   if (!afterExec)
     return {
       kind: 'refuse',
