@@ -3,7 +3,10 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
-import { measuredCountFromOutput } from '../workflow/workflow-class-measured-floor.ts'
+import {
+  creditedMeasurementCommands,
+  measuredCountFromOutput,
+} from '../workflow/workflow-class-measured-floor.ts'
 
 export type ClassGuardMeasurement = { className: string; command: string; count: number }
 export type ClassGuardExec = {
@@ -25,6 +28,7 @@ export function decidePullRequestClassGuard(input: {
   implementClosedAt?: string
   execs: readonly ClassGuardExec[]
   worktree?: string
+  checkoutRoots: readonly string[]
 }): ClassGuardDecision {
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
@@ -54,9 +58,11 @@ export function decidePullRequestClassGuard(input: {
       kind: 'refuse',
       message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
     }
+  const creditedCommands = creditedMeasurementCommands(measurement.command, input.checkoutRoots)
+  const rerunCommand = creditedCommands.at(-1)!
   const matchingExecs = input.execs.filter(
     (entry) =>
-      entry.command === measurement.command &&
+      creditedCommands.includes(entry.command) &&
       entry.exitCode === 0 &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
@@ -65,14 +71,14 @@ export function decidePullRequestClassGuard(input: {
     return {
       kind: 'refuse',
       message: matchingExecs.length
-        ? `the Class guard post-implement measurement did not run in worktree ${input.worktree}; run \`${rerun(input.worktree, measurement.command)}\``
-        : `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, measurement.command)}\``,
+        ? `the Class guard post-implement measurement did not run in worktree ${input.worktree}; run \`${rerun(input.worktree, rerunCommand)}\``
+        : `the Class guard has no successful post-implement measurement; run \`${rerun(input.worktree, rerunCommand)}\``,
     }
   const afterCount = measuredCountFromOutput(afterExec.output)
   if (afterCount === null || Number(parsed[3]) !== afterCount)
     return {
       kind: 'refuse',
-      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(input.worktree, measurement.command)}\` and update the line`,
+      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(input.worktree, rerunCommand)}\` and update the line`,
     }
   return { kind: 'allow' }
 }

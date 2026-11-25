@@ -205,8 +205,9 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
     kind TEXT NOT NULL,
     session_id TEXT
   )`)
-  const argv = ['sh', '-c', 'rg leak | wc -l']
-  const command = renderClassMeasurementCommand(argv)!
+  const recordedArgv = ['bun', '/private/tmp/measure.ts', project.path]
+  const rerunArgv = ['bun', '/private/tmp/measure.ts', '.']
+  const command = renderClassMeasurementCommand(recordedArgv)!
   const temp = mkdtempSync(join(tmpdir(), 'class-guard-admission-'))
   const worktree = join(temp, 'worktree')
   const linkedWorktree = join(temp, 'linked-worktree')
@@ -217,7 +218,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
       `INSERT INTO probe (command,cwd,output_tail,exit_code,created_at,kind,session_id)
        VALUES (?,?,'0\n',0,'2026-11-24T11:01:00Z','exec','session-a')`,
     )
-    .run(JSON.stringify(argv), linkedWorktree)
+    .run(JSON.stringify(rerunArgv), linkedWorktree)
   const closed = JSON.stringify([
     {
       n: 1,
@@ -246,6 +247,8 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         body,
       },
       async () => [held],
+      undefined,
+      () => [project.path],
     )
   const fallbackAdmission = (
     cwd: string,
@@ -263,6 +266,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
       },
       async () => [{ ...held, args: '{}' }],
       () => facts,
+      () => [project.path],
     )
 
   try {

@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { shellQuote } from '../../../shared/shell-quote.ts'
+import { parseShellQuoted, shellQuote } from '../../../shared/shell-quote.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {
@@ -34,13 +34,16 @@ export function renderClassMeasurementCommand(argv: readonly string[] | null): s
 
 type NamedCheckoutPath = { path: string; relative: string }
 
-function checkoutPathInArgument(
+type CheckoutPathMatch = NamedCheckoutPath & { start: number; end: number }
+
+function checkoutPathsInArgument(
   argument: string,
   checkoutRoots: readonly string[],
-): NamedCheckoutPath | null {
+): CheckoutPathMatch[] {
   const roots = [
     ...new Set(checkoutRoots.map((root) => root.replace(/\/+$/, '')).filter(Boolean)),
   ].sort((left, right) => right.length - left.length)
+  const matches: CheckoutPathMatch[] = []
   for (const root of roots) {
     let start = argument.indexOf(root)
     while (start !== -1) {
@@ -49,12 +52,45 @@ function checkoutPathInArgument(
         let end = start + root.length
         while (end < argument.length && !/[\s"'`;&|<>()]/.test(argument[end]!)) end += 1
         const path = argument.slice(start, end)
-        return { path, relative: path === root ? '.' : path.slice(root.length + 1) }
+        if (!matches.some((match) => start < match.end && end > match.start))
+          matches.push({
+            start,
+            end,
+            path,
+            relative: path === root ? '.' : path.slice(root.length + 1),
+          })
       }
       start = argument.indexOf(root, start + 1)
     }
   }
-  return null
+  return matches
+}
+
+export function treeRelativeArgv(
+  argv: readonly string[],
+  checkoutRoots: readonly string[],
+): string[] {
+  return argv.map((argument, index) => {
+    if (index === 0) return argument
+    const matches = checkoutPathsInArgument(argument, checkoutRoots).sort(
+      (left, right) => right.start - left.start,
+    )
+    let rewritten = argument
+    for (const match of matches)
+      rewritten = `${rewritten.slice(0, match.start)}${match.relative}${rewritten.slice(match.end)}`
+    return rewritten
+  })
+}
+
+export function creditedMeasurementCommands(
+  command: string,
+  checkoutRoots: readonly string[],
+): string[] {
+  const argv = parseShellQuoted(command)
+  if (!argv) return [command]
+  const rewritten = treeRelativeArgv(argv, checkoutRoots)
+  if (rewritten.every((argument, index) => argument === argv[index])) return [command]
+  return [command, renderClassMeasurementCommand(rewritten)!]
 }
 
 export function decideClassMeasuredFloor(input: {
@@ -94,8 +130,8 @@ export function decideClassMeasuredFloor(input: {
     }
   const checkoutPath = exec.argv
     ?.slice(1)
-    .map((argument) => checkoutPathInArgument(argument, input.checkoutRoots))
-    .find((path) => path !== null)
+    .flatMap((argument) => checkoutPathsInArgument(argument, input.checkoutRoots))
+    .at(0)
   if (checkoutPath)
     return {
       met: false,
