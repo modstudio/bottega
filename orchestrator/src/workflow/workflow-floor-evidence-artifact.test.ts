@@ -296,6 +296,33 @@ test('notes and attached text must be written during the active step', async () 
     gather(d, { artifacts: [`note:${noteId}`] }, { readNote: readNote('2026-09-02') }),
   ).resolves.toBeDefined()
 
+  let promotedNoteReads = 0
+  const gathered = await gather(
+    d,
+    { artifacts: [`note:${noteId}`] },
+    {
+      readNote: readNote('2026-09-02'),
+      listPromotedNotes: async () => {
+        promotedNoteReads += 1
+        return []
+      },
+    },
+    identity,
+    [
+      {
+        kind: 'task-open-with-notes',
+        deferrable: false,
+        expectedExitCode: 0,
+        expectedStatus: 'done',
+        requirePullRequest: false,
+        operatorRuling: false,
+      },
+    ],
+  )
+  expect(gathered.notes).toHaveLength(1)
+  expect(gathered).not.toHaveProperty('promotedNotes')
+  expect(promotedNoteReads).toBe(0)
+
   const textId = newRecordId()
   d.query(
     `INSERT INTO workflow_step_text
