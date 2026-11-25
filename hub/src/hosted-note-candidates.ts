@@ -3,11 +3,11 @@
 
 import type { SQL } from 'bun'
 import { formatNoteLabel } from '../../shared/note-label.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import {
   noteDuplicateQuestionCandidates,
   type RankedDuplicateQuestionNote,
 } from './note-duplicate-candidates.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
 export type HostedNoteCandidate = {
   record_id: string

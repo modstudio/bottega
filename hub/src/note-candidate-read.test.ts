@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
-import type { HubTypedQuestionInput } from './typed-question-service.ts'
+import { duplicateCandidatesForNewNote, noteCandidates } from './note.ts'
 import {
   NOTE_DUPLICATE_CANDIDATES,
   noteDuplicateQuestionCandidates,
-  notePairSubjectRef,
-} from './note-duplicate-question.ts'
-import { duplicateCandidatesForNewNote, noteCandidates } from './note.ts'
+} from './note-duplicate-candidates.ts'
+import { notePairSubjectRef } from './note-duplicate-question.ts'
+import type { HubTypedQuestionInput } from './typed-question-service.ts'
 
 const id = (value: number) => `01990000-0000-7000-8000-${String(value).padStart(12, '0')}`
 

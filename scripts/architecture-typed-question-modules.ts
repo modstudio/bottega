@@ -113,7 +113,8 @@ export const typedQuestionModules = [
     './note-duplicate-candidates.ts',
     './typed-question-service.ts',
   ]),
-  module('hub/src/note-duplicate-candidates.ts', ['./task.ts']),
+  module('hub/src/note-duplicate-candidates.ts', ['./duplicate-score.ts']),
+  module('hub/src/duplicate-score.ts', []),
   module('hub/src/note-duplicate-backtest.ts', [
     'bun:sqlite',
     'node:crypto',

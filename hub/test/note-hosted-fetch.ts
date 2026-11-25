@@ -1,7 +1,7 @@
 import { RECORD_SPACE_HEADER_NAME } from '../../shared/record-request-headers.ts'
 import { db } from '../src/db.ts'
 import { resolveNoteReference } from '../src/note.ts'
-import { noteDuplicateQuestionCandidates } from '../src/note-duplicate-question.ts'
+import { noteDuplicateQuestionCandidates } from '../src/note-duplicate-candidates.ts'
 import { getNote, listNotes } from '../src/note-read.ts'
 
 type NoteRequestBody = {

@@ -4,23 +4,15 @@
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { newRecordId } from '../../shared/record-id.ts'
-import type { NoulQuestion } from '../../shared/typed-question/registry.ts'
 import { startTypedQuestionCredentialResolution } from '../../shared/typed-question/client.ts'
+import type { NoulQuestion } from '../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   type DuplicateQuestionNote,
-  NOTE_DUPLICATE_CANDIDATES,
   noteDuplicateQuestionCandidates,
   type RankedDuplicateQuestionNote,
 } from './note-duplicate-candidates.ts'
 import { askHubTypedQuestion } from './typed-question-service.ts'
-
-export {
-  type DuplicateQuestionNote,
-  NOTE_DUPLICATE_CANDIDATES,
-  noteDuplicateQuestionCandidates,
-  type RankedDuplicateQuestionNote,
-} from './note-duplicate-candidates.ts'
 
 export const NOTE_DUPLICATE_QUESTION: NoulQuestion = {
   id: 'note_duplicate',

@@ -1,7 +1,7 @@
 // concern: note-duplicate-candidates
 /** Selects the bounded lexical set considered by note duplicate questions. */
 
-import { duplicateScore } from './task.ts'
+import { duplicateScore } from './duplicate-score.ts'
 
 export const NOTE_DUPLICATE_CANDIDATES = 20
 

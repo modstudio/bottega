@@ -3,12 +3,14 @@ import { createHash } from 'node:crypto'
 import { newRecordId } from '../../shared/record-id.ts'
 import { db, writeTransaction } from './db.ts'
 import {
+  NOTE_DUPLICATE_CANDIDATES,
+  noteDuplicateQuestionCandidates,
+} from './note-duplicate-candidates.ts'
+import {
   askNoteDuplicateQuestions,
   jevOnlyDuplicateCandidates,
-  NOTE_DUPLICATE_CANDIDATES,
   NOTE_DUPLICATE_QUESTION,
   noteDuplicateLabel,
-  noteDuplicateQuestionCandidates,
   recordNoteDuplicateDistinct,
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,

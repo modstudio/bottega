@@ -5,6 +5,7 @@ import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
+import { listHostedNoteCandidates } from './hosted-note-candidates.ts'
 import { listHostedNotes } from './hosted-note-list.ts'
 import { listHostedSlimNotes } from './hosted-note-slim-list.ts'
 import {
@@ -21,7 +22,6 @@ import {
   insertOutsideNote,
   listOutsideNotes,
 } from './hosted-outside-notes.ts'
-import { listHostedNoteCandidates } from './hosted-note-candidates.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,

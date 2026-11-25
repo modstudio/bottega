@@ -3,6 +3,7 @@ import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.t
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { processMemo } from '../../shared/process-memo.ts'
+import type { HostedNoteCandidate } from './hosted-note-candidates.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import {
@@ -12,7 +13,6 @@ import {
   sendHostedSessionRequest,
 } from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
-import type { HostedNoteCandidate } from './hosted-note-candidates.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import type { SlimNote } from './note-slim-list-shape.ts'
