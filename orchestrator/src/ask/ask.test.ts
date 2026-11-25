@@ -284,12 +284,12 @@ describe('the live ask channel always answers', () => {
       db().query('SELECT started_at FROM run WHERE record_id=?').get(run) as { started_at: string }
     ).started_at
     const pushedAt = new Date(Date.parse(startedAt) + 1).toISOString()
-    db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
     const local = postNotice(
       { audience: `run:${run}`, title: 'Local ask', body: 'local ask body' },
       { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       Date.parse(pushedAt),
     )
+    db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
     const hosted: HostedBoardMessage = {
       id: newRecordId(),
       kind: 'notice',

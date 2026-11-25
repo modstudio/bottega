@@ -20,8 +20,8 @@ import {
   hostedBoardRefreshStoppedReason,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardMode } from './board-mode.ts'
 import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
+import { boardMode } from './board-mode.ts'
 import {
   architectIdentity,
   messageCanBeReaped,

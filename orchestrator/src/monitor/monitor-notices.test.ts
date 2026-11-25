@@ -36,7 +36,6 @@ afterEach(() => {
 test('heartbeat delivery emits hosted instead of differing local rows', async () => {
   const session = 'monitor-hosted-reader'
   const userId = newRecordId()
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run('board_hosted_signed_in_user', userId)
@@ -57,6 +56,7 @@ test('heartbeat delivery emits hosted instead of differing local rows', async ()
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     Date.parse(createdAt),
   )
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const hosted: HostedBoardMessage = {
     id: newRecordId(),
     kind: 'notice',

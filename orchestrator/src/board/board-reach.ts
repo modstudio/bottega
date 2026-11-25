@@ -12,8 +12,8 @@ import {
   HOSTED_BOARD_PRODUCT_STOPPED_REMEDY,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardMode } from './board-mode.ts'
 import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import { boardMode } from './board-mode.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 

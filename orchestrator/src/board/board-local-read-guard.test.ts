@@ -5,7 +5,12 @@ import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { projectAt } from '../project/projects.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
-import { postNotice, reapBoardMessagesForInstall, recordPresence } from './board-service.ts'
+import {
+  markSessionMessagesDelivered,
+  postNotice,
+  reapBoardMessagesForInstall,
+  recordPresence,
+} from './board-service.ts'
 import { messageRows } from './board-store.ts'
 
 beforeEach(() => fixtureProjectRecordId(db()))
@@ -84,5 +89,21 @@ test('guarded board rows return locally and stop with a hosted-reader remedy aft
   } finally {
     if (endpoint === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = endpoint
+  }
+})
+
+test('hosted delivery marking allows an empty local id list and refuses a local id', () => {
+  const prior = process.env.BOTTEGA_RECORD_API_URL
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  try {
+    expect(() => markSessionMessagesDelivered('hosted-session', [])).not.toThrow()
+    expect(() => markSessionMessagesDelivered('hosted-session', [newRecordId()])).toThrow(
+      /requireLocalBoardWrite stopped local board notice delivery/,
+    )
+  } finally {
+    db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+    if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = prior
   }
 })

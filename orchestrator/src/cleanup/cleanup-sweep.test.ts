@@ -320,13 +320,21 @@ test('closed session sweep releases local claims but leaves adopted local histor
   const insertClaim = database.query(
     `INSERT INTO board_claim
      (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at)
-     VALUES (?,'bottega','task',?,'architect',?,60000,?,?,?)`,
+     VALUES (?,?,'task',?,'architect',?,60000,?,?,?)`,
   )
   const closedAt = '2026-11-09T12:00:00.000Z'
   const lapsesAt = '2026-11-09T12:03:00.000Z'
   insertCloseOut.run(newRecordId(), localSession, closedAt)
   insertSeen.run(localSession, closedAt)
-  insertClaim.run(localClaim, `DEV-${localClaim}`, localSession, closedAt, closedAt, lapsesAt)
+  insertClaim.run(
+    localClaim,
+    PLATFORM_SLUG,
+    `DEV-${localClaim}`,
+    localSession,
+    closedAt,
+    closedAt,
+    lapsesAt,
+  )
   const release = async (session: string) => closeOutReport(session, true)
   const lines: string[] = []
   expect(
@@ -339,13 +347,21 @@ test('closed session sweep releases local claims but leaves adopted local histor
       adapters: { release },
     }),
   ).toBe(false)
-  expect(database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(localClaim)).toEqual(
-    { closed_at: new Date(clock).toISOString() },
-  )
+  expect(
+    database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(localClaim),
+  ).toEqual({ closed_at: new Date(clock).toISOString() })
 
   insertCloseOut.run(newRecordId(), hostedSession, closedAt)
   insertSeen.run(hostedSession, closedAt)
-  insertClaim.run(hostedClaim, `DEV-${hostedClaim}`, hostedSession, closedAt, closedAt, lapsesAt)
+  insertClaim.run(
+    hostedClaim,
+    PLATFORM_SLUG,
+    `DEV-${hostedClaim}`,
+    hostedSession,
+    closedAt,
+    closedAt,
+    lapsesAt,
+  )
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -366,7 +382,9 @@ test('closed session sweep releases local claims but leaves adopted local histor
       database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(hostedClaim),
     ).toEqual({ closed_at: null })
     expect(
-      database.query('SELECT swept_at FROM session_close_out WHERE session_id=?').get(hostedSession),
+      database
+        .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
+        .get(hostedSession),
     ).toEqual({ swept_at: new Date(clock).toISOString() })
   } finally {
     database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)

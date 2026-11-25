@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
@@ -781,16 +782,18 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
   ).toBe(0)
 })
 
-test('machine writes stay local after adoption while their UUID reads resolve through hosted', async () => {
+test('machine writes refuse local board storage after adoption', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const client = createMemoryRecordApiClient()
-  const local = await boardPost(
-    { audience: 'machine:host', title: 'Machine', body: 'local' },
-    { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, client },
-  )
-  expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
-  await expect(boardThread(local.recordId, { env, client })).rejects.toThrow(
-    /hosted board is unused in this fixture/,
+  await expect(
+    boardPost(
+      { audience: 'machine:host', title: 'Machine', body: 'local' },
+      { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, client },
+    ),
+  ).rejects.toThrow(
+    new RegExp(
+      `requireLocalBoardWrite stopped local board notice post; use ${PLATFORM_SLUG} board post`,
+    ),
   )
 })
 

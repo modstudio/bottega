@@ -80,7 +80,6 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
   const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.CLAUDE_CODE_SESSION_ID = session
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
   db()
     .query(
@@ -97,6 +96,7 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
     },
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
   )
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   let changesCalls = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),

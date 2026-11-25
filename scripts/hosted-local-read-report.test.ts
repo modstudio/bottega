@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { hostedLocalBoardHeadFailures } from './hosted-local-board-head-check.ts'
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadAllowedFile,
@@ -10,7 +11,6 @@ import {
   hostedBoardLocalReadFailures,
   hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
-  hostedLocalBoardHeadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
   hostedLocalReadScan,
@@ -564,9 +564,7 @@ test('write-time board head judgment refuses an unheaded site and accepts a head
       }`,
     }),
   ).toEqual([
-    expect.stringContaining(
-      `${file}:2: local board_message write has no proven local-board head`,
-    ),
+    expect.stringContaining(`${file}:2: local board_message write has no proven local-board head`),
   ])
   expect(
     hostedLocalBoardHeadFailures({

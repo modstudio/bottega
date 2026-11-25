@@ -11,11 +11,11 @@ import {
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { hubWebSourcePlacementViolation } from './architecture-hub-packages.ts'
-import { hostedLocalBoardHeadFailures } from './hosted-local-read-report.ts'
 import {
   hubUiFolderLayerRuleName,
   isDeclaredHubUiSourceLocation,
 } from './architecture-ui-layers.ts'
+import { hostedLocalBoardHeadFailures } from './hosted-local-board-head-check.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const target = process.argv[2]

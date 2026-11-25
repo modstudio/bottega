@@ -102,6 +102,11 @@ test('board read and read --claim use hosted cache instead of differing local ro
     {},
     Date.parse(createdAt),
   )
+  const localRead = postNotice(
+    { audience: 'session:delivery-reader', title: 'Local read', body: 'local body' },
+    env,
+    Date.parse(createdAt) + 1,
+  )
   const hostedClaim = hosted('session:delivery-reader')
   installFailedRefreshWithCached(hostedClaim)
   const refreshed = async () => ({ status: 'success' as const, applied: 0 })
@@ -120,11 +125,6 @@ test('board read and read --claim use hosted cache instead of differing local ro
   ).toBeNull()
   expect((await claimBoardNotices(false, { env, refresh: refreshed })).notices).toEqual([])
 
-  const localRead = postNotice(
-    { audience: 'session:delivery-reader', title: 'Local read', body: 'local body' },
-    env,
-    Date.parse(createdAt) + 1,
-  )
   const hostedRead = hosted('session:delivery-reader')
   db()
     .query(

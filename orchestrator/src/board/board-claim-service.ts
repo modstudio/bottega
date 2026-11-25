@@ -510,6 +510,19 @@ export function liveClaimsOfSession(
     .map((row) => view(row, clock, database))
 }
 
+export function localClaimSubject(
+  recordId: string,
+  environment: Environment,
+  database = db(),
+): { subject_kind: string; subject_value: string } | null {
+  requireLocalBoardRead(environment, database)
+  return database
+    .query<{ subject_kind: string; subject_value: string }, [string]>(
+      'SELECT subject_kind,subject_value FROM board_claim WHERE record_id=?',
+    )
+    .get(recordId)
+}
+
 /** Release the live claims held by a swept session; lapsed rows stay for the existing lapse path. */
 export function releaseSessionClaims(
   session: string,
