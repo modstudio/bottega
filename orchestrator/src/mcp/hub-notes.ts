@@ -133,12 +133,19 @@ export async function listHubNotesPromotedTo(
 }
 
 export async function findHubNote(
-  project: string,
+  project: string | undefined,
   reference: string,
   options: HubNoteReadOptions,
 ): Promise<HubNote | null> {
   const output = await (options.output ?? hubOutput)(
-    ['note', 'list', '--project', project, '--reference', reference, '--json'],
+    [
+      'note',
+      'list',
+      ...(project ? ['--project', project] : []),
+      '--reference',
+      reference,
+      '--json',
+    ],
     options.cwd,
   )
   const normalized = reference.toLowerCase()
@@ -153,17 +160,9 @@ export async function findHubNote(
   )
 }
 
-export async function hubNoteLabel(recordId: string, options: { cwd: string }): Promise<string> {
-  const list = async (stale: boolean) => {
-    const output = await hubOutput(
-      ['note', 'list', ...(stale ? ['--stale'] : []), '--json'],
-      options.cwd,
-    )
-    return noteRowsSchema.parse(JSON.parse(output) as unknown)
-  }
-  const notes = [...(await list(false)), ...(await list(true))]
-  const note = notes.find((candidate) => candidate.record_id === recordId)
-  if (!note)
+export async function hubNoteLabel(recordId: string, options: HubNoteReadOptions): Promise<string> {
+  const note = await findHubNote(undefined, recordId, options)
+  if (!note || note.record_id !== recordId)
     throw new Error(`hub cannot resolve note ${recordId}; run \`${PLATFORM_SLUG} note list\``)
   return note.label
 }

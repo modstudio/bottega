@@ -149,10 +149,15 @@ test('interactive note reads each spawn one filtered slim-list command', async (
       output,
     ),
   ).rejects.toThrow('task DEV-977 was promoted from note fixture#1')
+  await expect(hubNotes.hubNoteLabel(liveId, { cwd: process.cwd(), output })).resolves.toBe(
+    'fixture#1',
+  )
 
-  expect(calls).toHaveLength(3)
+  expect(calls).toHaveLength(4)
   for (const args of calls) {
     expect(args.slice(0, 2)).toEqual(['note', 'list'])
     expect(args.filter((arg) => arg === '--promoted-to' || arg === '--reference')).toHaveLength(1)
   }
+  expect(calls[3]).not.toContain('--project')
+  expect(calls[3]).not.toContain('--stale')
 })
