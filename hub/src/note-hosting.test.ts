@@ -192,11 +192,11 @@ describe('hosted-only note safety', () => {
         activeSpaceId: 'space-a',
         memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
       })) as unknown as typeof fetch
-    for (const query of [
-      'promoted_to=DEV-7&stale=true',
-      'promoted_to=DEV-7&actionable=true',
-      'reference=gamma%231&stale=true',
-      'reference=gamma%231&actionable=true',
+    for (const [query, error] of [
+      ['promoted_to=DEV-7&stale=true', 'promoted_to cannot be combined with stale=true'],
+      ['promoted_to=DEV-7&actionable=true', 'promoted_to cannot be combined with actionable=true'],
+      ['reference=gamma%231&stale=true', 'reference cannot be combined with stale=true'],
+      ['reference=gamma%231&actionable=true', 'reference cannot be combined with actionable=true'],
     ]) {
       const response = await noteApi(
         new Request(`https://hub.example.test/v1/notes/list?${query}`, {
@@ -206,8 +206,28 @@ describe('hosted-only note safety', () => {
         { fetch: identity },
       )
       expect(response?.status, query).toBe(400)
-      expect((await response?.json()) as { error: string }).toHaveProperty('error')
+      expect(await response?.json()).toEqual({ error })
     }
+
+    let captured: unknown
+    const accepted = await noteApi(
+      new Request(
+        'https://hub.example.test/v1/notes/list?promoted_to=DEV-7&stale=false&actionable=false',
+        {
+          headers: { authorization: 'Bearer test', 'x-record-space': 'space-a' },
+        },
+      ),
+      hostedRouteTestConfig,
+      {
+        fetch: identity,
+        listSlim: async (...args: unknown[]) => {
+          captured = args[2]
+          return { notes: [], total: 0 }
+        },
+      },
+    )
+    expect(accepted?.status).toBe(200)
+    expect(captured).toMatchObject({ promotedTo: 'DEV-7', stale: false, actionable: false })
   })
 
   test('every note route refuses a requested space outside the caller memberships', async () => {

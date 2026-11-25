@@ -136,15 +136,15 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
 function slimListFilters(url: URL) {
   const promotedTo = url.searchParams.get('promoted_to')?.trim() || undefined
   const reference = url.searchParams.get('reference')?.trim() || undefined
-  const stateFilter = url.searchParams.has('stale')
-    ? 'stale'
-    : url.searchParams.has('actionable')
-      ? 'actionable'
+  const stateFilter = url.searchParams.get('stale') === 'true'
+    ? 'stale=true'
+    : url.searchParams.get('actionable') === 'true'
+      ? 'actionable=true'
       : null
   if ((promotedTo || reference) && stateFilter)
     return json(
       {
-        error: `--${promotedTo ? 'promoted-to' : 'reference'} cannot be combined with --${stateFilter}`,
+        error: `${promotedTo ? 'promoted_to' : 'reference'} cannot be combined with ${stateFilter}`,
       },
       400,
     )

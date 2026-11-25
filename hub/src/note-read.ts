@@ -467,9 +467,15 @@ export async function listProjectSlimNotes(
 ): Promise<{ notes: SlimNote[]; total: number }> {
   const limit = noteListLimit(filters.limit)
   if (filters.project && !isRegisteredNoteProject(filters.project)) {
-    if (filters.stale || filters.kept || filters.actionable)
+    if (
+      filters.stale ||
+      filters.kept ||
+      filters.actionable ||
+      filters.promotedTo ||
+      filters.reference
+    )
       throw new Error(
-        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
+        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept, --actionable, --promoted-to and --reference`,
       )
     const rows = await listOutsideProjectNotes(filters.project, filters.hosted)
     const search = filters.text?.toLowerCase()
