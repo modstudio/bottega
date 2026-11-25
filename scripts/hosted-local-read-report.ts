@@ -142,6 +142,19 @@ export function hostedHubLocalReadFailures(hits: readonly HostedLocalReadHit[]):
   )
 }
 
+export function hostedDocLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
+  return hits.flatMap((hit) =>
+    hit.kind === 'read' &&
+    (hit.path === 'hosted-reachable' || hit.path === 'cannot-tell') &&
+    hit.exclusionReason !== 'planned' &&
+    hit.table === 'doc_revision'
+      ? [
+          `${hit.file}:${hit.line}: hosted install can read doc_revision from the local SQLite store; read revisions through the hosted doc client on a hosted install`,
+        ]
+      : [],
+  )
+}
+
 const WRITE_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
 const HOSTED_SELECTORS = [
   'boardMode',

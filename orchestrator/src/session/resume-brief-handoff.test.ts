@@ -334,6 +334,9 @@ test('hosted author preparation resolves the latest non-consume revision author'
     }),
   ).toBe('brief-author')
   expect(localHostedReads).toBe(0)
+  db()
+    .query('UPDATE doc_revision SET session_id=? WHERE record_id=?')
+    .run('stale-local-session', localRevision)
 
   process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
   await expect(
@@ -367,7 +370,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
       },
     ],
   })
-  expect(resolvedAuthor).toBe('brief-author')
+  expect(resolvedAuthor).toBeNull()
   expect(resolvedAuthor).not.toBe('brief-consumer')
 
   const unknown = await prepareResumeBriefHandoff(

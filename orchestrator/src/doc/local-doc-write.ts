@@ -281,15 +281,21 @@ export function executeLocalDocRestore(
 }
 
 export function commitDocRestore(
-  input: RestoreInput & { recordId: string; revisionId: string },
+  input: RestoreInput & {
+    recordId: string
+    revisionId: string
+    compareExpectedRevision?: boolean
+  },
 ): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    assertLocalRevisionWrite(
-      input,
-      currentDocRevision(input.scope, input.subject, input.slug, input.owner),
-      false,
-    )
+    if (input.compareExpectedRevision !== false) {
+      assertLocalRevisionWrite(
+        input,
+        currentDocRevision(input.scope, input.subject, input.slug, input.owner),
+        false,
+      )
+    }
     const at = nowIso()
     if (existing) {
       db()

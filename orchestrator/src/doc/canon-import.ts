@@ -4,6 +4,7 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { RecordCanonImportResult } from '../record/record-api-client.ts'
+import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
@@ -60,6 +61,21 @@ export function hasCanonImportHistory(address: LocalCanonImportAddress): boolean
       )
       .get(subject, owner) !== null
   )
+}
+
+export function authoritativeCanonImportHistory(
+  address: LocalCanonImportAddress,
+  hostedRows: readonly unknown[],
+  localHistory: () => boolean = () => hasCanonImportHistory(address),
+  readAuthority: (actions: {
+    local(): boolean
+    hosted(): boolean
+  }) => Promise<boolean> = applyRecordReadAuthority,
+): Promise<boolean> {
+  return readAuthority({
+    local: localHistory,
+    hosted: () => hostedRows.length > 0,
+  })
 }
 
 function localCanonImportResult(

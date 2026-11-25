@@ -1046,6 +1046,7 @@ export async function restoreDoc(
         ...context,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        compareExpectedRevision: false,
       })
     },
   }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))

@@ -229,6 +229,54 @@ const B2_PLANNED_LOCAL_READ_SITES: readonly B2ReasonedSite[] = [
   },
 ]
 
+const DOC_REVISION_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
+  {
+    file: 'orchestrator/src/doc/canon-import.ts',
+    functionName: 'hasCanonImportHistory',
+    expectedSites: 1,
+    detail:
+      'authoritativeCanonImportHistory calls this helper only from applyRecordReadAuthority local-authoritative handling; hosted project and user plans use their unfiltered hosted canon rows',
+  },
+  {
+    file: 'orchestrator/src/doc/doc-revision-store.ts',
+    functionName: 'currentDocRevision',
+    expectedSites: 1,
+    detail:
+      'doc-restore-state reaches this helper only through restoreReadState local-authoritative handling, and commitDocRestore skips it for the hosted mirror call',
+  },
+  {
+    file: 'orchestrator/src/doc/doc-revision-store.ts',
+    functionName: 'latestStoredDocAuthorSession',
+    expectedSites: 1,
+    detail:
+      'resumeBriefAuthorSession calls this helper only when record authority is local, and context-service calls it only from sessionResumeBriefState local handling',
+  },
+  {
+    file: 'orchestrator/src/doc/doc-revision-store.ts',
+    functionName: 'listStoredDocRevisions',
+    expectedSites: 2,
+    detail:
+      'doc-authoritative-read calls this helper only inside applyRecordReadAuthority local-authoritative history and revision-list handling',
+  },
+  {
+    file: 'orchestrator/src/identity/doc-revision-identity.ts',
+    functionName: 'resolveDocRevisionIdentifier',
+    expectedSites: 2,
+    detail:
+      'resolveDocRevisionIdentifier confines both local revision lookups to applyRecordReadAuthority local-authoritative handling and returns or refuses identifiers in its hosted arm',
+  },
+]
+
+const DOC_REVISION_PLANNED_SITES: readonly B2ReasonedSite[] = [
+  {
+    file: 'orchestrator/src/doc/doc-revision-store.ts',
+    functionName: 'getStoredDocRevision',
+    expectedSites: 3,
+    detail:
+      'filed ruling refs in commands/rulings.ts and mcp/mcp-operator-tools.ts need revision.number, which the hosted record has no column for; held for Shmuel Barkin ruling on a record revision-number column or ruling-ref format change, task DEV-2634',
+  },
+]
+
 export type HostedLocalSqlAllowedFile = {
   pattern: RegExp
   functionName?: string
@@ -368,6 +416,22 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     detail: 'The local document read adapter builds SQL only for machine-local document tables',
     expectedSites: 1,
   },
+  ...DOC_REVISION_LOCAL_ONLY_SITES.map(({ file, functionName, expectedSites, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    functionName,
+    reason: 'local-only' as const,
+    detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
+  ...DOC_REVISION_PLANNED_SITES.map(({ file, functionName, expectedSites, detail }) => ({
+    pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+    functionName,
+    reason: 'planned' as const,
+    detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
   ...B2_LOCAL_ONLY_SITES.map(({ file, functionName, expectedSites, detail }) => ({
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
     functionName,

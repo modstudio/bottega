@@ -8,6 +8,7 @@ import {
   type HostedLocalReadAllowedFile,
   type HostedLocalReadCandidate,
   hostedBoardLocalReadFailures,
+  hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
@@ -217,6 +218,29 @@ test('reports planned reads as hosted-reachable without refusing them', () => {
   expect(hostedHubLocalReadFailures([{ ...planned!, exclusionReason: undefined }])).toEqual([
     expect.stringContaining('hosted install can read task'),
   ])
+})
+
+test('refuses unplanned hosted doc revision reads and permits planned ones', () => {
+  const hit = {
+    file: 'orchestrator/src/doc/new-reader.ts',
+    line: 31,
+    table: 'doc_revision',
+    kind: 'read' as const,
+    path: 'hosted-reachable' as const,
+    reason: 'fixture',
+    module: 'orchestrator:doc',
+  }
+  expect(hostedDocLocalReadFailures([hit, { ...hit, path: 'cannot-tell' }])).toEqual([
+    expect.stringContaining('new-reader.ts:31: hosted install can read doc_revision'),
+    expect.stringContaining('read revisions through the hosted doc client'),
+  ])
+  expect(
+    hostedDocLocalReadFailures([
+      { ...hit, exclusionReason: 'planned' },
+      { ...hit, path: 'local-only' },
+      { ...hit, kind: 'write' },
+    ]),
+  ).toEqual([])
 })
 
 test.each([
