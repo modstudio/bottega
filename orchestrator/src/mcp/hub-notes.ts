@@ -105,7 +105,10 @@ export function parseFiledNoteOutput(output: string) {
   }
 }
 
-export async function listHubNotes(project: string, options: HubNoteReadOptions): Promise<HubNote[]> {
+export async function listHubNotes(
+  project: string,
+  options: HubNoteReadOptions,
+): Promise<HubNote[]> {
   const list = async (stale: boolean) => {
     const output = await (options.output ?? hubOutput)(
       ['note', 'list', '--project', project, ...(stale ? ['--stale'] : []), '--json'],

@@ -449,6 +449,19 @@ export function listActionableNotes(
   return listNotes({ ...filters, actionable: true }, hosted)
 }
 
+function specialSlimListFilter(filters: NoteFilters): '--promoted-to' | '--reference' | null {
+  const specialFilter = filters.promotedTo
+    ? '--promoted-to'
+    : filters.reference
+      ? '--reference'
+      : null
+  if (specialFilter && filters.stale)
+    throw new Error(`${specialFilter} cannot be combined with --stale`)
+  if (specialFilter && filters.actionable)
+    throw new Error(`${specialFilter} cannot be combined with --actionable`)
+  return specialFilter
+}
+
 export async function listProjectSlimNotes(
   filters: NoteFilters & { limit?: number; hosted?: NoteClientOptions },
 ): Promise<{ notes: SlimNote[]; total: number }> {
@@ -468,15 +481,7 @@ export async function listProjectSlimNotes(
   }
   if (filters.actionable && filters.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
-  const specialFilter = filters.promotedTo
-    ? '--promoted-to'
-    : filters.reference
-      ? '--reference'
-      : null
-  if (specialFilter && filters.stale)
-    throw new Error(`${specialFilter} cannot be combined with --stale`)
-  if (specialFilter && filters.actionable)
-    throw new Error(`${specialFilter} cannot be combined with --actionable`)
+  const specialFilter = specialSlimListFilter(filters)
   if (filters.kept && !filters.session)
     throw new Error(
       `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,

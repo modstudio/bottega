@@ -144,7 +144,7 @@ test('interactive note reads each spawn one filtered slim-list command', async (
         workflow: { slug: 'plan-task' },
         project: 'fixture',
         arguments: { key: 'DEV-977' },
-      } as Parameters<typeof assertPlanTaskNoteProvenance>[0],
+      } as unknown as Parameters<typeof assertPlanTaskNoteProvenance>[0],
       undefined,
       output,
     ),

@@ -10,7 +10,6 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
-import type { HubNote } from '../mcp/hub-notes.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -96,6 +95,7 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
+import type { ListWorkflowNotesPort } from './workflow-cursor-compose.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void
@@ -117,7 +117,7 @@ export type WorkflowCommandOptions = {
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
   promotionContainsHead?: PromotionContainsHead
-  listNotes?: (project: string, options: { cwd: string }) => Promise<HubNote[]>
+  listNotes?: ListWorkflowNotesPort
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =

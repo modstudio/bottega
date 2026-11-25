@@ -9,7 +9,7 @@ import {
   type HubNote,
   type HubNoteOutput,
   type HubNoteReadOptions,
-  listHubNotesPromotedTo,
+  listHubNotesPromotedTo as listPromotedNotesForWorkflow,
 } from '../mcp/hub-notes.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
@@ -75,7 +75,7 @@ export type WorkflowComposeInheritance = {
 
 export async function assertPlanTaskNoteProvenance(
   composition: Composition,
-  listNotes: ListWorkflowNotesPort = listHubNotesPromotedTo,
+  listNotes: ListWorkflowNotesPort = listPromotedNotesForWorkflow,
   output?: HubNoteOutput,
 ): Promise<void> {
   const key = workflowKeyOf(composition.arguments)
@@ -521,7 +521,7 @@ export async function insertWorkflowCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   keylessSiblingRetry = false,
   inheritance?: WorkflowComposeInheritance,
-  listNotes: ListWorkflowNotesPort = listHubNotesPromotedTo,
+  listNotes: ListWorkflowNotesPort = listPromotedNotesForWorkflow,
 ): Promise<SelectableCursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,
