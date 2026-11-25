@@ -218,36 +218,37 @@ if (import.meta.main) {
         migrateStore(snapshot)
         return runWithStore(snapshot)
       })
-      process.exit(code)
-    }
-    const findings = await (source.kind === 'gate-facts'
-      ? withBranchStoreScratch('canon-drift', (dir) =>
-          withMainGateFactsSnapshot(
-            storeKind,
-            dir,
-            (snapshotError) => {
-              const database = new Database(live!, { readonly: true })
-              try {
-                throw new Error(
-                  `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+      process.exitCode = code
+    } else {
+      const findings = await (source.kind === 'gate-facts'
+        ? withBranchStoreScratch('canon-drift', (dir) =>
+            withMainGateFactsSnapshot(
+              storeKind,
+              dir,
+              (snapshotError) => {
+                const database = new Database(live!, { readonly: true })
+                try {
+                  throw new Error(
+                    `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+                  )
+                } finally {
+                  database.close()
+                }
+              },
+              (snapshot) => {
+                console.log(
+                  `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
                 )
-              } finally {
-                database.close()
-              }
-            },
-            (snapshot) => {
-              console.log(
-                `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
-              )
-              return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
-            },
-          ),
-        )
-      : checkCanonDrift(root))
-    for (const finding of findings) {
-      console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
+                return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+              },
+            ),
+          )
+        : checkCanonDrift(root))
+      for (const finding of findings) {
+        console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
+      }
+      if (findings.length) process.exitCode = 1
     }
-    if (findings.length) process.exitCode = 1
   } catch (cause) {
     console.error(String((cause as Error).message ?? cause))
     process.exitCode = 1
