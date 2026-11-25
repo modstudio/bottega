@@ -605,9 +605,7 @@ export async function markBoardDeliveryDelivered(input: {
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
     const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env, true)
-    if (mode === 'hosted' && !identifier)
-      boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
-    if (mode === 'hosted' && identifier?.source === 'hosted')
+    if (mode === 'hosted' && (!identifier || identifier.source === 'hosted'))
       boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
     return identifier ? [identifier] : []
   })

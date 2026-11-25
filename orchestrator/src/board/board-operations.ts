@@ -204,9 +204,8 @@ function preparePostText(input: PostNoticeInput, c: ReturnType<typeof context>):
   return prepareBoardNoticeText(input, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
 }
 
-function hostedClient(c: ReturnType<typeof context>): RecordApiClient {
-  return c.client ?? recordApiClient()
-}
+const hostedClient = (c: ReturnType<typeof context>): RecordApiClient =>
+  c.client ?? recordApiClient()
 
 function writeDestination(c: ReturnType<typeof context>, project?: string | null) {
   return c.destinationResolver(hostedClient(c), project, c.database)

@@ -467,8 +467,8 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 1,
   },
   {
-    pattern: /^orchestrator\/src\/board\/board-message-identifier\.ts$/,
-    functionName: 'localMessageRow',
+    pattern: /^orchestrator\/src\/identity\/board-message-identity\.ts$/,
+    functionName: 'boardMessageIdentity',
     reason: 'local-only',
     detail: 'DEV-2645: machine-audience notices are local by design on every install',
     expectedSites: 2,

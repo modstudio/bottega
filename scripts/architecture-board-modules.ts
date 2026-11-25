@@ -47,6 +47,7 @@ export const boardModules: BoardModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../identity/board-message-identity.ts',
     './board-hosted-cache.ts',
     './board-hosted-cache-readers.ts',
     './board-hosted-refresh-message.ts',
