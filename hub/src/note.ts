@@ -75,7 +75,6 @@ import {
   recordNoteRelinkCommentsInTransaction,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
-import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
@@ -291,29 +290,7 @@ type CandidateNote = Pick<NoteRow, 'record_id' | 'number' | 'label' | 'project' 
 export function noteCandidates(notes: CandidateNote[], text: string): NoteCandidate[] {
   const byId = new Map(notes.map((note) => [note.record_id, note]))
   return duplicateCandidates(
-    notes.map(
-      (note): TaskRow => ({
-        record_id: note.record_id,
-        external_id: null,
-        key: note.record_id,
-        project: note.project,
-        title: note.text,
-        status: null,
-        status_category: null,
-        parent_key: null,
-        parent_record_id: null,
-        body: null,
-        assignee: null,
-        opened_at: '',
-        closed_at: null,
-        updated_at: '',
-        source: 'local',
-        first_seen: '',
-        last_seen: '',
-        next_document_number: 1,
-        retired_reason: null,
-      }),
-    ),
+    notes.map((note) => ({ key: note.record_id, title: note.text, status: null })),
     text,
   ).map((candidate) => {
     const note = byId.get(candidate.key)!

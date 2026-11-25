@@ -92,9 +92,14 @@ export class StaleTaskBodyError extends Error {
 const DUPLICATE_THRESHOLD = 0.2
 const DUPLICATE_LIMIT = 3
 
-export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateCandidate[] {
+type DuplicateCandidateTask = Pick<TaskRow, 'key' | 'status' | 'title'>
+
+export function duplicateCandidates(
+  tasks: DuplicateCandidateTask[],
+  title: string,
+): DuplicateCandidate[] {
   return tasks
-    .filter((task): task is TaskRow & { title: string } => !!task.title)
+    .filter((task): task is DuplicateCandidateTask & { title: string } => !!task.title)
     .map((task) => ({
       key: task.key,
       status: task.status,
