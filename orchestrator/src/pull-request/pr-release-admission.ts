@@ -7,8 +7,10 @@ import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
 import {
+  explicitlyRequiredRungs,
   type RequiredRungDecision,
   requiredRungDecision,
+  requiredRungSentence,
   rungsCanBeExplicitlyRequired,
 } from '../release/release-required.ts'
 import { requiredMergeCommand } from './pr-post-landing-payload.ts'
@@ -49,19 +51,15 @@ export function decidePullRequestReleaseAdmission(input: {
       ),
     }
   }
-  const explicitlyRequired = input.decision.rungs
-    .filter(({ required, requiredBy }) => required && requiredBy === 'explicit')
-    .map(({ rung }) => rung)
+  const explicitlyRequired = explicitlyRequiredRungs(input.decision)
   if (input.releaseRequired || explicitlyRequired.length === 0) return { kind: 'allow' }
   return {
     kind: 'refuse',
     message: renderRefusal(
-      refusal(
-        `refusing merge: ${
-          explicitlyRequired.length === 1 ? 'release rung' : 'release rungs'
-        } ${explicitlyRequired.join(', ')} required by this pull request`,
-        { kind: 'edit', text: requiredMergeCommand(input.target, input.depth) },
-      ),
+      refusal(`refusing merge: ${requiredRungSentence(explicitlyRequired)}`, {
+        kind: 'edit',
+        text: requiredMergeCommand(input.target, input.depth),
+      }),
     ),
   }
 }

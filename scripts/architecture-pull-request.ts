@@ -59,7 +59,6 @@ export const pullRequestModuleSpecs = [
       '../release/release-required.ts',
       './pr-post-landing-payload.ts',
     ],
-    typeOnlyAllowed: ['../release/release-required.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-merge.fixture.ts',
