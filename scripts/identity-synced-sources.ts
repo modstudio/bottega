@@ -350,14 +350,13 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordApiClient',
     ['board_claim'],
-    ['releaseBoardClaim', 'releaseBoardTaskClaims', 'renewBoardClaim', 'takeBoardClaim'],
-  ),
-  ...writeEntries(
-    'orchestrator',
-    'recordApiClient',
-    [],
-    ['releaseBoardSessionClaims'],
-    'no local table; the holder session comes from the caller',
+    [
+      'releaseBoardClaim',
+      'releaseBoardSessionClaims',
+      'releaseBoardTaskClaims',
+      'renewBoardClaim',
+      'takeBoardClaim',
+    ],
   ),
   ...writeEntries(
     'orchestrator',

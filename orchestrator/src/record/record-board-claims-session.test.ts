@@ -28,6 +28,7 @@ type ExplainNode = {
   'Relation Name'?: string
   'Index Name'?: string
   'Index Cond'?: string
+  Filter?: string
   Plans?: ExplainNode[]
 }
 
@@ -140,9 +141,36 @@ test('session release closes only the caller live claims held by that session', 
   expect(selectionScan?.['Index Cond']).toContain('holder_user_id')
   expect(selectionScan?.['Index Cond']).toContain('holder_session')
 
-  const updateScan = planNodes(await explain(update!)).find(
-    (node) => node['Relation Name'] === 'board_claim' && node['Index Name'],
+  const updatePlan = await explain(update!)
+  const updateNodes = planNodes(updatePlan)
+  const updateScan = updateNodes.find(
+    (node) =>
+      node['Relation Name'] === 'board_claim' &&
+      node['Index Name'] === 'board_claim_live_subject_unique',
   )
-  expect(updateScan?.['Index Name']).toBe('board_claim_pkey')
-  expect(updateScan?.['Index Cond']).toContain('id =')
+  expect(updateScan?.Filter).toContain('closed_at IS NULL')
+  expect(updateScan?.Filter).toContain('id =')
+  const updateWriteMembership = updateNodes.find(
+    (node) => node['Relation Name'] === 'membership' && node.Filter?.includes("permission = 'write'"),
+  )
+  expect(updateWriteMembership).toBeDefined()
+
+  await database.exec(`
+    RESET ROLE;
+    UPDATE membership SET permission='read'
+    WHERE space_id='${spaceId}' AND user_id='${otherUserId}';
+    SET ROLE record_actor;
+  `)
+  await expect(
+    releaseHostedBoardSessionClaims({
+      url: fixtureUrl,
+      userId: otherUserId,
+      spaceId,
+      holderSession,
+    }),
+  ).resolves.toEqual({ released: 0 })
+  const readOnlyClaim = await database.query<{ closed_at: Date | null }>(
+    `SELECT closed_at FROM board_claim WHERE id='${claimIds.anotherUser}'`,
+  )
+  expect(readOnlyClaim.rows).toEqual([{ closed_at: null }])
 })

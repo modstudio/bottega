@@ -160,6 +160,14 @@ test('board session claim release validates its strict body and destination spac
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toEqual({ error: 'invalid board claim release-session' })
   }
+  const machineSession = await request({
+    holderSession: 'operator:01990000-0000-7000-8000-000000026401',
+  })
+  expect(machineSession.status).toBe(400)
+  expect(await machineSession.json()).toEqual({
+    error:
+      'a machine-derived operator session is shared by every terminal session on the machine and cannot be released',
+  })
   const noSpace = await request({ holderSession: 'session-a' }, false)
   expect(noSpace.status).toBe(409)
   expect(await noSpace.json()).toEqual({
