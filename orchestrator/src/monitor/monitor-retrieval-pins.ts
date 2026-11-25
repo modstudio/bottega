@@ -4,6 +4,7 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
@@ -91,7 +92,12 @@ export function observeRetrievalPins(
       value = JSON.parse(child.stdout) as unknown
     } catch {
       throw new Error(
-        `${childErrorTail(child.stderr, child.exitCode)}; cleared by: inspect the full child output with ${PLATFORM_SLUG} __retrieval-search --check-doc-pins`,
+        renderRefusal(
+          refusal(childErrorTail(child.stderr, child.exitCode), {
+            kind: 'command',
+            argv: [PLATFORM_SLUG, '__retrieval-search', '--check-doc-pins'],
+          }),
+        ),
       )
     }
     if (child.exitCode !== 0 && child.exitCode !== 1) {

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { observeRetrievalPins, staleRetrievalPinConditions } from './monitor-retrieval-pins.ts'
 
 const stalePinReport = JSON.stringify({
@@ -48,6 +49,9 @@ test('an empty stale-pin report carries the child stderr instead of a JSON parse
   expect(result.notApplicable).toEqual([])
   expect(result.errors).toHaveLength(1)
   expect(result.errors[0]).toContain('error: document pin checking needs its benchmark fixtures')
+  expect(result.errors[0]).toContain(
+    `cleared by: ${PLATFORM_SLUG} __retrieval-search --check-doc-pins`,
+  )
   expect(result.errors[0]).not.toContain('Unexpected EOF')
 })
 

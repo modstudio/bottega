@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/monitor/monitor-retrieval-pins.ts#observeRetrievalPins": {
+      "test": "orchestrator/src/monitor/monitor-retrieval-pins.test.ts: an empty stale-pin report carries the child stderr instead of a JSON parse error"
+    },
     "orchestrator/src/release/release-client-contract.ts#readReleaseClientContract": {
       "test": "orchestrator/src/release/release-client-contract.test.ts: writing the current contract clears the missing-current refusal named by the update remedy"
     },

@@ -75,6 +75,7 @@ import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { checkHostedHealth } from './monitor-hosted-health.ts'
 import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
 import { fileUnavailableMonitorIssues } from './monitor-issue-filing.ts'
+import { appendMonitorObservation } from './monitor-observation.ts'
 import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
@@ -681,17 +682,6 @@ function appendObserved(
   conditions.push(...observation.conditions)
   errors.push(...observation.errors)
   for (const kind of observation.unobservedKinds) unobserved.add(kind)
-}
-
-function appendMonitorObservation(
-  conditions: MonitorCondition[],
-  errors: string[],
-  notApplicable: string[],
-  observation: { conditions: MonitorCondition[]; errors: string[]; notApplicable: string[] },
-): void {
-  conditions.push(...observation.conditions)
-  errors.push(...observation.errors)
-  notApplicable.push(...observation.notApplicable)
 }
 
 export async function monitor(
