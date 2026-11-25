@@ -143,11 +143,7 @@ describe('class-measured floor', () => {
 
   test('credits the recorded and tree-relative commands when it names a checkout', () => {
     const command = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', checkoutRoot])!
-    const treeRelativeCommand = renderClassMeasurementCommand([
-      'bun',
-      'scripts/measure.ts',
-      '.',
-    ])!
+    const treeRelativeCommand = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', '.'])!
     expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([
       command,
       treeRelativeCommand,
