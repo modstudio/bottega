@@ -13,8 +13,6 @@ import { readRecordLocalByDesign } from './record-local-mark.ts'
 import { recordSessionPresent } from './record-session.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 
-export { recordSessionPresent }
-
 export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,

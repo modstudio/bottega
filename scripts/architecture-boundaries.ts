@@ -927,6 +927,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/hosted-table-guard.ts',
       '../evidence/evidence-query.ts',
       '../review/review-round-backfill.ts',
+      '../record/record-session.ts',
       '../record/record-write-authority.ts',
       '../run/run-liveness.ts',
       '../run/shared-git-config-run.ts',

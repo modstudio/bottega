@@ -954,7 +954,7 @@ export function seedCurrentProjectSchema(
   let recordSessionPresent = sessionPresent ?? false
   if (seedPending && sessionPresent === undefined) {
     try {
-      recordSessionPresent = registeredOpenHooks().recordSessionPresent?.(database) ?? false
+      recordSessionPresent = openHooks?.recordSessionPresent?.(database) ?? false
     } catch {
       recordSessionPresent = false
     }

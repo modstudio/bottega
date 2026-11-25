@@ -7,10 +7,8 @@ import {
 } from '../database/hosted-table-guard.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
-import {
-  hostedRecordOwnsHostedTables,
-  recordSessionPresent,
-} from '../record/record-write-authority.ts'
+import { recordSessionPresent } from '../record/record-session.ts'
+import { hostedRecordOwnsHostedTables } from '../record/record-write-authority.ts'
 import { backfillReviewRounds } from '../review/review-round-backfill.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'

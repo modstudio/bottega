@@ -226,6 +226,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../review/review-round-backfill.ts',
     '../run/run-liveness.ts',
     '../run/shared-git-config-run.ts',
+    '../record/record-session.ts',
     '../record/record-write-authority.ts',
     '../workflow/workflow-seeds.ts',
   ]),

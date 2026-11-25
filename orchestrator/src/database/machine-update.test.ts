@@ -936,6 +936,30 @@ test('machine update keeps its successful result when store maintenance fails', 
   ])
 })
 
+test('successful machine updates invoke default-project retirement', async () => {
+  for (const deps of [
+    successfulMachineUpdateDeps(),
+    Object.assign(successfulMachineUpdateDeps(), {
+      identity: { kind: 'distribution' as const, root: dir, manifest: {} as never },
+      updateDistribution: async () => {},
+    }),
+  ]) {
+    const lines: string[] = []
+    let retirements = 0
+    await machineUpdateCommand(
+      { log: (line) => lines.push(line) },
+      {
+        ...deps,
+        recordSessionPresent: () => true,
+        releaseHostedRows: async () => {},
+        retireUnusedDefaultLocalProject: async () => Boolean(++retirements),
+      },
+    )
+    expect(retirements).toBe(1)
+    expect(lines).toContain('retired unused default local project tasks')
+  }
+})
+
 test('checkout update refreshes through deps.cwd when the running identity root differs', async () => {
   const target = mkdtempSync(join(tmpdir(), 'machine-update-checkout.'))
   const refreshed: string[] = []
