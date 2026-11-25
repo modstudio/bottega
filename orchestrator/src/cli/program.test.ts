@@ -95,6 +95,11 @@ test('public routes preserve every store-free owner invocation at the executable
       publicPath: ['gate', 'test-substance'],
     },
     {
+      argv: ['board-head', 'judge'],
+      ownerPath: ['board-head'],
+      publicPath: ['gate', 'board-head'],
+    },
+    {
       argv: ['hub-import', 'judge'],
       ownerPath: ['hub-import'],
       publicPath: ['gate', 'hub-import'],

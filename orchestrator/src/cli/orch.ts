@@ -73,6 +73,7 @@ export function isStoreFreeInvocation(
         argv[1] === 'restore')) ||
     (argv[0] === 'setup' && argv[1] === 'facts') ||
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
+    (argv[0] === 'board-head' && argv[1] === 'judge') ||
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||
     (argv[0] === 'release' && argv[1] === 'check') ||
     argv[0] === 'journal' ||

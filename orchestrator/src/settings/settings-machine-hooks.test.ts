@@ -153,15 +153,15 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(27)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(28)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(9)
   expect(
     commands.match(/BOTTEGA_ORCHESTRATOR_DB='\/state\/orchestrator\/orchestrator\.db'/g),
-  ).toHaveLength(27)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(27)
+  ).toHaveLength(28)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(28)
   for (const verb of ['run start', 'board ask', 'board post']) {
     expect(commands).toContain(`Bash(${PLATFORM_SLUG} ${verb}:*)`)
     expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} ${verb}:*)`)
@@ -215,6 +215,10 @@ test('test substance guard covers every editor tool from the rendered install', 
   expect(group?.hooks).toEqual([
     {
       type: 'command',
+      command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/${PLATFORM_SLUG}' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/board-head-guard.py'`,
+    },
+    {
+      type: 'command',
       command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/${PLATFORM_SLUG}' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
     },
     {
@@ -245,7 +249,7 @@ test('global use off is rendered into every product hook command', () => {
     RUNTIME,
   ).settings.hooks
   const commands = JSON.stringify(hooks)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(28)
 })
 
 test('superseded handlers name exactly the removed profile entries', () => {

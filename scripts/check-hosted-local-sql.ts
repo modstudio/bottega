@@ -12,7 +12,6 @@ import {
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import {
   type HostedLocalReadHit,
-  hostedBoardLocalReadFailures,
   hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
   hostedLocalReadScan,
@@ -20,6 +19,7 @@ import {
   hostedLocalSqlExemptionReasonFailures,
   hostedLocalSqlSelectorFailures,
 } from './hosted-local-read-report.ts'
+import { hostedLocalBoardHitFailures } from './hosted-local-board-head-check.ts'
 import {
   HOSTED_LOCAL_SQL_ALLOWED_FILES,
   type HostedLocalSqlAllowedFile,
@@ -421,7 +421,7 @@ export function checkHostedLocalSql(root: string): {
     failures: [
       ...scan.configurationFailures,
       ...reportOnlyAllowedFileBudgetFailures(scan.report.hits, HOSTED_LOCAL_SQL_ALLOWED_FILES),
-      ...hostedBoardLocalReadFailures(scan.report.hits),
+      ...hostedLocalBoardHitFailures(scan.report.hits),
       ...hostedHubLocalReadFailures(scan.report.hits),
       ...hostedDocLocalReadFailures(scan.report.hits),
       ...hostedLocalSqlViolations({

@@ -7,7 +7,6 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   realpathSync,
   rmdirSync,
   rmSync,
@@ -18,13 +17,12 @@ import { isDeadlineAbort, startBounded } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { optionalCheckoutRoot } from '../../shared/install-root.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
+import {
+  editorTargetFile,
+  parseEditorToolPayload,
+  proposedEditorContent,
+} from './editor-proposal.ts'
 import { type Project, projectAt } from './project/projects.ts'
-
-type ToolPayload = {
-  tool_name?: unknown
-  tool_input?: unknown
-  cwd?: unknown
-}
 
 type HubImportJudgment = {
   status: 'ok' | 'refused' | 'unchecked'
@@ -44,12 +42,6 @@ const JUDGE_CLEANUP_MARGIN_MS = 500
 
 function hubImportPolicyRoot(): string | null {
   return optionalCheckoutRoot(import.meta.dir, process.env)
-}
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
 }
 
 function within(root: string, path: string) {
@@ -114,56 +106,6 @@ export function registeredHubCheckout(
 
 function registeredCheckout(file: string, database: Database): RegisteredHubTarget | null {
   return registeredHubCheckout(file, projectAt(file, database))
-}
-
-function replacement(source: string, edit: Record<string, unknown>) {
-  const oldString = edit.old_string
-  const newString = edit.new_string
-  if (
-    typeof oldString !== 'string' ||
-    typeof newString !== 'string' ||
-    !source.includes(oldString)
-  ) {
-    throw new Error('edit strings do not describe the current file')
-  }
-  return edit.replace_all === true
-    ? source.split(oldString).join(newString)
-    : source.replace(oldString, newString)
-}
-
-function proposedContent(file: string, payload: ToolPayload) {
-  const input = object(payload.tool_input)
-  if (!input) throw new Error('tool input is not an object')
-  if (payload.tool_name === 'Write') {
-    if (typeof input.content !== 'string') throw new Error('Write has no content')
-    return input.content
-  }
-  let content = readFileSync(file, 'utf8')
-  if (payload.tool_name === 'Edit') return replacement(content, input)
-  if (payload.tool_name !== 'MultiEdit' || !Array.isArray(input.edits)) {
-    throw new Error('tool input is not a supported editor shape')
-  }
-  for (const edit of input.edits) {
-    const value = object(edit)
-    if (!value) throw new Error('MultiEdit contains an invalid edit')
-    content = replacement(content, value)
-  }
-  return content
-}
-
-function targetFile(payload: ToolPayload) {
-  const input = object(payload.tool_input)
-  const raw = input?.file_path ?? input?.path
-  if (typeof raw !== 'string' || raw.length === 0) return null
-  return resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), raw)
-}
-
-function parseToolPayload(text: string): ToolPayload {
-  try {
-    return JSON.parse(text) as ToolPayload
-  } catch {
-    throw new Error('input must be valid JSON')
-  }
 }
 
 async function runInstalledJudge(
@@ -249,8 +191,8 @@ export async function hubImportJudgeCommand(
   deadlineMs: number,
   openDatabase: () => Database = openReadOnlyDatabase,
 ): Promise<HubImportJudgment> {
-  const payload = parseToolPayload(text)
-  const file = targetFile(payload)
+  const payload = parseEditorToolPayload(text)
+  const file = editorTargetFile(payload)
   if (!file) return { status: 'unchecked', findings: [], reason: 'tool input has no file path' }
 
   let database: Database
@@ -295,7 +237,7 @@ export async function hubImportJudgeCommand(
 
   let content: string
   try {
-    content = proposedContent(canonicalFile, payload)
+    content = proposedEditorContent(canonicalFile, payload)
   } catch (error) {
     return {
       status: 'unchecked',

@@ -2,6 +2,7 @@ import { hostedTableInSql } from '../orchestrator/src/database/hosted-table-guar
 import {
   classifyHostedLocalReadSites,
   type HostedLocalReadCandidate,
+  type HostedLocalReadHit,
   hostedLocalReadSourceFacts,
 } from './hosted-local-read-report.ts'
 import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
@@ -49,13 +50,21 @@ export function hostedLocalBoardHeadFailures(input: {
       dynamicTable: true,
     })),
   ]
-  return classifyHostedLocalReadSites({
-    candidates,
-    tables,
-    allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
-  }).flatMap((hit) =>
+  return hostedLocalBoardHitFailures(
+    classifyHostedLocalReadSites({
+      candidates,
+      tables,
+      allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
+    }),
+  )
+}
+
+/** The one board-head judgment shared by the whole-tree gate and the write-time hook. */
+export function hostedLocalBoardHitFailures(hits: readonly HostedLocalReadHit[]): string[] {
+  return hits.flatMap((hit) =>
     (hit.path === 'cannot-tell' || hit.path === 'hosted-reachable') &&
-    hit.exclusionReason !== 'planned'
+    hit.table.startsWith('board_') &&
+    hit.exclusionReason === undefined
       ? [
           `${hit.file}:${hit.line}: local ${hit.table} ${hit.kind} has no proven local-board head; add a requireLocalBoardRead/requireLocalBoardWrite head, or an allowlist entry naming its task`,
         ]
