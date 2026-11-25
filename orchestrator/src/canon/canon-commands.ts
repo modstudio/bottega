@@ -190,7 +190,6 @@ async function projectCanonImportPlan(
     {
       kind: 'project',
       subject: project.name,
-      projectId: project.recordId,
     },
     allProjectRows,
   )

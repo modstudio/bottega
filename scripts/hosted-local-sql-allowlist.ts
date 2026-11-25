@@ -231,7 +231,7 @@ const B2_PLANNED_LOCAL_READ_SITES: readonly B2ReasonedSite[] = [
 
 const DOC_REVISION_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
   {
-    file: 'orchestrator/src/doc/canon-import.ts',
+    file: 'orchestrator/src/doc/doc-revision-store.ts',
     functionName: 'hasCanonImportHistory',
     expectedSites: 1,
     detail:
