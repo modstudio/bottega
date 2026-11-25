@@ -2,10 +2,8 @@
 /** Replays session release, expires machine liveness and claims, and retains its close-out record. */
 
 import type { Database } from 'bun:sqlite'
-import { decideBoardMode } from '../../../shared/board-mode.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { releaseSessionClaims } from '../board/board-claim-service.ts'
-import { boardHasAdoptedHosted } from '../board/board-mode.ts'
+import { boardModeDecision } from '../board/board-mode.ts'
 import { db, expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
 import { KEEP_RUN_FILES_DAYS } from '../run/run-artifact-limits.ts'
 import {
@@ -118,11 +116,7 @@ export async function sweepSessionCloseOutRecords(input: {
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   const now = input.now ?? Date.now()
   const adapters = { ...defaultAdapters, ...input.adapters }
-  const boardDecision = decideBoardMode({
-    adopted: boardHasAdoptedHosted(database),
-    hostedConfigured: () => recordApiConfigured(process.env),
-    locality: 'shared',
-  })
+  const boardDecision = boardModeDecision('shared', process.env, database)
   if (boardDecision.mode === 'refused') input.presentation.error(boardDecision.reason)
   const releaseLocalClaims = boardDecision.mode === 'local'
   const rows = newestSessionCloseOutRecords(database)

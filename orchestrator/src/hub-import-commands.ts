@@ -14,11 +14,7 @@ import {
   parseEditorToolPayload,
   proposedEditorContent,
 } from './editor-proposal.ts'
-import {
-  registeredBottegaCheckout,
-  registeredCheckoutForFile,
-  type RegisteredCheckoutTarget,
-} from './registered-checkout.ts'
+import { type RegisteredCheckoutTarget, registeredCheckoutForFile } from './registered-checkout.ts'
 
 // Must leave enough of the hook's absolute deadline for candidate and directory cleanup.
 const JUDGE_CLEANUP_MARGIN_MS = 500
@@ -27,15 +23,12 @@ function hubImportPolicyRoot(): string | null {
   return optionalCheckoutRoot(import.meta.dir, process.env)
 }
 
-/** Pure applicability decision after the project register has resolved the owning project. */
-export function registeredHubCheckout(
-  file: string,
-  project: Parameters<typeof registeredBottegaCheckout>[1],
-): RegisteredCheckoutTarget | null {
-  const target = registeredBottegaCheckout(file, project)
+function registeredHubTarget(file: string, database: Database): RegisteredCheckoutTarget | null {
+  const target = registeredCheckoutForFile(file, database)
   if (!target) return null
-  const checkoutRelative = relative(target.checkout, target.file).split(sep).join('/')
-  return checkoutRelative.startsWith('hub/') ? target : null
+  return relative(target.checkout, target.file).split(sep).join('/').startsWith('hub/')
+    ? target
+    : null
 }
 
 async function runInstalledJudge(
@@ -137,12 +130,7 @@ export async function hubImportJudgeCommand(
   }
   let target: RegisteredCheckoutTarget | null
   try {
-    const registered = registeredCheckoutForFile(file, database)
-    target =
-      registered &&
-      relative(registered.checkout, registered.file).split(sep).join('/').startsWith('hub/')
-        ? registered
-        : null
+    target = registeredHubTarget(file, database)
   } finally {
     database.close()
   }

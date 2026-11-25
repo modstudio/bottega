@@ -1,8 +1,7 @@
 import type { Database } from 'bun:sqlite'
-import type { BoardLocality } from '../../../shared/board-mode.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
-import { boardMode } from './board-mode.ts'
+import { type BoardLocality, boardMode } from './board-mode.ts'
 
 export function requireLocalBoardRead(
   environment: Record<string, string | undefined> = process.env,

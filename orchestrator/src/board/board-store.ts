@@ -1,5 +1,4 @@
 import { hostname } from 'node:os'
-import type { BoardLocality } from '../../../shared/board-mode.ts'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
@@ -21,6 +20,7 @@ import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import type { BoardLocality } from './board-mode.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -544,8 +544,9 @@ export function authorWindowDecision(
   clock: number,
   duplicate: boolean,
   database: ReturnType<typeof writableDb>,
+  locality: BoardLocality = 'shared',
 ) {
-  requireLocalBoardRead(process.env, database)
+  requireLocalBoardRead(process.env, database, locality)
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const recentPosts = (
     database
@@ -635,6 +636,11 @@ function duplicateRoot(
   })
 }
 
+function rootMessageLocality(input: PostNoticeInput, audience: string): BoardLocality {
+  if (input.suggestingRunId) return 'suggestion'
+  return parseAudience(audience).kind === 'machine' ? 'machine-audience' : 'shared'
+}
+
 export function insertRootMessage(
   kind: 'notice' | 'question',
   input: PostNoticeInput,
@@ -650,6 +656,7 @@ export function insertRootMessage(
     input.audience,
     postingMachine,
   )
+  const locality = rootMessageLocality(input, audienceExpression)
   validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd, database)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
@@ -673,7 +680,7 @@ export function insertRootMessage(
     clock,
     senderTags,
   })
-  const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
+  const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database, locality)
   if (decision === 'drop-duplicate') {
     const reached = (
       database

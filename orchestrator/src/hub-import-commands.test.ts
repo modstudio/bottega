@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
-import { hubImportJudgeCommand, registeredHubCheckout } from './hub-import-commands.ts'
+import { hubImportJudgeCommand } from './hub-import-commands.ts'
+import { registeredBottegaCheckout } from './registered-checkout.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
@@ -67,7 +68,7 @@ describe('hub import judge applicability', () => {
   })
   test('does not judge a matching path outside the registered checkout', () => {
     const project = { name: PLATFORM_SLUG, path: '/registered/workshop' }
-    expect(registeredHubCheckout('/scratch/other/hub/ui/example.ts', project)).toBeNull()
+    expect(registeredBottegaCheckout('/scratch/other/hub/ui/example.ts', project)).toBeNull()
   })
 
   test('rejects symlink escapes and judges a sibling registered worktree', () => {
@@ -84,16 +85,16 @@ describe('hub import judge applicability', () => {
     const project = { name: PLATFORM_SLUG, path: projectPath }
     try {
       expect(
-        registeredHubCheckout(join(projectPath, 'hub/web/src/components/leak.ts'), project),
+        registeredBottegaCheckout(join(projectPath, 'hub/web/src/components/leak.ts'), project),
       ).toBeNull()
       expect(
-        registeredHubCheckout(
+        registeredBottegaCheckout(
           join(projectPath, 'hub/web/src/components/linked-parent/probe.ts'),
           project,
         ),
       ).toBeNull()
       expect(
-        registeredHubCheckout(join(worktree, 'hub/web/src/components/probe.ts'), project),
+        registeredBottegaCheckout(join(worktree, 'hub/web/src/components/probe.ts'), project),
       ).toEqual({
         checkout: realpathSync(worktree),
         file: join(realpathSync(worktree), 'hub/web/src/components/probe.ts'),

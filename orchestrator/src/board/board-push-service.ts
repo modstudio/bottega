@@ -50,6 +50,7 @@ import {
   addressed,
   boardOrigin,
   boardReaderBeganAt,
+  type MessageRow,
   machineMessageRows,
   messageRows,
   originText,
@@ -303,6 +304,7 @@ function localPendingAcknowledgements(
   clock: number,
   database: Database,
   sourceRows = messageRows(database),
+  locality: 'shared' | 'machine-audience' = 'shared',
 ): BoardDelivery[] {
   const candidates = sourceRows
     .filter((row) => {
@@ -312,7 +314,7 @@ function localPendingAcknowledgements(
         row.ack_required === 1 &&
         row.author_session !== session &&
         rowIsLive(row, clock) &&
-        addressed(row, session, clock) &&
+        addressed(row, session, clock, database, locality) &&
         receipt.acknowledged_at === null
       )
     })
@@ -479,6 +481,21 @@ async function claimPendingPushes(
   }
 }
 
+function pendingAcknowledgements(
+  input: DeliveryInput,
+  beganAt: string | null,
+  clock: number,
+  database: Database,
+  localRows: MessageRow[],
+  localMode: boolean,
+) {
+  const locality = localMode ? 'shared' : 'machine-audience'
+  return [
+    ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows, locality),
+    ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
+  ]
+}
+
 export async function pendingBoardDelivery(input: DeliveryInput): Promise<PendingBoardDelivery> {
   requireRealSession(input.session, 'board pending')
   const database = input.database ?? writableDb()
@@ -517,10 +534,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
         purpose: message.purpose,
       })),
   ]
-  const pendingAcknowledgements = [
-    ...localPendingAcknowledgements(input.session, beganAt, clock, database, localRows),
-    ...(localMode ? [] : hostedPendingAcknowledgements(input.session, beganAt, clock, database)),
-  ]
+  const pending = pendingAcknowledgements(input, beganAt, clock, database, localRows, localMode)
   const withdrawals = pendingWithdrawals(
     input.session,
     clock,
@@ -535,12 +549,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
     deliveredAt: item.deliveredAt,
     purpose: item.purpose,
   }))
-  const candidates = pendingDeliveryCandidates(
-    input,
-    unread,
-    withdrawalDeliveries,
-    pendingAcknowledgements,
-  )
+  const candidates = pendingDeliveryCandidates(input, unread, withdrawalDeliveries, pending)
   const selected = boundedBoardDelivery(
     input.excludeAcknowledgementRequired
       ? candidates.filter((message) => !message.requiresAcknowledgement)
@@ -549,7 +558,7 @@ export async function pendingBoardDelivery(input: DeliveryInput): Promise<Pendin
   return {
     delivery: selected.messages,
     overflow: selected.overflow,
-    pendingAcknowledgements,
+    pendingAcknowledgements: pending,
     stopped: false,
     warning: deliveryWarning(
       localPush?.warning ?? null,
@@ -600,6 +609,7 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const mode = boardMode('shared', input.env ?? process.env, database)
+  const localLocality = mode === 'hosted' ? 'machine-audience' : 'shared'
   const messages = localBoardRows(database)
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
@@ -618,7 +628,7 @@ export async function markBoardDeliveryDelivered(input: {
         requestedLocal.has(row.record_id) &&
         row.author_session !== input.session &&
         rowIsLive(row, clock, database) &&
-        deliverableTo(row, input.session, clock, database),
+        deliverableTo(row, input.session, clock, database, localLocality),
     )
     .map((row) => row)
   const hosted = resolved

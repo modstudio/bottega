@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
-import type { BoardLocality } from '../../../shared/board-mode.ts'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -22,7 +21,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
-import { boardHasAdoptedHosted, boardMode } from './board-mode.ts'
+import { type BoardLocality, boardHasAdoptedHosted, boardMode } from './board-mode.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -442,16 +441,17 @@ export function markRunNoticesDelivered(
 ): void {
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
   const idSet = new Set(ids)
+  const locality = rowsLocality(sourceRows)
   const rows = sourceRows.filter(
     (row) =>
       row.kind === 'notice' &&
       idSet.has(row.record_id) &&
       rowIsLive(row, clock) &&
-      addressed(row, reader, clock),
+      addressed(row, reader, clock, db(), locality),
   )
   if (!rows.length) return
   const database = writableDb()
-  requireLocalBoardWrite('notice delivery', process.env, database, rowsLocality(rows))
+  requireLocalBoardWrite('notice delivery', process.env, database, locality)
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
@@ -561,22 +561,16 @@ export function markNoticesDelivered(
 ): void {
   const reader = boardReader(env)
   const idSet = new Set(ids)
+  const locality = rowsLocality(sourceRows)
   const rows = sourceRows.filter(
     (row) =>
       idSet.has(row.record_id) &&
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
-      deliverableTo(row, reader, clock, database),
+      deliverableTo(row, reader, clock, database, locality),
   )
   if (!rows.length) return
-  requireLocalBoardWrite(
-    'notice delivery',
-    env,
-    database,
-    rows.every((row) => row.audience && parseAudience(row.audience).kind === 'machine')
-      ? 'machine-audience'
-      : 'shared',
-  )
+  requireLocalBoardWrite('notice delivery', env, database, locality)
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
@@ -646,15 +640,12 @@ export function acknowledgeNotice(
 ) {
   const reader = boardReader(env)
   const row = sourceRows.find((candidate) => candidate.record_id === id)
-  if (!row || !rowIsLive(row, clock) || !addressed(row, reader, clock))
+  if (!row) throw new Error(`live board notice ${id} is not addressed to this reader`)
+  const locality = rowLocality(row)
+  if (!rowIsLive(row, clock) || !addressed(row, reader, clock, db(), locality))
     throw new Error(`live board notice ${id} is not addressed to this reader`)
   const database = writableDb()
-  requireLocalBoardWrite(
-    'notice acknowledge',
-    env,
-    database,
-    row.audience && parseAudience(row.audience).kind === 'machine' ? 'machine-audience' : 'shared',
-  )
+  requireLocalBoardWrite('notice acknowledge', env, database, locality)
   database
     .query(
       `INSERT INTO board_receipt
@@ -672,18 +663,25 @@ export function acknowledgeNotice(
     )
 }
 
-export function noticeStatus(id: string, env: Environment = process.env, clock = Date.now()) {
-  requireLocalBoardRead(env)
+export function noticeStatus(
+  id: string,
+  env: Environment = process.env,
+  clock = Date.now(),
+  database: Database = db(),
+  sourceRows: MessageRow[] = messageRows(database),
+) {
   const actor = boardActor(env)
-  const row = messageRows().find((candidate) => candidate.record_id === id)
+  const row = sourceRows.find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
+  const locality = rowLocality(row)
+  requireLocalBoardRead(env, database, locality)
   if (
     actor.kind !== 'operator' &&
     actor.session !== row.author_session &&
-    !addressed(row, actor.session, clock)
+    !addressed(row, actor.session, clock, database, locality)
   )
     throw new Error(`board notice ${id} was not authored by or addressed to this session`)
-  const receipts = db()
+  const receipts = database
     .query(
       `SELECT reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at FROM board_receipt
        WHERE message_record_id=? ORDER BY reader_session`,
@@ -697,7 +695,7 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
   }[]
   const unresolved = new Set(
     row.ack_required && row.audience && parseAudience(row.audience).kind === 'machine'
-      ? recipients(row.audience, clock, messageTags(row.record_id))
+      ? recipients(row.audience, clock, messageTags(row.record_id, database, locality))
       : [],
   )
   for (const receipt of receipts) {
@@ -706,9 +704,9 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
     else unresolved.add(receipt.reader_session)
   }
   return {
-    message: render(row),
+    message: render(row, false, database, locality),
     row,
-    tags: messageTags(row.record_id),
+    tags: messageTags(row.record_id, database, locality),
     receipts,
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
@@ -726,25 +724,36 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
   }
 }
 
-export function withdrawNotice(id: string, env: Environment = process.env, clock = Date.now()) {
-  requireLocalBoardWrite('notice withdraw', env)
+export function withdrawNotice(
+  id: string,
+  env: Environment = process.env,
+  clock = Date.now(),
+  database: Database = writableDb(),
+  sourceRows: MessageRow[] = messageRows(database),
+) {
   const actor = boardActor(env)
-  const row = messageRows().find((candidate) => candidate.record_id === id)
+  const row = sourceRows.find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
+  requireLocalBoardWrite('notice withdraw', env, database, rowLocality(row))
   if (actor.kind !== 'operator' && actor.session !== row.author_session)
     throw new Error(`only the notice author or operator may withdraw board notice ${id}`)
-  writableDb()
+  database
     .query(
       "UPDATE board_message SET withdrawn_reason=CASE WHEN withdrawn_at IS NULL THEN 'author' ELSE withdrawn_reason END,withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?",
     )
     .run(new Date(clock).toISOString(), row.record_id)
 }
 
-export function markSessionMessagesDelivered(session: string, ids: string[], at = nowIso()) {
+export function markSessionMessagesDelivered(
+  session: string,
+  ids: string[],
+  at = nowIso(),
+  locality: BoardLocality = 'shared',
+) {
   requireRealSession(session, 'board delivery acknowledgement')
   if (ids.length === 0) return
   const database = writableDb()
-  requireLocalBoardWrite('notice delivery', process.env, database)
+  requireLocalBoardWrite('notice delivery', process.env, database, locality)
   for (const id of ids)
     database
       .query(

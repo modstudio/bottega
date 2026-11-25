@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { relative, sep } from 'node:path'
 import { hostedLocalBoardHeadFailures } from '../../scripts/hosted-local-board-head-check.ts'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import type { EditorJudgment } from './editor-judgment.ts'
 import {
@@ -65,7 +66,7 @@ export function boardHeadJudgeCommand(
       reason: `project register could not be read: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
-  let target
+  let target: ReturnType<typeof registeredCheckoutForFile>
   try {
     target = registeredCheckoutForFile(file, database)
   } finally {
@@ -75,11 +76,15 @@ export function boardHeadJudgeCommand(
     return {
       status: 'unchecked',
       findings: [],
-      reason: `candidate ${file} is not inside a registered Bottega checkout`,
+      reason: `candidate ${file} is not inside a registered ${PLATFORM_NAME} checkout`,
     }
   const original = relative(target.checkout, target.file).split(sep).join('/')
   if (!original.startsWith('orchestrator/src/'))
-    return { status: 'unchecked', findings: [], reason: `candidate ${file} is outside orchestrator/src` }
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: `candidate ${file} is outside orchestrator/src`,
+    }
   try {
     const failures = hostedLocalBoardHeadFailures({ file: original, sourceText: content })
     return failures.length

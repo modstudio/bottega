@@ -565,10 +565,16 @@ export async function boardReply(
 
 export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
+  const database = db()
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  const localRows = resolved.source === 'local' ? localBoardRows(database) : []
+  const localRow = localRows.find((row) => row.record_id === resolved.recordId)
+  const localLocality = localRow?.audience ? locality(localRow.audience) : ('shared' as const)
   const thread =
     resolved.source === 'local'
-      ? localThread(readThread(resolved.recordId, c.env, c.clock))
+      ? localThread(
+          readThread(resolved.recordId, c.env, c.clock, database, localRows, localLocality),
+        )
       : hostedThread(await hostedClient(c).getBoardThread(resolved.recordId))
   if (resolved.source === 'hosted' && thread.root.noteRecordId) {
     try {
@@ -583,7 +589,8 @@ export async function boardThread(id: string, inputContext?: Context) {
   if (session) {
     const recordIds = [thread.root.recordId, ...thread.replies.map((reply) => reply.recordId)]
     const deliveredAt = new Date(c.clock).toISOString()
-    if (resolved.source === 'local') markSessionMessagesDelivered(session, recordIds, deliveredAt)
+    if (resolved.source === 'local')
+      markSessionMessagesDelivered(session, recordIds, deliveredAt, localLocality)
     else await markBoardDeliveriesDelivered(session, recordIds, deliveredAt)
   }
   return thread
@@ -710,8 +717,10 @@ export async function boardFileNote(questionId: string, inputContext?: Context) 
 
 export async function boardWithdraw(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
-  if (resolved.source === 'local') withdrawNotice(resolved.recordId, c.env, c.clock)
+  const database = db()
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  if (resolved.source === 'local')
+    withdrawNotice(resolved.recordId, c.env, c.clock, database, localBoardRows(database))
   else
     await hostedClient(c).withdrawBoardMessage(resolved.recordId, await writeDestination(c), {
       authorSession: boardActor(c.env).session,
@@ -760,14 +769,18 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
 
 export async function boardStatus(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
+  const database = db()
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
   return resolved.source === 'hosted'
     ? await hostedClient(c)
         .getBoardStatus(resolved.recordId)
         .then((status: HostedBoardStatus) =>
           hostedBoardStatusResult(status.message, status.receipts),
         )
-    : localStatus(noticeStatus(resolved.recordId, c.env, c.clock), c.clock)
+    : localStatus(
+        noticeStatus(resolved.recordId, c.env, c.clock, database, localBoardRows(database)),
+        c.clock,
+      )
 }
 
 function hostedClaimRunId(runId: string | undefined, env: Environment): string | null | undefined {

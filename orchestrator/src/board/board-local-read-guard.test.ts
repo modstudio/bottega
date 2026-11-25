@@ -88,7 +88,7 @@ test('guarded board rows return locally and stop with a hosted-reader remedy aft
     )
     expect(() =>
       postNotice(
-        { audience: 'machine:host', title: 'Hosted local write', body: 'Must stop.' },
+        { audience: 'operator', title: 'Hosted local write', body: 'Must stop.' },
         { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       ),
     ).toThrow(/requireLocalBoardWrite stopped local board notice post/)

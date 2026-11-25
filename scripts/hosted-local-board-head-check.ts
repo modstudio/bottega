@@ -1,7 +1,4 @@
-import {
-  type HostedLocalReadHit,
-  scanHostedLocalReadSource,
-} from './hosted-local-read-report.ts'
+import { type HostedLocalReadHit, scanHostedLocalReadSource } from './hosted-local-read-report.ts'
 import { isProductionTypeScriptFile } from './typescript-source-files.ts'
 
 export function hostedLocalBoardHeadFailures(input: {
@@ -9,11 +6,13 @@ export function hostedLocalBoardHeadFailures(input: {
   sourceText: string
 }): string[] {
   if (!isProductionTypeScriptFile(input.file)) return []
-  return hostedLocalBoardHitFailures(scanHostedLocalReadSource({
-    sourceText: input.sourceText,
-    file: input.file,
-    concern: 'orchestrator',
-  }))
+  return hostedLocalBoardHitFailures(
+    scanHostedLocalReadSource({
+      sourceText: input.sourceText,
+      file: input.file,
+      concern: 'orchestrator',
+    }),
+  )
 }
 
 /** The one board-head judgment shared by the whole-tree gate and the write-time hook. */

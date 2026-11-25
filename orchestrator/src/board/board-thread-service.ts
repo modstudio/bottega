@@ -15,6 +15,7 @@ import {
   fileAcceptedAnswerNote,
 } from './board-answer-note.ts'
 import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
+import type { BoardLocality } from './board-mode.ts'
 import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
@@ -56,15 +57,15 @@ type Environment = Record<string, string | undefined>
 
 const authorReader = (row: MessageRow) => row.author_session ?? OPERATOR_READER
 
-function message(recordId: string): MessageRow {
-  const row = messageRows().find((candidate) => candidate.record_id === recordId)
+function message(recordId: string, sourceRows: MessageRow[] = messageRows()): MessageRow {
+  const row = sourceRows.find((candidate) => candidate.record_id === recordId)
   if (!row) throw new Error(`no board message ${recordId}; choose an existing board message UUID`)
   return row
 }
 
-function threadRoot(recordId: string): MessageRow {
-  const row = message(recordId)
-  return row.kind === 'reply' ? message(row.thread_root_record_id!) : row
+function threadRoot(recordId: string, sourceRows: MessageRow[] = messageRows()): MessageRow {
+  const row = message(recordId, sourceRows)
+  return row.kind === 'reply' ? message(row.thread_root_record_id!, sourceRows) : row
 }
 
 function replyingProject(actor: ReturnType<typeof boardActor>, cwd: string) {
@@ -83,7 +84,12 @@ export function askQuestion(
   cwd = process.cwd(),
 ) {
   const database = writableDb()
-  requireLocalBoardWrite('notice post', env, database)
+  requireLocalBoardWrite(
+    'notice post',
+    env,
+    database,
+    parseAudience(input.audience).kind === 'machine' ? 'machine-audience' : 'shared',
+  )
   return writeTransaction(
     () => insertRootMessage('question', input, env, clock, cwd, database),
     database,
@@ -295,21 +301,28 @@ export function replyToThread(
   }, database)
 }
 
-export function readThread(recordId: string, env: Environment = process.env, clock = Date.now()) {
-  requireLocalBoardRead(env, db())
+export function readThread(
+  recordId: string,
+  env: Environment = process.env,
+  clock = Date.now(),
+  database: ReturnType<typeof db> = db(),
+  sourceRows: MessageRow[] = messageRows(database),
+  locality: BoardLocality = 'shared',
+) {
+  requireLocalBoardRead(env, database, locality)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
-  const root = threadRoot(recordId)
-  const loopedIn = replyAudienceFacts(root, db()).loopedInSessions.includes(reader)
+  const root = threadRoot(recordId, sourceRows)
+  const loopedIn = replyAudienceFacts(root, database).loopedInSessions.includes(reader)
   if (
     actor.kind !== 'operator' &&
     authorReader(root) !== reader &&
-    !addressed(root, reader, clock) &&
-    !hasReceipt(root.record_id, reader) &&
+    !addressed(root, reader, clock, database, locality) &&
+    !hasReceipt(root.record_id, reader, database, locality) &&
     !loopedIn
   )
     throw new Error(`board thread ${root.number} is not readable by this session`)
-  const replies = db()
+  const replies = database
     .query(
       `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE thread_root_record_id=? ORDER BY created_at,number`,
     )
@@ -330,7 +343,7 @@ export function readThread(recordId: string, env: Environment = process.env, clo
       body: root.body,
       audience: root.audience,
       origin: boardOrigin(root),
-      senderTags: messageTags(root.record_id)
+      senderTags: messageTags(root.record_id, database, locality)
         .filter((tag) => tag.origin === 'sender')
         .map(({ kind, value }) => ({ kind, value })),
       createdAt: root.created_at,

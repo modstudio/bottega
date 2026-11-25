@@ -8,6 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from editor_tool_judge import EDITOR_TOOLS, run_editor_tool_judge
+from registered_scope import should_hook_act
 
 JUDGE_TIMEOUT_SECONDS = 2
 
@@ -31,6 +32,8 @@ def precheck_text(payload, path):
 
 
 def should_check_board_head(payload, path):
+    if not should_hook_act(payload):
+        return False
     if payload.get("tool_name") not in EDITOR_TOOLS or path is None:
         return False
     normalized = path.replace(os.sep, "/")

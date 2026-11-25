@@ -10,6 +10,7 @@ import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 
 export const BOARD_HOSTED_ADOPTED_KEY = 'board_hosted_adopted'
+export type { BoardLocality } from '../../../shared/board-mode.ts'
 
 export function boardHasAdoptedHosted(database: Database = db()): boolean {
   return (
@@ -24,13 +25,21 @@ export function boardMode(
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),
 ): 'local' | 'hosted' {
-  const decision = decideBoardMode({
+  const decision = boardModeDecision(locality, environment, database)
+  if (decision.mode === 'refused') throw new Error(decision.reason)
+  return decision.mode
+}
+
+export function boardModeDecision(
+  locality: BoardLocality,
+  environment: Record<string, string | undefined> = process.env,
+  database: Database = db(),
+) {
+  return decideBoardMode({
     adopted: boardHasAdoptedHosted(database),
     hostedConfigured: () => recordApiConfigured(environment),
     locality,
   })
-  if (decision.mode === 'refused') throw new Error(decision.reason)
-  return decision.mode
 }
 
 export function boardModeForId(

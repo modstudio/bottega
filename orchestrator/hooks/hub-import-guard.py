@@ -6,11 +6,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from editor_tool_judge import EDITOR_TOOLS, UnsupportedEditorShape, run_editor_tool_judge
+from registered_scope import should_hook_act
 
 JUDGE_TIMEOUT_SECONDS = 8
 
 
 def should_check_hub_import(payload, path):
+    if not should_hook_act(payload):
+        return False
     if path is None or "/hub/" not in path.replace(os.sep, "/"):
         return False
     if payload.get("tool_name") not in EDITOR_TOOLS:

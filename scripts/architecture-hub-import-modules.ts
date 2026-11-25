@@ -43,6 +43,7 @@ export const hubImportModules = [
     allowed: [
       'node:path',
       '../../scripts/hosted-local-board-head-check.ts',
+      '../../shared/brand.ts',
       './database/db.ts',
       './editor-judgment.ts',
       './editor-proposal.ts',

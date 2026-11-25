@@ -386,6 +386,40 @@ test('closed session sweep releases local claims but leaves adopted local histor
         .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
         .get(hostedSession),
     ).toEqual({ swept_at: new Date(clock).toISOString() })
+
+    const refusedSession = newRecordId()
+    const refusedClaim = newRecordId()
+    insertCloseOut.run(newRecordId(), refusedSession, closedAt)
+    insertSeen.run(refusedSession, closedAt)
+    insertClaim.run(
+      refusedClaim,
+      PLATFORM_SLUG,
+      `DEV-${refusedClaim}`,
+      refusedSession,
+      closedAt,
+      closedAt,
+      lapsesAt,
+    )
+    delete process.env.BOTTEGA_RECORD_API_URL
+    await expect(
+      sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(lines, () => {}),
+        adapters: { release },
+      }),
+    ).resolves.toBe(false)
+    expect(
+      database.query('SELECT closed_at FROM board_claim WHERE record_id=?').get(refusedClaim),
+    ).toEqual({ closed_at: null })
+    expect(
+      database
+        .query('SELECT swept_at FROM session_close_out WHERE session_id=?')
+        .get(refusedSession),
+    ).toEqual({ swept_at: new Date(clock).toISOString() })
+    expect(lines.filter((line) => line.includes('BOTTEGA_RECORD_API_URL'))).toHaveLength(1)
   } finally {
     database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
     if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL

@@ -1,5 +1,26 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { resolve } from 'node:path'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { boardHeadHookShouldAct, boardHeadJudgeCommand } from './board-head-commands.ts'
+
+const checkout = resolve(import.meta.dir, '../..')
+
+function registeredDatabase() {
+  const database = new Database(':memory:')
+  database.run(
+    'CREATE TABLE project (record_id TEXT PRIMARY KEY, name TEXT, path TEXT, stack TEXT, canon INTEGER, settings TEXT, retired_at TEXT)',
+  )
+  database.run('INSERT INTO project VALUES (?,?,?,?,?,?,NULL)', [
+    'project',
+    PLATFORM_SLUG,
+    checkout,
+    'bun',
+    1,
+    '{}',
+  ])
+  return database
+}
 
 test('board-head hook pre-check is narrow to production orchestrator board content', () => {
   expect(
@@ -29,7 +50,7 @@ test('board-head hook pre-check is narrow to production orchestrator board conte
 })
 
 test('board-head judge refuses an unheaded proposed file and accepts a headed one', () => {
-  const file = '/repo/orchestrator/src/board/candidate.ts'
+  const file = resolve(checkout, 'orchestrator/src/board/candidate.ts')
   const payload = (content: string) =>
     JSON.stringify({ tool_name: 'Write', tool_input: { file_path: file, content } })
 
@@ -38,6 +59,7 @@ test('board-head judge refuses an unheaded proposed file and accepts a headed on
       payload(
         "export function write(database) { database.query('UPDATE board_message SET title=?') }",
       ),
+      registeredDatabase,
     ),
   ).toEqual({
     status: 'refused',
@@ -45,7 +67,7 @@ test('board-head judge refuses an unheaded proposed file and accepts a headed on
       {
         rule: 'local-board-sql-requires-head',
         dependency: expect.stringContaining(
-          'orchestrator/src/board/candidate.ts:1: local board_message write',
+          `${file} (orchestrator/src/board/candidate.ts:1: local board_message write`,
         ),
       },
     ],
@@ -56,6 +78,27 @@ test('board-head judge refuses an unheaded proposed file and accepts a headed on
         requireLocalBoardWrite('notice post', process.env, database)
         database.query('UPDATE board_message SET title=?')
       }`),
+      registeredDatabase,
     ),
   ).toEqual({ status: 'ok', findings: [] })
+})
+
+test('board-head judge leaves a matching foreign checkout unchecked', () => {
+  const file = '/tmp/other-project/orchestrator/src/board/candidate.ts'
+  expect(
+    boardHeadJudgeCommand(
+      JSON.stringify({
+        tool_name: 'Write',
+        tool_input: {
+          file_path: file,
+          content: "database.query('UPDATE board_message SET title=?')",
+        },
+      }),
+      registeredDatabase,
+    ),
+  ).toEqual({
+    status: 'unchecked',
+    findings: [],
+    reason: `candidate ${file} is not inside a registered ${PLATFORM_NAME} checkout`,
+  })
 })
