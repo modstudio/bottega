@@ -25,6 +25,7 @@ import {
   type HostedRowReferences,
   type HostedRowTable,
   hostedRowIdsAreEmpty,
+  hostedRowIsHeld,
   type PresenceReader,
   questionAuditIsPresent,
   readHostedRowPresence,
@@ -40,9 +41,15 @@ type DefaultProjectRetirementDependencies = {
 const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
 export const HOSTED_ROW_RELEASE_ARCHIVE_KEEP = BOUNDED_JSONL_ARCHIVE_KEEP
 
+type KeptTable = {
+  table: HostedRowTable
+  heldIds: readonly string[]
+  absentIds: readonly string[]
+}
+
 export type HostedRowReleaseDecision = {
   deleteIds: HostedRowIds
-  keptTables: Array<{ table: HostedRowTable; absentIds: readonly string[] }>
+  keptTables: KeptTable[]
 }
 
 function addParents(
@@ -96,6 +103,19 @@ function keepIncompleteHeldFlows(
   }
 }
 
+function classifyAbsentRows(
+  table: HostedRowTable,
+  absent: readonly string[],
+  references: HostedRowReferences,
+  held: { questions: ReadonlySet<string>; flows: ReadonlySet<string> },
+): Pick<KeptTable, 'heldIds' | 'absentIds'> {
+  const heldIds: string[] = []
+  const absentIds: string[] = []
+  for (const id of absent)
+    (hostedRowIsHeld(table, id, references, held) ? heldIds : absentIds).push(id)
+  return { heldIds, absentIds }
+}
+
 /** Decide per-table retention and close retained parent references to a fixed point. */
 export function decideHostedRowRelease(
   local: HostedRowIds,
@@ -125,7 +145,7 @@ export function decideHostedRowRelease(
     })
     if (!absent.length) continue
     for (const id of local[table]) kept[table].add(id)
-    keptTables.push({ table, absentIds: absent })
+    keptTables.push({ table, ...classifyAbsentRows(table, absent, references, held) })
   }
   let changed = true
   while (changed) {
@@ -165,12 +185,25 @@ function keptTableLine(table: HostedRowTable, ids: readonly string[]): string {
   return `kept local ${table}: ${ids.length} ids absent from the record: ${shown.join(', ')}${omitted ? `, and ${omitted} more` : ''}; run ${PLATFORM_SLUG} record sync, then ${PLATFORM_SLUG} machine update`
 }
 
+function heldTableLine(table: HostedRowTable, ids: readonly string[]): string {
+  const shown = ids.slice(0, HOSTED_ROW_RELEASE_SHOWN_IDS)
+  const omitted = ids.length - shown.length
+  return `kept local ${table}: ${ids.length} ids held by the record with different content: ${shown.join(', ')}${omitted ? `, and ${omitted} more` : ''}; no command clears this yet`
+}
+
 type Presentation = { log(value: string): void }
 type WithDatabase = <T>(action: (database: Database) => T) => T
 export type HostedRowReleaseDependencies = {
   withDatabase?: WithDatabase
   presence?: PresenceReader
   archive?: ArchiveWriter
+}
+
+function logKeptTables(presentation: Presentation, keptTables: readonly KeptTable[]): void {
+  for (const report of keptTables) {
+    if (report.heldIds.length) presentation.log(heldTableLine(report.table, report.heldIds))
+    if (report.absentIds.length) presentation.log(keptTableLine(report.table, report.absentIds))
+  }
 }
 
 function defaultPresenceReader(input: Parameters<PresenceReader>[0]) {
@@ -298,8 +331,7 @@ export async function releaseHostedRowsAfterUpdate(
   }
   withDatabase((database) => deleteHostedRows(database, decision.deleteIds))
   if (archivePath) presentation.log(`archived released local workflow history at ${archivePath}`)
-  for (const report of decision.keptTables)
-    presentation.log(keptTableLine(report.table, report.absentIds))
+  logKeptTables(presentation, decision.keptTables)
   if (released)
     presentation.log(`released ${released} local workflow history rows now on the record`)
 }

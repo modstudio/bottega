@@ -44,6 +44,41 @@ export type HostedRowState = {
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
 
+function hostedRowFlow(
+  table: HostedRowTable,
+  id: string,
+  references: HostedRowReferences,
+): string | undefined {
+  if (table === 'task_flow') return id
+  if (table === 'workflow_cursor') return references.cursorFlow.get(id)
+  if (table === 'workflow_obligation')
+    return references.cursorFlow.get(references.obligationCursor.get(id) ?? '')
+  if (table === 'workflow_step_text')
+    return references.cursorFlow.get(references.stepTextCursor.get(id) ?? '')
+  if (table === 'workflow_text_copy')
+    return references.cursorFlow.get(references.textCopyCursor.get(id) ?? '')
+  if (table === 'question') return undefined
+  const question = references.auditQuestion.get(id)
+  const cursor = question ? references.questionCursor.get(question) : undefined
+  return cursor ? references.cursorFlow.get(cursor) : undefined
+}
+
+/** Classify a local hosted row whose record conflict prevents another upload attempt. */
+export function hostedRowIsHeld(
+  table: HostedRowTable,
+  id: string,
+  references: HostedRowReferences,
+  held: { flows: ReadonlySet<string>; questions: ReadonlySet<string> },
+): boolean {
+  if (table === 'question') return held.questions.has(id)
+  if (table === 'question_mutation_audit') {
+    const question = references.auditQuestion.get(id)
+    if (question && held.questions.has(question)) return true
+  }
+  const flow = hostedRowFlow(table, id, references)
+  return flow !== undefined && held.flows.has(flow)
+}
+
 function questionAuditIdentity(input: QuestionAuditIdentity): string {
   return `${input.questionId}|${input.action}|${Date.parse(input.at)}`
 }

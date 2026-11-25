@@ -94,8 +94,8 @@ test('hosted row release keeps an incomplete table and its referenced parents', 
   const decision = decideHostedRowRelease(local, presence({ question: ['present'] }), refs)
   expect(decision.deleteIds).toEqual(rowIds({}))
   expect(decision.keptTables).toEqual([
-    { table: 'question_mutation_audit', absentIds: ['audit'] },
-    { table: 'question', absentIds: ['missing'] },
+    { table: 'question_mutation_audit', heldIds: [], absentIds: ['audit'] },
+    { table: 'question', heldIds: [], absentIds: ['missing'] },
   ])
 })
 
@@ -372,7 +372,7 @@ test('hosted row release deletes a held flow when all child rows are present', a
   database.close()
 })
 
-test('hosted row release keeps a held flow intact when one child is absent', async () => {
+test('hosted row release reports an absent held-flow step text without a circular remedy', async () => {
   const database = migratedTestDatabase()
   const ids = seedReleaseRows(database)
   const flowId = [...ids.task_flow][0]!
@@ -397,9 +397,10 @@ test('hosted row release keeps a held flow intact when one child is absent', asy
     workflow_cursor: 1,
     task_flow: 1,
   })
-  expect(output.some((line) => line.includes(`workflow_step_text`) && line.includes(textId))).toBe(
-    true,
-  )
+  const line = output.find((value) => value.includes(`kept local workflow_step_text: 1 ids`))
+  expect(line).toContain(`held by the record with different content: ${textId}`)
+  expect(line).toContain('no command clears this yet')
+  expect(line).not.toContain('record sync')
   database.close()
 })
 

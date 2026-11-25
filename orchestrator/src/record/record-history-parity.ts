@@ -8,6 +8,7 @@ import {
   type HostedRowReferences,
   type HostedRowStates,
   type HostedRowTable,
+  hostedRowIsHeld,
   questionAuditIsPresent,
 } from './record-hosted-row-presence.ts'
 
@@ -37,31 +38,6 @@ export type WorkflowHistoryParityInput = {
 
 export type WorkflowHistoryParityDiagnosis = { lines: string[]; failed: boolean }
 
-function flowForRow(
-  table: ParityTable,
-  id: string,
-  references: HostedRowReferences,
-): string | undefined {
-  if (table === 'task_flow') return id
-  if (table === 'workflow_cursor') return references.cursorFlow.get(id)
-  if (table === 'workflow_step_text')
-    return references.cursorFlow.get(references.stepTextCursor.get(id) ?? '')
-  if (table === 'workflow_text_copy')
-    return references.cursorFlow.get(references.textCopyCursor.get(id) ?? '')
-  const question = references.auditQuestion.get(id)
-  const cursor = question ? references.questionCursor.get(question) : undefined
-  return cursor ? references.cursorFlow.get(cursor) : undefined
-}
-
-function rowIsHeld(table: ParityTable, id: string, input: WorkflowHistoryParityInput): boolean {
-  if (table === 'question_mutation_audit') {
-    const question = input.references.auditQuestion.get(id)
-    if (question && input.heldQuestionIds.has(question)) return true
-  }
-  const flow = flowForRow(table, id, input.references)
-  return flow !== undefined && input.heldFlowIds.has(flow)
-}
-
 function heldWarningLine(table: ParityTable, count: number): string {
   return `  warning: workflow history ${table}: held ${count} (no command clears this yet)`
 }
@@ -86,7 +62,13 @@ function classifyMissingRows(
   const ids = [...input.local[table]].filter((id) => !rowIsPresent(table, id, input))
   const counts = { held: 0, skipped: 0, pending: 0 }
   for (const id of ids) {
-    if (rowIsHeld(table, id, input)) counts.held += 1
+    if (
+      hostedRowIsHeld(table, id, input.references, {
+        flows: input.heldFlowIds,
+        questions: input.heldQuestionIds,
+      })
+    )
+      counts.held += 1
     else if (skipped) counts.skipped += 1
     else counts.pending += 1
   }
