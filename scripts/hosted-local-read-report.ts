@@ -106,10 +106,7 @@ const HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES = [
 export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
   const refused = new Set<string>(HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES)
   return hits.flatMap((hit) =>
-    hit.kind === 'read' &&
-    hit.path === 'hosted-reachable' &&
-    refused.has(hit.table) &&
-    hit.file !== 'orchestrator/src/board/board-suggestions.ts'
+    hit.kind === 'read' && hit.path === 'hosted-reachable' && refused.has(hit.table)
       ? [
           `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; branch through boardMode/boardModeForId and the hosted board reader`,
         ]

@@ -26,6 +26,12 @@ type B2ReasonedSite = {
   detail: string
 }
 
+const BOARD_SUGGESTION_LOCAL_ONLY_SITES = [
+  ['suggestBoardPost', 5],
+  ['suggestion', 1],
+  ['senderDefaults', 1],
+] as const
+
 const B2_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
   ...[
     ['listLocalTasks', 1],
@@ -429,6 +435,15 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     functionName,
     reason: 'planned' as const,
     detail,
+    expectedSites,
+    reportOnly: true as const,
+  })),
+  ...BOARD_SUGGESTION_LOCAL_ONLY_SITES.map(([functionName, expectedSites]) => ({
+    pattern: /^orchestrator\/src\/board\/board-suggestions\.ts$/,
+    functionName,
+    reason: 'local-only' as const,
+    detail:
+      'reads and writes of worker board suggestions and their sender tags are machine-local by design; the hosted board refuses kind suggestion through record-board-scope.ts hostedBoardPostRefusal, and suggestBoardPost writes them to the local store on every install',
     expectedSites,
     reportOnly: true as const,
   })),
