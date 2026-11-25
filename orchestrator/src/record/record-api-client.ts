@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
+import type { Database } from 'bun:sqlite'
 import { hostedApiFetch as apiFetch } from '../../../shared/bounded-fetch.ts'
 import type {
   DocAudience,
@@ -557,19 +558,21 @@ export async function recordApiRequest<T>(
   } = {},
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = apiFetch,
-  preflight: () => void = throwIfRecordApiRequestRefused,
+  preflight?: () => void,
   origin?: string,
+  database?: Database,
 ): Promise<T> {
-  preflight()
+  const enforcePreflight = preflight ?? (() => throwIfRecordApiRequestRefused(database))
+  enforcePreflight()
   const resolvedOrigin = origin ?? recordApiBaseUrl()
   const readToken = async () =>
     init.signal
       ? await (authentication
           ? authentication.tokenAsync(init.signal)
-          : storedRecordTokenAsync(undefined, init.signal))
+          : storedRecordTokenAsync(database, init.signal))
       : authentication
         ? authentication.token()
-        : storedRecordToken()
+        : storedRecordToken(database)
   const send = async (bearer: string) => {
     const { destinationSpaceId: s, headers: h } = init
     const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
@@ -609,8 +612,8 @@ export async function recordApiRequest<T>(
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
-function throwIfRecordApiRequestRefused(): void {
-  const authority = currentRecordWriteDecision()
+function throwIfRecordApiRequestRefused(database?: Database): void {
+  const authority = currentRecordWriteDecision(database)
   if (authority.verdict === 'refused') {
     throw new RecordApiRequestError(authority.refusal, 'refused')
   }
@@ -755,14 +758,20 @@ export function authenticatedRecordApiClient(
 export function recordApiClient(
   request = recordApiRequest,
   transport?: typeof fetch,
+  database?: Database,
 ): RecordApiClient {
   const injected = injectSlot().current
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return recordApiClientOver(
-    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch),
-    { transport: transport ?? apiFetch, streamTransport: transport },
+    selectTransport(request, recordApiRequest, recordApiBaseUrl, transport ?? apiFetch, database),
+    {
+      transport: transport ?? apiFetch,
+      streamTransport: transport,
+      streamToken: database ? () => storedRecordToken(database) : undefined,
+      preflight: database ? () => throwIfRecordApiRequestRefused(database) : undefined,
+    },
   )
 }
 

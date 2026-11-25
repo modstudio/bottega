@@ -71,7 +71,7 @@ export async function hostedDocClient(
   suppliedOwner?: RecordWriteOwner,
   database?: Database,
 ): Promise<HostedDocClient> {
-  const client = recordApiClient()
+  const client = recordApiClient(undefined, undefined, database)
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName, database)?.recordId ?? null) : null
   const owner = suppliedOwner ?? docOwner(projectName)

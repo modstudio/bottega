@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -11,12 +11,10 @@ import {
 } from '../orchestrator/src/database/db.ts'
 import { writeMigratedTestDatabase } from '../orchestrator/src/database/test-database.fixture.ts'
 import { currentRecordAuthorityFacts } from '../orchestrator/src/record/record-write-authority.ts'
-import {
-  createMemoryRecordApiClient,
-  installRecordApiClient,
-} from '../orchestrator/test/fixtures/record-api.ts'
+import { installRecordApiClient } from '../orchestrator/test/fixtures/record-api.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
+import { clearRecordSessionToken, writeRecordSessionToken } from '../shared/record-session.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
 import {
   branchChangedPaths,
@@ -29,6 +27,9 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
+const originalKeyStore = process.env.BOTTEGA_KEYSTORE
+const originalTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const originalFetch = globalThis.fetch
 
 function git(root: string, ...args: string[]): string {
   return runTestGit(root, process.env, ...args)
@@ -176,70 +177,103 @@ describe('canon drift branch gate', () => {
     expect(digest()).toBe(before)
   })
 
-  test('reads hosted canon rows without changing a scratch store', async () => {
-    const root = repository()
-    const store = DB_PATH
-    writeMigratedTestDatabase(store)
-    const writable = new Database(store, { create: true })
-    writable
-      .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')
-      .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main', space: 'fixture' }))
-    writable.exec('DELETE FROM record_local_by_design; DELETE FROM record_install_binding;')
-    writable
-      .query(
-        "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-25',?)",
-      )
-      .run('https://record.example.test')
-    writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
-    writable.close()
-    const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
-    const before = digest()
-    const memory = createMemoryRecordApiClient()
-    installRecordApiClient({
-      ...memory,
-      whoami: async () => ({
-        user: { id: 'user-a' },
-        activeSpaceId: 'fixture-space',
-        personalSpaceId: 'personal-space',
-        memberships: [{ space_id: 'fixture-space', slug: 'fixture', permission: 'write' }],
-      }),
-      listDocs: async (query) => ({
-        items:
-          query.subject === 'fixture'
-            ? [
-                {
-                  id: newRecordId(),
-                  scope: 'canon',
-                  subject: 'fixture',
-                  slug: 'AGENTS.md',
-                  title: 'Hosted fixture canon',
-                  body: 'Hosted fixture canon body.',
-                  delivery: 'inject',
-                  audiences: ['technical'],
-                  status: 'current',
-                  kind: 'working',
-                  createdAt: '2026-11-25T00:00:00.000Z',
-                  updatedAt: '2026-11-25T00:00:00.000Z',
+  describe('hosted-authoritative store read', () => {
+    beforeEach(() => {
+      installRecordApiClient(null)
+      process.env.BOTTEGA_KEYSTORE = 'file'
+      process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = '1'
+      process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+      writeRecordSessionToken('fixture-token')
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        const body =
+          url.pathname === '/v1/whoami'
+            ? {
+                user: {
+                  id: 'user-a',
+                  name: 'Fixture User',
+                  email: 'fixture@example.test',
+                  emailVerified: true,
                 },
-              ]
-            : [],
-        nextCursor: null,
-      }),
+                activeSpaceId: 'fixture-space',
+                personalSpaceId: 'personal-space',
+                memberships: [
+                  {
+                    space_id: 'fixture-space',
+                    name: 'Fixture',
+                    slug: 'fixture',
+                    role: 'member',
+                    permission: 'write',
+                  },
+                ],
+              }
+            : {
+                items:
+                  url.searchParams.get('subject') === 'fixture'
+                    ? [
+                        {
+                          id: newRecordId(),
+                          scope: 'canon',
+                          subject: 'fixture',
+                          slug: 'AGENTS.md',
+                          title: 'Hosted fixture canon',
+                          body: 'Hosted fixture canon body.',
+                          delivery: 'inject',
+                          audiences: ['technical'],
+                          status: 'current',
+                          kind: 'working',
+                          createdAt: '2026-11-25T00:00:00.000Z',
+                          updatedAt: '2026-11-25T00:00:00.000Z',
+                        },
+                      ]
+                    : [],
+                nextCursor: null,
+              }
+        return Response.json(body)
+      }) as typeof fetch
     })
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
 
-    const readonly = openReadOnlyDatabase(store)
-    try {
-      expect(await readCanonGateInput(root, readonly)).toMatchObject({
-        project: { name: 'fixture' },
-        rows: [{ slug: 'AGENTS.md', body: 'Hosted fixture canon body.', subject: 'fixture' }],
-      })
-    } finally {
-      readonly.close()
+    afterEach(() => {
+      clearRecordSessionToken()
+      globalThis.fetch = originalFetch
+      if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
+      else process.env.BOTTEGA_KEYSTORE = originalKeyStore
+      if (originalTestContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+      else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = originalTestContainer
       process.env.BOTTEGA_RECORD_API_URL = ''
-    }
+    })
 
-    expect(digest()).toBe(before)
+    test('reads hosted canon rows without changing a scratch store', async () => {
+      const root = repository()
+      const store = DB_PATH
+      writeMigratedTestDatabase(store)
+      const writable = new Database(store, { create: true })
+      writable
+        .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')
+        .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main', space: 'fixture' }))
+      writable.exec('DELETE FROM record_local_by_design; DELETE FROM record_install_binding;')
+      writable
+        .query(
+          "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-25',?)",
+        )
+        .run('https://record.example.test')
+      writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
+      writable.close()
+      const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
+      const before = digest()
+
+      const readonly = openReadOnlyDatabase(store)
+      try {
+        expect(await readCanonGateInput(root, readonly)).toMatchObject({
+          project: { name: 'fixture' },
+          rows: [{ slug: 'AGENTS.md', body: 'Hosted fixture canon body.', subject: 'fixture' }],
+        })
+      } finally {
+        readonly.close()
+      }
+
+      expect(digest()).toBe(before)
+    })
   })
 
   test('refuses CI base metadata that differs from registered trunk', () => {
