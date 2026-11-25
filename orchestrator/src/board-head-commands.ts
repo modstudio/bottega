@@ -4,6 +4,7 @@
 import { sep } from 'node:path'
 import { hostedLocalBoardHeadFailures } from '../../scripts/hosted-local-board-head-check.ts'
 import {
+  type EditorToolPayload,
   editorTargetFile,
   parseEditorToolPayload,
   proposedEditorContent,
@@ -36,7 +37,7 @@ function checkoutRelativeFile(file: string): string | null {
 }
 
 export function boardHeadJudgeCommand(text: string): BoardHeadJudgment {
-  let payload
+  let payload: EditorToolPayload
   try {
     payload = parseEditorToolPayload(text)
   } catch (error) {

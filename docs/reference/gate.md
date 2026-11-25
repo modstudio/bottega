@@ -5,6 +5,9 @@
 gates and mechanical checks
 
 - [bottega gate](#bottega-gate)
+- [bottega gate board-head](#bottega-gate-board-head)
+- [bottega gate board-head help](#bottega-gate-board-head-help)
+- [bottega gate board-head judge](#bottega-gate-board-head-judge)
 - [bottega gate check](#bottega-gate-check)
 - [bottega gate enforcement](#bottega-gate-enforcement)
 - [bottega gate help](#bottega-gate-help)
@@ -26,6 +29,7 @@ gates and mechanical checks
 
 ### Related
 
+- [bottega gate board-head](./gate.md#bottega-gate-board-head)
 - [bottega gate check](./gate.md#bottega-gate-check)
 - [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
 - [bottega gate help](./gate.md#bottega-gate-help)
@@ -34,6 +38,42 @@ gates and mechanical checks
 - [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
 - [bottega gate run](./gate.md#bottega-gate-run)
 - [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
+
+## bottega gate board-head
+
+**Synopsis:** `bottega gate board-head`
+
+judge whether proposed local board SQL has a local-board head
+
+### Related
+
+- [bottega gate](./gate.md#bottega-gate)
+- [bottega gate board-head help](./gate.md#bottega-gate-board-head-help)
+- [bottega gate board-head judge](./gate.md#bottega-gate-board-head-judge)
+
+## bottega gate board-head help
+
+**Synopsis:** `bottega gate board-head help [command]`
+
+display help for command
+
+### Related
+
+- [bottega gate board-head](./gate.md#bottega-gate-board-head)
+
+## bottega gate board-head judge
+
+**Synopsis:** `bottega gate board-head judge [--tool-input]`
+
+read and judge one proposed editor payload from standard input
+
+### Options
+
+- `--tool-input`: read an editor tool payload
+
+### Related
+
+- [bottega gate board-head](./gate.md#bottega-gate-board-head)
 
 ## bottega gate check
 

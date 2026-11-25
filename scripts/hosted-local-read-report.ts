@@ -95,28 +95,6 @@ export type HostedLocalReadScan = {
   }
 }
 
-const HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES = [
-  'board_message',
-  'board_claim',
-  'board_receipt',
-  'board_message_tag',
-  'board_withdrawal_delivery',
-] as const
-
-export function hostedBoardLocalReadFailures(hits: readonly HostedLocalReadHit[]): string[] {
-  const refused = new Set<string>(HOSTED_BOARD_LOCAL_READ_REFUSAL_TABLES)
-  return hits.flatMap((hit) =>
-    hit.kind === 'read' &&
-    hit.path === 'hosted-reachable' &&
-    hit.exclusionReason !== 'planned' &&
-    refused.has(hit.table)
-      ? [
-          `${hit.file}:${hit.line}: hosted install can read ${hit.table} from the local SQLite store; branch through boardMode/boardModeForId and the hosted board reader`,
-        ]
-      : [],
-  )
-}
-
 const HOSTED_HUB_LOCAL_READ_REFUSAL_TABLES = [
   'task',
   'task_document',

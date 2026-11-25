@@ -10,6 +10,7 @@ import {
   HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
   hostedTableInSql,
 } from '../orchestrator/src/database/hosted-table-guard.ts'
+import { hostedLocalBoardHitFailures } from './hosted-local-board-head-check.ts'
 import {
   type HostedLocalReadHit,
   hostedDocLocalReadFailures,
@@ -19,7 +20,6 @@ import {
   hostedLocalSqlExemptionReasonFailures,
   hostedLocalSqlSelectorFailures,
 } from './hosted-local-read-report.ts'
-import { hostedLocalBoardHitFailures } from './hosted-local-board-head-check.ts'
 import {
   HOSTED_LOCAL_SQL_ALLOWED_FILES,
   type HostedLocalSqlAllowedFile,
