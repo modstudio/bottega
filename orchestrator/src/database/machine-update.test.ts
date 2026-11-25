@@ -107,9 +107,8 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   }
 }
 
-const NO_BUILD_OR_REFRESH = {
-  buildCli: () => {},
-  runLaunchAgentsRefreshVerb: () => {},
+const NO_POST_UPDATE = {
+  handoffPostUpdate: () => {},
 }
 
 function machineUpdateCommand(
@@ -117,15 +116,7 @@ function machineUpdateCommand(
   deps: Parameters<typeof runMachineUpdateCommand>[1] = {},
   requestedVersion?: string,
 ) {
-  return runMachineUpdateCommand(
-    presentation,
-    {
-      storeAttachedToHostedRecord: () => false,
-      recordSessionPresent: () => false,
-      ...deps,
-    },
-    requestedVersion,
-  )
+  return runMachineUpdateCommand(presentation, deps, requestedVersion)
 }
 
 function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
@@ -144,8 +135,7 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
       return args[0] === 'rev-parse' ? 'current-before' : ''
     },
     migrate,
-    syncWorkflows: () => {},
-    ...NO_BUILD_OR_REFRESH,
+    ...NO_POST_UPDATE,
   }
 }
 
@@ -170,15 +160,14 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       migrate: () => {
         migrated = true
       },
-      syncWorkflows: () => {},
-      ...NO_BUILD_OR_REFRESH,
+      ...NO_POST_UPDATE,
     },
   )
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
   expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0])).join(' ')).toBe(
-    'branch fetch show rev-parse pull diff branch status branch status',
+    'branch fetch show rev-parse pull diff',
   )
 })
 
@@ -207,8 +196,7 @@ test('machine update proceeds when the hub store is absent and records position 
         migrate: () => {
           migrated = true
         },
-        syncWorkflows: () => {},
-        ...NO_BUILD_OR_REFRESH,
+        ...NO_POST_UPDATE,
       },
     )
     expect(migrated).toBeTrue()
@@ -242,8 +230,7 @@ test("machine update recovers a dead holder's intent before the new update", asy
           return args[0] === 'rev-parse' ? 'current-before' : ''
         },
         migrate: () => {},
-        syncWorkflows: () => {},
-        ...NO_BUILD_OR_REFRESH,
+        ...NO_POST_UPDATE,
       },
     )
   } finally {
@@ -436,36 +423,6 @@ test('machine update leaves main pulled when the store position cannot be read a
   }
 })
 
-test('machine update refuses a tracked-dirty install root before refresh', async () => {
-  let refreshed = false
-  await expect(
-    machineUpdateCommand(
-      { log: () => {} },
-      {
-        cwd: dir,
-        authorityRefusal: () => null,
-        project: () => ({
-          name: 'migration-update-fixture',
-          path: dir,
-          settings: { trunk: 'main' },
-        }),
-        git: (_cwd, args) => {
-          if (args[0] === 'branch') return 'main'
-          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
-          if (args[0] === 'status') return ' M tracked.ts'
-          return ''
-        },
-        migrate: () => {},
-        syncWorkflows: () => {},
-        runLaunchAgentsRefreshVerb: () => {
-          refreshed = true
-        },
-      },
-    ),
-  ).rejects.toThrow('checkout has tracked modifications')
-  expect(refreshed).toBeFalse()
-})
-
 test('an additive machine update marks only the store-open window around pull and migrate', async () => {
   const held = incomingAdditiveMigration()
   const phases: string[] = []
@@ -495,8 +452,7 @@ test('an additive machine update marks only the store-open window around pull an
           expect(migrationDrain(db())).toBeNull()
           phases.push('migrate')
         },
-        syncWorkflows: () => {},
-        ...NO_BUILD_OR_REFRESH,
+        ...NO_POST_UPDATE,
       },
     )
     expect(phases).toEqual(['pull', 'migrate'])
@@ -646,8 +602,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           expect(migrationDrain(db())?.phase).toBe('migrating')
           events.push('migrate')
         },
-        syncWorkflows: () => {},
-        ...NO_BUILD_OR_REFRESH,
+        ...NO_POST_UPDATE,
       },
     )
   } finally {
@@ -861,17 +816,13 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {},
-      syncWorkflows: () => {},
-      ...NO_BUILD_OR_REFRESH,
+      ...NO_POST_UPDATE,
     },
   )
   expect(lines[0]).toBe(`updating the ${PLATFORM_NAME} checkout at ${target}`)
-  expect(lines[1]).toBe('outbox released 0 payloads; backlog remains no')
-  expect(lines[2]).toMatch(
-    /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
-  )
+  expect(lines).toHaveLength(1)
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual(Array(10).fill(target))
+  expect(gitCwds).toEqual(Array(6).fill(target))
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -898,71 +849,19 @@ test('machine update defaults the target to the installation root', async () => 
         return ''
       },
       migrate: () => {},
-      syncWorkflows: () => {},
-      buildCli: () => {},
-      runLaunchAgentsRefreshVerb: () => {},
+      ...NO_POST_UPDATE,
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual(Array(10).fill(target))
+  expect(gitCwds).toEqual(Array(6).fill(target))
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 
-test('machine update does not name the checkout when the caller is already there', async () => {
-  const lines: string[] = []
-  await machineUpdateCommand({ log: (line) => lines.push(line) }, successfulMachineUpdateDeps())
-  expect(lines).toHaveLength(2)
-  expect(lines[0]).toBe('outbox released 0 payloads; backlog remains no')
-  expect(lines[1]).toMatch(
-    /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
-  )
-})
-
-test('machine update keeps its successful result when store maintenance fails', async () => {
-  const lines: string[] = []
-  await expect(
-    machineUpdateCommand(
-      { log: (line) => lines.push(line) },
-      {
-        ...successfulMachineUpdateDeps(),
-        maintainStore: () => {
-          throw new Error('store busy')
-        },
-      },
-    ),
-  ).resolves.toBeUndefined()
-  expect(lines).toEqual([
-    `incremental vacuum setup skipped: store busy; retry with ${PLATFORM_SLUG} machine update`,
-  ])
-})
-
-test('successful machine updates invoke default-project retirement', async () => {
-  for (const deps of [
-    successfulMachineUpdateDeps(),
-    Object.assign(successfulMachineUpdateDeps(), {
-      identity: { kind: 'distribution' as const, root: dir, manifest: {} as never },
-      updateDistribution: async () => {},
-    }),
-  ]) {
-    const lines: string[] = []
-    let retirements = 0
-    await machineUpdateCommand(
-      { log: (line) => lines.push(line) },
-      {
-        ...deps,
-        recordSessionPresent: () => true,
-        releaseHostedRows: async () => {},
-        retireUnusedDefaultLocalProject: async () => Boolean(++retirements),
-      },
-    )
-    expect(retirements).toBe(1)
-    expect(lines).toContain('retired unused default local project tasks')
-  }
-})
-
-test('checkout update refreshes through deps.cwd when the running identity root differs', async () => {
+test('checkout update hands post-update work to the pulled checkout once', async () => {
   const target = mkdtempSync(join(tmpdir(), 'machine-update-checkout.'))
-  const refreshed: string[] = []
+  const handoffs: Parameters<
+    NonNullable<Parameters<typeof runMachineUpdateCommand>[1]['handoffPostUpdate']>
+  >[0][] = []
   writeFileSync(join(target, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
   try {
     await machineUpdateCommand(
@@ -987,49 +886,55 @@ test('checkout update refreshes through deps.cwd when the running identity root 
               ? JSON.stringify({ entries: migrationJournal() })
               : '',
         migrate: () => {},
-        syncWorkflows: () => {},
-        buildCli: () => {},
-        maintainStore: () => {},
-        runLaunchAgentsRefreshVerb: (binary) => refreshed.push(binary),
+        handoffPostUpdate: (input) => handoffs.push(input),
       },
     )
-    expect(refreshed).toEqual([resolve(target, 'bin', PLATFORM_SLUG)])
+    expect(handoffs).toEqual([
+      {
+        binary: resolve(target, 'bin', PLATFORM_SLUG),
+        path: { path: 'checkout', checkout: target, branch: 'main', beforePull: '' },
+        presentation: expect.any(Object),
+      },
+    ])
   } finally {
     rmSync(target, { recursive: true, force: true })
   }
 })
 
-test('distribution update refreshes through the installed target and preserves its remedy failure', async () => {
+test('distribution update hands post-update work to the installed target once', async () => {
   const target = realpathSync(process.execPath)
-  const refreshed: string[] = []
+  const handoffs: Parameters<
+    NonNullable<Parameters<typeof runMachineUpdateCommand>[1]['handoffPostUpdate']>
+  >[0][] = []
   let updated = false
-  const remedy = `com.user.orch-record-sync definition still drifted; run ${PLATFORM_SLUG} machine setup apply`
-  await expect(
-    machineUpdateCommand(
-      { log: () => {} },
-      {
-        authorityRefusal: () => null,
-        identity: {
-          kind: 'distribution',
-          root: resolve(target, '..'),
-          manifest: {
-            name: PLATFORM_NAME,
-            version: '1.2.3',
-            built: '2026-11-06T12:00:00.000Z',
-            commit: 'abc1234',
-          },
-        },
-        updateDistribution: async () => {
-          updated = true
-        },
-        maintainStore: () => {},
-        runLaunchAgentsRefreshVerb: (binary) => {
-          refreshed.push(binary)
-          throw new Error(remedy)
+  await machineUpdateCommand(
+    { log: () => {} },
+    {
+      authorityRefusal: () => null,
+      identity: {
+        kind: 'distribution',
+        root: resolve(target, '..'),
+        manifest: {
+          name: PLATFORM_NAME,
+          version: '1.2.3',
+          built: '2026-11-06T12:00:00.000Z',
+          commit: 'abc1234',
         },
       },
-    ),
-  ).rejects.toThrow(remedy)
+      updateDistribution: async () => {
+        updated = true
+        return '0.5.18'
+      },
+      handoffPostUpdate: (input) => handoffs.push(input),
+    },
+  )
   expect(updated).toBeTrue()
-  expect(refreshed).toEqual([target])
+  expect(handoffs).toEqual([
+    {
+      binary: target,
+      path: { path: 'distribution' },
+      presentation: expect.any(Object),
+      targetVersion: '0.5.18',
+    },
+  ])
 })

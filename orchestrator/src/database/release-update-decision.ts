@@ -124,7 +124,7 @@ export function candidateStoreDecision(
   }
 }
 
-function compareReleaseVersions(left: string, right: string): number {
+export function compareReleaseVersions(left: string, right: string): number {
   const leftParts = left.split('.').map(Number)
   const rightParts = right.split('.').map(Number)
   for (let index = 0; index < 3; index += 1) {

@@ -18,27 +18,16 @@ import {
 } from '../../../shared/update-lock.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
-import {
-  returnMainCheckoutToTrunkCommand,
-  verifyMainCheckoutInvariant,
-} from '../project/main-checkout-invariant.ts'
+import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
-import { recordSessionPresent } from '../record/record-session.ts'
 import { incomingRequiredRungGuard, type ReleaseGuardProject } from '../release/release-required.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
-import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
-import { buildCheckoutCli } from './checkout-cli-build.ts'
-import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
   DB_PATH,
   migrationAuthorityRefusal,
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
-import {
-  releaseHostedRowsAfterUpdate,
-  retireDefaultProjectAfterUpdate,
-} from './hosted-row-release.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -65,6 +54,7 @@ import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationJournal, migrationState, storeJournalPosition } from './migrations.ts'
+import { handoffPostUpdateSteps, type PostUpdateInput } from './post-update-steps.ts'
 import { migrateInstalledBinary, prepareReleaseUpdate } from './release-update.ts'
 import {
   decideCurrentReleaseUpdate,
@@ -152,28 +142,6 @@ function runDependencyInstall(cwd: string): void {
   })
 }
 
-function runWorkflowSync(cwd: string, since: string): void {
-  if (process.env.NODE_ENV === 'test') {
-    throw new Error(
-      'real machine-update workflow sync refuses side effects under the test runner; inject a syncWorkflows step',
-    )
-  }
-  const reason = 'machine update synchronized the registered landing branch'
-  const commands = workflowTreeSyncCommands(
-    resolveInstallationPaths(cwd, {}).executable,
-    cwd,
-    reason,
-    since,
-  )
-  for (const argv of [commands.import, commands.promote]) {
-    runPostPullStep({
-      argv,
-      cwd,
-      failureLabel: `${PLATFORM_SLUG} ${argv.slice(1, 3).join(' ')}`,
-    })
-  }
-}
-
 /** Decide whether a pulled path list requires refreshing checkout dependencies. */
 export function pulledRangeChangesPackageJson(paths: readonly string[]): boolean {
   return paths.some((path) => /(^|\/)package\.json$/.test(path))
@@ -239,53 +207,17 @@ type UpdateDependencies = {
   git?: (cwd: string, args: string[]) => string
   install?: (cwd: string) => void
   migrate?: (cwd: string) => void
-  buildCli?: (cwd: string) => void
-  syncWorkflows?: (cwd: string, since: string) => void
   afterDrainPromoted?: () => void
-  maintainStore?: (presentation: Presentation) => void
-  releaseHostedRows?: (presentation: Presentation) => Promise<void>
-  retireUnusedDefaultLocalProject?: () => Promise<boolean>
-  storeAttachedToHostedRecord?: () => boolean
-  recordSessionPresent?: () => boolean
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
-  runLaunchAgentsRefreshVerb?: (binary: string) => void
+  handoffPostUpdate?: (input: {
+    binary: string
+    path: PostUpdateInput
+    presentation: Presentation
+    targetVersion?: string
+  }) => void
   project?: (cwd: string, database: import('bun:sqlite').Database) => ReleaseGuardProject | null
   requiredRungRefusal?: (project: ReleaseGuardProject, branch: string) => string | null
-  verifyMainCheckout?: (
-    path: string,
-    trunk: string,
-    git: (cwd: string, args: string[]) => string,
-  ) => void
-}
-
-function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
-    budget: 'machine-update',
-  })
-  process.stdout.write(result.stdout)
-  process.stderr.write(result.stderr)
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim()
-    const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(
-      `launch-agent refresh failed with exit ${result.exitCode}${detail}; run ${binary} machine launch-agents refresh`,
-    )
-  }
-}
-
-function maintainStoreAfterUpdate(
-  presentation: Presentation,
-  maintainStore: (presentation: Presentation) => void,
-): void {
-  try {
-    maintainStore(presentation)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    presentation.log(
-      `incremental vacuum setup skipped: ${message}; retry with ${PLATFORM_SLUG} machine update`,
-    )
-  }
 }
 
 async function applyWithMigrationGuard(input: {
@@ -343,7 +275,7 @@ async function updateDistribution(input: {
   manifest: Extract<InstallationIdentity, { kind: 'distribution' }>['manifest']
   requestedVersion?: string
   deps: UpdateDependencies
-}): Promise<void> {
+}): Promise<string> {
   const requested = input.requestedVersion
     ? normalizeReleaseVersion(input.requestedVersion)
     : undefined
@@ -371,12 +303,12 @@ async function updateDistribution(input: {
     } finally {
       prepared.update.cleanup()
     }
-    return
+    return prepared.update.version
   }
   const current = decideCurrentReleaseUpdate(prepared.version, runningState.pending.length > 0)
   if (current.action === 'no-op') {
     input.presentation.log(current.message)
-    return
+    return prepared.version
   }
   const runningJournal = migrationJournal()
   const migration = withSynchronousDatabaseForMigrationStep((database) => {
@@ -399,6 +331,7 @@ async function updateDistribution(input: {
     deps: input.deps,
   })
   input.presentation.log(current.message)
+  return prepared.version
 }
 
 type PostPullOperation = 'pulled-path measurement' | 'dependency install' | 'migration'
@@ -658,28 +591,10 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   } finally {
     clearMachineUpdateIntent()
   }
-  const verifyMainCheckout = deps.verifyMainCheckout ?? verifyMainCheckoutInvariant
-  verifyMainCheckout(target, branch, runGit)
-  const syncWorkflows = deps.syncWorkflows ?? runWorkflowSync
-  syncWorkflows(target, beforePull)
-  try {
-    ;(deps.buildCli ?? buildCheckoutCli)(target)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `compiled checkout CLI build failed: ${detail}; rerun ${PLATFORM_SLUG} machine update`,
-    )
-  }
-  const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
-  maintainStoreAfterUpdate(presentation, maintainStore)
-  const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
-  refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
-  verifyMainCheckout(target, branch, runGit)
-  await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
-  await retireDefaultProjectAfterUpdate(presentation, {
-    recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
-    retire: deps.retireUnusedDefaultLocalProject,
-    storeAttached: deps.storeAttachedToHostedRecord,
+  ;(deps.handoffPostUpdate ?? handoffPostUpdateSteps)({
+    binary: resolveInstallationPaths(target, {}).executable,
+    path: { path: 'checkout', checkout: target, branch, beforePull },
+    presentation,
   })
 }
 
@@ -704,21 +619,17 @@ export async function machineUpdateCommandUnderLock(
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {
-    await (deps.updateDistribution ?? updateDistribution)({
+    const targetVersion = await (deps.updateDistribution ?? updateDistribution)({
       manifest: identity.manifest,
       requestedVersion,
       presentation,
       deps,
     })
-    const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
-    maintainStoreAfterUpdate(presentation, maintainStore)
-    const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
-    refreshLaunchAgents(realpathSync(process.execPath))
-    await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
-    await retireDefaultProjectAfterUpdate(presentation, {
-      recordSessionPresent: deps.recordSessionPresent ?? recordSessionPresent,
-      retire: deps.retireUnusedDefaultLocalProject,
-      storeAttached: deps.storeAttachedToHostedRecord,
+    ;(deps.handoffPostUpdate ?? handoffPostUpdateSteps)({
+      binary: realpathSync(process.execPath),
+      path: { path: 'distribution' },
+      presentation,
+      targetVersion,
     })
     return
   }
