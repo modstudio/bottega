@@ -26,6 +26,9 @@ import type { DoctorReporter } from './doctor-reporter.ts'
 
 type Clock = () => number
 type ParityLoader = () => Promise<WorkflowHistoryParityDiagnosis>
+type IdentityLoader = () => Promise<
+  Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>>
+>
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -138,10 +141,20 @@ export async function workflowHistoryParityDoctorDiagnosis(
 
 export async function reportRecordDoctor(
   presentation: DoctorReporter,
-  activeSpace: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
+  whoami: IdentityLoader = () => recordApiClient().whoami(),
   historyParity: () => Promise<WorkflowHistoryParityDiagnosis> = workflowHistoryParityDoctorDiagnosis,
 ): Promise<void> {
-  await reportActiveSpaceDoctor(presentation, activeSpace)
+  let identity: Awaited<ReturnType<IdentityLoader>> | undefined
+  await reportActiveSpaceDoctor(presentation, () =>
+    activeSpaceDoctorDiagnosis(async () => {
+      identity = await whoami()
+      return identity
+    }),
+  )
+  if (!identity?.activeSpaceId) {
+    presentation.log('workflow history parity: not run — no active hosted space')
+    return
+  }
   const parity = await historyParity()
   for (const line of parity.lines) presentation.log(line)
   if (parity.failed) presentation.exitCode(1)

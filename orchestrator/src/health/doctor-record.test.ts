@@ -1,6 +1,40 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { workflowHistoryParityDoctorDiagnosis } from './doctor-record.ts'
+import { reportRecordDoctor, workflowHistoryParityDoctorDiagnosis } from './doctor-record.ts'
+
+test('workflow-history parity is not run without an active hosted space', async () => {
+  const lines: string[] = []
+  const exitCodes: number[] = []
+  let whoamiCalls = 0
+  let parityCalled = false
+
+  await reportRecordDoctor(
+    {
+      log: (line) => lines.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => {
+      whoamiCalls += 1
+      return {
+        user: { id: 'user-a' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      }
+    },
+    async () => {
+      parityCalled = true
+      return { lines: [], failed: true }
+    },
+  )
+
+  expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
+    'workflow history parity: not run — no active hosted space',
+  ])
+  expect(exitCodes).toEqual([])
+  expect(whoamiCalls).toBe(1)
+  expect(parityCalled).toBe(false)
+})
 
 test('workflow-history presence read failure reports the reason, remedy, and failure timing', async () => {
   const times = [10, 17]
