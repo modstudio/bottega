@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { parseShellQuoted, shellQuote } from '../../../shared/shell-quote.ts'
-import { MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS } from '../project/projects.ts'
+import { MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS } from '../project/worktree-directory.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 
 export type ClassMeasurement = {

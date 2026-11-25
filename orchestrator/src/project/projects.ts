@@ -118,6 +118,7 @@ import {
   type ForgeVisibilityLookup,
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
+import { MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS } from './worktree-directory.ts'
 
 export { treeRunScriptProblems } from './project-settings-refusals.ts'
 export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
@@ -875,9 +876,6 @@ const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work ha
 function requiresCleanMain(settings: ProjectSettings): boolean {
   return settings.requireCleanMain !== false
 }
-
-/** Relative segments under a registered checkout where Bottega creates disposable trees. */
-export const MAIN_CHECKOUT_WORKTREE_RELATIVE_SEGMENTS = ['.claude', 'worktrees'] as const
 
 /** The directory under a registered checkout where Bottega creates disposable trees. */
 export function mainCheckoutWorktreeHint(projectPath: string): string {

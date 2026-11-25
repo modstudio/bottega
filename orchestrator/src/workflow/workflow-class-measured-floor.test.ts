@@ -162,12 +162,12 @@ describe('class-measured floor', () => {
     ).toEqual(['bun', 'scripts/measure.ts'])
   })
 
-  test.each([
-    `${checkoutRoot}/.claude/worktrees/t`,
-    `${checkoutRoot}/.claude/worktrees/t/`,
-  ])('rewrites a worktree root %s to dot', (worktree) => {
-    expect(treeRelativeArgv(['bun', worktree], [checkoutRoot])).toEqual(['bun', '.'])
-  })
+  test.each([`${checkoutRoot}/.claude/worktrees/t`, `${checkoutRoot}/.claude/worktrees/t/`])(
+    'rewrites a worktree root %s to dot',
+    (worktree) => {
+      expect(treeRelativeArgv(['bun', worktree], [checkoutRoot])).toEqual(['bun', '.'])
+    },
+  )
 
   test('keeps an empty worktree name checkout-relative', () => {
     const directory = `${checkoutRoot}/.claude/worktrees/`
