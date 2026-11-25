@@ -10,7 +10,7 @@ import {
 import { recordApiClient } from '../record/record-api-client.ts'
 import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 
-class HostedReleaseDestinationRefused extends Error {
+export class HostedReleaseDestinationRefused extends Error {
   override readonly name = 'HostedReleaseDestinationRefused'
 }
 
@@ -28,12 +28,23 @@ export async function releaseHostedClaims(
   try {
     destination = await destinationResolver(client, project, database)
   } catch (cause) {
-    if (!(project !== null && cause instanceof RecordApiRequestError && cause.kind === 'refused'))
+    if (
+      !(
+        project !== null &&
+        cause instanceof RecordApiRequestError &&
+        cause.kind === 'refused' &&
+        cause.status === 409
+      )
+    )
       throw cause
     try {
       destination = await destinationResolver(client, null, database)
     } catch (fallbackCause) {
-      if (fallbackCause instanceof RecordApiRequestError && fallbackCause.kind === 'refused')
+      if (
+        fallbackCause instanceof RecordApiRequestError &&
+        fallbackCause.kind === 'refused' &&
+        fallbackCause.status === 409
+      )
         throw new HostedReleaseDestinationRefused(fallbackCause.message)
       throw fallbackCause
     }
