@@ -21,3 +21,13 @@ const CHECKOUT_ONLY_INSTALLERS = new Set<string>(
 export function isCheckoutOnlyLaunchAgentInstaller(command: string): boolean {
   return CHECKOUT_ONLY_INSTALLERS.has(command)
 }
+
+/** Normalize installer ownership into the plain facts schedule policy consumes. */
+export function checkoutScheduleOwnerFacts(
+  owners: readonly { label: string; command: string }[],
+): Array<{ label: string; checkoutOnly: boolean }> {
+  return owners.map(({ label, command }) => ({
+    label,
+    checkoutOnly: isCheckoutOnlyLaunchAgentInstaller(command),
+  }))
+}

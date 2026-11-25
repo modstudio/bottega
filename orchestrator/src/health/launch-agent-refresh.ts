@@ -8,17 +8,17 @@ import {
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
 import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
-import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
+import {
+  checkoutScheduleOwnerFacts,
+  LAUNCHD_TEMPLATE_OWNERS,
+} from '../../../shared/launchd-owners.ts'
+import { isMaintenanceScheduleLabel, scheduleExpectation } from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
 } from '../setup/launchd-owners.ts'
-import {
-  isMaintenanceScheduleLabel,
-  type ScheduleApplyResult,
-  type ScheduleSetupFact,
-} from '../setup/setup-schedule-policy.ts'
+import type { ScheduleApplyResult, ScheduleSetupFact } from '../setup/setup-schedule-policy.ts'
 import {
   applyMaintenanceSchedules,
   gatherScheduleSetupFacts,
@@ -57,6 +57,7 @@ export function decideLaunchAgentRefresh(input: {
   requiredMaintenanceLabels: ReadonlySet<string>
 }): LaunchAgentRefreshPlan {
   const drifted = input.owners.filter(({ label }) => definitionIsDrifted(input.observations[label]))
+  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
   const unverified = input.owners.flatMap(({ label }) => {
     const comparison = input.observations[label]?.comparison
     return comparison?.kind === 'unavailable' ? [{ label, detail: comparison.detail }] : []
@@ -75,7 +76,7 @@ export function decideLaunchAgentRefresh(input: {
   }
   const releaseOwned = input.owners.filter(
     ({ label }) =>
-      isMaintenanceScheduleLabel(label) &&
+      scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled &&
       maintenanceDefinitionNeedsRefresh(
         label,
         input.observations[label],
@@ -91,7 +92,10 @@ export function decideLaunchAgentRefresh(input: {
     applyMaintenance: releaseOwned.length > 0,
     unverified,
     notReleaseInstalled: drifted
-      .filter(({ label }) => !isMaintenanceScheduleLabel(label))
+      .filter(
+        ({ label }) =>
+          !scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled,
+      )
       .map(({ label }) => label),
   }
 }

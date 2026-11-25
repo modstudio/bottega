@@ -141,10 +141,10 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-engine.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/schedule-policy.ts',
       './developer-node.ts',
       './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
-      './setup-schedule-policy.ts',
       './setup-toolchain.ts',
     ],
     typeOnlyAllowed: [
@@ -212,9 +212,9 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-planner.ts',
     allowed: [
       '../../../shared/machine-config.ts',
+      '../../../shared/schedule-policy.ts',
       './setup-agent-declarations.ts',
       './setup-engine.ts',
-      './setup-schedule-policy.ts',
       './setup-toolchain.ts',
     ],
     typeOnlyAllowed: [
@@ -303,6 +303,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/embedded-assets.ts',
       '../../../shared/install-root.ts',
       '../../../shared/launch-agent-skip.ts',
+      '../../../shared/schedule-policy.ts',
       '../../../shared/state-directory.ts',
       './launchd-owners.ts',
       './setup-schedule-policy.ts',
@@ -317,6 +318,8 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-schedule-runtime.ts',
     allowed: [
       'node:os',
+      '../../../shared/install-root.ts',
+      '../../../shared/schedule-policy.ts',
       '../../../shared/state-directory.ts',
       './setup-schedule-policy.ts',
       './setup-schedules.ts',
@@ -332,6 +335,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       '../../../shared/launch-agent-render.ts',
       '../../../shared/launch-agent-skip.ts',
+      '../../../shared/schedule-policy.ts',
       '../../../shared/state-directory.ts',
     ],
     typeOnlyAllowed: ['../../../shared/machine-config.ts'],
@@ -349,6 +353,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/embedded-assets.ts',
       '../../../shared/install-root.ts',
       '../../../shared/launch-agent-skip.ts',
+      '../../../shared/schedule-policy.ts',
       '../../../shared/state-directory.ts',
       './setup-schedule-policy.ts',
     ],

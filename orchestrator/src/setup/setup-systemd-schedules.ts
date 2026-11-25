@@ -9,18 +9,20 @@ import { join } from 'node:path'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
-import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
   MAINTENANCE_SCHEDULE_LABELS,
   type MaintenanceScheduleLabel,
+  SYSTEMD_TEMPLATE_DIRECTORY,
+  SYSTEMD_UNITS,
+  systemdActivationUnits,
+} from '../../../shared/schedule-policy.ts'
+import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   type ScheduleApplyResult,
   type ScheduleRenderValues,
   type ScheduleSetupFact,
-  SYSTEMD_TEMPLATE_DIRECTORY,
-  SYSTEMD_UNITS,
-  systemdActivationUnits,
 } from './setup-schedule-policy.ts'
 
 function systemdUnitDirectory(values: ScheduleRenderValues): string {

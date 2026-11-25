@@ -2,10 +2,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
-import {
-  SYSTEMD_TEMPLATE_DIRECTORY,
-  SYSTEMD_UNIT_SUFFIXES,
-} from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { COMPILE_AUTOLOAD_OFF_FLAGS } from '../shared/compile-autoload.ts'
 import {
@@ -16,6 +12,7 @@ import {
 import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
+import { SYSTEMD_TEMPLATE_DIRECTORY, SYSTEMD_UNIT_SUFFIXES } from '../shared/schedule-policy.ts'
 import { requireReleaseBun } from './release-config.ts'
 import { distributionManifest, releaseVersion, run } from './release-support.ts'
 

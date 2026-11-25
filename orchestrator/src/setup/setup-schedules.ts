@@ -8,11 +8,14 @@ import { dirname, join } from 'node:path'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
+import {
+  LAUNCHD_TEMPLATE_PATHS,
+  MAINTENANCE_SCHEDULE_LABELS,
+  type MaintenanceScheduleLabel,
+} from '../../../shared/schedule-policy.ts'
 import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { plistStandardOutPath } from './launchd-owners.ts'
 import {
-  MAINTENANCE_SCHEDULE_LABELS,
-  type MaintenanceScheduleLabel,
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   type ScheduleApplyResult,
@@ -20,12 +23,9 @@ import {
   type ScheduleSetupFact,
 } from './setup-schedule-policy.ts'
 
-const templatePath = (label: MaintenanceScheduleLabel): string =>
-  `ops/launchd/${label}.plist.template`
-
 function renderedSchedule(label: MaintenanceScheduleLabel, values: ScheduleRenderValues): string {
   const identity = installationIdentity(import.meta.dir, {})
-  const relative = templatePath(label)
+  const relative = LAUNCHD_TEMPLATE_PATHS[label]
   return renderMaintenanceSchedule(
     readInstallAsset(relative, join(identity.root, relative)),
     values,

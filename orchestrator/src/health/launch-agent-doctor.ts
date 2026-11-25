@@ -28,8 +28,12 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import { isCheckoutOnlyLaunchAgentInstaller } from '../../../shared/launchd-owners.ts'
+import {
+  checkoutScheduleOwnerFacts,
+  isCheckoutOnlyLaunchAgentInstaller,
+} from '../../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
+import { isMaintenanceScheduleLabel, scheduleExpectation } from '../../../shared/schedule-policy.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -41,7 +45,6 @@ import {
   includesLaunchAgents,
   installationPlistOwners,
 } from '../setup/launchd-owners.ts'
-import { isMaintenanceScheduleLabel } from '../setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../spare/spare-decisions.ts'
 
 export type LaunchAgentLoadObservation =
@@ -168,12 +171,13 @@ export function decideLaunchAgentDoctor(input: {
   const unloaded = input.owners.filter(
     ({ label }) => !input.skipReasons[label] && !loadedLabels.has(label),
   )
+  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
   const informational = unloaded
     .filter(
       ({ label, command }) =>
-        !isMaintenanceScheduleLabel(label) &&
         input.installationKind !== 'checkout' &&
-        isCheckoutOnlyLaunchAgentInstaller(command),
+        isCheckoutOnlyLaunchAgentInstaller(command) &&
+        !scheduleExpectation(label, 'darwin', 'distribution', checkoutOwners).scheduled,
     )
     .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const)
   const informationalLabels = new Set(informational.map(({ label }) => label))

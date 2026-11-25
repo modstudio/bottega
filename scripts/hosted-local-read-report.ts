@@ -11,9 +11,10 @@ import {
 } from '../orchestrator/src/record/install-binding.ts'
 import { hostedRecordOwnsHostedTables } from '../orchestrator/src/record/record-write-authority.ts'
 import {
+  LAUNCHD_TEMPLATE_PATHS,
   MAINTENANCE_SCHEDULE_LABELS,
   SYSTEMD_UNITS,
-} from '../orchestrator/src/setup/setup-schedule-policy.ts'
+} from '../shared/schedule-policy.ts'
 import {
   HOSTED_LOCAL_SQL_ALLOWED_FILES,
   HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
@@ -855,7 +856,7 @@ function hostedLocalReadConfiguration(root: string) {
   })
   const schedules = MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const timer = SYSTEMD_UNITS[label].find((unit) => unit.endsWith('.timer'))
-    const launchd = readFileSync(resolve(root, `ops/launchd/${label}.plist.template`), 'utf8')
+    const launchd = readFileSync(resolve(root, LAUNCHD_TEMPLATE_PATHS[label]), 'utf8')
     const systemd = timer ? readFileSync(resolve(root, `ops/systemd/${timer}`), 'utf8') : ''
     return {
       label,

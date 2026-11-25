@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { NOT_SCHEDULED_BY_THIS_INSTALL, scheduleExpectation } from '../../shared/schedule-policy.ts'
 import {
+  formatServiceRevisionDoctorDecision,
   parseServiceIdentity,
   REVISION_CHECK_MS,
   type RevisionMonitorAdapters,
@@ -20,6 +22,26 @@ const identity: ServiceIdentity = {
 }
 
 describe('service revision comparison', () => {
+  test('reports an unscheduled collector from policy instead of as gone', () => {
+    const owners = [{ label: 'com.user.hub-collect', checkoutOnly: true }]
+    for (const [platform, installationKind, expected] of [
+      ['darwin', 'distribution', 'collect        gone (no identity recorded)'],
+      ['linux', 'distribution', 'collect        gone (no identity recorded)'],
+      ['darwin', 'checkout', 'collect        gone (no identity recorded)'],
+      ['linux', 'checkout', `collect        ${NOT_SCHEDULED_BY_THIS_INSTALL}`],
+    ] as const) {
+      expect(
+        formatServiceRevisionDoctorDecision(
+          'collect',
+          scheduleExpectation('com.user.hub-collect', platform, installationKind, owners),
+          { status: 'missing' },
+          { revision: null, error: 'not read' },
+          null,
+        ),
+      ).toBe(expected)
+    }
+  })
+
   test('reports current, stale, dead, and reused services', () => {
     expect(
       serviceRevisionStatus(identity, { status: 'live' }, { revision: 'aaaa', error: null }),

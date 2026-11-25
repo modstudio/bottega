@@ -43,6 +43,8 @@ const ALLOWED = new Set([
   // The checkout-free installer must name the private repository before it can load brand code.
   'install.sh',
   'bin/bottega',
+  // The launchd shell installer must render the ruled checkout executable path literally.
+  'hub/bin/install-launchd.sh',
   // This policy test intentionally uses a project whose name happens to match the platform slug.
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.

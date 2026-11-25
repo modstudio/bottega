@@ -2,12 +2,13 @@
 /** Routes maintenance schedule facts and application to the host platform adapter. */
 
 import { homedir } from 'node:os'
+import { runningInstallationIdentity } from '../../../shared/install-root.ts'
+import { schedulePlatformSupported } from '../../../shared/schedule-policy.ts'
 import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import {
-  type ScheduleApplyResult,
-  type ScheduleRenderValues,
-  type ScheduleSetupFact,
-  schedulePlatformSupported,
+import type {
+  ScheduleApplyResult,
+  ScheduleRenderValues,
+  ScheduleSetupFact,
 } from './setup-schedule-policy.ts'
 import {
   applyLaunchdMaintenanceSchedules,
@@ -21,8 +22,10 @@ import {
 } from './setup-systemd-schedules.ts'
 
 function scheduleValues(): ScheduleRenderValues {
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
   return {
     bottegaBin: process.execPath,
+    installationRoot: identity.root,
     home: homedir(),
     stateHomeEnvironment: STATE_HOME_ENV,
     stateHome: resolveStateRoot(process.env),

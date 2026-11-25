@@ -8,6 +8,7 @@ import {
   pidRecordIdentity,
   processStartTime,
 } from '../../shared/process-identity.ts'
+import type { ScheduleExpectation } from '../../shared/schedule-policy.ts'
 import { db, writeTransaction } from './db.ts'
 
 export const REVISION_CHECK_MS = 60_000
@@ -279,25 +280,45 @@ export function startRevisionMonitor(
   }, REVISION_CHECK_MS)
 }
 
-export function formatServiceRevisionDoctor(): string[] {
+export function formatServiceRevisionDoctorDecision(
+  service: 'serve' | 'collect',
+  expectation: ScheduleExpectation,
+  recorded: IdentityRead,
+  current: RevisionRead,
+  processRead: ProcessIdentityRead | null,
+): string {
+  if (!expectation.scheduled) return `${service.padEnd(14)} ${expectation.reason}`
+  if (recorded.status === 'missing') return `${service.padEnd(14)} gone (no identity recorded)`
+  if (recorded.status === 'unreadable') {
+    return `${service.padEnd(14)} unreadable (recorded identity: ${recorded.reason})`
+  }
+  if (!processRead) throw new Error('valid service identity requires process identity facts')
+  const { identity } = recorded
+  const status = serviceRevisionStatus(identity, processRead, current)
+  if (status.status === 'gone') {
+    return `${service.padEnd(14)} gone (pid ${identity.pid}, holder ${identity.holder})`
+  }
+  if (status.status === 'unreadable') {
+    return `${service.padEnd(14)} unreadable (${status.side}: ${status.reason})`
+  }
+  if (status.status === 'current') {
+    return `${service.padEnd(14)} current ${status.revision} (pid ${identity.pid}, started ${identity.startedAt})`
+  }
+  return `${service.padEnd(14)} stale ${status.startedRevision} -> ${status.currentRevision} (started ${status.startedAt})`
+}
+
+export function formatServiceRevisionDoctor(collectExpectation: ScheduleExpectation): string[] {
   const current = readInstallHead()
   return (['serve', 'collect'] as const).map((service) => {
     const recorded = readIdentity(service)
-    if (recorded.status === 'missing') return `${service.padEnd(14)} gone (no identity recorded)`
-    if (recorded.status === 'unreadable') {
-      return `${service.padEnd(14)} unreadable (recorded identity: ${recorded.reason})`
-    }
-    const { identity } = recorded
-    const status = serviceRevisionStatus(identity, processIdentityRead(identity), current)
-    if (status.status === 'gone') {
-      return `${service.padEnd(14)} gone (pid ${identity.pid}, holder ${identity.holder})`
-    }
-    if (status.status === 'unreadable') {
-      return `${service.padEnd(14)} unreadable (${status.side}: ${status.reason})`
-    }
-    if (status.status === 'current') {
-      return `${service.padEnd(14)} current ${status.revision} (pid ${identity.pid}, started ${identity.startedAt})`
-    }
-    return `${service.padEnd(14)} stale ${status.startedRevision} -> ${status.currentRevision} (started ${status.startedAt})`
+    const expectation: ScheduleExpectation =
+      service === 'collect' ? collectExpectation : { scheduled: true, reason: null }
+    return formatServiceRevisionDoctorDecision(
+      service,
+      expectation,
+      recorded,
+      current,
+      recorded.status === 'valid' ? processIdentityRead(recorded.identity) : null,
+    )
   })
 }

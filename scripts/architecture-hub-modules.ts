@@ -912,6 +912,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/install-root.ts',
       '../../shared/process-identity.ts',
+      '../../shared/schedule-policy.ts',
       './db.ts',
       '../../shared/git.ts',
       '../../shared/bounded-process.ts',

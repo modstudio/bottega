@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { NOT_SCHEDULED_BY_THIS_INSTALL } from '../../shared/schedule-policy.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import {
@@ -54,19 +55,19 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
   })
 
-  test('judges distribution slow collection from its observed launch-agent state', () => {
+  test('judges slow collection from platform and installation schedule ownership', () => {
     const missing = { status: 'missing', ageMs: null } as const
-    expect(slowCollectionDoctorDecision('distribution', false, false, missing)).toBe(
-      'collect slow   not installed by a release install',
-    )
-    expect(slowCollectionDoctorDecision('distribution', true, false, missing)).toBe(
+    const owners = [{ label: 'com.user.hub-collect', checkoutOnly: true }]
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(slowCollectionDoctorDecision('distribution', platform, owners, missing)).toBe(
+        'collect slow   FAIL — never completed',
+      )
+    }
+    expect(slowCollectionDoctorDecision('checkout', 'darwin', owners, missing)).toBe(
       'collect slow   FAIL — never completed',
     )
-    expect(slowCollectionDoctorDecision('distribution', null, false, missing)).toBe(
-      'collect slow   FAIL — never completed',
-    )
-    expect(slowCollectionDoctorDecision('distribution', false, true, missing)).toBe(
-      'collect slow   FAIL — never completed',
+    expect(slowCollectionDoctorDecision('checkout', 'linux', owners, missing)).toBe(
+      `collect slow   ${NOT_SCHEDULED_BY_THIS_INSTALL}`,
     )
   })
 
