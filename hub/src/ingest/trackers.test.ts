@@ -440,7 +440,7 @@ describe('tracker register', () => {
         listTools: async () => [
           { name: 'task_list', inputSchema: { properties: { projectId: {} } } },
         ],
-        async callTool(_name, args) {
+        async callTool(_name: string, args: Record<string, unknown>) {
           const pageSize = args.limit as number
           pageSizes.push(pageSize)
           if (pageSize > 3) throw new ToolCallRefused('fixture page too large')
