@@ -101,8 +101,7 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   })
-  if (!seededSpaceId)
-    return bindDestination(await recordWriteDestination(client, owner, database))
+  if (!seededSpaceId) return bindDestination(await recordWriteDestination(client, owner, database))
 
   let destinationRead: ReturnType<typeof recordWriteDestination> | undefined
   const confirmedDestination = () =>

@@ -201,9 +201,7 @@ describe('canon drift branch gate', () => {
         user: { id: 'user-a' },
         activeSpaceId: 'fixture-space',
         personalSpaceId: 'personal-space',
-        memberships: [
-          { space_id: 'fixture-space', slug: 'fixture', permission: 'write' },
-        ],
+        memberships: [{ space_id: 'fixture-space', slug: 'fixture', permission: 'write' }],
       }),
       listDocs: async (query) => ({
         items:
@@ -234,9 +232,7 @@ describe('canon drift branch gate', () => {
     try {
       expect(await readCanonGateInput(root, readonly)).toMatchObject({
         project: { name: 'fixture' },
-        rows: [
-          { slug: 'AGENTS.md', body: 'Hosted fixture canon body.', subject: 'fixture' },
-        ],
+        rows: [{ slug: 'AGENTS.md', body: 'Hosted fixture canon body.', subject: 'fixture' }],
       })
     } finally {
       readonly.close()
