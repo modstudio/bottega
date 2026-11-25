@@ -200,4 +200,23 @@ describe('adaptive tracker paging', () => {
       'stopal cursor-mcp status todo reached the row bound of 4000 before the read completed',
     )
   })
+
+  test('empty cursor pages with a next cursor still consume the row bound', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    let calls = 0
+    const fetched = await source.fetch({
+      listTools: scopeTools,
+      async callTool() {
+        calls += 1
+        return { data: { items: [], nextCursor: String(calls) } }
+      },
+    })
+
+    expect(calls).toBe(40)
+    expect(fetched.tasks).toEqual([])
+    expect(fetched.complete).toBeFalse()
+    expect(fetched.error).toBe(
+      'stopal cursor-mcp status todo reached the row bound of 4000 before the read completed',
+    )
+  })
 })

@@ -45,8 +45,9 @@ export async function readAdaptiveCursorPages<Row>(input: {
   let lastSuccessfulPageSize: number | undefined
   let cursor: string | undefined
   let rowsRead = 0
-  while (rowsRead < input.maxRows) {
-    const requestedPageSize = Math.min(pageSize, input.maxRows - rowsRead)
+  let positionsRequested = 0
+  while (positionsRequested < input.maxRows) {
+    const requestedPageSize = Math.min(pageSize, input.maxRows - positionsRequested)
     let reply: { rows: Row[]; nextCursor?: string }
     try {
       reply = await input.read(cursor, requestedPageSize)
@@ -66,6 +67,7 @@ export async function readAdaptiveCursorPages<Row>(input: {
     lastSuccessfulPageSize = requestedPageSize
     pages.push(reply.rows)
     rowsRead += reply.rows.length
+    positionsRequested += requestedPageSize
     cursor = reply.nextCursor
     if (!cursor) break
   }
