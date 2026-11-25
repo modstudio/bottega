@@ -27,6 +27,8 @@ test('note evidence accepts a note sighted after step activation', async () => {
         `note:${recordId}`,
         'fixture',
         '2026-09-01T00:00:00.000Z',
+        'DEV-977',
+        false,
         productionWorkflowFloorPorts(),
       ),
     ).resolves.toMatchObject({
@@ -59,6 +61,8 @@ test('note evidence refuses an old note with the sighting command', async () => 
         `note:${recordId}`,
         'fixture',
         '2026-09-01T00:00:00.000Z',
+        'DEV-977',
+        false,
         productionWorkflowFloorPorts(),
       ),
     ).rejects.toThrow(

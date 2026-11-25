@@ -10,11 +10,21 @@ import {
   invokeFloorEvidencePort,
 } from './workflow-floor-evidence-replay.ts'
 
+function noteArtifactNeedsFreshness(
+  promotedTask: string | null,
+  cursorKey: string,
+  isTaskOpenWithNotesFloor: boolean,
+): boolean {
+  return !isTaskOpenWithNotesFloor || promotedTask !== cursorKey
+}
+
 export async function gatherNoteArtifactEvidence(
   parsed: Extract<ArtifactRef, { kind: 'note' }>,
   offeredArtifact: string,
   project: string,
   stepActivatedAt: string,
+  cursorKey: string,
+  isTaskOpenWithNotesFloor: boolean,
   ports: FloorEvidencePorts,
 ): Promise<{
   artifact: ValidatedArtifactEvidence['artifact']
@@ -37,7 +47,10 @@ export async function gatherNoteArtifactEvidence(
     staleAt: note?.staleAt ?? null,
     writtenAt: note?.writtenAt,
   }
-  if (evidence.recordId) {
+  if (
+    evidence.recordId &&
+    noteArtifactNeedsFreshness(evidence.promotedTask, cursorKey, isTaskOpenWithNotesFloor)
+  ) {
     const sightingReference = evidence.label ?? parsed.reference
     requireMutableArtifactFreshness(
       'note',

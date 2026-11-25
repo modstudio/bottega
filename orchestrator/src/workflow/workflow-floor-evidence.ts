@@ -927,6 +927,8 @@ async function gatherArtifactEntry(
           offeredArtifact,
           input.identity.project,
           input.identity.stepActivatedAt,
+          input.identity.workflowKey,
+          input.floors.some((floor) => floor.kind === 'task-open-with-notes'),
           ports,
         )
       : undefined
