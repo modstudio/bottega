@@ -72,6 +72,7 @@ export type RunControlPresentation = {
 type ContinueRunDependencies = {
   renewTaskClaim?: RenewTaskClaim
   binding?: { cursorRecordId: string; stepSlug: string }
+  continuedWithFindings?: boolean
   reportDetached?: (childId: string, jobName: string) => Promise<void>
 }
 
@@ -457,16 +458,22 @@ export function resumeLaunchForRoot(rootId: string): ResumeLaunchOptions {
   return resumeLaunchFromStored(row)
 }
 
+type ContinuationLaunchContext = Pick<
+  ContinueRunDependencies,
+  'binding' | 'continuedWithFindings'
+> & { project: Project | null }
+
 function continuationLaunch(
   inherited: ResumeLaunchOptions,
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  context: { project: Project | null; binding: ContinueRunDependencies['binding'] },
-): ResumeLaunchOptions & { binding?: ContinueRunDependencies['binding'] } {
+  context: ContinuationLaunchContext,
+): ResumeLaunchOptions & Pick<ContinueRunDependencies, 'binding' | 'continuedWithFindings'> {
   return {
     ...inherited,
     binding: context.binding,
+    continuedWithFindings: context.continuedWithFindings,
     lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
@@ -477,6 +484,15 @@ function continuationLaunch(
     }).seed,
   }
 }
+
+const continuationLaunchContext = (
+  project: Project | null,
+  dependencies: ContinueRunDependencies,
+): ContinuationLaunchContext => ({
+  project,
+  binding: dependencies.binding,
+  continuedWithFindings: dependencies.continuedWithFindings,
+})
 
 function continuationLensInputs(rootId: string) {
   const row = db()
@@ -869,13 +885,12 @@ export async function continueRun(
     readsRepo: Boolean(jobNeeds.readsRepo),
     writesRepo: Boolean(jobNeeds.writesRepo),
   })
-  const inheritedLaunch = resumeLaunchForRoot(id)
   const launch = continuationLaunch(
-    inheritedLaunch,
+    resumeLaunchForRoot(id),
     id,
     treeDecision,
     Boolean(jobNeeds.writesRepo),
-    { project, binding: dependencies.binding },
+    continuationLaunchContext(project, dependencies),
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({

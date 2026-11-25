@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
@@ -41,7 +41,7 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import { runOwnedPaths, runTempDir } from '../run-owned-paths.ts'
+import { runOwnedPaths } from '../run-owned-paths.ts'
 import { confinedLaunchCwd as decideCwd } from '../sandbox/confined-launch-cwd.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
@@ -99,6 +99,7 @@ import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { errorTail } from './run-process.ts'
+import { prepareReadOnlyRunTemp } from './run-read-only-temp.ts'
 import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
@@ -108,24 +109,9 @@ import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
-export function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
-  if (writesJob) return
-  const path = runTempDir(runtimeDir)
-  try {
-    const stat = lstatSync(path)
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      throw new Error(
-        `run temp path ${path} is not a real directory; remedy: remove it and retry the run`,
-      )
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    mkdirSync(path, { recursive: true, mode: 0o700 })
-  }
-}
-
 type ClaimOptions = {
   binding?: RunWorkflowBinding
+  continuedWithFindings?: boolean
   reserveId?: string
   agentExplicit?: boolean
   transport?: 'cli' | 'acp'
@@ -418,7 +404,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
                         executor=?, evidence_excluded=?, harness_wall_bound_ms=?, endpoint_key_source=?,
-                        credential_id=?, credential_payer=?, credential_binding=?, cursor_record_id=?, step_slug=?
+                        credential_id=?, credential_payer=?, credential_binding=?, cursor_record_id=?, step_slug=?,
+                        continued_with_findings=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -459,6 +446,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.credential,
         ),
         ...bindingValues(binding),
+        opts.continuedWithFindings ? 1 : 0,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -468,8 +456,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
                           executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source,
-                          credential_id, credential_payer, credential_binding, cursor_record_id, step_slug)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          credential_id, credential_payer, credential_binding, cursor_record_id, step_slug, continued_with_findings)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -514,6 +502,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.credential,
         ),
         ...bindingValues(binding),
+        opts.continuedWithFindings ? 1 : 0,
       ) as { record_id: string; number: number }
   const supersededQuestionState = await prepareClaimQuestionState({
     resolveSuperseded: identity.resolveSupersededTurn,

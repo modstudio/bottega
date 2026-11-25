@@ -385,6 +385,7 @@ export async function continueCommand(
     {
       renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim,
       binding: admissionResult.binding,
+      continuedWithFindings: includeFindings,
       reportDetached,
     },
   )

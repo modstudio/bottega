@@ -451,6 +451,68 @@ function noAcceptedFindingsFixture() {
   }
 }
 
+function recordAppliedFindingsTurn(
+  fixture: ReturnType<typeof noAcceptedFindingsFixture>,
+  input: {
+    branch?: string
+    continuedWithFindings?: boolean
+    startedAt?: string
+    status?: 'failed' | 'ok'
+  } = {},
+) {
+  fixture.d
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+          project_record_id,branch,launch_key,continued_with_findings)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'head',
+               ?,'waiver-fixture',?,?,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      input.startedAt ?? '2026-11-20T00:00:00.000Z',
+      input.status ?? 'ok',
+      fixture.projectRecordId,
+      input.branch ?? 'DEV-1-change',
+      'DEV-1',
+      input.continuedWithFindings === false ? 0 : 1,
+    )
+}
+
+function recordAcceptedFindingsRound(
+  fixture: ReturnType<typeof noAcceptedFindingsFixture>,
+  input: { recordedAt: string; headCommit?: string | null },
+): string {
+  const runRecordId = newRecordId()
+  fixture.d
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+          project_record_id,branch,launch_key,head_commit,lens,model)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
+               'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change','DEV-1',?,'correctness','fixture-model')`,
+    )
+    .run(
+      runRecordId,
+      fixture.projectRecordId,
+      input.headCommit === undefined ? fixture.head : input.headCommit,
+    )
+  const output = reviewReply(1, 'high')
+  const reviewRecordId = recordReview(runRecordId, output, fixture.d)
+  gradeReviewLens(
+    runRecordId,
+    output,
+    { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
+    fixture.d,
+  )
+  triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
+  completeReview(reviewRecordId, fixture.d)
+  fixture.d
+    .query('UPDATE review SET recorded_at=? WHERE record_id=?')
+    .run(input.recordedAt, reviewRecordId)
+  return reviewRecordId
+}
+
 test('no measured review round establishes no accepted findings', () => {
   const fixture = noAcceptedFindingsFixture()
   try {
@@ -469,26 +531,7 @@ test('no measured review round establishes no accepted findings', () => {
 test('a measured review round with an accepted finding withholds no accepted findings', () => {
   const fixture = noAcceptedFindingsFixture()
   try {
-    const runRecordId = newRecordId()
-    fixture.d
-      .query(
-        `INSERT INTO run
-           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
-            project_record_id,branch,head_commit,lens,model)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
-                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change',?,'correctness','fixture-model')`,
-      )
-      .run(runRecordId, fixture.projectRecordId, fixture.head)
-    const output = reviewReply(1, 'high')
-    const reviewRecordId = recordReview(runRecordId, output, fixture.d)
-    gradeReviewLens(
-      runRecordId,
-      output,
-      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
-      fixture.d,
-    )
-    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
-    completeReview(reviewRecordId, fixture.d)
+    recordAcceptedFindingsRound(fixture, { recordedAt: '2026-11-19T00:00:00.000Z' })
 
     expect(
       gatherNoAcceptedFindingsFact(
@@ -502,29 +545,107 @@ test('a measured review round with an accepted finding withholds no accepted fin
   }
 })
 
-test('an unmeasured review with an accepted finding withholds no accepted findings', () => {
+test('a same-cursor findings continuation applies the measured review round', () => {
   const fixture = noAcceptedFindingsFixture()
   try {
-    const runRecordId = newRecordId()
+    recordAcceptedFindingsRound(fixture, { recordedAt: '2026-11-19T00:00:00.000Z' })
+    recordAppliedFindingsTurn(fixture)
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: ['no-accepted-findings'] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
+test('a findings continuation on the predecessor cursor applies a measured handoff round', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    recordAcceptedFindingsRound(fixture, { recordedAt: '2026-11-19T00:00:00.000Z' })
+    recordAppliedFindingsTurn(fixture)
     fixture.d
       .query(
         `INSERT INTO run
            (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
-            project_record_id,branch,lens,model)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
-                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change','correctness','fixture-model')`,
+            project_record_id,branch,minted_branch,launch_base,launch_key)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-21','codex','implement',
+                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-handoff','DEV-1-handoff',
+                 'DEV-1-change','DEV-1')`,
       )
-      .run(runRecordId, fixture.projectRecordId)
-    const output = reviewReply(1, 'high')
-    const reviewRecordId = recordReview(runRecordId, output, fixture.d)
-    gradeReviewLens(
-      runRecordId,
-      output,
-      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
-      fixture.d,
-    )
-    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
-    completeReview(reviewRecordId, fixture.d)
+      .run(newRecordId(), fixture.projectRecordId)
+    const git = (...args: string[]) => {
+      const result = spawnFixtureGitSync(args, { cwd: fixture.repository })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    git('branch', 'DEV-1-handoff')
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-handoff' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: ['no-accepted-findings'] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
+test('an unmeasured review with an accepted finding withholds no accepted findings', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    recordAcceptedFindingsRound(fixture, {
+      recordedAt: '2026-11-19T00:00:00.000Z',
+      headCommit: null,
+    })
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: [] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
+test('a findings continuation applies accepted findings in an unmeasured lineage', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    recordAcceptedFindingsRound(fixture, {
+      recordedAt: '2026-11-19T00:00:00.000Z',
+      headCommit: null,
+    })
+    recordAppliedFindingsTurn(fixture)
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: ['no-accepted-findings'] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
+test.each([
+  ['a later turn without findings', { continuedWithFindings: false }],
+  ['a findings turn before the last review', { startedAt: '2026-11-19T12:00:00.000Z' }],
+  ['a failed findings turn after the last review', { status: 'failed' as const }],
+])('%s does not apply the measured review round', (_description, turn) => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    recordAcceptedFindingsRound(fixture, { recordedAt: '2026-11-20T00:00:00.000Z' })
+    recordAppliedFindingsTurn(fixture, turn)
 
     expect(
       gatherNoAcceptedFindingsFact(

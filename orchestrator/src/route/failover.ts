@@ -45,6 +45,7 @@ export type ResolvedTaskBranch = {
 
 export type DetachSpec = {
   binding?: { cursorRecordId: string; stepSlug: string }
+  continuedWithFindings?: boolean
   agent?: string
   agentExplicit?: boolean
   /** Surface routing result; unlike agent, this is not a caller pin. */
@@ -151,6 +152,7 @@ const detachRouting = (spec: DetachSpec) => ({
 function completeDetachSpec(spec: DetachSpec) {
   const complete: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
     binding: spec.binding,
+    continuedWithFindings: spec.continuedWithFindings,
     agent: spec.agent,
     ...detachRouting(spec),
     schema: spec.schema,
@@ -193,6 +195,7 @@ export function detachedRunOptions(
 ) {
   const {
     binding,
+    continuedWithFindings,
     agent,
     mcp,
     model,
@@ -228,6 +231,7 @@ export function detachedRunOptions(
     prompt,
     reserveId,
     binding,
+    continuedWithFindings,
     agent,
     ...detachRouting(consumed as DetachSpec),
     schemaPath: spec.schema,

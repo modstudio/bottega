@@ -525,6 +525,7 @@ type RetryRunRow = {
   branch_kept: string | null
   agent_explicit: number
   branch_kept_tip: string | null
+  continued_with_findings: number
 }
 
 function retryReviewBindings(row: Pick<RetryRunRow, 'lens' | 'review_role' | 'prompt_path'>) {
@@ -610,15 +611,18 @@ async function recordedRulingsForRetry(rootId: string): Promise<RecordedRuling[]
 async function continueWritingRetry(
   id: string,
   retryAuthority: RootAuthority,
-  flags: RunFlags,
+  row: Pick<RetryRunRow, 'continued_with_findings'>,
+  options: { flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<string> {
+  const { flags } = options
   const reportDetached = reportsBeforeFollow(flags)
     ? (childId: string, jobName: string) =>
         reportContinuedRun(childId, jobName, flags, helpers.presentation)
     : undefined
   const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, {
     ...helpers,
+    continuedWithFindings: Boolean(row.continued_with_findings),
     reportDetached,
   })
   const detail = `continued as run ${resumed.childId}`
@@ -641,7 +645,7 @@ export async function retryRun(
           requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
           requested.schema_path, requested.model, requested.lens, requested.review_role, COALESCE(requested.review_ref, root.review_ref) review_ref, COALESCE(requested.launch_cwd, root.launch_cwd) launch_cwd,
           requested.launch_seed, requested.launch_key, COALESCE(requested.launch_base, root.launch_base) launch_base, requested.no_failover, requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
-          requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
+          requested.started_at, requested.continued_with_findings, root.repo, root.project_record_id, root.cwd root_cwd,
           root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
      FROM run requested JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
      WHERE requested.record_id = ?`,
@@ -662,7 +666,7 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue')
-    return continueWritingRetry(id, retryAuthority, options.flags, helpers)
+    return continueWritingRetry(id, retryAuthority, row, options, helpers)
   if (!row.prompt_path || !existsSync(row.prompt_path)) {
     throw new Error(
       `run ${id} has no prompt on disk — it predates prompt capture, or the file has aged out ` +

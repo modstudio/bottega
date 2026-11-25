@@ -62,6 +62,11 @@ export const reviewModules: ReviewModule[] = [
     '../database/entity-number.ts',
     'bun:sqlite',
   ]),
+  module('orchestrator/src/review/review-round-application.ts', [
+    'bun:sqlite',
+    './review-group.ts',
+    './review-lineage-store.ts',
+  ]),
   module('orchestrator/src/review/review-read.ts', [
     'shared/brand.ts',
     'bun:sqlite',

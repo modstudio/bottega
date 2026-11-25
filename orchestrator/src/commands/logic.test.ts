@@ -273,8 +273,9 @@ test('continue parses --findings before the message and hands the rendered text 
     continuationFindingsForRun: (_database, runId, message) =>
       `REVIEW FINDINGS\n\n1. review for ${runId}\n\nARCHITECT MESSAGE\n\n${message}`,
     continueCommandDependencies: {
-      continueRun: async (_id, message, _limit, produceMessage) => {
+      continueRun: async (_id, message, _limit, produceMessage, options) => {
         received = produceMessage ? produceMessage() : message
+        expect(options?.continuedWithFindings).toBeTrue()
         return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
@@ -312,8 +313,9 @@ test('continue without --findings hands the architect message through unchanged'
       throw new Error('findings renderer must not be called')
     },
     continueCommandDependencies: {
-      continueRun: async (_id, message, _limit, produceMessage) => {
+      continueRun: async (_id, message, _limit, produceMessage, options) => {
         received = produceMessage ? produceMessage() : message
+        expect(options?.continuedWithFindings).toBeFalse()
         return { childId: '99', job: 'implement', reported: false }
       },
       reportContinuedRun: async () => {},
