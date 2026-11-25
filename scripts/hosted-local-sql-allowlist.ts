@@ -467,6 +467,22 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites: 1,
   },
   {
+    pattern: /^orchestrator\/src\/identity\/board-message-identity\.ts$/,
+    functionName: 'boardMessageIdentity',
+    reason: 'local-only',
+    detail: 'DEV-2645: machine-audience notices are local by design on every install',
+    expectedSites: 2,
+    reportOnly: true,
+  },
+  {
+    pattern: /^orchestrator\/src\/board\/board-message-identifier\.ts$/,
+    functionName: 'localMessageIsMachineScoped',
+    reason: 'local-only',
+    detail: 'DEV-2645: machine-audience notices are local by design on every install',
+    expectedSites: 1,
+    reportOnly: true,
+  },
+  {
     pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,
     reason: 'local-only',
     detail: 'The local document read adapter builds SQL only for machine-local document tables',

@@ -76,6 +76,7 @@ import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
+  localBoardRows,
   markSessionMessagesDelivered,
   noticeStatus,
   type PostNoticeInput,
@@ -203,9 +204,8 @@ function preparePostText(input: PostNoticeInput, c: ReturnType<typeof context>):
   return prepareBoardNoticeText(input, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
 }
 
-function hostedClient(c: ReturnType<typeof context>): RecordApiClient {
-  return c.client ?? recordApiClient()
-}
+const hostedClient = (c: ReturnType<typeof context>): RecordApiClient =>
+  c.client ?? recordApiClient()
 
 function writeDestination(c: ReturnType<typeof context>, project?: string | null) {
   return c.destinationResolver(hostedClient(c), project, c.database)
@@ -720,8 +720,10 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
 
 export async function boardAcknowledge(id: string, inputContext?: Context) {
   const c = context(inputContext)
-  const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
-  if (resolved.source === 'local') acknowledgeNotice(resolved.recordId, c.env, c.clock)
+  const database = db()
+  const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
+  if (resolved.source === 'local')
+    acknowledgeNotice(resolved.recordId, c.env, c.clock, localBoardRows(database))
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.

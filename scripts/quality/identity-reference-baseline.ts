@@ -1,7 +1,6 @@
 /** Shrink-only production bypasses that predate the shared identity resolver. */
 export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'hub/scripts/test-postgres-evidence.ts': 1,
-  'orchestrator/src/board/board-message-identifier.ts': 1,
   'orchestrator/src/cli/program.ts': 1,
   'orchestrator/src/collect/collect.ts': 2,
   'orchestrator/src/commands/run-listing.ts': 1,

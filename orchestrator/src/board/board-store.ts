@@ -774,9 +774,22 @@ function insertRootRow(
 
 export function messageRows(database = db()): MessageRow[] {
   requireLocalBoardRead(process.env, database)
+  return selectMessageRows(database)
+}
+
+function selectMessageRows(database: ReturnType<typeof db>, machineScoped = false): MessageRow[] {
   return database
-    .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message ORDER BY number`)
+    .query(
+      `SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message${machineScoped ? " WHERE audience LIKE 'machine:%'" : ''} ORDER BY number`,
+    )
     .all() as MessageRow[]
+}
+
+/** Machine-audience messages stay local after the shared board is adopted. */
+export function machineMessageRows(database = db()): MessageRow[] {
+  return selectMessageRows(database, true).filter(
+    (row) => row.audience !== null && parseAudience(row.audience).kind === 'machine',
+  )
 }
 
 export function messageTags(messageRecordId: string, database = db()): BoardTag[] {

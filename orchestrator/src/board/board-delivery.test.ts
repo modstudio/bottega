@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { hostname } from 'node:os'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -16,6 +17,8 @@ import {
 } from './board-delivery.ts'
 import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import { boardAcknowledge, boardPost } from './board-operations.ts'
+import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice } from './board-service.ts'
 
 const createdAt = new Date(Date.now() - 1_000).toISOString()
@@ -84,6 +87,124 @@ beforeEach(() => {
 afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
+})
+
+test('a hosted install pushes, delivers, and acknowledges only its local machine notice', async () => {
+  const clock = Date.now()
+  const session = 'hosted-machine-reader'
+  const env = {
+    CLAUDE_CODE_SESSION_ID: session,
+    BOTTEGA_RECORD_API_URL: 'https://record.test',
+  }
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect',?,'delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(
+      session,
+      hostname(),
+      new Date(clock - 2_000).toISOString(),
+      new Date(clock - 1_000).toISOString(),
+    )
+  const stayedLocal = postNotice(
+    { audience: `session:${session}`, title: 'Stayed local', body: 'Do not route locally.' },
+    {
+      CLAUDE_CODE_SESSION_ID: 'stayed-local-author',
+      BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL,
+    },
+    clock - 1,
+  )
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const posted = await boardPost(
+    {
+      audience: `machine:${hostname()}`,
+      title: 'Machine delivery',
+      body: 'Deliver this local machine notice.',
+      purpose: 'request',
+      ackRequired: true,
+    },
+    { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, clock },
+  )
+
+  const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 1, env })
+  expect(pending.delivery.map((notice) => notice.id)).toEqual([String(posted.number)])
+  const receipt = () =>
+    db()
+      .query(
+        'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, session)
+  const resetReceipt = () =>
+    db()
+      .query(
+        'UPDATE board_receipt SET delivered_at=NULL,acknowledged_at=NULL WHERE message_record_id=? AND reader_session=?',
+      )
+      .run(posted.recordId, session)
+
+  await markBoardDeliveryDelivered({
+    session,
+    ids: pending.delivery.map((notice) => notice.id),
+    clock: clock + 2,
+    env,
+  })
+  expect(receipt()).toEqual({
+    delivered_at: new Date(clock + 2).toISOString(),
+    acknowledged_at: null,
+  })
+
+  resetReceipt()
+  await markBoardDeliveryDelivered({
+    session,
+    ids: [posted.recordId],
+    clock: clock + 3,
+    env,
+  })
+  expect(receipt()).toEqual({
+    delivered_at: new Date(clock + 3).toISOString(),
+    acknowledged_at: null,
+  })
+
+  resetReceipt()
+  await markBoardNoticesDelivered([String(posted.number)], env, { database: db() })
+  expect(receipt()).toEqual({ delivered_at: expect.any(String), acknowledged_at: null })
+
+  resetReceipt()
+  await markBoardNoticesDelivered([posted.recordId], env, { database: db() })
+  expect(receipt()).toEqual({ delivered_at: expect.any(String), acknowledged_at: null })
+
+  await boardAcknowledge(posted.recordId, { env, clock: clock + 4 })
+  expect(receipt()).toEqual({
+    delivered_at: expect.any(String),
+    acknowledged_at: new Date(clock + 4).toISOString(),
+  })
+
+  resetReceipt()
+  await boardAcknowledge(String(posted.number), { env, clock: clock + 5 })
+  expect(receipt()).toEqual({
+    delivered_at: new Date(clock + 5).toISOString(),
+    acknowledged_at: new Date(clock + 5).toISOString(),
+  })
+
+  await expect(
+    markBoardDeliveryDelivered({ session, ids: ['not-an-id'], clock: clock + 6, env }),
+  ).rejects.toThrow(/board delivery id must be either a positive integer string .* or a UUID/)
+
+  await expect(
+    boardAcknowledge(stayedLocal.recordId, {
+      env,
+      clock: clock + 7,
+      client: createMemoryRecordApiClient(),
+      destinationResolver: async () => ({ destinationSpaceId: 'space:test' }),
+    }),
+  ).rejects.toThrow(/hosted board is unused in this fixture/)
+  expect(
+    db()
+      .query(
+        'SELECT acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(stayedLocal.recordId, session),
+  ).toEqual({ acknowledged_at: null })
 })
 
 test('board read and read --claim use hosted cache instead of differing local rows', async () => {
