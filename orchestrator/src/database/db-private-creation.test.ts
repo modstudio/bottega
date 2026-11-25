@@ -3,11 +3,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  createDatabasePrivately,
-  registerOpenHooks,
-  seedCurrentProjectSchema,
-} from './db.ts'
+import { createDatabasePrivately, registerOpenHooks, seedCurrentProjectSchema } from './db.ts'
 import { applyMigrations } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 
