@@ -88,6 +88,14 @@ test('a selection inside a package whose test script embeds a path still narrows
   expect(group!.argv).toEqual(['bun', 'test', './src/run/exec.test.ts'])
 })
 
+test('isolates focused tests only for a marked leg directory', () => {
+  const [hub] = groupFocusedTestPaths(['hub/src/db.test.ts'])
+  const [orchestrator] = groupFocusedTestPaths(['orchestrator/src/run/exec.test.ts'])
+
+  expect(hub!.argv).toContain('--isolate')
+  expect(orchestrator!.argv).toEqual(['bun', 'test', './src/run/exec.test.ts'])
+})
+
 test('an unreached test runs from its workspace', () => {
   const [group] = groupFocusedTestPaths(['orchestrator/src/postgres/postgres-import.test.ts'])
   expect(relative(root, group!.directory)).toBe('orchestrator')
