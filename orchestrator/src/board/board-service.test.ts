@@ -13,6 +13,7 @@ import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
 import { projectAt } from '../project/projects.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import {
   acknowledgeNotice,
@@ -957,6 +958,22 @@ test('delivery entry point refuses the operator sentinel before changing its rec
       )
       .get(posted.recordId, 'operator'),
   ).toEqual({ delivered_at: null })
+})
+
+test('hosted delivery marking allows an empty local id list and refuses a local id', () => {
+  const prior = process.env.BOTTEGA_RECORD_API_URL
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  try {
+    expect(() => markSessionMessagesDelivered('hosted-session', [])).not.toThrow()
+    expect(() => markSessionMessagesDelivered('hosted-session', [newRecordId()])).toThrow(
+      /requireLocalBoardWrite stopped local board notice delivery/,
+    )
+  } finally {
+    db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+    if (prior === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = prior
+  }
 })
 
 test('machine:this resolves to the posting machine, interrupts, and reports unacknowledged sessions', () => {

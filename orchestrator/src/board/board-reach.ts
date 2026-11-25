@@ -13,6 +13,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { boardMode } from './board-mode.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
@@ -151,6 +152,7 @@ function projectConcern(project: string | null, readerProject: string): BoardRea
 }
 
 function localMessageFacts(id: string, database: Database): MessageFacts | null {
+  requireLocalBoardRead(process.env, database)
   const row = database
     .query(`SELECT ${BOARD_MESSAGE_COLUMNS} FROM board_message WHERE record_id=?`)
     .get(id) as MessageRow | null
@@ -410,6 +412,7 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
 })
 
 function localReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
+  requireLocalBoardRead(process.env, database)
   return (
     database
       .query(

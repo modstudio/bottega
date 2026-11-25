@@ -319,6 +319,24 @@ const DOC_REVISION_PLANNED_SITES: readonly B2ReasonedSite[] = [
 const BOARD_REACH_PLANNED_SITES: readonly B2ReasonedSite[] = [
   {
     file: 'orchestrator/src/board/board-reach.ts',
+    functionName: 'recordBoardReach',
+    expectedSites: 1,
+    detail: 'board reach delivery hosting is planned by DEV-2234',
+  },
+  {
+    file: 'orchestrator/src/board/board-reach.ts',
+    functionName: 'reapBoardReach',
+    expectedSites: 1,
+    detail: 'board reach delivery hosting is planned by DEV-2234',
+  },
+  {
+    file: 'orchestrator/src/board/board-store.ts',
+    functionName: 'claimPresenceFacts',
+    expectedSites: 1,
+    detail: 'hosted claim presence is planned by DEV-2641',
+  },
+  {
+    file: 'orchestrator/src/board/board-reach.ts',
     functionName: 'boardMessageTitle',
     expectedSites: 4,
     detail:
@@ -331,6 +349,21 @@ const BOARD_REACH_PLANNED_SITES: readonly B2ReasonedSite[] = [
     detail:
       "the read only feeds the reach report and reaches only message_source='local' rows from before adoption; architect ruling note 01a21090",
   },
+]
+
+const BOARD_SUGGESTION_ROOT_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
+  ...[
+    ['recordRecipients', 1],
+    ['duplicateRoot', 2],
+    ['insertRootMessage', 1],
+    ['insertRootRow', 2],
+  ].map(([functionName, expectedSites]) => ({
+    file: 'orchestrator/src/board/board-store.ts',
+    functionName: String(functionName),
+    expectedSites: Number(expectedSites),
+    detail:
+      'insertRootMessage also stores worker suggestions that are local-only because the hosted board refuses suggestion messages; notice and question callers have local-board write heads',
+  })),
 ]
 
 export type HostedLocalSqlAllowedFile = {
@@ -504,6 +537,16 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES: readonly HostedLocalSqlAllowedFile[
     expectedSites,
     reportOnly: true as const,
   })),
+  ...BOARD_SUGGESTION_ROOT_LOCAL_ONLY_SITES.map(
+    ({ file, functionName, expectedSites, detail }) => ({
+      pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
+      functionName,
+      reason: 'local-only' as const,
+      detail,
+      expectedSites,
+      reportOnly: true as const,
+    }),
+  ),
   ...B2_LOCAL_ONLY_SITES.map(({ file, functionName, expectedSites, detail }) => ({
     pattern: new RegExp(`^${file.replaceAll('.', '\\.')}$`),
     functionName,

@@ -14,7 +14,7 @@ import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
 } from './board-answer-note.ts'
-import { requireLocalBoardRead } from './board-local-read-guard.ts'
+import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
 import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
@@ -83,6 +83,7 @@ export function askQuestion(
   cwd = process.cwd(),
 ) {
   const database = writableDb()
+  requireLocalBoardWrite('notice post', env, database)
   return writeTransaction(
     () => insertRootMessage('question', input, env, clock, cwd, database),
     database,
@@ -106,6 +107,7 @@ function addReplyReceipts(
   facts: ReturnType<typeof replyAudienceFacts>,
   database: ReturnType<typeof writableDb>,
 ): number {
+  requireLocalBoardWrite('reply post', process.env, database)
   const recipients = resolveReplyReaders({
     rootAuthor: authorReader(root),
     threadAuthors: facts.threadAuthors,
@@ -198,6 +200,7 @@ export function replyToThread(
   cwd = process.cwd(),
   audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
+  requireLocalBoardWrite('reply post', env)
   validateReplyBody(body)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
@@ -373,6 +376,7 @@ function takeFilingLease(
   clock: number,
 ): { question: MessageRow; reply: MessageRow; startedAt: string } {
   const database = writableDb()
+  requireLocalBoardWrite('answer accept', process.env, database)
   return writeTransaction(() => {
     const current = message(questionId)
     const refusal = filingLeaseRefusal(current, clock)
@@ -410,6 +414,7 @@ async function filePendingNote(
   notePendingError: string | null
   retry: string | null
 }> {
+  requireLocalBoardWrite('answer accept')
   const { question, reply, startedAt } = takeFilingLease(questionId, clock)
   try {
     const filed = await filer(
@@ -472,6 +477,7 @@ export async function acceptAnswer(
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
   prepareFailure?: (detail: string) => string,
 ) {
+  requireLocalBoardWrite('answer accept', env)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
@@ -515,6 +521,7 @@ export async function fileAnswerNote(
   clock = Date.now(),
   prepareFailure?: (detail: string) => string,
 ) {
+  requireLocalBoardWrite('answer accept', env)
   const actor = boardActor(env)
   const question = message(questionId)
   if (question.kind !== 'question' || question.accepted_reply_record_id === null)

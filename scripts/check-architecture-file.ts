@@ -11,6 +11,7 @@ import {
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { hubWebSourcePlacementViolation } from './architecture-hub-packages.ts'
+import { hostedLocalBoardHeadFailures } from './hosted-local-read-report.ts'
 import {
   hubUiFolderLayerRuleName,
   isDeclaredHubUiSourceLocation,
@@ -42,6 +43,35 @@ if (hubWebPlacementViolation) {
     }),
   )
   process.exit(0)
+}
+
+if (/^orchestrator\/src\/.*\.[cm]?ts$/.test(original)) {
+  try {
+    const boardHeadFailures = hostedLocalBoardHeadFailures({
+      file: original,
+      sourceText: readFileSync(target, 'utf8'),
+    })
+    if (boardHeadFailures.length) {
+      console.log(
+        JSON.stringify({
+          status: 'refused',
+          findings: boardHeadFailures.map((dependency) => ({
+            rule: 'local-board-sql-requires-head',
+            dependency,
+          })),
+        }),
+      )
+      process.exit(0)
+    }
+  } catch (error) {
+    console.log(
+      JSON.stringify({
+        status: 'unchecked',
+        reason: `local board SQL head check could not decide: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    )
+    process.exit(0)
+  }
 }
 
 if (

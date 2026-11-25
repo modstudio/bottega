@@ -10,6 +10,7 @@ import {
   hostedBoardLocalReadFailures,
   hostedDocLocalReadFailures,
   hostedHubLocalReadFailures,
+  hostedLocalBoardHeadFailures,
   hostedLocalReadDeclarationValidation,
   hostedLocalReadKind,
   hostedLocalReadScan,
@@ -112,6 +113,14 @@ test.each([
     source: `function read() {
       requireLocalBoardRead(env, db)
       db.query(\`SELECT * FROM hosted_row\`)
+    }`,
+    path: 'local-only',
+  },
+  {
+    name: 'a write after an unconditional local board write guard',
+    source: `function write() {
+      requireLocalBoardWrite('notice post', env, db)
+      db.query(\`UPDATE hosted_row SET value=1\`)
     }`,
     path: 'local-only',
   },
@@ -543,4 +552,29 @@ test.each([
   expect(hits).toHaveLength(1)
   expect(hits[0]?.path).toBe(fixture.path)
   if ('reason' in fixture) expect(hits[0]?.reason).toContain(fixture.reason)
+})
+
+test('write-time board head judgment refuses an unheaded site and accepts a headed site', () => {
+  const file = 'orchestrator/src/board/candidate.ts'
+  expect(
+    hostedLocalBoardHeadFailures({
+      file,
+      sourceText: `function write(database) {
+        database.query(\`UPDATE board_message SET title='changed'\`)
+      }`,
+    }),
+  ).toEqual([
+    expect.stringContaining(
+      `${file}:2: local board_message write has no proven local-board head`,
+    ),
+  ])
+  expect(
+    hostedLocalBoardHeadFailures({
+      file,
+      sourceText: `function write(database) {
+        requireLocalBoardWrite('notice post', process.env, database)
+        database.query(\`UPDATE board_message SET title='changed'\`)
+      }`,
+    }),
+  ).toEqual([])
 })

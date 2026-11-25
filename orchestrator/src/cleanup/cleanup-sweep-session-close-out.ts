@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { releaseSessionClaims } from '../board/board-claim-service.ts'
+import { boardMode } from '../board/board-mode.ts'
 import { db, expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
 import { KEEP_RUN_FILES_DAYS } from '../run/run-artifact-limits.ts'
 import {
@@ -77,7 +78,8 @@ async function sweepCloseOutRow(input: {
     writeTransaction(() => {
       const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
       if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()
-      input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
+      if (boardMode('shared', process.env, input.database) === 'local')
+        input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
       expireSessionSeen(input.row.session_id, input.database)
       const marked = markSessionCloseOutSwept(
         input.row.record_id,
@@ -107,12 +109,12 @@ export async function sweepSessionCloseOutRecords(input: {
   presentation: CleanupPresentation
   database?: Database
   now?: number
-  adapters?: SweepAdapters
+  adapters?: Partial<SweepAdapters>
 }): Promise<boolean> {
   if (!input.enabled) return false
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   const now = input.now ?? Date.now()
-  const adapters = input.adapters ?? defaultAdapters
+  const adapters = { ...defaultAdapters, ...input.adapters }
   const rows = newestSessionCloseOutRecords(database)
   let failed = false
   for (const row of rows) {

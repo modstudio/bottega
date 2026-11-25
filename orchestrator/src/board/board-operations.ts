@@ -53,6 +53,7 @@ import {
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting, queueHostedBoardAcknowledgement } from './board-hosted-cache.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 import {
   resolveBoardClaimIdentifier,
   resolveBoardMessageIdentifier,
@@ -952,15 +953,22 @@ export async function boardLiveClaimProjectsForSession(
   const claims = await boardLiveClaimsOfSession(session, clock, database)
   return [...new Set(claims.map(({ project }) => project))]
 }
+
+function localTaskClaim(recordId: string, environment: Environment) {
+  const database = db()
+  requireLocalBoardRead(environment, database)
+  return database
+    .query<{ subject_kind: string; subject_value: string }, [string]>(
+      'SELECT subject_kind,subject_value FROM board_claim WHERE record_id=?',
+    )
+    .get(recordId)
+}
+
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const resolved = resolveBoardClaimIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
-    const claim = db()
-      .query<{ subject_kind: string; subject_value: string }, [string]>(
-        'SELECT subject_kind,subject_value FROM board_claim WHERE record_id=?',
-      )
-      .get(resolved.recordId)
+    const claim = localTaskClaim(resolved.recordId, c.env)
     if (claim?.subject_kind === 'task')
       throw new Error(
         `task claims follow task cursors; run workflow next to the end or workflow abandon for ${claim.subject_value}`,

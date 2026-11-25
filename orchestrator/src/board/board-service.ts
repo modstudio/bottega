@@ -21,6 +21,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { boardMode } from './board-mode.ts'
+import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -139,8 +140,8 @@ export function postNotice(
   clock = Date.now(),
   cwd = process.cwd(),
 ): PostNoticeResult {
-  boardMode('shared', env)
   const database = writableDb()
+  requireLocalBoardWrite('notice post', env, database)
   return writeTransaction(() => postNoticeInTransaction(input, env, clock, cwd, database), database)
 }
 
@@ -172,6 +173,7 @@ export function runReaderIdentity(runId: string, database = db()) {
 }
 
 function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
+  requireLocalBoardRead(process.env, database)
   return database
     .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
     .get(messageRecordId, reader) as { delivered_at: string | null } | null
@@ -187,6 +189,7 @@ function replySuccessorPush(
   clock: number,
   database: Database,
 ): boolean {
+  requireLocalBoardRead(process.env, database)
   if (reply.kind !== 'reply' || reply.thread_root_record_id === null) return false
   const root = messageRows(database).find(
     (candidate) => candidate.record_id === reply.thread_root_record_id,
@@ -220,6 +223,7 @@ function takeReportReplySuccessor(
   clock: number,
   database: Database,
 ): boolean {
+  requireLocalBoardWrite('notice delivery', process.env, database)
   return writeTransaction(() => {
     if (!replySuccessorPush(reply, reader, clock, database)) return false
     database
@@ -401,6 +405,7 @@ export function markRunNoticesDelivered(runId: string, ids: string[], clock = Da
   )
   if (!rows.length) return
   const database = writableDb()
+  requireLocalBoardWrite('notice delivery', process.env, database)
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
@@ -504,6 +509,7 @@ export function markNoticesDelivered(
   clock = Date.now(),
   database: Database = writableDb(),
 ): void {
+  requireLocalBoardWrite('notice delivery', env, database)
   const reader = boardReader(env)
   const idSet = new Set(ids)
   const rows = messageRows(database).filter(
@@ -575,6 +581,7 @@ export async function boardRequestCountForSession(
 }
 
 export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
+  requireLocalBoardWrite('notice acknowledge', env)
   const reader = boardReader(env)
   const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row || !rowIsLive(row, clock) || !addressed(row, reader, clock))
@@ -597,6 +604,7 @@ export function acknowledgeNotice(id: string, env: Environment = process.env, cl
 }
 
 export function noticeStatus(id: string, env: Environment = process.env, clock = Date.now()) {
+  requireLocalBoardRead(env)
   const actor = boardActor(env)
   const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
@@ -650,6 +658,7 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
 }
 
 export function withdrawNotice(id: string, env: Environment = process.env, clock = Date.now()) {
+  requireLocalBoardWrite('notice withdraw', env)
   const actor = boardActor(env)
   const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
@@ -664,7 +673,9 @@ export function withdrawNotice(id: string, env: Environment = process.env, clock
 
 export function markSessionMessagesDelivered(session: string, ids: string[], at = nowIso()) {
   requireRealSession(session, 'board delivery acknowledgement')
+  if (ids.length === 0) return
   const database = writableDb()
+  requireLocalBoardWrite('notice delivery', process.env, database)
   for (const id of ids)
     database
       .query(
@@ -793,6 +804,7 @@ export async function boardEscalations(
 }
 
 export function reapBoardMessages(clock = Date.now()): number {
+  requireLocalBoardWrite('notice reap')
   const rows = messageRows()
   const acceptedRoots = new Set(
     rows

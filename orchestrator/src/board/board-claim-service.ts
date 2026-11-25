@@ -181,6 +181,7 @@ function linkClaimNotice(
   cwd: string,
   database: ReturnType<typeof writableDb>,
 ): void {
+  requireLocalBoardWrite('notice post', env, database)
   const notice = (() => {
     try {
       return postNoticeInTransaction({ audience, title, body }, env, clock, cwd, database)
@@ -220,6 +221,7 @@ function conflictingClaims(context: TakeTransaction): {
   exactHeld: ClaimRow | undefined
   foreignLive: ClaimRow[]
 } {
+  requireLocalBoardRead(context.env, context.database)
   const candidates = context.database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND closed_at IS NULL ORDER BY taken_at,record_id`,
@@ -375,6 +377,7 @@ export function takeClaim(
   database = writableDb(),
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): TakeClaimResult {
+  requireLocalBoardWrite('claim take', env, database)
   const cursorSession =
     taskCursorAuthority?.mode === 'take' ||
     taskCursorAuthority?.mode === 'start-child' ||
@@ -513,6 +516,7 @@ export function releaseSessionClaims(
   clock = Date.now(),
   database = writableDb(),
 ): number {
+  requireLocalBoardWrite('claim release', process.env, database)
   return writeTransaction(() => {
     const rows = database
       .query(
@@ -537,6 +541,7 @@ export function closeQueuedTaskClaim(
   clock = Date.now(),
   database = writableDb(),
 ): { closed: number; reason: ClaimCloseReason | null } {
+  requireLocalBoardWrite('claim maintenance', process.env, database)
   return writeTransaction(() => {
     const row = database
       .query(
@@ -562,6 +567,7 @@ export function releaseTaskClaims(
   database = writableDb(),
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { released: number } {
+  requireLocalBoardWrite('claim release', env, database)
   if (taskCursorAuthority?.mode !== 'release') claimActor(env)
   if (!projectByName(project, database))
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
@@ -581,6 +587,7 @@ export function releaseTaskClaims(
 }
 
 export function stampEndedClaims(clock = Date.now(), database = writableDb()): number {
+  requireLocalBoardWrite('claim maintenance', process.env, database)
   return writeTransaction(() => {
     const rows = database
       .query(`SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE closed_at IS NULL`)

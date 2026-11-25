@@ -544,6 +544,7 @@ export function authorWindowDecision(
   duplicate: boolean,
   database: ReturnType<typeof writableDb>,
 ) {
+  requireLocalBoardRead(process.env, database)
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const recentPosts = (
     database
@@ -780,6 +781,7 @@ export function messageRows(database = db()): MessageRow[] {
 }
 
 export function messageTags(messageRecordId: string, database = db()): BoardTag[] {
+  requireLocalBoardRead(process.env, database)
   return database
     .query(
       'SELECT kind,value,origin FROM board_message_tag WHERE message_record_id=? ORDER BY rowid',
@@ -824,6 +826,7 @@ export function rowIsLive(message: MessageRow, clock: number, database = db()): 
 }
 
 export function hasReceipt(messageRecordId: string, reader: string, database = db()): boolean {
+  requireLocalBoardRead(process.env, database)
   return Boolean(
     database
       .query('SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=?')
@@ -836,6 +839,7 @@ export function holdsReplySuccessor(
   reader: string,
   database = db(),
 ): boolean {
+  requireLocalBoardRead(process.env, database)
   return Boolean(
     database
       .query(
@@ -851,6 +855,7 @@ export function hasNonSuccessorReceipt(
   reader: string,
   database = db(),
 ): boolean {
+  requireLocalBoardRead(process.env, database)
   return Boolean(
     database
       .query(

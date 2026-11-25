@@ -174,6 +174,7 @@ const MODE_SELECTOR_PATTERN = MODE_SELECTORS.join('|')
 const HOSTED_SELECTORS = [
   ...MODE_SELECTORS,
   'requireLocalBoardRead',
+  'requireLocalBoardWrite',
   'hostedRecordOwnsHostedTables',
 ] as const
 const OWNERSHIP_SELECTOR = 'hostedRecordOwnsHostedTables'
@@ -502,7 +503,9 @@ function selectorIfPath(input: {
 }
 
 function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
-  for (const match of body.slice(0, site).matchAll(/\brequireLocalBoardRead\s*\(/g)) {
+  for (const match of body
+    .slice(0, site)
+    .matchAll(/\brequireLocalBoard(?:Read|Write)\s*\(/g)) {
     const token = match.index ?? 0
     const prefix = statementPrefixFacts(body, token)
     if (
@@ -657,6 +660,53 @@ export function hostedLocalReadSourceFacts(
 
 export function hostedLocalReadKind(sql: string): HostedLocalReadKind {
   return /^\s*SELECT\b/i.test(sql) ? 'read' : WRITE_SQL.test(sql) ? 'write' : 'read'
+}
+
+export function hostedLocalBoardHeadFailures(input: {
+  file: string
+  sourceText: string
+}): string[] {
+  const tables = STATE_CLASSES.flatMap((item) =>
+    'table' in item &&
+    item.store === 'orchestrator' &&
+    item.class === 'hosted' &&
+    item.table.startsWith('board_')
+      ? [{ table: item.table, cache: item.cache === true, ...(item.task ? { task: item.task } : {}) }]
+      : [],
+  )
+  const tableNames = tables.map(({ table }) => table)
+  const sourceFacts = hostedLocalReadSourceFacts(input.sourceText)
+  const extracted = extractSqlFromSource({
+    sourceText: input.sourceText,
+    file: input.file,
+    renderedUnresolvedRisk: (sql) => hostedTableInSql(sql, tableNames) !== null,
+  })
+  const candidates: HostedLocalReadCandidate[] = [
+    ...extracted.sites.map((site) => ({ ...site, ...sourceFacts, sourceText: input.sourceText })),
+    ...extracted.unresolved.map((site) => ({
+      ...site,
+      ...sourceFacts,
+      sourceText: input.sourceText,
+    })),
+    ...extracted.cannotJudge.map((site) => ({
+      ...site,
+      ...sourceFacts,
+      sourceText: input.sourceText,
+      dynamicTable: true,
+    })),
+  ]
+  return classifyHostedLocalReadSites({
+    candidates,
+    tables,
+    allowedFiles: HOSTED_LOCAL_SQL_ALLOWED_FILES,
+  }).flatMap((hit) =>
+    (hit.path === 'cannot-tell' || hit.path === 'hosted-reachable') &&
+    hit.exclusionReason !== 'planned'
+      ? [
+          `${hit.file}:${hit.line}: local ${hit.table} ${hit.kind} has no proven local-board head; add a requireLocalBoardRead/requireLocalBoardWrite head, or an allowlist entry naming its task`,
+        ]
+      : [],
+  )
 }
 
 function hostedLocalReadModule(file: string): string {

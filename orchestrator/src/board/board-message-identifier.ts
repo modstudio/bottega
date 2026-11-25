@@ -11,6 +11,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { boardHasAdoptedHosted, boardMode, boardModeForId } from './board-mode.ts'
+import { requireLocalBoardRead } from './board-local-read-guard.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
 const HOSTED_MESSAGE_ID_REMEDY = `pass the board-message record id (UUID); use ${PLATFORM_SLUG} board thread or a board read verb to find it`
@@ -48,6 +49,7 @@ export function boardMessageKind(
   source: 'local' | 'hosted',
 ): 'root' | 'reply' | 'missing' {
   if (source === 'hosted') return cachedHostedBoardMessageKind(recordId, database)
+  requireLocalBoardRead(process.env, database)
   const row = database
     .query<{ thread_root_record_id: string | null }, [string]>(
       `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
