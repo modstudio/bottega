@@ -346,7 +346,18 @@ export type HostedPushOutcome =
       replacedId?: string
       reason?: string
     }
-  | { id: string; status: 'rejected'; reason: string }
+  | {
+      id: string
+      status: 'rejected'
+      reason: string
+      conflict?: {
+        code: 'day-identity-conflict'
+        day: string
+        incomingId: string
+        existingId: string
+        machineId: string | null
+      }
+    }
 
 type ParsedHostedPushItem =
   | { input: ParsedHostedPushChange }

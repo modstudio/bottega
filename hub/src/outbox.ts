@@ -1,7 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
+import { decideDayIdAdoption } from './day-id-adoption.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import { hostedQueueRefusal } from './hosted-queue-decision.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -377,6 +379,26 @@ function recordOutcome(
   trace?: { operation: 'upsert' | 'delete'; destination: string | null },
 ) {
   const { entry } = item
+  const adoption = decideDayIdAdoption(item.change, outcome, storedMachineId())
+  if (adoption.action === 'adopt') {
+    const changed = writeTransaction((conn) => {
+      const adoptedDay = conn
+        .query(`UPDATE day SET record_id=? WHERE record_id=?`)
+        .run(adoption.hostedId, item.change.id).changes
+      const requeued = conn
+        .query(
+          `UPDATE hosted_outbox SET id=?,row_id=?,queued_at=?,generation=generation+1,
+           attempts=0,last_error=NULL,quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL
+           WHERE id=? AND generation=?`,
+        )
+        .run(adoption.hostedId, adoption.hostedId, at, entry.id, entry.generation).changes
+      if (adoptedDay !== 1 || requeued !== 1)
+        throw new Error('day identity adoption lost its local row or outbox entry')
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      return requeued
+    })
+    return changed > 0 ? 'retry' : null
+  }
   const decision = decideOutboxLifecycle(
     entry.attempts,
     outcome.status === 'rejected'

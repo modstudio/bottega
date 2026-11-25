@@ -526,10 +526,29 @@ export async function hostedPushChanges(
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw new Error('hosted hub returned a malformed push outcome')
     const row = value as Record<string, unknown>
+    const conflict =
+      row.conflict === undefined ||
+      (row.conflict !== null && typeof row.conflict === 'object' && !Array.isArray(row.conflict))
+        ? (row.conflict as Record<string, unknown> | undefined)
+        : null
+    const malformedConflict =
+      conflict === null ||
+      (conflict !== undefined &&
+        (conflict.code !== 'day-identity-conflict' ||
+          typeof conflict.day !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(conflict.day) ||
+          typeof conflict.incomingId !== 'string' ||
+          !UUID.test(conflict.incomingId) ||
+          typeof conflict.existingId !== 'string' ||
+          !UUID.test(conflict.existingId) ||
+          (conflict.machineId !== null &&
+            (typeof conflict.machineId !== 'string' || !UUID.test(conflict.machineId)))))
     if (
       typeof row.id !== 'string' ||
       (row.status !== 'applied' && row.status !== 'duplicate' && row.status !== 'rejected') ||
       (row.status === 'rejected' && typeof row.reason !== 'string') ||
+      (row.status !== 'rejected' && row.conflict !== undefined) ||
+      malformedConflict ||
       (row.status !== 'rejected' && row.reason !== undefined && typeof row.reason !== 'string') ||
       (row.status === 'rejected' &&
         (row.adoptedId !== undefined || row.replacedId !== undefined)) ||

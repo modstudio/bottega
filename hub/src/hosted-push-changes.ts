@@ -3,7 +3,11 @@ import { maskHostedTableWrite } from '../../shared/hosted-secret-mask.ts'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
-import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
+import {
+  applyDayChangeInTransaction,
+  applyIntervalChangeInTransaction,
+  DayIdentityConflictError,
+} from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import {
   fieldConflict,
@@ -449,6 +453,23 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   },
 }
 
+function rejectedPushOutcome(input: ParsedHostedPushChange, error: unknown): HostedPushOutcome {
+  if (!(error instanceof DayIdentityConflictError))
+    return { id: input.id, status: 'rejected', reason: (error as Error).message }
+  return {
+    id: input.id,
+    status: 'rejected',
+    reason: error.message,
+    conflict: {
+      code: error.code,
+      day: error.day,
+      incomingId: error.incomingId,
+      existingId: error.existingId,
+      machineId: error.machineId,
+    },
+  }
+}
+
 export async function applyHostedPushChangesInTransaction(
   tx: SQL,
   identity: TaskIdentity,
@@ -482,7 +503,7 @@ export async function applyHostedPushChangesInTransaction(
       if (error instanceof HostedRevisionConflictError) throw error
       if (error instanceof HostedChangeIdMismatchError) throw error
       if (!replayProbeCompleted) throw error
-      outcome = { id: input.id, status: 'rejected', reason: (error as Error).message }
+      outcome = rejectedPushOutcome(input, error)
     }
     outcomes[index] = outcome
   }

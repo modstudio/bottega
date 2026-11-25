@@ -5,10 +5,36 @@ import type { PushedDay, PushedInterval } from './push-contract.ts'
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
 export type DayEvidence = PushedDay
-function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
-  return new Error(
-    `day identity conflict: date ${row.day} belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
-  )
+
+export class DayIdentityConflictError extends Error {
+  readonly code = 'day-identity-conflict' as const
+  readonly day: string
+  readonly incomingId: string
+  readonly existingId: string
+  readonly machineId: string | null
+
+  constructor(
+    day: string,
+    incomingId: string,
+    existingId: string,
+    machineId: string | null,
+  ) {
+    super(
+      `day identity conflict: date ${day} belongs to UUID ${existingId}, not incoming UUID ${incomingId}`,
+    )
+    this.day = day
+    this.incomingId = incomingId
+    this.existingId = existingId
+    this.machineId = machineId
+  }
+}
+
+function dayIdentityConflict(
+  row: DayEvidence,
+  existingId: string,
+  machineId: string | null,
+): DayIdentityConflictError {
+  return new DayIdentityConflictError(row.day, row.id, existingId, machineId)
 }
 
 export function hostedIntervalWrite(
@@ -26,7 +52,7 @@ export function hostedDayWrite(
   existingMachineDayId: string | null,
 ): 'update' | 'insert' {
   if (existingId) return 'update'
-  if (existingMachineDayId) throw dayIdentityConflict(row, existingMachineDayId)
+  if (existingMachineDayId) throw dayIdentityConflict(row, existingMachineDayId, row.machine_id)
   return 'insert'
 }
 
@@ -200,7 +226,7 @@ export async function applyDayChangeInTransaction(
   const byId = existing.find((candidate) => candidate.by_id)?.id ?? null
   const idHolder = existing.find((candidate) => candidate.by_id)
   if (idHolder?.machine_id && idHolder.machine_id !== row.machine_id)
-    throw dayIdentityConflict(row, idHolder.id)
+    throw dayIdentityConflict(row, idHolder.id, null)
   const byDay = existing.find((candidate) => !candidate.by_id)?.id ?? byId
   const write = hostedDayWrite(row, byId, byDay)
   if (write === 'insert') {

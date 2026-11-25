@@ -198,7 +198,14 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   const wrongOwner = { ...firstOnly, machine_id: secondMachineId }
   expect(
     (await apply([{ table: 'hub_day', id: firstOnly.id, op: 'upsert', row: wrongOwner }]))[0],
-  ).toMatchObject({ status: 'rejected' })
+  ).toMatchObject({
+    status: 'rejected',
+    conflict: {
+      code: 'day-identity-conflict',
+      existingId: firstOnly.id,
+      machineId: null,
+    },
+  })
   expect(
     (
       await database.query<{ machine_id: string }>(
@@ -221,7 +228,14 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   const conflict = { ...first, id: '01990000-0000-7000-8000-000000008332' }
   expect(
     (await apply([{ table: 'hub_day', id: conflict.id, op: 'upsert', row: conflict }]))[0],
-  ).toMatchObject({ status: 'rejected' })
+  ).toMatchObject({
+    status: 'rejected',
+    conflict: {
+      code: 'day-identity-conflict',
+      existingId: first.id,
+      machineId: first.machine_id,
+    },
+  })
   for (const machineId of ['01990000-0000-7000-8000-000000008399', foreignMachineId]) {
     const rejected = { ...first, id: Bun.randomUUIDv7(), machine_id: machineId, day: '2026-10-21' }
     expect(
