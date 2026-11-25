@@ -41,8 +41,8 @@ import {
   hasReceipt,
   insertRootMessage,
   localBoardDuplicateLiveSql,
-  machineMessageRows,
   type MessageRow,
+  machineMessageRows,
   messageRows,
   messageTags,
   originText,
@@ -79,9 +79,7 @@ function messageLocality(row: MessageRow): BoardLocality {
 
 function localMessageRows(recordId: string, database: ReturnType<typeof writableDb>): MessageRow[] {
   const machineRows = machineMessageRows(database)
-  return machineRows.some((row) => row.record_id === recordId)
-    ? machineRows
-    : messageRows(database)
+  return machineRows.some((row) => row.record_id === recordId) ? machineRows : messageRows(database)
 }
 
 function replyingProject(actor: ReturnType<typeof boardActor>, cwd: string) {
@@ -226,6 +224,7 @@ export function replyToThread(
   requireLocalBoardWrite('reply post', env, database, locality)
   return writeTransaction(() => {
     const facts = replyAudienceFacts(root, database)
+    const hasRootReceipt = hasReceipt(root.record_id, reader, database, locality)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
       root: {
@@ -237,9 +236,7 @@ export function replyToThread(
         accepted: root.accepted_reply_record_id !== null,
       },
       addressed: addressed(root, reader, clock, database, locality),
-      hasReceipt:
-        hasReceipt(root.record_id, reader, database, locality) ||
-        facts.loopedInSessions.includes(reader),
+      hasReceipt: hasRootReceipt || facts.loopedInSessions.includes(reader),
     })
     if (refusal) throw new Error(refusal)
     const storedAudience = audience === null ? null : replyAudienceValue(audience)

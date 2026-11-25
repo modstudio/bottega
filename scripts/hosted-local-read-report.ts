@@ -31,6 +31,7 @@ import {
   type StateClassDeclaration,
   type TableStateClassDeclaration,
 } from './identity-state-classes.ts'
+import { typescriptCallArguments } from './typescript-call-arguments.ts'
 
 const HOSTED_LOCAL_READ_KINDS = ['read', 'write'] as const
 const HOSTED_LOCAL_READ_PATHS = [
@@ -229,34 +230,6 @@ function matchingDelimiter(source: string, start: number, open: string, close: s
     if (source[index] === close && --depth === 0) return index
   }
   return -1
-}
-
-function callArguments(source: string, open: number, close: number): string[] {
-  const arguments_: string[] = []
-  let start = open + 1
-  let depth = 0
-  let quote: "'" | '"' | null = null
-  for (let index = start; index < close; index += 1) {
-    const char = source[index]
-    if (quote !== null) {
-      if (char === '\\') index += 1
-      else if (char === quote) quote = null
-      continue
-    }
-    if (char === "'" || char === '"') {
-      quote = char
-      continue
-    }
-    if (char === '(' || char === '[' || char === '{') depth += 1
-    else if (char === ')' || char === ']' || char === '}') depth -= 1
-    else if (char === ',' && depth === 0) {
-      arguments_.push(source.slice(start, index).trim())
-      start = index + 1
-    }
-  }
-  const last = source.slice(start, close).trim()
-  if (last || arguments_.length > 0) arguments_.push(last)
-  return arguments_
 }
 
 function functionBodyRange(source: string, parenEnd: number): SourceRange | null {
@@ -514,8 +487,8 @@ function hasUnconditionalLocalBoardGuard(body: string, site: number): boolean {
     const open = token + match[0].lastIndexOf('(')
     const close = matchingDelimiter(body, open, '(', ')')
     if (close < 0 || close >= site) continue
-    const arguments_ = callArguments(body, open, close)
-    const locality = arguments_[match[0].includes('Write') ? 3 : 2]
+    const args = typescriptCallArguments(body, open, close)
+    const locality = args[match[0].includes('Write') ? 3 : 2]
     const literal = locality?.match(/^(['"])(.*)\1$/)
     if (literal && literal[2] !== 'shared') continue
     const prefix = statementPrefixFacts(body, token)
