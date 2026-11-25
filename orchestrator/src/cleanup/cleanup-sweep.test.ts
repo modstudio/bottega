@@ -452,8 +452,8 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
      VALUES (?,?,?,1,'clear',1,0,0,0)`,
   )
   const insertSeen = database.query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
-  const addSessions = () =>
-    Array.from({ length: 3 }, () => {
+  const addSessions = (count = 3) =>
+    Array.from({ length: count }, () => {
       const session = newRecordId()
       insertCloseOut.run(newRecordId(), session, closedAt)
       insertSeen.run(session, closedAt)
@@ -542,6 +542,52 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
       `could not release hosted board claims of closed session ${refusedCalls[0]}: fixture refused; retry: ${PLATFORM_SLUG} machine sweep`,
     )
 
+    for (const session of refusedSessions)
+      database
+        .query('UPDATE session_close_out SET swept_at=? WHERE session_id=?')
+        .run(new Date(clock).toISOString(), session)
+
+    const conflictSessions = addSessions(2)
+    const conflictCalls: string[] = []
+    const conflictLines: string[] = []
+    expect(
+      await sweepSessionCloseOutRecords({
+        enabled: true,
+        dryRun: false,
+        database,
+        now: clock,
+        presentation: presentation(conflictLines, () => {}),
+        adapters: {
+          release: async (session) => closeOutReport(session, true),
+          releaseHostedClaims: async (session) => {
+            conflictCalls.push(session)
+            if (conflictCalls.length === 1)
+              throw new RecordApiRequestError('fixture conflict', 'refused', 409)
+            return 0
+          },
+        },
+      }),
+    ).toBe(true)
+    expect(conflictCalls).toEqual(conflictSessions)
+    expect(
+      database
+        .query(
+          `SELECT session_id, swept_at FROM session_close_out
+           WHERE session_id IN (?,?) ORDER BY session_id`,
+        )
+        .all(...conflictSessions),
+    ).toEqual(
+      conflictSessions
+        .map((session, index) => ({
+          session_id: session,
+          swept_at: index === 0 ? null : new Date(clock).toISOString(),
+        }))
+        .sort((left, right) => left.session_id.localeCompare(right.session_id)),
+    )
+    expect(conflictLines).toContain(
+      `could not release hosted board claims of closed session ${conflictCalls[0]}: fixture conflict; retry: ${PLATFORM_SLUG} machine sweep`,
+    )
+
     const callsBeforeDryRun = refusedCalls.length
     expect(
       await sweepSessionCloseOutRecords({
@@ -561,7 +607,7 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
     ).toBe(false)
     expect(refusedCalls).toHaveLength(callsBeforeDryRun)
     expect(refusedLines).toContain(
-      `would release hosted board claims of closed session ${refusedCalls[0]}`,
+      `would release hosted board claims of closed session ${conflictCalls[0]}`,
     )
   } finally {
     database.query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)

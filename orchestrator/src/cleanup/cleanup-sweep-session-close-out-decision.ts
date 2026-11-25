@@ -51,9 +51,12 @@ function hostedReleaseCause(cause: unknown): HostedReleaseCause {
 }
 
 export function hostedReleaseFailure(cause: unknown): HostedReleaseFailure {
-  const { kind, status } = hostedReleaseCause(cause)
+  const { name, kind, status } = hostedReleaseCause(cause)
   if (status === 401 || status === 403) return 'deferred-auth'
-  if (kind === 'refused' && [400, 409, 422].includes(typeof status === 'number' ? status : -1))
+  if (
+    name === 'HostedReleaseDestinationRefused' ||
+    (kind === 'refused' && [400, 422].includes(typeof status === 'number' ? status : -1))
+  )
     return 'final'
   return 'deferred'
 }

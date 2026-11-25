@@ -30,7 +30,12 @@ describe('closed session sweep decision', () => {
 describe('hosted release failure decision', () => {
   test.each([
     [new RecordApiRequestError('bad request', 'refused', 400), 'final', false],
-    [new RecordApiRequestError('destination refused', 'refused', 409), 'final', false],
+    [new RecordApiRequestError('conflict', 'refused', 409), 'deferred', false],
+    [
+      Object.assign(new Error('destination refused'), { name: 'HostedReleaseDestinationRefused' }),
+      'final',
+      false,
+    ],
     [new RecordApiRequestError('invalid', 'refused', 422), 'final', false],
     [new RecordApiRequestError('sign in', 'refused', 401), 'deferred-auth', true],
     [new RecordApiRequestError('forbidden', 'refused', 403), 'deferred-auth', true],
