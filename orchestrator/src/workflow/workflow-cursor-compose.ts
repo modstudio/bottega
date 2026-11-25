@@ -5,7 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
+import {
+  type HubNote,
+  type HubNoteReadOptions,
+  listHubNotesPromotedTo as listPromotedNotesForWorkflow,
+} from '../mcp/hub-notes.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
@@ -58,8 +62,9 @@ import type { composeWorkflow } from './workflows.ts'
 type Composition = ReturnType<typeof composeWorkflow>
 export type ListWorkflowNotesPort = (
   project: string,
-  options: { cwd: string },
-) => Promise<HubNote[]>
+  key: string,
+  options: HubNoteReadOptions,
+) => Promise<Pick<HubNote, 'label' | 'promoted_task'>[]>
 export type WorkflowComposeInheritance = {
   parentFlowRecordId: string
   activeOrdinal: number
@@ -69,13 +74,13 @@ export type WorkflowComposeInheritance = {
 
 export async function assertPlanTaskNoteProvenance(
   composition: Composition,
-  listNotes: ListWorkflowNotesPort = listHubNotes,
+  listNotes: ListWorkflowNotesPort = listPromotedNotesForWorkflow,
 ): Promise<void> {
   const key = workflowKeyOf(composition.arguments)
   if (composition.workflow.slug !== 'plan-task' || !key) return
   let read: Parameters<typeof decidePlanTaskNoteProvenance>[0]['read']
   try {
-    const notes = await listNotes(composition.project, { cwd: process.cwd() })
+    const notes = await listNotes(composition.project, key, { cwd: process.cwd() })
     read = {
       kind: 'available',
       notes: notes.map((note) => ({ label: note.label, promotedTask: note.promoted_task })),
@@ -514,7 +519,7 @@ export async function insertWorkflowCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   keylessSiblingRetry = false,
   inheritance?: WorkflowComposeInheritance,
-  listNotes: ListWorkflowNotesPort = listHubNotes,
+  listNotes: ListWorkflowNotesPort = listPromotedNotesForWorkflow,
 ): Promise<SelectableCursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,

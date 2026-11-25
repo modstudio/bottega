@@ -7,6 +7,7 @@ import { db } from './db.ts'
 import type { HostedAcknowledgement } from './hosted-notes.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
+import { parseSlimNoteReference } from './identity/note-reference.ts'
 import {
   hostedGetNote,
   hostedListNoteCandidates,
@@ -19,6 +20,7 @@ import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
 import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
+import { normalizeSpecialSlimListFilters } from './note-slim-list-filter.ts'
 import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type NoteFilters = {
@@ -26,6 +28,8 @@ export type NoteFilters = {
   stale?: boolean
   session?: string | string[]
   actionable?: boolean
+  promotedTo?: string
+  reference?: string
   kept?: boolean
   text?: string
 }
@@ -129,6 +133,20 @@ function listLocalFilteredRows<Row extends { text: string }>(
     clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
   appendSessionClauses(filters, clauses, values)
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
+  if (filters.promotedTo) {
+    clauses.push('note.promoted_task = ?')
+    values.push(filters.promotedTo)
+  }
+  if (filters.reference) {
+    const reference = parseSlimNoteReference(filters.reference)
+    if ('recordId' in reference) {
+      clauses.push('lower(note.record_id) = ?')
+      values.push(reference.recordId)
+    } else {
+      clauses.push('(note.project,note.number) = (?,?)')
+      values.push(reference.project, reference.number)
+    }
+  }
   const rows = db()
     .query<Row, (string | number)[]>(
       `SELECT ${projection} FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
@@ -339,6 +357,8 @@ async function listHostedSlimNoteRows(
             project: filters.project,
             stale: filters.stale,
             actionable: filters.actionable,
+            promotedTo: filters.promotedTo,
+            reference: filters.reference,
             sessions: filters.sessions,
             kept: filters.sessions.length ? Boolean(filters.kept) : undefined,
             text: filters.text,
@@ -442,9 +462,15 @@ export async function listProjectSlimNotes(
 ): Promise<{ notes: SlimNote[]; total: number }> {
   const limit = noteListLimit(filters.limit)
   if (filters.project && !isRegisteredNoteProject(filters.project)) {
-    if (filters.stale || filters.kept || filters.actionable)
+    if (
+      filters.stale ||
+      filters.kept ||
+      filters.actionable ||
+      filters.promotedTo ||
+      filters.reference
+    )
       throw new Error(
-        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
+        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept, --actionable, --promoted-to and --reference`,
       )
     const rows = await listOutsideProjectNotes(filters.project, filters.hosted)
     const search = filters.text?.toLowerCase()
@@ -456,13 +482,26 @@ export async function listProjectSlimNotes(
   }
   if (filters.actionable && filters.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
+  const normalized = normalizeSpecialSlimListFilters({
+    ...filters,
+    stale: Boolean(filters.stale),
+  })
+  if (normalized.kind === 'conflict') {
+    const special = normalized.special === 'promotedTo' ? '--promoted-to' : '--reference'
+    throw new Error(`${special} cannot be combined with --${normalized.state}`)
+  }
   if (filters.kept && !filters.session)
     throw new Error(
       `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
     )
   const { hosted, ...localFilters } = filters
   return listSlimNotes(
-    { ...localFilters, stale: Boolean(filters.stale), kept: Boolean(filters.kept), limit },
+    {
+      ...localFilters,
+      ...normalized.filters,
+      kept: Boolean(filters.kept),
+      limit,
+    },
     hosted,
   )
 }

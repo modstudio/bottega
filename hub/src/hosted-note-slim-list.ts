@@ -4,12 +4,15 @@
 import type { SQL } from 'bun'
 import { formatNoteLabel } from '../../shared/note-label.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
+import { parseSlimNoteReference } from './identity/note-reference.ts'
 import { noteListLimit, type SlimNote } from './note-slim-list-shape.ts'
 
 export type HostedSlimNoteListFilters = {
   project?: string
   stale?: boolean
   actionable?: boolean
+  promotedTo?: string
+  reference?: string
   sessions?: string[]
   kept?: boolean
   text?: string
@@ -31,6 +34,9 @@ export async function listHostedSlimNotes(
       ...new Set((filters.sessions ?? []).map((value) => value.trim()).filter(Boolean)),
     ]
     const limit = noteListLimit(filters.limit)
+    const reference = filters.reference ? parseSlimNoteReference(filters.reference) : null
+    const recordId = reference && 'recordId' in reference ? reference.recordId : null
+    const label = reference && 'project' in reference ? reference : null
     const selected = (await tx`
       SELECT id,number::int number,project,text,sightings::int sightings,created_at,last_seen_at,
         stale_at,stale_reason,promoted_task,count(*) OVER ()::int total
@@ -42,6 +48,12 @@ export async function listHostedSlimNotes(
           OR (${filters.stale ?? false} AND stale_at IS NOT NULL)
           OR (NOT ${filters.stale ?? false} AND stale_at IS NULL))
         AND (NOT ${filters.actionable ?? false} OR (stale_at IS NULL AND promoted_task IS NULL))
+        AND (${filters.promotedTo ?? null}::text IS NULL
+          OR promoted_task=${filters.promotedTo ?? null})
+        AND (${filters.reference ?? null}::text IS NULL
+          OR (${recordId}::text IS NOT NULL AND lower(id::text)=${recordId})
+          OR (${label?.project ?? null}::text IS NOT NULL
+            AND (project,number)=(${label?.project ?? null},${label?.number ?? null})))
         AND (${filters.text ?? null}::text IS NULL
           OR position(lower(${filters.text ?? ''}) in lower(text)) > 0)
         AND (${sessions.length === 0} OR EXISTS (
