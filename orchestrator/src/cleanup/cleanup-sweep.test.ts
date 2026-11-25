@@ -570,8 +570,10 @@ test('hosted claim release bounds an outage and retries per-session refusals', a
       }),
     ).toBe(true)
     expect(conflictCalls).toEqual(conflictSessions)
-    expect(selectSweptAt.get(conflictCalls[0])).toEqual({ swept_at: null })
-    expect(selectSweptAt.get(conflictCalls[1])).toEqual({ swept_at: new Date(clock).toISOString() })
+    expect(selectSweptAt.get(conflictCalls[0]!)).toEqual({ swept_at: null })
+    expect(selectSweptAt.get(conflictCalls[1]!)).toEqual({
+      swept_at: new Date(clock).toISOString(),
+    })
     expect(conflictLines).toContain(
       `could not release hosted board claims of closed session ${conflictCalls[0]}: fixture conflict; retry: ${PLATFORM_SLUG} machine sweep`,
     )
