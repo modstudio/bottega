@@ -10,15 +10,14 @@ import {
   recordTrackerReadState,
   storedTrackerPageSize,
   storedTrackerReadMode,
-  trackerReadPassComplete,
   trackerProjectsReadSince,
+  trackerReadPassComplete,
 } from './tracker-read-state.ts'
-import { trackerLegError } from './tracker-result.ts'
+import { finishTrackerResults, trackerLegError } from './tracker-result.ts'
 import {
   collectTrackerSource,
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
-  finishTrackerResults,
   ingestTrackers,
   retireOutOfScopeTrackerTasks,
   type TrackerTask,

@@ -343,7 +343,7 @@ export type TrackerFetchResult = {
  */
 export const MAX_PAGES = 40
 export const TRACKER_DEFAULT_PAGE_SIZE = 100
-export const TRACKER_STATUS_ROW_LIMIT = MAX_PAGES * TRACKER_DEFAULT_PAGE_SIZE
+const TRACKER_STATUS_ROW_LIMIT = MAX_PAGES * TRACKER_DEFAULT_PAGE_SIZE
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
@@ -445,11 +445,7 @@ async function mappedWorkspaceTask(
     parentKey: reportedParentKey(hit, 'short_id'),
     title: decode(hit.summary ?? ''),
     status: hit.status ?? '',
-    category: categoryOf(
-      hit.status ?? '',
-      hit.status_category ?? 'completed',
-      states,
-    ),
+    category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
     updatedAt: null,
     assignee: assignee ?? null,
   }
@@ -748,13 +744,7 @@ function appendCursorTasks(
       continue
     }
     if (!task.humanKey) continue
-    const category = categoryForTrackerRead(
-      incremental,
-      task.status,
-      task.status,
-      status,
-      states,
-    )
+    const category = categoryForTrackerRead(incremental, task.status, task.status, status, states)
     if (category === null) {
       complete = false
       continue

@@ -11,10 +11,6 @@ import {
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
-import {
-  dropUnregisteredTrackerCollectorStates,
-  recordTrackerCollectorState,
-} from '../collector-leg-state.ts'
 import { resolveHostedUrl } from '../hosted-url.ts'
 import { hostedWriteMode } from '../hosted-write-mode.ts'
 import { credentials, Mcp } from '../mcp.ts'
@@ -44,15 +40,9 @@ import {
   recordTrackerReadState,
   storedTrackerPageSize,
   storedTrackerReadMode,
-  trackerReadKey,
   trackerReadPassComplete,
 } from './tracker-read-state.ts'
-import {
-  BACKFILL_RESULT,
-  successfulTrackerRead,
-  type TrackerResult,
-  trackerLegError,
-} from './tracker-result.ts'
+import { finishTrackerResults, type TrackerResult } from './tracker-result.ts'
 import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
@@ -811,43 +801,9 @@ function recentIntervalsNeedingTracker(conn: Database) {
     .all()
 }
 
-export function finishTrackerResults(
-  results: { result: TrackerResult; filled: number }[],
-  at: string,
-  registeredProjects: readonly Project[],
-): TrackerResult[] {
-  const filled = results.reduce((sum, item) => sum + item.filled, 0)
-  const out = results.map((item) => item.result)
-  if (filled)
-    out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
-  for (const result of out) recordTrackerCollectorState(result, at)
-  dropUnregisteredTrackerCollectorStates(registeredProjects)
-  const successfulProjects = out.filter(successfulTrackerRead)
-  if (successfulProjects.length)
-    writeTransaction((conn) => {
-      const write = conn.query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      for (const result of successfulProjects) write.run(trackerReadKey(result.project), at)
-    })
-  if (!trackerLegError(out))
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        )
-        .run(JSON.stringify(at)),
-    )
-  return out
-}
-
 function trackerIngestInputs(only: ReadonlySet<Project> | null) {
   const registeredTrackers = trackerRegistrations(projects())
-  const trackers = registeredTrackers.filter(
-    (tracker) => !only || only.has(tracker.project),
-  )
+  const trackers = registeredTrackers.filter((tracker) => !only || only.has(tracker.project))
   return {
     trackers,
     registeredProjects: registeredTrackers.map((tracker) => tracker.project),

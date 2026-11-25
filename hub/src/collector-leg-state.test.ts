@@ -116,10 +116,9 @@ describe('collector leg state', () => {
 
     dropUnregisteredTrackerCollectorStates(['registered'])
 
-    expect(collectorLegStates().map((state) => ('unreadable' in state ? state.key : state.source))).toEqual([
-      'runs',
-      'tasks:registered',
-    ])
+    expect(
+      collectorLegStates().map((state) => ('unreadable' in state ? state.key : state.source)),
+    ).toEqual(['runs', 'tasks:registered'])
   })
 
   test('a quiet tracker stays current through its next scheduled slow cadence', () => {

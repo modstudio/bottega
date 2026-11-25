@@ -112,11 +112,14 @@ export function recordCollectorLegSuccess(source: string, at: string): { logReco
   return { logRecovery: previous?.failingSince != null }
 }
 
-export function recordTrackerCollectorState(result: {
-  project: string
-  error?: string
-  skipped?: string
-}, at = new Date().toISOString()): void {
+export function recordTrackerCollectorState(
+  result: {
+    project: string
+    error?: string
+    skipped?: string
+  },
+  at = new Date().toISOString(),
+): void {
   if (result.project === 'backfill' || result.skipped) return
   const source = trackerLegSource(result.project)
   try {
