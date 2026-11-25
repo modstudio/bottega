@@ -1,13 +1,21 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
-import type { ReleaseRungPlan, RequiredRungDecision } from '../release/release-required.ts'
+import {
+  type IncomingRequiredRungDependencies,
+  incomingRequiredRungGuard,
+  type ReleaseRungPlan,
+  type RequiredReleaseRung,
+  type RequiredRungDecision,
+  requiredRungDecision,
+} from '../release/release-required.ts'
 import { adapter, cwd, recordPassingGate, registerProject } from './pr-merge.fixture.ts'
 import { mergePullRequest } from './pr-merge.ts'
 import {
   decidePullRequestReleaseAdmission,
   pullRequestReleaseDecisionAtHead,
 } from './pr-release-admission.ts'
+import { pullRequestReleaseNotice } from './pr-release-notice.ts'
 
 function plan(rung: string, requiredBy: ReleaseRungPlan['requiredBy']): ReleaseRungPlan {
   return {
@@ -89,6 +97,134 @@ describe('decidePullRequestReleaseAdmission', () => {
     expect(admission.message).toContain(
       `cleared by: ${PLATFORM_SLUG} pr merge DEV-2555 --release-required --depth staging`,
     )
+  })
+})
+
+describe('pullRequestReleaseNotice', () => {
+  test('names explicitly required rungs and the release-required merge command', () => {
+    expect(
+      pullRequestReleaseNotice({
+        decision: decided(plan('hosted-hub', 'explicit')),
+        target: 'DEV-2664',
+      }),
+    ).toBe(
+      `release rung hosted-hub required by this pull request; merge with: ${PLATFORM_SLUG} pr merge DEV-2664 --release-required`,
+    )
+  })
+
+  test('reports an undecided requirement and says merge decides it again', () => {
+    expect(
+      pullRequestReleaseNotice({
+        decision: { decided: false, required: [], rungs: [], error: 'closure unavailable' },
+        target: 'DEV-2664',
+      }),
+    ).toBe(
+      `release rung requirement could not be decided: closure unavailable; ${PLATFORM_SLUG} pr merge decides it again`,
+    )
+  })
+
+  test('returns no notice when no rung is explicitly required', () => {
+    expect(
+      pullRequestReleaseNotice({
+        decision: decided(plan('production', 'reach')),
+        target: 'DEV-2664',
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('merge admission stays at least as strict as machine update', () => {
+  const closure = new Map([
+    ['hub/src/hosted.ts', new Set(['hub/src/hosted.ts', 'shared/call-budgets.ts'])],
+  ])
+  const cases: {
+    name: string
+    rung: RequiredReleaseRung
+    changedPaths: string[]
+    entryClosure: typeof closure
+  }[] = [
+    {
+      name: 'requiredWhenChanged match',
+      rung: {
+        name: 'hosted-api',
+        branch: 'main',
+        deploy: 'deploy hosted-api',
+        requiredWhenChanged: ['shared/record/**'],
+      },
+      changedPaths: ['shared/record/schema.ts'],
+      entryClosure: new Map(),
+    },
+    {
+      name: 'entry-closure-only match',
+      rung: {
+        name: 'hosted-hub',
+        branch: 'main',
+        deploy: 'deploy hosted-hub',
+        requiredWhenChanged: ['hub/migrations/**'],
+        entryPoints: ['hub/src/hosted.ts'],
+      },
+      changedPaths: ['shared/call-budgets.ts'],
+      entryClosure: closure,
+    },
+    {
+      name: 'non-trunk rung',
+      rung: {
+        name: 'production',
+        branch: 'production',
+        deploy: 'deploy production',
+        requiredWhenChanged: ['packages/**'],
+      },
+      changedPaths: ['packages/app.ts'],
+      entryClosure: new Map(),
+    },
+    {
+      name: 'rung that cannot deploy from the release tree',
+      rung: {
+        name: 'manual',
+        branch: 'main',
+        requiredWhenChanged: ['manual/**'],
+      },
+      changedPaths: ['manual/runbook.ts'],
+      entryClosure: new Map(),
+    },
+  ]
+
+  test.each(cases)('$name', ({ rung, changedPaths, entryClosure }) => {
+    const guarded = {
+      path: '/fixture',
+      name: 'fixture',
+      settings: {
+        trunk: 'main',
+        worktree: { recipePath: `${PLATFORM_SLUG}.jsonc` },
+        release: { rungs: [rung] },
+      },
+    } as Project
+    let now = 0
+    const dependencies: IncomingRequiredRungDependencies = {
+      resolve: (ref) => (ref === 'HEAD' ? 'current' : 'incoming'),
+      changedPaths: () => changedPaths,
+      entryClosure: () => entryClosure,
+      newestLive: () => null,
+      contains: () => false,
+      now: () => now++,
+    }
+    const machineRefusal = incomingRequiredRungGuard(guarded, 'main', dependencies).refusal
+    const decision = requiredRungDecision(
+      guarded,
+      () => changedPaths,
+      () => entryClosure,
+    )
+    const mergeAdmission = decidePullRequestReleaseAdmission({
+      decision,
+      releaseRequired: false,
+      target: 'DEV-2664',
+    })
+
+    if (machineRefusal !== null) {
+      expect(mergeAdmission.kind).toBe('refuse')
+      expect(machineRefusal).toContain(rung.name)
+      if (mergeAdmission.kind === 'refuse') expect(mergeAdmission.message).toContain(rung.name)
+    }
   })
 })
 
