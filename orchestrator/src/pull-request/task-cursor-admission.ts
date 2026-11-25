@@ -144,6 +144,7 @@ export async function assertPullRequestTaskCursorAdmission(
     systemJob?: string | null
     body?: string
     cwd?: string
+    checkoutRoots: readonly string[]
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
@@ -214,6 +215,7 @@ export async function assertPullRequestTaskCursorAdmission(
       cwd: realpathOrLexical(entry.cwd),
     })),
     worktree,
+    checkoutRoots: input.checkoutRoots,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
 }

@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import {
+  creditedMeasurementCommands,
   decideClassMeasuredFloor,
   renderClassMeasurementCommand,
+  treeRelativeArgv,
 } from './workflow-class-measured-floor.ts'
 
 const artifact = (overrides: Record<string, unknown> = {}): ValidatedArtifactEvidence => ({
@@ -110,6 +112,100 @@ describe('class-measured floor', () => {
     expect(renderClassMeasurementCommand(['sh', '-c', "rg 'reader leak' | wc -l"])).toBe(
       String.raw`'sh' '-c' 'rg '\''reader leak'\'' | wc -l'`,
     )
+  })
+
+  test('rewrites every checkout occurrence to its tree-relative form', () => {
+    expect(
+      treeRelativeArgv(
+        ['bun', `${checkoutRoot}/first.ts ${checkoutRoot}/scripts/measure.ts`, checkoutRoot],
+        [checkoutRoot],
+      ),
+    ).toEqual(['bun', 'first.ts scripts/measure.ts', '.'])
+  })
+
+  test('never rewrites argv zero even when it names a checkout', () => {
+    expect(treeRelativeArgv([checkoutRoot, checkoutRoot], [checkoutRoot])).toEqual([
+      checkoutRoot,
+      '.',
+    ])
+  })
+
+  test('does not rewrite a sibling whose name starts with the checkout root', () => {
+    expect(
+      treeRelativeArgv(['bun', `${checkoutRoot}2/scripts/measure.ts`], [checkoutRoot]),
+    ).toEqual(['bun', `${checkoutRoot}2/scripts/measure.ts`])
+  })
+
+  test('rewrites a checkout root with trailing slashes to dot', () => {
+    expect(treeRelativeArgv(['bun', `${checkoutRoot}/`], [checkoutRoot])).toEqual(['bun', '.'])
+  })
+
+  test('does not rewrite a checkout path embedded in a path word', () => {
+    const embedded = `x${checkoutRoot}/scripts/measure.ts`
+    expect(treeRelativeArgv(['bun', embedded], [checkoutRoot])).toEqual(['bun', embedded])
+    expect(decide([artifact({ argv: ['bun', embedded] })], [checkoutRoot]).met).toBe(true)
+  })
+
+  test('rewrites a checkout path after a flag delimiter', () => {
+    expect(treeRelativeArgv(['bun', `--root=${checkoutRoot}/docs`], [checkoutRoot])).toEqual([
+      'bun',
+      '--root=docs',
+    ])
+  })
+
+  test('rewrites a path inside a worktree relative to that worktree', () => {
+    expect(
+      treeRelativeArgv(
+        ['bun', `${checkoutRoot}/.claude/worktrees/t/scripts/measure.ts`],
+        [checkoutRoot],
+      ),
+    ).toEqual(['bun', 'scripts/measure.ts'])
+  })
+
+  test.each([`${checkoutRoot}/.claude/worktrees/t`, `${checkoutRoot}/.claude/worktrees/t/`])(
+    'rewrites a worktree root %s to dot',
+    (worktree) => {
+      expect(treeRelativeArgv(['bun', worktree], [checkoutRoot])).toEqual(['bun', '.'])
+    },
+  )
+
+  test('keeps an empty worktree name checkout-relative', () => {
+    const directory = `${checkoutRoot}/.claude/worktrees/`
+    expect(treeRelativeArgv(['bun', directory], [checkoutRoot])).toEqual([
+      'bun',
+      '.claude/worktrees/',
+    ])
+  })
+
+  test('the worktree checkout-path refusal names the worktree-relative path', () => {
+    const absolute = `${checkoutRoot}/.claude/worktrees/t/scripts/measure.ts`
+    const decision = decide([artifact({ argv: ['bun', absolute] })], [checkoutRoot])
+    expect(decision.met).toBe(false)
+    if (!decision.met) {
+      expect(decision.message).toContain(absolute)
+      expect(decision.message).toContain('tree-relative form `scripts/measure.ts`')
+    }
+  })
+
+  test('credits only the recorded command when it names no checkout', () => {
+    const command = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', '.'])!
+    expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([command])
+  })
+
+  test('credits only the tree-relative command when the recorded command names a checkout', () => {
+    const command = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', checkoutRoot])!
+    const treeRelativeCommand = renderClassMeasurementCommand(['bun', 'scripts/measure.ts', '.'])!
+    expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([treeRelativeCommand])
+  })
+
+  test('credits only the worktree-relative command for a path inside a worktree', () => {
+    const command = renderClassMeasurementCommand([
+      'bun',
+      `${checkoutRoot}/.claude/worktrees/t/scripts/measure.ts`,
+    ])!
+    expect(creditedMeasurementCommands(command, [checkoutRoot])).toEqual([
+      renderClassMeasurementCommand(['bun', 'scripts/measure.ts'])!,
+    ])
   })
 
   test('floor satisfaction does not add its measurement to the input evidence', async () => {

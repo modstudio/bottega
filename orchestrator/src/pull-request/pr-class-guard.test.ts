@@ -18,6 +18,7 @@ const base = {
     },
   ],
   worktree: '/tree',
+  checkoutRoots: [],
 }
 
 test('allows a matching class guard', () =>
@@ -79,4 +80,91 @@ test('quotes a spaced worktree and shell command as one rerunnable invocation', 
     kind: 'refuse',
     message: `the Class guard has no successful post-implement measurement; run \`${PLATFORM_SLUG} workflow exec --cwd '/tree with space' -- 'sh' '-c' 'rg '\\''reader leak'\\'' | wc -l'\``,
   })
+})
+
+test('allows a tree-relative rerun of a recorded command that names a checkout', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!
+  const relative = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', '.'])!
+  expect(
+    decidePullRequestClassGuard({
+      ...base,
+      measurement: { ...base.measurement, command: recorded, count: 4 },
+      body: 'Class guard: example class (before 4, after 0)',
+      execs: [{ ...base.execs[0]!, command: relative }],
+      checkoutRoots: [checkout],
+    }),
+  ).toEqual({ kind: 'allow' })
+})
+
+test('refuses an absolute recorded command rerun when a tree-relative form exists', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurement: { ...base.measurement, command: recorded, count: 4 },
+    body: 'Class guard: example class (before 4, after 0)',
+    execs: [{ ...base.execs[0]!, command: recorded }],
+    checkoutRoots: [checkout],
+  })
+  expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining("'.'") })
+  if (decision.kind === 'refuse') expect(decision.message).not.toContain(checkout)
+})
+
+test('refuses a tree-relative rerun outside the worktree', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!
+  const relative = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', '.'])!
+  expect(
+    decidePullRequestClassGuard({
+      ...base,
+      measurement: { ...base.measurement, command: recorded },
+      execs: [{ ...base.execs[0]!, command: relative, cwd: '/main' }],
+      checkoutRoots: [checkout],
+    }),
+  ).toEqual({ kind: 'refuse', message: expect.stringContaining('did not run in worktree') })
+})
+
+test('the rerun remedy names only the tree-relative credited command', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const recorded = renderClassMeasurementCommand(['bun', '/private/tmp/measure.ts', checkout])!
+  const decision = decidePullRequestClassGuard({
+    ...base,
+    measurement: { ...base.measurement, command: recorded },
+    execs: [],
+    checkoutRoots: [checkout],
+  })
+  expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining("'.'") })
+  if (decision.kind === 'refuse') expect(decision.message).not.toContain(checkout)
+})
+
+test('a recorded command naming no checkout keeps its original matching behavior', () => {
+  expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' })
+  expect(
+    decidePullRequestClassGuard({ ...base, execs: [{ ...base.execs[0]!, command: "'other'" }] }),
+  ).toEqual({ kind: 'refuse', message: expect.stringContaining(command) })
+})
+
+test('allows only the worktree-relative rerun of a command naming a path inside a worktree', () => {
+  const checkout = '/Users/shmuel/Projects/bottega'
+  const absolutePath = `${checkout}/.claude/worktrees/DEV-2627/scripts/measure.ts`
+  const recorded = renderClassMeasurementCommand(['bun', absolutePath])!
+  const relative = renderClassMeasurementCommand(['bun', 'scripts/measure.ts'])!
+  const input = {
+    ...base,
+    measurement: { ...base.measurement, command: recorded },
+    checkoutRoots: [checkout],
+  }
+  expect(
+    decidePullRequestClassGuard({
+      ...input,
+      execs: [{ ...base.execs[0]!, command: relative }],
+    }),
+  ).toEqual({ kind: 'allow' })
+  const decision = decidePullRequestClassGuard({
+    ...input,
+    execs: [{ ...base.execs[0]!, command: recorded }],
+  })
+  expect(decision).toEqual({ kind: 'refuse', message: expect.stringContaining(relative) })
+  if (decision.kind === 'refuse') expect(decision.message).not.toContain(absolutePath)
 })

@@ -225,6 +225,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/shell-quote.ts',
+    '../project/worktree-directory.ts',
     './workflow-artifact-evidence.ts',
   ]),
   module('orchestrator/src/workflow/workflow-class-measurement-trail.ts', [
