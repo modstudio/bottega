@@ -26,6 +26,7 @@ const cursorIds = {
 const claimIds = {
   callerLive: '01990000-0000-7000-8000-000000026425',
   callerLapsed: '01990000-0000-7000-8000-000000026426',
+  callerCursorBound: '01990000-0000-7000-8000-000000026441',
   anotherSession: '01990000-0000-7000-8000-000000026427',
   anotherUser: '01990000-0000-7000-8000-000000026428',
   crossSpace: '01990000-0000-7000-8000-000000026432',
@@ -121,7 +122,10 @@ beforeAll(async () => {
     VALUES
       ('${claimIds.callerLive}','${projectId}','resource','caller-live','${userId}',
        '${holderSession}',60000,now(),now(),now() + interval '1 hour'),
-      ('${claimIds.callerLapsed}','${projectId}','task','DEV-CURSOR','${userId}',
+      ('${claimIds.callerLapsed}','${projectId}','resource','caller-lapsed','${userId}',
+       '${holderSession}',60000,now() - interval '2 hours',now() - interval '2 hours',
+       now() - interval '1 hour'),
+      ('${claimIds.callerCursorBound}','${projectId}','task','DEV-CURSOR','${userId}',
        '${holderSession}',60000,now() - interval '2 hours',now() - interval '2 hours',
        now() - interval '1 hour'),
       ('${claimIds.anotherSession}','${projectId}','resource','another-session','${userId}',
@@ -160,10 +164,11 @@ test('session release closes only the caller live claims held by that session', 
   }>(`SELECT id, closed_at, close_reason FROM board_claim ORDER BY id`)
   expect(result.rows).toEqual([
     { id: claimIds.callerLive, closed_at: expect.any(Date), close_reason: 'released' },
-    { id: claimIds.callerLapsed, closed_at: expect.any(Date), close_reason: 'released' },
+    { id: claimIds.callerLapsed, closed_at: null, close_reason: null },
     { id: claimIds.anotherSession, closed_at: null, close_reason: null },
     { id: claimIds.anotherUser, closed_at: null, close_reason: null },
     { id: claimIds.crossSpace, closed_at: expect.any(Date), close_reason: 'released' },
+    { id: claimIds.callerCursorBound, closed_at: expect.any(Date), close_reason: 'released' },
   ])
   await database.exec(`
     SET ROLE record_actor;

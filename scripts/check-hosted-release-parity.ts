@@ -24,7 +24,12 @@ function localReleaseGates(file: SourceFile): { name: string; line: number }[] {
           const { line } = source.getLineAndCharacterOfPosition(condition.getStart(source))
           gates.push({ name, line: line + 1 })
         }
-        ts.forEachChild(condition, inspectCondition)
+        if (
+          ts.isParenthesizedExpression(condition) ||
+          ts.isPrefixUnaryExpression(condition) ||
+          ts.isBinaryExpression(condition)
+        )
+          ts.forEachChild(condition, inspectCondition)
       }
       inspectCondition(node.expression)
     }

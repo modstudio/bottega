@@ -30,6 +30,17 @@ test('a file without a local release candidate passes', () => {
   ).toEqual([])
 })
 
+test('a local release property passed to a call is not a gate', () => {
+  expect(
+    hostedReleaseParityViolations([
+      {
+        path: 'orchestrator/src/example.ts',
+        text: 'if (await sweepCloseOutRow({ releaseLocalClaims })) return true',
+      },
+    ]),
+  ).toEqual([])
+})
+
 test('test files are ignored', () => {
   expect(
     hostedReleaseParityViolations([

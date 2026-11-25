@@ -3,24 +3,31 @@
 
 import type { Database } from 'bun:sqlite'
 import { boundedFetch } from '../../../shared/bounded-fetch.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
-import { boardWriteDestination } from '../board/board-write-destination.ts'
+import {
+  type BoardDestinationResolver,
+  boardWriteDestination,
+} from '../board/board-write-destination.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 
-export async function releaseHostedClaims(session: string, database: Database): Promise<number> {
+export async function releaseHostedClaims(
+  session: string,
+  database: Database,
+  destinationResolver: BoardDestinationResolver = boardWriteDestination,
+): Promise<number> {
   const presence = database
     .query<{ project: string | null }, [string]>('SELECT project FROM presence WHERE session_id=?')
     .get(session)
   const client = recordApiClient(undefined, boundedFetch('hosted-close-out'))
-  const destination = await boardWriteDestination(client, presence?.project ?? null, database)
+  const project = presence?.project ?? null
+  let destination
+  try {
+    destination = await destinationResolver(client, project, database)
+  } catch (cause) {
+    if (!(project !== null && cause instanceof RecordApiRequestError && cause.kind === 'refused'))
+      throw cause
+    destination = await destinationResolver(client, null, database)
+  }
   const result = await client.releaseBoardSessionClaims({ holderSession: session }, destination)
   return result.released
-}
-
-export function hostedRecordUnreachable(cause: unknown): boolean {
-  return (
-    cause instanceof BoundExceededError ||
-    (cause instanceof RecordApiRequestError && cause.kind === 'unreachable')
-  )
 }

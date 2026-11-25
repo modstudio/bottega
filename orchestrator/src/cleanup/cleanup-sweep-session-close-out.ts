@@ -19,11 +19,14 @@ import {
   sessionCloseOutLastSeen,
 } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { decideSessionCloseOutSweep } from './cleanup-sweep-session-close-out-decision.ts'
 import {
-  hostedRecordUnreachable,
-  releaseHostedClaims,
-} from './cleanup-sweep-session-close-out-hosted.ts'
+  decideHostedReleaseRow,
+  decideSessionCloseOutSweep,
+  hostedReleaseFailure,
+  hostedReleaseTripsCircuit,
+  type HostedReleaseCircuitCause,
+} from './cleanup-sweep-session-close-out-decision.ts'
+import { releaseHostedClaims } from './cleanup-sweep-session-close-out-hosted.ts'
 
 type SweepAdapters = {
   release: (session: string) => Promise<SessionCloseOutReport>
@@ -40,7 +43,7 @@ const defaultAdapters: SweepAdapters = {
 class SessionResumedDuringSweep extends Error {}
 class SessionCloseOutAlreadySwept extends Error {}
 
-type HostedReleaseState = { unreachable: boolean }
+type HostedReleaseState = { circuitCause: HostedReleaseCircuitCause | null }
 
 function rowDecision(row: SessionCloseOutRow, lastSeen: string | null = row.last_seen) {
   return decideSessionCloseOutSweep({
@@ -73,27 +76,42 @@ async function releaseHostedClaimsForRow(input: {
   presentation: CleanupPresentation
   enabled: boolean
   state: HostedReleaseState
-}): Promise<boolean> {
-  if (!input.enabled) return false
-  if (input.state.unreachable) {
-    input.presentation.error(
-      `skipped hosted claim release for closed session ${input.row.session_id}: the record was unreachable earlier in this sweep; retry: ${PLATFORM_SLUG} machine sweep`,
-    )
-    return true
+}): Promise<'proceed' | 'stamp-final' | 'defer'> {
+  const pending = decideHostedReleaseRow({
+    session: input.row.session_id,
+    enabled: input.enabled,
+    circuitCause: input.state.circuitCause,
+    attempt: { outcome: 'pending' },
+    platformSlug: PLATFORM_SLUG,
+  })
+  if (pending.disposition === 'defer') {
+    input.presentation.error(pending.message!)
+    return 'defer'
   }
+  if (!input.enabled) return 'proceed'
   try {
     const released = await input.adapters.releaseHostedClaims(input.row.session_id, input.database)
     if (released > 0)
       input.presentation.log(
         `released ${released} hosted board claims of closed session ${input.row.session_id}`,
       )
-    return false
+    return 'proceed'
   } catch (cause) {
-    if (hostedRecordUnreachable(cause)) input.state.unreachable = true
-    input.presentation.error(
-      `could not release hosted board claims of closed session ${input.row.session_id}: ${cause instanceof Error ? cause.message : String(cause)}; retry: ${PLATFORM_SLUG} machine sweep`,
-    )
-    return true
+    const decision = decideHostedReleaseRow({
+      session: input.row.session_id,
+      enabled: true,
+      circuitCause: null,
+      attempt: {
+        outcome: 'failed',
+        failure: hostedReleaseFailure(cause),
+        message: cause instanceof Error ? cause.message : String(cause),
+        tripCircuit: hostedReleaseTripsCircuit(cause),
+      },
+      platformSlug: PLATFORM_SLUG,
+    })
+    input.state.circuitCause = decision.circuitCause
+    input.presentation.error(decision.message!)
+    return decision.disposition
   }
 }
 
@@ -104,7 +122,7 @@ async function sweepCloseOutRow(input: {
   adapters: SweepAdapters
   presentation: CleanupPresentation
   releaseLocalClaims: boolean
-  releaseHostedClaims: boolean
+  hostedReleaseEnabled: boolean
   hostedReleaseState: HostedReleaseState
 }): Promise<boolean> {
   try {
@@ -118,17 +136,22 @@ async function sweepCloseOutRow(input: {
       reportUncleanReplay(input.row.session_id, report, input.presentation)
       return true
     }
-    if (
-      await releaseHostedClaimsForRow({
+    if (input.hostedReleaseEnabled) {
+      const beforeHostedRelease = rowDecision(
+        input.row,
+        sessionCloseOutLastSeen(input.row.session_id, input.database),
+      )
+      if (beforeHostedRelease.action === 'skip') return false
+    }
+    const hostedDisposition = await releaseHostedClaimsForRow({
         row: input.row,
         database: input.database,
         adapters: input.adapters,
         presentation: input.presentation,
-        enabled: input.releaseHostedClaims,
+        enabled: input.hostedReleaseEnabled,
         state: input.hostedReleaseState,
       })
-    )
-      return true
+    if (hostedDisposition === 'defer') return true
     writeTransaction(() => {
       const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
       if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()
@@ -172,16 +195,23 @@ export async function sweepSessionCloseOutRecords(input: {
   const boardDecision = boardModeDecision('shared', process.env, database)
   if (boardDecision.mode === 'refused') input.presentation.error(boardDecision.reason)
   const releaseLocalClaims = boardDecision.mode === 'local'
-  const releaseHostedClaims = boardDecision.mode === 'hosted'
-  const hostedReleaseState: HostedReleaseState = { unreachable: false }
+  const hostedReleaseEnabled = boardDecision.mode === 'hosted'
+  const hostedReleaseState: HostedReleaseState = { circuitCause: null }
   const rows = newestSessionCloseOutRecords(database)
   let failed = false
   for (const row of rows) {
     const decision = rowDecision(row)
     if (decision.action === 'skip') continue
+    if (boardDecision.mode === 'refused') {
+      input.presentation.error(
+        `deferred closed session ${row.session_id}: hosted board claims cannot be released while ${boardDecision.reason}`,
+      )
+      failed = true
+      continue
+    }
     if (input.dryRun) {
       input.presentation.log(`would sweep closed session ${row.session_id}`)
-      if (releaseHostedClaims)
+      if (hostedReleaseEnabled)
         input.presentation.log(
           `would release hosted board claims of closed session ${row.session_id}`,
         )
@@ -195,7 +225,7 @@ export async function sweepSessionCloseOutRecords(input: {
         adapters,
         presentation: input.presentation,
         releaseLocalClaims,
-        releaseHostedClaims,
+        hostedReleaseEnabled,
         hostedReleaseState,
       })
     )
