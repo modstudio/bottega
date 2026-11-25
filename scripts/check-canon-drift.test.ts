@@ -26,7 +26,6 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
-const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 
 function git(root: string, ...args: string[]): string {
   return runTestGit(root, process.env, ...args)
@@ -56,8 +55,7 @@ afterEach(() => {
 })
 
 afterAll(() => {
-  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 describe('canon drift branch gate', () => {
