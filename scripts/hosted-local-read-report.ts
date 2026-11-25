@@ -320,36 +320,49 @@ function conditionMode(
   if (!direct && !mode && !hosted) return null
   if (hosted) return new RegExp(`!\\s*${hosted[0]}\\b`).test(condition) ? 'local' : 'hosted'
   const notEqual = /!==?/.test(condition)
-  if (/['"]local-authoritative['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
-  if (/['"]hosted-configured['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
-  if (/['"]local['"]/.test(condition)) return notEqual ? 'hosted' : 'local'
-  if (/['"]hosted['"]/.test(condition)) return notEqual ? 'local' : 'hosted'
+  for (const [literal, equalMode] of [
+    ['local-authoritative', 'local'],
+    ['hosted-configured', 'hosted'],
+    ['local', 'local'],
+    ['hosted', 'hosted'],
+  ] as const)
+    if (new RegExp(`['"]${literal}['"]`).test(condition))
+      return notEqual ? (equalMode === 'local' ? 'hosted' : 'local') : equalMode
   return null
 }
 
-function endsInUnconditionalExit(statementText: string): boolean {
-  for (const match of statementText.matchAll(/\b(?:return|throw)\b/g)) {
-    const token = match.index ?? 0
-    let depth = 0
-    let statementStart = 0
-    for (let index = 0; index < token; index += 1) {
-      if (statementText[index] === '{') depth += 1
-      if (statementText[index] === '}' && --depth === 0) statementStart = index + 1
-      if (statementText[index] === ';' && depth === 0) statementStart = index + 1
-      if (statementText[index] === '\n' && depth === 0) statementStart = index + 1
-    }
-    if (depth !== 0 || statementText.slice(statementStart, token).trim()) continue
-    const remainder = statementText.slice(token)
-    let nested = 0
-    for (let index = 0; index < remainder.length; index += 1) {
-      if (remainder[index] === '{') nested += 1
-      if (remainder[index] === '}') nested -= 1
-      if (remainder[index] === ';' && nested === 0)
-        return remainder.slice(index + 1).trim().length === 0
-    }
-    return true
+function statementPrefixFacts(text: string, token: number): { depth: number; start: number } {
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < token; index += 1) {
+    if (text[index] === '{') depth += 1
+    if (text[index] === '}' && --depth === 0) start = index + 1
+    if ((text[index] === ';' || text[index] === '\n') && depth === 0) start = index + 1
   }
-  return false
+  return { depth, start }
+}
+
+function exitConsumesRemainder(remainder: string): boolean {
+  let depth = 0
+  for (let index = 0; index < remainder.length; index += 1) {
+    if (remainder[index] === '{') depth += 1
+    if (remainder[index] === '}') depth -= 1
+    if (remainder[index] === ';' && depth === 0)
+      return remainder.slice(index + 1).trim().length === 0
+  }
+  return true
+}
+
+function endsInUnconditionalExit(statementText: string): boolean {
+  return [...statementText.matchAll(/\b(?:return|throw)\b/g)].some((match) => {
+    const token = match.index ?? 0
+    const prefix = statementPrefixFacts(statementText, token)
+    return (
+      prefix.depth === 0 &&
+      !statementText.slice(prefix.start, token).trim() &&
+      exitConsumesRemainder(statementText.slice(token))
+    )
+  })
 }
 
 function selectorTernaryPath(

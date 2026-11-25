@@ -13,8 +13,8 @@ import {
   renewClaim,
   takeClaim,
 } from './board-claim-service.ts'
-import { BOARD_POST_RATE_LIMIT } from './board-policy.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import { BOARD_POST_RATE_LIMIT } from './board-policy.ts'
 import { claimNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
 function fixtureProject() {
@@ -287,10 +287,10 @@ test('hosted installs refuse local claim renewal and release without changing th
   }
 
   expect(() => renewClaim(claim.recordId, hostedEnv, clock + 1)).toThrow(
-    /bottega board claim renew/,
+    new RegExp(`${PLATFORM_SLUG} board claim renew`),
   )
   expect(() => releaseClaim(claim.recordId, hostedEnv, clock + 2)).toThrow(
-    /bottega board claim release/,
+    new RegExp(`${PLATFORM_SLUG} board claim release`),
   )
   expect(
     db()

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   resolveBoardClaimIdentifier,
@@ -37,7 +38,7 @@ test('adopted board identifiers resolve only through hosted records', () => {
   const claimId = newRecordId()
 
   expect(() => resolveBoardMessageIdentifier(database, 1, configured)).toThrow(
-    /record id \(UUID\).*bottega board thread/,
+    new RegExp(`record id \\(UUID\\).*${PLATFORM_SLUG} board thread`),
   )
   expect(resolveBoardMessageIdentifier(database, messageId, configured)).toEqual({
     source: 'hosted',

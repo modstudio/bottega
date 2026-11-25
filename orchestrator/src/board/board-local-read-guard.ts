@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { boardMode } from './board-mode.ts'
 
@@ -19,6 +20,6 @@ export function requireLocalBoardWrite(
 ): void {
   if (boardMode('shared', environment, database) === 'local') return
   throw new Error(
-    `a hosted install cannot change a local board claim; use bottega board ${verb} with the hosted claim UUID`,
+    `a hosted install cannot change a local board claim; use ${PLATFORM_SLUG} board ${verb} with the hosted claim UUID`,
   )
 }
