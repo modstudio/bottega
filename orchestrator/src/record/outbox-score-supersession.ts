@@ -51,10 +51,7 @@ function scoredAt(payload: string): string | null {
 }
 
 /** Applies score supersession through the ordinary audited quarantine retirement path. */
-export function retireSupersededQuarantinedScoreRows(
-  database: Database,
-  at = nowIso(),
-): number {
+export function retireSupersededQuarantinedScoreRows(database: Database, at = nowIso()): number {
   const quarantined = database
     .query<StoredScoreRow, []>(
       `SELECT id,row_id,payload,retired_at
@@ -82,17 +79,17 @@ export function retireSupersededQuarantinedScoreRows(
         const candidateScoredAt = scoredAt(candidate.payload)
         return candidateScoredAt === null
           ? []
-          : [{ id: candidate.id, scoredAt: candidateScoredAt, retired: candidate.retired_at !== null }]
+          : [
+              {
+                id: candidate.id,
+                scoredAt: candidateScoredAt,
+                retired: candidate.retired_at !== null,
+              },
+            ]
       }),
     )
     if (supersedingId === null) continue
-    retireOutboxRow(
-      row.id,
-      `superseded by score outbox row ${supersedingId}`,
-      database,
-      at,
-      null,
-    )
+    retireOutboxRow(row.id, `superseded by score outbox row ${supersedingId}`, database, at, null)
     retired += 1
   }
   return retired
