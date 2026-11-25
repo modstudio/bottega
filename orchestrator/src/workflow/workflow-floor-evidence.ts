@@ -70,6 +70,7 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
+import { gatherPromotedNotes } from './workflow-floor-promoted-notes-evidence.ts'
 import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
@@ -666,32 +667,6 @@ function gatherTask(
     mergedPullRequest,
     ...(pullRequestUnavailable ? { pullRequestUnavailable } : {}),
     trackerStates,
-  }
-}
-
-async function gatherPromotedNotes(
-  project: string,
-  taskKey: string,
-  ports: FloorEvidencePorts,
-): Promise<NonNullable<ValidatedEvidence['promotedNotes']>> {
-  try {
-    const notes = await invokeFloorEvidencePort(
-      ports,
-      'listPromotedNotes',
-      async () => {
-        throw new Error('floor evidence port listPromotedNotes has no implementation')
-      },
-      project,
-      taskKey,
-    )
-    return { known: true, notes }
-  } catch (error) {
-    rethrowFloorEvidencePortMiss(error)
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      known: false,
-      reason: detail.split(/\r?\n/, 1)[0]?.trim() || 'promoted note read failed',
-    }
   }
 }
 

@@ -44,7 +44,7 @@ export type NoteFloorEvidence = {
   writtenAt?: string
 }
 
-export type PromotedNotesEvidence =
+type PromotedNotesEvidence =
   | {
       known: true
       notes: Pick<NoteFloorEvidence, 'recordId' | 'label' | 'staleAt'>[]
@@ -63,10 +63,19 @@ export type TaskOpenWithNotesEvidence = {
   promotedNotes?: PromotedNotesEvidence
 }
 
-export function hasLivePromotedNotes(evidence: TaskOpenWithNotesEvidence): boolean {
+function hasLivePromotedNotes(evidence: TaskOpenWithNotesEvidence): boolean {
   return evidence.promotedNotes?.known === true
     ? evidence.promotedNotes.notes.some((note) => note.staleAt === null)
     : true
+}
+
+export function taskOpenWithNotesRemedy(
+  evidence: TaskOpenWithNotesEvidence,
+  workflowKey?: string,
+): string {
+  return hasLivePromotedNotes(evidence)
+    ? ` and --artifact note:<record-id|label> naming a live note promoted to ${workflowKey ?? 'the cursor task'}`
+    : `; no note artifact is needed because no live note is promoted to ${workflowKey ?? 'the cursor task'}`
 }
 
 function taskFailures(

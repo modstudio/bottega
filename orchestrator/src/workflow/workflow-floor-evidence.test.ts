@@ -73,47 +73,6 @@ const commandExitFloor = {
   operatorRuling: false,
 } as const
 
-const taskOpenWithNotesFloor = {
-  ...operatorRulingFloor,
-  kind: 'task-open-with-notes',
-  operatorRuling: false,
-} as const
-
-test('gathers promoted notes only for a task-open-with-notes floor', async () => {
-  const d = database()
-  let calls = 0
-  const listPromotedNotes = async () => {
-    calls += 1
-    return [{ recordId: newRecordId(), label: 'fixture#1', staleAt: null }]
-  }
-
-  const gathered = await gather(d, {}, { listPromotedNotes }, identity, [taskOpenWithNotesFloor])
-  expect(gathered.promotedNotes).toEqual({
-    known: true,
-    notes: [{ recordId: expect.any(String), label: 'fixture#1', staleAt: null }],
-  })
-  expect(calls).toBe(1)
-
-  expect(await gather(d, {}, { listPromotedNotes })).not.toHaveProperty('promotedNotes')
-  expect(calls).toBe(1)
-})
-
-test('records the first error line when promoted notes cannot be read', async () => {
-  const gathered = await gather(
-    database(),
-    {},
-    {
-      listPromotedNotes: async () => {
-        throw new Error('hub unavailable\nrequest detail')
-      },
-    },
-    identity,
-    [taskOpenWithNotesFloor],
-  )
-
-  expect(gathered.promotedNotes).toEqual({ known: false, reason: 'hub unavailable' })
-})
-
 test('gathers the stranded-question remedy through operator-floor evidence', async () => {
   const d = database()
   const recordId = newRecordId()
