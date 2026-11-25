@@ -379,12 +379,10 @@ function recordOutcome(
   trace?: { operation: 'upsert' | 'delete'; destination: string | null },
 ) {
   const { entry } = item
-  const adoption = decideDayIdAdoption(item.change, outcome, storedMachineId())
+  const machineId = outcome.status === 'rejected' && outcome.conflict ? storedMachineId() : null
+  const adoption = decideDayIdAdoption(item.change, outcome, machineId)
   if (adoption.action === 'adopt') {
     const changed = writeTransaction((conn) => {
-      const adoptedDay = conn
-        .query(`UPDATE day SET record_id=? WHERE record_id=?`)
-        .run(adoption.hostedId, item.change.id).changes
       const requeued = conn
         .query(
           `UPDATE hosted_outbox SET id=?,row_id=?,queued_at=?,generation=generation+1,
@@ -392,8 +390,11 @@ function recordOutcome(
            WHERE id=? AND generation=?`,
         )
         .run(adoption.hostedId, adoption.hostedId, at, entry.id, entry.generation).changes
-      if (adoptedDay !== 1 || requeued !== 1)
-        throw new Error('day identity adoption lost its local row or outbox entry')
+      if (requeued === 0) return 0
+      const adoptedDay = conn
+        .query(`UPDATE day SET record_id=? WHERE record_id=?`)
+        .run(adoption.hostedId, item.change.id).changes
+      if (adoptedDay !== 1) throw new Error('day identity adoption lost its local row')
       traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
       return requeued
     })
