@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { ToolCallRefused } from './tracker-list-scope.ts'
 import { grownPageSize } from './tracker-adaptive-pages.ts'
+import { ToolCallRefused } from './tracker-list-scope.ts'
 import { type TrackerProject, trackerSourceFor } from './trackers.ts'
 
 const project = (name: string, protocol: 'cursor-mcp' | 'workspace-mcp'): TrackerProject => ({

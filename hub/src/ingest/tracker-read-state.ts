@@ -1,7 +1,7 @@
 // concern: tracker read cursor and adaptive page-size cache
 
-import { TRACKER_DEFAULT_PAGE_SIZE, type TrackerSource } from '../../../shared/trackers.ts'
 import { grownPageSize } from '../../../shared/tracker-adaptive-pages.ts'
+import { TRACKER_DEFAULT_PAGE_SIZE, type TrackerSource } from '../../../shared/trackers.ts'
 import { db, type Project, writeTransaction } from '../db.ts'
 import {
   TRACKER_SINCE_OVERLAP_MS,
@@ -9,7 +9,7 @@ import {
   trackerReadMode,
 } from './tracker-read-mode.ts'
 
-export const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
+const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
 const trackerSinceKey = (project: Project) => `collect.tracker.${project}.since`
 const trackerFullReadKey = (project: Project) => `collect.tracker.${project}.full-at`
 const trackerForceFullKey = (project: Project) => `collect.tracker.${project}.force-full`

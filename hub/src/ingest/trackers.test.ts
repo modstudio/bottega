@@ -62,6 +62,9 @@ const storedTrackerTask = {
 
 const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>
   writeTrackerCache([task], at, [])
+const settingValue = (key: string) =>
+  db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)
+    ?.value ?? null
 
 describe('tracker observation times', () => {
   const at = '2026-09-03T10:00:00.000Z'
@@ -394,13 +397,7 @@ describe('tracker register', () => {
       mode: 'full',
       since: '2026-11-06T09:55:00.000Z',
     })
-    expect(
-      db()
-        .query<{ value: string }, []>(
-          "SELECT value FROM setting WHERE key='collect.tracker.alpha.full-at'",
-        )
-        .get()?.value,
-    ).toBe(first)
+    expect(settingValue('collect.tracker.alpha.full-at')).toBe(first)
   })
 
   test('full reads probe at double the remembered page size capped at the protocol default', () => {
@@ -455,11 +452,7 @@ describe('tracker register', () => {
       { key: 'FL-1', status_category: 'active' },
       { key: 'FL-2', status_category: 'active' },
     ])
-    expect(
-      db()
-        .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-        .get(`collect.tracker.${project}.force-full`),
-    ).toEqual({ value: '1' })
+    expect(settingValue(`collect.tracker.${project}.force-full`)).toBe('1')
   })
 
   describe('hosted list failure', () => {
@@ -482,11 +475,10 @@ describe('tracker register', () => {
     })
 
     test('a refused hosted list still applies backfill without retirement and records failure', async () => {
-      const project = 'alpha'
       resetFixtureStore()
       delete process.env.BOTTEGA_HOSTED_URL
       cacheTrackerTask(
-        { ...trackerTask, externalId: 'hosted-existing', key: 'ALP-1', project },
+        { ...trackerTask, externalId: 'hosted-existing', key: 'ALP-1' },
         '2026-11-20T10:00:00.000Z',
       )
       process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
@@ -496,53 +488,36 @@ describe('tracker register', () => {
         sent.push(...changes)
         return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
       }) as typeof fetch
-      const source: TrackerSource = {
-        project,
-        env: 'FIXTURE',
-        supportsUpdatedSince: false,
-        fetch: async () => {
-          throw new Error('list refused')
-        },
-        lookup: async (_client, key) => ({
-          ...trackerTask,
-          externalId: 'hosted-backfill',
-          key,
-          project,
-        }),
-      }
+      const tracker = source(false, async () => {
+        throw new Error('list refused')
+      })
+      tracker.lookup = async (_client, key) => ({
+        ...trackerTask,
+        externalId: 'hosted-backfill',
+        key,
+      })
 
       const collected = await collectTrackerSource(
-        { project, prefixes: ['ALP'], source },
-        [{ task_key: 'ALP-2', project }],
+        { project: 'alpha', prefixes: ['ALP'], source: tracker },
+        [{ task_key: 'ALP-2', project: 'alpha' }],
         '2026-11-20T11:00:00.000Z',
         { callTool: async () => ({}) } as never,
       )
-      finishTrackerResults([collected], '2026-11-20T11:00:00.000Z', [project])
+      finishTrackerResults([collected], '2026-11-20T11:00:00.000Z', ['alpha'])
 
-      expect(
-        db()
-          .query<{ key: string; retired_reason: string | null }, [string]>(
-            'SELECT key,retired_reason FROM task WHERE project=? ORDER BY key',
-          )
-          .all(project),
-      ).toEqual([
+      const rows = db()
+        .query<{ key: string; retired_reason: string | null }, [string]>(
+          'SELECT key,retired_reason FROM task WHERE project=? ORDER BY key',
+        )
+        .all('alpha')
+      expect(rows).toEqual([
         { key: 'ALP-1', retired_reason: null },
         { key: 'ALP-2', retired_reason: null },
       ])
       expect(sent).toHaveLength(1)
       expect(sent[0]).toMatchObject({ table: 'hub_task', row: { key: 'ALP-2' } })
-      expect(
-        db()
-          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-          .get(`collect.tracker.${project}.force-full`),
-      ).toEqual({ value: '1' })
-      expect(
-        db()
-          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-          .get('collect.leg.tasks%3Aalpha'),
-      ).toEqual({
-        value: expect.stringContaining('"consecutiveFailures":1'),
-      })
+      expect(settingValue('collect.tracker.alpha.force-full')).toBe('1')
+      expect(settingValue('collect.leg.tasks%3Aalpha')).toContain('"consecutiveFailures":1')
     })
   })
 
@@ -652,30 +627,18 @@ describe('tracker register', () => {
       '2026-10-01T12:00:00.000Z',
       ['alpha'],
     )
-    expect(
-      db()
-        .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-        .get('collect.leg.tasks%3Abackfill'),
-    ).toBeNull()
+    expect(settingValue('collect.leg.tasks%3Abackfill')).toBeNull()
 
     resetFixtureStore()
     finishTrackerResults([], '2026-10-01T13:00:00.000Z', [])
-    expect(
-      db()
-        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.trackers.at'`)
-        .get(),
-    ).toBeNull()
+    expect(settingValue('collect.trackers.at')).toBeNull()
   })
 
   test('only projects that declare a usable tracker are polled', async () => {
     const results = await ingestTrackers()
     expect(results.map((result) => result.project)).toEqual(['alpha'])
     expect(results[0]!.skipped).toContain('FIXTURE_NO_CREDENTIALS_MCP_URL')
-    expect(
-      db()
-        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.trackers.at'`)
-        .get()?.value,
-    ).toBeString()
+    expect(settingValue('collect.trackers.at')).toBeString()
     expect(trackerLegError(results)).toBeNull()
   })
 
