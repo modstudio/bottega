@@ -202,7 +202,9 @@ function hostedReadFailure(cause: unknown): Error {
 }
 
 function hostedUrlWithoutUserinfo(hosted: NoteClientOptions | undefined): string {
-  const url = new URL(hosted?.baseUrl ?? resolveHostedUrl())
+  const resolved = hosted?.baseUrl ?? resolveHostedUrl()
+  if (!resolved) throw new Error('hosted hub is not configured')
+  const url = new URL(resolved)
   url.username = ''
   url.password = ''
   return url.toString()
