@@ -58,6 +58,7 @@ export const recordOutboxModules: ArchitectureModule[] = [
       'bun:sqlite',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/outbox-quarantine.ts',
+      'orchestrator/src/record/outbox-read.ts',
     ],
   },
   {

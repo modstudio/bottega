@@ -152,8 +152,8 @@ test('sync skips a score row retired between the supersession scan and write', a
     const statement = originalQuery(sql)
     if (!sql.includes("WHERE kind='score'") || !sql.includes('AND row_id=?')) return statement
     const originalAll = statement.all.bind(statement)
-    statement.all = ((...parameters: unknown[]) => {
-      const rows = originalAll(...parameters)
+    statement.all = ((rowId: string) => {
+      const rows = originalAll(rowId)
       originalQuery('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=7').run(
         STAMP,
         'disposed concurrently',
