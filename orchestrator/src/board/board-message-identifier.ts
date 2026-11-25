@@ -11,7 +11,7 @@ import {
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
 import { boardHasAdoptedHosted, boardMode, boardModeForId } from './board-mode.ts'
-import { machineMessageRows } from './board-store.ts'
+import { parseAudience } from './board-policy.ts'
 
 const ACCEPTED = 'a positive decimal board-message number or a full board-message UUID'
 const HOSTED_MESSAGE_ID_REMEDY = `pass the board-message record id (UUID); use ${PLATFORM_SLUG} board thread or a board read verb to find it`
@@ -79,14 +79,31 @@ function hosted(
   return { source: 'hosted', recordId }
 }
 
-function hostedMessageResolution(given: string): BoardIdentifierResolution {
-  if (/^[0-9]+$/.test(given))
+type ClassifiedMessageIdentifier =
+  | { kind: 'number'; number: number; valid: boolean }
+  | { kind: 'record'; recordId: string }
+  | { kind: 'invalid' }
+
+function classifyMessageIdentifier(given: string): ClassifiedMessageIdentifier {
+  if (/^[0-9]+$/.test(given)) {
+    const number = Number(given)
+    return { kind: 'number', number, valid: Number.isSafeInteger(number) && number >= 1 }
+  }
+  if (hasRecordIdShape(given)) return { kind: 'record', recordId: given.toLowerCase() }
+  return { kind: 'invalid' }
+}
+
+function hostedMessageResolution(
+  given: string,
+  classified: ClassifiedMessageIdentifier,
+): BoardIdentifierResolution {
+  if (classified.kind === 'number')
     throw new Error(`board message number ${given} is local-only; ${HOSTED_MESSAGE_ID_REMEDY}`)
-  if (!hasRecordIdShape(given))
+  if (classified.kind === 'invalid')
     throw new Error(
       `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
     )
-  return { source: 'hosted', recordId: given.toLowerCase() }
+  return { source: 'hosted', recordId: classified.recordId }
 }
 
 function boardIdentifierMode(
@@ -101,22 +118,30 @@ function boardIdentifierMode(
       : 'local'
 }
 
-function localMachineMessageResolution(
+function localMessageRow(
   database: Database,
-  given: string,
-): BoardIdentifierResolution | null {
-  const rows = machineMessageRows(database)
-  if (/^[0-9]+$/.test(given)) {
-    const number = Number(given)
-    const row = Number.isSafeInteger(number)
-      ? rows.find((candidate) => candidate.number === number)
-      : undefined
-    return row ? { source: 'local', recordId: row.record_id } : null
+  classified: ClassifiedMessageIdentifier,
+): { record_id: string } | null {
+  if (classified.kind === 'number') {
+    if (!classified.valid) return null
+    return database
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE number=?')
+      .get(classified.number)
   }
-  if (!hasRecordIdShape(given)) return null
-  const recordId = given.toLowerCase()
-  const row = rows.find((candidate) => candidate.record_id === recordId)
-  return row ? { source: 'local', recordId: row.record_id } : null
+  if (classified.kind === 'record')
+    return database
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM board_message WHERE record_id=?')
+      .get(classified.recordId)
+  return null
+}
+
+function localMessageIsMachineScoped(database: Database, recordId: string): boolean {
+  const row = database
+    .query<{ audience: string | null }, [string]>(
+      'SELECT audience FROM board_message WHERE record_id=?',
+    )
+    .get(recordId)
+  return row?.audience != null && parseAudience(row.audience).kind === 'machine'
 }
 
 export function resolveBoardMessageIdentifier(
@@ -127,32 +152,29 @@ export function resolveBoardMessageIdentifier(
   allowLocalMachineScoped = false,
 ): BoardIdentifierResolution {
   const given = String(input)
+  const classified = classifyMessageIdentifier(given)
   const mode = boardIdentifierMode(database, environment, validateHosted)
   if (mode === 'hosted') {
-    const local = allowLocalMachineScoped ? localMachineMessageResolution(database, given) : null
-    if (local) return local
-    return hostedMessageResolution(given)
+    const local = allowLocalMachineScoped ? localMessageRow(database, classified) : null
+    if (local && localMessageIsMachineScoped(database, local.record_id))
+      return { source: 'local', recordId: local.record_id }
+    return hostedMessageResolution(given, classified)
   }
-  if (/^[0-9]+$/.test(given)) {
-    const number = Number(given)
-    if (!Number.isSafeInteger(number) || number < 1)
+  if (classified.kind === 'number') {
+    if (!classified.valid)
       throw new Error(
         `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
       )
-    const row = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE number=?')
-      .get(number)
+    const row = localMessageRow(database, classified)
     if (row) return { source: 'local', recordId: row.record_id }
-    throw new Error(`no board message has number ${number}; pass ${ACCEPTED}`)
+    throw new Error(`no board message has number ${classified.number}; pass ${ACCEPTED}`)
   }
-  if (!hasRecordIdShape(given))
+  if (classified.kind === 'invalid')
     throw new Error(
       `invalid board-message identifier ${JSON.stringify(given)}: expected ${ACCEPTED}`,
     )
-  const recordId = given.toLowerCase()
-  const row = database
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM board_message WHERE record_id=?')
-    .get(recordId)
+  const recordId = classified.recordId
+  const row = localMessageRow(database, classified)
   if (uploadedShadow(database, recordId, 'message'))
     return hosted(database, recordId, 'board message identifier', environment, validateHosted)
   if (row) return { source: 'local', recordId: row.record_id }

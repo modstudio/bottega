@@ -51,6 +51,7 @@ export const boardModules: BoardModule[] = [
     './board-hosted-cache-readers.ts',
     './board-hosted-refresh-message.ts',
     './board-mode.ts',
+    './board-policy.ts',
     './board-store.ts',
   ]),
   module('orchestrator/src/board/board-mode.ts', [

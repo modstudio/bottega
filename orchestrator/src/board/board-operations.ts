@@ -57,7 +57,7 @@ import {
   resolveBoardClaimIdentifier,
   resolveBoardMessageIdentifier,
 } from './board-message-identifier.ts'
-import { boardHasAdoptedHosted, boardMode } from './board-mode.ts'
+import { boardMode } from './board-mode.ts'
 import {
   type BoardClaimResult,
   type BoardPostResult,
@@ -76,6 +76,7 @@ import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
+  localBoardRows,
   markSessionMessagesDelivered,
   noticeStatus,
   type PostNoticeInput,
@@ -723,7 +724,7 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
   const database = db()
   const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
   if (resolved.source === 'local')
-    acknowledgeNotice(resolved.recordId, c.env, c.clock, boardHasAdoptedHosted(database))
+    acknowledgeNotice(resolved.recordId, c.env, c.clock, localBoardRows(database))
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.

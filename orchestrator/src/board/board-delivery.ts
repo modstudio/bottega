@@ -22,19 +22,18 @@ import {
   hostedBoardMessageNotFoundMessage,
   resolveBoardDeliveryIdentifier,
 } from './board-message-identifier.ts'
-import { boardHasAdoptedHosted } from './board-mode.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import { boardDeliveryForm } from './board-render.ts'
 import {
   claimPushNotices,
   claimRunPushNotices,
+  localBoardRows,
   markNoticesDelivered,
   markRunNoticesDelivered,
   markSessionMessagesDelivered,
   readNotices,
   runReaderIdentity,
 } from './board-service.ts'
-import { machineMessageRows, messageRows } from './board-store.ts'
 
 export const BOARD_PUSH_REFRESH_SECONDS = 15
 export const BOARD_PUSH_REMIND_SECONDS = 300
@@ -72,9 +71,6 @@ const splitBoardIds = (
   }
   return { local, hosted }
 }
-
-const localDeliveryRows = (database: Database) =>
-  boardHasAdoptedHosted(database) ? machineMessageRows(database) : messageRows(database)
 
 const deliveryNotice = (notice: {
   id?: number | string
@@ -221,7 +217,7 @@ export async function markRunBoardNoticesDelivered(
   const ids = splitBoardIds(sourceIds, process.env, database)
   const { reader, readerRunRecordId } = runReaderIdentity(runId)
   if (ids.local.length)
-    markRunNoticesDelivered(runId, ids.local, Date.now(), localDeliveryRows(database))
+    markRunNoticesDelivered(runId, ids.local, Date.now(), localBoardRows(database))
   if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted, { readerRunRecordId })
 }
 
@@ -253,7 +249,7 @@ export async function markBoardNoticesDelivered(
     }
   }
   if (ids.local.length)
-    markNoticesDelivered(ids.local, env, Date.now(), database, localDeliveryRows(database))
+    markNoticesDelivered(ids.local, env, Date.now(), database, localBoardRows(database))
   if (ids.hosted.length)
     await markCachedHostedDelivered(sessionReader(env), ids.hosted, { database })
 }

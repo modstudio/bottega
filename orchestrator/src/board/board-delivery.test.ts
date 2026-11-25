@@ -90,7 +90,7 @@ afterEach(() => {
 })
 
 test('a hosted install pushes, delivers, and acknowledges only its local machine notice', async () => {
-  const clock = Date.parse('2026-11-25T06:30:00.000Z')
+  const clock = Date.now()
   const session = 'hosted-machine-reader'
   const env = {
     CLAUDE_CODE_SESSION_ID: session,
@@ -129,29 +129,71 @@ test('a hosted install pushes, delivers, and acknowledges only its local machine
 
   const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 1, env })
   expect(pending.delivery.map((notice) => notice.id)).toEqual([String(posted.number)])
+  const receipt = () =>
+    db()
+      .query(
+        'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, session)
+  const resetReceipt = () =>
+    db()
+      .query(
+        'UPDATE board_receipt SET delivered_at=NULL,acknowledged_at=NULL WHERE message_record_id=? AND reader_session=?',
+      )
+      .run(posted.recordId, session)
+
   await markBoardDeliveryDelivered({
     session,
     ids: pending.delivery.map((notice) => notice.id),
     clock: clock + 2,
     env,
   })
-  await boardAcknowledge(posted.recordId, { env, clock: clock + 3 })
-
-  expect(
-    db()
-      .query(
-        'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
-      )
-      .get(posted.recordId, session),
-  ).toEqual({
+  expect(receipt()).toEqual({
     delivered_at: new Date(clock + 2).toISOString(),
-    acknowledged_at: new Date(clock + 3).toISOString(),
+    acknowledged_at: null,
   })
+
+  resetReceipt()
+  await markBoardDeliveryDelivered({
+    session,
+    ids: [posted.recordId],
+    clock: clock + 3,
+    env,
+  })
+  expect(receipt()).toEqual({
+    delivered_at: new Date(clock + 3).toISOString(),
+    acknowledged_at: null,
+  })
+
+  resetReceipt()
+  await markBoardNoticesDelivered([String(posted.number)], env, { database: db() })
+  expect(receipt()).toEqual({ delivered_at: expect.any(String), acknowledged_at: null })
+
+  resetReceipt()
+  await markBoardNoticesDelivered([posted.recordId], env, { database: db() })
+  expect(receipt()).toEqual({ delivered_at: expect.any(String), acknowledged_at: null })
+
+  await boardAcknowledge(posted.recordId, { env, clock: clock + 4 })
+  expect(receipt()).toEqual({
+    delivered_at: expect.any(String),
+    acknowledged_at: new Date(clock + 4).toISOString(),
+  })
+
+  resetReceipt()
+  await boardAcknowledge(String(posted.number), { env, clock: clock + 5 })
+  expect(receipt()).toEqual({
+    delivered_at: new Date(clock + 5).toISOString(),
+    acknowledged_at: new Date(clock + 5).toISOString(),
+  })
+
+  await expect(
+    markBoardDeliveryDelivered({ session, ids: ['not-an-id'], clock: clock + 6, env }),
+  ).rejects.toThrow(/board delivery id must be either a positive integer string .* or a UUID/)
 
   await expect(
     boardAcknowledge(stayedLocal.recordId, {
       env,
-      clock: clock + 5,
+      clock: clock + 7,
       client: createMemoryRecordApiClient(),
       destinationResolver: async () => ({ destinationSpaceId: 'space:test' }),
     }),

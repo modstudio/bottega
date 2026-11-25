@@ -45,7 +45,7 @@ import {
   boundedBoardDelivery,
   renderPendingAcknowledgement,
 } from './board-render.ts'
-import { claimPushNotices, deliverableTo } from './board-service.ts'
+import { claimPushNotices, deliverableTo, localBoardRows } from './board-service.ts'
 import {
   addressed,
   boardOrigin,
@@ -600,11 +600,13 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const mode = boardMode('shared', input.env ?? process.env, database)
-  const messages = mode === 'local' ? messageRows(database) : machineMessageRows(database)
+  const messages = localBoardRows(database)
   const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
     if (isWithdrawalDeliveryId(id)) return []
     const identifier = resolveBoardDeliveryIdentifier(database, id, input.env ?? process.env, true)
+    if (mode === 'hosted' && !identifier)
+      boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
     if (mode === 'hosted' && identifier?.source === 'hosted')
       boardModeForId(id, 'board delivery id', input.env ?? process.env, database)
     return identifier ? [identifier] : []

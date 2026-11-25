@@ -20,7 +20,7 @@ import {
   hostedBoardRefreshStoppedReason,
   hostedBoardStoppedMessage,
 } from './board-hosted-refresh-message.ts'
-import { boardMode } from './board-mode.ts'
+import { boardHasAdoptedHosted, boardMode } from './board-mode.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -69,6 +69,11 @@ export { requireRealSession } from './board-policy.ts'
 
 export type { PostNoticeInput, PostNoticeResult }
 export { boardActor }
+
+/** Local board rows remain machine-scoped after this store adopts the hosted board. */
+export function localBoardRows(database: Database = db()): MessageRow[] {
+  return boardHasAdoptedHosted(database) ? machineMessageRows(database) : messageRows(database)
+}
 
 function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
@@ -587,12 +592,10 @@ export function acknowledgeNotice(
   id: string,
   env: Environment = process.env,
   clock = Date.now(),
-  machineScoped = false,
+  sourceRows: MessageRow[] = messageRows(),
 ) {
   const reader = boardReader(env)
-  const row = (machineScoped ? machineMessageRows() : messageRows()).find(
-    (candidate) => candidate.record_id === id,
-  )
+  const row = sourceRows.find((candidate) => candidate.record_id === id)
   if (!row || !rowIsLive(row, clock) || !addressed(row, reader, clock))
     throw new Error(`live board notice ${id} is not addressed to this reader`)
   writableDb()
