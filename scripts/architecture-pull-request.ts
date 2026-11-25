@@ -53,6 +53,14 @@ export const pullRequestModuleSpecs = [
     typeOnlyAllowed: ['../project/projects.ts'],
   },
   {
+    file: 'orchestrator/src/pull-request/pr-release-notice.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../release/release-required.ts',
+      './pr-post-landing-payload.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-merge.fixture.ts',
     allowed: [
       'node:url',
@@ -193,6 +201,8 @@ export const pullRequestModuleSpecs = [
       './mergeability-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',
+      './pr-release-admission.ts',
+      './pr-release-notice.ts',
       './task-cursor-admission.ts',
     ],
   },

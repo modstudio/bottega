@@ -90,6 +90,16 @@ export type RequiredRungDecision =
   | { decided: true; required: string[]; rungs: ReleaseRungPlan[]; error: null }
   | { decided: false; required: string[]; rungs: ReleaseRungPlan[]; error: string }
 
+export function explicitlyRequiredRungs(decision: RequiredRungDecision): string[] {
+  return decision.rungs
+    .filter(({ required, requiredBy }) => required && requiredBy === 'explicit')
+    .map(({ rung }) => rung)
+}
+
+export function requiredRungSentence(rungs: readonly string[]): string {
+  return `${rungs.length === 1 ? 'release rung' : 'release rungs'} ${rungs.join(', ')} required by this pull request`
+}
+
 export type RequiredReleaseStep = 'deploy-rungs' | 'move-main' | 'hand-off'
 
 /** Decide the only allowed ordering before adapters perform any side effect. */

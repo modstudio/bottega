@@ -3,7 +3,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
 import { releaseProofDecision } from './release-decision.ts'
 import {
-  decideRequiredRungs,
   formatRequiredReleaseReport,
   type IncomingRequiredRungDependencies,
   incomingRequiredRungGuard,
@@ -189,91 +188,6 @@ const runner = (overrides: Partial<RequiredReleaseRunner> = {}): RequiredRelease
   ...overrides,
 })
 
-describe('decideRequiredRungs', () => {
-  test('requires the hosted API for a record migration', () => {
-    expect(
-      decideRequiredRungs(
-        [
-          {
-            name: 'hosted-api',
-            branch: 'main',
-            requiredWhenChanged: ['shared/record/migrations/**'],
-          },
-        ],
-        ['shared/record/migrations/20261031_add_column.sql'],
-        new Map(),
-      ),
-    ).toEqual(['hosted-api'])
-  })
-
-  test('requires no rung when no path matches', () => {
-    expect(
-      decideRequiredRungs(
-        [
-          {
-            name: 'hosted-api',
-            branch: 'main',
-            requiredWhenChanged: ['shared/record/migrations/**'],
-          },
-        ],
-        ['orchestrator/src/run.ts'],
-        new Map(),
-      ),
-    ).toEqual([])
-  })
-
-  test('on-demand rungs remain required by a matching change', () => {
-    expect(
-      decideRequiredRungs(
-        [
-          {
-            name: 'hosted-api',
-            branch: 'main',
-            onDemand: true,
-            requiredWhenChanged: ['shared/record/**'],
-          },
-        ],
-        ['shared/record/schema.ts'],
-        new Map(),
-      ),
-    ).toEqual(['hosted-api'])
-  })
-
-  test('several required rungs retain declaration order', () => {
-    expect(
-      decideRequiredRungs(
-        [
-          { name: 'second', branch: 'main', requiredWhenChanged: ['shared/**'] },
-          { name: 'first', branch: 'main', requiredWhenChanged: ['**/*.ts'] },
-          { name: 'unmatched', branch: 'main', requiredWhenChanged: ['docs/**'] },
-        ],
-        ['shared/record/schema.ts'],
-        new Map(),
-      ),
-    ).toEqual(['second', 'first'])
-  })
-
-  test('requires a rung when a changed path is in its entry closure', () => {
-    const rungs = [
-      {
-        name: 'hosted-api',
-        branch: 'main',
-        entryPoints: ['orchestrator/src/record/server.ts'],
-      },
-    ]
-    const closure = new Map([
-      [
-        'orchestrator/src/record/server.ts',
-        new Set(['orchestrator/src/record/server.ts', 'orchestrator/src/record/evidence.ts']),
-      ],
-    ])
-    expect(decideRequiredRungs(rungs, ['orchestrator/src/record/evidence.ts'], closure)).toEqual([
-      'hosted-api',
-    ])
-    expect(decideRequiredRungs(rungs, ['docs/release.md'], closure)).toEqual([])
-  })
-})
-
 describe('requiredRungDecision', () => {
   const entryPointProject = {
     ...project,
@@ -303,6 +217,39 @@ describe('requiredRungDecision', () => {
     )
 
     expect(decision.required).toEqual(['hosted-api'])
+  })
+
+  test('marks a rung explicitly required when only its entry closure matches', () => {
+    const decision = requiredRungDecision(
+      {
+        ...entryPointProject,
+        settings: {
+          ...entryPointProject.settings,
+          release: {
+            ...entryPointProject.settings.release!,
+            rungs: [
+              {
+                name: 'hosted-hub',
+                branch: 'main',
+                requiredWhenChanged: ['hub/migrations/**'],
+                entryPoints: ['hub/src/hosted.ts'],
+              },
+            ],
+          },
+        },
+      },
+      () => ['shared/call-budgets.ts'],
+      () =>
+        new Map([['hub/src/hosted.ts', new Set(['hub/src/hosted.ts', 'shared/call-budgets.ts'])]]),
+    )
+
+    expect(decision.rungs).toEqual([
+      expect.objectContaining({
+        rung: 'hosted-hub',
+        required: true,
+        requiredBy: 'explicit',
+      }),
+    ])
   })
 
   test('does not inspect changes when no rung declares required paths', () => {
@@ -609,6 +556,42 @@ describe('requiredRungDecision', () => {
       expect.objectContaining({ rung: 'production', branch: 'develop', required: true }),
     ])
   })
+})
+
+test('machine update refuses an unproved rung matched only through its entry closure', () => {
+  const guarded = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          {
+            name: 'hosted-hub',
+            branch: 'main',
+            deploy: 'deploy hosted-hub',
+            live: 'read hosted-hub live commit',
+            requiredWhenChanged: ['hub/migrations/**'],
+            entryPoints: ['hub/src/hosted.ts'],
+          },
+        ],
+      },
+    },
+  } as Project
+  let now = 0
+  const dependencies: IncomingRequiredRungDependencies = {
+    resolve: (ref) => (ref === 'HEAD' ? 'current' : 'incoming'),
+    changedPaths: () => ['shared/call-budgets.ts'],
+    entryClosure: () =>
+      new Map([['hub/src/hosted.ts', new Set(['hub/src/hosted.ts', 'shared/call-budgets.ts'])]]),
+    newestLive: () => null,
+    contains: () => false,
+    now: () => now++,
+  }
+
+  expect(incomingRequiredRungGuard(guarded, 'main', dependencies).refusal).toContain(
+    'required rung hosted-hub has not proved incoming commit incoming live',
+  )
 })
 
 describe('releaseRequiredRungsBeforeMainMove', () => {
