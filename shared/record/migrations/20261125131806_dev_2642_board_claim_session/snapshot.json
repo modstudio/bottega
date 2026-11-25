@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d8cfde29-a575-4019-ba40-0ff6906592f4",
+  "id": "3022bb32-0022-4d7d-911a-ac0e4190ad2d",
   "prevIds": [
     "6a890fe9-1ba5-475e-af0b-422e3fea1482"
   ],
@@ -20293,7 +20293,7 @@
         }
       ],
       "isUnique": false,
-      "where": "\"closed_at\" IS NULL",
+      "where": "\"closed_at\" IS NULL AND \"holder_session\" IS NOT NULL",
       "with": "",
       "method": "btree",
       "concurrently": false,

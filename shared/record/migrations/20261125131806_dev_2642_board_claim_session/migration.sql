@@ -1,0 +1,1 @@
+CREATE INDEX "board_claim_holder_session_open_idx" ON "board_claim" ("holder_user_id","holder_session") WHERE "closed_at" IS NULL AND "holder_session" IS NOT NULL;

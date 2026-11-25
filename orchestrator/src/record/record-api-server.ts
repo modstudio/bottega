@@ -24,8 +24,8 @@ import { listHostedBoardChanges, readHostedBoardHead } from './record-board-chan
 import {
   listHostedBoardClaims,
   releaseHostedBoardClaim,
-  releaseHostedBoardTaskClaims,
   releaseHostedBoardSessionClaims,
+  releaseHostedBoardTaskClaims,
   renewHostedBoardClaim,
   takeHostedBoardClaim,
 } from './record-board-claims.ts'

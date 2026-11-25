@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { recordBoardClaimClient } from './record-api-client-board-claims.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 
 test('releaseBoardSessionClaims posts the holder session to the destination space', async () => {
   const calls: Array<{ path: string; init?: RequestInit & { destinationSpaceId?: string } }> = []
