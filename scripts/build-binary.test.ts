@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
 import {
   assertTargetHost,
   BINARY_TARGETS,
+  binaryCompileArgv,
   embeddedAssetPaths,
   parseBinaryTarget,
 } from './build-binary.ts'
@@ -58,4 +60,13 @@ test('binary targets parse only the four supported glibc and Darwin forms', () =
   expect(() => parseBinaryTarget('linux-x64-musl')).toThrow('Windows and musl are unsupported')
   expect(() => parseBinaryTarget('windows-x64')).toThrow('Windows and musl are unsupported')
   expect(() => assertTargetHost('darwin-arm64', 'linux')).toThrow('must be ad-hoc signed')
+})
+
+test('every binary target compiles ESM bytecode', () => {
+  for (const target of BINARY_TARGETS) {
+    const argv = binaryCompileArgv(target, `/release/${PLATFORM_SLUG}`, '/generated/entry.ts')
+    expect(argv).toContain('--bytecode')
+    expect(argv).toContain('--format=esm')
+    expect(argv).toContain(`--target=bun-${target}`)
+  }
 })

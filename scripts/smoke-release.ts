@@ -12,6 +12,7 @@ import {
 } from './build-release-artifacts.ts'
 import { FAKE_HARNESS_SCRIPT } from './fake-harness.ts'
 import { RELEASE_BUN_VERSION } from './release-config.ts'
+import { measureReleaseStartup } from './release-startup.ts'
 import { run } from './release-support.ts'
 
 const version = '0.1.0'
@@ -56,6 +57,13 @@ try {
   const target = parseBinaryTarget(`linux-${arch}`)
   const asset = artifactName(version, target)
   const archive = await buildReleaseArtifact(`v${version}`, scratch, target)
+  await run(['tar', '-xzf', archive, '-C', scratch])
+  const hostBinary = join(scratch, PLATFORM_SLUG)
+  const startup = await measureReleaseStartup(hostBinary, process.env)
+  console.log(
+    `${startup.message}; samples ${startup.samplesMs.map((sample) => sample.toFixed(1)).join(', ')} ms`,
+  )
+  if (!startup.ok) throw new Error(startup.message)
   writeChecksumSet(scratch, [archive])
   writeReleaseManifest(scratch, {
     version,
