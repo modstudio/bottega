@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { collectFast, collectFastHostedOutbox, collectHostedOutboxOnce } from './collect.ts'
+import { QUIET_MAX_MS, SLOW_MS } from './collect-cadence.ts'
 import {
   type CollectorLegState,
   collectorLegStates,
@@ -70,6 +71,29 @@ describe('collector leg state', () => {
         (state) => !('unreadable' in state) && state.source === 'tasks:alpha',
       ),
     ).toEqual(failed)
+  })
+
+  test('a quiet tracker stays current through its next scheduled slow cadence', () => {
+    const now = Date.parse('2026-11-20T12:00:00.000Z')
+    const atAge = (ageMs: number) => new Date(now - ageMs).toISOString()
+    const state = (source: string, ageMs: number): CollectorLegState => ({
+      source,
+      lastSuccessAt: atAge(ageMs),
+      lastError: null,
+      lastErrorAt: null,
+      failingSince: null,
+    })
+
+    expect(
+      collectorLegView(
+        [state('tasks:alpha', QUIET_MAX_MS + SLOW_MS), state('runs', QUIET_MAX_MS + 1)],
+        now,
+        { count: 0, oldest: null },
+      ).collectorLegs,
+    ).toEqual([
+      expect.objectContaining({ source: 'tasks:alpha', status: 'current' }),
+      expect.objectContaining({ source: 'runs', status: 'stale' }),
+    ])
   })
 
   test('a failing leg remains visible beside a successful leg and governs freshness', () => {

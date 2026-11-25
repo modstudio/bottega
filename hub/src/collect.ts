@@ -8,7 +8,7 @@ import {
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
-import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
+import { FAST_MS, QUIET_MAX_MS, SLOW_MS } from './collect-cadence.ts'
 import { formatTrackerCounts, type TrackerCounts, trackerCounts } from './collect-tracker-counts.ts'
 import {
   type WatchRunningCycle,
@@ -84,7 +84,6 @@ export type LiveWatcherHeartbeat = {
   ageSeconds: number
 }
 
-const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
 
 const hostedTrackerCandidates = () =>

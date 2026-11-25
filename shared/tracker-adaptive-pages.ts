@@ -78,6 +78,7 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
   let rowOffset = 0
   while (pages.length < input.maxPages) {
     const pageIndex = Math.floor(rowOffset / pageSize)
+    const pageStart = pageIndex * pageSize
     const page = pageIndex + 1
     let reply: { rows: Row[]; lastPage?: number }
     try {
@@ -99,7 +100,10 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
     pages.push(reply.rows)
     if (!(reply.lastPage && page < reply.lastPage))
       return { pages, complete: true, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
-    rowOffset += pageSize
+    rowOffset =
+      pageStart < rowOffset
+        ? Math.max(rowOffset, pageStart + reply.rows.length)
+        : pageStart + pageSize
   }
   return { pages, complete: false, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
 }
