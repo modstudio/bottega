@@ -380,17 +380,23 @@ function postLandingHandOffOutcome(
 function postLandingRungDecision(
   input: Pick<
     Parameters<typeof completePullRequestPostLanding>[0],
-    'project' | 'mergeCommit' | 'depth' | 'releaseRequired' | 'workflowPromotionDue'
+    | 'project'
+    | 'mergeCommit'
+    | 'depth'
+    | 'releaseRequired'
+    | 'workflowPromotionDue'
+    | 'preMergeReleaseDecision'
   >,
   post: PullRequestPostLandingAdapter,
 ): RequiredRungDecision {
   return input.workflowPromotionDue || input.releaseRequired
-    ? requiredRungDecision(
-        input.project,
-        () => post.changedPaths(input.project, input.mergeCommit),
-        (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
-        input.depth,
-      )
+    ? (input.preMergeReleaseDecision ??
+        requiredRungDecision(
+          input.project,
+          () => post.changedPaths(input.project, input.mergeCommit),
+          (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
+          input.depth,
+        ))
     : { decided: true, required: [], rungs: [], error: null }
 }
 
@@ -435,6 +441,7 @@ type CompletePullRequestPostLandingInput = {
   releaseRequired: boolean
   depth?: string
   workflowPromotionDue: boolean
+  preMergeReleaseDecision?: RequiredRungDecision
   recordingError?: string
   requeueOutput?: string
   movesInstallation?: boolean
