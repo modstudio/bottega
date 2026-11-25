@@ -54,6 +54,7 @@ function hasHostedReleaseCall(text: string, hostedName: string, path: string): b
 export function hostedReleaseParityViolations(files: SourceFile[]): string[] {
   return files.flatMap((file) => {
     if (file.path.endsWith('.test.ts')) return []
+    if (!file.text.includes('releaseLocal')) return []
     return localReleaseGates(file).flatMap(({ name, line }) => {
       const hostedName = name.replace(/^releaseLocal/, 'releaseHosted')
       if (hasHostedReleaseCall(file.text, hostedName, file.path)) return []

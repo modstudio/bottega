@@ -22,6 +22,14 @@ test('a local release gate with its hosted call passes', () => {
   ).toEqual([])
 })
 
+test('a file without a local release candidate passes', () => {
+  expect(
+    hostedReleaseParityViolations([
+      { path: 'orchestrator/src/example.ts', text: 'if (shouldRelease) releaseClaims()' },
+    ]),
+  ).toEqual([])
+})
+
 test('test files are ignored', () => {
   expect(
     hostedReleaseParityViolations([
