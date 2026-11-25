@@ -71,7 +71,7 @@ function childErrorTail(stderr: string, exitCode: number): string {
 }
 
 export function observeRetrievalPins(
-  checkoutRoot: CheckoutRootLookup = () => optionalCheckoutRoot(process.cwd(), process.env),
+  checkoutRoot: CheckoutRootLookup = () => optionalCheckoutRoot(import.meta.dir, process.env),
   runChild: ChildRunner = startBoundedSync,
 ): RetrievalPinObservation {
   try {

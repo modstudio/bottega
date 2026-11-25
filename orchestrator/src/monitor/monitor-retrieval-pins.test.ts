@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { observeRetrievalPins, staleRetrievalPinConditions } from './monitor-retrieval-pins.ts'
 
@@ -13,6 +13,30 @@ const stalePinReport = JSON.stringify({
       current: false,
     },
   ],
+})
+
+describe('default checkout lookup', () => {
+  let originalCwd = ''
+
+  beforeEach(() => {
+    originalCwd = process.cwd()
+    process.chdir('/')
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+  })
+
+  test('finds this checkout when the process runs outside it', () => {
+    let runnerCalled = false
+    const result = observeRetrievalPins(undefined, () => {
+      runnerCalled = true
+      return { exitCode: 0, stdout: JSON.stringify({ pins: [] }), stderr: '' }
+    })
+
+    expect(runnerCalled).toBe(true)
+    expect(result).toEqual({ conditions: [], errors: [], notApplicable: [] })
+  })
 })
 
 test('a distribution install reports retrieval pins as not applicable without spawning', () => {
