@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
 import {
   closeDatabaseForFixture,
@@ -17,6 +17,8 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { clearRecordSessionToken, writeRecordSessionToken } from '../shared/record-session.ts'
 import {
+  realPathForPotentialPath,
+  recordSessionPath,
   resolveStateRoot,
   STATE_HOME_ENV,
   temporaryStateStoreMigrationAllowed,
@@ -191,8 +193,19 @@ describe('canon drift branch gate', () => {
       installRecordApiClient(null)
       stateHome = mkdtempSync(join(tmpdir(), 'canon-drift-record-state-'))
       process.env[STATE_HOME_ENV] = stateHome
-      if (!temporaryStateStoreMigrationAllowed(resolveStateRoot(process.env), resolve(tmpdir()))) {
-        throw new Error('hosted canon test state root must be under the OS temporary directory')
+      const realTemporaryDirectory = realPathForPotentialPath(tmpdir())
+      const isolatedPaths = [resolveStateRoot(process.env), recordSessionPath(process.env)]
+      if (
+        !isolatedPaths.every((path) =>
+          temporaryStateStoreMigrationAllowed(
+            realPathForPotentialPath(path),
+            realTemporaryDirectory,
+          ),
+        )
+      ) {
+        throw new Error(
+          'hosted canon test state root and record session path must be under the OS temporary directory',
+        )
       }
       process.env.BOTTEGA_KEYSTORE = 'file'
       process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = '1'

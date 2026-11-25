@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
@@ -142,7 +143,7 @@ describe('legacy record session migration', () => {
       const readonly = openReadOnlyDatabase(store)
       try {
         expect(() => storedRecordToken(readonly, undefined, true)).toThrow(
-          /legacy row.*read-only connection[\s\S]*main checkout.*bin\/bottega/,
+          `the record session token is still in the store's legacy row and cannot be migrated through a read-only connection\ncleared by: from the main checkout, run ${PLATFORM_SLUG} record whoami once, so it migrates the record session token`,
         )
       } finally {
         readonly.close()
