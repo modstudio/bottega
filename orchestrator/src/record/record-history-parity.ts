@@ -64,10 +64,13 @@ function rowIsHeld(table: ParityTable, id: string, input: WorkflowHistoryParityI
   return flow !== undefined && input.heldFlowIds.has(flow)
 }
 
-function causeLine(counts: { held: number; skipped: number; pending: number }): string {
+function heldWarningLine(table: ParityTable, count: number): string {
+  return `  warning: workflow history ${table}: held ${count} (no command clears this yet)`
+}
+
+function causeLine(counts: { skipped: number; pending: number }): string {
   return (
-    `  causes: held ${counts.held} (no command clears this yet); ` +
-    `skipped ${counts.skipped} (no command clears this yet); ` +
+    `  causes: skipped ${counts.skipped} (no command clears this yet); ` +
     `pending ${counts.pending} (run \`${PLATFORM_SLUG} record sync\`)`
   )
 }
@@ -104,18 +107,22 @@ export function workflowHistoryParityDiagnosis(
       if (table !== 'question_mutation_audit') return !input.present[table].has(id)
       return !questionAuditIsPresent(id, input.references.auditIdentity.get(id), input.present)
     })
-    lines.push(
-      `workflow history ${table}: ${local.size} local; ${local.size - missing.length} on the record — ${missing.length ? 'missing from the record' : 'ok'}`,
-    )
-    if (!missing.length) continue
-    failed = true
     const counts = { held: 0, skipped: 0, pending: 0 }
     for (const id of missing) {
       if (rowIsHeld(table, id, input)) counts.held += 1
       else if (skipped) counts.skipped += 1
       else counts.pending += 1
     }
-    lines.push(causeLine(counts))
+    const actionable = counts.skipped + counts.pending
+    lines.push(
+      `workflow history ${table}: ${local.size} local; ${local.size - missing.length} on the record — ${missing.length === 0 ? 'ok' : actionable === 0 ? 'held locally' : 'missing from the record'}`,
+    )
+    if (!missing.length) continue
+    if (counts.held > 0) lines.push(heldWarningLine(table, counts.held))
+    if (actionable > 0) {
+      failed = true
+      lines.push(causeLine(counts))
+    }
     if (table === 'workflow_cursor' || table === 'task_flow')
       lines.push(stateLine(table, missing, input.states))
   }

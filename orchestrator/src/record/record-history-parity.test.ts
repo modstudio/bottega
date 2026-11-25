@@ -63,7 +63,7 @@ test('all workflow-history rows present report ok and pass', () => {
   ])
 })
 
-test('missing rows split held from globally skipped rows and name their remedies', () => {
+test('held plus skipped warns for held rows and fails for skipped rows', () => {
   const diagnosis = workflowHistoryParityDiagnosis(
     input({
       local: {
@@ -97,12 +97,15 @@ test('missing rows split held from globally skipped rows and name their remedies
   )
 
   expect(diagnosis.failed).toBe(true)
+  expect(diagnosis.lines).toContain(
+    '  warning: workflow history workflow_step_text: held 1 (no command clears this yet)',
+  )
   expect(diagnosis.lines.join('\n')).toContain(
-    `causes: held 1 (no command clears this yet); skipped 1 (no command clears this yet); pending 0 (run \`${PLATFORM_SLUG} record sync\`)`,
+    `causes: skipped 1 (no command clears this yet); pending 0 (run \`${PLATFORM_SLUG} record sync\`)`,
   )
 })
 
-test('a changed fingerprint classifies non-held gaps as pending', () => {
+test('held plus pending warns for held rows and fails for pending rows', () => {
   const diagnosis = workflowHistoryParityDiagnosis(
     input({
       local: {
@@ -137,9 +140,33 @@ test('a changed fingerprint classifies non-held gaps as pending', () => {
   )
 
   expect(diagnosis.failed).toBe(true)
-  expect(diagnosis.lines.join('\n')).toContain(
-    `causes: held 1 (no command clears this yet); skipped 0 (no command clears this yet); pending 1 (run \`${PLATFORM_SLUG} record sync\`)`,
+  expect(diagnosis.lines).toContain(
+    '  warning: workflow history workflow_step_text: held 1 (no command clears this yet)',
   )
+  expect(diagnosis.lines.join('\n')).toContain(
+    `causes: skipped 0 (no command clears this yet); pending 1 (run \`${PLATFORM_SLUG} record sync\`)`,
+  )
+})
+
+test('held-only rows warn without failing or describing the table as failed', () => {
+  const diagnosis = workflowHistoryParityDiagnosis(
+    input({
+      present: {
+        ...input().present,
+        workflow_step_text: new Set(),
+      },
+      heldFlowIds: new Set(['flow']),
+    }),
+  )
+
+  expect(diagnosis.failed).toBe(false)
+  expect(diagnosis.lines).toContain(
+    'workflow history workflow_step_text: 1 local; 0 on the record — held locally',
+  )
+  expect(diagnosis.lines).toContain(
+    '  warning: workflow history workflow_step_text: held 1 (no command clears this yet)',
+  )
+  expect(diagnosis.lines.join('\n')).not.toContain('missing from the record')
 })
 
 test('question audit identity on the record counts an audit stored under another id', () => {

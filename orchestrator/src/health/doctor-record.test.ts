@@ -1,12 +1,10 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { withSynchronousReadOnlyDatabase } from '../database/db.ts'
-import { guardHostedTables } from '../database/hosted-table-guard.ts'
-import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  closeDatabaseForFixture,
+  db,
+  withSynchronousReadOnlyDatabase,
+} from '../database/db.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import {
   loadWorkflowHistoryParity,
@@ -15,23 +13,26 @@ import {
 } from './doctor-record.ts'
 
 test('workflow-history parity uses a read-only handle beside a guarded hosted store', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'doctor-record-parity-'))
-  const path = join(root, 'orchestrator.db')
-  writeMigratedTestDatabase(path)
-  const guarded = guardHostedTables(new Database(path, { readonly: true }))
-  const doctorHandle = <T>(action: (handle: Database) => T): T => {
-    // The hosted install's ordinary handle is guarded; doctor opens the same store read-only.
-    void guarded
-    return withSynchronousReadOnlyDatabase((handle) => {
-      expect(() => handle.exec('CREATE TABLE doctor_write_probe (id TEXT)')).toThrow(/read-?only/i)
-      return action(handle)
-    }, path)
-  }
+  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  db()
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-25','https://record.test')",
+    )
+    .run()
+  closeDatabaseForFixture()
   try {
+    const guarded = db()
+    expect(() => guarded.query('SELECT * FROM workflow_obligation').all()).toThrow(
+      /workflow_obligation is held by the hosted record/,
+    )
+    withSynchronousReadOnlyDatabase((handle) => {
+      expect(() => handle.exec('CREATE TABLE doctor_write_probe (id TEXT)')).toThrow(/read-?only/i)
+    })
     const times = [10, 10]
     const diagnosis = await workflowHistoryParityDoctorDiagnosis(
       () =>
-        loadWorkflowHistoryParity(doctorHandle, async (input) => ({
+        loadWorkflowHistoryParity(undefined, async (input) => ({
           obligationIds: input.obligationIds ?? [],
           textIds: input.textIds ?? [],
           textCopyIds: input.textCopyIds ?? [],
@@ -50,8 +51,9 @@ test('workflow-history parity uses a read-only handle beside a guarded hosted st
     expect(diagnosis.lines).toContain('workflow history parity: pass in 0 ms')
     expect(diagnosis.failed).toBe(false)
   } finally {
-    guarded.close()
-    rmSync(root, { recursive: true, force: true })
+    closeDatabaseForFixture()
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
   }
 })
 
