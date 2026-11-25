@@ -884,6 +884,8 @@ test('machine update defaults the target to the installation root', async () => 
       syncWorkflows: () => {},
       buildCli: () => {},
       runLaunchAgentsRefreshVerb: () => {},
+      storeAttachedToHostedRecord: () => false,
+      recordSessionPresent: () => false,
     },
   )
   expect(projectPaths).toEqual([target])
@@ -914,6 +916,8 @@ test('machine update does not name the checkout when the caller is already there
       syncWorkflows: () => {},
       buildCli: () => {},
       runLaunchAgentsRefreshVerb: () => {},
+      storeAttachedToHostedRecord: () => false,
+      recordSessionPresent: () => false,
     },
   )
   expect(lines).toHaveLength(2)
@@ -950,6 +954,8 @@ test('machine update keeps its successful result when store maintenance fails', 
         },
         buildCli: () => {},
         runLaunchAgentsRefreshVerb: () => {},
+        storeAttachedToHostedRecord: () => false,
+        recordSessionPresent: () => false,
       },
     ),
   ).resolves.toBeUndefined()
@@ -1030,4 +1036,114 @@ test('distribution update refreshes through the installed target and preserves i
   ).rejects.toThrow(remedy)
   expect(updated).toBeTrue()
   expect(refreshed).toEqual([target])
+})
+
+test('both update paths retire after hosted-row release when bound or signed in', async () => {
+  const checkoutEvents: string[] = []
+  const checkoutLines: string[] = []
+  await machineUpdateCommand(
+    { log: (line) => checkoutLines.push(line) },
+    {
+      ...successfulMachineUpdateDeps(),
+      releaseHostedRows: async () => {
+        checkoutEvents.push('release')
+      },
+      storeAttachedToHostedRecord: () => true,
+      recordSessionPresent: () => false,
+      retireDefaultLocalProject: async () => {
+        checkoutEvents.push('retire')
+        return true
+      },
+    },
+  )
+  expect(checkoutEvents).toEqual(['release', 'retire'])
+  expect(checkoutLines).toContain('retired unused default local project tasks')
+
+  const distributionEvents: string[] = []
+  await machineUpdateCommand(
+    { log: () => {} },
+    {
+      authorityRefusal: () => null,
+      identity: {
+        kind: 'distribution',
+        root: resolve(realpathSync(process.execPath), '..'),
+        manifest: {
+          name: PLATFORM_NAME,
+          version: '1.2.3',
+          built: '2026-11-25T00:00:00.000Z',
+          commit: 'abc1234',
+        },
+      },
+      updateDistribution: async () => {},
+      maintainStore: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
+      releaseHostedRows: async () => {
+        distributionEvents.push('release')
+      },
+      storeAttachedToHostedRecord: () => false,
+      recordSessionPresent: () => true,
+      retireDefaultLocalProject: async () => {
+        distributionEvents.push('retire')
+        return false
+      },
+    },
+  )
+  expect(distributionEvents).toEqual(['release', 'retire'])
+})
+
+test('both update paths skip retirement without a binding or record session', async () => {
+  let retirements = 0
+  const retirementDeps = {
+    storeAttachedToHostedRecord: () => false,
+    recordSessionPresent: () => false,
+    retireDefaultLocalProject: async () => {
+      retirements += 1
+      return false
+    },
+  }
+  await machineUpdateCommand(
+    { log: () => {} },
+    { ...successfulMachineUpdateDeps(), ...retirementDeps, releaseHostedRows: async () => {} },
+  )
+  await machineUpdateCommand(
+    { log: () => {} },
+    {
+      authorityRefusal: () => null,
+      identity: {
+        kind: 'distribution',
+        root: resolve(realpathSync(process.execPath), '..'),
+        manifest: {
+          name: PLATFORM_NAME,
+          version: '1.2.3',
+          built: '2026-11-25T00:00:00.000Z',
+          commit: 'abc1234',
+        },
+      },
+      updateDistribution: async () => {},
+      maintainStore: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
+      releaseHostedRows: async () => {},
+      ...retirementDeps,
+    },
+  )
+  expect(retirements).toBe(0)
+})
+
+test('machine update logs a retirement failure and remains successful', async () => {
+  const lines: string[] = []
+  await expect(
+    machineUpdateCommand(
+      { log: (line) => lines.push(line) },
+      {
+        ...successfulMachineUpdateDeps(),
+        releaseHostedRows: async () => {},
+        storeAttachedToHostedRecord: () => true,
+        recordSessionPresent: () => false,
+        retireDefaultLocalProject: async () => {
+          throw new Error('retirement fixture failure')
+        },
+      },
+    ),
+  ).resolves.toBeUndefined()
+  expect(lines).toContain('default local project retirement failed: retirement fixture failure')
 })

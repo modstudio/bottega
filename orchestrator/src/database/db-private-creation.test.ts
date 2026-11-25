@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createDatabasePrivately } from './db.ts'
+import { createDatabasePrivately, seedCurrentProjectSchema } from './db.ts'
 import { applyMigrations } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 
@@ -14,8 +14,24 @@ function temporaryStore() {
 
 function initialize(database: Database, root: string): void {
   applyMigrations(database)
-  initializeDefaultLocalProject(database, true, { BOTTEGA_STATE_HOME: root })
+  initializeDefaultLocalProject(database, true, false, { BOTTEGA_STATE_HOME: root })
 }
+
+test('fresh-store seeding clears its marker with and without a record session', () => {
+  for (const sessionPresent of [true, false]) {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database.query("INSERT INTO schema_meta(key,value) VALUES ('new_store_seed_pending','1')").run()
+    seedCurrentProjectSchema(database, true, sessionPresent)
+    expect(database.query("SELECT name FROM project WHERE name='tasks'").all()).toHaveLength(
+      sessionPresent ? 0 : 1,
+    )
+    expect(
+      database.query("SELECT value FROM schema_meta WHERE key='new_store_seed_pending'").get(),
+    ).toBeNull()
+    database.close()
+  }
+})
 
 test('failed private creation leaves neither a published store nor temporary database files', () => {
   const fixture = temporaryStore()

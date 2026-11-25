@@ -19,8 +19,8 @@ function fixture() {
 
 test('a new store gets the exact default local project once', () => {
   const { database, root } = fixture()
-  initializeDefaultLocalProject(database, true, { BOTTEGA_STATE_HOME: root })
-  initializeDefaultLocalProject(database, true, { BOTTEGA_STATE_HOME: root })
+  initializeDefaultLocalProject(database, true, false, { BOTTEGA_STATE_HOME: root })
+  initializeDefaultLocalProject(database, true, false, { BOTTEGA_STATE_HOME: root })
 
   const rows = database
     .query('SELECT * FROM project WHERE name = ?')
@@ -40,7 +40,14 @@ test('a new store gets the exact default local project once', () => {
 
 test('an existing store is not backfilled', () => {
   const { database, root } = fixture()
-  initializeDefaultLocalProject(database, false, { BOTTEGA_STATE_HOME: root })
+  initializeDefaultLocalProject(database, false, false, { BOTTEGA_STATE_HOME: root })
+  expect(database.query('SELECT COUNT(*) AS count FROM project').get()).toEqual({ count: 0 })
+  expect(existsSync(join(root, 'projects', 'tasks'))).toBe(false)
+})
+
+test('a record session suppresses the default local project', () => {
+  const { database, root } = fixture()
+  initializeDefaultLocalProject(database, true, true, { BOTTEGA_STATE_HOME: root })
   expect(database.query('SELECT COUNT(*) AS count FROM project').get()).toEqual({ count: 0 })
   expect(existsSync(join(root, 'projects', 'tasks'))).toBe(false)
 })

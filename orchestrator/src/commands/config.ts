@@ -302,6 +302,11 @@ function registerMachineCommands(config: Command): void {
   registerMachineTrustCommands(machine)
 }
 
+const retireDefaultLocalProject = async () =>
+  (
+    await import('../project/default-local-project-retirement.ts')
+  ).attemptDefaultLocalProjectRetirement({ log })
+
 function registerMachineIdentityCommands(machine: Command): void {
   machine
     .command('init')
@@ -331,6 +336,7 @@ function registerMachineIdentityCommands(machine: Command): void {
         process.env,
         await requestedMachineNames(options),
       )
+      await retireDefaultLocalProject()
       log(keyId)
       await adoption.reportCheckedOutHostedProjects(
         { log },
