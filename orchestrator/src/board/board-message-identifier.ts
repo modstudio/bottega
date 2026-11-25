@@ -101,6 +101,24 @@ function boardIdentifierMode(
       : 'local'
 }
 
+function localMachineMessageResolution(
+  database: Database,
+  given: string,
+): BoardIdentifierResolution | null {
+  const rows = machineMessageRows(database)
+  if (/^[0-9]+$/.test(given)) {
+    const number = Number(given)
+    const row = Number.isSafeInteger(number)
+      ? rows.find((candidate) => candidate.number === number)
+      : undefined
+    return row ? { source: 'local', recordId: row.record_id } : null
+  }
+  if (!hasRecordIdShape(given)) return null
+  const recordId = given.toLowerCase()
+  const row = rows.find((candidate) => candidate.record_id === recordId)
+  return row ? { source: 'local', recordId: row.record_id } : null
+}
+
 export function resolveBoardMessageIdentifier(
   database: Database,
   input: string | number,
@@ -111,20 +129,8 @@ export function resolveBoardMessageIdentifier(
   const given = String(input)
   const mode = boardIdentifierMode(database, environment, validateHosted)
   if (mode === 'hosted') {
-    if (allowLocalMachineScoped) {
-      const rows = machineMessageRows(database)
-      if (/^[0-9]+$/.test(given)) {
-        const number = Number(given)
-        const row = Number.isSafeInteger(number)
-          ? rows.find((candidate) => candidate.number === number)
-          : undefined
-        if (row) return { source: 'local', recordId: row.record_id }
-      } else if (hasRecordIdShape(given)) {
-        const recordId = given.toLowerCase()
-        const row = rows.find((candidate) => candidate.record_id === recordId)
-        if (row) return { source: 'local', recordId: row.record_id }
-      }
-    }
+    const local = allowLocalMachineScoped ? localMachineMessageResolution(database, given) : null
+    if (local) return local
     return hostedMessageResolution(given)
   }
   if (/^[0-9]+$/.test(given)) {

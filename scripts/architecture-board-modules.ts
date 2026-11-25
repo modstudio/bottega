@@ -51,6 +51,7 @@ export const boardModules: BoardModule[] = [
     './board-hosted-cache-readers.ts',
     './board-hosted-refresh-message.ts',
     './board-mode.ts',
+    './board-store.ts',
   ]),
   module('orchestrator/src/board/board-mode.ts', [
     'bun:sqlite',
@@ -152,6 +153,7 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-render.ts',
     './board-service.ts',
+    './board-store.ts',
   ]),
   module('orchestrator/src/board/board-push-policy.ts', [
     '../../../shared/board-purpose.ts',

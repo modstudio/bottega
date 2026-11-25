@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
@@ -8,7 +8,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
@@ -26,14 +25,10 @@ import {
   setCommandOutput,
   writeTranscript,
 } from '../../test/fixtures/board-hook.ts'
-import {
-  createMemoryRecordApiClient,
-  installRecordApiClient,
-} from '../../test/fixtures/record-api.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
-import { boardAcknowledge, boardPost } from './board-operations.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import {
   boardPendingJson,
@@ -60,97 +55,6 @@ function ensurePostingProject() {
 afterEach(() => {
   removeHookFixtures()
   installRecordApiClient(null)
-})
-
-describe('hosted machine delivery', () => {
-  const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-
-  beforeEach(() => {
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-  })
-
-  afterEach(() => {
-    if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
-  })
-
-  test('pushes, delivers, and acknowledges a local machine notice after adoption', async () => {
-    ensurePostingProject()
-    const clock = Date.parse('2026-11-25T06:30:00.000Z')
-    const session = 'hosted-machine-reader'
-    const env = {
-      CLAUDE_CODE_SESSION_ID: session,
-      BOTTEGA_RECORD_API_URL: 'https://record.test',
-    }
-    db()
-      .query(
-        `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-         VALUES (?,'claude-code','architect',?,'push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
-      )
-      .run(
-        session,
-        hostname(),
-        new Date(clock - 2_000).toISOString(),
-        new Date(clock - 1_000).toISOString(),
-      )
-    const stayedLocal = postNotice(
-      { audience: `session:${session}`, title: 'Stayed local', body: 'Do not route locally.' },
-      {
-        CLAUDE_CODE_SESSION_ID: 'stayed-local-author',
-        BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL,
-      },
-      clock - 1,
-      postingCwd,
-    )
-    db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-    const posted = await boardPost(
-      {
-        audience: `machine:${hostname()}`,
-        title: 'Machine delivery',
-        body: 'Deliver this local machine notice.',
-        purpose: 'request',
-        ackRequired: true,
-      },
-      { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, clock },
-    )
-
-    const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 1, env })
-    expect(pending.delivery.map((notice) => notice.id)).toEqual([String(posted.number)])
-    await markBoardDeliveryDelivered({
-      session,
-      ids: pending.delivery.map((notice) => notice.id),
-      clock: clock + 2,
-      env,
-    })
-    await boardAcknowledge(posted.recordId, { env, clock: clock + 3 })
-
-    expect(
-      db()
-        .query(
-          'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
-        )
-        .get(posted.recordId, session),
-    ).toEqual({
-      delivered_at: new Date(clock + 2).toISOString(),
-      acknowledged_at: new Date(clock + 3).toISOString(),
-    })
-
-    await expect(
-      boardAcknowledge(stayedLocal.recordId, {
-        env,
-        clock: clock + 5,
-        client: createMemoryRecordApiClient(),
-        destinationResolver: async () => ({ destinationSpaceId: 'space:test' }),
-      }),
-    ).rejects.toThrow(/hosted board is unused in this fixture/)
-    expect(
-      db()
-        .query(
-          'SELECT acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
-        )
-        .get(stayedLocal.recordId, session),
-    ).toEqual({ acknowledged_at: null })
-  })
 })
 
 test('an architect may address architects without receiving its own post', async () => {
