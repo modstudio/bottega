@@ -133,6 +133,25 @@ export function assertTargetHost(target: BinaryTarget, hostPlatform: NodeJS.Plat
   }
 }
 
+export function binaryCompileArgv(
+  target: BinaryTarget,
+  destination: string,
+  entry: string,
+): string[] {
+  return [
+    'bun',
+    'build',
+    '--compile',
+    `--target=bun-${target}`,
+    ...COMPILE_AUTOLOAD_OFF_FLAGS,
+    '--bytecode',
+    '--format=esm',
+    '--outfile',
+    destination,
+    entry,
+  ]
+}
+
 export async function buildBinary(
   tag: string,
   outputDirectory: string,
@@ -185,19 +204,7 @@ await import(${JSON.stringify(join(repositoryRoot, 'cli', `${PLATFORM_SLUG}.ts`)
 `,
     )
 
-    await run(
-      [
-        'bun',
-        'build',
-        '--compile',
-        `--target=bun-${target}`,
-        ...COMPILE_AUTOLOAD_OFF_FLAGS,
-        '--outfile',
-        destination,
-        wrapper,
-      ],
-      generatedDirectory,
-    )
+    await run(binaryCompileArgv(target, destination, wrapper), generatedDirectory)
     if (platform === 'darwin') {
       await run(['codesign', '--force', '--sign', '-', destination])
     }

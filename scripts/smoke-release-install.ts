@@ -15,6 +15,7 @@ import { renderedBoardHeartbeatGuidance } from '../shared/heartbeat-guidance.ts'
 import { shellQuote } from '../shared/shell-quote.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
+import { measureReleaseStartup } from './release-startup.ts'
 import { releaseVersion, stripInheritedOverrides } from './release-support.ts'
 
 type InstallProofPaths = {
@@ -518,7 +519,10 @@ async function seedProofSettings(
 function reportProof(results: StepResult[], assertionFailures: string[]): number {
   for (const result of results) {
     console.log(`${result.name} exit ${result.exitCode}`)
-    if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
+    if (
+      (result.exitCode !== 0 || result.name === 'extracted hook' || result.name === 'startup') &&
+      result.output
+    ) {
       console.log(result.output)
     }
     if (result.name === 'heartbeat arm') {
@@ -527,6 +531,29 @@ function reportProof(results: StepResult[], assertionFailures: string[]): number
   }
   for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
   return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
+}
+
+async function runStartupProof(
+  executable: string,
+  env: Record<string, string | undefined>,
+): Promise<StepResult> {
+  try {
+    const measurement = await measureReleaseStartup(executable, env)
+    return {
+      name: 'startup',
+      exitCode: measurement.ok ? 0 : 1,
+      output: measurement.message,
+      stderr: '',
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      name: 'startup',
+      exitCode: 1,
+      output: message,
+      stderr: message,
+    }
+  }
 }
 
 async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
@@ -561,6 +588,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
         env,
       ),
     )
+    results.push(await runStartupProof(executable, env))
     recordProofAssertion(
       assertionFailures,
       releaseDownloadsReachedCurl(
