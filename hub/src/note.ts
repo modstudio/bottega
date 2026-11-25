@@ -21,12 +21,18 @@ import { NoteReferenceNotVisibleError, resolveNoteIdentity } from './identity/id
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
-import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
+import {
+  hostedCreateNote,
+  hostedListNoteCandidates,
+  hostedPromoteNote,
+  type NoteClientOptions,
+} from './note-client.ts'
 import {
   askNoteDuplicateQuestions,
   jevOnlyDuplicateCandidates,
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
+  startNoteDuplicateCredentialResolution,
 } from './note-duplicate-question.ts'
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
@@ -281,7 +287,9 @@ export async function acknowledgeNote(
   }
 }
 
-function noteCandidates(notes: NoteRow[], text: string): NoteCandidate[] {
+type CandidateNote = Pick<NoteRow, 'record_id' | 'number' | 'label' | 'project' | 'text'>
+
+export function noteCandidates(notes: CandidateNote[], text: string): NoteCandidate[] {
   const byId = new Map(notes.map((note) => [note.record_id, note]))
   return duplicateCandidates(
     notes.map(
@@ -297,12 +305,12 @@ function noteCandidates(notes: NoteRow[], text: string): NoteCandidate[] {
         parent_record_id: null,
         body: null,
         assignee: null,
-        opened_at: note.created_at,
+        opened_at: '',
         closed_at: null,
-        updated_at: note.last_seen_at,
+        updated_at: '',
         source: 'local',
-        first_seen: note.created_at,
-        last_seen: note.last_seen_at,
+        first_seen: '',
+        last_seen: '',
         next_document_number: 1,
         retired_reason: null,
       }),
@@ -380,16 +388,27 @@ export type CreateNoteResult = {
   outside: boolean
 }
 
-async function duplicateCandidatesForNewNote(
+type NoteDuplicateAsk = Parameters<typeof askNoteDuplicateQuestions>[3]
+
+export async function duplicateCandidatesForNewNote(
   text: string,
   project: string,
   sameAs: string | undefined,
   hosted?: NoteClientOptions,
+  dependencies: {
+    ask?: NoteDuplicateAsk
+    startCredentialResolution?: () => void
+  } = {},
 ): Promise<NoteCandidate[]> {
   if (sameAs) return []
-  const notes = await listNotes({ project, actionable: true }, hosted)
+  const hostedMode = hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
+  if (hostedMode)
+    (dependencies.startCredentialResolution ?? startNoteDuplicateCredentialResolution)()
+  const notes = hostedMode
+    ? await hostedListNoteCandidates(project, text, await noteDestinationOptions(project, hosted))
+    : await listNotes({ project, actionable: true }, hosted)
   const lexicalCandidates = noteCandidates(notes, text)
-  const asked = await askNoteDuplicateQuestions(notes, project, text)
+  const asked = await askNoteDuplicateQuestions(notes, project, text, dependencies.ask)
   return [
     ...lexicalCandidates,
     ...jevOnlyDuplicateCandidates(lexicalCandidates, asked).map(({ probability, ...note }) => ({

@@ -21,6 +21,7 @@ import {
   insertOutsideNote,
   listOutsideNotes,
 } from './hosted-outside-notes.ts'
+import { listHostedNoteCandidates } from './hosted-note-candidates.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
@@ -84,6 +85,19 @@ async function outsideRoute(context: RouteContext): Promise<Response | null> {
 async function readRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who } = context
   if (request.method !== 'GET') return null
+  if (url.pathname === '/v1/notes/candidates') {
+    const project = url.searchParams.get('project')?.trim() ?? ''
+    const text = url.searchParams.get('text')?.trim() ?? ''
+    if (!project || !text) return json({ error: 'candidate list requires project and text' }, 400)
+    return json(
+      await call(dependencies.listCandidates, listHostedNoteCandidates)(
+        config.recordDatabaseUrl,
+        who,
+        project,
+        text,
+      ),
+    )
+  }
   if (url.pathname === '/v1/notes/list') {
     const filters = slimListFilters(url)
     if (filters instanceof Response) return filters

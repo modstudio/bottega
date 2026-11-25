@@ -657,6 +657,15 @@ export const hubModuleSpecs = [
       './note-slim-list-shape.ts',
     ],
   },
+  {
+    file: 'hub/src/hosted-note-candidates.ts',
+    allowed: [
+      'bun',
+      '../../shared/note-label.ts',
+      './hosted-tenant.ts',
+      './note-duplicate-candidates.ts',
+    ],
+  },
   { file: 'hub/src/note-slim-list-shape.ts', allowed: [] },
   {
     file: 'hub/src/note-outside.ts',

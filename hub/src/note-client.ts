@@ -12,6 +12,7 @@ import {
   sendHostedSessionRequest,
 } from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
+import type { HostedNoteCandidate } from './hosted-note-candidates.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import type { SlimNote } from './note-slim-list-shape.ts'
@@ -228,6 +229,10 @@ export async function hostedListNotes(
     if (!page.more) return { notes, acknowledgements }
     cursor = page.cursor
   }
+}
+export function hostedListNoteCandidates(project: string, text: string, options: NoteReadOptions) {
+  const query = new URLSearchParams({ project, text })
+  return request<HostedNoteCandidate[]>(`/v1/notes/candidates?${query}`, options)
 }
 export async function hostedListSlimNotes(
   filters: {

@@ -126,6 +126,7 @@ describe('suggestion notes', () => {
             ],
             capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
           })
+        if (url.pathname === '/v1/notes/candidates') return Response.json([])
         if (url.pathname === '/v1/notes' && init?.method === 'GET')
           return Response.json({ notes: [], acknowledgements: [], cursor: 'done', more: false })
         requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
