@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 import {
@@ -56,7 +57,7 @@ describe('hosted release failure decision', () => {
           message: 'operator session refused\npass the harness session id',
           tripCircuit: false,
         },
-        platformSlug: 'bottega',
+        platformSlug: PLATFORM_SLUG,
       }),
     ).toEqual({
       disposition: 'stamp-final',

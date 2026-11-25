@@ -1,9 +1,6 @@
 // concern: closed session sweep decision
 /** Decides whether the machine may finish one recorded session close-out. */
 
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
-import { RecordApiRequestError } from '../record/record-api-client-response.ts'
-
 export type SessionCloseOutSweepFacts = {
   clean: boolean
   closedAt: number
@@ -43,25 +40,35 @@ export type HostedReleaseRowDecision = {
   circuitCause: HostedReleaseCircuitCause | null
 }
 
+type HostedReleaseCause = {
+  name?: unknown
+  kind?: unknown
+  status?: unknown
+}
+
+function hostedReleaseCause(cause: unknown): HostedReleaseCause {
+  return cause !== null && typeof cause === 'object' ? cause : {}
+}
+
 export function hostedReleaseFailure(cause: unknown): HostedReleaseFailure {
-  if (cause instanceof RecordApiRequestError) {
-    if (cause.status === 401 || cause.status === 403) return 'deferred-auth'
-    if (cause.kind === 'refused' && [400, 409, 422].includes(cause.status ?? -1)) return 'final'
-  }
+  const { kind, status } = hostedReleaseCause(cause)
+  if (status === 401 || status === 403) return 'deferred-auth'
+  if (kind === 'refused' && [400, 409, 422].includes(typeof status === 'number' ? status : -1))
+    return 'final'
   return 'deferred'
 }
 
 export function hostedReleaseTripsCircuit(cause: unknown): boolean {
+  const { name, kind, status } = hostedReleaseCause(cause)
   return (
-    cause instanceof BoundExceededError ||
-    (cause instanceof RecordApiRequestError &&
-      (cause.kind === 'unreachable' ||
-        cause.kind === 'server' ||
-        cause.status === 401 ||
-        cause.status === 403 ||
-        cause.status === 408 ||
-        cause.status === 429 ||
-        (cause.status !== null && cause.status >= 500)))
+    name === 'BoundExceededError' ||
+    kind === 'unreachable' ||
+    kind === 'server' ||
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    status === 429 ||
+    (typeof status === 'number' && status >= 500)
   )
 }
 

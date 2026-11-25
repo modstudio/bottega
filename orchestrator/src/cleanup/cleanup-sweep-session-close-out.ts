@@ -22,9 +22,9 @@ import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideHostedReleaseRow,
   decideSessionCloseOutSweep,
+  type HostedReleaseCircuitCause,
   hostedReleaseFailure,
   hostedReleaseTripsCircuit,
-  type HostedReleaseCircuitCause,
 } from './cleanup-sweep-session-close-out-decision.ts'
 import { releaseHostedClaims } from './cleanup-sweep-session-close-out-hosted.ts'
 
@@ -67,6 +67,16 @@ function reportUncleanReplay(
     presentation.error(
       `closed session ${session} error: ${item.item}: ${item.detail}; retry: ${item.retry}`,
     )
+}
+
+function reportDryRun(
+  row: SessionCloseOutRow,
+  hostedReleaseEnabled: boolean,
+  presentation: CleanupPresentation,
+): void {
+  presentation.log(`would sweep closed session ${row.session_id}`)
+  if (hostedReleaseEnabled)
+    presentation.log(`would release hosted board claims of closed session ${row.session_id}`)
 }
 
 async function releaseHostedClaimsForRow(input: {
@@ -144,13 +154,13 @@ async function sweepCloseOutRow(input: {
       if (beforeHostedRelease.action === 'skip') return false
     }
     const hostedDisposition = await releaseHostedClaimsForRow({
-        row: input.row,
-        database: input.database,
-        adapters: input.adapters,
-        presentation: input.presentation,
-        enabled: input.hostedReleaseEnabled,
-        state: input.hostedReleaseState,
-      })
+      row: input.row,
+      database: input.database,
+      adapters: input.adapters,
+      presentation: input.presentation,
+      enabled: input.hostedReleaseEnabled,
+      state: input.hostedReleaseState,
+    })
     if (hostedDisposition === 'defer') return true
     writeTransaction(() => {
       const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
@@ -210,11 +220,7 @@ export async function sweepSessionCloseOutRecords(input: {
       continue
     }
     if (input.dryRun) {
-      input.presentation.log(`would sweep closed session ${row.session_id}`)
-      if (hostedReleaseEnabled)
-        input.presentation.log(
-          `would release hosted board claims of closed session ${row.session_id}`,
-        )
+      reportDryRun(row, hostedReleaseEnabled, input.presentation)
       continue
     }
     if (

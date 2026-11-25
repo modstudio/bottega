@@ -8,6 +8,7 @@ import {
   boardWriteDestination,
 } from '../board/board-write-destination.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
 import { RecordApiRequestError } from '../record/record-api-client-response.ts'
 
 export async function releaseHostedClaims(
@@ -20,7 +21,7 @@ export async function releaseHostedClaims(
     .get(session)
   const client = recordApiClient(undefined, boundedFetch('hosted-close-out'))
   const project = presence?.project ?? null
-  let destination
+  let destination: RecordWriteDestination
   try {
     destination = await destinationResolver(client, project, database)
   } catch (cause) {
