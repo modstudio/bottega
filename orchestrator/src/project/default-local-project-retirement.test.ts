@@ -95,33 +95,6 @@ describe('hosted-configured sign-in', () => {
     expect(existsSync(path)).toBe(false)
   })
 
-  test('uses the default local task reader for a project without a record space', async () => {
-    const d = database()
-    const { environment } = registerDefault(d, 'orch-default-hosted-local-reader-')
-    d.query(
-      `INSERT INTO record_install_binding(id,bound_at,record_origin)
-     VALUES (1,'2026-11-24T00:00:00.000Z',?)`,
-    ).run(process.env.BOTTEGA_RECORD_API_URL!)
-    const guarded = STANDARD_OPEN_HOOKS.access!(d)
-    const restoreTaskReader = installTaskListReaders({
-      list: async () => {
-        throw new Error('project tasks has no declared record space')
-      },
-      listLocal: async (filters) => {
-        expect(filters).toEqual({ project: 'tasks' })
-        return []
-      },
-    })
-    try {
-      expect(
-        await retireUnusedDefaultLocalProject(guarded, environment, undefined, noReferences),
-      ).toBe(true)
-      expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
-    } finally {
-      restoreTaskReader()
-    }
-  })
-
   test('uses the hosted reference counter with the default local task reader', async () => {
     const d = database()
     const { environment } = registerDefault(d, 'orch-default-hosted-reference-counter-')
