@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db } from '../database/db.ts'
+import { db, withSynchronousDatabaseForMigrationStep } from '../database/db.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
@@ -26,6 +26,7 @@ import type { DoctorReporter } from './doctor-reporter.ts'
 
 type Clock = () => number
 type ParityLoader = () => Promise<WorkflowHistoryParityDiagnosis>
+type SynchronousDatabaseProvider = <T>(action: (database: Database) => T) => T
 type IdentityLoader = () => Promise<
   Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>>
 >
@@ -63,9 +64,20 @@ export async function reportActiveSpaceDoctor(
   if (diagnosis.failed) presentation.exitCode(1)
 }
 
-async function loadWorkflowHistoryParity(database: Database = db()) {
-  const state = collectHostedRowState(database)
-  const read = recordApiClient().readTaskFlowPresence
+export async function loadWorkflowHistoryParity(
+  withDatabase: SynchronousDatabaseProvider = withSynchronousDatabaseForMigrationStep,
+  presenceReader: ReturnType<typeof recordApiClient>['readTaskFlowPresence'] = recordApiClient()
+    .readTaskFlowPresence,
+) {
+  const local = withDatabase((database) => ({
+    state: collectHostedRowState(database),
+    heldFlowIds: readHeldFlowIds(database),
+    heldQuestionIds: readHeldQuestionIds(database),
+    storedFingerprint: storedHistoryUploadFingerprint(database),
+    currentFingerprint: historyUploadFingerprint(database),
+  }))
+  const { state } = local
+  const read = presenceReader
   if (!read)
     throw new Error(
       `record API lacks workflow-history presence support; release the hosted API, then retry \`${PLATFORM_SLUG} machine doctor\``,
@@ -85,10 +97,10 @@ async function loadWorkflowHistoryParity(database: Database = db()) {
     local: state.ids,
     present,
     references: state.references,
-    heldFlowIds: readHeldFlowIds(database),
-    heldQuestionIds: readHeldQuestionIds(database),
-    storedFingerprint: storedHistoryUploadFingerprint(database),
-    currentFingerprint: historyUploadFingerprint(database),
+    heldFlowIds: local.heldFlowIds,
+    heldQuestionIds: local.heldQuestionIds,
+    storedFingerprint: local.storedFingerprint,
+    currentFingerprint: local.currentFingerprint,
     states: state.states,
   })
 }

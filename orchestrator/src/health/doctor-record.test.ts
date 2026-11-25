@@ -1,7 +1,48 @@
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
-import { reportRecordDoctor, workflowHistoryParityDoctorDiagnosis } from './doctor-record.ts'
+import {
+  loadWorkflowHistoryParity,
+  reportRecordDoctor,
+  workflowHistoryParityDoctorDiagnosis,
+} from './doctor-record.ts'
+
+test('workflow-history parity uses the maintenance handle beside a guarded hosted store', async () => {
+  const database = migratedTestDatabase()
+  const guarded = guardHostedTables(database)
+  const maintenanceHandle = <T>(action: (handle: Database) => T): T => {
+    // The hosted install's ordinary handle is guarded; maintenance opens the same store raw.
+    void guarded
+    return action(database)
+  }
+  try {
+    const times = [10, 10]
+    const diagnosis = await workflowHistoryParityDoctorDiagnosis(() =>
+      loadWorkflowHistoryParity(maintenanceHandle, async (input) => ({
+        obligationIds: input.obligationIds ?? [],
+        textIds: input.textIds ?? [],
+        textCopyIds: input.textCopyIds ?? [],
+        questionAuditIds: input.questionAuditIds ?? [],
+        questionIds: input.questionIds ?? [],
+        stageIds: input.stageIds ?? [],
+        flowIds: input.flowIds ?? [],
+        questionAuditIdentities: [],
+      })),
+      () => times.shift()!,
+    )
+
+    expect(diagnosis.lines).toContain(
+      'workflow history workflow_step_text: 0 local; 0 on the record — ok',
+    )
+    expect(diagnosis.lines).toContain('workflow history parity: pass in 0 ms')
+    expect(diagnosis.failed).toBe(false)
+  } finally {
+    database.close()
+  }
+})
 
 test('workflow-history parity is not run without an active hosted space', async () => {
   const lines: string[] = []
