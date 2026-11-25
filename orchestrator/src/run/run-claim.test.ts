@@ -190,7 +190,9 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
     expect(
-      db().query('SELECT continued_with_findings FROM run WHERE record_id=?').get(implicit.claim.id),
+      db()
+        .query('SELECT continued_with_findings FROM run WHERE record_id=?')
+        .get(implicit.claim.id),
     ).toEqual({ continued_with_findings: 0 })
     expect(
       db()

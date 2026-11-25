@@ -507,10 +507,9 @@ function recordAcceptedFindingsRound(
   )
   triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
   completeReview(reviewRecordId, fixture.d)
-  fixture.d.query('UPDATE review SET recorded_at=? WHERE record_id=?').run(
-    input.recordedAt,
-    reviewRecordId,
-  )
+  fixture.d
+    .query('UPDATE review SET recorded_at=? WHERE record_id=?')
+    .run(input.recordedAt, reviewRecordId)
   return reviewRecordId
 }
 

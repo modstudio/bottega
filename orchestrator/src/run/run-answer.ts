@@ -611,17 +611,18 @@ async function recordedRulingsForRetry(rootId: string): Promise<RecordedRuling[]
 async function continueWritingRetry(
   id: string,
   retryAuthority: RootAuthority,
-  continuedWithFindings: boolean,
-  flags: RunFlags,
+  row: Pick<RetryRunRow, 'continued_with_findings'>,
+  options: { flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<string> {
+  const { flags } = options
   const reportDetached = reportsBeforeFollow(flags)
     ? (childId: string, jobName: string) =>
         reportContinuedRun(childId, jobName, flags, helpers.presentation)
     : undefined
   const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, {
     ...helpers,
-    continuedWithFindings,
+    continuedWithFindings: Boolean(row.continued_with_findings),
     reportDetached,
   })
   const detail = `continued as run ${resumed.childId}`
@@ -665,13 +666,7 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue')
-    return continueWritingRetry(
-      id,
-      retryAuthority,
-      Boolean(row.continued_with_findings),
-      options.flags,
-      helpers,
-    )
+    return continueWritingRetry(id, retryAuthority, row, options, helpers)
   if (!row.prompt_path || !existsSync(row.prompt_path)) {
     throw new Error(
       `run ${id} has no prompt on disk — it predates prompt capture, or the file has aged out ` +
