@@ -6,6 +6,7 @@ import { QUESTION_UUID_COLUMNS } from './identity-question-manifest.ts'
 import { RECORD_CACHE_IDENTITIES } from './identity-record-cache-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
+import { RUN_BOOLEAN_VALUES } from './identity-run-manifest.ts'
 import { SESSION_EVENT_IDENTITY } from './identity-session-event-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
@@ -69,21 +70,6 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'pull_request_ci.complete',
     'release_ledger.rollback',
     'release_ledger.live_matches_candidate',
-    'run.probe',
-    'run.no_failover',
-    'run.automatic_failover',
-    'run.agent_explicit',
-    'run.transport_explicit',
-    'run.carry_happened',
-    'run.mcp',
-    'run.mcp_connected',
-    'run.mcp_trust_granted',
-    'run.keep_tree',
-    'run.unreconciled',
-    'run.work_preserved',
-    'run.provisioning_entries_limited',
-    'run.gate_requests_closed',
-    'run.tests_claim_disagrees',
     'question.jev_order_flipped',
     'run_checkpoint.final',
     'workflow_obligation.require_pull_request',
@@ -91,6 +77,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_obligation.operator_ruling',
     'brief_injection.over_cap',
   ]),
+  ...RUN_BOOLEAN_VALUES,
   ...manifest('orchestrator', 'count, ordinal, version, handle, or measurement', [
     'collect_change_counter.value',
     'agent.max_concurrent',
