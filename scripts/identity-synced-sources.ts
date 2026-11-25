@@ -355,6 +355,13 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...writeEntries(
     'orchestrator',
     'recordApiClient',
+    [],
+    ['releaseBoardSessionClaims'],
+    'no local table; the holder session comes from the caller',
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
     ['board_receipt', 'hosted_board_receipt_cache'],
     ['putBoardReceipt'],
   ),
