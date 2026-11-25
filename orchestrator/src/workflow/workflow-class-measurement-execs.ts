@@ -1,5 +1,5 @@
 // concern: workflows
-/** Reads workflow exec facts used to verify a post-implement class measurement. */
+/** Reads class-measurement exec facts: post-implement candidates and the measure exec's cwd. */
 
 import type { Database } from 'bun:sqlite'
 import { probeRecordIdForNumber } from './probe-identifier.ts'
