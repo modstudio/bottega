@@ -251,6 +251,41 @@ test('task-open-with-notes requires a named note only when the task has a live p
   })
 })
 
+test('task-open-with-notes gives a stale named note the sighting remedy', () => {
+  const result = decideFloorSatisfaction({
+    floors: [taskOpenWithNotes],
+    evidence: {
+      task: {
+        key: 'DEV-977',
+        status: 'open',
+        statusCategory: 'open',
+        mergedPullRequest: null,
+        trackerStates: {},
+      },
+      notes: [
+        {
+          reference: '00000000-0000-4000-8000-000000000014',
+          recordId: '00000000-0000-4000-8000-000000000014',
+          label: `${PLATFORM_SLUG}#2817`,
+          promotedTask: 'DEV-977',
+          staleAt: '2026-11-20T00:00:00.000Z',
+        },
+      ],
+    },
+    workflowKey: 'DEV-977',
+    enforcement: 'floors',
+    finishing: false,
+    openObligations: [],
+  })
+
+  expect(result).toMatchObject({
+    action: 'refuse',
+    message: expect.stringContaining(
+      `${PLATFORM_SLUG} note new --same-as ${PLATFORM_SLUG}#2817 --project <project> "<sighting>"`,
+    ),
+  })
+})
+
 test('task-open-with-notes requiring a pull request accepts only a merged pull request', () => {
   const requiredFloor = { ...taskOpenWithNotes, requirePullRequest: true }
   const task = {

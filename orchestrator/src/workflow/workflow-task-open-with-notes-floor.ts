@@ -117,7 +117,10 @@ export function taskOpenWithNotesFailures(
     if (!note.recordId) failures.push(`${name} does not exist`)
     else if (note.promotedTask !== workflowKey)
       failures.push(`${name} is attached to ${note.promotedTask ?? 'no task'}, not ${workflowKey}`)
-    if (note.recordId && note.staleAt !== null) failures.push(`${name} is stale`)
+    if (note.recordId && note.staleAt !== null)
+      failures.push(
+        `${name} is stale; record a sighting with \`${platformSlug} note new --same-as ${name} --project <project> "<sighting>"\``,
+      )
   }
   return failures
 }

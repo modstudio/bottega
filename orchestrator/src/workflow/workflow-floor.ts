@@ -78,6 +78,10 @@ export function floorsIncludeTrackerTransition(floors: ReadonlyArray<{ kind: str
   return floors.some((floor) => floor.kind === 'tracker-transition')
 }
 
+export function floorsIncludeTaskOpenWithNotes(floors: ReadonlyArray<{ kind: string }>): boolean {
+  return floors.some((floor) => floor.kind === 'task-open-with-notes')
+}
+
 export const DEFAULT_EXPECTED_EXIT_CODE = 0
 export const DEFAULT_EXPECTED_STATUS = 'done'
 
@@ -582,9 +586,7 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   return gateOk || runOk || artifactOk
 }
 
-function normalizedTrackerWord(value: string): string {
-  return value.toLowerCase().replace(/[ -]+/g, '_')
-}
+const normalizedTrackerWord = (value: string): string => value.toLowerCase().replace(/[ -]+/g, '_')
 
 function expectedTrackerCategory(
   expectedStatus: string,
@@ -934,9 +936,8 @@ function refuseOpen(open: OpenObligation[]): FloorDecision {
   }
 }
 
-function firstDeferrable(floors: Floor[]): Floor | undefined {
-  return floors.find((floor) => floor.deferrable)
-}
+const firstDeferrable = (floors: Floor[]): Floor | undefined =>
+  floors.find((floor) => floor.deferrable)
 
 function deferralOf(
   floors: Floor[],
