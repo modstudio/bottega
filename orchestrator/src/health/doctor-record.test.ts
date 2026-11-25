@@ -1,5 +1,6 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { closeDatabaseForFixture, db, withSynchronousReadOnlyDatabase } from '../database/db.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import {
@@ -8,49 +9,54 @@ import {
   workflowHistoryParityDoctorDiagnosis,
 } from './doctor-record.ts'
 
-test('workflow-history parity uses a read-only handle beside a guarded hosted store', async () => {
-  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+let previousRecordApiUrl: string | undefined
+
+beforeEach(() => {
+  previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+})
+
+afterEach(() => {
+  closeDatabaseForFixture()
+  if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+})
+
+test('workflow-history parity uses a read-only handle beside a guarded hosted store', async () => {
   db()
     .query(
       "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-25','https://record.test')",
     )
     .run()
   closeDatabaseForFixture()
-  try {
-    const guarded = db()
-    expect(() => guarded.query('SELECT * FROM workflow_obligation').all()).toThrow(
-      /workflow_obligation is held by the hosted record/,
-    )
-    withSynchronousReadOnlyDatabase((handle) => {
-      expect(() => handle.exec('CREATE TABLE doctor_write_probe (id TEXT)')).toThrow(/read-?only/i)
-    })
-    const times = [10, 10]
-    const diagnosis = await workflowHistoryParityDoctorDiagnosis(
-      () =>
-        loadWorkflowHistoryParity(undefined, async (input) => ({
-          obligationIds: input.obligationIds ?? [],
-          textIds: input.textIds ?? [],
-          textCopyIds: input.textCopyIds ?? [],
-          questionAuditIds: input.questionAuditIds ?? [],
-          questionIds: input.questionIds ?? [],
-          stageIds: input.stageIds ?? [],
-          flowIds: input.flowIds ?? [],
-          questionAuditIdentities: [],
-        })),
-      () => times.shift()!,
-    )
+  const guarded = db()
+  expect(() => guarded.query('SELECT * FROM workflow_obligation').all()).toThrow(
+    /workflow_obligation is held by the hosted record/,
+  )
+  withSynchronousReadOnlyDatabase((handle) => {
+    expect(() => handle.exec('CREATE TABLE doctor_write_probe (id TEXT)')).toThrow(/read-?only/i)
+  })
+  const times = [10, 10]
+  const diagnosis = await workflowHistoryParityDoctorDiagnosis(
+    () =>
+      loadWorkflowHistoryParity(undefined, async (input) => ({
+        obligationIds: input.obligationIds ?? [],
+        textIds: input.textIds ?? [],
+        textCopyIds: input.textCopyIds ?? [],
+        questionAuditIds: input.questionAuditIds ?? [],
+        questionIds: input.questionIds ?? [],
+        stageIds: input.stageIds ?? [],
+        flowIds: input.flowIds ?? [],
+        questionAuditIdentities: [],
+      })),
+    () => times.shift()!,
+  )
 
-    expect(diagnosis.lines).toContain(
-      'workflow history workflow_step_text: 0 local; 0 on the record — ok',
-    )
-    expect(diagnosis.lines).toContain('workflow history parity: pass in 0 ms')
-    expect(diagnosis.failed).toBe(false)
-  } finally {
-    closeDatabaseForFixture()
-    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
-  }
+  expect(diagnosis.lines).toContain(
+    'workflow history workflow_step_text: 0 local; 0 on the record — ok',
+  )
+  expect(diagnosis.lines).toContain('workflow history parity: pass in 0 ms')
+  expect(diagnosis.failed).toBe(false)
 })
 
 test('workflow-history parity is not run without an active hosted space', async () => {
@@ -72,7 +78,7 @@ test('workflow-history parity is not run without an active hosted space', async 
   )
 
   expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
-    'workflow history parity: not run — no active hosted space',
+    'workflow history parity: not run — this store has never attached to the hosted record',
   ])
   expect(exitCodes).toEqual([])
 })
@@ -158,6 +164,32 @@ test('attached workflow history fails with the sign-in remedy when signed out', 
 
   expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
     `workflow history: could not establish: ${RECORD_SIGN_IN_REMEDY}`,
+    expect.stringMatching(/^workflow history parity: fail in \d+ ms$/),
+  ])
+  expect(exitCodes).toEqual([1])
+})
+
+test('attached workflow history fails with the shared remedy when no space is active', async () => {
+  const lines: string[] = []
+  const exitCodes: number[] = []
+
+  await reportRecordDoctor(
+    {
+      log: (line) => lines.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    }),
+    async () => ({ lines: [], failed: false }),
+    () => true,
+  )
+
+  expect(lines.filter((line) => line.startsWith('workflow history'))).toEqual([
+    `workflow history: could not establish: ${RECORD_ACTIVE_SPACE_REMEDY}`,
     expect.stringMatching(/^workflow history parity: fail in \d+ ms$/),
   ])
   expect(exitCodes).toEqual([1])

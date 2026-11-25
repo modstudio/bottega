@@ -32,13 +32,14 @@ export type HostedRowReferences = {
   cursorHandoff: ReadonlyMap<string, string>
   flowOpenCursor: ReadonlyMap<string, string>
 }
+export type HostedRowStates = {
+  workflow_cursor: ReadonlyMap<string, string>
+  task_flow: ReadonlyMap<string, string>
+}
 export type HostedRowState = {
   ids: HostedRowIds
   references: HostedRowReferences
-  states: {
-    workflow_cursor: ReadonlyMap<string, string>
-    task_flow: ReadonlyMap<string, string>
-  }
+  states: HostedRowStates
 }
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }

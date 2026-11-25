@@ -1063,9 +1063,13 @@ export function withSynchronousReadOnlyDatabase<T>(
   action: (database: Database) => T,
   path = DB_PATH,
 ): T {
+  refuseStoreAfterCheckoutMove()
   const database = openReadOnlyDatabase(path)
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    const migrationWindow = migrationWindowRefusal(database)
+    if (migrationWindow.refusal) throw new Error(migrationWindow.refusal)
+    if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
     return action(database)
   } finally {
     database.close()

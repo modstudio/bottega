@@ -6,6 +6,7 @@ import { decideHistoryUploadPass, type HistoryUploadFingerprint } from './record
 import {
   type HostedRowPresence,
   type HostedRowReferences,
+  type HostedRowStates,
   type HostedRowTable,
   questionAuditIsPresent,
 } from './record-hosted-row-presence.ts'
@@ -21,10 +22,6 @@ const WORKFLOW_HISTORY_PARITY_TABLES = [
 type ParityTable = (typeof WORKFLOW_HISTORY_PARITY_TABLES)[number]
 type ParityIds = Record<ParityTable, ReadonlySet<string>>
 type ParityPresence = Pick<HostedRowPresence, ParityTable | 'questionAuditIdentities'>
-type LocalStates = {
-  workflow_cursor: ReadonlyMap<string, string>
-  task_flow: ReadonlyMap<string, string>
-}
 type CauseCounts = { held: number; skipped: number; pending: number }
 
 export type WorkflowHistoryParityInput = {
@@ -35,7 +32,7 @@ export type WorkflowHistoryParityInput = {
   heldQuestionIds: ReadonlySet<string>
   storedFingerprint: HistoryUploadFingerprint | null
   currentFingerprint: HistoryUploadFingerprint
-  states: LocalStates
+  states: HostedRowStates
 }
 
 export type WorkflowHistoryParityDiagnosis = { lines: string[]; failed: boolean }
@@ -71,7 +68,7 @@ function heldWarningLine(table: ParityTable, count: number): string {
 
 function causeLine(counts: Pick<CauseCounts, 'skipped' | 'pending'>): string {
   return (
-    `  causes: skipped ${counts.skipped} (no command clears this yet); ` +
+    `  causes: skipped ${counts.skipped} (run \`${PLATFORM_SLUG} machine update\`, then \`${PLATFORM_SLUG} record sync\`); ` +
     `pending ${counts.pending} (run \`${PLATFORM_SLUG} record sync\`)`
   )
 }
@@ -107,7 +104,7 @@ function tableStatus(
 function stateLine(
   table: 'workflow_cursor' | 'task_flow',
   ids: readonly string[],
-  states: LocalStates,
+  states: HostedRowStates,
 ) {
   const counts = new Map<string, number>()
   for (const id of ids) {

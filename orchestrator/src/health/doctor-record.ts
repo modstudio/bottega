@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, withSynchronousReadOnlyDatabase } from '../database/db.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { storeHasAttachedToHostedRecord } from '../record/install-binding.ts'
@@ -152,14 +153,15 @@ export async function reportRecordDoctor(
     }),
   )
   if (!hasAttachedToHostedRecord()) {
-    presentation.log('workflow history parity: not run — no active hosted space')
+    presentation.log(
+      'workflow history parity: not run — this store has never attached to the hosted record',
+    )
     return
   }
   if (!identity?.activeSpaceId) {
     const parity = await workflowHistoryParityDoctorDiagnosis(async () => {
       throw (
-        identityFailure ??
-        new Error(`no active hosted space; run \`${PLATFORM_SLUG} record doctor\``)
+        identityFailure ?? new Error(RECORD_ACTIVE_SPACE_REMEDY)
       )
     })
     for (const line of parity.lines) presentation.log(line)

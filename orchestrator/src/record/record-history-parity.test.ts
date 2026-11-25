@@ -101,7 +101,7 @@ test('held plus skipped warns for held rows and fails for skipped rows', () => {
     '  warning: workflow history workflow_step_text: held 1 (no command clears this yet)',
   )
   expect(diagnosis.lines.join('\n')).toContain(
-    `causes: skipped 1 (no command clears this yet); pending 0 (run \`${PLATFORM_SLUG} record sync\`)`,
+    `causes: skipped 1 (run \`${PLATFORM_SLUG} machine update\`, then \`${PLATFORM_SLUG} record sync\`); pending 0 (run \`${PLATFORM_SLUG} record sync\`)`,
   )
 })
 
@@ -144,7 +144,7 @@ test('held plus pending warns for held rows and fails for pending rows', () => {
     '  warning: workflow history workflow_step_text: held 1 (no command clears this yet)',
   )
   expect(diagnosis.lines.join('\n')).toContain(
-    `causes: skipped 0 (no command clears this yet); pending 1 (run \`${PLATFORM_SLUG} record sync\`)`,
+    `causes: skipped 0 (run \`${PLATFORM_SLUG} machine update\`, then \`${PLATFORM_SLUG} record sync\`); pending 1 (run \`${PLATFORM_SLUG} record sync\`)`,
   )
 })
 
@@ -189,6 +189,40 @@ test('question audit identity on the record counts an audit stored under another
   expect(diagnosis.failed).toBe(false)
   expect(diagnosis.lines).toContain(
     'workflow history question_mutation_audit: 1 local; 1 on the record — ok',
+  )
+})
+
+test('question audit held by question warns and passes', () => {
+  const diagnosis = workflowHistoryParityDiagnosis(
+    input({
+      present: {
+        ...input().present,
+        question_mutation_audit: new Set(),
+      },
+      heldQuestionIds: new Set(['question']),
+    }),
+  )
+
+  expect(diagnosis.failed).toBe(false)
+  expect(diagnosis.lines).toContain(
+    '  warning: workflow history question_mutation_audit: held 1 (no command clears this yet)',
+  )
+})
+
+test('question audit resolving through its cursor to a held flow warns and passes', () => {
+  const diagnosis = workflowHistoryParityDiagnosis(
+    input({
+      present: {
+        ...input().present,
+        question_mutation_audit: new Set(),
+      },
+      heldFlowIds: new Set(['flow']),
+    }),
+  )
+
+  expect(diagnosis.failed).toBe(false)
+  expect(diagnosis.lines).toContain(
+    '  warning: workflow history question_mutation_audit: held 1 (no command clears this yet)',
   )
 })
 
