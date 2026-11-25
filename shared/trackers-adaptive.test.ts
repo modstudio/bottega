@@ -102,6 +102,36 @@ describe('adaptive tracker paging', () => {
     )
   })
 
+  test('workspace paging advances by the server page span when client filtering removes rows', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const allRows = Array.from({ length: 60 }, (_, index) => ({
+      id: `row-${index}`,
+      short_id: `STAR-${index + 1}`,
+      status: 'todo',
+      team: index >= 24 && index <= 35 ? 'Other' : 'Platform',
+    }))
+    const fetched = await source.fetch({
+      listTools: async () => [
+        { name: 'list-tasks-tool', inputSchema: { properties: {} } },
+      ],
+      async callTool(_name, args) {
+        const pageSize = args.per_page as number
+        const start = ((args.page as number) - 1) * pageSize
+        if (pageSize > 25 || (start >= 25 && pageSize === 25) || (start >= 36 && pageSize > 1))
+          throw new ToolCallRefused('fixture page too large')
+        return {
+          tasks: allRows.slice(start, start + pageSize),
+          last_page: Math.ceil(allRows.length / pageSize),
+        }
+      },
+    })
+
+    expect(fetched.complete).toBeTrue()
+    expect(new Set(fetched.tasks.map((task) => task.key))).toEqual(
+      new Set(allRows.filter((row) => row.team === 'Platform').map((row) => row.short_id)),
+    )
+  })
+
   test('a refusal at page size one leaves prior rows intact and reports its position', async () => {
     const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
     const fetched = await source.fetch({

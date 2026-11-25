@@ -100,10 +100,7 @@ export async function readAdaptiveWorkspacePages<Row>(input: {
     pages.push(reply.rows)
     if (!(reply.lastPage && page < reply.lastPage))
       return { pages, complete: true, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
-    rowOffset =
-      pageStart < rowOffset
-        ? Math.max(rowOffset, pageStart + reply.rows.length)
-        : pageStart + pageSize
+    rowOffset = pageStart + pageSize
   }
   return { pages, complete: false, pageSize: lastSuccessfulPageSize, nextPageSize: pageSize }
 }
