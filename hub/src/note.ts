@@ -21,16 +21,13 @@ import { NoteReferenceNotVisibleError, resolveNoteIdentity } from './identity/id
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
-import {
-  hostedCreateNote,
-  hostedPromoteNote,
-  type NoteClientOptions,
-} from './note-client.ts'
+import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import {
   askNoteDuplicateQuestions,
   jevOnlyDuplicateCandidates,
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
+  startNoteDuplicateCredentialResolution,
 } from './note-duplicate-question.ts'
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
@@ -51,8 +48,8 @@ import {
 import {
   getNote,
   listActionableNotes,
-  listNoteDuplicateCandidates,
   listNoteAcknowledgements,
+  listNoteDuplicateCandidates,
   listNotes,
   localNoteAcknowledgementSightings,
 } from './note-read.ts'
@@ -377,7 +374,10 @@ export async function duplicateCandidatesForNewNote(
   } = {},
 ): Promise<NoteCandidate[]> {
   if (sameAs) return []
-  const notes = await listNoteDuplicateCandidates(project, text, hosted, dependencies)
+  const notes = await listNoteDuplicateCandidates(project, text, hosted, {
+    startCredentialResolution:
+      dependencies.startCredentialResolution ?? startNoteDuplicateCredentialResolution,
+  })
   const lexicalCandidates = noteCandidates(notes, text)
   const asked = await askNoteDuplicateQuestions(notes, project, text, dependencies.ask)
   return [

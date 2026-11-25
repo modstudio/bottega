@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { duplicateCandidatesForNewNote, noteCandidates } from './note.ts'
 import {
   NOTE_DUPLICATE_CANDIDATES,
@@ -108,7 +109,7 @@ test('hosted candidate read failures carry the note read remedy', async () => {
         return Response.json({ error: 'record unavailable' }, { status: 500 })
       },
     }),
-  ).rejects.toThrow('run `bottega record doctor`, then retry')
+  ).rejects.toThrow(`run \`${PLATFORM_SLUG} record doctor\`, then retry`)
 })
 
 test('a server without the candidate route falls back to its actionable note list', async () => {

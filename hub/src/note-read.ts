@@ -15,7 +15,6 @@ import {
   isMissingHostedNote,
   type NoteClientOptions,
 } from './note-client.ts'
-import { startNoteDuplicateCredentialResolution } from './note-duplicate-question.ts'
 import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { noteReadSpaces } from './note-project-space.ts'
@@ -393,14 +392,12 @@ export async function listNotes(
 export async function listNoteDuplicateCandidates(
   project: string,
   text: string,
-  hosted?: NoteClientOptions,
-  dependencies: { startCredentialResolution?: () => void } = {},
+  hosted: NoteClientOptions | undefined,
+  dependencies: { startCredentialResolution: () => void },
 ) {
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) !== 'hosted-configured')
     return listLocalNotes(normalizeNoteFilters({ project, actionable: true }))
-  const startCredentialResolution =
-    dependencies.startCredentialResolution ?? startNoteDuplicateCredentialResolution
-  startCredentialResolution()
+  dependencies.startCredentialResolution()
   const spaces = await noteReadSpaces(project, hosted ?? {})
   try {
     const results = await Promise.all(
