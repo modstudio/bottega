@@ -41,6 +41,7 @@ import {
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
 import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
+import { retireSupersededQuarantinedScoreRows } from './outbox-score-supersession.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -740,7 +741,9 @@ function beginSyncPass(local: Database, requestedNow?: () => string) {
   const now = requestedNow ?? nowIso
   return {
     now,
-    retired: retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, now()),
+    retired:
+      retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, now()) +
+      retireSupersededQuarantinedScoreRows(local, now()),
   }
 }
 
