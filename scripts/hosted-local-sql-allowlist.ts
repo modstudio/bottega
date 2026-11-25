@@ -321,19 +321,22 @@ const BOARD_REACH_PLANNED_SITES: readonly B2ReasonedSite[] = [
     file: 'orchestrator/src/board/board-reach.ts',
     functionName: 'recordBoardReach',
     expectedSites: 1,
-    detail: 'board reach delivery hosting is planned by DEV-2234',
+    detail:
+      'board reach delivery hosting is planned by DEV-2234; accepted by the architect ruling for DEV-2640 round-1 fixes',
   },
   {
     file: 'orchestrator/src/board/board-reach.ts',
     functionName: 'reapBoardReach',
     expectedSites: 1,
-    detail: 'board reach delivery hosting is planned by DEV-2234',
+    detail:
+      'board reach delivery hosting is planned by DEV-2234; accepted by the architect ruling for DEV-2640 round-1 fixes',
   },
   {
     file: 'orchestrator/src/board/board-store.ts',
     functionName: 'claimPresenceFacts',
     expectedSites: 1,
-    detail: 'hosted claim presence is planned by DEV-2641',
+    detail:
+      'hosted claim presence is planned by DEV-2641; accepted by the architect ruling for DEV-2640 round-1 fixes',
   },
   {
     file: 'orchestrator/src/board/board-reach.ts',

@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import type { BoardLocality } from '../../../shared/board-mode.ts'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
@@ -773,8 +774,8 @@ function insertRootRow(
   return { recordId, number }
 }
 
-export function messageRows(database = db()): MessageRow[] {
-  requireLocalBoardRead(process.env, database)
+export function messageRows(database = db(), locality: BoardLocality = 'shared'): MessageRow[] {
+  requireLocalBoardRead(process.env, database, locality)
   return selectMessageRows(database)
 }
 
@@ -793,8 +794,12 @@ export function machineMessageRows(database = db()): MessageRow[] {
   )
 }
 
-export function messageTags(messageRecordId: string, database = db()): BoardTag[] {
-  requireLocalBoardRead(process.env, database)
+export function messageTags(
+  messageRecordId: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+): BoardTag[] {
+  requireLocalBoardRead(process.env, database, locality)
   return database
     .query(
       'SELECT kind,value,origin FROM board_message_tag WHERE message_record_id=? ORDER BY rowid',
@@ -807,13 +812,14 @@ export function addressed(
   reader: string,
   clock: number,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
   return (
     message.audience !== null &&
     recipients(
       message.audience,
       clock,
-      messageTags(message.record_id, database),
+      messageTags(message.record_id, database, locality),
       database,
       presenceFacts(database, clock),
       message.author_project,
@@ -838,8 +844,13 @@ export function rowIsLive(message: MessageRow, clock: number, database = db()): 
   )
 }
 
-export function hasReceipt(messageRecordId: string, reader: string, database = db()): boolean {
-  requireLocalBoardRead(process.env, database)
+export function hasReceipt(
+  messageRecordId: string,
+  reader: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+): boolean {
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query('SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=?')
@@ -851,8 +862,9 @@ export function holdsReplySuccessor(
   messageRecordId: string,
   reader: string,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
-  requireLocalBoardRead(process.env, database)
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query(
@@ -867,8 +879,9 @@ export function hasNonSuccessorReceipt(
   messageRecordId: string,
   reader: string,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
-  requireLocalBoardRead(process.env, database)
+  requireLocalBoardRead(process.env, database, locality)
   return Boolean(
     database
       .query(

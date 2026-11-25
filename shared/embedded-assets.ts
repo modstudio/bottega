@@ -230,6 +230,7 @@ const runtimeHookFiles = [
   'bun-cache-guard.py',
   'context-precompact.py',
   'context-review.py',
+  'editor_tool_judge.py',
   'git-guard.py',
   'heartbeat-board-observation.py',
   'heartbeat-decision.py',

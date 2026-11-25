@@ -16,6 +16,8 @@ export const hubImportModules = [
       './database/db.ts',
       './project/projects.ts',
       '../../shared/bounded-process.ts',
+      './editor-judgment.ts',
+      './registered-checkout.ts',
     ],
   },
   {
@@ -23,11 +25,28 @@ export const hubImportModules = [
     allowed: ['node:fs', 'node:path'],
   },
   {
+    file: 'orchestrator/src/editor-judgment.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/registered-checkout.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:fs',
+      'node:path',
+      '../../shared/brand.ts',
+      './project/projects.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/board-head-commands.ts',
     allowed: [
       'node:path',
       '../../scripts/hosted-local-board-head-check.ts',
+      './database/db.ts',
+      './editor-judgment.ts',
       './editor-proposal.ts',
+      './registered-checkout.ts',
     ],
   },
   {

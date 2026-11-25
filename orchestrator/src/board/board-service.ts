@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
+import type { BoardLocality } from '../../../shared/board-mode.ts'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -79,6 +80,18 @@ export function localBoardRows(database: Database = db()): MessageRow[] {
 function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
   return actor.session ?? OPERATOR_READER
+}
+
+function rowLocality(row: MessageRow): BoardLocality {
+  return row.audience && parseAudience(row.audience).kind === 'machine'
+    ? 'machine-audience'
+    : 'shared'
+}
+
+function rowsLocality(rows: MessageRow[]): BoardLocality {
+  return rows.length > 0 && rows.every((row) => rowLocality(row) === 'machine-audience')
+    ? 'machine-audience'
+    : 'shared'
 }
 
 export function recordPresence(
@@ -183,15 +196,25 @@ export function runReaderIdentity(runId: string, database = db()) {
   return { reader: runReader(readerRunRecordId), readerRunRecordId }
 }
 
-function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
-  requireLocalBoardRead(process.env, database)
+function receiptDelivery(
+  messageRecordId: string,
+  reader: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+) {
+  requireLocalBoardRead(process.env, database, locality)
   return database
     .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
     .get(messageRecordId, reader) as { delivered_at: string | null } | null
 }
 
-function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
-  return Boolean(receiptDelivery(messageRecordId, reader, database)?.delivered_at)
+function wasDelivered(
+  messageRecordId: string,
+  reader: string,
+  database = db(),
+  locality: BoardLocality = 'shared',
+): boolean {
+  return Boolean(receiptDelivery(messageRecordId, reader, database, locality)?.delivered_at)
 }
 
 function replySuccessorPush(
@@ -199,8 +222,9 @@ function replySuccessorPush(
   reader: string,
   clock: number,
   database: Database,
+  locality: BoardLocality = 'shared',
 ): boolean {
-  requireLocalBoardRead(process.env, database)
+  requireLocalBoardRead(process.env, database, locality)
   if (reply.kind !== 'reply' || reply.thread_root_record_id === null) return false
   const root = messageRows(database).find(
     (candidate) => candidate.record_id === reply.thread_root_record_id,
@@ -210,9 +234,9 @@ function replySuccessorPush(
     presence: presenceFacts(database, clock),
     reader,
     rootAuthorSession: root.author_session,
-    rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database),
+    rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database, locality),
     rootProject: root.author_project,
-    readerIsParticipant: hasNonSuccessorReceipt(reply.record_id, reader, database),
+    readerIsParticipant: hasNonSuccessorReceipt(reply.record_id, reader, database, locality),
     successorClaimed: Boolean(
       database
         .query(
@@ -255,15 +279,21 @@ export function deliverableTo(
   reader: string,
   clock: number,
   database = db(),
+  locality: BoardLocality = 'shared',
 ): boolean {
   return message.kind === 'reply'
-    ? hasReceipt(message.record_id, reader, database) ||
-        replySuccessorPush(message, reader, clock, database)
-    : addressed(message, reader, clock, database)
+    ? hasReceipt(message.record_id, reader, database, locality) ||
+        replySuccessorPush(message, reader, clock, database, locality)
+    : addressed(message, reader, clock, database, locality)
 }
 
-function render(message: MessageRow, worker = false, database = db()) {
-  const tags = messageTags(message.record_id, database)
+function render(
+  message: MessageRow,
+  worker = false,
+  database = db(),
+  locality: BoardLocality = 'shared',
+) {
+  const tags = messageTags(message.record_id, database, locality)
   if (message.kind === 'reply') {
     const root = messageRows(database).find(
       (candidate) => candidate.record_id === message.thread_root_record_id,
@@ -421,7 +451,7 @@ export function markRunNoticesDelivered(
   )
   if (!rows.length) return
   const database = writableDb()
-  requireLocalBoardWrite('notice delivery', process.env, database)
+  requireLocalBoardWrite('notice delivery', process.env, database, rowsLocality(rows))
   const deliveredAt = new Date(clock).toISOString()
   writeTransaction(() => {
     const stamp = database.query(
@@ -455,26 +485,27 @@ export function claimNotices(
   threadTitle?: string
 } & ReplySuccessorNoticeState)[] {
   const reader = boardReader(env)
+  const locality = rowsLocality(sourceRows)
   const rows = sourceRows.filter(
     (row) =>
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
-      deliverableTo(row, reader, clock, database) &&
-      (all || !wasDelivered(row.record_id, reader, database)),
+      deliverableTo(row, reader, clock, database, locality) &&
+      (all || !wasDelivered(row.record_id, reader, database, locality)),
   )
   return rows.map((row) => {
     const notice = {
-      ...render(row, false, database),
+      ...render(row, false, database, locality),
       ackRequired: row.ack_required === 1,
       ackDeadline: row.ack_deadline,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
     }
-    return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database)
+    return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database, locality)
       ? {
           ...notice,
           reportReplySuccessor: true,
-          successorHeld: holdsReplySuccessor(row.record_id, reader, database),
+          successorHeld: holdsReplySuccessor(row.record_id, reader, database, locality),
         }
       : notice
   })
