@@ -10,6 +10,7 @@ import {
   outboxHeldUnknownColumns,
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
+import { isSupersedableOutboxRow } from '../record/outbox-supersession.ts'
 import { type AddressedMonitorCondition, boundToChars } from './monitor-types.ts'
 
 export const QUARANTINE_ERROR_SUMMARY_CHARS = 256
@@ -29,6 +30,9 @@ function quarantinedParentRemedy(id: number): string {
 
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
   return quarantinedOutboxRows(database).map((row) => {
+    const automaticRetirement = isSupersedableOutboxRow(row.kind, row.payload)
+      ? `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise `
+      : ''
     const scoreWarning =
       row.kind === 'score' ? '; retrying it would overwrite a newer hosted verdict' : ''
     return {
@@ -37,7 +41,7 @@ export function outboxQuarantineConditions(database: Database): AddressedMonitor
       since: row.quarantinedAt,
       ageMs: null,
       detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
-      action: `a later ${row.kind} row for this identity that is pending or synced retires it automatically on the next ${PLATFORM_SLUG} record sync; otherwise run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text>${scoreWarning}; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
+      action: `${automaticRetirement}run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text>${scoreWarning}; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
       ownerSession: null,
     }
   })

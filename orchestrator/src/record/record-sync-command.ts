@@ -172,7 +172,7 @@ export async function syncCommand(
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
   if (result.retired) presentation.log(`retired ${result.retired} direct-write outbox rows`)
   if (result.superseded)
-    presentation.log(`retired ${result.superseded} superseded quarantined score rows`)
+    presentation.log(`retired ${result.superseded} superseded quarantined outbox rows`)
   if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
   logProjectRegister(result.projectRegister, presentation)
   logRecordCacheCounts(result, presentation)

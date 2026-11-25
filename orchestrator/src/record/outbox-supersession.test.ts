@@ -7,6 +7,7 @@ import { outboxRowWaitsForParent } from './outbox-dependency.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
   type OtherOutboxRow,
+  isSupersedableOutboxKind,
   retireSupersededQuarantinedOutboxRows,
   supersedingOutboxRow,
 } from './outbox-supersession.ts'
@@ -16,12 +17,18 @@ const EARLIER = '2026-09-15T00:59:00.000Z'
 const LATER = '2026-09-15T01:02:00.000Z'
 
 describe('score outbox supersession decision', () => {
-  const quarantined = { id: 7, kind: 'score' as const, rowId: 'run-record-id', scoredAt: STAMP }
+  const scorePayload = (scoredAt: string) => JSON.stringify({ scoredAt })
+  const quarantined = {
+    id: 7,
+    kind: 'score' as const,
+    rowId: 'run-record-id',
+    payload: scorePayload(STAMP),
+  }
   const candidate = (overrides: Partial<OtherOutboxRow> = {}): OtherOutboxRow => ({
     id: 8,
     kind: 'score',
     rowId: quarantined.rowId,
-    scoredAt: LATER,
+    payload: scorePayload(LATER),
     quarantined: false,
     retired: false,
     ...overrides,
@@ -36,7 +43,9 @@ describe('score outbox supersession decision', () => {
   })
 
   test('does not supersede with an earlier verdict despite a higher id', () => {
-    expect(supersedingOutboxRow(quarantined, [candidate({ scoredAt: EARLIER })])).toBeNull()
+    expect(
+      supersedingOutboxRow(quarantined, [candidate({ payload: scorePayload(EARLIER) })]),
+    ).toBeNull()
   })
 
   test('does not supersede with a retired row', () => {
@@ -46,7 +55,7 @@ describe('score outbox supersession decision', () => {
   test('names the greatest verdict time and breaks ties with the highest id', () => {
     expect(
       supersedingOutboxRow(quarantined, [
-        candidate({ id: 12, scoredAt: '2026-09-15T01:01:00.000Z' }),
+        candidate({ id: 12, payload: scorePayload('2026-09-15T01:01:00.000Z') }),
         candidate({ id: 9 }),
         candidate({ id: 11 }),
         candidate({ id: 10 }),
@@ -63,18 +72,23 @@ describe('score outbox supersession decision', () => {
   })
 
   test('equal verdict time supersedes only with a higher id', () => {
-    expect(supersedingOutboxRow(quarantined, [candidate({ id: 8, scoredAt: STAMP })])?.id).toBe(8)
-    expect(supersedingOutboxRow(quarantined, [candidate({ id: 6, scoredAt: STAMP })])).toBeNull()
+    expect(
+      supersedingOutboxRow(quarantined, [candidate({ id: 8, payload: scorePayload(STAMP) })])
+        ?.id,
+    ).toBe(8)
+    expect(
+      supersedingOutboxRow(quarantined, [candidate({ id: 6, payload: scorePayload(STAMP) })]),
+    ).toBeNull()
   })
 })
 
 describe('non-score outbox supersession decision', () => {
-  const quarantined = { id: 7, kind: 'run' as const, rowId: 'run-record-id', scoredAt: null }
+  const quarantined = { id: 7, kind: 'run' as const, rowId: 'run-record-id', payload: '{}' }
   const candidate = (overrides: Partial<OtherOutboxRow> = {}): OtherOutboxRow => ({
     id: 8,
     kind: 'run',
     rowId: quarantined.rowId,
-    scoredAt: null,
+    payload: '{}',
     quarantined: false,
     retired: false,
     ...overrides,
@@ -116,7 +130,7 @@ test('a kind without a comparator is not superseded', () => {
     id: 7,
     kind: 'question',
     rowId: 'question-record-id',
-    scoredAt: null,
+    payload: '{}',
     quarantined: true,
     retired: false,
   }
@@ -130,11 +144,15 @@ test('a kind without a comparator is not superseded', () => {
   expect(supersedingOutboxRow(quarantined, [later])).toBeNull()
 })
 
-const OUTBOX_KINDS = Object.keys(
-  OUTBOX_PAYLOAD_CONTRACTS,
-) as (keyof typeof OUTBOX_PAYLOAD_CONTRACTS)[]
+const OUTBOX_KINDS = (
+  Object.keys(OUTBOX_PAYLOAD_CONTRACTS) as (keyof typeof OUTBOX_PAYLOAD_CONTRACTS)[]
+).filter(isSupersedableOutboxKind)
 
-function insertOutboxRows(kind: string) {
+function insertOutboxRows(
+  kind: string,
+  quarantinedPayload = JSON.stringify({ scoredAt: STAMP }),
+  laterPayload = JSON.stringify({ scoredAt: LATER }),
+) {
   const database = migratedTestDatabase()
   const insert = database.query(
     `INSERT INTO outbox
@@ -146,7 +164,7 @@ function insertOutboxRows(kind: string) {
     7,
     kind,
     'run-record-id',
-    JSON.stringify({ scoredAt: STAMP }),
+    quarantinedPayload,
     STAMP,
     null,
     STAMP,
@@ -158,7 +176,7 @@ function insertOutboxRows(kind: string) {
     8,
     kind,
     'run-record-id',
-    JSON.stringify({ scoredAt: LATER }),
+    laterPayload,
     LATER,
     LATER,
     null,
@@ -167,33 +185,6 @@ function insertOutboxRows(kind: string) {
   )
   return database
 }
-
-test('sync retires and audits a quarantined score superseded by a later score', async () => {
-  const database = insertOutboxRows('score')
-  const result = await syncRecord(options(database, fakePostgres()))
-
-  expect(result.retired).toBeUndefined()
-  expect(result.superseded).toBe(1)
-  expect(
-    database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get(),
-  ).toEqual({
-    retired_at: STAMP,
-    retirement_reason: 'superseded by score outbox row 8',
-  })
-  expect(
-    database
-      .query(
-        `SELECT disposition,reason,actor_session
-           FROM outbox_quarantine_audit WHERE outbox_id=7 AND disposition='retire'`,
-      )
-      .get(),
-  ).toEqual({
-    disposition: 'retire',
-    reason: 'superseded by score outbox row 8',
-    actor_session: null,
-  })
-  database.close()
-})
 
 test.each(OUTBOX_KINDS)(
   'sync retires and audits a quarantined %s row superseded by a later row',
@@ -224,6 +215,49 @@ test.each(OUTBOX_KINDS)(
     database.close()
   },
 )
+
+test('sync does not retire a non-supersedable contract kind', async () => {
+  const database = insertOutboxRows('brief_injection')
+  const result = await syncRecord(options(database, fakePostgres()))
+
+  expect(result.superseded).toBeUndefined()
+  expect(database.query('SELECT retired_at FROM outbox WHERE id=7').get()).toEqual({
+    retired_at: null,
+  })
+  expect(
+    database
+      .query("SELECT count(*) AS rows FROM outbox_quarantine_audit WHERE outbox_id=7 AND disposition='retire'")
+      .get(),
+  ).toEqual({ rows: 0 })
+  database.close()
+})
+
+test('sync does not retire a run row carrying an evidence-unvoid action', async () => {
+  const database = insertOutboxRows(
+    'run',
+    JSON.stringify({ evidenceUnvoid: { note: 'mistaken void' } }),
+    '{}',
+  )
+  const result = await syncRecord(options(database, fakePostgres()))
+
+  expect(result.superseded).toBeUndefined()
+  expect(database.query('SELECT retired_at FROM outbox WHERE id=7').get()).toEqual({
+    retired_at: null,
+  })
+  database.close()
+})
+
+test('sync retires the same run pair when the quarantined row carries no action', async () => {
+  const database = insertOutboxRows('run', '{}', '{}')
+  const result = await syncRecord(options(database, fakePostgres()))
+
+  expect(result.superseded).toBe(1)
+  expect(database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=7').get()).toEqual({
+    retired_at: STAMP,
+    retirement_reason: 'superseded by run outbox row 8',
+  })
+  database.close()
+})
 
 test('a superseded parent defers its child on the later live row instead of blocking it', () => {
   const database = migratedTestDatabase()

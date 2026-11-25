@@ -15,12 +15,15 @@ export type QuarantinedOutboxRow = {
   id: number
   kind: string
   recordId: string
+  payload: string
   error: string
   attempts: number
   quarantinedAt: string
 }
 
-export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
+export type QuarantinedOutboxRowSummary = Omit<QuarantinedOutboxRow, 'payload'>
+
+export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,payload,quarantine_reason,attempts,quarantined_at
   FROM outbox WHERE ${QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL} ORDER BY id`
 
 type OutboxIdentity = {
@@ -285,6 +288,7 @@ export function quarantinedOutboxRows(database: Database = db()): QuarantinedOut
         id: number
         kind: string
         row_id: string
+        payload: string
         quarantine_reason: string
         attempts: number
         quarantined_at: string
@@ -296,8 +300,17 @@ export function quarantinedOutboxRows(database: Database = db()): QuarantinedOut
       id: row.id,
       kind: row.kind,
       recordId: row.row_id,
+      payload: row.payload,
       error: row.quarantine_reason,
       attempts: row.attempts,
       quarantinedAt: row.quarantined_at,
     }))
+}
+
+/** Removes the internal payload used to choose a quarantine remedy from public status output. */
+export function quarantinedOutboxRowSummary(
+  row: QuarantinedOutboxRow,
+): QuarantinedOutboxRowSummary {
+  const { payload: _payload, ...summary } = row
+  return summary
 }

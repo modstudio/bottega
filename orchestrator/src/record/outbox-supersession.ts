@@ -10,7 +10,7 @@ export type QuarantinedOutboxRow = {
   id: number
   kind: string
   rowId: string
-  scoredAt: string | null
+  payload: string
 }
 
 export type OtherOutboxRow = QuarantinedOutboxRow & {
@@ -18,56 +18,113 @@ export type OtherOutboxRow = QuarantinedOutboxRow & {
   retired: boolean
 }
 
-type OutboxRowComparator = (left: QuarantinedOutboxRow, right: QuarantinedOutboxRow) => number
+type ContractOutboxKind = keyof typeof OUTBOX_PAYLOAD_CONTRACTS
+type ParsedPayload = Record<string, unknown>
+type OrderingKey = number | string
+type OutboxSupersessionDefinition = {
+  orderingKey: (row: QuarantinedOutboxRow, payload: ParsedPayload | null) => OrderingKey | null
+  compare: (
+    leftKey: OrderingKey,
+    rightKey: OrderingKey,
+    left: QuarantinedOutboxRow,
+    right: QuarantinedOutboxRow,
+  ) => number
+  cannotBeSuperseded: (payload: ParsedPayload) => boolean
+}
 
-const byId: OutboxRowComparator = (left, right) => left.id - right.id
-const byScoreTime: OutboxRowComparator = (left, right) => {
-  if (left.scoredAt === null) return -1
-  if (right.scoredAt === null) return 1
-  return left.scoredAt.localeCompare(right.scoredAt) || byId(left, right)
+function parsedPayload(payload: string): ParsedPayload | null {
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as ParsedPayload)
+      : null
+  } catch {
+    return null
+  }
+}
+
+const byId: OutboxSupersessionDefinition = {
+  orderingKey: (row, payload) => (payload === null ? null : row.id),
+  compare: (leftKey, rightKey) => (leftKey as number) - (rightKey as number),
+  cannotBeSuperseded: () => false,
 }
 
 const OUTBOX_ROW_COMPARATORS = {
-  run: byId,
-  score: byScoreTime,
-  review: byId,
-  review_lens: byId,
-  review_finding: byId,
-  review_read: byId,
-  review_funnel_decision: byId,
+  run: {
+    ...byId,
+    cannotBeSuperseded: (payload) => payload.evidenceUnvoid != null,
+  },
   release: byId,
+  review: byId,
+  review_read: byId,
   landing: byId,
-  landing_override: byId,
   landing_review_carry: byId,
-  landing_triage_snapshot: byId,
-  pull_request_ci: byId,
-  contention: byId,
-  test_flake: byId,
   branch_disposal: byId,
-  brief_injection: byId,
-  context_review: byId,
-  hook_emission: byId,
-} as const satisfies Record<keyof typeof OUTBOX_PAYLOAD_CONTRACTS, OutboxRowComparator>
+  pull_request_ci: byId,
+  score: {
+    // A retry can refresh a lower-id score row in place to a newer verdict, so verdict time wins.
+    orderingKey: (_row, payload) =>
+      payload !== null && typeof payload.scoredAt === 'string' ? payload.scoredAt : null,
+    compare: (leftKey, rightKey, left, right) =>
+      (leftKey as string).localeCompare(rightKey as string) || left.id - right.id,
+    cannotBeSuperseded: () => false,
+  },
+} as const satisfies Partial<Record<ContractOutboxKind, OutboxSupersessionDefinition>>
+
+type SupersedableOutboxKind = keyof typeof OUTBOX_ROW_COMPARATORS
+
+function supersessionDefinition(kind: string): OutboxSupersessionDefinition | null {
+  if (!Object.hasOwn(OUTBOX_ROW_COMPARATORS, kind)) return null
+  return OUTBOX_ROW_COMPARATORS[kind as SupersedableOutboxKind]
+}
+
+export function isSupersedableOutboxKind(kind: string): kind is SupersedableOutboxKind {
+  return supersessionDefinition(kind) !== null
+}
+
+/** Whether this stored quarantined row may use the automatic supersession remedy. */
+export function isSupersedableOutboxRow(kind: string, payload: string): boolean {
+  const definition = supersessionDefinition(kind)
+  const parsed = parsedPayload(payload)
+  if (definition === null || parsed === null || definition.cannotBeSuperseded(parsed)) return false
+  return definition.orderingKey({ id: 0, kind, rowId: '', payload }, parsed) !== null
+}
 
 /** Names the latest row that safely supersedes a quarantined whole-state mutation. */
 export function supersedingOutboxRow(
   quarantined: QuarantinedOutboxRow,
   others: readonly OtherOutboxRow[],
 ): OtherOutboxRow | null {
-  if (quarantined.kind === 'score' && quarantined.scoredAt === null) return null
-  if (!Object.hasOwn(OUTBOX_ROW_COMPARATORS, quarantined.kind)) return null
-  const compare = OUTBOX_ROW_COMPARATORS[quarantined.kind as keyof typeof OUTBOX_ROW_COMPARATORS]
+  const definition = supersessionDefinition(quarantined.kind)
+  const quarantinedPayload = parsedPayload(quarantined.payload)
+  if (
+    definition === null ||
+    quarantinedPayload === null ||
+    definition.cannotBeSuperseded(quarantinedPayload)
+  )
+    return null
+  const quarantinedKey = definition.orderingKey(quarantined, quarantinedPayload)
+  if (quarantinedKey === null) return null
+
   let superseding: OtherOutboxRow | null = null
+  let supersedingKey: OrderingKey | null = null
   for (const row of others) {
     if (
-      row.kind === quarantined.kind &&
-      row.rowId === quarantined.rowId &&
-      !row.retired &&
-      !row.quarantined &&
-      compare(row, quarantined) > 0 &&
-      (superseding === null || compare(row, superseding) > 0)
+      row.kind !== quarantined.kind ||
+      row.rowId !== quarantined.rowId ||
+      row.retired ||
+      row.quarantined
+    )
+      continue
+    const candidateKey = definition.orderingKey(row, parsedPayload(row.payload))
+    if (
+      candidateKey !== null &&
+      definition.compare(candidateKey, quarantinedKey, row, quarantined) > 0 &&
+      (superseding === null ||
+        definition.compare(candidateKey, supersedingKey as OrderingKey, row, superseding) > 0)
     ) {
       superseding = row
+      supersedingKey = candidateKey
     }
   }
   return superseding
@@ -87,17 +144,6 @@ export const QUARANTINED_OUTBOX_ROWS_FOR_SUPERSESSION_SQL = `SELECT id,kind,row_
  WHERE ${QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL}
  ORDER BY id`
 
-function scoredAt(payload: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(payload)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    const value = (parsed as Record<string, unknown>).scoredAt
-    return typeof value === 'string' ? value : null
-  } catch {
-    return null
-  }
-}
-
 /** Applies supersession through the ordinary audited quarantine retirement path. */
 export function retireSupersededQuarantinedOutboxRows(database: Database, at = nowIso()): number {
   const quarantined = database
@@ -105,6 +151,7 @@ export function retireSupersededQuarantinedOutboxRows(database: Database, at = n
     .all()
   let retired = 0
   for (const row of quarantined) {
+    if (!isSupersedableOutboxRow(row.kind, row.payload)) continue
     const related = database
       .query<StoredOutboxRow, [string, string]>(
         `SELECT id,kind,row_id,payload,quarantined_at,retired_at
@@ -114,17 +161,12 @@ export function retireSupersededQuarantinedOutboxRows(database: Database, at = n
       )
       .all(row.kind, row.row_id)
     const superseding = supersedingOutboxRow(
-      {
-        id: row.id,
-        kind: row.kind,
-        rowId: row.row_id,
-        scoredAt: row.kind === 'score' ? scoredAt(row.payload) : null,
-      },
+      { id: row.id, kind: row.kind, rowId: row.row_id, payload: row.payload },
       related.map((candidate) => ({
         id: candidate.id,
         kind: candidate.kind,
         rowId: candidate.row_id,
-        scoredAt: candidate.kind === 'score' ? scoredAt(candidate.payload) : null,
+        payload: candidate.payload,
         quarantined: candidate.quarantined_at !== null,
         retired: candidate.retired_at !== null,
       })),

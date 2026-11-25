@@ -206,8 +206,10 @@ export async function outboxEntries(): Promise<Record<string, unknown>[]> {
   await registerFrontDoorRuntime()
   const { ensureDatabase, db } = await import('../database/db.ts')
   ensureDatabase()
-  const { quarantinedOutboxRows } = await import('../record/outbox-quarantine.ts')
-  return quarantinedOutboxRows(db())
+  const { quarantinedOutboxRows, quarantinedOutboxRowSummary } = await import(
+    '../record/outbox-quarantine.ts'
+  )
+  return quarantinedOutboxRows(db()).map(quarantinedOutboxRowSummary)
 }
 
 /** Structured owner output for the product front door's composite storage report. */

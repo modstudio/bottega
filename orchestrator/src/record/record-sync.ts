@@ -37,6 +37,7 @@ import {
 } from './outbox-dependency.ts'
 import {
   quarantinedOutboxRows,
+  quarantinedOutboxRowSummary,
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
@@ -632,7 +633,7 @@ function completedSyncResult(input: {
       ? { projectRegister: input.cachePull.projectRegister }
       : {}),
     ...input.cachePull,
-    quarantined: quarantinedOutboxRows(input.local),
+    quarantined: quarantinedOutboxRows(input.local).map(quarantinedOutboxRowSummary),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.historyUploadLines?.length ? { historyUploadLines: input.historyUploadLines } : {}),
