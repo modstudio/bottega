@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -16,6 +17,7 @@ import {
 import { installRunAnswerEnvironment } from '../../test/fixtures/run-answer-environment.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { readMessageText } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
@@ -894,6 +896,50 @@ describe('retry command', () => {
     await expect(retry(id)).rejects.toThrow(
       `run ${id} is a lifecycle row, not agent work; it cannot be retried. No action is needed because lifecycle rows are evidence-excluded`,
     )
+  })
+
+  test('a writing retry preserves the findings continuation flag', async () => {
+    const repository = mkdtempSync(join(tmpdir(), 'findings-retry-'))
+    try {
+      const git = (...args: string[]) => {
+        const result = spawnFixtureGitSync(args, { cwd: repository })
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+      }
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'fixture@example.com')
+      git('config', 'user.name', 'Fixture')
+      writeFileSync(join(repository, 'file.txt'), 'base\n')
+      git('add', 'file.txt')
+      git('commit', '-m', 'base')
+      git('checkout', '-b', 'DEV-1-findings')
+      upsertProject({
+        recordId: newRecordId(),
+        name: 'continuation-fixture',
+        path: repository,
+      })
+      const id = failed('implement')
+      db()
+        .query(
+          `UPDATE run SET vendor_session=?,continued_with_findings=1,cwd=?,worktree=?,worktree_source='git',branch=?,base_commit=?
+           WHERE record_id=?`,
+        )
+        .run(
+          'findings-session',
+          repository,
+          repository,
+          'DEV-1-findings',
+          gitContext(repository, 'rev-parse', '--verify', 'HEAD'),
+          id,
+        )
+
+      const childId = await retry(id)
+
+      expect(
+        db().query('SELECT continued_with_findings FROM run WHERE record_id=?').get(childId),
+      ).toEqual({ continued_with_findings: 1 })
+    } finally {
+      rmSync(repository, { recursive: true, force: true })
+    }
   })
 
   test('bridge-only identity cannot retry an unowned read-only run', async () => {
