@@ -7,11 +7,13 @@ import {
 import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from './hosted-local-sql-allowlist.ts'
 import { extractSqlFromSource } from './hosted-sql-schema.ts'
 import { STATE_CLASSES } from './identity-state-classes.ts'
+import { isProductionTypeScriptFile } from './typescript-source-files.ts'
 
 export function hostedLocalBoardHeadFailures(input: {
   file: string
   sourceText: string
 }): string[] {
+  if (!isProductionTypeScriptFile(input.file)) return []
   const tables = STATE_CLASSES.flatMap((item) =>
     'table' in item &&
     item.store === 'orchestrator' &&

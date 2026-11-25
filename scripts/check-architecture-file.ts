@@ -16,6 +16,7 @@ import {
   isDeclaredHubUiSourceLocation,
 } from './architecture-ui-layers.ts'
 import { hostedLocalBoardHeadFailures } from './hosted-local-board-head-check.ts'
+import { isProductionTypeScriptFile } from './typescript-source-files.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const target = process.argv[2]
@@ -27,6 +28,7 @@ const pathOnly = process.argv.includes('--path-only')
 
 // This must exceed the command's cleanup margin so this process can remove cruise artifacts.
 const ARCHITECTURE_CRUISE_CLEANUP_MARGIN_MS = 1_750
+let boardHeadUncheckedReason: string | undefined
 if (!target || !original || deadlineArgument === -1 || !Number.isFinite(deadlineMs)) {
   console.error(
     'usage: bun scripts/check-architecture-file.ts <candidate> [original] [checkout-root] --deadline-ms <epoch-ms>',
@@ -45,7 +47,7 @@ if (hubWebPlacementViolation) {
   process.exit(0)
 }
 
-if (/^orchestrator\/src\/.*\.[cm]?ts$/.test(original)) {
+if (original.startsWith('orchestrator/src/') && isProductionTypeScriptFile(original)) {
   try {
     const boardHeadFailures = hostedLocalBoardHeadFailures({
       file: original,
@@ -64,13 +66,7 @@ if (/^orchestrator\/src\/.*\.[cm]?ts$/.test(original)) {
       process.exit(0)
     }
   } catch (error) {
-    console.log(
-      JSON.stringify({
-        status: 'unchecked',
-        reason: `local board SQL head check could not decide: ${error instanceof Error ? error.message : String(error)}`,
-      }),
-    )
-    process.exit(0)
+    boardHeadUncheckedReason = `local board SQL head check could not decide: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -102,7 +98,13 @@ if (!isDeclaredHubUiSourceLocation(original)) {
 }
 
 if (pathOnly) {
-  console.log(JSON.stringify({ status: 'ok' }))
+  console.log(
+    JSON.stringify(
+      boardHeadUncheckedReason
+        ? { status: 'unchecked', reason: boardHeadUncheckedReason }
+        : { status: 'ok' },
+    ),
+  )
   process.exit(0)
 }
 
@@ -111,7 +113,12 @@ if (cruiseTimeoutMs <= 0) {
   console.log(
     JSON.stringify({
       status: 'unchecked',
-      reason: 'architecture cruise deadline leaves no time before the cleanup margin',
+      reason: [
+        boardHeadUncheckedReason,
+        'architecture cruise deadline leaves no time before the cleanup margin',
+      ]
+        .filter(Boolean)
+        .join('; '),
     }),
   )
   process.exit(0)
@@ -127,7 +134,12 @@ const cruise = await runArchitectureCruise({
 })
 if (cruise.timedOut) {
   console.log(
-    JSON.stringify({ status: 'unchecked', reason: 'architecture cruise reached its deadline' }),
+    JSON.stringify({
+      status: 'unchecked',
+      reason: [boardHeadUncheckedReason, 'architecture cruise reached its deadline']
+        .filter(Boolean)
+        .join('; '),
+    }),
   )
   process.exit(0)
 }
@@ -154,6 +166,8 @@ console.log(
           status: 'refused',
           findings: findings.map(({ rule, to }) => ({ rule: rule.name, dependency: to })),
         }
-      : { status: 'ok' },
+      : boardHeadUncheckedReason
+        ? { status: 'unchecked', reason: boardHeadUncheckedReason }
+        : { status: 'ok' },
   ),
 )

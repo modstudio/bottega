@@ -576,3 +576,14 @@ test('write-time board head judgment refuses an unheaded site and accepts a head
     }),
   ).toEqual([])
 })
+
+test('write-time board head judgment does not judge test-file SQL fixtures', () => {
+  expect(
+    hostedLocalBoardHeadFailures({
+      file: 'orchestrator/src/board/candidate.test.ts',
+      sourceText: `function fixture(database) {
+        database.query(\`INSERT INTO board_message (record_id) VALUES ('fixture')\`)
+      }`,
+    }),
+  ).toEqual([])
+})

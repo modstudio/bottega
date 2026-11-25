@@ -7,11 +7,14 @@ function typescriptFiles(directory: string, includeTests: boolean): string[] {
     if (entry.name === 'node_modules') continue
     const path = resolve(directory, entry.name)
     if (entry.isDirectory()) files.push(...typescriptFiles(path, includeTests))
-    else if (entry.name.endsWith('.ts') && (includeTests || !entry.name.endsWith('.test.ts')))
+    else if (includeTests ? entry.name.endsWith('.ts') : isProductionTypeScriptFile(entry.name))
       files.push(path)
   }
   return files
 }
+
+export const isProductionTypeScriptFile = (file: string): boolean =>
+  file.endsWith('.ts') && !file.endsWith('.test.ts')
 
 export const productionTypeScriptFiles = (directory: string): string[] =>
   typescriptFiles(directory, false)
