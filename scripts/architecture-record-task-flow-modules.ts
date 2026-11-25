@@ -60,4 +60,9 @@ export const recordTaskFlowModules: RecordModule[] = [
     './record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/record/record-history-upload-state.ts', ['bun:sqlite']),
+  module('orchestrator/src/record/record-history-parity.ts', [
+    '../../../shared/brand.ts',
+    './record-history-upload.ts',
+    './record-hosted-row-presence.ts',
+  ]),
 ]

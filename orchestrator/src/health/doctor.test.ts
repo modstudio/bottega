@@ -10,17 +10,16 @@ import { mainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
-  activeSpaceDoctorDiagnosis,
   affectedSelectorDoctorFinding,
   canonEvalDoctorDecision,
   doctorAcpStatus,
   doctorRegisterBranchProblems,
   registeredMainCheckoutDiagnosis,
-  reportActiveSpaceDoctor,
   reportCheckoutRegister,
   sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+import { activeSpaceDoctorDiagnosis, reportActiveSpaceDoctor } from './doctor-record.ts'
 
 test('sandbox doctor prints each readiness fix on its own indented line', () => {
   expect(

@@ -48,9 +48,6 @@ import {
   resolvedWorktreeTool,
   undeclaredCommitHooks,
 } from '../project/projects.ts'
-import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
-import { recordMembershipsFromIdentity } from '../record/record-space.ts'
 import {
   classifiedDockerResources,
   dockerRemovalCommand,
@@ -71,6 +68,7 @@ import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
+import { reportRecordDoctor } from './doctor-record.ts'
 import type { DoctorReporter } from './doctor-reporter.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
@@ -97,35 +95,6 @@ type DoctorPresentation = DoctorReporter & {
   jobs(): string[]
   acpRuntimeGaps(): string | null
   retrievalCheck(): Promise<RetrievalCheckResult>
-}
-
-export async function activeSpaceDoctorDiagnosis(
-  whoami: () => Promise<Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>>> = () =>
-    recordApiClient().whoami(),
-): Promise<{ line: string; failed: boolean }> {
-  try {
-    const decision = activeSpaceInvariant(recordMembershipsFromIdentity(await whoami()))
-    if (!decision.holds) return { line: `active space   FAIL — ${decision.message}`, failed: true }
-    return {
-      line: `active space   pass — ${decision.active?.slug ?? decision.active?.spaceId ?? 'no space'}`,
-      failed: false,
-    }
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error)
-    return {
-      line: `active space   check could not run — ${cause === RECORD_SIGN_IN_REMEDY ? `no one is signed in; ${RECORD_SIGN_IN_REMEDY}` : cause}`,
-      failed: false,
-    }
-  }
-}
-
-export async function reportActiveSpaceDoctor(
-  presentation: DoctorReporter,
-  diagnose: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
-): Promise<void> {
-  const diagnosis = await diagnose()
-  presentation.log(diagnosis.line)
-  if (diagnosis.failed) presentation.exitCode(1)
 }
 
 type RegisteredCheckout = {
@@ -788,7 +757,7 @@ export async function doctorCommand(
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
   await reportInstallationStatus(presentation, machineLevel)
-  await reportActiveSpaceDoctor(presentation)
+  await reportRecordDoctor(presentation)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)
