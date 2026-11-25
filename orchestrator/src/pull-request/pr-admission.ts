@@ -56,6 +56,8 @@ import {
   type MergeabilityFacts,
 } from './mergeability-decision.ts'
 import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
+import { pullRequestReleaseDecisionAtHead } from './pr-release-admission.ts'
+import { pullRequestReleaseNotice } from './pr-release-notice.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
 
@@ -722,6 +724,17 @@ function createPullRequestAdmittedChange(
     return checkedAdmission
   }, database)
 
+  let releaseDecision: ReturnType<typeof pullRequestReleaseDecisionAtHead>
+  try {
+    releaseDecision = pullRequestReleaseDecisionAtHead(change.project, cwd, {
+      headCommit: change.tip,
+      baseBranch: trunk,
+    })
+  } catch (cause) {
+    const error = cause instanceof Error ? cause.message : String(cause)
+    releaseDecision = { decided: false, required: [], rungs: [], error }
+  }
+
   let createResult: PullRequestCreateResult | null = null
   if (!existing) {
     pushPullRequestBranch(cwd, change.branch)
@@ -759,8 +772,12 @@ function createPullRequestAdmittedChange(
   if (outcome.finalizePullRequestNumber !== null) {
     finalizeTriageIntent(change.project.name, change.branch, outcome.finalizePullRequestNumber)
   }
+  const releaseNotice = pullRequestReleaseNotice({
+    decision: releaseDecision,
+    target: outcome.finalizePullRequestNumber?.toString() ?? null,
+  })
   return {
-    output: outcome.output,
+    output: [outcome.output, releaseNotice].filter(Boolean).join('\n'),
     overrideId: checked.overrideId,
   }
 }
