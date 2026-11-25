@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const DIRECTORIES = ['shared', 'hub/test', 'orchestrator/test'] as const
-const ENVIRONMENT_RETURN = /if\s*\(\s*!?process\.env\.[A-Za-z_$][\w$]*[^)\n]*\)\s*return\b/
+const ENVIRONMENT_RETURN =
+  /\bif\s*\([^\n)]*(?:(?:process|Bun)\.env(?:\.[A-Za-z_$][\w$]*|\[['"][A-Za-z_$][\w$]*['"]\]))[^\n)]*\)\s*(?:\{\s*)?return\b/
 const REMEDY =
   'a test-store guard must refuse by store identity, never by environment, and a production opener decides in its own caller when the test question applies'
 
@@ -12,19 +13,24 @@ function guardedTestInfrastructure(path: string): boolean {
   if (path.endsWith('.test.ts')) return false
   return (
     /^shared\/test-[^/]+\.ts$/.test(path) ||
-    /^hub\/test\/[^/]+\.ts$/.test(path) ||
-    /^orchestrator\/test\/[^/]+\.ts$/.test(path) ||
+    /^hub\/test\/.+\.ts$/.test(path) ||
+    /^orchestrator\/test\/.+\.ts$/.test(path) ||
     path === 'scripts/test-preload.ts'
   )
+}
+
+function pathsBelow(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name)
+    return entry.isDirectory() ? pathsBelow(path) : [path]
+  })
 }
 
 function sourcePaths(): string[] {
   const paths = DIRECTORIES.flatMap((directory) => {
     const absolute = join(ROOT, directory)
     if (!existsSync(absolute)) return []
-    return readdirSync(absolute, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => relative(ROOT, join(absolute, entry.name)))
+    return pathsBelow(absolute).map((path) => relative(ROOT, path))
   })
   paths.push('scripts/test-preload.ts')
   return paths.filter(guardedTestInfrastructure).sort()
@@ -33,7 +39,7 @@ function sourcePaths(): string[] {
 type DestructiveTestGuardFinding = { file: string; line: number }
 
 /** Find test-store guards whose refusal can be disabled by an environment variable. */
-function destructiveTestGuardFindings(
+export function destructiveTestGuardFindings(
   files: Readonly<Record<string, string>>,
 ): DestructiveTestGuardFinding[] {
   return Object.entries(files)

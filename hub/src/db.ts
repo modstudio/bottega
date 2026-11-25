@@ -75,11 +75,14 @@ export const DB_PATH = livePath
 export const NON_INSTALLATION_STORE_DELIVERY_REASON =
   'hosted delivery is off because this store is not the installation store'
 
+/** Decide whether a production opener must ask the test-store safety question. */
+export function testStoreQuestionApplies(nodeEnvironment: string | undefined): boolean {
+  return nodeEnvironment === 'test'
+}
+
 /** Apply the test-store question only when a production opener is running under the test runtime. */
-export function assertTestHubDatabasePathForTestProcess(
-  assertSafe: () => void = assertTestHubDatabasePath,
-): void {
-  if (process.env.NODE_ENV === 'test') assertSafe()
+export function assertTestHubDatabasePathForTestProcess(): void {
+  if (testStoreQuestionApplies(process.env.NODE_ENV)) assertTestHubDatabasePath()
 }
 
 /** Decide hosted delivery from already-resolved store identities. */
