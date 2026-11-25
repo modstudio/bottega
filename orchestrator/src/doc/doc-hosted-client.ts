@@ -1,6 +1,7 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
+import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { db } from '../database/db.ts'
@@ -68,12 +69,13 @@ export async function hostedDocClient(
   scope: string,
   subject: string | null,
   suppliedOwner?: RecordWriteOwner,
+  database?: Database,
 ): Promise<HostedDocClient> {
   const client = recordApiClient()
   const projectName = docWriteProjectName(scope, subject)
-  const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
+  const projectId = projectName ? (projectRowByName(projectName, database)?.recordId ?? null) : null
   const owner = suppliedOwner ?? docOwner(projectName)
-  const seededSpaceId = cachedProjectSpace(db(), projectName)
+  const seededSpaceId = cachedProjectSpace(database ?? db(), projectName)
   const bindDestination = (destination: { destinationSpaceId: string }): HostedDocClient => ({
     listDocs: (query) =>
       client.listDocs(query, query.acrossReadableSpaces ? undefined : destination),
@@ -99,10 +101,12 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   })
-  if (!seededSpaceId) return bindDestination(await recordWriteDestination(client, owner))
+  if (!seededSpaceId)
+    return bindDestination(await recordWriteDestination(client, owner, database))
 
   let destinationRead: ReturnType<typeof recordWriteDestination> | undefined
-  const confirmedDestination = () => (destinationRead ??= recordWriteDestination(client, owner))
+  const confirmedDestination = () =>
+    (destinationRead ??= recordWriteDestination(client, owner, database))
   const confirmedClient = async () => bindDestination(await confirmedDestination())
   return {
     listDocs: async (query) => {

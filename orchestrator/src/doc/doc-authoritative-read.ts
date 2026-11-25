@@ -180,8 +180,13 @@ function docFromHosted(row: HostedRow): Doc {
   }
 }
 
-async function hostedRows(filters: DocListFilters): Promise<Doc[]> {
-  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
+async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
+  const client = await hostedDocClient(
+    filters.scope ?? 'global',
+    filters.subject ?? null,
+    undefined,
+    database,
+  )
   const page = await listAllHostedDocs(client.listDocs, {
     scope: filters.scope,
     subject: filters.subject,
@@ -289,7 +294,7 @@ export function readDocs(filters: DocListFilters = {}, database?: Database): Pro
   const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
   const actions = {
     local: () => listDocsStore(resolvedFilters(localFilters), database),
-    hosted: () => withReadRemedy(() => hostedRows(filters)),
+    hosted: () => withReadRemedy(() => hostedRows(filters, database)),
   }
   return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
 }

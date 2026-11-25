@@ -24,7 +24,7 @@ import {
 } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
 import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
-import { DB_PATH, withSynchronousReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import { DB_PATH, withReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { migrationRefusal } from '../orchestrator/src/database/migrations.ts'
 import {
   type GateFacts,
@@ -183,7 +183,7 @@ async function checkCanonDrift(
 ): Promise<HydrationDrift[]> {
   if (facts) return canonDriftFromInput(checkout, readCanonGateFactsInput(checkout, facts))
   try {
-    const input = await withSynchronousReadOnlyDatabase(
+    const input = await withReadOnlyDatabase(
       (database) => readCanonGateInput(checkout, database),
       databasePath,
     )
