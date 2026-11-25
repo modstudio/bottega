@@ -3,6 +3,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { type BoardLocality, boardMode } from './board-mode.ts'
 
+export type { BoardLocality } from './board-mode.ts'
+
 export function requireLocalBoardRead(
   environment: Record<string, string | undefined> = process.env,
   database: Database = db(),

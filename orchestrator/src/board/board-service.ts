@@ -24,6 +24,7 @@ import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-rea
 import { type BoardLocality, boardHasAdoptedHosted, boardMode } from './board-mode.ts'
 import {
   architectIdentity,
+  boardAudienceLocality,
   messageCanBeReaped,
   needsAckEscalation,
   OPERATOR_READER,
@@ -76,15 +77,24 @@ export function localBoardRows(database: Database = db()): MessageRow[] {
   return boardHasAdoptedHosted(database) ? machineMessageRows(database) : messageRows(database)
 }
 
+export function localBoardRowsFor(
+  recordId: string,
+  source: 'local' | 'hosted',
+  database: Database = db(),
+): [MessageRow[], BoardLocality] {
+  if (source === 'hosted') return [[], 'shared']
+  const rows = localBoardRows(database)
+  const row = rows.find((candidate) => candidate.record_id === recordId)
+  return [rows, row?.audience ? boardAudienceLocality(row.audience) : 'shared']
+}
+
 function boardReader(env: Environment = process.env): string {
   const actor = boardActor(env)
   return actor.session ?? OPERATOR_READER
 }
 
 function rowLocality(row: MessageRow): BoardLocality {
-  return row.audience && parseAudience(row.audience).kind === 'machine'
-    ? 'machine-audience'
-    : 'shared'
+  return row.audience ? boardAudienceLocality(row.audience) : 'shared'
 }
 
 function rowsLocality(rows: MessageRow[]): BoardLocality {
@@ -159,12 +169,7 @@ export function postNotice(
   cwd = process.cwd(),
 ): PostNoticeResult {
   const database = writableDb()
-  requireLocalBoardWrite(
-    'notice post',
-    env,
-    database,
-    parseAudience(input.audience).kind === 'machine' ? 'machine-audience' : 'shared',
-  )
+  requireLocalBoardWrite('notice post', env, database, boardAudienceLocality(input.audience))
   return writeTransaction(() => postNoticeInTransaction(input, env, clock, cwd, database), database)
 }
 

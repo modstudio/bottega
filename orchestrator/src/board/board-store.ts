@@ -19,8 +19,7 @@ import { projectAt, projects } from '../project/projects.ts'
 import { claimBoundToOpenCursor } from './board-claim-cursor-binding.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
-import { requireLocalBoardRead } from './board-local-read-guard.ts'
-import type { BoardLocality } from './board-mode.ts'
+import { type BoardLocality, requireLocalBoardRead } from './board-local-read-guard.ts'
 import {
   type Audience,
   acknowledgementRefusal,

@@ -79,6 +79,17 @@ export function parseAudience(expression: string): Audience {
   }
 }
 
+export function boardAudienceLocality(audience: string) {
+  return parseAudience(audience).kind === 'machine'
+    ? ('machine-audience' as const)
+    : ('shared' as const)
+}
+
+export function localBoardAudienceRefusal(audience: Audience): string | null {
+  if (audience.kind !== 'spaces') return null
+  return 'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces'
+}
+
 /** The controlled topic that marks a notice about the platform every project depends on. */
 const PLATFORM_NOTICE_TOPIC = 'platform'
 

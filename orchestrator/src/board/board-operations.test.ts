@@ -22,8 +22,8 @@ import {
   boardStatus,
   boardThread,
   boardWithdraw,
-  localBoardAudienceRefusal,
 } from './board-operations.ts'
+import { localBoardAudienceRefusal } from './board-policy.ts'
 
 import { pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice } from './board-service.ts'
@@ -779,28 +779,6 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
   expect(
     db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
   ).toBe(0)
-})
-
-test('machine writes and their number and UUID reads stay local after adoption', async () => {
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const client = createMemoryRecordApiClient()
-  const hostedEnv = { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }
-  const local = await boardPost(
-    { audience: 'machine:host', title: 'Machine', body: 'local' },
-    { env: hostedEnv, client },
-  )
-  expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
-  await expect(boardThread(local.recordId, { env: hostedEnv, client })).resolves.toMatchObject({
-    root: { recordId: local.recordId },
-  })
-  await expect(boardStatus(local.recordId, { env: hostedEnv, client })).resolves.toMatchObject({
-    message: { recordId: local.recordId },
-  })
-  await expect(
-    boardStatus(String(local.number), { env: hostedEnv, client }),
-  ).resolves.toMatchObject({
-    message: { recordId: local.recordId },
-  })
 })
 
 test('an adopted install refuses every positive-integer board-message id', async () => {

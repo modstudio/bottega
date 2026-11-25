@@ -27,6 +27,36 @@ export function boardHeadHookShouldAct(file: string, sourceText: string): boolea
   )
 }
 
+function registeredTarget(file: string, openDatabase: () => Database) {
+  const database = openDatabase()
+  try {
+    return registeredCheckoutForFile(file, database)
+  } finally {
+    database.close()
+  }
+}
+
+function judgeBoardHead(file: string, original: string, content: string): EditorJudgment {
+  try {
+    const failures = hostedLocalBoardHeadFailures({ file: original, sourceText: content })
+    return failures.length
+      ? {
+          status: 'refused',
+          findings: failures.map((dependency) => ({
+            rule: 'local-board-sql-requires-head',
+            dependency: `${file} (${dependency})`,
+          })),
+        }
+      : { status: 'ok', findings: [] }
+  } catch (error) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: `local board SQL head check could not decide (${error instanceof Error ? error.message : String(error)})`,
+    }
+  }
+}
+
 export function boardHeadJudgeCommand(
   text: string,
   openDatabase: () => Database = openReadOnlyDatabase,
@@ -56,21 +86,15 @@ export function boardHeadJudgeCommand(
   }
   if (!boardHeadHookShouldAct(file, content)) return { status: 'ok', findings: [] }
 
-  let database: Database
+  let target: ReturnType<typeof registeredCheckoutForFile>
   try {
-    database = openDatabase()
+    target = registeredTarget(file, openDatabase)
   } catch (error) {
     return {
       status: 'unchecked',
       findings: [],
       reason: `project register could not be read: ${error instanceof Error ? error.message : String(error)}`,
     }
-  }
-  let target: ReturnType<typeof registeredCheckoutForFile>
-  try {
-    target = registeredCheckoutForFile(file, database)
-  } finally {
-    database.close()
   }
   if (!target)
     return {
@@ -85,22 +109,5 @@ export function boardHeadJudgeCommand(
       findings: [],
       reason: `candidate ${file} is outside orchestrator/src`,
     }
-  try {
-    const failures = hostedLocalBoardHeadFailures({ file: original, sourceText: content })
-    return failures.length
-      ? {
-          status: 'refused',
-          findings: failures.map((dependency) => ({
-            rule: 'local-board-sql-requires-head',
-            dependency: `${file} (${dependency})`,
-          })),
-        }
-      : { status: 'ok', findings: [] }
-  } catch (error) {
-    return {
-      status: 'unchecked',
-      findings: [],
-      reason: `local board SQL head check could not decide (${error instanceof Error ? error.message : String(error)})`,
-    }
-  }
+  return judgeBoardHead(file, original, content)
 }

@@ -14,12 +14,16 @@ import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
 } from './board-answer-note.ts'
-import { requireLocalBoardRead, requireLocalBoardWrite } from './board-local-read-guard.ts'
-import type { BoardLocality } from './board-mode.ts'
+import {
+  type BoardLocality,
+  requireLocalBoardRead,
+  requireLocalBoardWrite,
+} from './board-local-read-guard.ts'
 import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
+  boardAudienceLocality,
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
@@ -84,12 +88,7 @@ export function askQuestion(
   cwd = process.cwd(),
 ) {
   const database = writableDb()
-  requireLocalBoardWrite(
-    'notice post',
-    env,
-    database,
-    parseAudience(input.audience).kind === 'machine' ? 'machine-audience' : 'shared',
-  )
+  requireLocalBoardWrite('notice post', env, database, boardAudienceLocality(input.audience))
   return writeTransaction(
     () => insertRootMessage('question', input, env, clock, cwd, database),
     database,

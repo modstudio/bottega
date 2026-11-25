@@ -65,10 +65,11 @@ import {
   claimResult,
 } from './board-operation-results.ts'
 import {
-  type Audience,
   acknowledgementRefusal,
   architectIdentity,
   architectsPostingRefusal,
+  boardAudienceLocality,
+  localBoardAudienceRefusal,
   OPERATOR_READER,
   parseAudience,
   standingPostingRefusal,
@@ -78,6 +79,7 @@ import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
   localBoardRows,
+  localBoardRowsFor,
   markSessionMessagesDelivered,
   noticeStatus,
   type PostNoticeInput,
@@ -99,6 +101,7 @@ import {
   readThread,
   replyToThread,
 } from './board-thread-service.ts'
+
 import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type Environment = Record<string, string | undefined>
@@ -210,17 +213,6 @@ const hostedClient = (c: ReturnType<typeof context>): RecordApiClient =>
 
 function writeDestination(c: ReturnType<typeof context>, project?: string | null) {
   return c.destinationResolver(hostedClient(c), project, c.database)
-}
-
-function locality(audience: string) {
-  return parseAudience(audience).kind === 'machine'
-    ? ('machine-audience' as const)
-    : ('shared' as const)
-}
-
-export function localBoardAudienceRefusal(audience: Audience): string | null {
-  if (audience.kind !== 'spaces') return null
-  return 'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces'
 }
 
 const stringId = (value: number | string | null) => (value === null ? null : String(value))
@@ -479,7 +471,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
     topics: input.topics,
   })
   if (standingRefusal) throw new Error(standingRefusal)
-  if (boardMode(locality(input.audience), c.env) === 'local') {
+  if (boardMode(boardAudienceLocality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
     if (localRefusal) throw new Error(localRefusal)
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
@@ -502,7 +494,7 @@ export async function boardAsk(
     { field: 'body', text: input.body, prior: null },
   ])
   const audience = parseAudience(input.audience)
-  if (boardMode(locality(input.audience), c.env) === 'local') {
+  if (boardMode(boardAudienceLocality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
     if (localRefusal) throw new Error(localRefusal)
     return localPostResult(askQuestion(input, c.env, c.clock, c.cwd))
@@ -567,14 +559,10 @@ export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const database = db()
   const resolved = resolveBoardMessageIdentifier(database, id, c.env, true, true)
-  const localRows = resolved.source === 'local' ? localBoardRows(database) : []
-  const localRow = localRows.find((row) => row.record_id === resolved.recordId)
-  const localLocality = localRow?.audience ? locality(localRow.audience) : ('shared' as const)
+  const [rows, rowLocality] = localBoardRowsFor(resolved.recordId, resolved.source, database)
   const thread =
     resolved.source === 'local'
-      ? localThread(
-          readThread(resolved.recordId, c.env, c.clock, database, localRows, localLocality),
-        )
+      ? localThread(readThread(resolved.recordId, c.env, c.clock, database, rows, rowLocality))
       : hostedThread(await hostedClient(c).getBoardThread(resolved.recordId))
   if (resolved.source === 'hosted' && thread.root.noteRecordId) {
     try {
@@ -590,7 +578,7 @@ export async function boardThread(id: string, inputContext?: Context) {
     const recordIds = [thread.root.recordId, ...thread.replies.map((reply) => reply.recordId)]
     const deliveredAt = new Date(c.clock).toISOString()
     if (resolved.source === 'local')
-      markSessionMessagesDelivered(session, recordIds, deliveredAt, localLocality)
+      markSessionMessagesDelivered(session, recordIds, deliveredAt, rowLocality)
     else await markBoardDeliveriesDelivered(session, recordIds, deliveredAt)
   }
   return thread
