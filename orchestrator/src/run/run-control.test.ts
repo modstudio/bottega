@@ -308,6 +308,9 @@ describe('run continuation', () => {
     })
 
     expect(reportedChild).toBe(resumed.childId)
+    expect(
+      db().query('SELECT continued_with_findings FROM run WHERE record_id=?').get(resumed.childId),
+    ).toEqual({ continued_with_findings: 0 })
     expect(resumed.reported).toBe(true)
     expect(
       db()
@@ -363,13 +366,20 @@ describe('run continuation', () => {
     })
     const resumed = await continueRun(root, 'apply the accepted findings', limit, undefined, {
       binding: admission.binding,
+      continuedWithFindings: true,
     })
 
     expect(
       db()
-        .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
+        .query(
+          'SELECT cursor_record_id,step_slug,continued_with_findings FROM run WHERE record_id=?',
+        )
         .get(resumed.childId),
-    ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'apply-findings' })
+    ).toEqual({
+      cursor_record_id: cursorRecordId,
+      step_slug: 'apply-findings',
+      continued_with_findings: 1,
+    })
   })
 
   test('continue --file refuses when a just-below-limit body plus the reminder exceeds argv', async () => {

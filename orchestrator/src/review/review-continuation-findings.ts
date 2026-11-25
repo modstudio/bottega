@@ -12,6 +12,7 @@ import {
   reviewsForTriage,
   type TriageReviewRow,
 } from './review-group.ts'
+import { continuationReviewsWereApplied } from './review-round-application.ts'
 import { type ChangeFacts, storedChangeFacts } from './same-change.ts'
 
 export type ContinuationFinding = {
@@ -65,11 +66,13 @@ export function continuationLineageHasAcceptedFindings(
   database: Database,
   group: ChangeGroup,
 ): boolean {
-  return reviewsForTriage(database, group).branchReviews.some((review) =>
+  const reviews = reviewsForTriage(database, group).branchReviews
+  const hasAcceptedFindings = reviews.some((review) =>
     review.findings.some(
       ({ disposition }) => disposition === 'accepted' || disposition === 'modified',
     ),
   )
+  return hasAcceptedFindings && !continuationReviewsWereApplied(database, group, reviews)
 }
 
 /** Choose the newest review round on the branch lineage, independent of today's patch. */
@@ -183,7 +186,11 @@ export function continuationRoundHasAcceptedFindings(
   database: Database,
   group: ChangeGroup,
 ): boolean {
-  return selectedFindings(database, group, true).findings.length > 0
+  const selected = selectedFindings(database, group, true)
+  return (
+    selected.findings.length > 0 &&
+    !continuationReviewsWereApplied(database, group, selected.round.reviews)
+  )
 }
 
 /** Pure presentation decision shared by normal and checkpoint continuation paths. */

@@ -387,8 +387,9 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, branch, lens, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms,
+                      continued_with_findings)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -420,6 +421,7 @@ async function detachResolved(
         storedMcpRequest(mcpRequest),
         ...detachedPlaceholderBindings(spec, binding, startedByUserId),
         ...placeholderExecution(spec, jobName),
+        spec.continuedWithFindings ? 1 : 0,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,

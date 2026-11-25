@@ -72,6 +72,7 @@ export type RunControlPresentation = {
 type ContinueRunDependencies = {
   renewTaskClaim?: RenewTaskClaim
   binding?: { cursorRecordId: string; stepSlug: string }
+  continuedWithFindings?: boolean
   reportDetached?: (childId: string, jobName: string) => Promise<void>
 }
 
@@ -462,11 +463,19 @@ function continuationLaunch(
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  context: { project: Project | null; binding: ContinueRunDependencies['binding'] },
-): ResumeLaunchOptions & { binding?: ContinueRunDependencies['binding'] } {
+  context: {
+    project: Project | null
+    binding: ContinueRunDependencies['binding']
+    continuedWithFindings: boolean | undefined
+  },
+): ResumeLaunchOptions & {
+  binding?: ContinueRunDependencies['binding']
+  continuedWithFindings?: boolean
+} {
   return {
     ...inherited,
     binding: context.binding,
+    continuedWithFindings: context.continuedWithFindings,
     lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
@@ -875,7 +884,11 @@ export async function continueRun(
     id,
     treeDecision,
     Boolean(jobNeeds.writesRepo),
-    { project, binding: dependencies.binding },
+    {
+      project,
+      binding: dependencies.binding,
+      continuedWithFindings: dependencies.continuedWithFindings,
+    },
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({

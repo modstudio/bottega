@@ -126,6 +126,7 @@ export function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): 
 
 type ClaimOptions = {
   binding?: RunWorkflowBinding
+  continuedWithFindings?: boolean
   reserveId?: string
   agentExplicit?: boolean
   transport?: 'cli' | 'acp'
@@ -418,7 +419,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
                         executor=?, evidence_excluded=?, harness_wall_bound_ms=?, endpoint_key_source=?,
-                        credential_id=?, credential_payer=?, credential_binding=?, cursor_record_id=?, step_slug=?
+                        credential_id=?, credential_payer=?, credential_binding=?, cursor_record_id=?, step_slug=?,
+                        continued_with_findings=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -459,6 +461,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.credential,
         ),
         ...bindingValues(binding),
+        opts.continuedWithFindings ? 1 : 0,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -468,8 +471,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
                           executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source,
-                          credential_id, credential_payer, credential_binding, cursor_record_id, step_slug)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          credential_id, credential_payer, credential_binding, cursor_record_id, step_slug, continued_with_findings)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -514,6 +517,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.credential,
         ),
         ...bindingValues(binding),
+        opts.continuedWithFindings ? 1 : 0,
       ) as { record_id: string; number: number }
   const supersededQuestionState = await prepareClaimQuestionState({
     resolveSuperseded: identity.resolveSupersededTurn,
