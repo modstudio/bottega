@@ -4,8 +4,6 @@ import { type TrackerProject, trackerSourceFor } from '../../shared/trackers.ts'
 import { projectList } from './orch-project-register.ts'
 import { type ProjectRegisterReader, projectRegisterReader } from './project-register-reader.ts'
 
-export type { StatusCategory } from '../../shared/trackers.ts'
-
 export type Project = string
 
 export type RegisteredProject = OrchProject & TrackerProject

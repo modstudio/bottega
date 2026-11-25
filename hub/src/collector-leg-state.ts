@@ -2,7 +2,8 @@
 /** Persists collector-leg outcomes and projects their freshness for public read surfaces. */
 
 import type { CollectorLegHealth } from '@bottega/hub-views/work-summary'
-import { collectionStaleness } from './collect-slow-health.ts'
+import { isTrackerLegSource, trackerLegSource } from '../../shared/collector-leg-source.ts'
+import { collectionStaleness, trackerCollectionStaleness } from './collect-slow-health.ts'
 import { db, writeTransaction } from './db.ts'
 import type { HostedChangeQuarantineSummary } from './hosted-change-quarantine.ts'
 
@@ -14,6 +15,7 @@ export type CollectorLegState = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  consecutiveFailures?: number
 }
 
 type UnreadableCollectorLegState = {
@@ -47,7 +49,11 @@ function parseState(value: string): CollectorLegState {
     !nullableString(row.lastSuccessAt) ||
     !nullableString(row.lastError) ||
     !nullableString(row.lastErrorAt) ||
-    !nullableString(row.failingSince)
+    !nullableString(row.failingSince) ||
+    !(
+      row.consecutiveFailures === undefined ||
+      (Number.isInteger(row.consecutiveFailures) && row.consecutiveFailures >= 0)
+    )
   )
     throw new Error(`collector leg state for ${row.source ?? 'unknown'} had invalid fields`)
   return row as CollectorLegState
@@ -88,6 +94,7 @@ export function recordCollectorLegFailure(
     lastError: error,
     lastErrorAt: at,
     failingSince: previous?.failingSince ?? at,
+    consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
   })
   return { logFailure: previous?.failingSince == null || previous.lastError !== error }
 }
@@ -100,8 +107,60 @@ export function recordCollectorLegSuccess(source: string, at: string): { logReco
     lastError: previous?.lastError ?? null,
     lastErrorAt: previous?.lastErrorAt ?? null,
     failingSince: null,
+    consecutiveFailures: 0,
   })
   return { logRecovery: previous?.failingSince != null }
+}
+
+export function recordTrackerCollectorState(
+  result: {
+    project: string
+    error?: string
+    skipped?: string
+  },
+  at = new Date().toISOString(),
+): void {
+  if (result.skipped) return
+  const source = trackerLegSource(result.project)
+  try {
+    if (result.error) recordCollectorLegFailure(source, result.error, at)
+    else recordCollectorLegSuccess(source, at)
+  } catch (stateError) {
+    console.error(
+      `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
+    )
+  }
+}
+
+export function dropUnregisteredTrackerCollectorStates(
+  registeredProjects: readonly string[],
+): void {
+  if (!registeredProjects.length) return
+  const registeredSources = new Set(registeredProjects.map(trackerLegSource))
+  const keys = db()
+    .query<{ key: string; value: string }, [string]>(
+      'SELECT key,value FROM setting WHERE key LIKE ?',
+    )
+    .all(`${SETTING_PREFIX}%`)
+    .filter((row) => {
+      const source = sourceFromSettingKey(row.key)
+      return isTrackerLegSource(source) && !registeredSources.has(source)
+    })
+  if (!keys.length) return
+  writeTransaction((conn) => {
+    const remove = conn.query('DELETE FROM setting WHERE key=?')
+    for (const row of keys) {
+      const source = sourceFromSettingKey(row.key)
+      let consecutiveFailures = 0
+      try {
+        consecutiveFailures = parseState(row.value).consecutiveFailures ?? 0
+      } catch {}
+      console.error(
+        `hub: removed ${source} collector state with ${consecutiveFailures} consecutive failures`,
+      )
+      remove.run(row.key)
+    }
+  })
 }
 
 export function collectorLegStates(): CollectorLegObservation[] {
@@ -136,7 +195,9 @@ export function collectorLegView(
         ageMs: null,
       }
     }
-    const staleness = collectionStaleness(now, state.lastSuccessAt)
+    const staleness = isTrackerLegSource(state.source)
+      ? trackerCollectionStaleness(now, state.lastSuccessAt)
+      : collectionStaleness(now, state.lastSuccessAt)
     const quarantine =
       state.source === 'hosted changes'
         ? {
@@ -166,10 +227,9 @@ export function collectorLegView(
     leg.lastSuccessAt === null ? [] : [leg.lastSuccessAt],
   )
   return {
-    collectedAt:
-      successes.length === collectorLegs.length && successes.length > 0
-        ? successes.reduce((oldest, value) => (value < oldest ? value : oldest))
-        : null,
+    collectedAt: successes.length
+      ? successes.reduce((oldest, value) => (value < oldest ? value : oldest))
+      : null,
     collectorLegs,
   }
 }

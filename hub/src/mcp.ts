@@ -8,6 +8,7 @@ import {
 } from '@modelcontextprotocol/client'
 import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
 import { containsSecretShaped } from '../../shared/secret-shaped.ts'
+import { ToolCallRefused } from '../../shared/tracker-list-scope.ts'
 
 class McpError extends Error {
   override name = 'McpError'
@@ -135,7 +136,9 @@ export class Mcp {
         { timeout: this.timeoutMs },
       )
       if (result.isError)
-        throw new McpError(`${name} returned an error: ${JSON.stringify(result).slice(0, 200)}`)
+        throw new ToolCallRefused(
+          `${name} returned an error: ${JSON.stringify(result).slice(0, 200)}`,
+        )
       if (result.structuredContent) return result.structuredContent
       for (const item of result.content) {
         if (item.type === 'text') {
@@ -198,7 +201,8 @@ export class Mcp {
   }
 }
 
-function mappedFailure(condition: string, error: unknown): McpError {
+function mappedFailure(condition: string, error: unknown): McpError | ToolCallRefused {
+  if (error instanceof ToolCallRefused) return error
   if (error instanceof McpError) return error
   if (error instanceof ProtocolError) {
     const detail: Record<string, unknown> = { code: error.code, message: error.message }

@@ -8,7 +8,7 @@ import {
   watcherLive,
 } from './collect.ts'
 import { SLOW_MS } from './collect-cadence.ts'
-import type { TrackerResult } from './ingest/trackers.ts'
+import type { TrackerResult } from './ingest/tracker-result.ts'
 
 describe('tracker poll schedule', () => {
   let now = 1_000_000

@@ -234,6 +234,7 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/collector-leg-conditions.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/collector-leg-source.ts',
     '../../../shared/self-spawn.ts',
     './monitor-types.ts',
   ]),

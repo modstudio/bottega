@@ -1,26 +1,35 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { resolveAssigneeIds, type TrackerSource } from '../../../shared/trackers.ts'
+import { clearRecordSessionToken, writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { ToolCallRefused } from '../../../shared/tracker-list-scope.ts'
+import {
+  resolveAssigneeIds,
+  type TrackerSource,
+  trackerSourceFor,
+} from '../../../shared/trackers.ts'
+import { declareFixtureProjectSpace } from '../../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
-import { trackerObservationTimes } from './tracker-observation-times.ts'
 import {
+  recordTrackerReadState,
+  storedTrackerPageSize,
+  storedTrackerReadMode,
+  trackerProjectsReadSince,
+  trackerReadPassComplete,
+} from './tracker-read-state.ts'
+import { finishTrackerResults, trackerLegError } from './tracker-result.ts'
+import {
+  collectTrackerSource,
   dropDeletedTrackerTasks,
   fetchTrackerTasks,
-  finishTrackerResults,
   ingestTrackers,
-  recordTrackerReadState,
   retireOutOfScopeTrackerTasks,
-  storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
   trackerKeyInScope,
   trackerKeyPrefix,
-  trackerLegError,
-  trackerProjectsReadSince,
-  trackerReadPassComplete,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
@@ -36,119 +45,13 @@ const trackerTask = {
   updatedAt: null,
   assignee: null,
 }
-const storedTrackerTask = {
-  external_id: trackerTask.externalId,
-  key: trackerTask.key,
-  project: trackerTask.project,
-  parent_key: null,
-  title: trackerTask.title,
-  status: trackerTask.status,
-  status_category: trackerTask.category,
-  opened_at: '2026-09-01T10:00:00.000Z',
-  closed_at: null,
-  first_seen: '2026-09-01T10:00:00.000Z',
-  last_seen: '2026-09-02T10:00:00.000Z',
-  updated_at: '2026-09-01T10:00:00.000Z',
-  assignee: null,
-  retired_reason: null,
-}
 
+declareFixtureProjectSpace('alpha', 'fixture-space')
 const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>
   writeTrackerCache([task], at, [])
-
-describe('tracker observation times', () => {
-  const at = '2026-09-03T10:00:00.000Z'
-
-  test('new and changed observations use the pass time when the tracker has no update time', () => {
-    expect(trackerObservationTimes(trackerTask, undefined, at)).toEqual({
-      openedAt: at,
-      closedAt: null,
-      firstSeen: at,
-      lastSeen: at,
-      updatedAt: at,
-    })
-    expect(
-      trackerObservationTimes({ ...trackerTask, title: 'Changed task' }, storedTrackerTask, at),
-    ).toEqual({
-      openedAt: at,
-      closedAt: null,
-      firstSeen: storedTrackerTask.first_seen,
-      lastSeen: at,
-      updatedAt: at,
-    })
-  })
-
-  test('an unchanged observation sends every stored time', () => {
-    expect(trackerObservationTimes(trackerTask, storedTrackerTask, at)).toEqual({
-      openedAt: storedTrackerTask.opened_at,
-      closedAt: storedTrackerTask.closed_at,
-      firstSeen: storedTrackerTask.first_seen,
-      lastSeen: storedTrackerTask.last_seen,
-      updatedAt: storedTrackerTask.updated_at,
-    })
-  })
-
-  test('an unchanged legacy row repairs missing update and open times once', () => {
-    const legacy = { ...storedTrackerTask, opened_at: null, updated_at: null }
-    const repaired = trackerObservationTimes(trackerTask, legacy, at)
-    expect(repaired).toEqual({
-      openedAt: at,
-      closedAt: legacy.closed_at,
-      firstSeen: legacy.first_seen,
-      lastSeen: legacy.last_seen,
-      updatedAt: at,
-    })
-
-    const secondAt = '2026-09-04T10:00:00.000Z'
-    expect(
-      trackerObservationTimes(
-        trackerTask,
-        { ...legacy, opened_at: repaired.openedAt, updated_at: repaired.updatedAt },
-        secondAt,
-      ),
-    ).toEqual(repaired)
-  })
-
-  test('a tracker update time is retained for new, changed, and unchanged observations', () => {
-    const updatedAt = '2026-09-03T09:30:00.000Z'
-    const supplied = { ...trackerTask, updatedAt }
-    const stored = { ...storedTrackerTask, updated_at: updatedAt, opened_at: updatedAt }
-    expect(trackerObservationTimes(supplied, undefined, at).updatedAt).toBe(updatedAt)
-    expect(trackerObservationTimes({ ...supplied, title: 'Changed task' }, stored, at)).toEqual({
-      openedAt: updatedAt,
-      closedAt: null,
-      firstSeen: stored.first_seen,
-      lastSeen: at,
-      updatedAt,
-    })
-    expect(trackerObservationTimes(supplied, stored, at)).toEqual({
-      openedAt: updatedAt,
-      closedAt: null,
-      firstSeen: stored.first_seen,
-      lastSeen: stored.last_seen,
-      updatedAt,
-    })
-  })
-
-  test('re-observing done work preserves its lifecycle times while an open task closes now', () => {
-    const done = { ...trackerTask, status: 'completed', category: 'done' as const }
-    const closedAt = '2026-09-02T12:00:00.000Z'
-    const stored = {
-      ...storedTrackerTask,
-      status: done.status,
-      status_category: done.category,
-      closed_at: closedAt,
-    }
-    expect(trackerObservationTimes(done, stored, at)).toMatchObject({
-      openedAt: stored.opened_at,
-      closedAt,
-    })
-    expect(
-      trackerObservationTimes({ ...done, title: 'Changed done task', updatedAt: at }, stored, at),
-    ).toMatchObject({ openedAt: stored.opened_at, closedAt })
-    expect(trackerObservationTimes(done, storedTrackerTask, at).closedAt).toBe(at)
-  })
-})
+const settingValue = (key: string) =>
+  db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)
+    ?.value ?? null
 
 describe('tracker key scope', () => {
   test('matches declared prefixes case-insensitively and admits every key without declarations', () => {
@@ -164,15 +67,19 @@ describe('tracker key scope', () => {
 })
 
 const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const hostedUrl = process.env.BOTTEGA_HOSTED_URL
 const keyStore = process.env.BOTTEGA_KEYSTORE
 beforeAll(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_HOSTED_URL
   process.env.BOTTEGA_KEYSTORE = 'file'
   resetFixtureStore()
 })
 afterAll(() => {
   if (recordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = recordApiUrl
+  if (hostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+  else process.env.BOTTEGA_HOSTED_URL = hostedUrl
   if (keyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
   else process.env.BOTTEGA_KEYSTORE = keyStore
 })
@@ -383,13 +290,169 @@ describe('tracker register', () => {
       mode: 'full',
       since: '2026-11-06T09:55:00.000Z',
     })
+    expect(settingValue('collect.tracker.alpha.full-at')).toBe(first)
+  })
+
+  test('full reads probe at double the remembered page size capped at the protocol default', () => {
+    writeTransaction((conn) => {
+      const write = conn.query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
+      write.run('collect.tracker.page-size-small.page-size', '20')
+      write.run('collect.tracker.page-size-large.page-size', '80')
+    })
+    expect(storedTrackerPageSize('page-size-small', 'incremental')).toBe(20)
+    expect(storedTrackerPageSize('page-size-small', 'full')).toBe(40)
+    expect(storedTrackerPageSize('page-size-large', 'full')).toBe(100)
+    expect(storedTrackerPageSize('page-size-missing', 'full')).toBe(100)
+  })
+
+  test('a successful adaptive read stores its working page size for the next incremental read', async () => {
+    const adaptive = trackerSourceFor({
+      name: 'alpha',
+      settings: {
+        tracker: {
+          protocol: 'cursor-mcp',
+          envPrefix: 'FIXTURE',
+          openStatuses: ['todo'],
+          states: { todo: 'open' },
+          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+        },
+      },
+    })!
+    const pageSizes: number[] = []
+
+    await collectTrackerSource(
+      { project: 'alpha', prefixes: ['ALP'], source: adaptive },
+      [],
+      '2026-11-20T10:00:00.000Z',
+      {
+        listTools: async () => [
+          { name: 'task_list', inputSchema: { properties: { projectId: {} } } },
+        ],
+        async callTool(_name: string, args: Record<string, unknown>) {
+          const pageSize = args.limit as number
+          pageSizes.push(pageSize)
+          if (pageSize > 3) throw new ToolCallRefused('fixture page too large')
+          return {
+            data: {
+              items: [{ id: 'adaptive-row', humanKey: 'ALP-ADAPTIVE', status: 'todo' }],
+            },
+          }
+        },
+      } as never,
+    )
+
+    expect(pageSizes).toEqual([100, 50, 25, 12, 6, 3])
+    expect(settingValue('collect.tracker.alpha.page-size')).toBe('3')
+    expect(storedTrackerPageSize('alpha', 'incremental')).toBe(3)
+  })
+
+  test('a failed list still backfills, records incomplete, and leaves retirements untouched', async () => {
+    const project = 'failed-list'
+    const existing = { ...trackerTask, externalId: 'existing', key: 'FL-1', project }
+    cacheTrackerTask(existing, '2026-11-20T10:00:00.000Z')
+    const source: TrackerSource = {
+      project,
+      env: 'FIXTURE',
+      supportsUpdatedSince: false,
+      fetch: async () => {
+        throw new Error('list unavailable')
+      },
+      lookup: async (_client, key) => ({
+        ...trackerTask,
+        externalId: 'backfilled',
+        key,
+        project,
+      }),
+    }
+
+    const collected = await collectTrackerSource(
+      { project, prefixes: ['FL'], source },
+      [{ task_key: 'FL-2', project }],
+      '2026-11-20T11:00:00.000Z',
+      { callTool: async () => ({}) } as never,
+    )
+
+    expect(collected).toMatchObject({
+      result: { project, tasks: 0, changed: 0, error: 'list unavailable' },
+      filled: 1,
+    })
     expect(
       db()
-        .query<{ value: string }, []>(
-          "SELECT value FROM setting WHERE key='collect.tracker.alpha.full-at'",
+        .query<{ key: string; status_category: string }, [string]>(
+          'SELECT key,status_category FROM task WHERE project=? ORDER BY key',
         )
-        .get()?.value,
-    ).toBe(first)
+        .all(project),
+    ).toEqual([
+      { key: 'FL-1', status_category: 'active' },
+      { key: 'FL-2', status_category: 'active' },
+    ])
+    expect(settingValue(`collect.tracker.${project}.force-full`)).toBe('1')
+  })
+
+  describe('hosted list failure', () => {
+    const nodeEnv = process.env.NODE_ENV
+    const originalFetch = globalThis.fetch
+
+    beforeAll(() => {
+      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+      process.env.NODE_ENV = 'development'
+      writeRecordSessionToken('fixture-token')
+    })
+
+    afterAll(() => {
+      delete process.env.BOTTEGA_HOSTED_URL
+      if (nodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = nodeEnv
+      globalThis.fetch = originalFetch
+      clearRecordSessionToken()
+      resetFixtureStore()
+    })
+
+    test('a refused hosted list still applies backfill without retirement and records failure', async () => {
+      resetFixtureStore()
+      delete process.env.BOTTEGA_HOSTED_URL
+      cacheTrackerTask(
+        { ...trackerTask, externalId: 'hosted-existing', key: 'ALP-1' },
+        '2026-11-20T10:00:00.000Z',
+      )
+      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+      const sent: Array<Record<string, unknown>> = []
+      globalThis.fetch = (async (_input, init) => {
+        const changes = JSON.parse(String(init?.body)) as Array<Record<string, unknown>>
+        sent.push(...changes)
+        return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
+      }) as typeof fetch
+      const tracker = source(false, async () => {
+        throw new Error('list refused')
+      })
+      tracker.lookup = async (_client, key) => ({
+        ...trackerTask,
+        externalId: 'hosted-backfill',
+        key,
+      })
+
+      const collected = await collectTrackerSource(
+        { project: 'alpha', prefixes: ['ALP'], source: tracker },
+        [{ task_key: 'ALP-2', project: 'alpha' }],
+        '2026-11-20T11:00:00.000Z',
+        { callTool: async () => ({}) } as never,
+      )
+      finishTrackerResults([collected], '2026-11-20T11:00:00.000Z', ['alpha'])
+
+      const rows = db()
+        .query<{ key: string; retired_reason: string | null }, [string]>(
+          'SELECT key,retired_reason FROM task WHERE project=? ORDER BY key',
+        )
+        .all('alpha')
+      expect(rows).toEqual([
+        { key: 'ALP-1', retired_reason: null },
+        { key: 'ALP-2', retired_reason: null },
+      ])
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toMatchObject({ table: 'hub_task', row: { key: 'ALP-2' } })
+      expect(settingValue('collect.tracker.alpha.force-full')).toBe('1')
+      expect(settingValue('collect.leg.tasks%3Aalpha')).toContain('"consecutiveFailures":1')
+    })
   })
 
   test('a refused hosted change keeps the cursor and forces the next read to be full', () => {
@@ -475,6 +538,7 @@ describe('tracker register', () => {
         { result: { project: 'skipped', tasks: 0, changed: 0, skipped: 'no key' }, filled: 0 },
       ],
       at,
+      ['fresh', 'failed', 'skipped'],
     )
     writeTransaction((conn) =>
       conn
@@ -490,15 +554,25 @@ describe('tracker register', () => {
     ).toEqual(new Set(['fresh']))
   })
 
+  test('a synthetic backfill result records no collector leg and an empty pass records no completion', () => {
+    resetFixtureStore()
+    finishTrackerResults(
+      [{ result: { project: 'alpha', tasks: 0, changed: 0 }, filled: 1 }],
+      '2026-10-01T12:00:00.000Z',
+      ['alpha'],
+    )
+    expect(settingValue('collect.leg.tasks%3Abackfill')).toBeNull()
+
+    resetFixtureStore()
+    finishTrackerResults([], '2026-10-01T13:00:00.000Z', [])
+    expect(settingValue('collect.trackers.at')).toBeNull()
+  })
+
   test('only projects that declare a usable tracker are polled', async () => {
     const results = await ingestTrackers()
     expect(results.map((result) => result.project)).toEqual(['alpha'])
     expect(results[0]!.skipped).toContain('FIXTURE_NO_CREDENTIALS_MCP_URL')
-    expect(
-      db()
-        .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.trackers.at'`)
-        .get()?.value,
-    ).toBeString()
+    expect(settingValue('collect.trackers.at')).toBeString()
     expect(trackerLegError(results)).toBeNull()
   })
 

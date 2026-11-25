@@ -8,14 +8,14 @@ import {
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
-import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
+import { FAST_MS, QUIET_MAX_MS, SLOW_MS } from './collect-cadence.ts'
 import { formatTrackerCounts, type TrackerCounts, trackerCounts } from './collect-tracker-counts.ts'
 import {
   type WatchRunningCycle,
   type WatchTick,
   watchCycleDecision,
 } from './collect-watch-schedule.ts'
-import { recordCollectorLegFailure, recordCollectorLegSuccess } from './collector-leg-state.ts'
+import * as collectorLegState from './collector-leg-state.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -32,13 +32,9 @@ export { resolveHostedUrl }
 import type { IngestReport } from './ingest/batches.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
-import {
-  ingestTrackers,
-  type TrackerResult,
-  trackerLegError,
-  trackerProjects,
-  trackerProjectsReadSince,
-} from './ingest/trackers.ts'
+import { trackerProjectsReadSince } from './ingest/tracker-read-state.ts'
+import { type TrackerResult, trackerLegError } from './ingest/tracker-result.ts'
+import { ingestTrackers, trackerProjects } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
@@ -84,7 +80,6 @@ export type LiveWatcherHeartbeat = {
   ageSeconds: number
 }
 
-const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
 
 const hostedTrackerCandidates = () =>
@@ -250,7 +245,7 @@ async function settleTimedLeg<T>(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     try {
-      const transition = recordCollectorLegFailure(source, message, nowIso())
+      const transition = collectorLegState.recordCollectorLegFailure(source, message, nowIso())
       if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)
     } catch (stateError) {
       console.error(`hub: ${source} collect failed: ${message}`)
@@ -262,7 +257,7 @@ async function settleTimedLeg<T>(
   }
   if (details === null) return null
   try {
-    const transition = recordCollectorLegSuccess(source, nowIso())
+    const transition = collectorLegState.recordCollectorLegSuccess(source, nowIso())
     if (transition.logRecovery) console.error(`hub: ${source} collect recovered`)
   } catch (stateError) {
     console.error(
@@ -834,14 +829,12 @@ async function collectSlowSourceLegs(
     liveWatcher,
   )
   const due = scheduled ? trackerSchedule.due(registeredTrackers) : selection.only
-  let trackerResults: TrackerResult[] = []
   if (collectTasks) {
     results.push(
       (await settleTimedLeg(
         'tasks',
         async () => {
-          trackerResults =
-            due?.size === 0 ? [] : await ingestTrackers(due, hostedTrackerCandidates())
+          const trackerResults = await ingestTrackers(due, hostedTrackerCandidates())
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)

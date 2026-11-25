@@ -7,6 +7,11 @@ export type ToolCaller = {
   listTools?: () => Promise<{ name: string; inputSchema: ToolInputSchema }[]>
 }
 
+/** A tool answered the call with the protocol's isError marker. */
+export class ToolCallRefused extends Error {
+  override name = 'ToolCallRefused'
+}
+
 export async function advertisedToolSchema(
   caller: ToolCaller,
   toolName: string,

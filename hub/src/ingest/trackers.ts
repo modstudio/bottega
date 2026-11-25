@@ -34,11 +34,15 @@ import {
   trackerObservationTimes,
   trackerTaskDiffers,
 } from './tracker-observation-times.ts'
+import type { TrackerReadMode } from './tracker-read-mode.ts'
 import {
-  TRACKER_SINCE_OVERLAP_MS,
-  type TrackerReadMode,
-  trackerReadMode,
-} from './tracker-read-mode.ts'
+  recordTrackerPageSize,
+  recordTrackerReadState,
+  storedTrackerPageSize,
+  storedTrackerReadMode,
+  trackerReadPassComplete,
+} from './tracker-read-state.ts'
+import { finishTrackerResults, type TrackerResult } from './tracker-result.ts'
 import { type TrackerTaskRowPlan, trackerTaskRowPlan } from './tracker-row-plan.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
@@ -101,31 +105,6 @@ export function trackerRegistrations(rows: ReturnType<typeof projects>): Tracker
   return registrations
 }
 
-export type TrackerResult = {
-  project: Project
-  tasks: number
-  changed: number
-  mode?: TrackerReadMode
-  deleted?: number
-  retired?: number
-  /** Rows in this read whose tracker response omitted the parent field. */
-  unreportedParents?: number
-  /** Reported parent keys whose canonical task identity is ambiguous. */
-  ambiguousParents?: number
-  ambiguousParentKeys?: string[]
-  /** Whether any tracker-owned row differed from the last successful read. */
-  activity?: boolean
-  skipped?: string
-  error?: string
-}
-
-export function trackerLegError(results: TrackerResult[]): string | null {
-  const failures = results.filter((result) => result.error)
-  return failures.length
-    ? failures.map((result) => `${result.project}: ${result.error}`).join('; ')
-    : null
-}
-
 export async function trackerCredentials(
   project: Project,
   env: string,
@@ -156,85 +135,6 @@ export const trackerProjects = () =>
       }
     })
     .map((project) => project.name)
-
-const BACKFILL_RESULT = 'backfill'
-
-/** True for a tracker project that was read successfully, never the synthetic backfill row. */
-export const successfulTrackerRead = (result: TrackerResult) =>
-  result.project !== BACKFILL_RESULT && !result.error && !result.skipped
-
-const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
-const trackerSinceKey = (project: Project) => `collect.tracker.${project}.since`
-const trackerFullReadKey = (project: Project) => `collect.tracker.${project}.full-at`
-const trackerForceFullKey = (project: Project) => `collect.tracker.${project}.force-full`
-
-function trackerSetting(key: string): string | null {
-  return (
-    db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)
-      ?.value ?? null
-  )
-}
-
-export function storedTrackerReadMode(
-  source: TrackerSource,
-  now: string,
-): {
-  mode: TrackerReadMode
-  since: string | null
-} {
-  const since = trackerSetting(trackerSinceKey(source.project))
-  return {
-    mode: trackerReadMode({
-      declared: source.supportsUpdatedSince,
-      forceFull: trackerSetting(trackerForceFullKey(source.project)) !== null,
-      since,
-      lastFullRead: trackerSetting(trackerFullReadKey(source.project)),
-      now,
-    }),
-    since,
-  }
-}
-
-export function recordTrackerReadState(
-  project: Project,
-  mode: TrackerReadMode,
-  startedAt: string,
-  complete: boolean,
-): void {
-  writeTransaction((conn) => {
-    if (!complete) {
-      conn
-        .query(`INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)`)
-        .run(trackerForceFullKey(project), '1')
-      return
-    }
-    const since = new Date(Date.parse(startedAt) - TRACKER_SINCE_OVERLAP_MS).toISOString()
-    const write = conn.query(`INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)`)
-    write.run(trackerSinceKey(project), since)
-    if (mode === 'full') write.run(trackerFullReadKey(project), startedAt)
-    conn.query('DELETE FROM setting WHERE key=?').run(trackerForceFullKey(project))
-  })
-}
-
-export function trackerReadPassComplete(
-  fetchedComplete: boolean,
-  rejectedChanges: readonly string[],
-): boolean {
-  return fetchedComplete && rejectedChanges.length === 0
-}
-
-export function trackerProjectsReadSince(
-  projectNames: readonly Project[],
-  cutoffMs: number,
-): Set<Project> {
-  const fresh = new Set<Project>()
-  const read = db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-  for (const project of projectNames) {
-    const value = read.get(trackerReadKey(project))?.value
-    if (value && Date.parse(value) >= cutoffMs) fresh.add(project)
-  }
-  return fresh
-}
 
 const TRACKER_LABEL_COLLISION = 'tracker label collision'
 
@@ -685,10 +585,12 @@ export async function fetchTrackerTasks(
   listHostedTrackerCandidates?: (
     project: string,
   ) => Promise<Array<Pick<TaskRow, 'key' | 'source' | 'status_category'>>>,
+  pageSize?: number,
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
     mode === 'incremental' ? (since ?? undefined) : undefined,
+    pageSize,
   )
   const tasks = fetched.tasks
   if (mode === 'incremental') return fetched
@@ -899,44 +801,78 @@ function recentIntervalsNeedingTracker(conn: Database) {
     .all()
 }
 
-export function finishTrackerResults(
-  results: { result: TrackerResult; filled: number }[],
-  at: string,
-): TrackerResult[] {
-  const filled = results.reduce((sum, item) => sum + item.filled, 0)
-  const out = results.map((item) => item.result)
-  if (filled) out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
-  const successfulProjects = out.filter(successfulTrackerRead)
-  if (successfulProjects.length)
-    writeTransaction((conn) => {
-      const write = conn.query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      for (const result of successfulProjects) write.run(trackerReadKey(result.project), at)
-    })
-  if (!trackerLegError(out))
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        )
-        .run(JSON.stringify(at)),
-    )
-  return out
-}
-
 function trackerIngestInputs(only: ReadonlySet<Project> | null) {
-  const trackers = trackerRegistrations(projects()).filter(
-    (tracker) => !only || only.has(tracker.project),
-  )
-  return { trackers, missing: recentIntervalsNeedingTracker(db()) }
+  const registeredTrackers = trackerRegistrations(projects())
+  const trackers = registeredTrackers.filter((tracker) => !only || only.has(tracker.project))
+  return {
+    trackers,
+    registeredProjects: registeredTrackers.map((tracker) => tracker.project),
+    missing: recentIntervalsNeedingTracker(db()),
+  }
 }
 
 type CollectedTracker = { result: TrackerResult; filled: number }
 
-async function collectTrackerSource(
+function hostedCollectorPorts(prefixes: readonly string[], at: string) {
+  return {
+    conn: db(),
+    planTask: (task: TrackerTask) => planTrackerTaskOn(db(), task, at),
+    applyPlans: (plans: TrackerTaskRowPlan[]) =>
+      writeTransaction((conn) => {
+        for (const plan of plans) applyTrackerPlanOn(conn, plan)
+      }),
+    inScope: (key: string) => trackerKeyInScope(key, prefixes),
+    prefix: trackerKeyPrefix,
+  }
+}
+
+async function collectAfterFetchFailure(input: {
+  source: TrackerSource
+  missing: { task_key: string; project: string }[]
+  at: string
+  startedAt: string
+  client: Mcp
+  prefixes: readonly string[]
+  hosted: boolean
+  hostedBackfill: TrackerTask[]
+  read: { mode: TrackerReadMode }
+  error: string
+}): Promise<CollectedTracker> {
+  const applied = input.hosted
+    ? await applyHostedCollectorPass({
+        source: input.source,
+        tasks: [],
+        deletedKeys: [],
+        backfillTasks: input.hostedBackfill,
+        prefixes: [],
+        at: input.at,
+        ports: hostedCollectorPorts(input.prefixes, input.at),
+      })
+    : null
+  const backfill =
+    applied?.backfill ??
+    (await backfillTrackerTasks(
+      input.source,
+      input.client,
+      input.missing,
+      input.at,
+      input.prefixes,
+    ))
+  recordTrackerReadState(input.source.project, input.read.mode, input.startedAt, false)
+  return {
+    result: {
+      project: input.source.project,
+      tasks: 0,
+      changed: 0,
+      activity: backfill.activity,
+      mode: input.read.mode,
+      error: input.error,
+    },
+    filled: backfill.filled,
+  }
+}
+
+export async function collectTrackerSource(
   tracker: Extract<TrackerRegistration, { source: TrackerSource }>,
   missing: { task_key: string; project: string }[],
   at: string,
@@ -947,17 +883,42 @@ async function collectTrackerSource(
   const startedAt = nowIso()
   const read = storedTrackerReadMode(s, startedAt)
   const prefixes = tracker.prefixes
-  const fetched = await fetchTrackerTasks(
-    s,
-    m,
-    read.mode,
-    read.since,
-    prefixes,
-    listHostedTrackerCandidates,
-  )
+  let fetched: TrackerFetchResult
+  try {
+    fetched = await fetchTrackerTasks(
+      s,
+      m,
+      read.mode,
+      read.since,
+      prefixes,
+      listHostedTrackerCandidates,
+      storedTrackerPageSize(s.project, read.mode),
+    )
+  } catch (cause) {
+    fetched = {
+      tasks: [],
+      complete: false,
+      deletedKeys: [],
+      error: cause instanceof Error ? cause.message : String(cause),
+    }
+  }
+  recordTrackerPageSize(s.project, fetched.pageSize)
   const unique = scopedTrackerTasks(fetched.tasks, prefixes)
   const hosted = hostedWriteMode(resolveHostedUrl()) === 'hosted-configured'
   const hostedBackfill = hosted ? await hostedBackfillReads(s, m, missing, prefixes) : []
+  if (fetched.error)
+    return collectAfterFetchFailure({
+      source: s,
+      missing,
+      at,
+      startedAt,
+      client: m,
+      prefixes,
+      hosted,
+      hostedBackfill,
+      read,
+      error: fetched.error,
+    })
   const applied = hosted
     ? await applyHostedCollectorPass({
         source: s,
@@ -966,16 +927,7 @@ async function collectTrackerSource(
         backfillTasks: hostedBackfill,
         prefixes,
         at,
-        ports: {
-          conn: db(),
-          planTask: (task) => planTrackerTaskOn(db(), task, at),
-          applyPlans: (plans) =>
-            writeTransaction((conn) => {
-              for (const plan of plans) applyTrackerPlanOn(conn, plan)
-            }),
-          inScope: (key) => trackerKeyInScope(key, prefixes),
-          prefix: trackerKeyPrefix,
-        },
+        ports: hostedCollectorPorts(prefixes, at),
       })
     : null
   const observations = applied?.observations ?? writeTrackerCache(unique.values(), at, prefixes)
@@ -1041,17 +993,19 @@ async function collectTracker(
       filled: 0,
     }
   const m = new Mcp(resolved.credentials.url, resolved.credentials.token)
+  let collected: CollectedTracker
   try {
     await m.initialize()
-    return await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
+    collected = await collectTrackerSource(tracker, missing, at, m, listHostedTrackerCandidates)
   } catch (cause) {
-    return {
+    collected = {
       result: { project: s.project, tasks: 0, changed: 0, error: String((cause as Error).message) },
       filled: 0,
     }
   } finally {
     await m.close()
   }
+  return collected
 }
 
 /** Snapshot every reachable tracker into the task table, recording transitions. */
@@ -1060,11 +1014,12 @@ export async function ingestTrackers(
   listHostedTrackerCandidates?: Parameters<typeof fetchTrackerTasks>[5],
 ) {
   const at = nowIso()
-  const { trackers, missing } = trackerIngestInputs(only)
+  const { trackers, registeredProjects, missing } = trackerIngestInputs(only)
   return finishTrackerResults(
     await Promise.all(
       trackers.map((tracker) => collectTracker(tracker, missing, at, listHostedTrackerCandidates)),
     ),
     at,
+    registeredProjects,
   )
 }

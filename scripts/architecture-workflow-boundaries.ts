@@ -84,7 +84,11 @@ export const workflowBoundarySpecs = [
   {
     name: 'project-task-list-boundary',
     file: 'orchestrator/src/workflow/project-task-list.ts',
-    allowed: ['../../../shared/trackers.ts', './task-read-port.ts', './workflow-task-reference.ts'],
+    allowed: [
+      '../../../shared/tracker-status-category.ts',
+      './task-read-port.ts',
+      './workflow-task-reference.ts',
+    ],
     reason:
       'Keep the expensive project-wide read in the one module whose importers are manifest-gated.',
   },

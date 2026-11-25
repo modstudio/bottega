@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { successfulTrackerRead, type TrackerResult } from './ingest/trackers.ts'
+import { successfulTrackerRead, type TrackerResult } from './ingest/tracker-result.ts'
 
 export type TrackerCounts = {
   read: number

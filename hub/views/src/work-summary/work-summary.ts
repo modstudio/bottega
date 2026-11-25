@@ -17,6 +17,7 @@ export type CollectorLegHealth = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  consecutiveFailures?: number
   status: 'current' | 'failing' | 'stale' | 'unreadable'
   ageMs: number | null
   quarantinedRows?: number

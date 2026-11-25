@@ -1,5 +1,5 @@
 import type { TaskSource } from '../../shared/task-source.ts'
-import type { StatusCategory } from '../../shared/trackers.ts'
+import type { StatusCategory } from '../../shared/tracker-status-category.ts'
 
 /** The canonical local task row shared by task storage adapters. */
 export type TaskRow = {

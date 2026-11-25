@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { ToolCallRefused } from '../../shared/tracker-list-scope.ts'
 import {
   failureDetail,
   MCP_PROTOCOL_VERSION,
@@ -336,6 +337,49 @@ describe('Mcp tool discovery', () => {
     await expect(client.callTool('read-only', {})).rejects.toThrow(
       'HTTP 503: fixture transport failure',
     )
+  })
+
+  test('preserves a typed tool refusal without classifying a transport failure as one', async () => {
+    let refuseTool = true
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+      if (message.method === 'initialize')
+        return Response.json({
+          jsonrpc: '2.0',
+          id: message.id,
+          result: {
+            protocolVersion: '2025-11-25',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'fixture', version: '1' },
+          },
+        })
+      if (message.method === 'notifications/initialized') return new Response(null)
+      if (refuseTool)
+        return Response.json({
+          jsonrpc: '2.0',
+          id: message.id,
+          result: { isError: true, content: [{ type: 'text', text: 'too large' }] },
+        })
+      return new Response('fixture transport failure', { status: 503 })
+    }) as typeof fetch
+    const client = new Mcp(
+      'https://fixture.invalid/mcp',
+      'fixture',
+      30_000,
+      null,
+      MCP_PROTOCOL_VERSION,
+    )
+    await client.initialize()
+
+    await expect(client.callTool('task_list', {})).rejects.toBeInstanceOf(ToolCallRefused)
+    refuseTool = false
+    try {
+      await client.callTool('task_list', {})
+      throw new Error('expected transport failure')
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(ToolCallRefused)
+      expect(error).toBeInstanceOf(Error)
+    }
   })
 
   test('closes the standalone response stream and terminates the session', async () => {
