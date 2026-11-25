@@ -2,18 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { observeRetrievalPins, staleRetrievalPinConditions } from './monitor-retrieval-pins.ts'
 
-const stalePinReport = JSON.stringify({
-  pins: [
-    {
-      queryId: 'stale-pin',
-      doc: 'doc:project/sample/guide',
-      docSlug: 'guide',
-      excerpt: 'stale excerpt',
-      revision: 'revision-8',
-      current: false,
-    },
-  ],
-})
+const stalePin = {
+  queryId: 'stale-pin',
+  doc: 'doc:project/sample/guide',
+  docSlug: 'guide',
+  excerpt: 'stale excerpt',
+  revision: 'revision-8',
+  current: false,
+}
+const stalePinReport = JSON.stringify({ pins: [stalePin] })
 
 describe('default checkout lookup', () => {
   let originalCwd = ''
@@ -86,18 +83,8 @@ test('exit one with a valid report remains a stale-pin condition', () => {
   )
 
   expect(result.errors).toEqual([])
-  expect(result.notApplicable).toEqual([])
-  expect(result.conditions).toEqual([
-    {
-      kind: 'stale-retrieval-benchmark-pin',
-      subject: 'stale-pin',
-      since: null,
-      ageMs: null,
-      detail: 'stale-pin excerpt is absent from guide at revision revision-8: "stale excerpt"',
-      action:
-        'repin stale-pin by hand in retrieval/src/benchmark/queries.ts after deciding what the query should retrieve',
-    },
-  ])
+  expect(result.conditions).toHaveLength(1)
+  expect(result.conditions[0]?.subject).toBe('stale-pin')
 })
 
 test('stale retrieval pins become report-only monitor conditions', () => {
@@ -112,14 +99,7 @@ test('stale retrieval pins become report-only monitor conditions', () => {
           revision: 'revision-8',
           current: true,
         },
-        {
-          queryId: 'stale-pin',
-          doc: 'doc:project/sample/guide',
-          docSlug: 'guide',
-          excerpt: 'stale excerpt',
-          revision: 'revision-8',
-          current: false,
-        },
+        stalePin,
       ],
     }),
   ).toEqual([

@@ -6,13 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import type { MonitorCondition } from './monitor-types.ts'
-
-type RetrievalPinObservation = {
-  conditions: MonitorCondition[]
-  errors: string[]
-  notApplicable: string[]
-}
+import type { MonitorCondition, MonitorObservation } from './monitor-types.ts'
 
 type CheckoutRootLookup = () => string | null
 type ChildRunner = typeof startBoundedSync
@@ -73,7 +67,7 @@ function childErrorTail(stderr: string, exitCode: number): string {
 export function observeRetrievalPins(
   checkoutRoot: CheckoutRootLookup = () => optionalCheckoutRoot(import.meta.dir, process.env),
   runChild: ChildRunner = startBoundedSync,
-): RetrievalPinObservation {
+): MonitorObservation {
   try {
     if (checkoutRoot() === null) {
       return {

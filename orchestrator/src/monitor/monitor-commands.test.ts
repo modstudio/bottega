@@ -16,9 +16,10 @@ import {
   formatHostAdmissionsLine,
   formatHostLoadLine,
   monitorCommand,
+  monitorPassLines,
   shouldReportReleasedMonitorHistory,
 } from './monitor-commands.ts'
-import type { MonitorHostLoad } from './monitor-types.ts'
+import type { MonitorHostLoad, MonitorResult } from './monitor-types.ts'
 
 const hostLoad: MonitorHostLoad = {
   gates: 0,
@@ -65,6 +66,40 @@ test('the host admission line reports the recent decision summary', () => {
   expect(line).toContain('4 admitted (2 after a hold)')
   expect(line).toContain('peak load 7.50, CPU 6.25')
   expect(line).toContain('pressure normal,warning')
+})
+
+test('the human monitor output includes a not-applicable reason', () => {
+  const reason = 'retrieval benchmark pin observation not applicable: fixture reason'
+  const result: MonitorResult = {
+    id: 1,
+    startedAt: '2026-11-25T00:00:00.000Z',
+    finishedAt: '2026-11-25T00:00:01.000Z',
+    trigger: 'invoked',
+    conditions: [],
+    errors: [],
+    notApplicable: [reason],
+    canon: { findings: 0, docs: 0 },
+    hostLoad,
+    hostPressure: {
+      available: false,
+      error: null,
+      memoryPressure: null,
+      attributions: [],
+      averageObservationElapsedMs: null,
+      averageObservationCpuMs: null,
+    },
+    runHostCapacity: { waiting: 0, oldestWaitMs: 0, heldOn: [] },
+    hostAdmissions: {
+      windowMs: 3_600_000,
+      admitted: 0,
+      held: 0,
+      highestLoadavg: null,
+      highestCpuBusy: null,
+      pressures: [],
+    },
+  }
+
+  expect(monitorPassLines(result, [])).toContain(`not applicable: ${reason}`)
 })
 
 test('short monitor history reports retention only after a release', () => {

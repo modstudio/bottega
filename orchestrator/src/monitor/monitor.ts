@@ -93,6 +93,7 @@ import {
   type HumanMonitorCondition,
   type MonitorCondition,
   type MonitorNoticeKind,
+  type MonitorObservation,
   type MonitorResult,
   type UnaddressedMonitorCondition,
 } from './monitor-types.ts'
@@ -128,13 +129,12 @@ function monitorBranchReclaimActions(
 async function initialMonitorObservations(
   database: ReturnType<typeof writableDb>,
   clock: number,
-): Promise<{
-  conditions: MonitorCondition[]
-  errors: string[]
-  notApplicable: string[]
-  hostPressure: MonitorResult['hostPressure']
-  unobservedStandingKinds: Set<StandingConditionUnobservedKind>
-}> {
+): Promise<
+  MonitorObservation & {
+    hostPressure: MonitorResult['hostPressure']
+    unobservedStandingKinds: Set<StandingConditionUnobservedKind>
+  }
+> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)

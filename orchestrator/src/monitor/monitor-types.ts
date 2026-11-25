@@ -91,6 +91,12 @@ export type UnaddressedMonitorCondition = MonitorConditionFields & {
 
 export type MonitorCondition = AddressedMonitorCondition | UnaddressedMonitorCondition
 
+export type MonitorObservation = {
+  conditions: MonitorCondition[]
+  errors: string[]
+  notApplicable: string[]
+}
+
 export type RecipeDatabaseNamespace = {
   project: string
   allocationKey: string
