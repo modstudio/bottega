@@ -1,7 +1,7 @@
+import { median } from '../orchestrator/src/state/statistics.ts'
 import { startBounded } from '../shared/bounded-process.ts'
 import { refusal, renderRefusal } from '../shared/refusal.ts'
 import type { BinaryTarget } from '../shared/release-artifacts.ts'
-import { median } from '../orchestrator/src/state/statistics.ts'
 
 // This catches parse-on-launch regressions with headroom for shared-runner noise.
 export const RELEASE_STARTUP_CEILING_MS = 200
