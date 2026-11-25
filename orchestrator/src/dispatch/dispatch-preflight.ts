@@ -340,12 +340,16 @@ export function namesRecordedRunTree(opts: {
   cwd: string
   explicitCwd?: boolean
   base?: string
-  resume?: { parent: string; worktree: { path: string } | null }
+  resume?: {
+    parent: string
+    worktree: { path: string } | null
+    recordedWorktreeOwnerRunId?: string
+  }
 }): boolean {
   if (opts.resume) {
     const row = db()
       .query('SELECT worktree FROM run WHERE record_id = ?')
-      .get(opts.resume.parent) as {
+      .get(opts.resume.recordedWorktreeOwnerRunId ?? opts.resume.parent) as {
       worktree: string | null
     } | null
     const recorded = row?.worktree ?? opts.resume.worktree?.path

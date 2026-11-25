@@ -22,6 +22,10 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import {
+  prepareChainTreeAttachment,
+  refuseMissingChainTreeDatabase,
+} from './chain-tree-service.ts'
+import {
   type ContinuationCheckpointContext,
   continuationCheckpointContext,
 } from './continuation-checkpoint-context.ts'
@@ -478,12 +482,22 @@ function continuationTree(
     rootBranch: row.branch_kept,
   })
   const recordedBranch = branchPlan.branch
-  const recordedTreeMatches = Boolean(
-    recordedBranch &&
-      latest.worktree &&
-      existsSync(latest.worktree) &&
-      branchOf(latest.worktree) === recordedBranch,
-  )
+  const branchTip =
+    branchPlan.tip ??
+    (recordedBranch && project
+      ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${recordedBranch}^{commit}`)
+      : null)
+  const attachedTree =
+    recordedBranch && project
+      ? prepareChainTreeAttachment({
+          rootId: id,
+          projectPath: project.path,
+          branch: recordedBranch,
+          branchTip,
+          retryCommand: `${PLATFORM_SLUG} run continue ${id}`,
+        })
+      : null
+  const recordedTreeMatches = Boolean(attachedTree)
   const worktreeTool = project ? resolvedWorktreeTool(project) : null
   const plan =
     recordedBranch && project
@@ -494,14 +508,7 @@ function continuationTree(
           hasCreate: Boolean(
             worktreeTool?.create || worktreeTool?.recipe || worktreeTool?.recipePath,
           ),
-          branchTip:
-            branchPlan.tip ??
-            gitContext(
-              project.path,
-              'rev-parse',
-              '--verify',
-              `refs/heads/${recordedBranch}^{commit}`,
-            ),
+          branchTip,
           retainedTip: gitContext(
             project.path,
             'rev-parse',
@@ -516,7 +523,13 @@ function continuationTree(
       `run ${id} cannot recreate its continuation tree for branch ${recordedBranch}: ` +
         `no retained tip exists`,
     )
-  return { project, recordedTreeMatches, plan, branchSource: branchPlan.source }
+  if (
+    !attachedTree &&
+    (plan?.action === 'recreate-on-branch' || plan?.action === 'recreate-then-restore')
+  ) {
+    refuseMissingChainTreeDatabase(id)
+  }
+  return { project, recordedTreeMatches, plan, branchSource: branchPlan.source, attachedTree }
 }
 
 function continuationLaunch(
@@ -600,9 +613,11 @@ function inheritedResumeWorktree(
   plan: ResumeTreePlan | null,
   latest: ChainTurn,
   projectPath: string | null,
+  attachedTree: ReturnType<typeof prepareChainTreeAttachment>,
 ) {
   if (decision.action !== 'inherit-present-tree') return null
   if (plan && plan.action !== 'attach-recorded') return null
+  if (attachedTree) return attachedTree.worktree
   if (!latest.worktree) return null
   return {
     path: latest.worktree,
@@ -815,15 +830,21 @@ export async function continueRun(
     recordedTreeMatches,
     plan: treePlan,
     branchSource,
+    attachedTree,
   } = continuationTree(id, row, latest, checkout.project)
-  refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
+  refuseHeldContinuationBranch(
+    id,
+    project?.path ?? null,
+    attachedTree?.worktree.path ?? latest.worktree,
+    treePlan,
+  )
   // A block naming an in-progress operation carries no checkpoint row, so it
   // must not be read as a recreated tree state: hasCheckpoint, not the block,
   // decides whether the conversation restarts.
   const checkpoint = continuationCheckpointContext({
     database: db(),
     rootId: id,
-    worktree: latest.worktree,
+    worktree: attachedTree?.worktree.path ?? latest.worktree,
     treePlan,
   })
   const continuation = continuationWorker(id, latest, checkpoint.hasCheckpoint)
@@ -857,7 +878,9 @@ export async function continueRun(
   // Stop preserves the artifact specifically so this transition can reopen it.
   authority = prepareContinuationAuthority(authority, id)
   const childId = await detach(row.job, prompt, {
-    cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
+    cwd:
+      attachedTree?.worktree.path ??
+      continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
     ...launch,
     transport: chainTransport(id) ?? undefined,
@@ -868,7 +891,14 @@ export async function continueRun(
       session: continuation.session,
       turn: nextTurn,
       sessionId: authority.owner,
-      worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
+      worktree: inheritedResumeWorktree(
+        treeDecision,
+        treePlan,
+        latest,
+        project?.path ?? null,
+        attachedTree,
+      ),
+      recordedWorktreeOwnerRunId: attachedTree?.ownerRunId,
       treePlan: recreatedTreePlan(treePlan),
       readOnlyBase: continuationReadOnlyBase(treeDecision),
       continuationMessage: messageBinding,

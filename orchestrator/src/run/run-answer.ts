@@ -780,6 +780,7 @@ export async function retryRun(
               turn: 1,
               sessionId: retryAuthority.owner,
               worktree: workspace.worktree,
+              recordedWorktreeOwnerRunId: workspace.recordedWorktreeOwnerRunId,
               treePlan: workspace.treePlan,
             }
           : retryTree.resume,

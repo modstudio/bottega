@@ -2,14 +2,17 @@
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Resolves and validates the retained or reprovisioned tree used by a fresh retry. */
 
-import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
-import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
+import { gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
+import {
+  prepareChainTreeAttachment,
+  refuseMissingChainTreeDatabase,
+} from './chain-tree-service.ts'
 import { latestCheckpoint } from './checkpoint.ts'
 import { retryLaunchDecision } from './continuation-tree-decision.ts'
 import {
@@ -29,6 +32,7 @@ export type WritingRetryWorkspace = {
   cwd: string
   commit: string
   worktree: Worktree | null
+  recordedWorktreeOwnerRunId?: string
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
 }
 
@@ -176,12 +180,17 @@ export function resolveWritingRetryWorkspace(
   }
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
   const relation = branchTipRelation(project.path, recordedTip, liveTip)
-  const recordedTreeMatches = Boolean(
-    latest.worktree && existsSync(latest.worktree) && branchOf(latest.worktree) === branch,
-  )
+  const attachedTree = prepareChainTreeAttachment({
+    rootId: input.rootId,
+    projectPath: project.path,
+    branch,
+    branchTip: liveTip,
+    retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
+  })
   const decision = decideWritingRetryWorkspace({
-    treeExists: recordedTreeMatches,
+    treeExists: Boolean(attachedTree),
     treeLive:
+      !attachedTree &&
       !input.strandedRecordOnly &&
       runAlive({
         status: latest.status,
@@ -223,15 +232,10 @@ export function resolveWritingRetryWorkspace(
   if (!liveTip) throw new Error(`run ${input.id} branch ${branch} has no live tip`)
   if (decision.action === 'reuse-tree') {
     return {
-      cwd: latest.worktree!,
+      cwd: attachedTree!.worktree.path,
       commit: liveTip,
-      worktree: {
-        path: latest.worktree!,
-        branch,
-        base: liveTip,
-        repoRoot: project.path,
-        source: latest.worktree_source ?? undefined,
-      },
+      worktree: attachedTree!.worktree,
+      recordedWorktreeOwnerRunId: attachedTree!.ownerRunId,
     }
   }
   const worktreeTool = resolvedWorktreeTool(project)
@@ -247,6 +251,7 @@ export function resolveWritingRetryWorkspace(
   if (plan.action === 'attach-recorded' || plan.action === 'refuse') {
     throw new Error(`run ${input.id} could not prepare branch ${branch} for retry`)
   }
+  refuseMissingChainTreeDatabase(input.rootId)
   refuseHeldContinuationBranch(input.id, project.path, latest.worktree, plan)
   if (worktreeTool?.create && !worktreeTool.recipe && !worktreeTool.recipePath) {
     throw new Error(
