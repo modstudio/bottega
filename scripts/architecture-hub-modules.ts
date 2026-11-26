@@ -638,6 +638,11 @@ export const hubModuleSpecs = [
       './db.ts',
       './note.ts',
       './note-duplicate-question.ts',
+      './note-classification.ts',
+      './note-curation-decisions.ts',
+      './note-curation.ts',
+      './note-curator-orch.ts',
+      './note-evaluation-record.ts',
       './note-evaluation.ts',
       './note-outside.ts',
       './note-promote-cli.ts',
@@ -649,6 +654,46 @@ export const hubModuleSpecs = [
       './tracker-new.ts',
       './typed-question-cli.ts',
     ],
+  },
+  {
+    file: 'hub/src/note-classification.ts',
+    allowed: [
+      '../../shared/credential-value.ts',
+      '../../shared/typed-question/client.ts',
+      './note-curation-decisions.ts',
+      './note-duplicate-question.ts',
+      './task-row.ts',
+      './task.ts',
+      './typed-question-declarations.ts',
+      './typed-question-service.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-curation-decisions.ts',
+    allowed: ['./note-evaluation.ts'],
+  },
+  {
+    file: 'hub/src/note-curation.ts',
+    allowed: [
+      'zod',
+      './note-curation-decisions.ts',
+      './note-curator-orch.ts',
+      './note-evaluation.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-curator-orch.ts',
+    allowed: [
+      'node:path',
+      '../../shared/brand.ts',
+      '../../shared/self-spawn.ts',
+      './orch-project-register.ts',
+      './orch.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-evaluation-record.ts',
+    allowed: ['./note-classification.ts', './note-curation-decisions.ts', './note-curation.ts'],
   },
   {
     file: 'hub/src/note-evaluation.ts',
