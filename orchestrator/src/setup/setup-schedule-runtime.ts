@@ -19,7 +19,12 @@ import {
   gatherScheduleLingerFact as gatherSystemdScheduleLingerFact,
   gatherSystemdScheduleSetupFacts,
   gatherScheduleUserFact as gatherSystemdScheduleUserFact,
+  systemdUserManagerAvailable,
 } from './setup-systemd-schedules.ts'
+
+export function scheduleUserManagerAvailable(platform: NodeJS.Platform): boolean {
+  return platform === 'linux' ? systemdUserManagerAvailable() : true
+}
 
 function scheduleValues(): ScheduleRenderValues {
   const identity = runningInstallationIdentity(import.meta.dir, process.env)

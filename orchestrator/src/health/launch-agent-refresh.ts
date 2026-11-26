@@ -9,7 +9,11 @@ import {
 } from '../../../shared/install-root.ts'
 import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
-import { isMaintenanceScheduleLabel } from '../../../shared/schedule-policy.ts'
+import {
+  isMaintenanceScheduleLabel,
+  schedulePlatformSupported,
+  systemdActivationUnits,
+} from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -19,6 +23,7 @@ import type { ScheduleApplyResult, ScheduleSetupFact } from '../setup/setup-sche
 import {
   applyMaintenanceSchedules,
   gatherScheduleSetupFacts,
+  scheduleUserManagerAvailable,
 } from '../setup/setup-schedule-runtime.ts'
 import {
   installedDefinitionObservations,
@@ -106,9 +111,11 @@ type RefreshDependencies = {
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
   requiredMaintenanceLabels?: () => readonly string[]
   readMachineLevel?: () => 'record' | 'full'
+  scheduleUserManagerAvailable?: (platform: NodeJS.Platform) => boolean
 }
 
 function distributionObservations(
+  platform: NodeJS.Platform,
   owners: readonly InstalledPlistOwner[],
   observe: NonNullable<RefreshDependencies['observe']>,
   readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>,
@@ -122,7 +129,10 @@ function distributionObservations(
     observations[fact.label] = {
       programPath: null,
       programExists: true,
-      comparison: { kind: 'compared', plistMatches: fact.loaded && fact.definitionMatches },
+      comparison: {
+        kind: 'compared',
+        plistMatches: fact.definitionMatches && (platform === 'linux' || fact.loaded),
+      },
     }
   }
   return observations
@@ -152,39 +162,147 @@ async function applyMaintenanceRefresh(
   return skippedLabels
 }
 
-/** Refresh drifted installed definitions, then prove each named definition now matches. */
-export async function refreshLaunchAgents(
+type SupportedRefresh = {
+  owners: InstalledPlistOwner[]
+  observe: NonNullable<RefreshDependencies['observe']>
+  readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>
+  requiredMaintenanceLabels: Set<string>
+  plan: LaunchAgentRefreshPlan
+}
+
+async function planSupportedRefresh(
   platform: NodeJS.Platform,
-  presentation: { log(value: string): void },
-  deps: RefreshDependencies = {},
-): Promise<void> {
-  if (!includesLaunchAgents(platform)) return
-  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
+  identity: InstallationIdentity,
+  launchAgentsSupported: boolean,
+  deps: RefreshDependencies,
+): Promise<SupportedRefresh> {
   const owners = await (deps.readOwners ?? installationPlistOwners)()
-  const observe = deps.observe ?? installedDefinitionObservations
+  const observe = launchAgentsSupported
+    ? (deps.observe ?? installedDefinitionObservations)
+    : () => ({})
   const readScheduleFacts = deps.readScheduleFacts ?? gatherScheduleSetupFacts
   const observations =
     identity.kind === 'distribution'
-      ? distributionObservations(owners, observe, readScheduleFacts)
+      ? distributionObservations(platform, owners, observe, readScheduleFacts)
       : observe(owners, identity.kind)
   const requiredMaintenanceLabels = new Set(
     identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : [],
   )
-  const plan = decideLaunchAgentRefresh({
-    installationKind: identity.kind,
-    machineLevel: deps.readMachineLevel?.() ?? 'full',
+  return {
     owners,
-    observations,
+    observe,
+    readScheduleFacts,
     requiredMaintenanceLabels,
-  })
+    plan: decideLaunchAgentRefresh({
+      installationKind: identity.kind,
+      machineLevel: deps.readMachineLevel?.() ?? 'full',
+      owners,
+      observations,
+      requiredMaintenanceLabels,
+    }),
+  }
+}
+
+function logPlanNotices(
+  plan: LaunchAgentRefreshPlan,
+  presentation: { log(value: string): void },
+): void {
   for (const { label, detail } of plan.unverified) {
     presentation.log(`${label} unverified — ${detail}`)
   }
   for (const label of plan.notReleaseInstalled) {
     presentation.log(`${label} ${NOT_INSTALLED_BY_RELEASE_INSTALL}`)
   }
+}
+
+function linuxManagerUnavailable(
+  platform: NodeJS.Platform,
+  plan: LaunchAgentRefreshPlan,
+  deps: RefreshDependencies,
+): boolean {
+  if (platform !== 'linux' || !plan.applyMaintenance) return false
+  // The real manager probe guards the real systemd applier; an injected applier answers for its own environment.
+  const available =
+    deps.scheduleUserManagerAvailable ??
+    (deps.applyMaintenance ? () => true : scheduleUserManagerAvailable)
+  return !available(platform)
+}
+
+function readAfterApply(
+  platform: NodeJS.Platform,
+  identity: InstallationIdentity,
+  refresh: SupportedRefresh,
+): {
+  observations: Record<string, LaunchAgentDefinitionObservation>
+  facts: ScheduleSetupFact[]
+} {
+  if (identity.kind !== 'distribution') {
+    return { observations: refresh.observe(refresh.owners, identity.kind), facts: [] }
+  }
+  const facts = refresh.readScheduleFacts()
+  return {
+    observations: distributionObservations(platform, refresh.owners, refresh.observe, () => facts),
+    facts,
+  }
+}
+
+function assertRefreshCompleted(
+  plan: LaunchAgentRefreshPlan,
+  observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>,
+  requiredMaintenanceLabels: ReadonlySet<string>,
+  skippedLabels: ReadonlySet<string>,
+): void {
+  const remaining = plan.labels.filter(
+    ({ label }) =>
+      !skippedLabels.has(label) &&
+      maintenanceDefinitionNeedsRefresh(label, observations[label], requiredMaintenanceLabels),
+  )
+  if (remaining.length === 0) return
+  throw new Error(
+    remaining
+      .map(({ label, command }) => `${label} definition still drifted; run ${command}`)
+      .join('\n'),
+  )
+}
+
+function logInactiveLinuxUnits(
+  platform: NodeJS.Platform,
+  plan: LaunchAgentRefreshPlan,
+  facts: readonly ScheduleSetupFact[],
+  skippedLabels: ReadonlySet<string>,
+  presentation: { log(value: string): void },
+): void {
+  if (platform !== 'linux') return
+  const factsByLabel = new Map(facts.map((fact) => [fact.label, fact]))
+  for (const { label } of plan.labels) {
+    if (!isMaintenanceScheduleLabel(label) || skippedLabels.has(label)) continue
+    const fact = factsByLabel.get(label)
+    if (!fact?.installed || !fact.definitionMatches || fact.loaded) continue
+    for (const unit of systemdActivationUnits(label)) {
+      presentation.log(`${unit} installed but not active; run systemctl --user status ${unit}`)
+    }
+  }
+}
+
+async function refreshSupportedLaunchAgents(
+  platform: NodeJS.Platform,
+  identity: InstallationIdentity,
+  launchAgentsSupported: boolean,
+  presentation: { log(value: string): void },
+  deps: RefreshDependencies,
+): Promise<void> {
+  const refresh = await planSupportedRefresh(platform, identity, launchAgentsSupported, deps)
+  const { plan } = refresh
+  logPlanNotices(plan, presentation)
   const runInstaller = deps.runCheckoutInstaller ?? runCheckoutInstaller
   for (const command of plan.checkoutCommands) runInstaller(identity.root, command)
+  if (linuxManagerUnavailable(platform, plan, deps)) {
+    const setupRemedy = installerRemedy('distribution', null)!
+    presentation.log(
+      `systemd user manager unavailable in this session; maintenance schedules not installed; run ${setupRemedy} from a login session`,
+    )
+    return
+  }
   const skippedLabels = plan.applyMaintenance
     ? await applyMaintenanceRefresh(
         deps.applyMaintenance ?? applyMaintenanceSchedules,
@@ -192,23 +310,23 @@ export async function refreshLaunchAgents(
       )
     : new Set<string>()
   if (plan.labels.length === 0) return
-  const after =
-    identity.kind === 'distribution'
-      ? distributionObservations(owners, observe, readScheduleFacts)
-      : observe(owners, identity.kind)
-  const remaining = plan.labels.filter(
-    ({ label }) =>
-      !skippedLabels.has(label) &&
-      maintenanceDefinitionNeedsRefresh(label, after[label], requiredMaintenanceLabels),
-  )
-  if (remaining.length > 0) {
-    throw new Error(
-      remaining
-        .map(({ label, command }) => `${label} definition still drifted; run ${command}`)
-        .join('\n'),
-    )
-  }
+  const after = readAfterApply(platform, identity, refresh)
+  assertRefreshCompleted(plan, after.observations, refresh.requiredMaintenanceLabels, skippedLabels)
+  logInactiveLinuxUnits(platform, plan, after.facts, skippedLabels, presentation)
   for (const { label } of plan.labels) {
     if (!skippedLabels.has(label)) presentation.log(`${label} re-rendered`)
   }
+}
+
+/** Refresh drifted installed definitions, then prove each named definition now matches. */
+export async function refreshLaunchAgents(
+  platform: NodeJS.Platform,
+  presentation: { log(value: string): void },
+  deps: RefreshDependencies = {},
+): Promise<void> {
+  const launchAgentsSupported = includesLaunchAgents(platform)
+  if (!launchAgentsSupported && !schedulePlatformSupported(platform)) return
+  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
+  if (identity.kind === 'checkout' && !launchAgentsSupported) return
+  return refreshSupportedLaunchAgents(platform, identity, launchAgentsSupported, presentation, deps)
 }
