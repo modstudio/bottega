@@ -2,6 +2,7 @@
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { which } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import {
@@ -65,6 +66,13 @@ import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
+import {
+  harnessInstallPrerequisiteAvailability,
+  harnessInstallPrerequisiteNotice,
+  missingHarnessInstallPrerequisites,
+  neededHarnesses,
+} from '../setup/harness-install-prerequisites.ts'
+import { type HarnessName, harnessInstallRoute } from '../setup/setup-mcp.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
@@ -454,6 +462,26 @@ export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
       ].join('\n')
 }
 
+export function harnessInstallPrerequisiteDoctorLine(
+  harness: HarnessName,
+  agentNames: readonly string[],
+  missing: Parameters<typeof harnessInstallPrerequisiteNotice>[2],
+): string {
+  const notice = harnessInstallPrerequisiteNotice(harness, agentNames, missing)
+  return `${notice.message}\n  ${notice.fix}`
+}
+
+function reportHarnessInstallPrerequisites(log: DoctorPresentation['log']): void {
+  const available = harnessInstallPrerequisiteAvailability(process.platform)
+  for (const { harness, agents: agentNames } of neededHarnesses(agentRows())) {
+    if (which(harness, { PATH: process.env.PATH })) continue
+    const route = harnessInstallRoute(harness, process.platform)
+    if (!route) continue
+    const missing = missingHarnessInstallPrerequisites(route, available)
+    if (missing.length) log(harnessInstallPrerequisiteDoctorLine(harness, agentNames, missing))
+  }
+}
+
 async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<void> {
   db()
   log(`database       ${DB_PATH}`)
@@ -615,6 +643,7 @@ async function reportAgentsForInstallLevel(
     return
   }
   await reportAgentsAndDelegation(presentation, agentStatus)
+  reportHarnessInstallPrerequisites(presentation.log)
 }
 
 async function workerHealthForInstallLevel(machineLevel: MachineLevel) {

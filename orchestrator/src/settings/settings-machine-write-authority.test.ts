@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -6,6 +7,7 @@ import {
   assertCurrentMachineHomeWriteAuthority,
   assertMachineHomeWriteAuthority,
   decideMachineHomeWriteAuthority,
+  decideMachineHomeWriteRefusal,
   machineHomesUnderTemporaryDirectory,
 } from './settings-machine-write-authority.ts'
 
@@ -55,13 +57,65 @@ test('write authority ignores a registered main checkout that no longer exists',
   ).not.toThrow()
 })
 
-test('write authority refuses a distribution when a registered main checkout exists', () => {
+test('write authority allows a distribution when a registered main checkout exists', () => {
   expect(
     decideMachineHomeWriteAuthority({
       ...authorityFacts,
       runningCopyIsDistribution: true,
     }),
-  ).toEqual({ action: 'refuse-not-registered-main' })
+  ).toEqual({ action: 'allow' })
+})
+
+test('a newer registered checkout keeps the existing rerun remedy', () => {
+  expect(
+    decideMachineHomeWriteRefusal({
+      command: 'machine settings apply',
+      registered: {
+        path: '/registered',
+        executable: `/registered/bin/${PLATFORM_SLUG}`,
+        version: { version: '0.5.22' },
+      },
+      running: { path: '/secondary', version: { version: '0.5.21' } },
+    }),
+  ).toEqual({
+    detail: null,
+    remedy: `cleared by: run \`/registered/bin/${PLATFORM_SLUG} machine settings apply\``,
+  })
+})
+
+test('an older registered checkout requires pulling before rerunning there', () => {
+  const refusal = decideMachineHomeWriteRefusal({
+    command: 'machine settings apply',
+    registered: {
+      path: '/registered',
+      executable: `/registered/bin/${PLATFORM_SLUG}`,
+      version: { version: '0.5.14' },
+    },
+    running: { path: '/secondary', version: { version: '0.5.21' } },
+  })
+  expect(refusal.detail).toContain('/registered is version 0.5.14')
+  expect(refusal.detail).toContain('/secondary is version 0.5.21')
+  expect(refusal.remedy).toContain('git -C /registered pull --ff-only')
+  expect(refusal.remedy).not.toBe(
+    `cleared by: run \`/registered/bin/${PLATFORM_SLUG} machine settings apply\``,
+  )
+})
+
+test('an unreadable version keeps the existing remedy and names the comparison failure', () => {
+  expect(
+    decideMachineHomeWriteRefusal({
+      command: 'machine settings apply',
+      registered: {
+        path: '/registered',
+        executable: `/registered/bin/${PLATFORM_SLUG}`,
+        version: { reason: 'manifest unreadable' },
+      },
+      running: { path: '/secondary', version: { version: '0.5.21' } },
+    }),
+  ).toEqual({
+    detail: 'could not compare versions: manifest unreadable',
+    remedy: `cleared by: run \`/registered/bin/${PLATFORM_SLUG} machine settings apply\``,
+  })
 })
 
 test('write authority refuses a secondary checkout', () => {
@@ -122,7 +176,7 @@ test('a standalone secondary clone is refused', () => {
   ).toThrow("real harness homes may only be written from this machine's installed copy")
 })
 
-test('a distribution on a development machine names the registered main executable', () => {
+test('a distribution on a development machine may write real homes', () => {
   expect(() =>
     assertMachineHomeWriteAuthority({
       command: 'machine settings apply',
@@ -133,9 +187,7 @@ test('a distribution on a development machine names the registered main executab
       runningInstallationRoot: '/opt/distribution',
       binaryRepositoryRoot: null,
     }),
-  ).toThrow(
-    `cleared by: run \`/projects/registered-main/bin/${PLATFORM_SLUG} machine settings apply\``,
-  )
+  ).not.toThrow()
 })
 
 test('an unregistered linked worktree names registration and rerun from its main checkout', () => {
@@ -152,6 +204,39 @@ test('an unregistered linked worktree names registration and rerun from its main
   ).toThrow(
     `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} project add /projects/main\`, then \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
   )
+})
+
+test('an unregistered linked worktree pulls an older main checkout before registration and rerun', () => {
+  const fixture = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-write-authority-`))
+  const main = join(fixture, 'main')
+  const running = join(fixture, 'running')
+  mkdirSync(main)
+  mkdirSync(running)
+  writeFileSync(
+    join(main, 'package.json'),
+    JSON.stringify({ name: PLATFORM_SLUG, version: '0.5.14' }),
+  )
+  writeFileSync(
+    join(running, 'package.json'),
+    JSON.stringify({ name: PLATFORM_SLUG, version: '0.5.21' }),
+  )
+  try {
+    expect(() =>
+      assertMachineHomeWriteAuthority({
+        command: 'machine settings apply',
+        targetHomes: ['/operator/.claude'],
+        runningFromRegisteredMainCheckout: false,
+        runningCopyIsDistribution: false,
+        registeredMainCheckout: null,
+        runningInstallationRoot: running,
+        binaryRepositoryRoot: main,
+      }),
+    ).toThrow(
+      `cleared by: run \`git -C ${main} pull --ff-only\`, then \`${main}/bin/${PLATFORM_SLUG} project add ${main}\`, then \`${main}/bin/${PLATFORM_SLUG} machine settings apply\``,
+    )
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
 })
 
 test('an unregistered main checkout names registration and rerun from itself', () => {

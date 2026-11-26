@@ -5,6 +5,9 @@ import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
+  HARNESS_MCP_CATALOGUE,
+  type HarnessName,
+  harnessInstallRoute,
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
@@ -27,6 +30,16 @@ const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult =
   stderr,
   timedOut: false,
   error: null,
+})
+
+test('Linux harness routes declare curl and goose declares bzip2', () => {
+  for (const harness of Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]) {
+    const route = harnessInstallRoute(harness, 'linux')
+    if (!route) continue
+    const commands = route.requires?.map(({ command }) => command) ?? []
+    if (route.command.includes('curl')) expect(commands, harness).toContain('curl')
+    if (harness === 'goose') expect(commands).toContain('bzip2')
+  }
 })
 
 test('classifies async setup command deadline and output failures', () => {

@@ -38,10 +38,17 @@ function manualInstallNotice(
   harness: HarnessName,
   reason: string,
   command: string,
+  output = '',
 ): HarnessInstallOutcome {
+  const tail = output
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .slice(-10)
+    .join('\n')
+    .slice(-2_000)
   return {
     status: 'follow-up',
-    message: `${harness} was not installed: ${reason}; run by hand: ${command}`,
+    message: `${harness} was not installed: ${reason}${tail ? `\n${tail}` : ''}; run by hand: ${command}`,
   }
 }
 
@@ -60,7 +67,13 @@ export function installHarness(
 ): HarnessInstallOutcome {
   const result = runner(['/bin/sh', '-c', route.command], HARNESS_INSTALL_TIMEOUT_MS)
   const failure = resultFailure(result)
-  if (failure) return manualInstallNotice(harness, failure, route.command)
+  if (failure)
+    return manualInstallNotice(
+      harness,
+      failure,
+      route.command,
+      `${result.stdout}\n${result.stderr}`,
+    )
   const path = detector.which(harness)
   if (path) return { status: 'applied', message: `installed ${harness} at ${path}` }
   if (route.binDir) {

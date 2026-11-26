@@ -10,6 +10,11 @@ import {
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { developerNodeNotice } from './developer-node.ts'
 import {
+  harnessInstallPrerequisiteNotice,
+  missingHarnessInstallPrerequisites,
+  neededHarnesses,
+} from './harness-install-prerequisites.ts'
+import {
   providerCredentialTrustNotices,
   type SetupCredentialTrustFact,
 } from './provider-credential-trust-notice.ts'
@@ -21,6 +26,7 @@ import {
   HARNESS_MCP_CATALOGUE,
   type HarnessInstallRoute,
   type HarnessName,
+  harnessCatalogueName,
   harnessDocumentation,
   harnessInstallRoute,
   harnessMcpServers,
@@ -430,22 +436,8 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   return notices
 }
 
-const HARNESS_CATALOGUE_NAMES = {
-  codex: 'codex',
-  grok: 'grok',
-  opencode: 'opencode',
-  goose: 'goose',
-  'claude-code': 'claude',
-} as const satisfies Record<string, HarnessName>
-
-function harnessCatalogueName(harness: string): HarnessName | null {
-  return Object.hasOwn(HARNESS_CATALOGUE_NAMES, harness)
-    ? HARNESS_CATALOGUE_NAMES[harness as keyof typeof HARNESS_CATALOGUE_NAMES]
-    : null
-}
-
 const UNREGISTERED_HARNESSES = [
-  { fact: HARNESS_CATALOGUE_NAMES['claude-code'], harness: 'claude-code' },
+  { fact: harnessCatalogueName('claude-code')!, harness: 'claude-code' },
   { fact: 'opencode', harness: 'opencode' },
   { fact: 'goose', harness: 'goose' },
 ] as const
@@ -490,22 +482,6 @@ function builtInAgentNotice(
     : null
 }
 
-function neededHarnesses(agents: SetupAgent[]): Array<{ harness: HarnessName; agents: string[] }> {
-  const names = new Map<HarnessName, string[]>()
-  for (const agent of agents) {
-    if (!agent.enabled) continue
-    const candidate =
-      agent.name === 'codex' || agent.name === 'grok'
-        ? agent.name
-        : harnessCatalogueName(agent.harness)
-    if (!candidate) continue
-    const agentNames = names.get(candidate) ?? []
-    agentNames.push(agent.name)
-    names.set(candidate, agentNames)
-  }
-  return [...names].map(([harness, harnessAgents]) => ({ harness, agents: harnessAgents }))
-}
-
 function proposeHarnessInstalls(
   machine: SetupFacts,
   agents: SetupAgent[],
@@ -526,6 +502,12 @@ function proposeHarnessInstalls(
           .join('; ')}`,
         blocking: false,
       })
+      return []
+    }
+    const missing = missingHarnessInstallPrerequisites(route, machine.harnessInstallPrerequisites)
+    if (missing.length) {
+      const notice = harnessInstallPrerequisiteNotice(harness, agentNames, missing)
+      notices.push(notice)
       return []
     }
     const questionId = harnessInstallQuestionId(harness)

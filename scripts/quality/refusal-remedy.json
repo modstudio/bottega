@@ -76,7 +76,6 @@
     "orchestrator/src/settings/settings-env.ts": 2,
     "orchestrator/src/settings/settings-files.ts": 1,
     "orchestrator/src/settings/settings-machine-apply.ts": 1,
-    "orchestrator/src/settings/settings-machine-write-authority.ts": 2,
     "orchestrator/src/settings/settings-write.ts": 2,
     "orchestrator/src/settings/settings.ts": 5,
     "orchestrator/src/ship-cleanup/ship-cleanup.ts": 4,

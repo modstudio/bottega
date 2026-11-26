@@ -256,6 +256,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/brand.ts',
       'shared/git.ts',
       'shared/install-root.ts',
+      'shared/refusal.ts',
       'shared/state-directory.ts',
       'bun:sqlite',
       'node:fs',

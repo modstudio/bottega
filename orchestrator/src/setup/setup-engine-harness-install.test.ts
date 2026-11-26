@@ -29,6 +29,7 @@ function machineWithHarness(
   return {
     ...machine,
     os: { platform, arch: 'x64', wsl: false },
+    harnessInstallPrerequisites: { curl: true, tar: true, bzip2: true },
     harnesses: {
       claude: { path: null, version: null, auth: 'unknown', mcp: null },
       codex: { path: null, version: null, auth: 'unknown', mcp: null },
@@ -39,6 +40,41 @@ function machineWithHarness(
     },
   }
 }
+
+test('missing goose bzip2 prerequisite gives an apt notice instead of an install question', () => {
+  const plan = proposeSetup(
+    resolveLifecycle,
+    {
+      ...machineWithHarness('goose', null, 'linux'),
+      harnessInstallPrerequisites: { curl: true, tar: true, bzip2: false },
+    },
+    [],
+    [],
+    [agent('goose', true)],
+  )
+  expect(plan.questions.some(({ id }) => id === 'harness:goose:install')).toBe(false)
+  expect(plan.notices).toContainEqual({
+    message:
+      'goose is needed by enabled agent(s) goose-agent, but its install route needs bzip2, which is not installed',
+    fix: `sudo apt-get install -y bzip2, then rerun ${PLATFORM_SLUG} machine setup plan`,
+    blocking: false,
+  })
+})
+
+test('unknown harness prerequisite facts still offer the install question', () => {
+  const plan = proposeSetup(
+    resolveLifecycle,
+    {
+      ...machineWithHarness('goose', null, 'linux'),
+      harnessInstallPrerequisites: {},
+    },
+    [],
+    [],
+    [agent('goose', true)],
+  )
+  expect(plan.questions.some(({ id }) => id === 'harness:goose:install')).toBe(true)
+  expect(plan.notices.some(({ message }) => message.includes('which is not installed'))).toBe(false)
+})
 
 const installCommands = {
   codex: {
