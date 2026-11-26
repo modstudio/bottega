@@ -57,8 +57,8 @@ import {
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
-import { withholdReviewFunnelDecisionHistory } from './record-sync-review-funnel-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
+import { withholdReviewFunnelDecisionHistory } from './record-sync-review-funnel-decision.ts'
 import { RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import type {
   BlockedOutboxRow,

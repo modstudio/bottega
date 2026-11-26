@@ -1,10 +1,7 @@
-import { createHash } from 'node:crypto'
 import { expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { utf8Bytes } from './outbox-read.ts'
-import {
-  RECORD_SYNC_MAX_PAYLOAD_BYTES,
-  type RecordPayload,
-} from './record-sync-contract.ts'
+import { RECORD_SYNC_MAX_PAYLOAD_BYTES, type RecordPayload } from './record-sync-contract.ts'
 import { withholdReviewFunnelDecisionHistory } from './record-sync-review-funnel-decision.ts'
 
 const digest = (value: unknown): string =>
