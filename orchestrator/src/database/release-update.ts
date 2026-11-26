@@ -66,7 +66,6 @@ type Presentation = { log(value: string): void }
 const releaseDownloadFetch = boundedFetch('release-download')
 
 type PreparedReleaseUpdate = {
-  version: string
   decision: Extract<CandidateStoreDecision, { state: 'positioned' }>
   pendingMigration: string | null
   apply(): void
@@ -391,7 +390,6 @@ export async function prepareReleaseUpdate(input: {
     return {
       action: 'prepared',
       update: {
-        version: resolution.version,
         decision,
         pendingMigration: journal[decision.position]?.tag ?? null,
         apply() {

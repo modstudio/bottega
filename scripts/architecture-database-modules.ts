@@ -95,7 +95,6 @@ export const databaseModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/database/post-update-steps.ts', [
     'node:fs',
-    '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
     '../../../shared/update-lock.ts',
@@ -105,9 +104,10 @@ export const databaseModules: ArchitectureModule[] = [
     './checkout-cli-build.ts',
     './database-commands.ts',
     './hosted-row-release.ts',
+    './post-pull-step.ts',
     './release-update.ts',
-    './release-update-decision.ts',
   ]),
+  module('orchestrator/src/database/post-pull-step.ts', ['../../../shared/bounded-process.ts']),
   module('orchestrator/src/database/applied-migration-compatibilities.ts', ['bun:sqlite']),
   module('orchestrator/src/database/migrations.ts', [
     'bun:sqlite',

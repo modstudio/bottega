@@ -1,8 +1,11 @@
 // concern: machine post-update policy and adapter
-/** Lists and runs the installed version's ordered post-update work. */
+/**
+ * Lists and runs the installed version's ordered post-update work. Machine update never installs
+ * an older release because releaseDowngradeRefusal refuses it, so the installed binary always
+ * carries machine post-update.
+ */
 
 import { realpathSync } from 'node:fs'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV, resolveInstallationPaths } from '../../../shared/install-root.ts'
 import {
@@ -18,12 +21,10 @@ import {
   releaseHostedRowsAfterUpdate,
   retireDefaultProjectAfterUpdate,
 } from './hosted-row-release.ts'
+import { runPostPullStep } from './post-pull-step.ts'
 import { databaseOverrideFreeEnvironment } from './release-update.ts'
-import { compareReleaseVersions } from './release-update-decision.ts'
 
 type Presentation = { log(value: string): void }
-
-export const POST_UPDATE_VERB_FIRST_RELEASE = '0.5.18'
 
 export type PostUpdatePath = 'checkout' | 'distribution'
 
@@ -59,21 +60,6 @@ export function postUpdateSteps(path: PostUpdatePath): readonly PostUpdateStep[]
   return path === 'checkout' ? CHECKOUT_POST_UPDATE_STEPS : DISTRIBUTION_POST_UPDATE_STEPS
 }
 
-export type PostUpdateHandoffDecision = { action: 'handoff' } | { action: 'skip'; message: string }
-
-/** Decide whether an installed release contains the hidden post-update verb. */
-export function postUpdateHandoffDecision(targetVersion: string): PostUpdateHandoffDecision {
-  if (compareReleaseVersions(targetVersion, POST_UPDATE_VERB_FIRST_RELEASE) >= 0) {
-    return { action: 'handoff' }
-  }
-  return {
-    action: 'skip',
-    message:
-      `release ${targetVersion} predates machine post-update; its post-update steps were not run, ` +
-      'and no single command runs them by hand',
-  }
-}
-
 export type PostUpdateInput =
   | { path: 'distribution' }
   | { path: 'checkout'; checkout: string; branch: string; beforePull: string }
@@ -93,26 +79,6 @@ export type PostUpdateDependencies = {
   retireUnusedDefaultLocalProject?: () => Promise<boolean>
   storeAttachedToHostedRecord?: () => boolean
   recordSessionPresent?: () => boolean
-}
-
-function runPostPullStep(input: {
-  argv: string[]
-  cwd: string
-  env?: Record<string, string | undefined>
-  failureLabel: string
-}): void {
-  const result = startBoundedSync(input.argv, {
-    budget: 'machine-update',
-    cwd: input.cwd,
-    env: input.env,
-  })
-  process.stdout.write(result.stdout)
-  process.stderr.write(result.stderr)
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim()
-    const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(`${input.failureLabel} failed with exit ${result.exitCode}${detail}`)
-  }
 }
 
 function runWorkflowSync(cwd: string, since: string): void {
@@ -217,6 +183,10 @@ export async function runPostUpdateSteps(
           storeAttached: deps.storeAttachedToHostedRecord,
         })
         break
+      default: {
+        const exhaustive: never = step
+        return exhaustive
+      }
     }
   }
 }
@@ -245,21 +215,10 @@ type HandoffPostUpdateBase = {
   environment?: Record<string, string | undefined>
 }
 
-export type HandoffPostUpdateInput = HandoffPostUpdateBase &
-  (
-    | { path: Extract<PostUpdateInput, { path: 'checkout' }> }
-    | { path: Extract<PostUpdateInput, { path: 'distribution' }>; targetVersion: string }
-  )
+export type HandoffPostUpdateInput = HandoffPostUpdateBase & { path: PostUpdateInput }
 
 /** Hand post-update work to the installed binary and preserve its output. */
 export function handoffPostUpdateSteps(input: HandoffPostUpdateInput): void {
-  if ('targetVersion' in input) {
-    const decision = postUpdateHandoffDecision(input.targetVersion)
-    if (decision.action === 'skip') {
-      input.presentation.log(decision.message)
-      return
-    }
-  }
   const argv = postUpdateArgv(input.binary, input.path)
   const environment = databaseOverrideFreeEnvironment({}, input.environment)
   if (input.path.path === 'checkout') delete environment[CHECKOUT_CLI_BINARY_ENV]

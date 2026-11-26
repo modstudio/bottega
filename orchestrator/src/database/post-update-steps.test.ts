@@ -2,13 +2,7 @@ import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
-import {
-  handoffPostUpdateSteps,
-  POST_UPDATE_VERB_FIRST_RELEASE,
-  postUpdateHandoffDecision,
-  postUpdateSteps,
-  runPostUpdateSteps,
-} from './post-update-steps.ts'
+import { handoffPostUpdateSteps, postUpdateSteps, runPostUpdateSteps } from './post-update-steps.ts'
 
 const checkout = resolve(import.meta.dir, '../../..')
 const checkoutBinary = `/checkout/bin/${PLATFORM_SLUG}`
@@ -31,18 +25,6 @@ test('post-update paths have one exact ordered step list', () => {
     'hosted-row-release',
     'default-project-retirement',
   ])
-})
-
-test('post-update handoff uses the first release carrying the verb as its cutoff', () => {
-  expect(postUpdateHandoffDecision('0.5.17')).toEqual({
-    action: 'skip',
-    message:
-      'release 0.5.17 predates machine post-update; its post-update steps were not run, and no single command runs them by hand',
-  })
-  expect(postUpdateHandoffDecision(POST_UPDATE_VERB_FIRST_RELEASE)).toEqual({
-    action: 'handoff',
-  })
-  expect(postUpdateHandoffDecision('0.5.19')).toEqual({ action: 'handoff' })
 })
 
 test('post-update handoff failures name the exact checkout and distribution rerun commands', () => {
@@ -68,7 +50,6 @@ test('post-update handoff failures name the exact checkout and distribution reru
       binary: distributionBinary,
       path: { path: 'distribution' },
       presentation,
-      targetVersion: POST_UPDATE_VERB_FIRST_RELEASE,
       spawn,
     }),
   ).toThrow(

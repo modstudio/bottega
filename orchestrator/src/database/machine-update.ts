@@ -2,7 +2,6 @@
 /** Updates either installation kind while holding its migration drain or window. */
 
 import { existsSync, realpathSync, renameSync, rmSync } from 'node:fs'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
@@ -54,6 +53,7 @@ import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationJournal, migrationState, storeJournalPosition } from './migrations.ts'
+import { runPostPullStep } from './post-pull-step.ts'
 import { type HandoffPostUpdateInput, handoffPostUpdateSteps } from './post-update-steps.ts'
 import { migrateInstalledBinary, prepareReleaseUpdate } from './release-update.ts'
 import {
@@ -103,26 +103,6 @@ function incomingJournal(
   const parsed = JSON.parse(source) as { entries?: unknown[] }
   if (!Array.isArray(parsed.entries)) throw new Error('incoming migration journal has no entries')
   return validatedMigrationJournalEntries(parsed.entries)
-}
-
-function runPostPullStep(input: {
-  argv: string[]
-  cwd: string
-  env?: Record<string, string | undefined>
-  failureLabel: string
-}): void {
-  const result = startBoundedSync(input.argv, {
-    budget: 'machine-update',
-    cwd: input.cwd,
-    env: input.env,
-  })
-  process.stdout.write(result.stdout)
-  process.stderr.write(result.stderr)
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim()
-    const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(`${input.failureLabel} failed with exit ${result.exitCode}${detail}`)
-  }
 }
 
 function runMigration(cwd: string): void {
@@ -270,7 +250,7 @@ async function updateDistribution(input: {
   manifest: Extract<InstallationIdentity, { kind: 'distribution' }>['manifest']
   requestedVersion?: string
   deps: UpdateDependencies
-}): Promise<string> {
+}): Promise<void> {
   const requested = input.requestedVersion
     ? normalizeReleaseVersion(input.requestedVersion)
     : undefined
@@ -298,12 +278,12 @@ async function updateDistribution(input: {
     } finally {
       prepared.update.cleanup()
     }
-    return prepared.update.version
+    return
   }
   const current = decideCurrentReleaseUpdate(prepared.version, runningState.pending.length > 0)
   if (current.action === 'no-op') {
     input.presentation.log(current.message)
-    return prepared.version
+    return
   }
   const runningJournal = migrationJournal()
   const migration = withSynchronousDatabaseForMigrationStep((database) => {
@@ -326,7 +306,6 @@ async function updateDistribution(input: {
     deps: input.deps,
   })
   input.presentation.log(current.message)
-  return prepared.version
 }
 
 type PostPullOperation = 'pulled-path measurement' | 'dependency install' | 'migration'
@@ -614,7 +593,7 @@ export async function machineUpdateCommandUnderLock(
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {
-    const targetVersion = await (deps.updateDistribution ?? updateDistribution)({
+    await (deps.updateDistribution ?? updateDistribution)({
       manifest: identity.manifest,
       requestedVersion,
       presentation,
@@ -624,7 +603,6 @@ export async function machineUpdateCommandUnderLock(
       binary: realpathSync(process.execPath),
       path: { path: 'distribution' },
       presentation,
-      targetVersion,
     })
     return
   }

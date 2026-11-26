@@ -922,7 +922,6 @@ test('distribution update hands post-update work to the installed target once', 
       },
       updateDistribution: async () => {
         updated = true
-        return '0.5.18'
       },
       handoffPostUpdate: (input) => handoffs.push(input),
     },
@@ -933,7 +932,6 @@ test('distribution update hands post-update work to the installed target once', 
       binary: target,
       path: { path: 'distribution' },
       presentation: expect.any(Object),
-      targetVersion: '0.5.18',
     },
   ])
 })
