@@ -31,12 +31,7 @@ never queued. A synced table is written locally and pushed on a schedule. A
 machine table is state no other machine cares about. A local-only install keeps
 every table. A hosted table without a home names its task.
 
-Every table declares a lifecycle: what it is, where its authoritative copy
-lives, how long each copy is kept and what removes it. Tables declare
-`hosted`, `synced` or `machine` in
-`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming the user's ruling;
-`scripts/check-identity-inventory.ts` enforces both. Doc-store records
-`design-machine-hosted-seam` and `design-data-lifecycle` hold detail.
+Table lifecycle and identity-class rules are in `.agents/contexts/table-lifecycle.md`.
 
 ## Delegation costs nothing in judgment
 

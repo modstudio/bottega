@@ -1,6 +1,8 @@
 ---
 description: Rules for current, compact, resolvable canon and documentation
-always: true
+paths:
+  - .agents/**
+  - "**/AGENTS.md"
 ---
 
 # Writing canon
