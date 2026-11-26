@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import type { GitRefObservation } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import {
   ensureCommitWithGit,
@@ -18,7 +20,7 @@ const path = '/projects/fixture/.claude/worktrees/release'
 
 const target = {
   project,
-  selected: { name: 'production' },
+  selected: { name: 'production', branch: 'production' },
   deploy: 'deploy',
 } as CheckoutReleaseTarget
 
@@ -38,8 +40,8 @@ function dependencies(
       calls.push(`resolve:${name}:${rung}:${commit}`)
       return target
     },
-    ensureCommit: (_project, commit) => {
-      calls.push(`ensure:${commit}`)
+    ensureCommit: (_project, commit, rungBranch) => {
+      calls.push(`ensure:${commit}:${rungBranch}`)
     },
     deploy: (_target, checkout, commit) => {
       calls.push(`deploy:${checkout}:${commit}`)
@@ -81,7 +83,7 @@ test('releaseAtCommit provisions the requested commit, deploys from it, and remo
   expect(report.result).toBe(released)
   expect(calls).toEqual([
     'resolve:fixture:production:merge-commit',
-    'ensure:merge-commit',
+    'ensure:merge-commit:production',
     'create:release-production-tree-id:merge-commit',
     'deploy:/projects/fixture/.claude/worktrees/release:merge-commit',
     'remove:/projects/fixture/.claude/worktrees/release',
@@ -145,56 +147,135 @@ test('releaseAtCommit preserves a proved deploy when removal leaves residue', as
 
 function commitRunner(
   calls: string[],
-  checks: boolean[],
-  fetchFailure?: Error,
-): Parameters<typeof ensureCommitWithGit>[2] {
+  observations: GitRefObservation[],
+  fetchFailure?: (branch: string) => unknown,
+): Parameters<typeof ensureCommitWithGit>[3] {
   return {
-    check: (args, cwd) => {
-      calls.push(`check:${cwd}:${args.join(' ')}`)
-      return { ok: checks.shift() ?? false, stderr: '' }
+    observe: (cwd, ref) => {
+      calls.push(`observe:${cwd}:${ref}`)
+      return observations.shift() ?? { outcome: 'absent' }
     },
     fetch: (args, cwd) => {
       calls.push(`fetch:${cwd}:${args.join(' ')}`)
-      if (fetchFailure) throw fetchFailure
+      const failure = fetchFailure?.(args[2]!)
+      if (failure) throw failure
     },
   }
 }
 
 test('ensureCommitWithGit does not fetch a commit already present locally', () => {
   const calls: string[] = []
-  ensureCommitWithGit(project, 'local-commit', commitRunner(calls, [true]))
+  ensureCommitWithGit(
+    project,
+    'local-commit',
+    'production',
+    commitRunner(calls, [{ outcome: 'present' }]),
+  )
 
-  expect(calls).toEqual(['check:/projects/fixture:cat-file -e local-commit^{commit}'])
+  expect(calls).toEqual(['observe:/projects/fixture:local-commit^{commit}'])
 })
 
 test('ensureCommitWithGit fetches an absent commit from the landing branch', () => {
   const calls: string[] = []
-  ensureCommitWithGit(project, 'merge-commit', commitRunner(calls, [false, true]))
+  ensureCommitWithGit(
+    project,
+    'merge-commit',
+    'main',
+    commitRunner(calls, [{ outcome: 'absent' }, { outcome: 'present' }]),
+  )
 
   expect(calls).toEqual([
-    'check:/projects/fixture:cat-file -e merge-commit^{commit}',
+    'observe:/projects/fixture:merge-commit^{commit}',
     'fetch:/projects/fixture:fetch origin main',
-    'check:/projects/fixture:cat-file -e merge-commit^{commit}',
+    'observe:/projects/fixture:merge-commit^{commit}',
   ])
 })
 
-test('ensureCommitWithGit refuses when the commit remains absent after fetch', () => {
-  expect(() =>
-    ensureCommitWithGit(project, 'missing-commit', commitRunner([], [false, false])),
-  ).toThrow(
-    "commit missing-commit is not on origin's main after fetching in checkout /projects/fixture; run git -C /projects/fixture fetch origin main, then rerun",
+test('ensureCommitWithGit fetches the landing and non-landing rung branches', () => {
+  const calls: string[] = []
+  ensureCommitWithGit(
+    project,
+    'release-commit',
+    'production',
+    commitRunner(calls, [{ outcome: 'absent' }, { outcome: 'present' }]),
   )
+
+  expect(calls).toEqual([
+    'observe:/projects/fixture:release-commit^{commit}',
+    'fetch:/projects/fixture:fetch origin main',
+    'fetch:/projects/fixture:fetch origin production',
+    'observe:/projects/fixture:release-commit^{commit}',
+  ])
 })
 
-test('ensureCommitWithGit reports a fetch failure with its remedy', () => {
+test('ensureCommitWithGit refuses when the commit remains absent from both branches', () => {
   expect(() =>
     ensureCommitWithGit(
       project,
       'missing-commit',
-      commitRunner([], [false], new Error('network unavailable')),
+      'production',
+      commitRunner([], [{ outcome: 'absent' }, { outcome: 'absent' }]),
     ),
   ).toThrow(
-    'commit missing-commit is absent from checkout /projects/fixture; fetch failed: network unavailable; run git -C /projects/fixture fetch origin main, then rerun',
+    "commit missing-commit is not on origin's main or production after fetching in checkout /projects/fixture; run git -C /projects/fixture fetch origin main production, then rerun",
+  )
+})
+
+test('ensureCommitWithGit refuses a failed probe without fetching', () => {
+  const calls: string[] = []
+  expect(() =>
+    ensureCommitWithGit(
+      project,
+      'missing-commit',
+      'production',
+      commitRunner(calls, [{ outcome: 'failed', detail: 'not a git repository' }]),
+    ),
+  ).toThrow(
+    'could not verify commit missing-commit in checkout /projects/fixture: not a git repository',
+  )
+  expect(calls).toEqual(['observe:/projects/fixture:missing-commit^{commit}'])
+})
+
+test('ensureCommitWithGit reports the failed branch fetch with its remedy', () => {
+  expect(() =>
+    ensureCommitWithGit(
+      project,
+      'missing-commit',
+      'production',
+      commitRunner([], [{ outcome: 'absent' }], (branch) =>
+        branch === 'production' ? new Error('network unavailable') : undefined,
+      ),
+    ),
+  ).toThrow(
+    "commit missing-commit is absent from checkout /projects/fixture; fetch of origin's production failed: network unavailable; run git -C /projects/fixture fetch origin main production, then rerun",
+  )
+})
+
+test('ensureCommitWithGit propagates a fetch bound error unchanged', () => {
+  const bound = new BoundExceededError('git fetch origin main', 'git-network', 'deadline', 120_000)
+  expect(() =>
+    ensureCommitWithGit(
+      project,
+      'missing-commit',
+      'main',
+      commitRunner([], [{ outcome: 'absent' }], () => bound),
+    ),
+  ).toThrow(bound)
+})
+
+test('ensureCommitWithGit reports a failed probe after fetching', () => {
+  expect(() =>
+    ensureCommitWithGit(
+      project,
+      'missing-commit',
+      'main',
+      commitRunner(
+        [],
+        [{ outcome: 'absent' }, { outcome: 'failed', detail: 'object database unreadable' }],
+      ),
+    ),
+  ).toThrow(
+    'could not verify commit missing-commit in checkout /projects/fixture after fetching: object database unreadable',
   )
 })
 
@@ -202,6 +283,11 @@ test('ensureCommitWithGit refuses an absent commit when the project has no trunk
   const projectWithoutTrunk = { ...project, settings: { ...project.settings, trunk: undefined } }
 
   expect(() =>
-    ensureCommitWithGit(projectWithoutTrunk, 'missing-commit', commitRunner([], [false])),
+    ensureCommitWithGit(
+      projectWithoutTrunk,
+      'missing-commit',
+      'production',
+      commitRunner([], [{ outcome: 'absent' }]),
+    ),
   ).toThrow('project has no trunk; set trunk, then retry')
 })
