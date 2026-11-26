@@ -53,7 +53,7 @@ const emptyPlan = (): SetupPlan => ({
   folderSelection: { options: [], defaults: [] },
 })
 
-const declaration = (): RecordSpaceAgent => ({
+const declarationWith = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent => ({
   name: 'codex-team',
   harness: 'codex',
   backend: 'vendor',
@@ -70,7 +70,11 @@ const declaration = (): RecordSpaceAgent => ({
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
+  ...overrides,
 })
+const declaration = (): RecordSpaceAgent => declarationWith()
 
 test('declared agents are offered for registration and get probe remedies without a project', async () => {
   const plan = emptyPlan()
@@ -115,6 +119,52 @@ test('a disabled unprobed declared agent is not offered for probing', async () =
 
   expect(plan.agentDeclarations?.existingProbeNames).toEqual([])
   expect(plan.questions).not.toContainEqual(expect.objectContaining({ id: 'probe-agents' }))
+})
+
+test('space-disabled local agents are offered as one recommended disable action', async () => {
+  const plan = emptyPlan()
+  const local: LocalAgentDeclaration = { ...declaration(), enabled: true, probedAt: null }
+  await addDeclaredAgentsToPlan(plan, [local], [], async () => ({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [declarationWith({ enabled: false, disabledReason: 'subscription ended' })],
+  }))
+
+  expect(plan.questions).toContainEqual(
+    expect.objectContaining({
+      id: 'apply-space-disabled',
+      recommendation: 'apply',
+      question: expect.stringContaining('codex-team: subscription ended'),
+    }),
+  )
+  expect(plan.agentDeclarations?.disablements).toEqual([
+    { name: 'codex-team', reason: 'subscription ended' },
+  ])
+})
+
+test('a space-enabled locally disabled agent produces only a notice with the local reason', async () => {
+  const plan = emptyPlan()
+  const local: LocalAgentDeclaration = {
+    ...declaration(),
+    enabled: false,
+    disabledReason: 'machine credential unavailable',
+    probedAt: null,
+  }
+  await addDeclaredAgentsToPlan(plan, [local], [], async () => ({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [declaration()],
+  }))
+
+  expect(plan.notices).toContainEqual({
+    message:
+      'space agent codex-team is enabled in the space but disabled locally: machine credential unavailable',
+    fix: `${PLATFORM_SLUG} agent set codex-team --enabled true`,
+    blocking: false,
+  })
+  expect(plan.agentDeclarations?.registrations).toEqual([])
+  expect(plan.agentDeclarations?.disablements).toEqual([])
+  expect(plan.questions).toEqual([])
 })
 
 test('an unreadable declaration read becomes a non-blocking sign-in notice', async () => {

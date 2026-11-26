@@ -3,8 +3,14 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { candidates, pick } from '../route/route.ts'
-import { agentCommand, agentReadinessPresentation, agentsCommand } from './agent-commands.ts'
+import {
+  agentCommand,
+  agentReadinessPresentation,
+  agentsCommand,
+  spaceAgentPresentation,
+} from './agent-commands.ts'
 import { refreshAgents, removeAgent } from './agent-registry.ts'
 
 test('agent presentation distinguishes installation, probe, disabled, and ready states', () => {
@@ -63,6 +69,33 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
     'disabled — retired after replacement',
     'OpenRouter key budget not verified',
     'ready',
+  ])
+})
+
+test('space agent JSON presentation emits the declaration array', () => {
+  const declaration = {
+    name: 'worker',
+    harness: 'goose',
+    backend: 'vendor',
+    model: 'model',
+    baseUrl: null,
+    transport: 'acp',
+    provider: null,
+    apiKeySecret: null,
+    requestSettings: null,
+    jobs: null,
+    preferredJobs: null,
+    maxConcurrent: null,
+    routeMetered: false,
+    trainsOnInputs: false,
+    operatedBy: 'vendor',
+    billing: 'api',
+    enabled: false,
+    disabledReason: 'retired',
+  } satisfies RecordSpaceAgent
+
+  expect(spaceAgentPresentation('team', [declaration], true)).toEqual([
+    JSON.stringify([declaration]),
   ])
 })
 

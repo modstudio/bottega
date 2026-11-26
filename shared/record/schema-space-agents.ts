@@ -24,6 +24,8 @@ export const spaceAgent = pgTable.withRLS(
     trainsOnInputs: boolean('trains_on_inputs').notNull(),
     operatedBy: text('operated_by').notNull(),
     billing: text().notNull(),
+    enabled: boolean().notNull().default(true),
+    disabledReason: text('disabled_reason'),
   },
   (table) => [
     unique('space_agent_space_name_unique').on(table.spaceId, table.name),

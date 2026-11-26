@@ -6,6 +6,7 @@ import {
   missingDeclaration,
   probesWithoutProject,
   probesWithProject,
+  setupAgentsWithDeclarations,
 } from './setup-agent-declarations.ts'
 
 const declared = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent => ({
@@ -25,6 +26,8 @@ const declared = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent =
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
   ...overrides,
 })
 
@@ -41,6 +44,20 @@ test('missing table offers valid rows and copies only the secret name', () => {
     registration: {
       name: 'worker',
       mutation: expect.objectContaining({ apiKeySecret: 'provider-key' }),
+    },
+  })
+})
+
+test('missing table carries a disabled declaration and its reason', () => {
+  expect(
+    missingDeclaration(
+      declared({ enabled: false, disabledReason: 'subscription ended' }),
+      undefined,
+    ),
+  ).toMatchObject({
+    kind: 'register',
+    registration: {
+      mutation: { enabled: false, reason: 'subscription ended' },
     },
   })
 })
@@ -75,4 +92,33 @@ test('probe tables include only never-probed rows and pending registrations', ()
     ['new', 'worker'],
   )
   expect(probesWithoutProject({ existingProbeNames, registrations })).toEqual(['new', 'worker'])
+})
+
+test('probe tables exclude pending disabled registrations', () => {
+  expect(
+    probesWithProject({
+      existingProbeNames: [],
+      registrations: [
+        { name: 'disabled', mutation: { harness: 'grok', enabled: false, reason: 'retired' } },
+      ],
+      projectPath: '/project',
+    }),
+  ).toEqual([])
+})
+
+test('one setup projection includes declared registrations and disablements for harness planning', () => {
+  const existing = local()
+  const projected = setupAgentsWithDeclarations(
+    [{ name: existing.name, harness: existing.harness, enabled: true, probePassed: false }],
+    [existing],
+    [
+      declared({ enabled: false, disabledReason: 'subscription ended' }),
+      declared({ name: 'goose-team', harness: 'goose', enabled: true }),
+    ],
+  )
+
+  expect(projected).toContainEqual(expect.objectContaining({ name: 'worker', enabled: false }))
+  expect(projected).toContainEqual(
+    expect.objectContaining({ name: 'goose-team', harness: 'goose', enabled: true }),
+  )
 })

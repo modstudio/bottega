@@ -44,6 +44,18 @@ test('agent registration forwards provider mutations to the agent command', asyn
   ])
 })
 
+test('agent list forwards an explicit record space', async () => {
+  const received: Array<{ json: boolean; space?: string }> = []
+  const program = new Command().exitOverride()
+  register(program, {
+    agentsCommand: async (json, _presentation, space) => void received.push({ json, space }),
+  })
+
+  await program.parseAsync(['node', 'orch', 'agents', '--space', 'shared-agents'])
+
+  expect(received).toEqual([{ json: false, space: 'shared-agents' }])
+})
+
 test('answer refuses a question-sibling option instead of recording it as ruling text', async () => {
   const recordId = addRun({
     agent: 'codex',

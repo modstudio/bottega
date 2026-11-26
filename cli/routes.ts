@@ -271,7 +271,15 @@ export const ROUTES = (
     route('agent add', 'orch', 'agent add'),
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
-    route('agent share', 'orch', 'agent share'),
+    {
+      ...route('agent share', 'orch', 'agent share'),
+      description:
+        'share one local agent declaration with a record space, or use --all to share every vendor-operated enabled and disabled row; self-operated rows are skipped because their endpoints belong to this machine',
+      options: [
+        { flags: '--all', description: 'share every local agent declaration' },
+        { flags: '--space <slug>', description: 'select the destination record space' },
+      ],
+    },
     route('agent unshare', 'orch', 'agent unshare'),
     route('agent list', 'orch', 'agents'),
     route('agent typed-question backtest', 'orch', 'typed-question backtest'),

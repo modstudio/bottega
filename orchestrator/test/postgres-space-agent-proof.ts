@@ -98,6 +98,8 @@ export function registerSpaceAgentServiceProof(input: {
     trainsOnInputs: false,
     operatedBy: 'service-proof-operator-initial',
     billing: 'service-proof-billing-initial',
+    enabled: false,
+    disabledReason: 'service proof disabled',
   }
   const changed: RecordSpaceAgent = {
     name: initial.name,
@@ -116,6 +118,8 @@ export function registerSpaceAgentServiceProof(input: {
     trainsOnInputs: true,
     operatedBy: 'service-proof-operator-changed',
     billing: 'service-proof-billing-changed',
+    enabled: true,
+    disabledReason: null,
   }
   const nullable: RecordSpaceAgent = {
     name: 'service-proof-nullable',
@@ -134,6 +138,8 @@ export function registerSpaceAgentServiceProof(input: {
     trainsOnInputs: false,
     operatedBy: 'service-proof-operator-nullable',
     billing: 'service-proof-billing-nullable',
+    enabled: true,
+    disabledReason: null,
   }
   const spaceBDeclaration: RecordSpaceAgent = {
     ...initial,
@@ -159,6 +165,21 @@ export function registerSpaceAgentServiceProof(input: {
     expect(
       (await readRecordSpaceAgents(spaceA)).filter(({ name }) => name === changed.name),
     ).toEqual([changed])
+
+    const {
+      enabled: _enabled,
+      disabledReason: _disabledReason,
+      ...legacyChanged
+    } = {
+      ...changed,
+      model: 'service-proof-model-legacy-write',
+    }
+    expect(await upsertRecordSpaceAgent({ ...spaceA, ...initial })).toEqual(initial)
+    expect(await upsertRecordSpaceAgent({ ...spaceA, ...legacyChanged })).toEqual({
+      ...legacyChanged,
+      enabled: false,
+      disabledReason: initial.disabledReason,
+    })
 
     expect(await upsertRecordSpaceAgent({ ...spaceA, ...nullable })).toEqual(nullable)
     expect(

@@ -23,6 +23,8 @@ const declaration = (model = 'gpt-6.2-sol'): RecordSpaceAgent => ({
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
 })
 
 test('space agent routes share, replace, list, and unshare declarations', async () => {
@@ -34,8 +36,8 @@ test('space agent routes share, replace, list, and unshare declarations', async 
       readSpaceAgents: async () => [...rows.values()],
       upsertSpaceAgent: async (input) => {
         const { url: _, userId: __, spaceId: ___, spaceIds: ____, ...row } = input
-        rows.set(row.name, row)
-        return row
+        rows.set(row.name, row as RecordSpaceAgent)
+        return row as RecordSpaceAgent
       },
       deleteSpaceAgent: async ({ name }) => ({ removed: rows.delete(name) }),
     },
@@ -65,13 +67,17 @@ test('space agent routes share, replace, list, and unshare declarations', async 
   expect(await (await request('DELETE', { name: 'codex' })).json()).toEqual({ removed: false })
 })
 
-test('space agent route rejects machine-state fields', async () => {
+test('space agent route validates stated enablement and preserves omitted fields', async () => {
+  let parsed: Record<string, unknown> | null = null
   const app = new Hono<RecordSpaceAgentEnvironment>()
   registerRecordSpaceAgentRoutes(
     app,
     {
       readSpaceAgents: async () => [],
-      upsertSpaceAgent: async (input) => input,
+      upsertSpaceAgent: async (input) => {
+        parsed = input
+        return declaration()
+      },
       deleteSpaceAgent: async () => ({ removed: false }),
     },
     {
@@ -84,10 +90,41 @@ test('space agent route rejects machine-state fields', async () => {
       noSpace: () => new Response('missing space', { status: 409 }),
     },
   )
-  const response = await app.request('/v1/space-agents', {
+  const invalid = await app.request('/v1/space-agents', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...declaration(), enabled: true }),
+    body: JSON.stringify({ ...declaration(), enabled: false, disabledReason: null }),
   })
-  expect(response.status).toBe(400)
+  expect(invalid.status).toBe(400)
+  expect(await invalid.text()).toContain('disabledReason must be non-empty when enabled is false')
+
+  const enabledWithReason = await app.request('/v1/space-agents', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...declaration(), disabledReason: 'not allowed' }),
+  })
+  expect(enabledWithReason.status).toBe(400)
+  expect(await enabledWithReason.text()).toContain(
+    'disabledReason must be null when enabled is true',
+  )
+
+  const { enabled: _, disabledReason: __, ...legacy } = declaration()
+  const reasonWithoutEnabled = await app.request('/v1/space-agents', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...legacy, disabledReason: 'ambiguous' }),
+  })
+  expect(reasonWithoutEnabled.status).toBe(400)
+  expect(await reasonWithoutEnabled.text()).toContain(
+    'disabledReason requires enabled to be stated',
+  )
+
+  const compatible = await app.request('/v1/space-agents', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(legacy),
+  })
+  expect(compatible.status).toBe(200)
+  expect(parsed).not.toHaveProperty('enabled')
+  expect(parsed).not.toHaveProperty('disabledReason')
 })

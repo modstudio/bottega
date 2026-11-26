@@ -76,6 +76,7 @@ export type SetupEnvironmentService = {
 
 export type SetupAgentService = {
   add(name: string, mutation: AgentMutation): void
+  disable?(name: string, reason: string): void
   probe(name: string, projectPath: string): Promise<{ ok: boolean | null; refusal?: string | null }>
 }
 
@@ -415,8 +416,30 @@ async function applyAgentAction(
   agents?: SetupAgentService,
 ): Promise<{ status: SetupAppliedActionStatus; message: string | null } | null> {
   if (action.kind === 'register-agents') return applyAgentRegistrations(action, agents)
+  if (action.kind === 'disable-agents') return applyAgentDisablements(action, agents)
   if (action.kind === 'probe-agents') return applyAgentProbes(action, agents)
   return null
+}
+
+function applyAgentDisablements(
+  action: Extract<SetupAction, { kind: 'disable-agents' }>,
+  agents?: SetupAgentService,
+): { status: SetupAppliedActionStatus; message: string } {
+  if (!agents?.disable) throw new Error('agent disable adapter is unavailable')
+  const lines: string[] = []
+  let failed = false
+  for (const declaration of action.agents) {
+    try {
+      agents.disable(declaration.name, declaration.reason)
+      lines.push(`${declaration.name}: disabled`)
+    } catch (error) {
+      failed = true
+      lines.push(
+        `${declaration.name}: failed; fix: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+  return { status: failed ? 'follow-up' : 'applied', message: lines.join('; ') }
 }
 
 function applyAgentRegistrations(

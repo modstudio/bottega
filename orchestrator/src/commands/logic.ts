@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { formatReference } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import type { agentCommand } from '../agent/agent-commands.ts'
+import type { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
 import { db, sessionId } from '../database/db.ts'
 import { keyedCursorOption } from '../dispatch/keyed-run-cursor-admission.ts'
@@ -299,6 +299,7 @@ type LogicDependencies = {
   continuationFindingsForRun?: typeof import('../review/review-continuation-findings.ts').continuationFindingsForRun
   continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
   agentCommand?: typeof agentCommand
+  agentsCommand?: typeof agentsCommand
 }
 
 const TREE_DESCRIPTIONS = {
@@ -562,6 +563,7 @@ function registerTreeCommands(program: Command): void {
 function registerAgentCommands(program: Command, runAgentCommand?: typeof agentCommand): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
     .option('--space <slug>', 'record space for share or unshare')
+    .option('--all', 'share every local agent')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
     .option('--model <value>', 'set the model identifier')
@@ -714,15 +716,18 @@ function registerWaitingCommand(program: Command): void {
 function registerAgentCatalogueCommands(
   program: Command,
   runAgentCommand: typeof agentCommand | undefined,
+  runAgentsCommand: typeof agentsCommand | undefined,
 ): void {
   registerAgentCommands(program, runAgentCommand)
-  describedCommand(program, 'agents', 'list agents and their readiness')
+  describedCommand(program, 'agents', "list local agents or one space's shared declarations")
     .option('--json', 'write agent capabilities as JSON')
+    .option('--space <slug>', 'list shared declarations in this record space')
     .allowExcessArguments(false)
     .action(async (options) =>
-      (await import('../agent/agent-commands.ts')).agentsCommand(
+      (runAgentsCommand ?? (await import('../agent/agent-commands.ts')).agentsCommand)(
         Boolean(options.json),
         presentation,
+        options.space,
       ),
     )
 }
@@ -934,5 +939,5 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  registerAgentCatalogueCommands(program, dependencies.agentCommand)
+  registerAgentCatalogueCommands(program, dependencies.agentCommand, dependencies.agentsCommand)
 }

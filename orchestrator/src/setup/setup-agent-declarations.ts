@@ -11,9 +11,14 @@ export type DeclaredAgentRegistration = {
   mutation: AgentMutation
 }
 
-export type LocalAgentDeclaration = RecordSpaceAgent & {
-  enabled: boolean
-  probedAt: string | null
+export type LocalAgentDeclaration = RecordSpaceAgent & { probedAt: string | null }
+
+type ProjectedSetupAgent = {
+  name: string
+  harness: string
+  enabled: number | boolean
+  probePassed: number | boolean
+  provider?: string | null
 }
 
 export type MissingDeclarationDecision =
@@ -53,6 +58,8 @@ function registration(declaration: RecordSpaceAgent): DeclaredAgentRegistration 
       routeMetered: declaration.routeMetered,
       trainsOnInputs: declaration.trainsOnInputs,
       billing: declaration.billing as AgentMutation['billing'],
+      enabled: declaration.enabled,
+      ...(declaration.enabled ? {} : { reason: declaration.disabledReason! }),
     },
   }
 }
@@ -68,6 +75,41 @@ export function missingDeclaration(
     : local
       ? { kind: 'present' }
       : { kind: 'register', registration: registration(declaration) }
+}
+
+export function spaceDisablesLocalAgent(
+  declaration: RecordSpaceAgent,
+  local: LocalAgentDeclaration | undefined,
+): local is LocalAgentDeclaration {
+  return declaration.enabled === false && local?.enabled === true
+}
+
+export function setupAgentsWithDeclarations(
+  agents: ProjectedSetupAgent[],
+  localAgents: LocalAgentDeclaration[],
+  declarations: RecordSpaceAgent[] | null,
+): ProjectedSetupAgent[] {
+  if (declarations === null) return agents
+  const projected = agents.map((agent) => ({ ...agent }))
+  const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
+  const projectedByName = new Map(projected.map((agent) => [agent.name, agent]))
+  for (const declaration of declarations) {
+    const local = localByName.get(declaration.name)
+    const existing = projectedByName.get(declaration.name)
+    if (existing && spaceDisablesLocalAgent(declaration, local)) existing.enabled = false
+    if (!existing && missingDeclaration(declaration, local).kind === 'register') {
+      const added: ProjectedSetupAgent = {
+        name: declaration.name,
+        harness: declaration.harness,
+        enabled: declaration.enabled,
+        provider: declaration.provider,
+        probePassed: false,
+      }
+      projected.push(added)
+      projectedByName.set(added.name, added)
+    }
+  }
+  return projected
 }
 
 const DECLARED_FIELDS = [
@@ -105,7 +147,12 @@ type ProbeCandidates = {
 }
 
 function probeNames(input: ProbeCandidates): string[] {
-  return [...input.existingProbeNames, ...input.registrations.map((agent) => agent.name)].sort()
+  return [
+    ...input.existingProbeNames,
+    ...input.registrations
+      .filter((agent) => agent.mutation.enabled !== false)
+      .map((agent) => agent.name),
+  ].sort()
 }
 
 /** Probe-with-project table: unprobed local rows and accepted registrations are offered together. */
