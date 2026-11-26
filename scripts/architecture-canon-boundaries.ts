@@ -344,6 +344,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/doc/canon-import.ts',
+      'orchestrator/src/doc/pack-projects.ts',
       `${source}canon-import-policy.ts`,
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/run/run-process.ts',

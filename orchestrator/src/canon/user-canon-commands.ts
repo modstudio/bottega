@@ -12,7 +12,8 @@ import {
 } from '../doc/doc-authoritative-read.ts'
 import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
-import { projects } from '../project/projects.ts'
+import { packProjects } from '../doc/pack-projects.ts'
+import { projectsIncludingRetired } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { assertCurrentMachineHomeWriteAuthority } from '../settings/settings-machine-write-authority.ts'
 import { planCanonImport } from './canon-import-policy.ts'
@@ -113,7 +114,7 @@ export async function userCanonImportCommand(
     }),
   )
   const surroundings = await Promise.all(
-    userCanonWriteTargets(projects()).map(async (project) => ({
+    userCanonWriteTargets(packProjects(projectsIncludingRetired())).map(async (project) => ({
       global,
       project: project
         ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(

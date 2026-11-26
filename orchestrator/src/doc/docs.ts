@@ -24,7 +24,13 @@ import {
 } from '../canon/pack-content.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
+import {
+  type Project,
+  projectAt,
+  projectByName,
+  projects,
+  projectsIncludingRetired,
+} from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -85,6 +91,7 @@ import {
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
+import { packProjects } from './pack-projects.ts'
 
 export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
@@ -259,10 +266,10 @@ async function assertPackSize(input: PackSizeInput): Promise<void> {
     input.scope === 'canon' ||
     (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
   if (!measuresPack) return
-  const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
-    name: string
-    path: string
-  }[]
+  const registered = projectsIncludingRetired()
+  const addressesOneProject =
+    input.scope === 'project' || (input.scope === 'canon' && input.subject !== null)
+  const projectRows = addressesOneProject ? registered : packProjects(registered)
   const projectsToCheck = affectedPackProjects(
     input,
     projectRows.map((project) => ({ ...project, subject: project.name })),
