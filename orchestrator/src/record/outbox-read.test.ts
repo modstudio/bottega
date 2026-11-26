@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { measureOutboxPayload, readOutboxRowReport, utf8Bytes } from './outbox-read.ts'
+import { measureOutboxPayload, readOutboxRow, reportOutboxRow, utf8Bytes } from './outbox-read.ts'
+import { outboxPayloadForRecordSync } from './record-sync.ts'
 import { planRecordSyncBatch } from './record-sync-batch.ts'
 
 const STAMP = '2026-11-26T12:00:00.000Z'
@@ -23,6 +23,12 @@ function outbox(payload: string): Database {
     )
     .run(payload, STAMP)
   return database
+}
+
+function readReport(rowId: number, database: Database) {
+  const row = readOutboxRow(database, rowId)
+  if (!row) throw new Error('missing fixture row')
+  return reportOutboxRow(row, outboxPayloadForRecordSync(database, row))
 }
 
 test('payload measurement reports exact nested JSON sizes only past the threshold', () => {
@@ -75,7 +81,7 @@ test('array summaries report count and the largest element without values', () =
 test('row report derives state and uses the sync byte measurement without printing values', () => {
   const payload = JSON.stringify({ secret: 'known-sentinel-value', nested: { count: 2 } })
   using database = outbox(payload)
-  const report = readOutboxRowReport(7, database)
+  const report = readReport(7, database)
 
   expect(report).toMatchObject({
     id: 'orch:7',
@@ -117,7 +123,7 @@ test('row report measures the same project identity payload that sync checks', (
     .query('INSERT INTO review_funnel_decision (record_id,project_record_id) VALUES (?,NULL)')
     .run('decision-record')
 
-  const report = readOutboxRowReport(7, database)
+  const report = readReport(7, database)
   const syncPayload = JSON.stringify({
     id: 'decision-record',
     projectId: null,
@@ -126,17 +132,15 @@ test('row report measures the same project identity payload that sync checks', (
   expect(report.payloadBytes).toBe(utf8Bytes(syncPayload))
 })
 
-test('row report refuses unknown rows with the listing remedy', () => {
+test('outbox read returns no row for an unknown id', () => {
   using database = outbox('{}')
-  expect(() => readOutboxRowReport(8, database)).toThrow(
-    `orchestrator outbox row 8 does not exist; run \`${PLATFORM_SLUG} record outbox\``,
-  )
+  expect(readOutboxRow(database, 8)).toBeNull()
 })
 
 test('row report refuses invalid JSON with bytes and a value-free parse error', () => {
   const payload = '{"field": known-sentinel-value}'
   using database = outbox(payload)
-  const report = readOutboxRowReport(7, database)
+  const report = readReport(7, database)
 
   expect(report.payloadBytes).toBe(utf8Bytes(payload))
   expect(report.fields).toBeNull()

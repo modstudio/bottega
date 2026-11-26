@@ -275,9 +275,9 @@ queue an outbox row for another delivery attempt
 
 ## bottega record outbox show
 
-**Synopsis:** `bottega record outbox show <id>`
+**Synopsis:** `bottega record outbox show <row-id>`
 
-show an entry's state and payload field sizes without printing payload values
+show an outbox row without printing payload values
 
 ### Related
 

@@ -24,7 +24,12 @@ import { promptHidden } from './hidden-prompt.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
-const presentation = { log }
+const presentation = {
+  log,
+  exitCode: (code: number) => {
+    process.exitCode = code
+  },
+}
 
 type RecordCommands = typeof import('../record/record-command.ts')
 type RecordCommandName = {
@@ -49,6 +54,7 @@ function lazyRecordCommand<Name extends RecordCommandName>(name: Name) {
 const recordAuditSecretsCommand = lazyRecordCommand('recordAuditSecretsCommand')
 const recordDoctorCommand = lazyRecordCommand('recordDoctorCommand')
 const recordMigrateCommand = lazyRecordCommand('recordMigrateCommand')
+const recordOutboxShowCommand = lazyRecordCommand('recordOutboxShowCommand')
 const recordPublicDocClearCommand = lazyRecordCommand('recordPublicDocClearCommand')
 const recordPublicDocDesignateCommand = lazyRecordCommand('recordPublicDocDesignateCommand')
 const recordPublicDocListCommand = lazyRecordCommand('recordPublicDocListCommand')
@@ -89,10 +95,7 @@ async function showOutboxCommand(rowId: string): Promise<void> {
       `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\` to list them`,
     )
   }
-  const { readOutboxRowReport } = await import('../record/outbox-read.ts')
-  const report = readOutboxRowReport(parsed)
-  log(JSON.stringify(report))
-  if (report.fields === null) process.exitCode = 2
+  await recordOutboxShowCommand(parsed, presentation)
 }
 
 export function httpAddress(value: string): string {
