@@ -133,7 +133,7 @@ export async function noteDuplicateBacktest(
     labelSources[subject.source] = (labelSources[subject.source] ?? 0) + 1
   return {
     readable: sourced.readable.length,
-    unreadable: sourced.unreadable,
+    unreadable: sourced.unreadable.length,
     unanswered,
     labelSources,
     sweep: noteDuplicateSweep(tuning),

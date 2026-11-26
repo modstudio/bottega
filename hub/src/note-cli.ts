@@ -322,8 +322,7 @@ function registerNoteMaintenanceCommands(note: Command): void {
       open()
       const project = options.project!
       const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
-      const allProjectNotes = (await listProjectSlimNotes({ project })).notes
-      const result = await evaluateNotePairs(project, notes, allProjectNotes)
+      const result = await evaluateNotePairs(project, notes)
       const body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
       await writeNoteEvaluationRecord(project, body)
       console.log(body)

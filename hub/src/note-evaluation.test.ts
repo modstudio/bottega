@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { typedQuestionStateIdentity } from '../../shared/typed-question/state-identity.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { NOTE_DUPLICATE_CANDIDATES } from './note-duplicate-candidates.ts'
 import { NOTE_DUPLICATE_QUESTION, notePairSubjectRef } from './note-duplicate-question.ts'
 import {
   answerEvaluationPair,
@@ -12,6 +13,7 @@ import {
   generateEvaluationPairs,
   noteEvaluationBody,
 } from './note-evaluation.ts'
+import { askHubTypedQuestionWithReuse } from './typed-question-service.ts'
 
 const note = (label: string, createdAt: string, text = label): EvaluationNote => ({
   record_id: newRecordId(),
@@ -62,13 +64,18 @@ test('reuses an exact recorded answer without asking again', async () => {
         nowIso(),
       )
   })
-  let asks = 0
-  const answer = await answerEvaluationPair(pair, db(), async () => {
-    asks++
-    return { noul: 0.1 }
-  })
+  const answer = await answerEvaluationPair(pair, (input) =>
+    askHubTypedQuestionWithReuse(input, {
+      ask: async () => {
+        throw new Error('asked despite a recorded answer')
+      },
+      database: db,
+      record: () => {
+        throw new Error('recorded despite a recorded answer')
+      },
+    }),
+  )
   expect(answer).toEqual({ probability: 0.91, reused: true })
-  expect(asks).toBe(0)
 })
 
 test('average linkage does not turn an unasked edge chain into one cluster', () => {
@@ -107,11 +114,22 @@ function outcome(subjectRef: string, source: string): void {
   })
 }
 
-test('blocking recall reads stored state when the merged source note no longer exists', () => {
+test('blocking recall counts reachable positives and excludes unreadable positives', () => {
   const older = note('project#1', '2026-01-01T00:00:00Z', 'shared stored pair older')
   const newer = note('project#2', '2026-01-02T00:00:00Z', 'shared stored pair newer')
   const included = notePairSubjectRef(older.record_id, newer.text)
+  const missedExisting = note('project#3', '2026-01-03T00:00:00Z', 'leftanchor')
+  const missedNewText = 'rightanchor'
+  const missed = notePairSubjectRef(missedExisting.record_id, missedNewText)
+  const distractors = Array.from({ length: NOTE_DUPLICATE_CANDIDATES }, (_, index) =>
+    note(
+      `project#${index + 4}`,
+      '2026-01-04T00:00:00Z',
+      `leftanchor rightanchor distractor${index}`,
+    ),
+  )
   outcome(included, 'same-as')
+  outcome(missed, 'merge')
   outcome(notePairSubjectRef(older.record_id, 'unreadable deleted source'), 'merge')
   writeTransaction((database) => {
     database
@@ -137,8 +155,25 @@ test('blocking recall reads stored state when the merged source note no longer e
         JSON.stringify({ existing: older.text, new: newer.text }),
         nowIso(),
       )
+    database
+      .query(
+        `INSERT INTO typed_question_answer
+         (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,state_json,
+          answer_json,model,input_tokens,latency_ms,error,created_at)
+         VALUES (?,?,?,?,?,?,?,NULL,'jev',NULL,1,NULL,?)`,
+      )
+      .run(
+        newRecordId(),
+        NOTE_DUPLICATE_QUESTION.id,
+        NOTE_DUPLICATE_QUESTION.version,
+        'note-pair',
+        missed,
+        typedQuestionStateIdentity({ existing: missedExisting.text, new: missedNewText }),
+        JSON.stringify({ existing: missedExisting.text, new: missedNewText }),
+        nowIso(),
+      )
   })
-  expect(blockingRecall(db(), 'project', [older], [older])).toEqual({
+  expect(blockingRecall(db(), 'project', [older, missedExisting, ...distractors])).toEqual({
     produced: 1,
     total: 2,
     unreadable: 1,
@@ -170,7 +205,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   ]
   const before = structuredClone(notes)
   let asks = 0
-  const result = await evaluateNotePairs('project', notes, notes, {
+  const result = await evaluateNotePairs('project', notes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++
@@ -187,5 +222,37 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   expect(notes).toEqual(before)
   const body = noteEvaluationBody('project', 'now', notes.length, result)
   expect(body).not.toContain('no duplicates')
-  expect(body).toContain('Unreadable positive states: 2')
+  expect(body).toContain('2 unreadable positives excluded')
+})
+
+test('zero candidate pairs are reported without a typed-question service failure', async () => {
+  const result = await evaluateNotePairs('project', [], {
+    credential: async () => ({ available: true }),
+    answerPair: async () => null,
+    positiveSubjects: () => ({ produced: 0, total: 0, unreadable: 0 }),
+  })
+  expect(result).toMatchObject({ pairsAsked: 0, answerFailure: null })
+  expect(noteEvaluationBody('project', 'now', 0, result)).toContain('No candidate pairs to ask.')
+})
+
+test('pairs asked excludes reused answers and includes failed asks', async () => {
+  const notes = [
+    note('project#1', '2026-01-01T00:00:00Z'),
+    note('project#2', '2026-01-02T00:00:00Z'),
+  ]
+  const dependencies = {
+    credential: async () => ({ available: true as const }),
+    positiveSubjects: () => ({ produced: 0, total: 0, unreadable: 0 }),
+  }
+  const reused = await evaluateNotePairs('project', notes, {
+    ...dependencies,
+    answerPair: async () => ({ probability: 0.9, reused: true }),
+  })
+  const failed = await evaluateNotePairs('project', notes, {
+    ...dependencies,
+    answerPair: async () => null,
+  })
+
+  expect(reused).toMatchObject({ generatedPairs: 1, pairsAsked: 0, reusedAnswers: 1 })
+  expect(failed).toMatchObject({ generatedPairs: 1, pairsAsked: 1, answeredPairs: 0 })
 })

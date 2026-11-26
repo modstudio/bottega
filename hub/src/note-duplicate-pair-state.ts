@@ -13,6 +13,8 @@ type NoteDuplicatePairState = { existing: string; new: string }
 export type NoteDuplicateNoteLookup = ReadonlyMap<string, { project: string; text: string }>
 export type NoteDuplicateSubject = {
   subjectRef: string
+  existingId: string
+  hash: string
   state: NoteDuplicatePairState
   label: boolean
   source: string
@@ -50,7 +52,10 @@ export function readNoteDuplicateSubjects(
   database: Database,
   notes: NoteDuplicateNoteLookup,
   options: { project?: string; sources?: readonly string[] } = {},
-): { readable: NoteDuplicateSubject[]; unreadable: number } {
+): {
+  readable: NoteDuplicateSubject[]
+  unreadable: Array<Omit<NoteDuplicateSubject, 'state'>>
+} {
   const refs = database
     .query<{ subject_ref: string }, [string, number]>(
       `SELECT DISTINCT subject_ref FROM typed_question_outcome
@@ -58,15 +63,14 @@ export function readNoteDuplicateSubjects(
     )
     .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version)
   const readable: NoteDuplicateSubject[] = []
-  let unreadable = 0
+  const unreadable: Array<Omit<NoteDuplicateSubject, 'state'>> = []
   for (const { subject_ref: subjectRef } of refs) {
     const outcome = noteDuplicateGoverningOutcome(database, subjectRef)
     if (!outcome) continue
     if (options.sources && !options.sources.includes(outcome.source)) continue
-    if (options.project) {
-      const parsed = parseNotePairSubjectRef(subjectRef)
-      if (!parsed || notes.get(parsed.existingId)?.project !== options.project) continue
-    }
+    const parsed = parseNotePairSubjectRef(subjectRef)
+    if (!parsed) continue
+    if (options.project && notes.get(parsed.existingId)?.project !== options.project) continue
     const stored = database
       .query<{ state_json: string | null }, [string, string]>(
         `SELECT state_json FROM typed_question_answer WHERE question_id=? AND subject_ref=?
@@ -75,8 +79,9 @@ export function readNoteDuplicateSubjects(
       .get(NOTE_DUPLICATE_QUESTION.id, subjectRef)
     const state =
       parsedState(stored?.state_json ?? null) ?? reconstructNotePairState(notes, subjectRef)
-    if (!state) unreadable += 1
-    else readable.push({ subjectRef, state, label: outcome.label, source: outcome.source })
+    const identity = { subjectRef, ...parsed, label: outcome.label, source: outcome.source }
+    if (!state) unreadable.push(identity)
+    else readable.push({ ...identity, state })
   }
   return { readable, unreadable }
 }
