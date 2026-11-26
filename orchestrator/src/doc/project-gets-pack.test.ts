@@ -119,6 +119,14 @@ describe('hosted canon pack measurement', () => {
       stack: null,
       settings: { space: 'live-space' },
     })
+    upsertProject({
+      name: 'live-space-less',
+      path: '/w/live-space-less',
+      canon: true,
+      recordId: newRecordId(),
+      stack: null,
+      settings: {},
+    })
     rememberHostedRecord()
 
     const reads: Array<string | null | undefined> = []
@@ -163,6 +171,7 @@ describe('hosted canon pack measurement', () => {
 
     expect(written.owner).toBeNull()
     expect(reads).not.toContain('retired-space-less')
+    expect(reads).not.toContain('live-space-less')
     expect(reads).toContain('live-with-space')
   })
 
@@ -182,6 +191,7 @@ describe('hosted canon pack measurement', () => {
 
     expect(written.owner).toBe(userId)
     expect(reads).not.toContain('retired-space-less')
+    expect(reads).not.toContain('live-space-less')
     expect(reads).not.toContain('live-with-space')
   })
 })
