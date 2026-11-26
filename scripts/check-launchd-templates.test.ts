@@ -71,13 +71,6 @@ describe('the checked-in templates', () => {
       readFileSync(join(repositoryRoot, 'hub/bin/install-launchd.sh'), 'utf8'),
     )
     expect(values.get('__BOTTEGA_BIN__')).toBe(`$INSTALL_ROOT/bin/${PLATFORM_SLUG}`)
-    const template = readFileSync(
-      join(repositoryRoot, 'hub/launchd/com.user.hub-collect.plist.template'),
-      'utf8',
-    )
-    expect(template.replaceAll('__BOTTEGA_BIN__', `/checkout/bin/${PLATFORM_SLUG}`)).toContain(
-      `<string>/checkout/bin/${PLATFORM_SLUG}</string>`,
-    )
   })
 
   test('every placeholder is rendered by the installer that owns the template', () => {

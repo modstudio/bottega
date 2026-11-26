@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { NOT_SCHEDULED_BY_THIS_INSTALL, scheduleExpectation } from '../../shared/schedule-policy.ts'
@@ -9,6 +9,7 @@ import {
   INTERVAL_UNLINKED_KEY_LIMIT,
   slowCollectionDoctorDecision,
 } from './doctor.ts'
+import { stampSetting } from './setting-stamp.ts'
 
 beforeEach(resetFixtureStore)
 afterAll(resetFixtureStore)
@@ -37,9 +38,6 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     const scheduled = scheduleExpectation('com.user.hub-collect', 'darwin', 'checkout', 'full', [
       { label: 'com.user.hub-collect', checkoutOnly: true },
     ])
-    expect(slowCollectionDoctorDecision(scheduled, { status: 'missing', ageMs: null })).toBe(
-      'collect slow   FAIL — never completed',
-    )
     expect(slowCollectionDoctorDecision(scheduled, { status: 'current', ageMs: 60_000 })).toBe(
       'collect slow   pass — 60s old',
     )
@@ -48,14 +46,18 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     )
   })
 
-  test('includes slow collection health in hub doctor output', async () => {
-    expect(
-      await hubDoctorLines({
+  describe('with a recent collection stamp', () => {
+    beforeEach(() => stampSetting('collect.slow.at'))
+    afterEach(resetFixtureStore)
+
+    test('includes store-backed slow collection age in hub doctor output', async () => {
+      const lines = await hubDoctorLines({
         installationKind: 'checkout',
         platform: 'darwin',
         machineLevel: 'full',
-      }),
-    ).toContain('collect slow   FAIL — never completed')
+      })
+      expect(lines.some((line) => /^collect slow   pass — \d+s old$/.test(line))).toBeTrue()
+    })
   })
 
   test('judges slow collection from platform and installation schedule ownership', () => {

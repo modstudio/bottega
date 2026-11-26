@@ -8,15 +8,8 @@ import {
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
 import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
-import {
-  checkoutScheduleOwnerFacts,
-  LAUNCHD_TEMPLATE_OWNERS,
-} from '../../../shared/launchd-owners.ts'
-import {
-  isMaintenanceScheduleLabel,
-  SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL,
-  scheduleExpectation,
-} from '../../../shared/schedule-policy.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
+import { isMaintenanceScheduleLabel } from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -39,10 +32,6 @@ export type LaunchAgentRefreshPlan = {
   applyMaintenance: boolean
   unverified: Array<{ label: string; detail: string }>
   notReleaseInstalled: string[]
-  notScheduledAtMachineLevel: Array<{
-    label: string
-    reason: typeof SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL
-  }>
 }
 
 function definitionIsDrifted(observation: LaunchAgentDefinitionObservation | undefined): boolean {
@@ -66,7 +55,6 @@ export function decideLaunchAgentRefresh(input: {
   requiredMaintenanceLabels: ReadonlySet<string>
 }): LaunchAgentRefreshPlan {
   const drifted = input.owners.filter(({ label }) => definitionIsDrifted(input.observations[label]))
-  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
   const unverified = input.owners.flatMap(({ label }) => {
     const comparison = input.observations[label]?.comparison
     return comparison?.kind === 'unavailable' ? [{ label, detail: comparison.detail }] : []
@@ -81,15 +69,11 @@ export function decideLaunchAgentRefresh(input: {
       applyMaintenance: false,
       unverified,
       notReleaseInstalled: [],
-      notScheduledAtMachineLevel: [],
     }
   }
-  const expectedByInstall = (label: string) =>
-    scheduleExpectation(label, 'darwin', input.installationKind, input.machineLevel, checkoutOwners)
-      .scheduled
   const releaseOwned = input.owners.filter(
     ({ label }) =>
-      expectedByInstall(label) &&
+      isMaintenanceScheduleLabel(label) &&
       maintenanceDefinitionNeedsRefresh(
         label,
         input.observations[label],
@@ -105,17 +89,8 @@ export function decideLaunchAgentRefresh(input: {
     applyMaintenance: releaseOwned.length > 0,
     unverified,
     notReleaseInstalled: drifted
-      .filter(({ label }) => !isMaintenanceScheduleLabel(label) && !expectedByInstall(label))
+      .filter(({ label }) => !isMaintenanceScheduleLabel(label))
       .map(({ label }) => label),
-    notScheduledAtMachineLevel: drifted
-      .filter(
-        ({ label }) =>
-          isMaintenanceScheduleLabel(label) &&
-          input.installationKind === 'distribution' &&
-          input.machineLevel !== 'full' &&
-          !expectedByInstall(label),
-      )
-      .map(({ label }) => ({ label, reason: SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL })),
   }
 }
 
@@ -207,9 +182,6 @@ export async function refreshLaunchAgents(
   }
   for (const label of plan.notReleaseInstalled) {
     presentation.log(`${label} ${NOT_INSTALLED_BY_RELEASE_INSTALL}`)
-  }
-  for (const { label, reason } of plan.notScheduledAtMachineLevel) {
-    presentation.log(`${label} ${reason}`)
   }
   const runInstaller = deps.runCheckoutInstaller ?? runCheckoutInstaller
   for (const command of plan.checkoutCommands) runInstaller(identity.root, command)

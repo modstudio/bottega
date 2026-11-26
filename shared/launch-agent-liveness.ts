@@ -1,5 +1,5 @@
 // concern: launch-agent liveness
-/** Observes whether launch agents are installed and loaded. */
+/** Observes launch-agent loaded state and names the release-install verdict. */
 
 import { startBoundedSync } from './bounded-process.ts'
 

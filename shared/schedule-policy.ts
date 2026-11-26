@@ -52,8 +52,6 @@ export function isMaintenanceScheduleLabel(label: string): label is MaintenanceS
 }
 
 export const NOT_SCHEDULED_BY_THIS_INSTALL = 'not scheduled by this install' as const
-export const SCHEDULED_ONLY_AT_FULL_MACHINE_LEVEL =
-  'this install schedules it only at machine level full' as const
 export const SCHEDULED_BY_THIS_INSTALL = { scheduled: true, reason: null } as const
 
 export const MAINTENANCE_SCHEDULE_DESCRIPTION =
