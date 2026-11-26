@@ -277,7 +277,7 @@ queue an outbox row for another delivery attempt
 
 **Synopsis:** `bottega record outbox show <id>`
 
-show an entry and any values kept after a hosted delete
+show an entry's state and payload field sizes without printing payload values
 
 ### Related
 

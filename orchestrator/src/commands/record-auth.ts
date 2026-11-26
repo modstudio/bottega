@@ -77,6 +77,24 @@ const recordSpaceMoveProjectCommand = lazyRecordCommand('recordSpaceMoveProjectC
 const recordSpaceSwitchCommand = lazyRecordCommand('recordSpaceSwitchCommand')
 const recordSpaceUnhideCommand = lazyRecordCommand('recordSpaceUnhideCommand')
 
+async function showOutboxCommand(rowId: string): Promise<void> {
+  if (!/^\d+$/.test(rowId)) {
+    throw new Error(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\` to list them`,
+    )
+  }
+  const parsed = Number(rowId)
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\` to list them`,
+    )
+  }
+  const { readOutboxRowReport } = await import('../record/outbox-read.ts')
+  const report = readOutboxRowReport(parsed)
+  log(JSON.stringify(report))
+  if (report.fields === null) process.exitCode = 2
+}
+
 export function httpAddress(value: string): string {
   if (!isHttpAddress(value)) throw new Error('address must be an http or https URL')
   const url = new URL(value)
@@ -578,6 +596,11 @@ async function retryOutboxCommand(
 
 function registerOutboxCommands(record: Command): void {
   const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
+  outbox
+    .command('show')
+    .description('show an outbox row without printing payload values')
+    .argument('<row-id>')
+    .action((rowId) => showOutboxCommand(String(rowId)))
   outbox
     .command('retry')
     .description('queue an outbox row for another delivery attempt')

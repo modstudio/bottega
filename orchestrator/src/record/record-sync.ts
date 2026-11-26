@@ -41,7 +41,11 @@ import {
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
-import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
+import {
+  outboxPayloadForRecordSync,
+  PENDING_OUTBOX_PREDICATE_SQL,
+  utf8Bytes,
+} from './outbox-read.ts'
 import { retireSupersededQuarantinedOutboxRows } from './outbox-supersession.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
@@ -200,8 +204,6 @@ type PreparedOutboxRow = {
   payloadBytes: number
 }
 
-const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength
-
 function planBatchRow(
   candidate: PreparedOutboxRow,
   input: {
@@ -281,7 +283,7 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
     })
     .map((row) => {
       const parsed = parsedPayload(row.payload)
-      const payload = payloadWithProjectIdentity(local, row, parsed)
+      const payload = outboxPayloadForRecordSync(local, row, parsed)
       return {
         row,
         parsed: parsedPayload(payload),
@@ -290,60 +292,6 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
       }
     })
   return new Set(rows)
-}
-
-function sourceProjectRecordId(local: Database, row: OutboxRow): string | null | undefined {
-  const queries: Partial<Record<string, string>> = {
-    run: `SELECT project.record_id FROM run
-      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
-    score: `SELECT project.record_id FROM run
-      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
-    review: `SELECT project.record_id FROM review
-      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
-    review_lens: `SELECT project.record_id FROM review_lens
-      JOIN review ON review.record_id=review_lens.review_record_id
-      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_lens.record_id=?`,
-    review_finding: `SELECT project.record_id FROM review_finding
-      JOIN review ON review.record_id=review_finding.review_record_id
-      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_finding.record_id=?`,
-    review_read: `SELECT project.record_id FROM review_read
-      LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
-    review_funnel_decision: `SELECT project.record_id FROM review_funnel_decision
-      LEFT JOIN project ON project.record_id=review_funnel_decision.project_record_id WHERE review_funnel_decision.record_id=?`,
-    landing: `SELECT project.record_id FROM landing
-      LEFT JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?`,
-    landing_override: `SELECT project.record_id FROM landing_override
-      LEFT JOIN project ON project.record_id=landing_override.project_record_id
-      WHERE landing_override.record_id=?`,
-    landing_review_carry: `SELECT project.record_id FROM landing_review_carry
-      LEFT JOIN project ON project.record_id=landing_review_carry.project_record_id
-      WHERE landing_review_carry.record_id=?`,
-    landing_triage_snapshot: `SELECT project.record_id FROM landing_triage_snapshot
-      LEFT JOIN project ON project.record_id=landing_triage_snapshot.project_record_id
-      WHERE landing_triage_snapshot.record_id=?`,
-    release: `SELECT project.record_id FROM release_ledger
-      LEFT JOIN project ON project.record_id=release_ledger.project_record_id WHERE release_ledger.record_id=?`,
-  }
-  const query = queries[row.kind]
-  if (!query) return undefined
-  return (
-    local.query<{ record_id: string | null }, [string]>(query).get(row.row_id)?.record_id ?? null
-  )
-}
-
-function payloadWithProjectIdentity(
-  local: Database,
-  row: OutboxRow,
-  parsed: Payload | null,
-): string {
-  if (!parsed || parsed.projectId != null || parsed.projectName == null) return row.payload
-  const projectId = sourceProjectRecordId(local, row)
-  if (projectId === undefined) return row.payload
-  return JSON.stringify({
-    ...parsed,
-    projectId,
-    ...(projectId ? {} : { projectName: null }),
-  })
 }
 
 function quarantineOversizedRow(input: {
