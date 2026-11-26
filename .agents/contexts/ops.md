@@ -6,7 +6,7 @@ paths: ["ops/**"]
 # Machine upkeep
 
 Unattended jobs fail loudly in their logs and never make a destructive guess, because no
-operator is present to correct one.
+user is present to correct one.
 
 Project refresh touches main checkouts only and never worktrees. It selects the deepest
 mode advertised by each project's `scripts/sync/main`, and one project failing does not

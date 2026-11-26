@@ -227,7 +227,7 @@ create or revise one context item
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
 - `--cursor <record-id>`: select cursor holder
-- `--kind <kind>`: ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives
+- `--kind <kind>`: ruling — the user's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives
 - `--source <source>`: item source
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision

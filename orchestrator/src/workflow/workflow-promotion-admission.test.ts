@@ -36,12 +36,12 @@ describe('workflow promotion admission', () => {
         fromOperator: true,
         reason: 'restore production immediately',
         author: 'ignored',
-        operatorName: 'Shmuel Barkin',
+        operatorName: 'Dana Example',
       }),
     ).toEqual({
       verdict: 'allow',
-      reason: 'override by Shmuel Barkin: restore production immediately',
-      author: 'Shmuel Barkin',
+      reason: 'override by Dana Example: restore production immediately',
+      author: 'Dana Example',
     })
   })
 
@@ -52,12 +52,27 @@ describe('workflow promotion admission', () => {
         landingBranchContainsHead: false,
         fromOperator: true,
         reason: '   ',
-        operatorName: 'Shmuel Barkin',
+        operatorName: 'Dana Example',
       }),
     ).toEqual({
       verdict: 'refuse',
       message:
         'workflow promotion --from-operator requires a non-empty reason; rerun with --reason "<reason>" --from-operator',
+    })
+  })
+
+  test("refuses an override without the overriding user's identity", () => {
+    expect(
+      decideWorkflowPromotionAdmission({
+        landingBranch: 'main',
+        landingBranchContainsHead: false,
+        fromOperator: true,
+        reason: 'restore production immediately',
+        operatorName: null,
+      }),
+    ).toEqual({
+      verdict: 'refuse',
+      message: "workflow promotion --from-operator requires the overriding user's identity",
     })
   })
 })

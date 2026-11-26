@@ -23,5 +23,5 @@ Before replacing the outbound Streamable HTTP client in `src/mcp.ts`, run
 `bun run --cwd hub evidence:mcp-dialects`. This is the required live compatibility evidence:
 it calls one read-only tracker tool through each registered external implementation, prints
 sanitized protocol and transport facts, and writes the same report to the hub state directory.
-It is an operator command, not a gate test, because it reaches real services with credentials
+It is a command the user runs, not a gate test, because it reaches real services with credentials
 resolved at use time.

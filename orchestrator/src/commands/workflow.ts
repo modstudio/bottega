@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
@@ -99,12 +100,22 @@ const authorOption = (command: Command) =>
 const promotionOptions = (command: Command) =>
   authorOption(command).option(
     '--from-operator',
-    "record Shmuel Barkin's override of landing-branch containment",
+    "record the user's override of landing-branch containment",
   )
 const spaceOption = (command: Command) =>
   command.option('--space <slug>', 'write to this record space')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
+const promotionOperatorName = (fromOperator: boolean): string | null =>
+  resolvedRulingPersonName(fromOperator)
+const withPromotionOperator = (
+  handlerOptions: WorkflowCommandOptions,
+  options: OptionValues,
+): WorkflowCommandOptions => ({
+  ...handlerOptions,
+  promotionOperatorName:
+    handlerOptions.promotionOperatorName ?? promotionOperatorName(Boolean(options.fromOperator)),
+})
 type WorkflowRegistration = {
   workflow: Command
   workflowPresentation: WorkflowPresentation
@@ -230,7 +241,11 @@ function registerWorkflowVersions({
       .action((slug, version, options) => {
         const argv = workflowArgv(verb, [slug, version], options)
         return verb === 'promote'
-          ? promoteWorkflowCommand(argv, output(options), handlerOptions)
+          ? promoteWorkflowCommand(
+              argv,
+              output(options),
+              withPromotionOperator(handlerOptions, options),
+            )
           : retireWorkflowCommand(argv, output(options))
       })
   }
@@ -699,7 +714,7 @@ function registerWorkflowTreeCommands({
     .allowExcessArguments(false)
     .action((options) =>
       promoteTreeCommand(workflowArgv('promote-tree', [], options), workflowPresentation, {
-        ...handlerOptions,
+        ...withPromotionOperator(handlerOptions, options),
         cwd: options.cwd ?? handlerOptions.cwd,
       }),
     )
@@ -765,7 +780,11 @@ function registerWorkflowCatalogue({
       .action((version, options) => {
         const argv = productArgv('catalogue', [verb, version], options)
         return verb === 'promote'
-          ? promoteCatalogueCommand(argv, output(options), handlerOptions)
+          ? promoteCatalogueCommand(
+              argv,
+              output(options),
+              withPromotionOperator(handlerOptions, options),
+            )
           : retireCatalogueCommand(argv, output(options))
       })
   }

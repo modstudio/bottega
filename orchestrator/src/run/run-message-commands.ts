@@ -40,6 +40,7 @@ import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
+import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import {
@@ -58,6 +59,7 @@ export type ContinueCommandDependencies = {
   admitKeyedTurn?: typeof admitKeyedTurn
   recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
   renewTaskClaim?: typeof renewTaskClaim
+  resolvedRulingPersonName?: typeof resolvedRulingPersonName
 }
 
 const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
@@ -73,6 +75,7 @@ type KeyedTurnCommandDependencies = {
   recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
   answerRun?: typeof answerRun
   retryRun?: typeof retryRun
+  resolvedRulingPersonName?: typeof resolvedRulingPersonName
 }
 
 const defaultKeyedTurnOptions: KeyedTurnCommandOptions = { fromOperator: false }
@@ -232,6 +235,9 @@ export async function retryCommand(
     runId: id,
     turn: 'retry',
     ...admission,
+    overridePersonName: (dependencies.resolvedRulingPersonName ?? resolvedRulingPersonName)(
+      admission.fromOperator,
+    ),
   })
   const resumedId = await (dependencies.retryRun ?? retryRun)(
     id,
@@ -261,6 +267,7 @@ export async function answerCommand(
   const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'answer',
+    overridePersonName: null,
   })
   const { result, answeredQuestions: questions } = await (dependencies.answerRun ?? answerRun)(
     id,
@@ -365,6 +372,9 @@ export async function continueCommand(
     runId: id,
     turn: 'continue',
     ...admission,
+    overridePersonName: (dependencies.resolvedRulingPersonName ?? resolvedRulingPersonName)(
+      admission.fromOperator,
+    ),
   })
   const reportDetached = reportsBeforeFollow(flags)
     ? async (childId: string, jobName: string) => {

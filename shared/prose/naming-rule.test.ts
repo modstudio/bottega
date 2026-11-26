@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { namingFindings } from './naming-rule.ts'
+import { NAMING_GUIDANCE, namingFindings } from './naming-rule.ts'
 
 describe('record naming rule', () => {
   test.each(['the operator said', 'Operator rulings', "operator's call", 'ask the operators'])(
@@ -43,14 +43,14 @@ describe('record naming rule', () => {
   })
 
   test('names the supplied person in the remedy', () => {
-    expect(namingFindings('the operator decided', 'Shmuel Barkin')[0]?.message).toBe(
-      'Name the person: Shmuel Barkin; where a role word is needed, use "the user".',
+    expect(namingFindings('the operator decided', 'Dana Example')[0]?.message).toBe(
+      `Name the person when recording what they did: Dana Example. ${NAMING_GUIDANCE}`,
     )
   })
 
   test('uses the generic remedy without a display name', () => {
     expect(namingFindings('the operator decided', null)[0]?.message).toBe(
-      'Name the person who decided; where a role word is needed, use "the user".',
+      `Name the person when recording what they did. ${NAMING_GUIDANCE}`,
     )
   })
 
@@ -59,7 +59,7 @@ describe('record naming rule', () => {
     ['The operator', null, 'The operator', 'The user'],
     ['an operator', null, 'an operator', 'the user'],
     ["the operator's", null, "the operator's", "the user's"],
-    ['the operator', 'Shmuel Barkin', 'the operator', 'Shmuel Barkin'],
+    ['the operator', 'Dana Example', 'the operator', 'Dana Example'],
     ['operator', null, 'operator', 'the user'],
   ])('replaces the complete role phrase in %s', (text, displayName, problem, suggestion) => {
     expect(namingFindings(text, displayName)).toEqual([

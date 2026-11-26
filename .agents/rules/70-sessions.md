@@ -23,7 +23,7 @@ Record facts and pointers when they are learned. Revise or drop context items wh
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until review admission holds for the head commit; an override requires the operator and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until review admission holds for the head commit; an override requires the user and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 

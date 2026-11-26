@@ -197,8 +197,9 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
-  harnessCursorAdapter(): {
+  harnessCursorAdapter(fromOperator: boolean): {
     harnessSession: string | null
+    overridePersonName: string | null
     readOpenCursors: OpenKeyedRunCursors
   }
   lookupTaskKey: TaskKeyLookup
@@ -234,7 +235,7 @@ async function keyedRunCursorWarningForDispatch(input: {
   cursor?: number
   adapter: DispatchPresentation['harnessCursorAdapter']
 }) {
-  const { harnessSession, readOpenCursors } = input.adapter()
+  const { harnessSession, overridePersonName, readOpenCursors } = input.adapter(input.fromOperator)
   const decision = await checkKeyedRunCursorAdmission(
     {
       turn: 'start',
@@ -244,6 +245,7 @@ async function keyedRunCursorWarningForDispatch(input: {
       writesRepo: input.writesRepo,
       overrideReason: input.overrideReason,
       fromOperator: input.fromOperator,
+      overridePersonName,
       harnessSession,
       cursor: input.cursor,
     },

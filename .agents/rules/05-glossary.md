@@ -5,6 +5,8 @@ always: true
 
 # Glossary
 
+**User** — the human who owns this install and makes its rulings; never an agent or session, even one prompting you.
+
 **Run** — one bounded execution of a job by an agent, recorded for judgment.
 
 **Chain** — a root run and its turns; the root holds the outcome, last turn's state and last agent-work failure.
@@ -13,22 +15,22 @@ always: true
 
 **Job** — a named work shape that declares the capabilities and working set its agent needs.
 
-**Pack** — the self-contained prompt material compiled for an agent from the applicable project and job canon.
+**Pack** — the prompt material compiled for an agent from its project and job canon.
 
 **Lens** — one narrow, named review viewpoint with a stable identity, one question, and explicit exclusions.
 
 **Review tier** — breadth and round budget from path risk and size, one lower at size `0` except `firm`.
 
-**Fidelity** — the writing-job judgment of whether the delivered change built what the specification asked for.
+**Fidelity** — whether a writing job's change built what its specification asked for.
 
-**Escape** — an outside change that overlaps a run's own diff and therefore blocks that chain from landing.
+**Escape** — an outside change that overlaps a run's own diff and so blocks its chain from landing.
 
-**Worktree** — the disposable checkout that isolates a repository run and bounds what its agent may write.
+**Worktree** — the disposable checkout that isolates a run and bounds what its agent may write.
 
-**Recipe** — a registered project's own templates for provisioning and releasing a writing worktree.
+**Recipe** — a project's own templates for provisioning and releasing a writing worktree.
 
-**Claim** — any recorded pointer to a resource, regardless of whether its participant is alive.
+**Claim** — any recorded pointer to a resource, whether or not its participant is alive.
 
-**Record** — the hosted system of record: evidence arrives by idempotent outbox sync; hosted-only data is written through its services.
+**Record** — the hosted system of record: evidence arrives by idempotent outbox sync; hosted-only data goes through its services.
 
-**Note** — a one-line observation whose project, run, branch, session, commit, and file anchor are derived when filed.
+**Note** — a one-line observation whose project, run, branch, session, commit and file anchor are derived when filed.

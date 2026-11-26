@@ -152,7 +152,7 @@ every table. A hosted table without a home names its task.
 Every table declares a lifecycle: what it is, where its authoritative copy
 lives, how long each copy is kept and what removes it. Tables declare
 `hosted`, `synced` or `machine` in
-`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming Shmuel Barkin's ruling;
+`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming the user's ruling;
 `scripts/check-identity-inventory.ts` enforces both. Doc-store records
 `design-machine-hosted-seam` and `design-data-lifecycle` hold detail.
 
@@ -182,8 +182,7 @@ job shape, stack and review lens. Do not route from a generic benchmark,
 marketing claim or global model average. Strength on one kind of work must not
 hide weakness on another.
 
-Every judgment is routing evidence, including failure. The evidence improves
-without a separate maintenance process because ordinary review supplies it.
+Every judgment is routing evidence, including failure.
 
 ## The platform is deliberately opinionated
 
@@ -196,7 +195,8 @@ before the next run routes.
 These invariants are product behavior, not configuration: models vary, so
 the process stays rigid enough to produce a consistent outcome. A project
 customizes a workflow only where its needs differ, such as review lenses for
-its stack, and never works around one.
+its stack, and never works around one. A Bottega defect never stops work: the
+user's override passes any refusal until its class is fixed.
 
 ## Canon binds and may be replaced
 
@@ -239,6 +239,8 @@ always: true
 
 # Glossary
 
+**User** — the human who owns this install and makes its rulings; never an agent or session, even one prompting you.
+
 **Run** — one bounded execution of a job by an agent, recorded for judgment.
 
 **Chain** — a root run and its turns; the root holds the outcome, last turn's state and last agent-work failure.
@@ -247,25 +249,25 @@ always: true
 
 **Job** — a named work shape that declares the capabilities and working set its agent needs.
 
-**Pack** — the self-contained prompt material compiled for an agent from the applicable project and job canon.
+**Pack** — the prompt material compiled for an agent from its project and job canon.
 
 **Lens** — one narrow, named review viewpoint with a stable identity, one question, and explicit exclusions.
 
 **Review tier** — breadth and round budget from path risk and size, one lower at size `0` except `firm`.
 
-**Fidelity** — the writing-job judgment of whether the delivered change built what the specification asked for.
+**Fidelity** — whether a writing job's change built what its specification asked for.
 
-**Escape** — an outside change that overlaps a run's own diff and therefore blocks that chain from landing.
+**Escape** — an outside change that overlaps a run's own diff and so blocks its chain from landing.
 
-**Worktree** — the disposable checkout that isolates a repository run and bounds what its agent may write.
+**Worktree** — the disposable checkout that isolates a run and bounds what its agent may write.
 
-**Recipe** — a registered project's own templates for provisioning and releasing a writing worktree.
+**Recipe** — a project's own templates for provisioning and releasing a writing worktree.
 
-**Claim** — any recorded pointer to a resource, regardless of whether its participant is alive.
+**Claim** — any recorded pointer to a resource, whether or not its participant is alive.
 
-**Record** — the hosted system of record: evidence arrives by idempotent outbox sync; hosted-only data is written through its services.
+**Record** — the hosted system of record: evidence arrives by idempotent outbox sync; hosted-only data goes through its services.
 
-**Note** — a one-line observation whose project, run, branch, session, commit, and file anchor are derived when filed.
+**Note** — a one-line observation whose project, run, branch, session, commit and file anchor are derived when filed.
 
 ---
 description: Module boundaries, service shape, validation, errors, and code ceilings
@@ -586,8 +588,8 @@ board must show what is happening.
 
 A defect is filed as a note, not fixed alone. Triage dedupes it and attaches
 it, as evidence, to the existing task for its class; it is fixed when its class
-is fixed. Two cases are fixed on arrival: a regression from work in flight, and
-a defect that is costing sessions now. A board request about a note follows the
+is fixed. Nothing is fixed on arrival; classes are fixed in batches, ranked by
+notes and sightings. A board request about a note follows the
 same triage.
 
 Triage drops a note whose cause goes away once its project plugs into Bottega,
@@ -647,7 +649,7 @@ Record facts and pointers when they are learned. Revise or drop context items wh
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until review admission holds for the head commit; an override requires the operator and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until review admission holds for the head commit; an override requires the user and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 

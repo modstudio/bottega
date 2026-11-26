@@ -31,12 +31,13 @@ export function harnessCursorAdapter() {
 }
 
 type AdmitKeyedTurnInput =
-  | { runId: string; turn: 'answer' }
+  | { runId: string; turn: 'answer'; overridePersonName: null }
   | {
       runId: string
       turn: Exclude<KeyedRunTurn, 'start' | 'answer'>
       overrideReason?: string
       fromOperator: boolean
+      overridePersonName: string | null
       cursor?: number
     }
 
@@ -45,6 +46,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
   const rootId = rootRunRecordId(input.runId)
   const facts = inheritedRunFacts(rootId)
   const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
+  const fromOperator = input.turn === 'answer' ? false : input.fromOperator
   const adapter = harnessCursorAdapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
@@ -56,7 +58,8 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
       rootCursorRecordId: facts.cursor_record_id,
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,
-      fromOperator: input.turn === 'answer' ? false : input.fromOperator,
+      fromOperator,
+      overridePersonName: input.overridePersonName,
       cursor: input.turn === 'answer' ? undefined : input.cursor,
     },
     adapter.readOpenCursors,

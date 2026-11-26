@@ -51,7 +51,7 @@ describe('combined prose check', () => {
   })
 
   test('keeps naming findings blocking', () => {
-    const check = checkProse('The operator decided.', options({ displayName: 'Shmuel Barkin' }))
+    const check = checkProse('The operator decided.', options({ displayName: 'Dana Example' }))
     expect(check.findings).toHaveLength(1)
     expect(check.findings[0]).toMatchObject({ rule: 'Naming', blocking: true })
   })

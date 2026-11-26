@@ -312,7 +312,7 @@ const DOC_REVISION_PLANNED_SITES: readonly B2ReasonedSite[] = [
     functionName: 'getStoredDocRevision',
     expectedSites: 3,
     detail:
-      'the one doc_revision read serves filed ruling refs in commands/rulings.ts and mcp/mcp-operator-tools.ts that need revision.number, which the hosted record has no column for; the other two budgeted sites are subject reads that retain declared-cache classification; held for Shmuel Barkin ruling on a record revision-number column or ruling-ref format change, task DEV-2634',
+      "the one doc_revision read serves filed ruling refs in commands/rulings.ts and mcp/mcp-operator-tools.ts that need revision.number, which the hosted record has no column for; the other two budgeted sites are subject reads that retain declared-cache classification; held for the user's ruling on a record revision-number column or ruling-ref format change, task DEV-2634",
   },
 ]
 

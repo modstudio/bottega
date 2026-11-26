@@ -16,6 +16,7 @@ export function admittedWorkflowPromotion(input: {
   argv: string[]
   root: string
   project: Project | null
+  operatorName: string | null
   containsHead?: PromotionContainsHead
 }): { reason: string | undefined; author: string | undefined } {
   const landingBranch = input.project?.settings.trunk?.trim() || null
@@ -47,7 +48,7 @@ export function admittedWorkflowPromotion(input: {
     fromOperator,
     reason: flagValue(input.argv, 'reason'),
     author: flagValue(input.argv, 'author'),
-    operatorName: fromOperator ? 'Shmuel Barkin' : null,
+    operatorName: input.operatorName,
   })
   if (decision.verdict === 'refuse') throw new Error(decision.message)
   return decision

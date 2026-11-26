@@ -117,6 +117,7 @@ export type WorkflowCommandOptions = {
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
   promotionContainsHead?: PromotionContainsHead
+  promotionOperatorName?: string | null
   listNotes?: ListWorkflowNotesPort
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
@@ -180,6 +181,7 @@ export async function promoteWorkflowCommand(
   const admitted = admittedWorkflowPromotion({
     argv,
     ...resolved,
+    operatorName: options.promotionOperatorName ?? null,
     containsHead: options.promotionContainsHead,
   })
   print(
@@ -841,6 +843,7 @@ export async function promoteCatalogueCommand(
   const admitted = admittedWorkflowPromotion({
     argv,
     ...resolved,
+    operatorName: options.promotionOperatorName ?? null,
     containsHead: options.promotionContainsHead,
   })
   print(

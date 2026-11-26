@@ -41,7 +41,7 @@ export const RECORD_SHAPES = {
 
 export type ContextRecordName = keyof typeof RECORD_SHAPES
 
-/** The record shape for an answer, based on whether Shmuel Barkin gave it. */
+/** The record shape for an answer, based on whether the user gave it. */
 export function answerRecordShape(operatorRuled: boolean): 'ruling' | 'self-ruling' {
   return operatorRuled ? 'ruling' : 'self-ruling'
 }
