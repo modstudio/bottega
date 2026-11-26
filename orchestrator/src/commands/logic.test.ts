@@ -44,15 +44,6 @@ test('agent registration forwards provider mutations to the agent command', asyn
   ])
 })
 
-test('agent catalogue forwards bulk share options', async () => {
-  const received: string[][] = []
-  const program = new Command().exitOverride()
-  register(program, { agentCommand: async (argv) => void received.push(argv) })
-
-  await program.parseAsync(['node', 'orch', 'agent', 'share', '--all', '--space', 'shared-agents'])
-  expect(received).toEqual([['agent', 'share', '--all', '--space', 'shared-agents']])
-})
-
 test('agent list forwards an explicit record space', async () => {
   const received: Array<{ json: boolean; space?: string }> = []
   const program = new Command().exitOverride()

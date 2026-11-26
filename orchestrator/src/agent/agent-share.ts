@@ -6,13 +6,10 @@ import { type RecordApiClient, recordApiClient } from '../record/record-api-clie
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
-import { type AgentRow, agentRowDeclaration, agentRows } from './agent-registry.ts'
+import { type AgentRow, agentRowDeclarationWithEnablement, agentRows } from './agent-registry.ts'
 
-export const sharedAgentDeclaration = (row: AgentRow): RecordSpaceAgent => ({
-  ...agentRowDeclaration(row),
-  enabled: Boolean(row.enabled),
-  disabledReason: row.disabled_reason,
-})
+export const sharedAgentDeclaration = (row: AgentRow): RecordSpaceAgent =>
+  agentRowDeclarationWithEnablement(row)
 
 function localAgent(name: string): AgentRow {
   const row = agentRows().find((candidate) => candidate.name === name)

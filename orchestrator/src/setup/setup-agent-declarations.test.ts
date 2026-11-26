@@ -6,6 +6,7 @@ import {
   missingDeclaration,
   probesWithoutProject,
   probesWithProject,
+  setupAgentsWithDeclarations,
 } from './setup-agent-declarations.ts'
 
 const declared = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent => ({
@@ -103,4 +104,21 @@ test('probe tables exclude pending disabled registrations', () => {
       projectPath: '/project',
     }),
   ).toEqual([])
+})
+
+test('one setup projection includes declared registrations and disablements for harness planning', () => {
+  const existing = local()
+  const projected = setupAgentsWithDeclarations(
+    [{ name: existing.name, harness: existing.harness, enabled: true, probePassed: false }],
+    [existing],
+    [
+      declared({ enabled: false, disabledReason: 'subscription ended' }),
+      declared({ name: 'goose-team', harness: 'goose', enabled: true }),
+    ],
+  )
+
+  expect(projected).toContainEqual(expect.objectContaining({ name: 'worker', enabled: false }))
+  expect(projected).toContainEqual(
+    expect.objectContaining({ name: 'goose-team', harness: 'goose', enabled: true }),
+  )
 })

@@ -120,21 +120,6 @@ test('share all continues after a failed declaration and reports every local row
   })
 })
 
-test('space listing reads the explicitly named destination', async () => {
-  await withHostedRecord(async () => {
-    let destination = ''
-    const client = {
-      listSpaceAgents: async (input: { destinationSpaceId: string }) => {
-        destination = input.destinationSpaceId
-        return []
-      },
-    } as unknown as RecordApiClient
-
-    await expect(listSharedAgents('shared-agents', client)).resolves.toEqual([])
-    expect(destination).toBe('shared-agents')
-  })
-})
-
 test('unshare withdraws a declaration without requiring a local agent row', async () => {
   await withHostedRecord(async () => {
     await expect(
@@ -193,7 +178,7 @@ describe('on a local-only install', () => {
     delete process.env.BOTTEGA_RECORD_API_URL
   })
 
-  test('share and unshare refuse with the hosted-record remedy', async () => {
+  test('share, unshare, and list refuse with the hosted-record remedy', async () => {
     const client = spaceAgentClient(true)
 
     await expect(shareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
@@ -201,6 +186,9 @@ describe('on a local-only install', () => {
     )
     await expect(unshareAgent('not-a-local-agent', 'shared-agents', client)).rejects.toThrow(
       `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent unshare\``,
+    )
+    await expect(listSharedAgents('shared-agents', client)).rejects.toThrow(
+      `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${PLATFORM_SLUG} agent list\``,
     )
   })
 })

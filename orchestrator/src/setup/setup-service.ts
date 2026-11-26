@@ -6,7 +6,12 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { probeAgent } from '../agent/agent-probe.ts'
-import { type AgentRow, addAgent, agentRowDeclaration, setAgent } from '../agent/agent-registry.ts'
+import {
+  type AgentRow,
+  addAgent,
+  agentRowDeclarationWithEnablement,
+  setAgent,
+} from '../agent/agent-registry.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectAmong, projectByName, projects } from '../project/projects.ts'
@@ -24,6 +29,8 @@ import {
   missingDeclaration,
   probesWithoutProject,
   probesWithProject,
+  setupAgentsWithDeclarations,
+  spaceDisablesLocalAgent,
 } from './setup-agent-declarations.ts'
 import {
   applySetupActions,
@@ -144,7 +151,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   const projectedAgents = setupAgentsWithDeclarations(
     state.agents,
     state.declarationAgents,
-    declarationRead,
+    declarationRead.kind === 'read' ? declarationRead.agents : null,
   )
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
@@ -171,34 +178,6 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   )
   addLegacyPathSymlinkRemovals(plan, pathDirectories(process.env.PATH))
   return plan
-}
-
-export function setupAgentsWithDeclarations(
-  agents: SetupAgent[],
-  localAgents: LocalAgentDeclaration[],
-  read: Awaited<ReturnType<typeof readActiveSpaceAgentDeclarations>>,
-): SetupAgent[] {
-  if (read.kind !== 'read') return agents
-  const projected = agents.map((agent) => ({ ...agent }))
-  const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
-  const projectedByName = new Map(projected.map((agent) => [agent.name, agent]))
-  for (const declaration of read.agents) {
-    const local = localByName.get(declaration.name)
-    const existing = projectedByName.get(declaration.name)
-    if (existing && !declaration.enabled) existing.enabled = false
-    if (!existing && missingDeclaration(declaration, local).kind === 'register') {
-      const added: SetupAgent = {
-        name: declaration.name,
-        harness: declaration.harness,
-        enabled: declaration.enabled,
-        provider: declaration.provider,
-        probePassed: false,
-      }
-      projected.push(added)
-      projectedByName.set(added.name, added)
-    }
-  }
-  return projected
 }
 
 function addLegacyPathSymlinkRemovals(plan: SetupPlan, directories: readonly string[]): void {
@@ -240,9 +219,7 @@ function readSetupState(): {
         probePassed: row.probe_result ? Number(JSON.parse(row.probe_result).ok === true) : 0,
       })),
       declarationAgents: rows.map((row) => ({
-        ...agentRowDeclaration(row),
-        enabled: Boolean(row.enabled),
-        disabledReason: row.disabled_reason,
+        ...agentRowDeclarationWithEnablement(row),
         probedAt: row.probed_at,
       })),
     }
@@ -267,7 +244,7 @@ export async function addDeclaredAgentsToPlan(
   const registrations = declaredAgentRegistrations(plan, read, localByName)
   const disablements = read.agents.flatMap((declaration) => {
     const local = localByName.get(declaration.name)
-    return !declaration.enabled && local?.enabled
+    return spaceDisablesLocalAgent(declaration, local)
       ? [{ name: declaration.name, reason: declaration.disabledReason! }]
       : []
   })

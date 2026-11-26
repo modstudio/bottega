@@ -28,6 +28,11 @@ export type RecordSpaceAgent = {
   disabledReason: string | null
 }
 
+export type RecordSpaceAgentWrite = Omit<RecordSpaceAgent, 'enabled' | 'disabledReason'> & {
+  enabled?: boolean
+  disabledReason?: string | null
+}
+
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
@@ -68,9 +73,12 @@ export async function readRecordSpaceAgents(input: Tenant): Promise<RecordSpaceA
 }
 
 export async function upsertRecordSpaceAgent(
-  original: Tenant & RecordSpaceAgent,
+  original: Tenant & RecordSpaceAgentWrite,
 ): Promise<RecordSpaceAgent> {
   const input = maskHostedTableWrite('space_agent', original)
+  const enablementStated = input.enabled !== undefined
+  const enabled = input.enabled ?? true
+  const disabledReason = enablementStated ? (input.disabledReason ?? null) : null
   return tenant(input, async (tx) => {
     const rows = (await tx`
       INSERT INTO space_agent(
@@ -82,7 +90,7 @@ export async function upsertRecordSpaceAgent(
         ${input.backend},${input.model},${input.baseUrl},${input.transport},${input.provider},
         ${input.apiKeySecret},${input.requestSettings},${input.jobs},${input.preferredJobs},
         ${input.maxConcurrent},${input.routeMetered},${input.trainsOnInputs},${input.operatedBy},
-        ${input.billing},${input.enabled},${input.disabledReason}
+        ${input.billing},${enabled},${disabledReason}
       ) ON CONFLICT (space_id,name) DO UPDATE SET
         harness=excluded.harness,backend=excluded.backend,model=excluded.model,
         base_url=excluded.base_url,transport=excluded.transport,provider=excluded.provider,
@@ -90,7 +98,10 @@ export async function upsertRecordSpaceAgent(
         jobs=excluded.jobs,preferred_jobs=excluded.preferred_jobs,
         max_concurrent=excluded.max_concurrent,route_metered=excluded.route_metered,
         trains_on_inputs=excluded.trains_on_inputs,operated_by=excluded.operated_by,
-        billing=excluded.billing,enabled=excluded.enabled,disabled_reason=excluded.disabled_reason
+        billing=excluded.billing,
+        enabled=CASE WHEN ${enablementStated} THEN excluded.enabled ELSE space_agent.enabled END,
+        disabled_reason=CASE WHEN ${enablementStated}
+          THEN excluded.disabled_reason ELSE space_agent.disabled_reason END
       RETURNING *
     `) as Record<string, unknown>[]
     return output(rows[0]!)

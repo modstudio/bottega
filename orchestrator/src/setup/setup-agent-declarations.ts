@@ -5,16 +5,14 @@ import { canonicalJson } from '../../../shared/canonical-json.ts'
 import { type AgentMutation, BACKENDS, HARNESSES, TRANSPORTS } from '../agent/agent-registry.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
+import type { SetupAgent } from './setup-engine.ts'
 
 export type DeclaredAgentRegistration = {
   name: string
   mutation: AgentMutation
 }
 
-export type LocalAgentDeclaration = RecordSpaceAgent & {
-  enabled: boolean
-  probedAt: string | null
-}
+export type LocalAgentDeclaration = RecordSpaceAgent & { probedAt: string | null }
 
 export type MissingDeclarationDecision =
   | { kind: 'register'; registration: DeclaredAgentRegistration }
@@ -70,6 +68,41 @@ export function missingDeclaration(
     : local
       ? { kind: 'present' }
       : { kind: 'register', registration: registration(declaration) }
+}
+
+export function spaceDisablesLocalAgent(
+  declaration: RecordSpaceAgent,
+  local: LocalAgentDeclaration | undefined,
+): local is LocalAgentDeclaration {
+  return declaration.enabled === false && local?.enabled === true
+}
+
+export function setupAgentsWithDeclarations(
+  agents: SetupAgent[],
+  localAgents: LocalAgentDeclaration[],
+  declarations: RecordSpaceAgent[] | null,
+): SetupAgent[] {
+  if (declarations === null) return agents
+  const projected = agents.map((agent) => ({ ...agent }))
+  const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
+  const projectedByName = new Map(projected.map((agent) => [agent.name, agent]))
+  for (const declaration of declarations) {
+    const local = localByName.get(declaration.name)
+    const existing = projectedByName.get(declaration.name)
+    if (existing && spaceDisablesLocalAgent(declaration, local)) existing.enabled = false
+    if (!existing && missingDeclaration(declaration, local).kind === 'register') {
+      const added: SetupAgent = {
+        name: declaration.name,
+        harness: declaration.harness,
+        enabled: declaration.enabled,
+        provider: declaration.provider,
+        probePassed: false,
+      }
+      projected.push(added)
+      projectedByName.set(added.name, added)
+    }
+  }
+  return projected
 }
 
 const DECLARED_FIELDS = [

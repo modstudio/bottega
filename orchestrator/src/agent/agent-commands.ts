@@ -17,6 +17,7 @@ import {
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
 import { listSharedAgents, shareAgent, shareAllAgents, unshareAgent } from './agent-share.ts'
+import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
@@ -297,18 +298,26 @@ export function agentReadinessPresentation(facts: {
   return 'ready'
 }
 
-async function spaceAgentsCommand(space: string, presentation: Presentation): Promise<void> {
+async function spaceAgentsCommand(
+  space: string,
+  json: boolean,
+  presentation: Presentation,
+): Promise<void> {
   const declarations = await listSharedAgents(space)
-  if (!declarations.length) {
-    presentation.log(`space ${space} has no agent declarations`)
-    return
-  }
-  for (const declaration of declarations) {
+  for (const line of spaceAgentPresentation(space, declarations, json)) presentation.log(line)
+}
+
+export function spaceAgentPresentation(
+  space: string,
+  declarations: RecordSpaceAgent[],
+  json: boolean,
+): string[] {
+  if (json) return [JSON.stringify(declarations)]
+  if (!declarations.length) return [`space ${space} has no agent declarations`]
+  return declarations.map((declaration) => {
     const state = declaration.enabled ? 'enabled' : `disabled — ${declaration.disabledReason}`
-    presentation.log(
-      `${declaration.name} harness=${declaration.harness} model=${declaration.model} ${state}`,
-    )
-  }
+    return `${declaration.name} harness=${declaration.harness} model=${declaration.model} ${state}`
+  })
 }
 
 export async function agentsCommand(
@@ -316,7 +325,7 @@ export async function agentsCommand(
   presentation: Presentation,
   space?: string,
 ): Promise<void> {
-  if (space) return spaceAgentsCommand(space, presentation)
+  if (space) return spaceAgentsCommand(space, json, presentation)
   const payload = await agentsPayload()
   if (json) {
     presentation.log(JSON.stringify(payload))

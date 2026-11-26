@@ -13,7 +13,6 @@ import {
   addDeclaredAgentsToPlan,
   addMcpConfigMigrations,
   createSetupService,
-  setupAgentsWithDeclarations,
 } from './setup-service.ts'
 
 const temporary: string[] = []
@@ -143,25 +142,29 @@ test('space-disabled local agents are offered as one recommended disable action'
   ])
 })
 
-test('one setup projection includes declared registrations and disablements for harness planning', () => {
-  const local = { ...declaration(), enabled: true, probedAt: null }
-  const projected = setupAgentsWithDeclarations(
-    [{ name: local.name, harness: local.harness, enabled: true, probePassed: false }],
-    [local],
-    {
-      kind: 'read',
-      space: { id: 'space-a', slug: 'team' },
-      agents: [
-        declarationWith({ enabled: false, disabledReason: 'subscription ended' }),
-        declarationWith({ name: 'goose-team', harness: 'goose', enabled: true }),
-      ],
-    },
-  )
+test('a space-enabled locally disabled agent produces only a notice with the local reason', async () => {
+  const plan = emptyPlan()
+  const local: LocalAgentDeclaration = {
+    ...declaration(),
+    enabled: false,
+    disabledReason: 'machine credential unavailable',
+    probedAt: null,
+  }
+  await addDeclaredAgentsToPlan(plan, [local], [], async () => ({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [declaration()],
+  }))
 
-  expect(projected).toContainEqual(expect.objectContaining({ name: 'codex-team', enabled: false }))
-  expect(projected).toContainEqual(
-    expect.objectContaining({ name: 'goose-team', harness: 'goose', enabled: true }),
-  )
+  expect(plan.notices).toContainEqual({
+    message:
+      'space agent codex-team is enabled in the space but disabled locally: machine credential unavailable',
+    fix: `${PLATFORM_SLUG} agent set codex-team --enabled true`,
+    blocking: false,
+  })
+  expect(plan.agentDeclarations?.registrations).toEqual([])
+  expect(plan.agentDeclarations?.disablements).toEqual([])
+  expect(plan.questions).toEqual([])
 })
 
 test('an unreadable declaration read becomes a non-blocking sign-in notice', async () => {

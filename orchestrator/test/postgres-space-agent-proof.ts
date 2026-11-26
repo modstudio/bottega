@@ -166,6 +166,17 @@ export function registerSpaceAgentServiceProof(input: {
       (await readRecordSpaceAgents(spaceA)).filter(({ name }) => name === changed.name),
     ).toEqual([changed])
 
+    const { enabled: _enabled, disabledReason: _disabledReason, ...legacyChanged } = {
+      ...changed,
+      model: 'service-proof-model-legacy-write',
+    }
+    expect(await upsertRecordSpaceAgent({ ...spaceA, ...initial })).toEqual(initial)
+    expect(await upsertRecordSpaceAgent({ ...spaceA, ...legacyChanged })).toEqual({
+      ...legacyChanged,
+      enabled: false,
+      disabledReason: initial.disabledReason,
+    })
+
     expect(await upsertRecordSpaceAgent({ ...spaceA, ...nullable })).toEqual(nullable)
     expect(
       (await readRecordSpaceAgents(spaceA)).find(({ name }) => name === nullable.name),

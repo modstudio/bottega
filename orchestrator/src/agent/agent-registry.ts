@@ -66,6 +66,14 @@ export function agentRowDeclaration(row: AgentRow) {
   }
 }
 
+export function agentRowDeclarationWithEnablement(row: AgentRow) {
+  return {
+    ...agentRowDeclaration(row),
+    enabled: Boolean(row.enabled),
+    disabledReason: row.disabled_reason,
+  }
+}
+
 /** Goose's own default context limit and the measured working budget for Goose runs. */
 export const GOOSE_CONTEXT_CEILING = 128_000
 
