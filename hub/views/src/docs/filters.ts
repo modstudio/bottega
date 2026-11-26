@@ -25,7 +25,7 @@ export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
 
 export const DOC_DELIVERY_LABELS = { inject: 'Inject', demand: 'Demand' } as const
 export const SHARED_PROJECT_LABEL = 'Shared'
-export const SHARED_PROJECT = '__shared__' as const
+export const SHARED_PROJECT = '' as const
 export type ProjectSelection = string | 'all' | typeof SHARED_PROJECT
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
