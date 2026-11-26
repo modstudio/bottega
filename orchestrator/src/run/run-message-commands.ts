@@ -40,8 +40,8 @@ import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
-import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { resolvedRulingPersonName } from './ruling-attribution.ts'
+import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import {
   continueRun,
