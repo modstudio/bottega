@@ -13,6 +13,7 @@ import {
   addDeclaredAgentsToPlan,
   addMcpConfigMigrations,
   createSetupService,
+  setupAgentsWithDeclarations,
 } from './setup-service.ts'
 
 const temporary: string[] = []
@@ -53,7 +54,7 @@ const emptyPlan = (): SetupPlan => ({
   folderSelection: { options: [], defaults: [] },
 })
 
-const declaration = (): RecordSpaceAgent => ({
+const declarationWith = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent => ({
   name: 'codex-team',
   harness: 'codex',
   backend: 'vendor',
@@ -70,7 +71,11 @@ const declaration = (): RecordSpaceAgent => ({
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
+  ...overrides,
 })
+const declaration = (): RecordSpaceAgent => declarationWith()
 
 test('declared agents are offered for registration and get probe remedies without a project', async () => {
   const plan = emptyPlan()
@@ -115,6 +120,48 @@ test('a disabled unprobed declared agent is not offered for probing', async () =
 
   expect(plan.agentDeclarations?.existingProbeNames).toEqual([])
   expect(plan.questions).not.toContainEqual(expect.objectContaining({ id: 'probe-agents' }))
+})
+
+test('space-disabled local agents are offered as one recommended disable action', async () => {
+  const plan = emptyPlan()
+  const local: LocalAgentDeclaration = { ...declaration(), enabled: true, probedAt: null }
+  await addDeclaredAgentsToPlan(plan, [local], [], async () => ({
+    kind: 'read',
+    space: { id: 'space-a', slug: 'team' },
+    agents: [declarationWith({ enabled: false, disabledReason: 'subscription ended' })],
+  }))
+
+  expect(plan.questions).toContainEqual(
+    expect.objectContaining({
+      id: 'apply-space-disabled',
+      recommendation: 'apply',
+      question: expect.stringContaining('codex-team: subscription ended'),
+    }),
+  )
+  expect(plan.agentDeclarations?.disablements).toEqual([
+    { name: 'codex-team', reason: 'subscription ended' },
+  ])
+})
+
+test('one setup projection includes declared registrations and disablements for harness planning', () => {
+  const local = { ...declaration(), enabled: true, probedAt: null }
+  const projected = setupAgentsWithDeclarations(
+    [{ name: local.name, harness: local.harness, enabled: true, probePassed: false }],
+    [local],
+    {
+      kind: 'read',
+      space: { id: 'space-a', slug: 'team' },
+      agents: [
+        declarationWith({ enabled: false, disabledReason: 'subscription ended' }),
+        declarationWith({ name: 'goose-team', harness: 'goose', enabled: true }),
+      ],
+    },
+  )
+
+  expect(projected).toContainEqual(expect.objectContaining({ name: 'codex-team', enabled: false }))
+  expect(projected).toContainEqual(
+    expect.objectContaining({ name: 'goose-team', harness: 'goose', enabled: true }),
+  )
 })
 
 test('an unreadable declaration read becomes a non-blocking sign-in notice', async () => {

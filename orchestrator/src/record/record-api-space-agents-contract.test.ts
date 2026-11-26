@@ -28,6 +28,8 @@ const declaration = {
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
 }
 
 test.each(['GET', 'PUT', 'DELETE'])('%s /v1/space-agents is served', async (method) => {

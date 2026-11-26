@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { probeAgent } from '../agent/agent-probe.ts'
-import { type AgentRow, addAgent, agentRowDeclaration } from '../agent/agent-registry.ts'
+import { type AgentRow, addAgent, agentRowDeclaration, setAgent } from '../agent/agent-registry.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectAmong, projectByName, projects } from '../project/projects.ts'
@@ -32,6 +32,7 @@ import {
   type SetupProjectService,
 } from './setup-apply.ts'
 import {
+  APPLY_SPACE_DISABLED_QUESTION_ID,
   PROBE_AGENTS_QUESTION_ID,
   proposeSetup,
   REGISTER_AGENTS_QUESTION_ID,
@@ -139,19 +140,30 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     state.agents,
     state.projects,
   )
+  const declarationRead = await readActiveSpaceAgentDeclarations()
+  const projectedAgents = setupAgentsWithDeclarations(
+    state.agents,
+    state.declarationAgents,
+    declarationRead,
+  )
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
     repositories.repositories,
     state.projects,
-    state.agents,
+    projectedAgents,
     repositories.notices,
     stableMcpServers(),
     hostedProjectNames,
     credentialTrustFacts,
   )
   if (hostedReadNotice) plan.notices.push(hostedReadNotice)
-  await addDeclaredAgentsToPlan(plan, state.declarationAgents, state.projects)
+  await addDeclaredAgentsToPlan(
+    plan,
+    state.declarationAgents,
+    state.projects,
+    async () => declarationRead,
+  )
   addMcpConfigMigrations(
     plan,
     homedir(),
@@ -159,6 +171,34 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   )
   addLegacyPathSymlinkRemovals(plan, pathDirectories(process.env.PATH))
   return plan
+}
+
+export function setupAgentsWithDeclarations(
+  agents: SetupAgent[],
+  localAgents: LocalAgentDeclaration[],
+  read: Awaited<ReturnType<typeof readActiveSpaceAgentDeclarations>>,
+): SetupAgent[] {
+  if (read.kind !== 'read') return agents
+  const projected = agents.map((agent) => ({ ...agent }))
+  const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
+  const projectedByName = new Map(projected.map((agent) => [agent.name, agent]))
+  for (const declaration of read.agents) {
+    const local = localByName.get(declaration.name)
+    const existing = projectedByName.get(declaration.name)
+    if (existing && !declaration.enabled) existing.enabled = false
+    if (!existing && missingDeclaration(declaration, local).kind === 'register') {
+      const added: SetupAgent = {
+        name: declaration.name,
+        harness: declaration.harness,
+        enabled: declaration.enabled,
+        provider: declaration.provider,
+        probePassed: false,
+      }
+      projected.push(added)
+      projectedByName.set(added.name, added)
+    }
+  }
+  return projected
 }
 
 function addLegacyPathSymlinkRemovals(plan: SetupPlan, directories: readonly string[]): void {
@@ -224,6 +264,12 @@ export async function addDeclaredAgentsToPlan(
   }
   const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
   const registrations = declaredAgentRegistrations(plan, read, localByName)
+  const disablements = read.agents.flatMap((declaration) => {
+    const local = localByName.get(declaration.name)
+    return !declaration.enabled && local?.enabled
+      ? [{ name: declaration.name, reason: declaration.disabledReason! }]
+      : []
+  })
   const declaredNames = new Set(read.agents.map(({ name }) => name))
   const declaredLocal = localAgents.filter(({ name }) => declaredNames.has(name))
   const current = projectAmong(process.cwd(), registeredProjects)
@@ -233,6 +279,7 @@ export async function addDeclaredAgentsToPlan(
     .map(({ name }) => name)
   plan.agentDeclarations = {
     registrations,
+    disablements,
     existingProbeNames,
     projectPath,
     spaceSlug: read.space.slug,
@@ -248,6 +295,27 @@ export async function addDeclaredAgentsToPlan(
       recommendation: 'register',
       why: 'Setup never adds a space declaration without approval.',
     })
+  }
+  if (disablements.length) {
+    plan.questions.push({
+      id: APPLY_SPACE_DISABLED_QUESTION_ID,
+      question: `Apply the space's disabled state to ${disablements.length} agents? ${disablements.map(({ name, reason }) => `${name}: ${reason}`).join('; ')}`,
+      options: [
+        { id: 'apply', label: 'Apply', why: 'Disable these local agents with the space reasons.' },
+        { id: 'skip', label: 'Skip', why: 'Leave these local agents enabled.' },
+      ],
+      recommendation: 'apply',
+      why: 'The space declares these agents disabled.',
+    })
+  }
+  for (const declaration of read.agents) {
+    const local = localByName.get(declaration.name)
+    if (declaration.enabled && local && !local.enabled)
+      plan.notices.push({
+        message: `space agent ${declaration.name} is enabled in the space but disabled locally: ${local.disabledReason}`,
+        fix: `${PLATFORM_SLUG} agent set ${declaration.name} --enabled true`,
+        blocking: false,
+      })
   }
   const probeNames = projectPath
     ? probesWithProject({ existingProbeNames, registrations, projectPath })
@@ -327,6 +395,7 @@ function setupProjectService(): SetupProjectService {
 function setupAgentService(): SetupAgentService {
   return {
     add: addAgent,
+    disable: (name, reason) => setAgent(name, { enabled: false, reason }),
     probe: (name, projectPath) =>
       probeAgent(name, {
         environment: process.env,

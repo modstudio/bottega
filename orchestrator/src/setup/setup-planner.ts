@@ -11,6 +11,7 @@ import type { ProjectSettings } from '../project/projects.ts'
 import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
 import { probesWithProject } from './setup-agent-declarations.ts'
 import {
+  APPLY_SPACE_DISABLED_QUESTION_ID,
   MACHINE_GLOBAL_USE_QUESTION_ID,
   MACHINE_LEVEL_QUESTION_ID,
   PROBE_AGENTS_QUESTION_ID,
@@ -85,6 +86,7 @@ export type SetupAction =
       agents: DeclaredAgentRegistration[]
       spaceSlug: string
     }
+  | { kind: 'disable-agents'; agents: Array<{ name: string; reason: string }> }
   | { kind: 'probe-agents'; names: string[]; projectPath: string }
   | {
       kind: 'install-harness' | 'skip-harness-install'
@@ -119,6 +121,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'set-global-use':
     case 'set-keystore':
     case 'register-agents':
+    case 'disable-agents':
     case 'probe-agents':
       return true
     case 'unchanged':
@@ -155,6 +158,8 @@ export function setupActionLine(action: SetupAction): string {
       return 'Set keystore to file'
     case 'register-agents':
       return `Register ${action.agents.length} declared agents`
+    case 'disable-agents':
+      return `Disable ${action.agents.length} agents from the space declaration`
     case 'probe-agents':
       return `Probe ${action.names.length} declared agents`
     case 'add':
@@ -299,6 +304,11 @@ function plannedAgentActions(plan: SetupPlan, answers: SetupAnswers): SetupActio
       })
     : []
   return [
+    ...(declarationPlan &&
+    answers[APPLY_SPACE_DISABLED_QUESTION_ID] === 'apply' &&
+    (declarationPlan.disablements?.length ?? 0)
+      ? [{ kind: 'disable-agents' as const, agents: declarationPlan.disablements! }]
+      : []),
     ...(registrations.length && declarationPlan
       ? [
           {

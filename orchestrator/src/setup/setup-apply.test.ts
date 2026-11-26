@@ -160,6 +160,30 @@ test('reports agent registration results per row and preserves the add remedy', 
   expect(failure[0]?.message).not.toContain('agent share')
 })
 
+test('applies declared disablements through the agent service', async () => {
+  const disabled: Array<{ name: string; reason: string }> = []
+  const agents: SetupAgentService = {
+    add: () => {},
+    disable: (name, reason) => disabled.push({ name, reason }),
+    probe: async () => ({ ok: true }),
+  }
+  const results = await applySetupActions(
+    [
+      {
+        kind: 'disable-agents',
+        agents: [{ name: 'grok', reason: 'subscription ended' }],
+      },
+    ],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    undefined,
+    agents,
+  )
+
+  expect(disabled).toEqual([{ name: 'grok', reason: 'subscription ended' }])
+  expect(results[0]).toMatchObject({ status: 'applied', message: 'grok: disabled' })
+})
+
 test('reports passing and failing probes without refusing setup', async () => {
   const agents: SetupAgentService = {
     add: () => {},

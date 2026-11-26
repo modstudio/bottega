@@ -24,6 +24,8 @@ export type RecordSpaceAgent = {
   trainsOnInputs: boolean
   operatedBy: string
   billing: string
+  enabled: boolean
+  disabledReason: string | null
 }
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
@@ -51,6 +53,8 @@ function output(row: Record<string, unknown>): RecordSpaceAgent {
     trainsOnInputs: Boolean(row.trains_on_inputs),
     operatedBy: String(row.operated_by),
     billing: String(row.billing),
+    enabled: Boolean(row.enabled),
+    disabledReason: row.disabled_reason === null ? null : String(row.disabled_reason),
   }
 }
 
@@ -72,13 +76,13 @@ export async function upsertRecordSpaceAgent(
       INSERT INTO space_agent(
         id,space_id,name,harness,backend,model,base_url,transport,provider,api_key_secret,
         request_settings,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs,
-        operated_by,billing
+        operated_by,billing,enabled,disabled_reason
       ) VALUES (
         ${newRecordId()}::uuid,${input.spaceId}::uuid,${input.name},${input.harness},
         ${input.backend},${input.model},${input.baseUrl},${input.transport},${input.provider},
         ${input.apiKeySecret},${input.requestSettings},${input.jobs},${input.preferredJobs},
         ${input.maxConcurrent},${input.routeMetered},${input.trainsOnInputs},${input.operatedBy},
-        ${input.billing}
+        ${input.billing},${input.enabled},${input.disabledReason}
       ) ON CONFLICT (space_id,name) DO UPDATE SET
         harness=excluded.harness,backend=excluded.backend,model=excluded.model,
         base_url=excluded.base_url,transport=excluded.transport,provider=excluded.provider,
@@ -86,7 +90,7 @@ export async function upsertRecordSpaceAgent(
         jobs=excluded.jobs,preferred_jobs=excluded.preferred_jobs,
         max_concurrent=excluded.max_concurrent,route_metered=excluded.route_metered,
         trains_on_inputs=excluded.trains_on_inputs,operated_by=excluded.operated_by,
-        billing=excluded.billing
+        billing=excluded.billing,enabled=excluded.enabled,disabled_reason=excluded.disabled_reason
       RETURNING *
     `) as Record<string, unknown>[]
     return output(rows[0]!)

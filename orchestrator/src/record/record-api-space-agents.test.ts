@@ -23,6 +23,8 @@ const declaration = (model = 'gpt-6.2-sol'): RecordSpaceAgent => ({
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
 })
 
 test('space agent routes share, replace, list, and unshare declarations', async () => {
@@ -65,7 +67,7 @@ test('space agent routes share, replace, list, and unshare declarations', async 
   expect(await (await request('DELETE', { name: 'codex' })).json()).toEqual({ removed: false })
 })
 
-test('space agent route rejects machine-state fields', async () => {
+test('space agent route validates disabled state and accepts omitted enablement as enabled', async () => {
   const app = new Hono<RecordSpaceAgentEnvironment>()
   registerRecordSpaceAgentRoutes(
     app,
@@ -84,10 +86,20 @@ test('space agent route rejects machine-state fields', async () => {
       noSpace: () => new Response('missing space', { status: 409 }),
     },
   )
-  const response = await app.request('/v1/space-agents', {
+  const invalid = await app.request('/v1/space-agents', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...declaration(), enabled: true }),
+    body: JSON.stringify({ ...declaration(), enabled: false, disabledReason: null }),
   })
-  expect(response.status).toBe(400)
+  expect(invalid.status).toBe(400)
+  expect(await invalid.text()).toContain('disabledReason must be non-empty when enabled is false')
+
+  const { enabled: _, disabledReason: __, ...legacy } = declaration()
+  const compatible = await app.request('/v1/space-agents', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(legacy),
+  })
+  expect(compatible.status).toBe(200)
+  expect(await compatible.json()).toMatchObject({ enabled: true, disabledReason: null })
 })

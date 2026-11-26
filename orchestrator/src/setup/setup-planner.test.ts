@@ -33,6 +33,7 @@ test('accepted declared-agent actions register before probing', () => {
     folderSelection: { options: [], defaults: [] },
     agentDeclarations: {
       registrations: [{ name: 'new', mutation: { harness: 'codex' } }],
+      disablements: [],
       existingProbeNames: ['existing'],
       projectPath: '/project',
       spaceSlug: 'team',
@@ -48,4 +49,27 @@ test('accepted declared-agent actions register before probing', () => {
     expect.objectContaining({ kind: 'register-agents' }),
     { kind: 'probe-agents', names: ['existing', 'new'], projectPath: '/project' },
   ])
+})
+
+test('accepted space disablement becomes one action', () => {
+  const plan = {
+    facts: { machine: { globalUse: null }, repositories: [] },
+    proposals: [],
+    registrations: [],
+    questions: [],
+    notices: [],
+    folderSelection: { options: [], defaults: [] },
+    agentDeclarations: {
+      registrations: [],
+      disablements: [{ name: 'grok', reason: 'subscription ended' }],
+      existingProbeNames: [],
+      projectPath: null,
+      spaceSlug: 'team',
+    },
+  } as unknown as SetupPlan
+
+  expect(planSetupActions(plan, { 'apply-space-disabled': 'apply' })).toContainEqual({
+    kind: 'disable-agents',
+    agents: [{ name: 'grok', reason: 'subscription ended' }],
+  })
 })

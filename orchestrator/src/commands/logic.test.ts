@@ -44,6 +44,15 @@ test('agent registration forwards provider mutations to the agent command', asyn
   ])
 })
 
+test('agent catalogue forwards bulk share options', async () => {
+  const received: string[][] = []
+  const program = new Command().exitOverride()
+  register(program, { agentCommand: async (argv) => void received.push(argv) })
+
+  await program.parseAsync(['node', 'orch', 'agent', 'share', '--all', '--space', 'shared-agents'])
+  expect(received).toEqual([['agent', 'share', '--space', 'shared-agents', '--all']])
+})
+
 test('answer refuses a question-sibling option instead of recording it as ruling text', async () => {
   const recordId = addRun({
     agent: 'codex',

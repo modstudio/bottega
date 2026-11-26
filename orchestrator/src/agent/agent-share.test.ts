@@ -6,7 +6,13 @@ import type { RecordApiClient } from '../record/record-api-client.ts'
 import { registerRecordRequestSpace } from '../record/record-api-request-space.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import type { AgentRow } from './agent-registry.ts'
-import { shareAgent, sharedAgentDeclaration, unshareAgent } from './agent-share.ts'
+import {
+  listSharedAgents,
+  shareAgent,
+  shareAllAgents,
+  sharedAgentDeclaration,
+  unshareAgent,
+} from './agent-share.ts'
 
 const hostedSpaceId = '01990000-0000-7000-8000-000000000248'
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
@@ -37,7 +43,7 @@ async function withHostedRecord<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-test('shared declaration carries every declared field and no machine state', () => {
+test('shared declaration carries declared enablement but no probe state', () => {
   const declaration = sharedAgentDeclaration({
     name: 'codex',
     harness: 'codex',
@@ -78,8 +84,9 @@ test('shared declaration carries every declared field and no machine state', () 
     maxConcurrent: 2,
     routeMetered: false,
     trainsOnInputs: false,
+    enabled: false,
+    disabledReason: 'machine-only',
   })
-  expect(declaration).not.toHaveProperty('enabled')
   expect(declaration).not.toHaveProperty('caps')
   expect(declaration).not.toHaveProperty('probeResult')
 })
@@ -91,6 +98,40 @@ test('share refusal names an unknown local agent and the listing remedy', async 
     ).rejects.toThrow(
       `unknown local agent "not-a-local-agent"; run \`${PLATFORM_SLUG} agent list\` to list local agents`,
     )
+  })
+})
+
+test('share all continues after a failed declaration and reports every local row', async () => {
+  await withHostedRecord(async () => {
+    const client = {
+      whoami: async () => ({ personalSpaceId: null, memberships: [] }),
+      upsertSpaceAgent: async (declaration: { name: string }) => {
+        if (declaration.name === 'codex') throw new Error('record unavailable for codex')
+        return declaration
+      },
+    } as unknown as RecordApiClient
+    const results = await shareAllAgents('shared-agents', client)
+
+    expect(results.find(({ name }) => name === 'codex')).toEqual({
+      name: 'codex',
+      error: 'record unavailable for codex',
+    })
+    expect(results.some((result) => result.declaration !== undefined)).toBe(true)
+  })
+})
+
+test('space listing reads the explicitly named destination', async () => {
+  await withHostedRecord(async () => {
+    let destination = ''
+    const client = {
+      listSpaceAgents: async (input: { destinationSpaceId: string }) => {
+        destination = input.destinationSpaceId
+        return []
+      },
+    } as unknown as RecordApiClient
+
+    await expect(listSharedAgents('shared-agents', client)).resolves.toEqual([])
+    expect(destination).toBe('shared-agents')
   })
 })
 

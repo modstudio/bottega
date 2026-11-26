@@ -18,6 +18,7 @@ import type { DeclaredAgentRegistration } from './setup-agent-declarations.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import {
+  HARNESS_MCP_CATALOGUE,
   type HarnessInstallRoute,
   type HarnessName,
   harnessDocumentation,
@@ -109,6 +110,7 @@ export type SetupPlan = {
   legacyPathSymlinks?: LegacyPathSymlink[]
   agentDeclarations?: {
     registrations: DeclaredAgentRegistration[]
+    disablements: Array<{ name: string; reason: string }>
     existingProbeNames: string[]
     projectPath: string | null
     spaceSlug: string
@@ -125,6 +127,7 @@ export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
 export const MACHINE_LEVEL_QUESTION_ID = 'machine:level'
 export const MACHINE_GLOBAL_USE_QUESTION_ID = 'machine:global-use'
 export const REGISTER_AGENTS_QUESTION_ID = 'register-agents'
+export const APPLY_SPACE_DISABLED_QUESTION_ID = 'apply-space-disabled'
 export const PROBE_AGENTS_QUESTION_ID = 'probe-agents'
 
 function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
@@ -344,15 +347,19 @@ function proposeHarnessRegistrations(
 
 function proposeMcpRegistrations(
   machine: SetupFacts,
+  agents: SetupAgent[],
   servers: McpServer[],
   questions: SetupQuestion[],
   notices: SetupNotice[],
 ): SetupRegistrationProposal[] {
+  const enabledHarnesses = new Set(neededHarnesses(agents).map(({ harness }) => harness))
   return (
     Object.entries(machine.harnesses ?? {}) as [keyof SetupFacts['harnesses'], HarnessFacts][]
-  ).flatMap(([harness, facts]) =>
-    proposeHarnessRegistrations(harness, facts, servers, questions, notices),
-  )
+  ).flatMap(([harness, facts]) => {
+    if (!HARNESS_MCP_CATALOGUE[harness].architectSession && !enabledHarnesses.has(harness))
+      return []
+    return proposeHarnessRegistrations(harness, facts, servers, questions, notices)
+  })
 }
 
 export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): string {
@@ -865,7 +872,7 @@ export function proposeSetup(
     ...providerCredentialTrustNotices(credentialTrustFacts),
   ]
   const harnessInstalls = proposeHarnessInstalls(machine, agents, questions, notices)
-  const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
+  const registrations = proposeMcpRegistrations(machine, agents, servers, questions, notices)
   const proposals = repositories.map((repository) =>
     proposeRepository(repository, register, occupied, questions, notices, resolveLifecycle),
   )

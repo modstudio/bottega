@@ -25,6 +25,8 @@ const declared = (overrides: Partial<RecordSpaceAgent> = {}): RecordSpaceAgent =
   trainsOnInputs: false,
   operatedBy: 'vendor',
   billing: 'subscription',
+  enabled: true,
+  disabledReason: null,
   ...overrides,
 })
 
@@ -41,6 +43,20 @@ test('missing table offers valid rows and copies only the secret name', () => {
     registration: {
       name: 'worker',
       mutation: expect.objectContaining({ apiKeySecret: 'provider-key' }),
+    },
+  })
+})
+
+test('missing table carries a disabled declaration and its reason', () => {
+  expect(
+    missingDeclaration(
+      declared({ enabled: false, disabledReason: 'subscription ended' }),
+      undefined,
+    ),
+  ).toMatchObject({
+    kind: 'register',
+    registration: {
+      mutation: { enabled: false, reason: 'subscription ended' },
     },
   })
 })

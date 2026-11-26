@@ -53,6 +53,8 @@ function registration(declaration: RecordSpaceAgent): DeclaredAgentRegistration 
       routeMetered: declaration.routeMetered,
       trainsOnInputs: declaration.trainsOnInputs,
       billing: declaration.billing as AgentMutation['billing'],
+      enabled: declaration.enabled,
+      ...(declaration.enabled ? {} : { reason: declaration.disabledReason! }),
     },
   }
 }

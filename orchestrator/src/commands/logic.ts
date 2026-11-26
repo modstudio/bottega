@@ -562,6 +562,7 @@ function registerTreeCommands(program: Command): void {
 function registerAgentCommands(program: Command, runAgentCommand?: typeof agentCommand): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
     .option('--space <slug>', 'record space for share or unshare')
+    .option('--all', 'share every local agent')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
     .option('--model <value>', 'set the model identifier')
@@ -716,13 +717,15 @@ function registerAgentCatalogueCommands(
   runAgentCommand: typeof agentCommand | undefined,
 ): void {
   registerAgentCommands(program, runAgentCommand)
-  describedCommand(program, 'agents', 'list agents and their readiness')
+  describedCommand(program, 'agents', "list local agents or one space's shared declarations")
     .option('--json', 'write agent capabilities as JSON')
+    .option('--space <slug>', 'list shared declarations in this record space')
     .allowExcessArguments(false)
     .action(async (options) =>
       (await import('../agent/agent-commands.ts')).agentsCommand(
         Boolean(options.json),
         presentation,
+        options.space,
       ),
     )
 }

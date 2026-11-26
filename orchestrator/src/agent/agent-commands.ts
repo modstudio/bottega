@@ -16,7 +16,7 @@ import {
   removeAgent,
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
-import { shareAgent, unshareAgent } from './agent-share.ts'
+import { listSharedAgents, shareAgent, shareAllAgents, unshareAgent } from './agent-share.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
@@ -50,6 +50,20 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   show: (name, _argv, presentation) => showCommand(name, presentation),
   share: async (name, argv, presentation) => {
     const space = requiredSpace(argv, 'share')
+    if (argv.includes('--all')) {
+      if (name) throw new Error('--all cannot be used with an agent name')
+      const results = await shareAllAgents(space)
+      for (const result of results) {
+        presentation.log(
+          result.error
+            ? `${result.name}: failed — ${result.error}`
+            : `${result.name}: shared with ${space}`,
+        )
+      }
+      if (results.some((result) => result.error)) presentation.setExitCode(1)
+      return
+    }
+    if (!name) throw new Error(`an agent name is required unless --all is used`)
     presentation.log(JSON.stringify(await shareAgent(name, space)))
   },
   unshare: async (name, argv, presentation) => {
@@ -197,17 +211,17 @@ export async function agentCommand(
   dependencies: AgentCommandDependencies = agentCommandDependencies,
 ): Promise<void> {
   const sub = argv[1],
-    name = argv[2]
+    name = argv[2]?.startsWith('--') ? undefined : argv[2]
   if (!isAgentCommandVerb(sub)) {
     throw new Error(
       `unknown agent command "${sub ?? ''}"; valid commands: ${AGENT_COMMAND_VERBS.join(', ')}`,
     )
   }
-  if (!name)
+  if (!name && !(sub === 'share' && argv.includes('--all')))
     throw new Error(
       `an agent name is required\nusage: ${PLATFORM_SLUG} agent ${sub} <name> [options]`,
     )
-  await AGENT_COMMAND_HANDLERS[sub](name, argv, presentation, dependencies)
+  await AGENT_COMMAND_HANDLERS[sub](name ?? '', argv, presentation, dependencies)
 }
 
 function addCommand(name: string, argv: string[], presentation: Presentation): void {
@@ -283,7 +297,25 @@ export function agentReadinessPresentation(facts: {
   return 'ready'
 }
 
-export async function agentsCommand(json: boolean, presentation: Presentation): Promise<void> {
+export async function agentsCommand(
+  json: boolean,
+  presentation: Presentation,
+  space?: string,
+): Promise<void> {
+  if (space) {
+    const declarations = await listSharedAgents(space)
+    if (!declarations.length) {
+      presentation.log(`space ${space} has no agent declarations`)
+      return
+    }
+    for (const declaration of declarations) {
+      const state = declaration.enabled ? 'enabled' : `disabled — ${declaration.disabledReason}`
+      presentation.log(
+        `${declaration.name} harness=${declaration.harness} model=${declaration.model} ${state}`,
+      )
+    }
+    return
+  }
   const payload = await agentsPayload()
   if (json) {
     presentation.log(JSON.stringify(payload))

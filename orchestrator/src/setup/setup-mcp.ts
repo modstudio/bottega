@@ -22,6 +22,7 @@ export function legacyMcpServerName(name: McpServerName): LegacyMcpServerName {
 }
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
 type HarnessMcpDescriptor = {
+  architectSession: boolean
   support: 'automatic' | 'manual'
   servers: readonly McpServerName[]
   manualDocumentation: string | null
@@ -31,6 +32,7 @@ type HarnessMcpDescriptor = {
 export type HarnessInstallRoute = { command: string; binDir?: string }
 export const HARNESS_MCP_CATALOGUE = {
   codex: {
+    architectSession: true,
     support: 'automatic',
     servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
@@ -44,6 +46,7 @@ export const HARNESS_MCP_CATALOGUE = {
     },
   },
   grok: {
+    architectSession: false,
     support: 'automatic',
     servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
@@ -60,18 +63,21 @@ export const HARNESS_MCP_CATALOGUE = {
     },
   },
   claude: {
+    architectSession: true,
     support: 'automatic',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: null,
     documentation: 'https://docs.anthropic.com/en/docs/claude-code/overview',
   },
   opencode: {
+    architectSession: false,
     support: 'manual',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://opencode.ai/v2/docs/mcp-servers',
     documentation: 'https://opencode.ai/docs',
   },
   goose: {
+    architectSession: false,
     support: 'manual',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://block.github.io/goose/',
