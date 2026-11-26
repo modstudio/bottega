@@ -95,6 +95,7 @@ export const databaseModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/database/post-update-steps.ts', [
     'node:fs',
+    '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
     '../../../shared/update-lock.ts',

@@ -6,6 +6,7 @@
  */
 
 import { realpathSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV, resolveInstallationPaths } from '../../../shared/install-root.ts'
 import {
