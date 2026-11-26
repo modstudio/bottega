@@ -11,6 +11,10 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
 
 export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
 
+export const LONG_RUNNING_MAINTENANCE_LABELS = [
+  COLLECT_SCHEDULE_LABEL,
+] as const satisfies readonly MaintenanceScheduleLabel[]
+
 export const LAUNCHD_TEMPLATE_PATHS: Record<MaintenanceScheduleLabel, string> = {
   'com.user.orch-sweep': 'ops/launchd/com.user.orch-sweep.plist.template',
   'com.user.orch-record-sync': 'ops/launchd/com.user.orch-record-sync.plist.template',

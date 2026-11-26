@@ -2,7 +2,12 @@ import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECKOUT_CLI_BINARY_ENV } from '../../../shared/install-root.ts'
-import { handoffPostUpdateSteps, postUpdateSteps, runPostUpdateSteps } from './post-update-steps.ts'
+import {
+  handoffPostUpdateSteps,
+  postUpdateSteps,
+  runLaunchAgentsRefreshVerb,
+  runPostUpdateSteps,
+} from './post-update-steps.ts'
 
 const checkout = resolve(import.meta.dir, '../../..')
 const checkoutBinary = `/checkout/bin/${PLATFORM_SLUG}`
@@ -88,7 +93,7 @@ test('checkout post-update adapter runs every step in decision order', async () 
       syncWorkflows: (_cwd, since) => events.push(`sync:${since}`),
       buildCli: () => events.push('build'),
       maintainStore: () => events.push('maintain'),
-      runLaunchAgentsRefreshVerb: (binary) => events.push(`refresh:${binary}`),
+      runLaunchAgentsRefreshVerb: (binary, restart) => events.push(`refresh:${binary}:${restart}`),
       releaseHostedRows: async () => {
         events.push('release')
       },
@@ -104,10 +109,47 @@ test('checkout post-update adapter runs every step in decision order', async () 
     'sync:abc123',
     'build',
     'maintain',
-    `refresh:${checkout}/bin/${PLATFORM_SLUG}`,
+    `refresh:${checkout}/bin/${PLATFORM_SLUG}:false`,
     'verify',
     'release',
     'retire',
+  ])
+})
+
+test('only distribution post-update requests long-running service restarts', async () => {
+  const requests: boolean[] = []
+  const dependencies = {
+    verifyMainCheckout: () => {},
+    syncWorkflows: () => {},
+    buildCli: () => {},
+    maintainStore: () => {},
+    runLaunchAgentsRefreshVerb: (_binary: string, restart: boolean) => requests.push(restart),
+    releaseHostedRows: async () => {},
+    recordSessionPresent: () => false,
+    storeAttachedToHostedRecord: () => false,
+  }
+  await runPostUpdateSteps(
+    { log: () => {} },
+    { path: 'checkout', checkout, branch: 'main', beforePull: 'abc123' },
+    dependencies,
+  )
+  await runPostUpdateSteps({ log: () => {} }, { path: 'distribution' }, dependencies)
+  expect(requests).toEqual([false, true])
+})
+
+test('launch-agent refresh argv includes the restart flag only when requested', () => {
+  const calls: string[][] = []
+  const spawn = ((argv: readonly string[]) => {
+    calls.push([...argv])
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }) as typeof import('../../../shared/bounded-process.ts').startBoundedSync
+
+  runLaunchAgentsRefreshVerb(distributionBinary, false, spawn)
+  runLaunchAgentsRefreshVerb(distributionBinary, true, spawn)
+
+  expect(calls).toEqual([
+    [distributionBinary, 'machine', 'launch-agents', 'refresh'],
+    [distributionBinary, 'machine', 'launch-agents', 'refresh', '--restart-long-running'],
   ])
 })
 

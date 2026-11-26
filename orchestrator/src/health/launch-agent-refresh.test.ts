@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { InstallationIdentity } from '../../../shared/install-root.ts'
 import {
+  LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   scheduleExpectation,
 } from '../../../shared/schedule-policy.ts'
@@ -464,4 +465,89 @@ test('distribution refresh logs a skipped maintenance label without reporting dr
     },
   )
   expect(lines).toEqual(['com.user.orch-record-sync skipped — disabled by machine policy'])
+})
+
+test('darwin refresh restarts declared long-running labels only for a distribution', async () => {
+  for (const identity of [
+    distributionIdentity,
+    { kind: 'checkout', root: '/checkout', version: 'development' } as const,
+  ]) {
+    const restarted: string[] = []
+    await refreshLaunchAgents(
+      'darwin',
+      { log: () => {} },
+      {
+        identity,
+        readOwners: async () => [],
+        observe: () => ({}),
+        readScheduleFacts: () => [],
+        restartLongRunning: true,
+        restartLongRunningMaintenance: () =>
+          LONG_RUNNING_MAINTENANCE_LABELS.map((label) => {
+            restarted.push(label)
+            return { label, status: 'restarted', command: `restart ${label}` }
+          }),
+      },
+    )
+    expect(restarted).toEqual(
+      identity.kind === 'distribution' ? [...LONG_RUNNING_MAINTENANCE_LABELS] : [],
+    )
+  }
+})
+
+test('darwin distribution refresh skips inactive services and logs unreachable gui remedies', async () => {
+  for (const [status, expectedLines] of [
+    ['inactive', []],
+    [
+      'unreachable',
+      LONG_RUNNING_MAINTENANCE_LABELS.map(
+        (label) =>
+          `${label} could not be restarted because the launchd gui domain is unreachable; run launchctl kill SIGTERM gui/501/${label} from a login session`,
+      ),
+    ],
+  ] as const) {
+    const lines: string[] = []
+    await refreshLaunchAgents(
+      'darwin',
+      { log: (line) => lines.push(line) },
+      {
+        identity: distributionIdentity,
+        readOwners: async () => [],
+        observe: () => ({}),
+        readScheduleFacts: () => [],
+        restartLongRunning: true,
+        restartLongRunningMaintenance: () =>
+          LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({
+            label,
+            status,
+            command: `launchctl kill SIGTERM gui/501/${label}`,
+          })),
+      },
+    )
+    expect(lines).toEqual([...expectedLines])
+  }
+})
+
+test('linux restart-only refresh logs one setup remedy when the user manager is unavailable', async () => {
+  const lines: string[] = []
+  let restarts = 0
+  await refreshLaunchAgents(
+    'linux',
+    { log: (line) => lines.push(line) },
+    {
+      identity: distributionIdentity,
+      readOwners: async () => [],
+      readScheduleFacts: () => [],
+      scheduleUserManagerAvailable: () => false,
+      restartLongRunning: true,
+      restartLongRunningMaintenance: () => {
+        restarts += 1
+        return []
+      },
+    },
+  )
+  expect(restarts).toBe(0)
+  expect(lines).toEqual([
+    `systemd user manager unavailable in this session; maintenance schedules not refreshed and long-running services not restarted; run ${PLATFORM_SLUG} machine setup apply from a login session`,
+  ])
 })

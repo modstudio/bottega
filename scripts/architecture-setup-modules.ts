@@ -302,6 +302,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'node:path',
       '../../../shared/embedded-assets.ts',
       '../../../shared/install-root.ts',
+      '../../../shared/launch-agent-liveness.ts',
       '../../../shared/launch-agent-skip.ts',
       '../../../shared/schedule-policy.ts',
       '../../../shared/state-directory.ts',

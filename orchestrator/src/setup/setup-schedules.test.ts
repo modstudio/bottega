@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   LAUNCHD_TEMPLATE_PATHS,
+  LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   SYSTEMD_UNITS,
 } from '../../../shared/schedule-policy.ts'
@@ -17,6 +18,8 @@ import {
   renderMaintenanceSchedule,
   requiredMaintenanceLabels,
 } from './setup-schedule-policy.ts'
+import { restartLongRunningLaunchdSchedules } from './setup-schedules.ts'
+import { restartLongRunningSystemdSchedules } from './setup-systemd-schedules.ts'
 
 const skipFacts = {
   modelHostAlias: '',
@@ -134,5 +137,78 @@ test('systemd schedule units render every placeholder and preserve intervals and
       expect(rendered.match(/__[A-Z0-9_]+__/g)).toBeNull()
       for (const fragment of expectations.get(name) ?? []) expect(rendered).toContain(fragment)
     }
+  }
+})
+
+test('distribution restart adapters issue the ruled command for every long-running label', () => {
+  const systemdCommands: string[][] = []
+  const systemdResults = restartLongRunningSystemdSchedules({
+    systemctl: '/usr/bin/systemctl',
+    active: () => true,
+    run: (systemctl, args) => systemdCommands.push([systemctl, '--user', ...args]),
+  })
+  expect(systemdCommands).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.flatMap((label) =>
+      SYSTEMD_UNITS[label]
+        .filter((unit) => unit.endsWith('.service'))
+        .map((unit) => ['/usr/bin/systemctl', '--user', 'try-restart', unit]),
+    ),
+  )
+  expect(systemdResults.map(({ label, status }) => ({ label, status }))).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'restarted' })),
+  )
+
+  const launchdCommands: string[][] = []
+  const results = restartLongRunningLaunchdSchedules({
+    launchctl: '/bin/launchctl',
+    uid: 501,
+    loaded: () => true,
+    run: (argv) => launchdCommands.push(argv),
+  })
+  expect(launchdCommands).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => [
+      '/bin/launchctl',
+      'kill',
+      'SIGTERM',
+      `gui/501/${label}`,
+    ]),
+  )
+  expect(results.map(({ label, status }) => ({ label, status }))).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'restarted' })),
+  )
+})
+
+test('systemd restart skips inactive or absent long-running units', () => {
+  const commands: string[][] = []
+  const results = restartLongRunningSystemdSchedules({
+    systemctl: '/usr/bin/systemctl',
+    active: () => false,
+    run: (systemctl, args) => commands.push([systemctl, ...args]),
+  })
+
+  expect(commands).toEqual([])
+  expect(results.map(({ label, status }) => ({ label, status }))).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'inactive' })),
+  )
+})
+
+test('launchd restart skips inactive labels and reports an unreachable gui domain', () => {
+  for (const [loaded, status] of [
+    [false, 'inactive'],
+    [null, 'unreachable'],
+  ] as const) {
+    let commands = 0
+    const results = restartLongRunningLaunchdSchedules({
+      launchctl: 'launchctl',
+      uid: 501,
+      loaded: () => loaded,
+      run: () => {
+        commands += 1
+      },
+    })
+    expect(commands).toBe(0)
+    expect(results.map((result) => result.status)).toEqual(
+      LONG_RUNNING_MAINTENANCE_LABELS.map(() => status),
+    )
   }
 })

@@ -148,6 +148,7 @@ function monitorHarness(
   const writes: ServiceIdentity[] = []
   const adapters: RevisionMonitorAdapters = {
     readHead: () => reads.shift()!,
+    installationKind: () => 'checkout',
     writeIdentity: (_service, written) => {
       writes.push({ ...written })
     },
@@ -175,6 +176,28 @@ function monitorHarness(
 }
 
 describe('revision monitor failures', () => {
+  test('distribution records its build commit without starting the checkout monitor', () => {
+    const harness = monitorHarness([{ revision: 'release-commit', error: null }])
+    let intervals = 0
+    harness.adapters.installationKind = () => 'distribution'
+    harness.adapters.setInterval = () => {
+      intervals += 1
+      return 1 as unknown as ReturnType<typeof setInterval>
+    }
+
+    startRevisionMonitor(
+      'collect',
+      identity.holder,
+      () => {},
+      () => {},
+      harness.adapters,
+    )
+
+    expect(harness.writes[0]?.revision).toBe('release-commit')
+    expect(harness.writes[0]?.revisionError).toBeNull()
+    expect(intervals).toBe(0)
+  })
+
   test('logs a failed error-record write and checks again on the next tick', async () => {
     const harness = monitorHarness([
       { revision: 'aaaa', error: null },

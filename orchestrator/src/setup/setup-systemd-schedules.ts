@@ -10,6 +10,7 @@ import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import {
+  LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   type MaintenanceScheduleLabel,
   SYSTEMD_TEMPLATE_DIRECTORY,
@@ -18,6 +19,7 @@ import {
 } from '../../../shared/schedule-policy.ts'
 import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
+  type LongRunningScheduleRestartResult,
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   type ScheduleApplyResult,
@@ -117,7 +119,31 @@ function runSystemctl(systemctl: string, args: string[]): void {
   const result = startBoundedSync([systemctl, '--user', ...args], { budget: 'process-table' })
   if (result.exitCode === 0) return
   const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim()
-  throw new Error(`systemctl --user ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
+  const command = `systemctl --user ${args.join(' ')}`
+  throw new Error(`${command} failed${detail ? `: ${detail}` : ''}; run ${command}`)
+}
+
+/** Restart every active long-running release-owned service after a distribution update. */
+export function restartLongRunningSystemdSchedules(
+  deps: {
+    systemctl?: string
+    active?: (systemctl: string, unit: string) => boolean
+    run?: (systemctl: string, args: string[]) => void
+  } = {},
+): LongRunningScheduleRestartResult[] {
+  const systemctl = deps.systemctl ?? requireSystemdUserManager()
+  return LONG_RUNNING_MAINTENANCE_LABELS.flatMap((label) =>
+    SYSTEMD_UNITS[label]
+      .filter((name) => name.endsWith('.service'))
+      .map((unit) => {
+        const command = `systemctl --user try-restart ${unit}`
+        if (!(deps.active ?? activeUnit)(systemctl, unit)) {
+          return { label, status: 'inactive', command }
+        }
+        ;(deps.run ?? runSystemctl)(systemctl, ['try-restart', unit])
+        return { label, status: 'restarted', command }
+      }),
+  )
 }
 
 async function writeChangedUnits(

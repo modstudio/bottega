@@ -6,6 +6,7 @@ import { runningInstallationIdentity } from '../../../shared/install-root.ts'
 import { schedulePlatformSupported } from '../../../shared/schedule-policy.ts'
 import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type {
+  LongRunningScheduleRestartResult,
   ScheduleApplyResult,
   ScheduleRenderValues,
   ScheduleSetupFact,
@@ -13,14 +14,18 @@ import type {
 import {
   applyLaunchdMaintenanceSchedules,
   gatherLaunchdScheduleSetupFacts,
+  restartLongRunningLaunchdSchedules,
 } from './setup-schedules.ts'
 import {
   applySystemdMaintenanceSchedules,
   gatherScheduleLingerFact as gatherSystemdScheduleLingerFact,
   gatherSystemdScheduleSetupFacts,
   gatherScheduleUserFact as gatherSystemdScheduleUserFact,
+  restartLongRunningSystemdSchedules,
   systemdUserManagerAvailable,
 } from './setup-systemd-schedules.ts'
+
+export type { LongRunningScheduleRestartResult } from './setup-schedule-policy.ts'
 
 export function scheduleUserManagerAvailable(platform: NodeJS.Platform): boolean {
   return platform === 'linux' ? systemdUserManagerAvailable() : true
@@ -60,6 +65,18 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
       return applySystemdMaintenanceSchedules(values)
     default:
       throw new Error(`maintenance schedule adapter missing for ${process.platform}`)
+  }
+}
+
+/** Restart active long-running maintenance services through the current platform adapter. */
+export function restartLongRunningMaintenanceSchedules(): LongRunningScheduleRestartResult[] {
+  switch (process.platform) {
+    case 'darwin':
+      return restartLongRunningLaunchdSchedules()
+    case 'linux':
+      return restartLongRunningSystemdSchedules()
+    default:
+      return []
   }
 }
 

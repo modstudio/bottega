@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
+  LAUNCHD_TEMPLATE_PATHS,
+  LONG_RUNNING_MAINTENANCE_LABELS,
+  MAINTENANCE_SCHEDULE_LABELS,
   NOT_SCHEDULED_BY_THIS_INSTALL,
+  SYSTEMD_TEMPLATE_DIRECTORY,
+  SYSTEMD_UNITS,
   scheduleExpectation,
   systemdActivationUnits,
 } from './schedule-policy.ts'
@@ -46,4 +53,24 @@ test('a non-checkout-only owner is not scheduled by a darwin checkout', () => {
 
 test('a service-only systemd label activates its service', () => {
   expect(systemdActivationUnits('com.user.hub-collect')).toEqual(['hub-collect.service'])
+})
+
+test('declared long-running labels exactly match systemd and launchd templates', () => {
+  const root = resolve(import.meta.dir, '..')
+  const systemdLongRunning = MAINTENANCE_SCHEDULE_LABELS.filter((label) =>
+    SYSTEMD_UNITS[label].some(
+      (unit) =>
+        unit.endsWith('.service') &&
+        /^Type=simple$/m.test(
+          readFileSync(resolve(root, SYSTEMD_TEMPLATE_DIRECTORY, unit), 'utf8'),
+        ),
+    ),
+  )
+  const launchdLongRunning = MAINTENANCE_SCHEDULE_LABELS.filter((label) =>
+    /<key>KeepAlive<\/key>\s*<true\/>/.test(
+      readFileSync(resolve(root, LAUNCHD_TEMPLATE_PATHS[label]), 'utf8'),
+    ),
+  )
+  expect(systemdLongRunning).toEqual([...LONG_RUNNING_MAINTENANCE_LABELS])
+  expect(launchdLongRunning).toEqual([...LONG_RUNNING_MAINTENANCE_LABELS])
 })
