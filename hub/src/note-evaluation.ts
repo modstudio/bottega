@@ -406,7 +406,6 @@ const defaultDependencies: Dependencies = {
 
 export function noteEvaluationBody(
   project: string,
-  at: string,
   noteCount: number,
   result: NoteEvaluationResult,
 ): string {
@@ -416,7 +415,6 @@ export function noteEvaluationBody(
   const lines = [
     `# Note evaluation: ${project}`,
     '',
-    `Run time: ${at}`,
     `Actionable notes: ${noteCount}`,
     `Candidate pairs: ${result.generatedPairs}`,
     `Pairs asked: ${result.pairsAsked}`,
@@ -424,7 +422,7 @@ export function noteEvaluationBody(
     `Blocking recall: ${recall}; ${result.recall.unreadable} unreadable positives excluded`,
   ]
   if (!result.generatedPairs) lines.push('', 'No candidate pairs to ask.')
-  if (result.answerFailure) lines.push('', result.answerFailure)
+  if (result.answerFailure) lines.push('', 'Duplicate answers were not obtained.')
   lines.push('', '## Duplicate clusters')
   if (!result.clusters.length) lines.push('', 'No scored clusters were obtained.')
   for (const [index, cluster] of result.clusters.entries()) {
@@ -432,7 +430,7 @@ export function noteEvaluationBody(
       '',
       `### ${index + 1}. ${cluster.notes.length} notes, mean ${cluster.meanProbability.toFixed(3)}`,
     )
-    for (const note of cluster.notes) lines.push('', `- ${note.label}: ${note.text}`)
+    for (const note of cluster.notes) lines.push('', `- ${note.label}`)
   }
   return lines.join('\n')
 }
