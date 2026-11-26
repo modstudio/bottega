@@ -678,6 +678,22 @@ type CreatePullRequestOptions = {
   body?: string
 }
 
+export function operatorOverrideForPullRequestCreate(
+  options: CreatePullRequestOptions,
+): { reason: string } | undefined {
+  if (options.overrideReason === undefined) return undefined
+  const decision = decideTriageOverride({
+    overrideReason: options.overrideReason,
+    ceilingRuling: options.ceilingRuling,
+    fromOperator: Boolean(options.fromOperator),
+    commandName: PLATFORM_SLUG,
+  })
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
+  return decision.kind === 'accept' && decision.attribution === 'operator'
+    ? { reason: decision.reason }
+    : undefined
+}
+
 function createPullRequestAdmittedChange(
   args: string[],
   options: CreatePullRequestOptions,
@@ -830,7 +846,8 @@ export async function createPullRequest(
 ): Promise<{ output: string; overrideId: string | null }> {
   const change = preparePullRequestCreate(options, cwd)
   const database = db()
-  await assertPullRequestTaskCursorAdmission({
+  const operatorOverride = operatorOverrideForPullRequestCreate(options)
+  const classGuardNotice = await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,
     branch: change.branch,
@@ -838,14 +855,19 @@ export async function createPullRequest(
     cwd,
     database,
     checkoutRoots: registeredCheckoutRoots(database),
+    operatorOverride,
   })
-  return createPullRequestAdmittedChange(
+  const created = createPullRequestAdmittedChange(
     args,
     options,
     cwd,
     change,
     await activeReviewFunnelPolicy(),
   )
+  return {
+    ...created,
+    output: [created.output, classGuardNotice].filter(Boolean).join('\n'),
+  }
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {

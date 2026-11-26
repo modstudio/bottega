@@ -148,6 +148,7 @@ export async function assertPullRequestTaskCursorAdmission(
     body?: string
     cwd?: string
     checkoutRoots: readonly string[]
+    operatorOverride?: { reason: string }
   },
   readOpenCursors: (database: Database, session: string) => Promise<HeldTaskCursor[]> = async (
     database,
@@ -169,7 +170,7 @@ export async function assertPullRequestTaskCursorAdmission(
       }),
     ),
   readTree: ReadPullRequestTree = readPullRequestTree,
-): Promise<void> {
+): Promise<string | undefined> {
   const caller = classifyCaller(input.env ?? process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
   const harnessSession = identity?.kind === 'identity' ? identity.session : null
@@ -190,7 +191,7 @@ export async function assertPullRequestTaskCursorAdmission(
       : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.message)
-  if (input.command !== 'pr create') return
+  if (input.command !== 'pr create') return undefined
   const cursor = heldCursors.find(
     (item) =>
       item.project === input.project.name &&
@@ -198,10 +199,10 @@ export async function assertPullRequestTaskCursorAdmission(
       item.workflowSlug === 'fix-defect' &&
       item.closed,
   )
-  if (!cursor?.closed) return
+  if (!cursor?.closed) return undefined
   const closed = closedStepsFromTrail(cursor.closed)
   const measurement = classMeasurementFromClosedSteps(closed)
-  if (!measurement) return
+  if (!measurement) return undefined
   const args = cursor.args ? (JSON.parse(cursor.args) as Record<string, string>) : {}
   const worktree = resolvedClassGuardWorktree(
     args.worktree?.trim() || undefined,
@@ -224,6 +225,11 @@ export async function assertPullRequestTaskCursorAdmission(
     worktree,
     checkoutRoots: input.checkoutRoots,
     measurementCwd: recordedMeasurementCwd ? realpathOrLexical(recordedMeasurementCwd) : undefined,
+    operatorOverride: input.operatorOverride,
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
+  if (classGuard.kind === 'overridden') {
+    return `class guard admitted by operator override: ${classGuard.refusal}`
+  }
+  return undefined
 }

@@ -264,14 +264,15 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
         'number,url,headRefOid,headRefName,baseRefName,statusCheckRollup',
       ]),
     ),
-  admitPullRequest: (project, branch) =>
-    assertPullRequestTaskCursorAdmission({
+  admitPullRequest: async (project, branch) => {
+    await assertPullRequestTaskCursorAdmission({
       command: 'pr create',
       project,
       branch,
       systemJob: CANON_MIRROR_JOB,
       checkoutRoots: registeredCheckoutRoots(),
-    }),
+    })
+  },
   openPullRequest: (path, title, bodyFile, policy) => {
     createPullRequestAdmittedWithPolicy(
       ['--title', title, '--body-file', bodyFile],

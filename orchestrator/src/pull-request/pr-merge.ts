@@ -255,8 +255,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       mergeCommit: typeof value.mergeCommit?.oid === 'string' ? value.mergeCommit.oid : null,
     }
   },
-  taskCursorAdmission(project, branch, database) {
-    return assertPullRequestTaskCursorAdmission({
+  async taskCursorAdmission(project, branch, database) {
+    await assertPullRequestTaskCursorAdmission({
       command: 'pr merge',
       project,
       branch,

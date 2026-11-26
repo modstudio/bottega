@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { renderClassMeasurementCommand } from '../workflow/workflow-class-measured-floor.ts'
 import { decidePullRequestClassGuard } from './pr-class-guard.ts'
@@ -23,6 +24,43 @@ const base = {
 
 test('allows a matching class guard', () =>
   expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+test('an operator override leaves an allowing class guard unchanged', () =>
+  expect(
+    decidePullRequestClassGuard({ ...base, operatorOverride: { reason: 'operator ruling' } }),
+  ).toEqual({ kind: 'allow' }))
+
+test('every class guard refusal yields to an operator override', () => {
+  const cases = [
+    { name: 'missing line', input: { body: '' } },
+    { name: 'malformed line', input: { body: 'Class guard: bad' } },
+    { name: 'missing name', input: { body: 'Class guard:  (before 3, after 0)' } },
+    { name: 'before mismatch', input: { body: 'Class guard: check (before 2, after 0)' } },
+    { name: 'rerun location unknown', input: { worktree: undefined } },
+    { name: 'no post-implement measurement', input: { execs: [] } },
+    { name: 'after mismatch', input: { body: 'Class guard: check (before 3, after 1)' } },
+  ]
+  const refusalMessages = new Set<string>()
+  for (const { name, input } of cases) {
+    const refused = decidePullRequestClassGuard({ ...base, ...input })
+    expect(refused.kind, name).toBe('refuse')
+    if (refused.kind !== 'refuse') continue
+    refusalMessages.add(refused.message)
+    expect(
+      decidePullRequestClassGuard({
+        ...base,
+        ...input,
+        operatorOverride: { reason: 'operator ruling' },
+      }),
+      name,
+    ).toEqual({
+      kind: 'overridden',
+      refusal: refused.message,
+      reason: 'operator ruling',
+    })
+  }
+  const source = readFileSync(new URL('./pr-class-guard.ts', import.meta.url), 'utf8')
+  expect(refusalMessages.size).toBe(source.match(/classGuardRefusal\(\s*input,/g)?.length ?? 0)
+})
 test('allows grep count zero with its no-match exit', () =>
   expect(
     decidePullRequestClassGuard({
