@@ -38,7 +38,7 @@ test.each(['GET', 'PUT', 'DELETE'])('%s /v1/space-agents is served', async (meth
     app,
     {
       readSpaceAgents: async () => [],
-      upsertSpaceAgent: async (input) => input,
+      upsertSpaceAgent: async () => declaration,
       deleteSpaceAgent: async () => ({ removed: true }),
     },
     {
