@@ -2,9 +2,9 @@
 description: Test value, placement, isolation, runtime, and suite-budget rules
 paths:
   - "**/*.test.ts"
-  - hub/test/**
-  - orchestrator/test/**
-  - retrieval/test/**
+  - "**/*.test.tsx"
+  - "**/test_*.py"
+  - "**/test/**"
 ---
 
 # Tests earn their standing cost
