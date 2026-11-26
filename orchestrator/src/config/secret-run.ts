@@ -8,7 +8,8 @@ import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-conne
 export const SECRET_RUN_WORKING_FORM = `${PLATFORM_SLUG} machine config secret run --name <KEY> [--name <KEY> ...] -- <argv...>`
 
 type SecretRunInvocation = { names: string[]; argv: string[] }
-type TypedCredentialPathLookup = () => Promise<readonly string[]>
+export type TypedCredentialPath = { path: string; mode: 'live' | 'test' | 'default' }
+export type TypedCredentialPathLookup = () => Promise<readonly TypedCredentialPath[]>
 
 type ChildEnvironment =
   | { ok: true; env: Record<string, string | undefined> }
@@ -82,7 +83,7 @@ export function childEnvironmentForNamedSecrets(
 export function namedSecretUnresolvedRefusal(
   unresolved: readonly string[],
   sealedEmpty: readonly string[],
-  typedCredentialPaths?: readonly string[],
+  typedCredentialPaths?: readonly TypedCredentialPath[],
 ): string {
   const sealed = new Set(sealedEmpty)
   const empty = unresolved.filter((key) => sealed.has(key))
@@ -100,7 +101,7 @@ export function namedSecretUnresolvedRefusal(
   const remedies = unresolved.map((key) => {
     const path = credentialMatches.get(key)
     return path
-      ? `${PLATFORM_SLUG} credential resolve ${path} --project <name> --reveal-to-env ${key} -- <argv>`
+      ? `${PLATFORM_SLUG} credential resolve ${path.path}${path.mode === 'default' ? '' : ` --mode ${path.mode}`} --project <name> --reveal-to-env ${key} -- <argv>`
       : `${PLATFORM_SLUG} machine config secret set ${key}`
   })
   if (credentialMatches.size !== unresolved.length)
@@ -114,17 +115,22 @@ export function namedSecretUnresolvedRefusal(
 /** Match the conventional environment name only when that typed credential is available. */
 export function matchingTypedCredentialPath(
   secretName: string,
-  availablePaths: readonly string[],
-): string | null {
+  availablePaths: readonly TypedCredentialPath[],
+): TypedCredentialPath | null {
   const match = /^([A-Z0-9]+(?:_[A-Z0-9]+)*)_API_KEY$/.exec(secretName)
   if (!match) return null
+  // credentialIdentityPath owns this slash-delimited format; this matcher accepts no named key.
   const path = `${match[1]!.toLowerCase().replaceAll('_', '-')}/api-key`
-  return availablePaths.includes(path) ? path : null
+  const modes = [
+    ...new Set(availablePaths.filter((row) => row.path === path).map((row) => row.mode)),
+  ]
+  if (modes.includes('default')) return { path, mode: 'default' }
+  return modes.length === 1 ? { path, mode: modes[0]! } : null
 }
 
 export async function typedCredentialPathsOrUnchecked(
   lookup?: TypedCredentialPathLookup,
-): Promise<readonly string[] | undefined> {
+): Promise<readonly TypedCredentialPath[] | undefined> {
   if (!lookup) return undefined
   try {
     return await lookup()
@@ -157,7 +163,8 @@ export async function runNamedSecrets(
     resolution = await resolveEnvValuesWithHosted(input.names)
   } catch (error) {
     const failure = secretResolutionFailure(error)
-    if (failure) throw new Error(failure)
+    if (failure)
+      throw new Error(`${failure}\ntyped provider credentials: ${PLATFORM_SLUG} credential list`)
     throw error
   }
   const child = childEnvironmentForNamedSecrets(input.names, resolution.values, process.env)

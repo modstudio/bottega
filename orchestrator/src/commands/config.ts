@@ -16,6 +16,7 @@ import {
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
 import type { getConfigEntry, setConfigEntry } from '../config/config-service.ts'
+import type { TypedCredentialPathLookup } from '../config/secret-run.ts'
 import type { pinnedConfigDestination } from '../config/secret-write-target.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -505,7 +506,7 @@ function registerConfigList(config: Command): void {
 
 export function register(
   program: Command,
-  typedCredentialPathLookup?: () => Promise<readonly string[]>,
+  typedCredentialPathLookup?: TypedCredentialPathLookup,
 ): void {
   const config = program.command('config').description('manage scoped configuration values')
   registerMachineCommands(config)
@@ -530,8 +531,8 @@ export function register(
     .command('list')
     .description('list sealed configuration keys')
     .action(async () => {
-      const { listSecrets } = await import('../config/config-service.ts')
-      const output = secretListPresentation(await listSecrets())
+      const { listSecrets, pinnedConfigSpaceId } = await import('../config/config-service.ts')
+      const output = secretListPresentation(await listSecrets(), pinnedConfigSpaceId())
       for (const line of output.stdout) log(line)
       for (const line of output.stderr) console.error(line)
     })
@@ -559,12 +560,13 @@ export function register(
 
 export function secretListPresentation(
   rows: readonly { scope: string; key: string; updatedAt: string }[],
+  space = '<unknown>',
 ): { stdout: string[]; stderr: string[] } {
   if (rows.length === 0)
     return {
       stdout: [],
       stderr: [
-        `no config secrets in this space (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
+        `no config secrets in space ${space} (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
       ],
     }
   return {

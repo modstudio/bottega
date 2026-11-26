@@ -1,13 +1,81 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
+import { writeMachineKey } from '../../../shared/machine-key-store.ts'
+import {
+  forgetRecordSessionToken,
+  writeRecordSessionToken,
+} from '../../../shared/record-session.ts'
+import { generateMachineKeyPair } from '../../../shared/secret-envelope.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
   childEnvironmentForNamedSecrets,
   matchingTypedCredentialPath,
   namedSecretUnresolvedRefusal,
   parseSecretRunArgs,
+  runNamedSecrets,
   SECRET_RUN_WORKING_FORM,
+  type TypedCredentialPathLookup,
   typedCredentialPathsOrUnchecked,
 } from './secret-run.ts'
+
+async function unresolvedNamedSecretRefusal(lookup: TypedCredentialPathLookup): Promise<string> {
+  const root = mkdtempSync(join(tmpdir(), 'secret-run-refusal-'))
+  const previousFetch = globalThis.fetch
+  const previous = {
+    configHome: process.env[CONFIG_HOME_ENV],
+    harnessEnv: process.env[HARNESS_ENV_FILE_ENV],
+    keyStore: process.env.BOTTEGA_KEYSTORE,
+    recordApi: process.env.BOTTEGA_RECORD_API_URL,
+    stateHome: process.env[STATE_HOME_ENV],
+    secret: process.env.OPENROUTER_API_KEY,
+  }
+  const spaceId = '01990000-0000-7000-8000-000000000041'
+  const userId = '01990000-0000-7000-8000-000000000042'
+  process.env[CONFIG_HOME_ENV] = root
+  process.env[HARNESS_ENV_FILE_ENV] = ''
+  process.env.BOTTEGA_KEYSTORE = 'file'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  process.env[STATE_HOME_ENV] = root
+  delete process.env.OPENROUTER_API_KEY
+  writeRecordSessionToken(`fixture-${crypto.randomUUID()}`)
+  writeMachineKey(await generateMachineKeyPair())
+  writeHostedConfigIdentity({ spaceId, userId })
+  globalThis.fetch = (async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.pathname === '/v1/whoami')
+      return Response.json({ user: { id: userId }, activeSpaceId: spaceId })
+    if (url.pathname === '/v1/config/trust-log') return Response.json({ entries: [] })
+    if (url.pathname === '/v1/config/secrets/OPENROUTER_API_KEY')
+      return Response.json({ error: 'fixture absent' }, { status: 404 })
+    return Response.json({ error: `unexpected fixture route ${url.pathname}` }, { status: 500 })
+  }) as typeof fetch
+  try {
+    await runNamedSecrets({ names: ['OPENROUTER_API_KEY'], argv: ['echo', 'ok'] }, lookup)
+    throw new Error('expected named secret refusal')
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  } finally {
+    globalThis.fetch = previousFetch
+    forgetRecordSessionToken()
+    for (const [key, value] of [
+      [CONFIG_HOME_ENV, previous.configHome],
+      [HARNESS_ENV_FILE_ENV, previous.harnessEnv],
+      ['BOTTEGA_KEYSTORE', previous.keyStore],
+      ['BOTTEGA_RECORD_API_URL', previous.recordApi],
+      [STATE_HOME_ENV, previous.stateHome],
+      ['OPENROUTER_API_KEY', previous.secret],
+    ] as const) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+}
 
 test('named keys are added over the base environment', () => {
   expect(
@@ -46,9 +114,18 @@ test('a key that is not named is not added even when the resolver would know it'
 })
 
 test('conventional API key names match only listed typed credential paths', () => {
-  const available = ['openrouter/api-key', 'vercel/api-key']
-  expect(matchingTypedCredentialPath('OPENROUTER_API_KEY', available)).toBe('openrouter/api-key')
-  expect(matchingTypedCredentialPath('VERCEL_API_KEY', available)).toBe('vercel/api-key')
+  const available = [
+    { path: 'openrouter/api-key', mode: 'default' as const },
+    { path: 'vercel/api-key', mode: 'default' as const },
+  ]
+  expect(matchingTypedCredentialPath('OPENROUTER_API_KEY', available)).toEqual({
+    path: 'openrouter/api-key',
+    mode: 'default',
+  })
+  expect(matchingTypedCredentialPath('VERCEL_API_KEY', available)).toEqual({
+    path: 'vercel/api-key',
+    mode: 'default',
+  })
   expect(matchingTypedCredentialPath('OPENROUTER_TOKEN', available)).toBeNull()
   expect(matchingTypedCredentialPath('BASETEN_API_KEY', available)).toBeNull()
 })
@@ -61,8 +138,8 @@ test('typed credential path lookup is optional and failures remain unchecked', a
     }),
   ).resolves.toBeUndefined()
   await expect(
-    typedCredentialPathsOrUnchecked(async () => ['openrouter/api-key']),
-  ).resolves.toEqual(['openrouter/api-key'])
+    typedCredentialPathsOrUnchecked(async () => [{ path: 'openrouter/api-key', mode: 'default' }]),
+  ).resolves.toEqual([{ path: 'openrouter/api-key', mode: 'default' }])
 })
 
 test('missing --name is refused with the working form', () => {
@@ -108,7 +185,11 @@ test('names that are simply not set keep the not-set refusal', () => {
 })
 
 test('a matching typed credential replaces the duplicate config-secret remedy', () => {
-  const refusal = namedSecretUnresolvedRefusal(['OPENROUTER_API_KEY'], [], ['openrouter/api-key'])
+  const refusal = namedSecretUnresolvedRefusal(
+    ['OPENROUTER_API_KEY'],
+    [],
+    [{ path: 'openrouter/api-key', mode: 'default' }],
+  )
   expect(refusal).toContain(
     `${PLATFORM_SLUG} credential resolve openrouter/api-key --project <name> --reveal-to-env OPENROUTER_API_KEY -- <argv>`,
   )
@@ -117,9 +198,56 @@ test('a matching typed credential replaces the duplicate config-secret remedy', 
 })
 
 test('checked credentials without a match still point to credential list', () => {
-  expect(namedSecretUnresolvedRefusal(['OTHER_SECRET'], [], ['openrouter/api-key'])).toContain(
+  expect(
+    namedSecretUnresolvedRefusal(
+      ['OTHER_SECRET'],
+      [],
+      [{ path: 'openrouter/api-key', mode: 'default' }],
+    ),
+  ).toContain(`${PLATFORM_SLUG} credential list`)
+})
+
+test('runNamedSecrets uses an injected typed credential remedy for an unresolved hosted name', async () => {
+  const refusal = await unresolvedNamedSecretRefusal(async () => [
+    { path: 'openrouter/api-key', mode: 'default' },
+  ])
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} credential resolve openrouter/api-key --project <name> --reveal-to-env OPENROUTER_API_KEY`,
+  )
+  expect(refusal).not.toContain('machine config secret set')
+})
+
+test('runNamedSecrets names credential list when its typed credential lookup rejects', async () => {
+  const refusal = await unresolvedNamedSecretRefusal(async () => {
+    throw new Error('fixture credential listing unavailable')
+  })
+  expect(refusal).toContain(`${PLATFORM_SLUG} credential list`)
+})
+
+test('a sole non-default credential mode is carried into the resolve remedy', () => {
+  const refusal = namedSecretUnresolvedRefusal(
+    ['OPENROUTER_API_KEY'],
+    [],
+    [{ path: 'openrouter/api-key', mode: 'live' }],
+  )
+  expect(refusal).toContain('credential resolve openrouter/api-key --mode live --project <name>')
+})
+
+test('default mode wins while several non-default modes are treated as no match', () => {
+  const rows = [
+    { path: 'openrouter/api-key', mode: 'live' as const },
+    { path: 'openrouter/api-key', mode: 'test' as const },
+  ]
+  expect(namedSecretUnresolvedRefusal(['OPENROUTER_API_KEY'], [], rows)).toContain(
     `${PLATFORM_SLUG} credential list`,
   )
+  expect(
+    namedSecretUnresolvedRefusal(
+      ['OPENROUTER_API_KEY'],
+      [],
+      [...rows, { path: 'openrouter/api-key', mode: 'default' }],
+    ),
+  ).toContain('credential resolve openrouter/api-key --project <name>')
 })
 
 test('a mixed refusal names each group its own state', () => {

@@ -56,10 +56,10 @@ test('config list --json presents the structured rows', () => {
 })
 
 test('an empty secret list points to typed credentials without writing stdout', () => {
-  expect(secretListPresentation([])).toEqual({
+  expect(secretListPresentation([], 'fixture-space')).toEqual({
     stdout: [],
     stderr: [
-      `no config secrets in this space (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
+      `no config secrets in space fixture-space (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
     ],
   })
 })
