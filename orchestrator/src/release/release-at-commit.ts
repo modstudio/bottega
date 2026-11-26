@@ -2,6 +2,7 @@
 /** Provisions, deploys from, and releases one checkout at an exact commit. */
 
 import { randomUUID } from 'node:crypto'
+import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import {
   type CheckoutReleaseTarget,
@@ -20,9 +21,15 @@ export type ReleaseAtCommitReport = {
 
 export type ReleaseAtCommitDependencies = {
   resolve(project: string, rung: string, commit: string): CheckoutReleaseTarget
+  ensureCommit(project: Project, commit: string): void
   deploy(target: CheckoutReleaseTarget, path: string, commit: string): ReleaseResult
   id(): string
   now(): number
+}
+
+type EnsureCommitGitRunner = {
+  check(args: string[], cwd: string, env: NodeJS.ProcessEnv): { ok: boolean; stderr: string }
+  fetch(args: string[], cwd: string, env: NodeJS.ProcessEnv): void
 }
 
 type ReleaseTreeRemovalResult =
@@ -37,9 +44,52 @@ export type ReleaseTreeLifecycle = {
 
 const releaseAtCommitDependencies: ReleaseAtCommitDependencies = {
   resolve: resolveCheckoutReleaseTarget,
+  ensureCommit,
   deploy: releaseProjectFromCheckout,
   id: randomUUID,
   now: Date.now,
+}
+
+const ensureCommitGitRunner: EnsureCommitGitRunner = {
+  check: (args, cwd, env) => gitResult(args, cwd, { env }),
+  fetch: (args, cwd, env) => {
+    git(args, cwd, env)
+  },
+}
+
+export function ensureCommitWithGit(
+  project: Project,
+  commit: string,
+  runner: EnsureCommitGitRunner,
+): void {
+  const cwd = project.path
+  const env = targetGitEnvironment(cwd)
+  const checkArgs = ['cat-file', '-e', `${commit}^{commit}`]
+  if (runner.check(checkArgs, cwd, env).ok) return
+
+  const trunk = project.settings.trunk
+  if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+
+  const fetchArgs = ['fetch', 'origin', trunk]
+  const remedy = `git -C ${cwd} fetch origin ${trunk}, then rerun`
+  try {
+    runner.fetch(fetchArgs, cwd, env)
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(
+      `commit ${commit} is absent from checkout ${cwd}; fetch failed: ${detail}; run ${remedy}`,
+    )
+  }
+
+  if (!runner.check(checkArgs, cwd, env).ok) {
+    throw new Error(
+      `commit ${commit} is not on origin's ${trunk} after fetching in checkout ${cwd}; run ${remedy}`,
+    )
+  }
+}
+
+function ensureCommit(project: Project, commit: string): void {
+  ensureCommitWithGit(project, commit, ensureCommitGitRunner)
 }
 
 /** The single capability predicate shared by merge ordering and machine update. */
@@ -67,6 +117,7 @@ export async function releaseAtCommit(input: {
   const target = dependencies.resolve(input.project, input.rung, input.commit)
   const provisionStarted = dependencies.now()
   const treeName = `release-${input.rung}-${dependencies.id()}`
+  dependencies.ensureCommit(target.project, input.commit)
   const path = input.lifecycle.create(target.project.path, treeName, input.commit)
   const provisionMs = dependencies.now() - provisionStarted
   let result: ReleaseResult | undefined
