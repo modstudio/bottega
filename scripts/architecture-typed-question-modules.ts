@@ -121,6 +121,7 @@ export const typedQuestionModules = [
     '../../shared/typed-question/typed-question-metrics.ts',
     '../../shared/typed-question/state-identity.ts',
     './db.ts',
+    './note-duplicate-pair-state.ts',
     './note-duplicate-question.ts',
     './typed-question-declarations.ts',
     './typed-question-service.ts',

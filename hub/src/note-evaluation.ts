@@ -11,13 +11,12 @@ import { typedQuestionStateIdentity } from '../../shared/typed-question/state-id
 import { db } from './db.ts'
 import { duplicateTokenSet, duplicateTokenSetScore } from './duplicate-score.ts'
 import { NOTE_DUPLICATE_CANDIDATES } from './note-duplicate-candidates.ts'
+import { readNoteDuplicateSubjects } from './note-duplicate-pair-state.ts'
 import {
   NOTE_DUPLICATE_CONCURRENCY,
   NOTE_DUPLICATE_QUESTION,
   NOTE_PAIR_SUBJECT_KIND,
-  noteDuplicateGoverningOutcome,
   notePairSubjectRef,
-  noteTextHash,
   parseNotePairSubjectRef,
 } from './note-duplicate-question.ts'
 import { askHubTypedQuestion } from './typed-question-service.ts'
@@ -50,7 +49,7 @@ export type NoteEvaluationResult = {
   reusedAnswers: number
   newAnswers: number
   answerFailure: string | null
-  recall: { produced: number; total: number; fraction: number | null }
+  recall: { produced: number; total: number; unreadable: number; fraction: number | null }
   clusters: NoteEvaluationCluster[]
 }
 
@@ -62,11 +61,12 @@ type Dependencies = {
   credential(): Promise<{ available: true } | { available: false; reason: string }>
   answerPair: PairAnswerer
   positiveSubjects(
+    project: string,
     actionableNotes: readonly EvaluationNote[],
-    allProjectNotes: readonly EvaluationNote[],
   ): {
     produced: number
     total: number
+    unreadable: number
   }
 }
 
@@ -309,12 +309,12 @@ async function mapConcurrent<T, R>(
 }
 
 export async function evaluateNotePairs(
+  project: string,
   actionableNotes: readonly EvaluationNote[],
-  allProjectNotes: readonly EvaluationNote[] = actionableNotes,
   dependencies: Dependencies = defaultDependencies,
 ): Promise<NoteEvaluationResult> {
   const pairs = generateEvaluationPairs(actionableNotes)
-  const recall = dependencies.positiveSubjects(actionableNotes, allProjectNotes)
+  const recall = dependencies.positiveSubjects(project, actionableNotes)
   const credential = await dependencies.credential()
   if (!credential.available) {
     return {
@@ -403,50 +403,47 @@ export async function answerEvaluationPair(
 
 export function blockingRecall(
   database: Database,
+  project: string,
   actionableNotes: readonly EvaluationNote[],
-  allProjectNotes: readonly EvaluationNote[],
-): { produced: number; total: number } {
-  const byId = new Map(allProjectNotes.map((note) => [note.record_id, note]))
-  const byHash = new Map<string, EvaluationNote[]>()
-  for (const note of allProjectNotes) {
-    const hash = noteTextHash(note.text)
-    byHash.set(hash, [...(byHash.get(hash) ?? []), note])
-  }
-  const poolById = new Map(actionableNotes.map((note) => [note.record_id, note]))
-  const tokens = new Map(
-    allProjectNotes.map((note) => [note.record_id, duplicateTokenSet(note.text)]),
+): { produced: number; total: number; unreadable: number } {
+  const subjects = readNoteDuplicateSubjects(database, {
+    project,
+    sources: ['merge', 'same-as'],
+  })
+  const actionableTokens = new Map(
+    actionableNotes.map((note) => [note.record_id, duplicateTokenSet(note.text)]),
   )
-  for (const note of actionableNotes)
-    if (!tokens.has(note.record_id)) tokens.set(note.record_id, duplicateTokenSet(note.text))
-  const subjects = database
-    .query<{ subject_ref: string }, [string, number]>(
-      `SELECT DISTINCT subject_ref FROM typed_question_outcome
-       WHERE question_id=? AND question_version=?`,
-    )
-    .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version)
   let produced = 0
-  let total = 0
-  for (const { subject_ref } of subjects) {
-    const outcome = noteDuplicateGoverningOutcome(database, subject_ref)
-    if (!outcome || !['merge', 'same-as'].includes(outcome.source)) continue
-    const parsed = parseNotePairSubjectRef(subject_ref)
-    const existing = parsed ? byId.get(parsed.existingId) : undefined
-    const newer = parsed
-      ? byHash.get(parsed.hash)?.find((note) => note.record_id !== parsed.existingId)
-      : undefined
-    if (!existing || !newer) continue
-    total++
-    const pool = new Map(poolById)
-    pool.set(existing.record_id, existing)
-    pool.set(newer.record_id, newer)
+  for (const subject of subjects.readable) {
+    const parsed = parseNotePairSubjectRef(subject.subjectRef)!
+    const existing = recallNote(parsed.existingId, subject.state.existing, project)
+    const newer = recallNote(`new:${subject.subjectRef}`, subject.state.new, project)
+    const pool = actionableNotes
+      .filter((note) => note.record_id !== parsed.existingId)
+      .concat(existing, newer)
+    const tokens = new Map(actionableTokens)
+    tokens.set(existing.record_id, duplicateTokenSet(existing.text))
+    tokens.set(newer.record_id, duplicateTokenSet(newer.text))
     if (
-      isTopCandidate(existing, newer, [...pool.values()], tokens) ||
-      isTopCandidate(newer, existing, [...pool.values()], tokens)
+      isTopCandidate(existing, newer, pool, tokens) ||
+      isTopCandidate(newer, existing, pool, tokens)
     )
       produced++
   }
-  return { produced, total }
+  return {
+    produced,
+    total: subjects.readable.length + subjects.unreadable,
+    unreadable: subjects.unreadable,
+  }
 }
+
+const recallNote = (recordId: string, text: string, project: string): EvaluationNote => ({
+  record_id: recordId,
+  label: recordId,
+  project,
+  text,
+  created_at: '',
+})
 
 function isTopCandidate(
   note: EvaluationNote,
@@ -468,8 +465,7 @@ function isTopCandidate(
 const defaultDependencies: Dependencies = {
   credential: credentialAvailability,
   answerPair: (pair) => answerEvaluationPair(pair),
-  positiveSubjects: (actionableNotes, allProjectNotes) =>
-    blockingRecall(db(), actionableNotes, allProjectNotes),
+  positiveSubjects: (project, actionableNotes) => blockingRecall(db(), project, actionableNotes),
 }
 
 export function noteEvaluationBody(
@@ -490,6 +486,7 @@ export function noteEvaluationBody(
     `Pairs asked: ${result.pairsAsked}`,
     `Answers: ${result.answeredPairs} (${result.reusedAnswers} reused, ${result.newAnswers} new)`,
     `Blocking recall: ${recall}`,
+    `Unreadable positive states: ${result.recall.unreadable}`,
   ]
   if (result.answerFailure) lines.push('', result.answerFailure)
   lines.push('', '## Duplicate clusters')

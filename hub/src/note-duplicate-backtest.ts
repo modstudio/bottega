@@ -9,14 +9,14 @@ import {
 } from '../../shared/typed-question/typed-question-metrics.ts'
 import { db } from './db.ts'
 import {
-  NOTE_DUPLICATE_QUESTION,
-  NOTE_PAIR_SUBJECT_KIND,
-  noteDuplicateGoverningOutcome,
-  noteTextHash,
-  parseNotePairSubjectRef,
-} from './note-duplicate-question.ts'
+  type NoteDuplicateSubject,
+  readNoteDuplicateSubjects,
+} from './note-duplicate-pair-state.ts'
+import { NOTE_DUPLICATE_QUESTION, NOTE_PAIR_SUBJECT_KIND } from './note-duplicate-question.ts'
 import { TYPED_QUESTION_DECLARATIONS } from './typed-question-declarations.ts'
 import { askHubTypedQuestion } from './typed-question-service.ts'
+
+export { reconstructNotePairState } from './note-duplicate-pair-state.ts'
 
 const NOTE_DUPLICATE_HOLDOUT_SHARE = 0.2
 const NOTE_DUPLICATE_SWEEP_THRESHOLDS = Array.from(
@@ -24,74 +24,14 @@ const NOTE_DUPLICATE_SWEEP_THRESHOLDS = Array.from(
   (_, index) => (50 + index * 5) / 100,
 )
 
-type PairState = { existing: string; new: string }
-type Subject = { subjectRef: string; state: PairState; label: boolean; source: string }
-
 export function noteDuplicateHoldout(subjectRef: string): boolean {
   return createHash('sha256').update(subjectRef).digest()[0]! < NOTE_DUPLICATE_HOLDOUT_SHARE * 256
-}
-
-function parsedState(value: string | null): PairState | null {
-  if (value === null) return null
-  try {
-    const parsed = JSON.parse(value) as Partial<PairState>
-    return typeof parsed.existing === 'string' && typeof parsed.new === 'string'
-      ? { existing: parsed.existing, new: parsed.new }
-      : null
-  } catch {
-    return null
-  }
-}
-
-export function reconstructNotePairState(database: Database, subjectRef: string): PairState | null {
-  const parsed = parseNotePairSubjectRef(subjectRef)
-  if (!parsed) return null
-  const { existingId, hash } = parsed
-  const existing = database
-    .query<{ project: string; text: string }, [string]>(
-      'SELECT project,text FROM note WHERE record_id=?',
-    )
-    .get(existingId)
-  if (!existing) return null
-  const newer = database
-    .query<{ text: string }, [string, string]>(
-      'SELECT text FROM note WHERE project=? AND record_id<>? ORDER BY created_at,record_id',
-    )
-    .all(existing.project, existingId)
-    .find((note) => noteTextHash(note.text) === hash)
-  return newer ? { existing: existing.text, new: newer.text } : null
-}
-
-function subjects(database: Database): { readable: Subject[]; unreadable: number } {
-  const refs = database
-    .query<{ subject_ref: string }, [string, number]>(
-      `SELECT DISTINCT subject_ref FROM typed_question_outcome
-       WHERE question_id=? AND question_version=?`,
-    )
-    .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version)
-  const readable: Subject[] = []
-  let unreadable = 0
-  for (const { subject_ref: subjectRef } of refs) {
-    const outcome = noteDuplicateGoverningOutcome(database, subjectRef)
-    if (!outcome) continue
-    const stored = database
-      .query<{ state_json: string | null }, [string, string]>(
-        `SELECT state_json FROM typed_question_answer WHERE question_id=? AND subject_ref=?
-         AND state_json IS NOT NULL ORDER BY created_at DESC,record_id DESC LIMIT 1`,
-      )
-      .get(NOTE_DUPLICATE_QUESTION.id, subjectRef)
-    const state =
-      parsedState(stored?.state_json ?? null) ?? reconstructNotePairState(database, subjectRef)
-    if (!state) unreadable += 1
-    else readable.push({ subjectRef, state, label: outcome.label, source: outcome.source })
-  }
-  return { readable, unreadable }
 }
 
 function answerRow(
   database: Database,
   version: number,
-  subject: Subject,
+  subject: NoteDuplicateSubject,
 ): TypedQuestionMetricRow | null {
   const row = database
     .query<
@@ -152,7 +92,7 @@ export async function noteDuplicateBacktest(
     (candidate) => candidate.id === NOTE_DUPLICATE_QUESTION.id && candidate.version === version,
   )
   if (!question) throw new Error(`note_duplicate v${version} is not declared`)
-  const sourced = subjects(database)
+  const sourced = readNoteDuplicateSubjects(database)
   for (const subject of sourced.readable) {
     if (!answerRow(database, version, subject))
       await ask({

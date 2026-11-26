@@ -107,14 +107,41 @@ function outcome(subjectRef: string, source: string): void {
   })
 }
 
-test('blocking recall counts a merged pair when one note is no longer actionable', () => {
-  const older = note('project#1', '2026-01-01T00:00:00Z')
-  const newer = note('project#2', '2026-01-02T00:00:00Z')
+test('blocking recall reads stored state when the merged source note no longer exists', () => {
+  const older = note('project#1', '2026-01-01T00:00:00Z', 'shared stored pair older')
+  const newer = note('project#2', '2026-01-02T00:00:00Z', 'shared stored pair newer')
   const included = notePairSubjectRef(older.record_id, newer.text)
   outcome(included, 'same-as')
-  expect(blockingRecall(db(), [older], [older, newer])).toEqual({
+  outcome(notePairSubjectRef(older.record_id, 'unreadable deleted source'), 'merge')
+  writeTransaction((database) => {
+    database
+      .query(
+        `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
+         VALUES (?,1,'project',?,'[]',?,?)`,
+      )
+      .run(older.record_id, older.text, older.created_at, older.created_at)
+    database
+      .query(
+        `INSERT INTO typed_question_answer
+         (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,state_json,
+          answer_json,model,input_tokens,latency_ms,error,created_at)
+         VALUES (?,?,?,?,?,?,?,NULL,'jev',NULL,1,NULL,?)`,
+      )
+      .run(
+        newRecordId(),
+        NOTE_DUPLICATE_QUESTION.id,
+        NOTE_DUPLICATE_QUESTION.version,
+        'note-pair',
+        included,
+        typedQuestionStateIdentity({ existing: older.text, new: newer.text }),
+        JSON.stringify({ existing: older.text, new: newer.text }),
+        nowIso(),
+      )
+  })
+  expect(blockingRecall(db(), 'project', [older])).toEqual({
     produced: 1,
-    total: 1,
+    total: 2,
+    unreadable: 1,
   })
 })
 
@@ -143,13 +170,13 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   ]
   const before = structuredClone(notes)
   let asks = 0
-  const result = await evaluateNotePairs(notes, notes, {
+  const result = await evaluateNotePairs('project', notes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++
       return { probability: 1, reused: false }
     },
-    positiveSubjects: () => ({ produced: 0, total: 0 }),
+    positiveSubjects: () => ({ produced: 0, total: 2, unreadable: 2 }),
   })
   expect(result).toMatchObject({
     pairsAsked: 0,
@@ -158,5 +185,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   })
   expect(asks).toBe(0)
   expect(notes).toEqual(before)
-  expect(noteEvaluationBody('project', 'now', notes.length, result)).not.toContain('no duplicates')
+  const body = noteEvaluationBody('project', 'now', notes.length, result)
+  expect(body).not.toContain('no duplicates')
+  expect(body).toContain('Unreadable positive states: 2')
 })

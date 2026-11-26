@@ -660,9 +660,14 @@ export const hubModuleSpecs = [
       './db.ts',
       './duplicate-score.ts',
       './note-duplicate-candidates.ts',
+      './note-duplicate-pair-state.ts',
       './note-duplicate-question.ts',
       './typed-question-service.ts',
     ],
+  },
+  {
+    file: 'hub/src/note-duplicate-pair-state.ts',
+    allowed: ['bun:sqlite', './note-duplicate-question.ts'],
   },
   {
     file: 'hub/src/hosted-note-slim-list.ts',
