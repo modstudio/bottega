@@ -531,7 +531,10 @@ export function register(
     .command('list')
     .description('list sealed configuration keys')
     .action(async () => {
-      const { listSecrets, pinnedConfigSpaceId } = await import('../config/config-service.ts')
+      const [{ listSecrets }, { pinnedConfigSpaceId }] = await Promise.all([
+        import('../config/config-service.ts'),
+        import('../config/secret-write-target.ts'),
+      ])
       const output = secretListPresentation(await listSecrets(), pinnedConfigSpaceId())
       for (const line of output.stdout) log(line)
       for (const line of output.stderr) console.error(line)

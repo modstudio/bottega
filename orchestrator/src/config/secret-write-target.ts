@@ -16,6 +16,11 @@ export async function pinnedConfigDestination(
   return pinnedHostedSecretDestination(client, readHostedConfigIdentity(env))
 }
 
+/** Read the locally pinned space used by an unflagged secret list without another hosted call. */
+export function pinnedConfigSpaceId(env: ConfigEnvironment = process.env): string | undefined {
+  return readHostedConfigIdentity(env)?.spaceId
+}
+
 export async function secretWriteTarget(
   selectedSpaceId: string | undefined,
   client: ConfigClient,
