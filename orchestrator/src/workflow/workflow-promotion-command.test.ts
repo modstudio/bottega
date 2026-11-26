@@ -8,7 +8,6 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
-import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { workflowImportBase } from './workflow-import-branch.ts'
 import {
   hostedWorkflowRepositoryFixture,
@@ -192,7 +191,10 @@ test('workflow promote refuses an unlanded HEAD and records an operator override
     '--reason',
     'emergency workflow repair',
   ]
-  const options = { promotionContainsHead: () => ({ contains: false }) }
+  const options = {
+    promotionContainsHead: () => ({ contains: false }),
+    promotionOperatorName: 'Dana Example',
+  }
   await expect(runWorkflowCommand(argv, workflowCommandPresentation([]), options)).rejects.toThrow(
     'land the workflow change by pull request',
   )
@@ -208,7 +210,7 @@ test('workflow promote refuses an unlanded HEAD and records an operator override
       )
       .get(),
   ).toEqual({
-    author: resolvedRulingPersonName(true),
-    reason: `override by ${resolvedRulingPersonName(true)}: emergency workflow repair`,
+    author: 'Dana Example',
+    reason: 'override by Dana Example: emergency workflow repair',
   })
 })

@@ -2,11 +2,14 @@
 /** Registers workflow command adapters. Must not own workflow decisions. */
 
 import { type Command, Option, type OptionValues } from 'commander'
+import { userInfo } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
+import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { rulingPersonName } from '../run/ruling-attribution.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
 import type { WorkflowCommandOptions, WorkflowPresentation } from '../workflow/workflow-commands.ts'
@@ -105,6 +108,13 @@ const spaceOption = (command: Command) =>
   command.option('--space <slug>', 'write to this record space')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
+const promotionOperatorName = (fromOperator: boolean): string | null =>
+  rulingPersonName(fromOperator, cachedSignedInRecordUser(db())?.name ?? null, userInfo().username)
+const resolvedPromotionOperatorName = (
+  handlerOptions: WorkflowCommandOptions,
+  fromOperator: boolean,
+): string | null =>
+  handlerOptions.promotionOperatorName ?? promotionOperatorName(fromOperator)
 type WorkflowRegistration = {
   workflow: Command
   workflowPresentation: WorkflowPresentation
@@ -230,7 +240,13 @@ function registerWorkflowVersions({
       .action((slug, version, options) => {
         const argv = workflowArgv(verb, [slug, version], options)
         return verb === 'promote'
-          ? promoteWorkflowCommand(argv, output(options), handlerOptions)
+          ? promoteWorkflowCommand(argv, output(options), {
+              ...handlerOptions,
+              promotionOperatorName: resolvedPromotionOperatorName(
+                handlerOptions,
+                Boolean(options.fromOperator),
+              ),
+            })
           : retireWorkflowCommand(argv, output(options))
       })
   }
@@ -701,6 +717,10 @@ function registerWorkflowTreeCommands({
       promoteTreeCommand(workflowArgv('promote-tree', [], options), workflowPresentation, {
         ...handlerOptions,
         cwd: options.cwd ?? handlerOptions.cwd,
+        promotionOperatorName: resolvedPromotionOperatorName(
+          handlerOptions,
+          Boolean(options.fromOperator),
+        ),
       }),
     )
 }
@@ -765,7 +785,13 @@ function registerWorkflowCatalogue({
       .action((version, options) => {
         const argv = productArgv('catalogue', [verb, version], options)
         return verb === 'promote'
-          ? promoteCatalogueCommand(argv, output(options), handlerOptions)
+          ? promoteCatalogueCommand(argv, output(options), {
+              ...handlerOptions,
+              promotionOperatorName: resolvedPromotionOperatorName(
+                handlerOptions,
+                Boolean(options.fromOperator),
+              ),
+            })
           : retireCatalogueCommand(argv, output(options))
       })
   }

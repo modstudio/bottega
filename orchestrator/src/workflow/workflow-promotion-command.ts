@@ -5,7 +5,6 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { flagValue } from '../cli/args.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
-import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { decideWorkflowPromotionAdmission } from './workflow-promotion-admission.ts'
 
 export type PromotionContainsHead = (
@@ -17,6 +16,7 @@ export function admittedWorkflowPromotion(input: {
   argv: string[]
   root: string
   project: Project | null
+  operatorName: string | null
   containsHead?: PromotionContainsHead
 }): { reason: string | undefined; author: string | undefined } {
   const landingBranch = input.project?.settings.trunk?.trim() || null
@@ -48,7 +48,7 @@ export function admittedWorkflowPromotion(input: {
     fromOperator,
     reason: flagValue(input.argv, 'reason'),
     author: flagValue(input.argv, 'author'),
-    operatorName: resolvedRulingPersonName(fromOperator),
+    operatorName: input.operatorName,
   })
   if (decision.verdict === 'refuse') throw new Error(decision.message)
   return decision
