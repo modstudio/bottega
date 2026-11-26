@@ -44,7 +44,7 @@ describe('hosted user canon pack measurement', () => {
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   })
 
-  test('a user canon write measures only live projects with hosted spaces', async () => {
+  test('a user canon write does not measure hosted project packs', async () => {
     upsertProject({
       name: 'retired-space-less',
       path: '/w/retired-space-less',
@@ -101,6 +101,6 @@ describe('hosted user canon pack measurement', () => {
 
     expect(written.owner).toBe(userId)
     expect(reads).not.toContain('retired-space-less')
-    expect(reads).toContain('live-with-space')
+    expect(reads).not.toContain('live-with-space')
   })
 })

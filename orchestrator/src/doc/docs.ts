@@ -161,6 +161,7 @@ async function authoritativeInjectedDocsForPack(
 type PackSizeInput = {
   scope: string
   subject: string | null
+  owner?: string
   slug: string
   title: string
   body: string
@@ -262,6 +263,7 @@ function packBudgetRefusalFor(
 
 async function assertPackSize(input: PackSizeInput): Promise<void> {
   assertIndividualInjectSize(input)
+  if (input.scope === 'canon' && input.owner) return
   const measuresPack =
     input.scope === 'canon' ||
     (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
