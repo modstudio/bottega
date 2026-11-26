@@ -16,6 +16,7 @@ export const noteEvaluationModuleSpecs = [
       '../../shared/typed-question/client.ts',
       './note-curation-decisions.ts',
       './note-duplicate-question.ts',
+      './note-evaluation.ts',
       './task-row.ts',
       './task.ts',
       './typed-question-declarations.ts',
@@ -38,6 +39,7 @@ export const noteEvaluationModuleSpecs = [
   {
     file: 'hub/src/note-curator-orch.ts',
     allowed: [
+      'node:fs/promises',
       '../../shared/brand.ts',
       '../../shared/bounded-process.ts',
       '../../shared/runtime-assets.ts',

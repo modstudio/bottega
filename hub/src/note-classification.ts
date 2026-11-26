@@ -9,6 +9,7 @@ import {
 } from '../../shared/typed-question/client.ts'
 import type { CuratorNote, NoteProposal, SeedClass } from './note-curation-decisions.ts'
 import { NOTE_DUPLICATE_CONCURRENCY } from './note-duplicate-question.ts'
+import { mapConcurrent } from './note-evaluation.ts'
 import { listTasks } from './task.ts'
 import type { TaskRow } from './task-row.ts'
 import { NOTE_CLASS_ACCEPT_CONFIDENCE, NOTE_CLASS_QUESTION } from './typed-question-declarations.ts'
@@ -64,24 +65,6 @@ export function seedMismatch(seed: readonly SeedClass[]): string | null {
     : `Jev class pass skipped: seed ${seedCodes.join(',')} differs from note_class v1 options ${declared.join(',')}; declare a new note_class version`
 }
 
-async function mapConcurrent<T, R>(
-  values: readonly T[],
-  operation: (value: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(values.length)
-  let cursor = 0
-  const worker = async () => {
-    while (cursor < values.length) {
-      const index = cursor++
-      results[index] = await operation(values[index]!)
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(NOTE_DUPLICATE_CONCURRENCY, values.length) }, worker),
-  )
-  return results
-}
-
 export async function runNoteClassPass(
   notes: readonly CuratorNote[],
   seed: readonly SeedClass[],
@@ -100,7 +83,7 @@ export async function runNoteClassPass(
       remaining: [...notes],
     }
   const seedCodes = new Set(seed.map(({ code }) => code))
-  const results = await mapConcurrent(notes, (note) =>
+  const results = await mapConcurrent(notes, NOTE_DUPLICATE_CONCURRENCY, (note) =>
     dependencies.ask({
       question: NOTE_CLASS_QUESTION,
       subjectKind: NOTE_CLASS_SUBJECT_KIND,

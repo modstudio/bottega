@@ -275,7 +275,7 @@ export function averageLinkageClusters(
     )
 }
 
-async function mapConcurrent<T, R>(
+export async function mapConcurrent<T, R>(
   values: readonly T[],
   concurrency: number,
   operation: (value: T) => Promise<R>,
