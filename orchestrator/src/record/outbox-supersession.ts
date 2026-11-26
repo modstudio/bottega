@@ -139,7 +139,7 @@ type StoredOutboxRow = {
   retired_at: string | null
 }
 
-export const QUARANTINED_OUTBOX_ROWS_FOR_SUPERSESSION_SQL = `SELECT id,kind,row_id,payload,quarantined_at,retired_at
+const QUARANTINED_OUTBOX_ROWS_FOR_SUPERSESSION_SQL = `SELECT id,kind,row_id,payload,quarantined_at,retired_at
   FROM outbox
  WHERE ${QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL}
  ORDER BY id`
