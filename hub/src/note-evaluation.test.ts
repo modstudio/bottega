@@ -201,19 +201,68 @@ test('pair generation and sparse clustering handle 1,500 notes', () => {
 })
 
 test('missing credential obtains no answers and leaves notes unchanged', async () => {
-  const notes = [
-    note('project#1', '2026-01-01T00:00:00Z'),
-    note('project#2', '2026-01-02T00:00:00Z'),
+  const project = `evaluation-${newRecordId()}`
+  const storedNotes = [
+    { ...note(`${project}#1`, '2026-01-01T00:00:00Z'), project, sightings: 3 },
+    { ...note(`${project}#2`, '2026-01-02T00:00:00Z'), project, sightings: 1 },
+    {
+      ...note(`${project}#3`, '2026-01-03T00:00:00Z'),
+      project,
+      sightings: 1,
+      staleAt: '2026-02-01T00:00:00Z',
+      staleReason: 'dropped: fixed',
+    },
+    {
+      ...note(`${project}#4`, '2026-01-04T00:00:00Z'),
+      project,
+      sightings: 1,
+      promotedTask: 'DEV-2686',
+    },
   ]
-  const before = structuredClone(notes)
+  writeTransaction((database) => {
+    const insert = database.query(
+      `INSERT INTO note
+       (record_id,number,project,text,anchors,sightings,created_at,last_seen_at,
+        stale_at,stale_reason,promoted_task)
+       VALUES (?,?,?,?, '[]',?,?,?,?,?,?)`,
+    )
+    storedNotes.forEach((stored, index) => {
+      insert.run(
+        stored.record_id,
+        index + 1,
+        project,
+        stored.text,
+        stored.sightings,
+        stored.created_at,
+        stored.created_at,
+        'staleAt' in stored ? stored.staleAt : null,
+        'staleReason' in stored ? stored.staleReason : null,
+        'promotedTask' in stored ? stored.promotedTask : null,
+      )
+    })
+  })
+  const storedState = () =>
+    db()
+      .query(
+        `SELECT text,sightings,stale_at,stale_reason,promoted_task,promoted_task_record_id
+         FROM note WHERE project=? ORDER BY number`,
+      )
+      .all(project)
+  const answerCount = () =>
+    db().query<{ count: number }, []>('SELECT COUNT(*) count FROM typed_question_answer').get()!
+      .count
+  const beforeNotes = storedState()
+  const beforeAnswers = answerCount()
+  const actionableNotes = storedNotes.slice(0, 2)
   let asks = 0
-  const result = await evaluateNotePairs('project', notes, notes, {
+  const result = await evaluateNotePairs(project, actionableNotes, storedNotes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++
       return { probability: 1, reused: false }
     },
-    positiveSubjects: () => ({ produced: 0, total: 2, unreadable: 2 }),
+    positiveSubjects: (candidateProject, actionable, all) =>
+      blockingRecall(db(), candidateProject, actionable, all),
   })
   expect(result).toMatchObject({
     pairsAsked: 0,
@@ -221,10 +270,10 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
     answerFailure: 'no answers obtained: missing key',
   })
   expect(asks).toBe(0)
-  expect(notes).toEqual(before)
-  const body = noteEvaluationBody('project', 'now', notes.length, result)
+  expect(storedState()).toEqual(beforeNotes)
+  expect(answerCount()).toBe(beforeAnswers)
+  const body = noteEvaluationBody(project, 'now', actionableNotes.length, result)
   expect(body).not.toContain('no duplicates')
-  expect(body).toContain('2 unreadable positives excluded')
 })
 
 test('zero candidate pairs are reported without a typed-question service failure', async () => {
