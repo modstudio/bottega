@@ -9,16 +9,15 @@ import { projectByRecordId } from '../project/project-read.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { inheritedRunFacts } from '../run/run-claim-inheritance.ts'
 import { rootRunRecordId } from '../run/run-root-record.ts'
-import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { checkKeyedRunCursorAdmission, type KeyedRunTurn } from './keyed-run-cursor-admission.ts'
 
 /** Read the calling harness identity and its open keyed workflow cursors. */
-export function harnessCursorAdapter(fromOperator = false) {
+export function harnessCursorAdapter(overridePersonName: string | null = null) {
   const caller = classifyCaller(process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
   return {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
-    overridePersonName: resolvedRulingPersonName(fromOperator),
+    overridePersonName,
     readOpenCursors: async (session: string) =>
       (await openQuestionStages(db(), session)).map((cursor) => ({
         recordId: cursor.record_id,
@@ -33,12 +32,13 @@ export function harnessCursorAdapter(fromOperator = false) {
 }
 
 type AdmitKeyedTurnInput =
-  | { runId: string; turn: 'answer' }
+  | { runId: string; turn: 'answer'; overridePersonName: null }
   | {
       runId: string
       turn: Exclude<KeyedRunTurn, 'start' | 'answer'>
       overrideReason?: string
       fromOperator: boolean
+      overridePersonName: string | null
       cursor?: number
     }
 
@@ -48,7 +48,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
   const facts = inheritedRunFacts(rootId)
   const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
   const fromOperator = input.turn === 'answer' ? false : input.fromOperator
-  const adapter = harnessCursorAdapter(fromOperator)
+  const adapter = harnessCursorAdapter(input.overridePersonName)
   const decision = await checkKeyedRunCursorAdmission(
     {
       turn: input.turn,

@@ -232,6 +232,7 @@ export async function retryCommand(
     runId: id,
     turn: 'retry',
     ...admission,
+    overridePersonName: null,
   })
   const resumedId = await (dependencies.retryRun ?? retryRun)(
     id,
@@ -261,6 +262,7 @@ export async function answerCommand(
   const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'answer',
+    overridePersonName: null,
   })
   const { result, answeredQuestions: questions } = await (dependencies.answerRun ?? answerRun)(
     id,
@@ -365,6 +367,7 @@ export async function continueCommand(
     runId: id,
     turn: 'continue',
     ...admission,
+    overridePersonName: null,
   })
   const reportDetached = reportsBeforeFollow(flags)
     ? async (childId: string, jobName: string) => {

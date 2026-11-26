@@ -109,7 +109,8 @@ describe('a keyed run-start dispatch under a held cursor writes its current step
             mcp: undefined,
             agentHarness: null,
           }),
-          harnessCursorAdapter,
+          harnessCursorAdapter: (fromOperator: boolean) =>
+            harnessCursorAdapter(fromOperator ? 'Dana Example' : null),
           lookupTaskKey: async () => ({ state: 'found' }),
           recordRunWarning: () => {},
           earlierReviewRejections: noEarlierReviewRejections,
@@ -239,7 +240,8 @@ describe('an unkeyed dispatch refuses writing work and binds non-writing work to
         mcp: undefined,
         agentHarness: null,
       }),
-      harnessCursorAdapter,
+      harnessCursorAdapter: (fromOperator: boolean) =>
+        harnessCursorAdapter(fromOperator ? 'Dana Example' : null),
       lookupTaskKey: async () => ({ state: 'found' as const }),
       recordRunWarning: () => {},
       earlierReviewRejections: noEarlierReviewRejections,

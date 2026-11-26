@@ -61,6 +61,7 @@ import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { heldLandingTreeRefusal } from '../run/held-branch-remedy.ts'
 import { sha } from '../run/prompt-sha.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
@@ -730,7 +731,8 @@ export async function doCommand(
       resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
-      harnessCursorAdapter,
+      harnessCursorAdapter: (fromOperator) =>
+        harnessCursorAdapter(resolvedRulingPersonName(fromOperator)),
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,

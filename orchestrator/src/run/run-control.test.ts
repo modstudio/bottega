@@ -363,6 +363,7 @@ describe('run continuation', () => {
       runId: root,
       turn: 'continue',
       fromOperator: false,
+      overridePersonName: null,
     })
     const resumed = await continueRun(root, 'apply the accepted findings', limit, undefined, {
       binding: admission.binding,
