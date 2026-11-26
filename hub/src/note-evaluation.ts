@@ -9,7 +9,7 @@ import {
 } from '../../shared/typed-question/client.ts'
 import { typedQuestionStateIdentity } from '../../shared/typed-question/state-identity.ts'
 import { db } from './db.ts'
-import { duplicateScore } from './duplicate-score.ts'
+import { duplicateTokenSet, duplicateTokenSetScore } from './duplicate-score.ts'
 import { NOTE_DUPLICATE_CANDIDATES } from './note-duplicate-candidates.ts'
 import {
   NOTE_DUPLICATE_CONCURRENCY,
@@ -62,8 +62,8 @@ type Dependencies = {
   credential(): Promise<{ available: true } | { available: false; reason: string }>
   answerPair: PairAnswerer
   positiveSubjects(
-    notes: readonly EvaluationNote[],
-    generated: ReadonlySet<string>,
+    actionableNotes: readonly EvaluationNote[],
+    allProjectNotes: readonly EvaluationNote[],
   ): {
     produced: number
     total: number
@@ -82,10 +82,17 @@ function filingOrder(
 
 export function generateEvaluationPairs(notes: readonly EvaluationNote[]): EvaluationPair[] {
   const pairs = new Map<string, EvaluationPair>()
+  const tokens = new Map(notes.map((note) => [note.record_id, duplicateTokenSet(note.text)]))
   for (const note of notes) {
     const candidates = notes
       .filter((candidate) => candidate.record_id !== note.record_id)
-      .map((candidate) => ({ candidate, score: duplicateScore(candidate.text, note.text) }))
+      .map((candidate) => ({
+        candidate,
+        score: duplicateTokenSetScore(
+          tokens.get(candidate.record_id)!,
+          tokens.get(note.record_id)!,
+        ),
+      }))
       .sort(
         (left, right) =>
           right.score - left.score ||
@@ -109,49 +116,172 @@ export function generateEvaluationPairs(notes: readonly EvaluationNote[]): Evalu
   )
 }
 
-function pairScore(
-  left: readonly EvaluationNote[],
-  right: readonly EvaluationNote[],
-  scores: ReadonlyMap<string, number>,
-): number {
-  let total = 0
-  for (const first of left) {
-    for (const second of right) total += scores.get(pairKey(first, second)) ?? 0
-  }
-  return total / (left.length * right.length)
+type SparseGroup = {
+  id: number
+  order: number
+  notes: EvaluationNote[]
+  size: number
+  internalSum: number
+  neighbours: Map<number, number>
 }
 
-const pairKey = (left: EvaluationNote, right: EvaluationNote) =>
-  left.record_id < right.record_id
-    ? `${left.record_id}:${right.record_id}`
-    : `${right.record_id}:${left.record_id}`
+type LinkCandidate = {
+  left: number
+  right: number
+  leftOrder: number
+  rightOrder: number
+  score: number
+}
+
+const candidateHigherPriority = (left: LinkCandidate, right: LinkCandidate) =>
+  left.score > right.score ||
+  (left.score === right.score &&
+    (left.leftOrder < right.leftOrder ||
+      (left.leftOrder === right.leftOrder && left.rightOrder < right.rightOrder)))
+
+class CandidateHeap {
+  readonly values: LinkCandidate[] = []
+
+  push(candidate: LinkCandidate): void {
+    this.values.push(candidate)
+    let index = this.values.length - 1
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2)
+      if (candidateHigherPriority(this.values[parent]!, candidate)) break
+      this.values[index] = this.values[parent]!
+      index = parent
+    }
+    this.values[index] = candidate
+  }
+
+  pop(): LinkCandidate | undefined {
+    const first = this.values[0]
+    const last = this.values.pop()
+    if (!first || !last || !this.values.length) return first
+    let index = 0
+    while (index * 2 + 1 < this.values.length) {
+      let child = index * 2 + 1
+      if (
+        child + 1 < this.values.length &&
+        candidateHigherPriority(this.values[child + 1]!, this.values[child]!)
+      )
+        child++
+      if (candidateHigherPriority(last, this.values[child]!)) break
+      this.values[index] = this.values[child]!
+      index = child
+    }
+    this.values[index] = last
+    return first
+  }
+}
+
+function pushGroupCandidate(
+  heap: CandidateHeap,
+  first: SparseGroup,
+  second: SparseGroup,
+  sum: number,
+): void {
+  const [left, right] = first.order < second.order ? [first, second] : [second, first]
+  heap.push({
+    left: left.id,
+    right: right.id,
+    leftOrder: left.order,
+    rightOrder: right.order,
+    score: sum / (left.size * right.size),
+  })
+}
+
+function sparseGroups(
+  notes: readonly EvaluationNote[],
+  pairs: readonly Pick<ScoredEvaluationPair, 'existing' | 'newer' | 'probability'>[],
+): Map<number, SparseGroup> {
+  const groups = new Map<number, SparseGroup>(
+    notes.map((note, index) => [
+      index,
+      { id: index, order: index, notes: [note], size: 1, internalSum: 0, neighbours: new Map() },
+    ]),
+  )
+  const noteGroup = new Map(notes.map((note, index) => [note.record_id, index]))
+  for (const pair of pairs) {
+    if (pair.probability === 0) continue
+    const left = noteGroup.get(pair.existing.record_id)
+    const right = noteGroup.get(pair.newer.record_id)
+    if (left === undefined || right === undefined || left === right) continue
+    groups
+      .get(left)!
+      .neighbours.set(right, (groups.get(left)!.neighbours.get(right) ?? 0) + pair.probability)
+    groups
+      .get(right)!
+      .neighbours.set(left, (groups.get(right)!.neighbours.get(left) ?? 0) + pair.probability)
+  }
+  return groups
+}
+
+function candidateHeap(groups: ReadonlyMap<number, SparseGroup>): CandidateHeap {
+  const heap = new CandidateHeap()
+  for (const group of groups.values()) {
+    for (const [otherId, sum] of group.neighbours) {
+      const other = groups.get(otherId)!
+      if (group.order < other.order) pushGroupCandidate(heap, group, other, sum)
+    }
+  }
+  return heap
+}
+
+function mergeSparseGroups(
+  groups: Map<number, SparseGroup>,
+  heap: CandidateHeap,
+  left: SparseGroup,
+  right: SparseGroup,
+  sum: number,
+): void {
+  left.notes.push(...right.notes)
+  left.internalSum += right.internalSum + sum
+  left.size += right.size
+  left.neighbours.delete(right.id)
+  for (const [neighbourId, rightSum] of right.neighbours) {
+    if (neighbourId === left.id) continue
+    const neighbour = groups.get(neighbourId)
+    if (!neighbour) continue
+    const combined = (left.neighbours.get(neighbourId) ?? 0) + rightSum
+    left.neighbours.set(neighbourId, combined)
+    neighbour.neighbours.delete(right.id)
+    neighbour.neighbours.set(left.id, combined)
+    pushGroupCandidate(heap, left, neighbour, combined)
+  }
+  groups.delete(right.id)
+}
+
+function joinSparseGroups(
+  groups: Map<number, SparseGroup>,
+  heap: CandidateHeap,
+  threshold: number,
+): void {
+  for (;;) {
+    const best = heap.pop()
+    if (!best) return
+    const left = groups.get(best.left)
+    const right = groups.get(best.right)
+    if (!left || !right) continue
+    const sum = left.neighbours.get(right.id)
+    if (sum === undefined || sum / (left.size * right.size) !== best.score) continue
+    if (best.score < threshold) return
+    mergeSparseGroups(groups, heap, left, right, sum)
+  }
+}
 
 export function averageLinkageClusters(
   notes: readonly EvaluationNote[],
   pairs: readonly Pick<ScoredEvaluationPair, 'existing' | 'newer' | 'probability'>[],
   threshold = NOTE_DUPLICATE_QUESTION.threshold,
 ): NoteEvaluationCluster[] {
-  const scores = new Map(
-    pairs.map((pair) => [pairKey(pair.existing, pair.newer), pair.probability]),
-  )
-  const groups: EvaluationNote[][] = notes.map((note) => [note])
-  for (;;) {
-    let best: { left: number; right: number; score: number } | null = null
-    for (let left = 0; left < groups.length; left++) {
-      for (let right = left + 1; right < groups.length; right++) {
-        const score = pairScore(groups[left]!, groups[right]!, scores)
-        if (!best || score > best.score) best = { left, right, score }
-      }
-    }
-    if (!best || best.score < threshold) break
-    groups[best.left]!.push(...groups[best.right]!)
-    groups.splice(best.right, 1)
-  }
-  return groups
-    .filter((group) => group.length > 1)
+  const groups = sparseGroups(notes, pairs)
+  joinSparseGroups(groups, candidateHeap(groups), threshold)
+  return [...groups.values()]
+    .filter((group) => group.size > 1)
     .map((group) => ({
-      notes: group.sort((left, right) => left.label.localeCompare(right.label)),
-      meanProbability: meanWithin(group, scores),
+      notes: group.notes.sort((left, right) => left.label.localeCompare(right.label)),
+      meanProbability: group.internalSum / ((group.size * (group.size - 1)) / 2),
     }))
     .sort(
       (left, right) =>
@@ -159,18 +289,6 @@ export function averageLinkageClusters(
         right.meanProbability - left.meanProbability ||
         left.notes[0]!.label.localeCompare(right.notes[0]!.label),
     )
-}
-
-function meanWithin(notes: readonly EvaluationNote[], scores: ReadonlyMap<string, number>): number {
-  let total = 0
-  let count = 0
-  for (let left = 0; left < notes.length; left++) {
-    for (let right = left + 1; right < notes.length; right++) {
-      total += scores.get(pairKey(notes[left]!, notes[right]!)) ?? 0
-      count++
-    }
-  }
-  return count ? total / count : 0
 }
 
 async function mapConcurrent<T, R>(
@@ -191,12 +309,12 @@ async function mapConcurrent<T, R>(
 }
 
 export async function evaluateNotePairs(
-  notes: readonly EvaluationNote[],
+  actionableNotes: readonly EvaluationNote[],
+  allProjectNotes: readonly EvaluationNote[] = actionableNotes,
   dependencies: Dependencies = defaultDependencies,
 ): Promise<NoteEvaluationResult> {
-  const pairs = generateEvaluationPairs(notes)
-  const generated = new Set(pairs.map((pair) => pair.subjectRef))
-  const recall = dependencies.positiveSubjects(notes, generated)
+  const pairs = generateEvaluationPairs(actionableNotes)
+  const recall = dependencies.positiveSubjects(actionableNotes, allProjectNotes)
   const credential = await dependencies.credential()
   if (!credential.available) {
     return {
@@ -225,7 +343,7 @@ export async function evaluateNotePairs(
       ? null
       : 'no answers obtained: the typed-question service returned no answers',
     recall: { ...recall, fraction: recall.total ? recall.produced / recall.total : null },
-    clusters: averageLinkageClusters(notes, scored),
+    clusters: averageLinkageClusters(actionableNotes, scored),
   }
 }
 
@@ -285,10 +403,21 @@ export async function answerEvaluationPair(
 
 export function blockingRecall(
   database: Database,
-  notes: readonly EvaluationNote[],
-  generated: ReadonlySet<string>,
+  actionableNotes: readonly EvaluationNote[],
+  allProjectNotes: readonly EvaluationNote[],
 ): { produced: number; total: number } {
-  const byId = new Map(notes.map((note) => [note.record_id, note]))
+  const byId = new Map(allProjectNotes.map((note) => [note.record_id, note]))
+  const byHash = new Map<string, EvaluationNote[]>()
+  for (const note of allProjectNotes) {
+    const hash = noteTextHash(note.text)
+    byHash.set(hash, [...(byHash.get(hash) ?? []), note])
+  }
+  const poolById = new Map(actionableNotes.map((note) => [note.record_id, note]))
+  const tokens = new Map(
+    allProjectNotes.map((note) => [note.record_id, duplicateTokenSet(note.text)]),
+  )
+  for (const note of actionableNotes)
+    if (!tokens.has(note.record_id)) tokens.set(note.record_id, duplicateTokenSet(note.text))
   const subjects = database
     .query<{ subject_ref: string }, [string, number]>(
       `SELECT DISTINCT subject_ref FROM typed_question_outcome
@@ -303,21 +432,44 @@ export function blockingRecall(
     const parsed = parseNotePairSubjectRef(subject_ref)
     const existing = parsed ? byId.get(parsed.existingId) : undefined
     const newer = parsed
-      ? notes.find(
-          (note) => note.record_id !== parsed.existingId && noteTextHash(note.text) === parsed.hash,
-        )
+      ? byHash.get(parsed.hash)?.find((note) => note.record_id !== parsed.existingId)
       : undefined
     if (!existing || !newer) continue
     total++
-    if (generated.has(subject_ref)) produced++
+    const pool = new Map(poolById)
+    pool.set(existing.record_id, existing)
+    pool.set(newer.record_id, newer)
+    if (
+      isTopCandidate(existing, newer, [...pool.values()], tokens) ||
+      isTopCandidate(newer, existing, [...pool.values()], tokens)
+    )
+      produced++
   }
   return { produced, total }
+}
+
+function isTopCandidate(
+  note: EvaluationNote,
+  candidate: EvaluationNote,
+  pool: readonly EvaluationNote[],
+  tokens: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  return pool
+    .filter((other) => other.record_id !== note.record_id)
+    .map((other) => ({
+      id: other.record_id,
+      score: duplicateTokenSetScore(tokens.get(note.record_id)!, tokens.get(other.record_id)!),
+    }))
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
+    .slice(0, NOTE_DUPLICATE_CANDIDATES)
+    .some(({ id }) => id === candidate.record_id)
 }
 
 const defaultDependencies: Dependencies = {
   credential: credentialAvailability,
   answerPair: (pair) => answerEvaluationPair(pair),
-  positiveSubjects: (notes, generated) => blockingRecall(db(), notes, generated),
+  positiveSubjects: (actionableNotes, allProjectNotes) =>
+    blockingRecall(db(), actionableNotes, allProjectNotes),
 }
 
 export function noteEvaluationBody(

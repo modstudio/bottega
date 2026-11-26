@@ -107,16 +107,33 @@ function outcome(subjectRef: string, source: string): void {
   })
 }
 
-test('blocking recall counts only positive subjects whose two notes remain actionable', () => {
+test('blocking recall counts a merged pair when one note is no longer actionable', () => {
   const older = note('project#1', '2026-01-01T00:00:00Z')
   const newer = note('project#2', '2026-01-02T00:00:00Z')
   const included = notePairSubjectRef(older.record_id, newer.text)
   outcome(included, 'same-as')
-  outcome(notePairSubjectRef(older.record_id, 'note no longer actionable'), 'merge')
-  expect(blockingRecall(db(), [older, newer], new Set([included]))).toEqual({
+  expect(blockingRecall(db(), [older], [older, newer])).toEqual({
     produced: 1,
     total: 1,
   })
+})
+
+test('pair generation and sparse clustering handle 1,500 notes', () => {
+  const notes = Array.from({ length: 1_500 }, (_, index) => ({
+    record_id: `note-${index.toString().padStart(4, '0')}`,
+    label: `project#${index + 1}`,
+    project: 'project',
+    text: `shared evaluation vocabulary unique${index}`,
+    created_at: '2026-01-01T00:00:00Z',
+  }))
+  const pairs = generateEvaluationPairs(notes)
+  expect(pairs.length).toBeGreaterThan(0)
+  const probabilities = Array.from({ length: 750 }, (_, index) => ({
+    existing: notes[index * 2]!,
+    newer: notes[index * 2 + 1]!,
+    probability: 0.9,
+  }))
+  expect(averageLinkageClusters(notes, probabilities)).toHaveLength(750)
 })
 
 test('missing credential obtains no answers and leaves notes unchanged', async () => {
@@ -126,7 +143,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   ]
   const before = structuredClone(notes)
   let asks = 0
-  const result = await evaluateNotePairs(notes, {
+  const result = await evaluateNotePairs(notes, notes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++
