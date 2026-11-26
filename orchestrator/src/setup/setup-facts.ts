@@ -26,6 +26,7 @@ import {
   HARNESS_MCP_CATALOGUE,
   type HarnessMcpFacts,
   type HarnessName,
+  harnessInstallRoute,
   harnessMcpServers,
   type SetupCommandRunner,
   stableMcpServers,
@@ -283,8 +284,9 @@ export async function gatherSetupFacts(
     }),
   ) as SetupFactsCapture['harnesses']
   const prerequisiteCommands = new Set(
-    Object.values(HARNESS_MCP_CATALOGUE).flatMap(
-      ({ install }) => install?.linux?.requires?.map(({ command }) => command) ?? [],
+    KNOWN_HARNESSES.flatMap(
+      (harness) =>
+        harnessInstallRoute(harness, 'linux')?.requires?.map(({ command }) => command) ?? [],
     ),
   )
   const harnessInstallPrerequisites = Object.fromEntries(

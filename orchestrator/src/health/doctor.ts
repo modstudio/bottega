@@ -67,10 +67,10 @@ import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import {
+  type HarnessName,
   harnessCatalogueName,
   harnessInstallPrerequisiteNotice,
   harnessInstallRoute,
-  type HarnessName,
   missingHarnessInstallPrerequisites,
 } from '../setup/setup-mcp.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -655,6 +655,7 @@ async function reportAgentsForInstallLevel(
     return
   }
   await reportAgentsAndDelegation(presentation, agentStatus)
+  reportHarnessInstallPrerequisites(presentation.log)
 }
 
 async function workerHealthForInstallLevel(machineLevel: MachineLevel) {
@@ -861,7 +862,6 @@ export async function doctorCommand(
     )
   }
   await reportAgentsForInstallLevel(machineLevel, { log, candidates }, agentStatus)
-  reportHarnessInstallPrerequisites(log)
   for (const row of workerRowsForInstallLevel(machineLevel)) {
     if (row.operated_by !== 'self' || !row.enabled) continue
     const probe = localProbeDiagnosis(row)

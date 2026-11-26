@@ -69,7 +69,11 @@ test('a newer registered checkout keeps the existing rerun remedy', () => {
   expect(
     decideMachineHomeWriteRefusal({
       command: 'machine settings apply',
-      registered: { path: '/registered', version: { version: '0.5.22' } },
+      registered: {
+        path: '/registered',
+        executable: `/registered/bin/${PLATFORM_SLUG}`,
+        version: { version: '0.5.22' },
+      },
       running: { path: '/secondary', version: { version: '0.5.21' } },
     }),
   ).toEqual({
@@ -81,7 +85,11 @@ test('a newer registered checkout keeps the existing rerun remedy', () => {
 test('an older registered checkout requires pulling before rerunning there', () => {
   const refusal = decideMachineHomeWriteRefusal({
     command: 'machine settings apply',
-    registered: { path: '/registered', version: { version: '0.5.14' } },
+    registered: {
+      path: '/registered',
+      executable: `/registered/bin/${PLATFORM_SLUG}`,
+      version: { version: '0.5.14' },
+    },
     running: { path: '/secondary', version: { version: '0.5.21' } },
   })
   expect(refusal.detail).toContain('/registered is version 0.5.14')
@@ -96,7 +104,11 @@ test('an unreadable version keeps the existing remedy and names the comparison f
   expect(
     decideMachineHomeWriteRefusal({
       command: 'machine settings apply',
-      registered: { path: '/registered', version: { reason: 'manifest unreadable' } },
+      registered: {
+        path: '/registered',
+        executable: `/registered/bin/${PLATFORM_SLUG}`,
+        version: { reason: 'manifest unreadable' },
+      },
       running: { path: '/secondary', version: { version: '0.5.21' } },
     }),
   ).toEqual({

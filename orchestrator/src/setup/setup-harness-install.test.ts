@@ -84,7 +84,7 @@ test('reports the last ten non-empty stdout and stderr lines within the output c
   expect(outcome.message).not.toContain('out-0')
   expect(outcome.message).toContain('last-error')
   expect(outcome.message).toEndWith(`; run by hand: ${route.command}`)
-  const appended = outcome.message.split('\n').slice(1).join('\n').split('; run by hand:')[0]
+  const appended = outcome.message.split('\n').slice(1).join('\n').split('; run by hand:')[0] ?? ''
   expect(appended.length).toBeLessThanOrEqual(2_000)
 })
 

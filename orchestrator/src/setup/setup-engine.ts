@@ -19,9 +19,9 @@ import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import {
   HARNESS_MCP_CATALOGUE,
-  harnessCatalogueName,
   type HarnessInstallRoute,
   type HarnessName,
+  harnessCatalogueName,
   harnessDocumentation,
   harnessInstallPrerequisiteNotice,
   harnessInstallRoute,

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { mainCheckoutOf } from '../../../shared/git.ts'
 import { assetPath, installationIdentity } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import {
   realPathForPotentialPath,
   temporaryStateStoreMigrationAllowed,
@@ -33,19 +34,23 @@ export function decideMachineHomeWriteAuthority(facts: {
 
 export type InstallationVersionRead = { version: string } | { reason: string }
 
+function clearedBy(text: string): string {
+  return renderRefusal(refusal('', { kind: 'edit', text })).trimStart()
+}
+
 export function decideMachineHomeWriteRefusal(input: {
   command: string
-  registered: { path: string; version: InstallationVersionRead }
+  registered: { path: string; executable: string; version: InstallationVersionRead }
   running: { path: string; version: InstallationVersionRead }
 }): { detail: string | null; remedy: string } {
-  const remedyExecutable = join(input.registered.path, 'bin', PLATFORM_SLUG)
+  const remedyExecutable = input.registered.executable
   if ('reason' in input.registered.version || 'reason' in input.running.version) {
     const reason = [input.registered.version, input.running.version]
       .flatMap((value) => ('reason' in value ? [value.reason] : []))
       .join('; ')
     return {
       detail: `could not compare versions: ${reason}`,
-      remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+      remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
     }
   }
   try {
@@ -54,20 +59,21 @@ export function decideMachineHomeWriteRefusal(input: {
         detail:
           `registered checkout ${input.registered.path} is version ${input.registered.version.version}; ` +
           `running installation ${input.running.path} is version ${input.running.version.version}`,
-        remedy:
-          `cleared by: run \`git -C ${input.registered.path} pull --ff-only\`, then ` +
-          `\`${remedyExecutable} ${input.command}\``,
+        remedy: clearedBy(
+          `run \`git -C ${input.registered.path} pull --ff-only\`, then ` +
+            `\`${remedyExecutable} ${input.command}\``,
+        ),
       }
     }
   } catch (error) {
     return {
       detail: `could not compare versions: ${error instanceof Error ? error.message : String(error)}`,
-      remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+      remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
     }
   }
   return {
     detail: null,
-    remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+    remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
   }
 }
 
@@ -144,6 +150,7 @@ export function assertMachineHomeWriteAuthority(input: {
       command: input.command,
       registered: {
         path: input.registeredMainCheckout,
+        executable: remedyExecutable,
         version: readInstallationVersion(input.registeredMainCheckout),
       },
       running: {
@@ -154,9 +161,10 @@ export function assertMachineHomeWriteAuthority(input: {
     detail = refusal.detail
     remedy = refusal.remedy
   } else {
-    remedy =
-      `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then ` +
-      `\`${remedyExecutable} ${input.command}\``
+    remedy = clearedBy(
+      `run \`${remedyExecutable} project add ${remedyRoot}\`, then ` +
+        `\`${remedyExecutable} ${input.command}\``,
+    )
   }
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from this machine's installed copy\n` +

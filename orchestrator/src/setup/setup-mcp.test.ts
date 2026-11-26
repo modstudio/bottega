@@ -6,11 +6,13 @@ import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
   HARNESS_MCP_CATALOGUE,
+  type HarnessName,
+  harnessInstallRoute,
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
-  mutateClaudeMcpRegistration,
   missingHarnessInstallPrerequisites,
+  mutateClaudeMcpRegistration,
   readMcpRegistration,
   reconcileClaudeMcpRegistration,
   registeredCommandResolves,
@@ -32,8 +34,8 @@ const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult =
 })
 
 test('Linux harness routes declare curl and goose declares bzip2', () => {
-  for (const [harness, descriptor] of Object.entries(HARNESS_MCP_CATALOGUE)) {
-    const route = descriptor.install?.linux
+  for (const harness of Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]) {
+    const route = harnessInstallRoute(harness, 'linux')
     if (!route) continue
     const commands = route.requires?.map(({ command }) => command) ?? []
     if (route.command.includes('curl')) expect(commands, harness).toContain('curl')
