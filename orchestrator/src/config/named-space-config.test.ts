@@ -426,7 +426,7 @@ test('trust in an anchored named space refuses a target absent from the log befo
       env,
     ),
   ).rejects.toThrow(
-    `the space's machine trust log does not list ${targetKeyId}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `the space's machine trust log does not list ${targetKeyId}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named\` with the code it prints`,
   )
   expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
 })
@@ -461,7 +461,7 @@ test("trust in an anchored named space refuses when this machine's key is absent
       env,
     ),
   ).rejects.toThrow(
-    `this machine's key ${keyId} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `this machine's key ${keyId} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named\` with the code it prints`,
   )
   expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
 })
@@ -558,6 +558,6 @@ test('registration names machine approve when an anchored log omits the data key
   } as unknown as ConfigClient
 
   await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
-    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named\` with the code it prints`,
   )
 })

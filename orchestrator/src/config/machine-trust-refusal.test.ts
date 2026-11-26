@@ -4,9 +4,22 @@ import {
   credentialMachineTrustFacts,
   credentialMachineTrustSteps,
 } from '../../../shared/credential-machine-trust.ts'
-import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
+import {
+  anchoredTrustRefusal,
+  machineApproveCommand,
+  machineTrustRefusal,
+} from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
+
+test('machine approve command names its code and space', () => {
+  expect(machineApproveCommand('named-space')).toBe(
+    `${PLATFORM_SLUG} machine approve <code> --space named-space`,
+  )
+  expect(machineApproveCommand('named-space', '123-word-word')).toBe(
+    `${PLATFORM_SLUG} machine approve 123-word-word --space named-space`,
+  )
+})
 
 test('credential trust repair orders registration before trust and omits completed steps', () => {
   const facts = {
@@ -83,7 +96,7 @@ test('anchored trust checks the local key before the target key', () => {
       'named-space',
     ),
   ).toBe(
-    `this machine's key ${local} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `this machine's key ${local} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named-space\` with the code it prints`,
   )
   expect(
     anchoredTrustRefusal(
@@ -92,7 +105,7 @@ test('anchored trust checks the local key before the target key', () => {
       'named-space',
     ),
   ).toBe(
-    `the space's machine trust log does not list ${target}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `the space's machine trust log does not list ${target}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named-space\` with the code it prints`,
   )
   expect(
     anchoredTrustRefusal(

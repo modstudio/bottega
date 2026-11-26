@@ -7,11 +7,14 @@ import type { TrustedKeys } from '../../../shared/trust-log-keys.ts'
 
 type RegisteredMachineKey = { revokedAt: string | null }
 
+export const machineApproveCommand = (spaceSlug: string, code = '<code>'): string =>
+  `${PLATFORM_SLUG} machine approve ${code} --space ${spaceSlug}`
+
 const localTrustLogRemedy = (spaceSlug: string) =>
-  `on this machine run \`${PLATFORM_SLUG} machine join --space ${spaceSlug}\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`
+  `on this machine run \`${PLATFORM_SLUG} machine join --space ${spaceSlug}\`, then on a machine the trust log already trusts run \`${machineApproveCommand(spaceSlug)}\` with the code it prints`
 
 const targetTrustLogRemedy = (spaceSlug: string) =>
-  `on that machine run \`${PLATFORM_SLUG} machine join --space ${spaceSlug}\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`
+  `on that machine run \`${PLATFORM_SLUG} machine join --space ${spaceSlug}\`, then on a machine the trust log already trusts run \`${machineApproveCommand(spaceSlug)}\` with the code it prints`
 
 const missingLocalTrustLogKeyRefusal = (keyId: string, spaceSlug: string) =>
   renderRefusal(

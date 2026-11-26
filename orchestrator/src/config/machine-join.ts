@@ -37,6 +37,7 @@ import {
 import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
 import { machineTrust } from './config-service.ts'
 import { encoded } from './data-key-access.ts'
+import { machineApproveCommand } from './machine-trust-refusal.ts'
 import { appendSignedTrustLogEntry } from './trust-log-append.ts'
 
 const MACHINE_JOIN_POLL_MS = 2_000
@@ -266,7 +267,7 @@ async function verifiedApprover(
   ) {
     await burn(ports, selected, nameplate, ownSide)
     throw new Error(
-      `the approving machine is not trusted by the space machine trust log; run \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+      `the approving machine is not trusted by the space machine trust log; run \`${machineApproveCommand(selected.slug)}\` from a machine the trust log already trusts`,
     )
   }
   return approver
@@ -363,7 +364,7 @@ async function approveAndWrap(
         { kind: 'add', ...joiner },
         {
           action: `running ${PLATFORM_SLUG} machine approve`,
-          retry: `\`${PLATFORM_SLUG} machine approve\``,
+          retry: `\`${machineApproveCommand(selected.slug)}\``,
         },
         { at: now(ports.at), env: ports.env },
       )
@@ -403,7 +404,7 @@ export async function machineJoin(
   const code = generatePairingCode(allocated.nameplate)
   const formatted = formatPairingCode(code)
   ports.output?.(formatted)
-  ports.output?.(`on an approved machine run: \`${PLATFORM_SLUG} machine approve ${formatted}\``)
+  ports.output?.(`on an approved machine run: \`${machineApproveCommand(selected.slug, formatted)}\``)
   const party = startMachineJoin(code, selected.spaceId, allocated.expiresAt, 'joiner')
   const ownSide = sideText(party.side)
   await ports.client.postMachineJoinMessage(
@@ -473,7 +474,7 @@ export async function machineApprove(
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial && !initial.keys.has(record.keyId))
     throw new Error(
-      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${PLATFORM_SLUG} machine approve\``,
+      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${machineApproveCommand(selected.slug)}\``,
     )
   const side = crypto.getRandomValues(new Uint8Array(16))
   const ownSide = sideText(side)
