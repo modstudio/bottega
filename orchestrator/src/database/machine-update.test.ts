@@ -38,6 +38,9 @@ import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 useFixtureInstallationRoot()
 
+type UpdateDependencies = NonNullable<Parameters<typeof runMachineUpdateCommand>[1]>
+type PostUpdateHandoffInput = Parameters<NonNullable<UpdateDependencies['handoffPostUpdate']>>[0]
+
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
   const pendingIndex = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
@@ -859,9 +862,7 @@ test('machine update defaults the target to the installation root', async () => 
 
 test('checkout update hands post-update work to the pulled checkout once', async () => {
   const target = mkdtempSync(join(tmpdir(), 'machine-update-checkout.'))
-  const handoffs: Parameters<
-    NonNullable<Parameters<typeof runMachineUpdateCommand>[1]['handoffPostUpdate']>
-  >[0][] = []
+  const handoffs: PostUpdateHandoffInput[] = []
   writeFileSync(join(target, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
   try {
     await machineUpdateCommand(
@@ -903,9 +904,7 @@ test('checkout update hands post-update work to the pulled checkout once', async
 
 test('distribution update hands post-update work to the installed target once', async () => {
   const target = realpathSync(process.execPath)
-  const handoffs: Parameters<
-    NonNullable<Parameters<typeof runMachineUpdateCommand>[1]['handoffPostUpdate']>
-  >[0][] = []
+  const handoffs: PostUpdateHandoffInput[] = []
   let updated = false
   await machineUpdateCommand(
     { log: () => {} },

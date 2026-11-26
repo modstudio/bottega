@@ -393,6 +393,7 @@ export const ROUTES = (
     ),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'journal'], owner: 'orch', argv: ['journal'], hidden: true },
+    { command: ['machine', 'post-update'], owner: 'orch', argv: ['post-update'], hidden: true },
     { command: ['machine', 'store-path'], owner: 'orch', argv: ['store-path'], hidden: true },
     {
       command: ['machine', 'launch-agents', 'refresh'],

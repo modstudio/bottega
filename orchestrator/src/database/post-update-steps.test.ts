@@ -188,6 +188,29 @@ test('post-update launch-agent refresh preserves its failure', async () => {
   ).rejects.toThrow(remedy)
 })
 
+test('post-update hosted-row release preserves its refusal and stops retirement', async () => {
+  let retired = false
+  await expect(
+    runPostUpdateSteps(
+      { log: () => {} },
+      { path: 'distribution' },
+      {
+        maintainStore: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
+        releaseHostedRows: async () => {
+          throw new Error('release refusal')
+        },
+        recordSessionPresent: () => true,
+        retireUnusedDefaultLocalProject: async () => {
+          retired = true
+          return true
+        },
+      },
+    ),
+  ).rejects.toThrow('release refusal')
+  expect(retired).toBeFalse()
+})
+
 test('post-update checkout verification preserves the checkout invariant failure', async () => {
   await expect(
     runPostUpdateSteps(

@@ -34,11 +34,11 @@ test.each([
 test.each([
   {
     changedPaths: 'package.json\0',
-    expected: ['pull', 'install', 'migrate', 'workflow-sync', 'build-cli'],
+    expected: ['pull', 'install', 'migrate', 'handoff'],
   },
   {
     changedPaths: 'shared/source.ts\0',
-    expected: ['pull', 'migrate', 'workflow-sync', 'build-cli'],
+    expected: ['pull', 'migrate', 'handoff'],
   },
 ])(
   'machine update orders dependency refresh for pulled paths $changedPaths',
@@ -64,51 +64,23 @@ test.each([
         },
         install: () => events.push('install'),
         migrate: () => events.push('migrate'),
-        syncWorkflows: (cwd, since) => {
-          expect({ cwd, since }).toEqual({ cwd: dir, since: 'before-commit' })
-          events.push('workflow-sync')
+        handoffPostUpdate: ({ path }) => {
+          expect(path).toEqual({
+            path: 'checkout',
+            checkout: dir,
+            branch: 'main',
+            beforePull: 'before-commit',
+          })
+          events.push('handoff')
         },
-        buildCli: () => events.push('build-cli'),
-        runLaunchAgentsRefreshVerb: () => {},
       },
     )
     expect(events).toEqual([...expected])
   },
 )
 
-test('machine update verifies the main checkout before synchronizing workflows', async () => {
-  let synchronized = false
-  await expect(
-    machineUpdateCommand(
-      { log: () => {} },
-      {
-        cwd: dir,
-        authorityRefusal: () => null,
-        project: () => ({
-          name: 'migration-update-fixture',
-          path: dir,
-          settings: { trunk: 'main' },
-        }),
-        git: (_cwd, args) => {
-          if (args[0] === 'branch') return 'main'
-          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
-          return args[0] === 'rev-parse' ? 'before-commit' : ''
-        },
-        migrate: () => {},
-        verifyMainCheckout: () => {
-          throw new Error('tracked workflow edit remains')
-        },
-        syncWorkflows: () => {
-          synchronized = true
-        },
-      },
-    ),
-  ).rejects.toThrow('tracked workflow edit remains')
-  expect(synchronized).toBeFalse()
-})
-
-test('machine update does not build the checkout CLI when migration fails', async () => {
-  let built = false
+test('machine update does not hand off post-update work when migration fails', async () => {
+  let handedOff = false
   await expect(
     machineUpdateCommand(
       { log: () => {} },
@@ -129,16 +101,16 @@ test('machine update does not build the checkout CLI when migration fails', asyn
         migrate: () => {
           throw new Error('injected migration failure')
         },
-        buildCli: () => {
-          built = true
+        handoffPostUpdate: () => {
+          handedOff = true
         },
       },
     ),
   ).rejects.toThrow('migration failed: injected migration failure')
-  expect(built).toBeFalse()
+  expect(handedOff).toBeFalse()
 })
 
-test('machine update reports a post-migration CLI build failure without rolling back', async () => {
+test('machine update reports a post-migration handoff failure without rolling back', async () => {
   const gitCalls: string[][] = []
   await expect(
     machineUpdateCommand(
@@ -159,15 +131,12 @@ test('machine update reports a post-migration CLI build failure without rolling 
           return ''
         },
         migrate: () => {},
-        syncWorkflows: () => {},
-        buildCli: () => {
-          throw new Error('injected build failure')
+        handoffPostUpdate: () => {
+          throw new Error('injected post-update failure')
         },
       },
     ),
-  ).rejects.toThrow(
-    `compiled checkout CLI build failed: injected build failure; rerun ${PLATFORM_SLUG} machine update`,
-  )
+  ).rejects.toThrow('injected post-update failure')
   expect(gitCalls).not.toContainEqual(['reset', '--keep', 'before-commit'])
 })
 

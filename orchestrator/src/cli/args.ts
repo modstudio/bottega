@@ -505,6 +505,7 @@ export const CLI_COMMANDS = new Set([
   'metric',
   'typed-question',
   'migrate',
+  'post-update',
   'monitor',
   'peek',
   'pending',
