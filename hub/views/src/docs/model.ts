@@ -1,10 +1,12 @@
 import { secondLevelHeadings } from '../markdown/headings.ts'
 import {
+  ALL_PROJECTS,
   activeFilterCount,
   applyFilters,
   clearStaleFilters,
   type FilterSelection,
   inProject,
+  isSharedProject,
   offeredFilters,
   offersSharedProject,
   type ProjectSelection,
@@ -73,13 +75,14 @@ export function docsViewModel(
   doc: DocsDoc | null,
   includeAudienceFilter = true,
   showWorking = false,
+  selectedItem: DocsTreeItem | null = null,
 ) {
   const projectItems = inProject(items, project)
   const forProject = docsVisibleByKind(projectItems, showWorking)
   const stale = clearStaleFilters(forProject, chosen)
   const structural = applyFilters(forProject, { ...stale, audience: null })
   const tree = treeForAudience(structural, selectedAudience(stale))
-  const groups = project === 'all' ? groupRootsBySubject(tree) : null
+  const groups = project === ALL_PROJECTS ? groupRootsBySubject(tree) : null
   const selected = treePath(tree, selectedId ?? '').at(-1) ?? null
   const path = selected ? treePath(tree, selected.id) : []
   const roots = groups ? groups.flatMap((group) => group.children) : tree
@@ -101,7 +104,8 @@ export function docsViewModel(
     around: selected ? neighbors(roots, selected.id) : { previous: null, next: null },
     headings: doc ? secondLevelHeadings(doc.body) : [],
     subjects: projectSubjects(items),
-    offersShared: offersSharedProject(items),
+    offersShared:
+      offersSharedProject(items) || Boolean(selectedItem && isSharedProject(selectedItem)),
     active: activeFilterCount(stale),
   }
 }

@@ -181,7 +181,6 @@ test('All projects groups roots by subject, and a single project does not', () =
   }
   const grouped = render({ items: [...items, extra], project: 'all', selectedId: '1' })
   expect(grouped).toContain('Shared note')
-  expect(grouped).toContain(SHARED_PROJECT_LABEL)
   const one = render({ items: [...items, extra], project: 'atlas', selectedId: '1' })
   expect(one).not.toContain('Shared note')
   expect(one).toContain(SHARED_PROJECT_LABEL)

@@ -14,6 +14,8 @@ import type { FieldSave } from './doc-field-controls.tsx'
 import { DocsFacts, type DocsFactsControls } from './facts.tsx'
 import { FilterPanel } from './filter-panel.tsx'
 import {
+  ALL_PROJECTS,
+  chooserProject,
   DOC_AUDIENCE_LABELS,
   type FilterSelection,
   type OfferedFilter,
@@ -121,7 +123,7 @@ function ProjectSelect({
       options={[
         ...subjects.map((name) => ({ value: name, label: name })),
         ...(offersShared ? [{ value: SHARED_PROJECT, label: SHARED_PROJECT_LABEL }] : []),
-        { value: 'all', label: 'All projects' },
+        { value: ALL_PROJECTS, label: 'All projects' },
       ]}
     />
   )
@@ -387,7 +389,12 @@ function DocsViewControls({
   >) {
   const selectProject = (next: ProjectSelection) => {
     onProject(next)
-    if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
+    if (
+      !selectedItem ||
+      next === ALL_PROJECTS ||
+      chooserProject(selectedItem, model.subjects) === next
+    )
+      return
     const first = docsViewModel(
       navigationItems,
       next,
@@ -446,6 +453,7 @@ function useDocsNavigationModel(
     doc,
     signedIn,
     showWorking,
+    selectedItem,
   )
   useEffect(() => {
     if (!sameFilters(model.stale, chosen)) onFilters(model.stale)

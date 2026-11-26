@@ -129,9 +129,10 @@ test('opening a document chooses its project, or Shared when it has none', () =>
 })
 
 test('search sends subject only when the chosen project is a subject on the source', () => {
+  const emptySubject = item({ id: 'empty-subject', title: 'Empty subject', subject: '' })
   expect(searchSubject('atlas', docs)).toBe('atlas')
   expect(searchSubject('all', docs)).toBeUndefined()
-  expect(searchSubject(SHARED_PROJECT, docs)).toBeUndefined()
+  expect(searchSubject(SHARED_PROJECT, [...docs, emptySubject])).toBeUndefined()
   expect(searchSubject('missing', docs)).toBeUndefined()
 })
 

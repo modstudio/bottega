@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
-import { EMPTY_FILTERS } from './filters.ts'
+import { EMPTY_FILTERS, SHARED_PROJECT } from './filters.ts'
 import {
   docsViewModel,
   docsVisibleByKind,
@@ -118,6 +118,22 @@ test('All projects groups roots; a single project does not', () => {
   expect(all.groups?.map((group) => group.heading)).toEqual(['atlas', 'starship', 'Shared'])
   const one = docsViewModel(items, 'atlas', EMPTY_FILTERS, 'g', null)
   expect(one.groups).toBeNull()
+})
+
+test('a selected Shared document keeps Shared offered when status filters hide it', () => {
+  const selected = item({ id: 'hidden', title: 'Hidden shared', subject: null, status: 'draft' })
+  const visible = docsVisibleByStatus([...items, selected], false)
+  const model = docsViewModel(
+    visible,
+    SHARED_PROJECT,
+    EMPTY_FILTERS,
+    selected.id,
+    null,
+    true,
+    false,
+    selected,
+  )
+  expect(model.offersShared).toBeTrue()
 })
 
 test('a selected document outside the visible tree is not the displayed document', () => {
