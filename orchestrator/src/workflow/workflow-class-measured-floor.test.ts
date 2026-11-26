@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import {
+  classMeasurementSucceeded,
   creditedMeasurementCommands,
   decideClassMeasuredFloor,
   renderClassMeasurementCommand,
@@ -32,6 +33,21 @@ const decide = (artifacts: readonly ValidatedArtifactEvidence[], checkoutRoots: 
   decideClassMeasuredFloor({ className: 'reader leak', artifacts, checkoutRoots })
 
 describe('class-measured floor', () => {
+  test('credits grep count zero with its no-match exit', () => {
+    expect(classMeasurementSucceeded({ exitCode: 1, output: '0\n' })).toBe(true)
+  })
+
+  test.each(['', 'not a count\n'])(
+    'does not credit grep no-match exit with output %j',
+    (output) => {
+      expect(classMeasurementSucceeded({ exitCode: 1, output })).toBe(false)
+    },
+  )
+
+  test('does not credit another non-zero exit with count zero output', () => {
+    expect(classMeasurementSucceeded({ exitCode: 2, output: '0\n' })).toBe(false)
+  })
+
   test('records the class, command, exec and count', () => {
     expect(decide([artifact()])).toEqual({
       met: true,

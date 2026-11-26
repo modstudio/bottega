@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
+  classMeasurementSucceeded,
   checkoutRelativePath,
   creditedMeasurementCommands,
   measuredCountFromOutput,
@@ -92,7 +93,7 @@ export function decidePullRequestClassGuard(input: {
   const matchingExecs = input.execs.filter(
     (entry) =>
       creditedCommands.includes(entry.command) &&
-      entry.exitCode === 0 &&
+      classMeasurementSucceeded(entry) &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
   const afterExec = matchingExecs.find((entry) => entry.cwd === rerunCwd)

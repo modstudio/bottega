@@ -29,6 +29,16 @@ export function measuredCountFromOutput(output: string): number | null {
   return lastLine && /^\d+$/.test(lastLine) ? Number(lastLine) : null
 }
 
+export function classMeasurementSucceeded(exec: { exitCode: number; output: string }): boolean {
+  const { exitCode, output } = exec
+  if (exitCode === 0) return true
+  const nonBlankLines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return exitCode === 1 && nonBlankLines.length === 1 && nonBlankLines[0] === '0'
+}
+
 export function renderClassMeasurementCommand(argv: readonly string[] | null): string | null {
   return argv?.length ? argv.map(shellQuote).join(' ') : null
 }
@@ -141,7 +151,7 @@ export function decideClassMeasuredFloor(input: {
       message: `floor class-measured is unmet: exactly one exec artifact is required; ${remedy}`,
     }
   const exec = input.artifacts[0].exec
-  if (exec.exitCode !== 0)
+  if (!classMeasurementSucceeded(exec))
     return {
       met: false,
       message: `floor class-measured is unmet: exec:${exec.id} exited ${exec.exitCode}; ${remedy}`,
