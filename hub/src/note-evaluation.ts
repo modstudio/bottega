@@ -81,7 +81,9 @@ export function generateEvaluationPairs(notes: readonly EvaluationNote[]): Evalu
       tokens.get(note.record_id)!,
     )
     for (const candidate of candidates) {
-      const [existing, newer] = [note, candidate].sort(compareNoteFilingOrder)
+      const noteIsExisting = compareNoteFilingOrder(note, candidate) <= 0
+      const existing: EvaluationNote = noteIsExisting ? note : candidate
+      const newer: EvaluationNote = noteIsExisting ? candidate : note
       const pair = {
         existing,
         newer,

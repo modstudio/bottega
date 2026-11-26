@@ -40,7 +40,7 @@ export function noteDuplicateQuestionCandidates<T extends DuplicateQuestionNote>
   return rankDuplicateCandidates(
     notes
       .filter((note) => note.project === project && note.stale_at === null)
-      .map((note) => ({ ...note, tokens: duplicateTokenSet(note.text) })),
+      .map((note) => ({ record_id: note.record_id, note, tokens: duplicateTokenSet(note.text) })),
     duplicateTokenSet(text),
-  ).map(({ tokens: _tokens, ...note }) => note)
+  ).map(({ note, score }) => ({ ...note, score }))
 }
