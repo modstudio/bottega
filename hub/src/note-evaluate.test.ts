@@ -6,11 +6,7 @@ import { readLiveSeedClasses, runNoteClassPass } from './note-classification.ts'
 import { curateEvaluationNotes } from './note-curation.ts'
 import { rankNoteClasses, type SeedClass } from './note-curation-decisions.ts'
 import { evaluateNotes } from './note-evaluate.ts'
-import {
-  answerEvaluationPair,
-  blockingRecall,
-  evaluateNotePairs,
-} from './note-evaluation.ts'
+import { answerEvaluationPair, blockingRecall, evaluateNotePairs } from './note-evaluation.ts'
 import { appendCurationRecord, parseCurationRecord } from './note-evaluation-record.ts'
 import { listProjectSlimNotes } from './note-read.ts'
 import { installProjectRegisterReader } from './project-register-reader.ts'
@@ -124,7 +120,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
     {
       record_id: bottegaRecordId,
       name: PLATFORM_SLUG,
-      path: '/fixtures/repos/bottega',
+      path: `/fixtures/repos/${PLATFORM_SLUG}`,
       stack: null,
       canon: true,
       repository: true,
@@ -155,7 +151,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
       },
       { sightings: 5, staleAt: null, staleReason: null, promotedTask: 'DEV-2686' },
     ]
-    notes.forEach((stored, index) =>
+    notes.forEach((stored, index) => {
       insertNote.run(
         noteIds[index]!,
         index + 1,
@@ -168,8 +164,8 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
         stored.staleAt,
         stored.staleReason,
         stored.promotedTask,
-      ),
-    )
+      )
+    })
 
     database
       .query(
@@ -184,7 +180,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
         source,first_seen,last_seen)
        VALUES (?,?,?,?, 'open', 'open', 'DEV-2079', ?, ?, 'local', '2026-01-01', '2026-01-01')`,
     )
-    classCodes.forEach((code, index) =>
+    classCodes.forEach((code, index) => {
       insertClass.run(
         newRecordId(),
         `DEV-${3000 + index}`,
@@ -192,8 +188,8 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
         `Class ${code}: Class ${code}`,
         epicId,
         `Definition ${code}`,
-      ),
-    )
+      )
+    })
   })
 
   const noteRows = () =>
@@ -220,7 +216,8 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
       project,
       { skipCurate: false },
       {
-        registeredProject: (name) => projects().find((candidate) => candidate.name === name) ?? null,
+        registeredProject: (name) =>
+          projects().find((candidate) => candidate.name === name) ?? null,
         listNotes: listProjectSlimNotes,
         evaluatePairs: (name, actionable, all) =>
           evaluateNotePairs(name, actionable, all, {
@@ -240,8 +237,16 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
             ask: async ({ subjectRef }) => ({
               answer:
                 subjectRef === noteIds[0]
-                  ? { choice: 'C1', confidence: 0.95, probabilities: { C1: 0.95 } }
-                  : { choice: 'none', confidence: 0.95, probabilities: { none: 0.95 } },
+                  ? {
+                      choice: 'C1' as const,
+                      confidence: 0.95,
+                      probabilities: { C1: 0.95 } as Record<string, number>,
+                    }
+                  : {
+                      choice: 'none' as const,
+                      confidence: 0.95,
+                      probabilities: { none: 0.95 } as Record<string, number>,
+                    },
               reused: false,
             }),
           }),
