@@ -521,9 +521,9 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
   doc(
     'doc-suggestion-promotion',
     'Can scheduled curation turn an observation into a task automatically?',
-    'canon',
+    'project',
     PLATFORM_SLUG,
-    '.agents/rules/60-tasks.md',
+    'notes-lifecycle',
     'Promotion is always a human act',
   ),
   doc(
@@ -531,7 +531,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'May a run continue while its implementation worker is waiting for a ruling?',
     'canon',
     PLATFORM_SLUG,
-    '.agents/contexts/releasing.md',
+    '.agents/rules/70-sessions.md',
     'Never continue or land a chain while its worker has an unanswered question',
   ),
 ]
