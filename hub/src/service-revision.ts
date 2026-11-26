@@ -2,7 +2,12 @@ import { gitAt } from '../../shared/git.ts'
 // concern: service-revision
 /** Identity and revision policy for long-running processes in the hub concern. */
 
-import { installRoot } from '../../shared/install-root.ts'
+import {
+  type InstallationKind,
+  installationBuildId,
+  installRoot,
+  runningInstallationIdentity,
+} from '../../shared/install-root.ts'
 import {
   type PidRecordIdentity,
   pidRecordIdentity,
@@ -109,6 +114,31 @@ function readInstallHead(): RevisionRead {
   }
 }
 
+function readRunningRevision(): RevisionRead {
+  try {
+    const identity = runningInstallationIdentity(import.meta.dir, process.env)
+    if (identity.kind === 'distribution') {
+      return { revision: identity.manifest.commit, error: null }
+    }
+  } catch (error) {
+    return { revision: null, error: error instanceof Error ? error.message : String(error) }
+  }
+  return readInstallHead()
+}
+
+function readInstalledRevision(): RevisionRead {
+  try {
+    const identity = runningInstallationIdentity(import.meta.dir, process.env)
+    if (identity.kind === 'checkout') return readInstallHead()
+    const revision = installationBuildId(import.meta.dir, process.env)
+    return revision
+      ? { revision, error: null }
+      : { revision: null, error: 'installed distribution build commit is unavailable' }
+  } catch (error) {
+    return { revision: null, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 const settingKey = (service: 'serve' | 'collect') => `service.${service}`
 
 function writeIdentity(service: 'serve' | 'collect', identity: ServiceIdentity): void {
@@ -184,6 +214,7 @@ type MaybePromise = void | Promise<void>
 
 export type RevisionMonitorAdapters = {
   readHead: () => RevisionRead
+  installationKind: () => InstallationKind
   writeIdentity: (service: 'serve' | 'collect', identity: ServiceIdentity) => MaybePromise
   processStartTime: (pid: number) => string | null
   now: () => number
@@ -194,7 +225,8 @@ export type RevisionMonitorAdapters = {
 }
 
 const revisionMonitorAdapters: RevisionMonitorAdapters = {
-  readHead: readInstallHead,
+  readHead: readRunningRevision,
+  installationKind: () => runningInstallationIdentity(import.meta.dir, process.env).kind,
   writeIdentity,
   processStartTime,
   now: Date.now,
@@ -235,6 +267,8 @@ export function startRevisionMonitor(
   } catch (error) {
     adapters.log(`hub: ${service} identity write failed: ${errorMessage(error)}`)
   }
+
+  if (adapters.installationKind() === 'distribution') return
 
   let lastCheck = adapters.now()
   let restarting = false
@@ -311,7 +345,7 @@ export function formatServiceRevisionDoctorDecision(
 }
 
 export function formatServiceRevisionDoctor(collectExpectation: ScheduleExpectation): string[] {
-  const current = readInstallHead()
+  const current = readInstalledRevision()
   return (['serve', 'collect'] as const).map((service) => {
     const recorded = readIdentity(service)
     const expectation = service === 'collect' ? collectExpectation : SCHEDULED_BY_THIS_INSTALL

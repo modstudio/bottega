@@ -88,7 +88,7 @@ test('checkout post-update adapter runs every step in decision order', async () 
       syncWorkflows: (_cwd, since) => events.push(`sync:${since}`),
       buildCli: () => events.push('build'),
       maintainStore: () => events.push('maintain'),
-      runLaunchAgentsRefreshVerb: (binary) => events.push(`refresh:${binary}`),
+      runLaunchAgentsRefreshVerb: (binary, restart) => events.push(`refresh:${binary}:${restart}`),
       releaseHostedRows: async () => {
         events.push('release')
       },
@@ -104,11 +104,32 @@ test('checkout post-update adapter runs every step in decision order', async () 
     'sync:abc123',
     'build',
     'maintain',
-    `refresh:${checkout}/bin/${PLATFORM_SLUG}`,
+    `refresh:${checkout}/bin/${PLATFORM_SLUG}:false`,
     'verify',
     'release',
     'retire',
   ])
+})
+
+test('only distribution post-update requests long-running service restarts', async () => {
+  const requests: boolean[] = []
+  const dependencies = {
+    verifyMainCheckout: () => {},
+    syncWorkflows: () => {},
+    buildCli: () => {},
+    maintainStore: () => {},
+    runLaunchAgentsRefreshVerb: (_binary: string, restart: boolean) => requests.push(restart),
+    releaseHostedRows: async () => {},
+    recordSessionPresent: () => false,
+    storeAttachedToHostedRecord: () => false,
+  }
+  await runPostUpdateSteps(
+    { log: () => {} },
+    { path: 'checkout', checkout, branch: 'main', beforePull: 'abc123' },
+    dependencies,
+  )
+  await runPostUpdateSteps({ log: () => {} }, { path: 'distribution' }, dependencies)
+  expect(requests).toEqual([false, true])
 })
 
 test('post-update store maintenance logs and continues', async () => {

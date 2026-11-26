@@ -10,6 +10,7 @@ import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import {
   LAUNCHD_TEMPLATE_PATHS,
+  LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   type MaintenanceScheduleLabel,
 } from '../../../shared/schedule-policy.ts'
@@ -22,6 +23,12 @@ import {
   type ScheduleRenderValues,
   type ScheduleSetupFact,
 } from './setup-schedule-policy.ts'
+
+export type LongRunningLaunchdRestartResult = {
+  label: (typeof LONG_RUNNING_MAINTENANCE_LABELS)[number]
+  status: 'restarted' | 'inactive' | 'unreachable'
+  command: string
+}
 
 function renderedSchedule(label: MaintenanceScheduleLabel, values: ScheduleRenderValues): string {
   const identity = installationIdentity(import.meta.dir, {})
@@ -41,6 +48,33 @@ function launchctlLoaded(launchctl: string, uid: number, label: string): boolean
     startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' })
       .exitCode === 0
   )
+}
+
+function runLaunchctl(argv: string[]): void {
+  const result = startBoundedSync(argv, { budget: 'process-table' })
+  if (result.exitCode === 0) return
+  const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim()
+  throw new Error(`${argv.join(' ')} failed${detail ? `: ${detail}` : ''}; run ${argv.join(' ')}`)
+}
+
+/** Signal loaded long-running launch agents so KeepAlive respawns the installed binary. */
+export function restartLongRunningLaunchdSchedules(deps: {
+  loaded: (label: string) => boolean | null
+  run?: (argv: string[]) => void
+  launchctl?: string
+  uid?: number
+}): LongRunningLaunchdRestartResult[] {
+  const launchctl = deps.launchctl ?? launchctlPath() ?? 'launchctl'
+  const uid = deps.uid ?? process.getuid?.()
+  return LONG_RUNNING_MAINTENANCE_LABELS.map((label) => {
+    const command = `${launchctl} kill SIGTERM gui/${uid ?? '<uid>'}/${label}`
+    const state = deps.loaded(label)
+    if (state === null || uid === undefined) return { label, status: 'unreachable', command }
+    if (!state) return { label, status: 'inactive', command }
+    const argv = [launchctl, 'kill', 'SIGTERM', `gui/${uid}/${label}`]
+    ;(deps.run ?? runLaunchctl)(argv)
+    return { label, status: 'restarted', command }
+  })
 }
 
 /** Gather the two facts the pure setup planner needs for each release-owned schedule. */

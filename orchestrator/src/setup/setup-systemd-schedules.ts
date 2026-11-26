@@ -10,6 +10,7 @@ import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import {
+  LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   type MaintenanceScheduleLabel,
   SYSTEMD_TEMPLATE_DIRECTORY,
@@ -117,7 +118,20 @@ function runSystemctl(systemctl: string, args: string[]): void {
   const result = startBoundedSync([systemctl, '--user', ...args], { budget: 'process-table' })
   if (result.exitCode === 0) return
   const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim()
-  throw new Error(`systemctl --user ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
+  const command = `systemctl --user ${args.join(' ')}`
+  throw new Error(`${command} failed${detail ? `: ${detail}` : ''}; run ${command}`)
+}
+
+/** Restart every active long-running release-owned service after a distribution update. */
+export function restartLongRunningSystemdSchedules(
+  deps: { systemctl?: string; run?: (systemctl: string, args: string[]) => void } = {},
+): void {
+  const systemctl = deps.systemctl ?? requireSystemdUserManager()
+  for (const label of LONG_RUNNING_MAINTENANCE_LABELS) {
+    for (const unit of SYSTEMD_UNITS[label].filter((name) => name.endsWith('.service'))) {
+      ;(deps.run ?? runSystemctl)(systemctl, ['try-restart', unit])
+    }
+  }
 }
 
 async function writeChangedUnits(

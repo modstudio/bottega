@@ -75,7 +75,7 @@ export type PostUpdateDependencies = {
   syncWorkflows?: (cwd: string, since: string) => void
   buildCli?: (cwd: string) => void
   maintainStore?: (presentation: Presentation) => void
-  runLaunchAgentsRefreshVerb?: (binary: string) => void
+  runLaunchAgentsRefreshVerb?: (binary: string, restartLongRunning: boolean) => void
   releaseHostedRows?: (presentation: Presentation) => Promise<void>
   retireUnusedDefaultLocalProject?: () => Promise<boolean>
   storeAttachedToHostedRecord?: () => boolean
@@ -104,8 +104,11 @@ function runWorkflowSync(cwd: string, since: string): void {
   }
 }
 
-function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
+function runLaunchAgentsRefreshVerb(binary: string, restartLongRunning: boolean): void {
+  const argv = [binary, 'machine', 'launch-agents', 'refresh']
+  if (restartLongRunning) argv.push('--restart-long-running')
+  const command = argv.join(' ')
+  const result = startBoundedSync(argv, {
     budget: 'machine-update',
   })
   process.stdout.write(result.stdout)
@@ -114,7 +117,7 @@ function runLaunchAgentsRefreshVerb(binary: string): void {
     const stderr = result.stderr.trim()
     const detail = stderr ? `: ${stderr}` : ''
     throw new Error(
-      `launch-agent refresh failed with exit ${result.exitCode}${detail}; run ${binary} machine launch-agents refresh`,
+      `launch-agent refresh failed with exit ${result.exitCode}${detail}; run ${command}`,
     )
   }
 }
@@ -172,7 +175,10 @@ export async function runPostUpdateSteps(
         )
         break
       case 'launch-agent-refresh':
-        ;(deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb)(binary)
+        ;(deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb)(
+          binary,
+          input.path === 'distribution',
+        )
         break
       case 'hosted-row-release':
         await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)

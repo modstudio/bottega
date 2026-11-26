@@ -1,7 +1,7 @@
 // concern: cli
 /** Adapts the hidden launch-agent refresh verb to its service. */
 
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import { refreshLaunchAgents } from '../health/launch-agent-refresh.ts'
@@ -14,9 +14,11 @@ export function registerLaunchAgentRefreshCommand(
   program
     .command('launch-agents', { hidden: true })
     .command('refresh')
+    .addOption(new Option('--restart-long-running').hideHelp())
     .allowExcessArguments(false)
-    .action(() =>
+    .action((options: { restartLongRunning?: boolean }) =>
       refreshLaunchAgents(process.platform, presentation, {
+        restartLongRunning: options.restartLongRunning === true,
         readMachineLevel: () => readMachineValue('machine.level') as MachineLevel,
         requiredMaintenanceLabels: () =>
           requiredMaintenanceLabels(
