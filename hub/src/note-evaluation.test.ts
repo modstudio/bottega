@@ -138,7 +138,7 @@ test('blocking recall reads stored state when the merged source note no longer e
         nowIso(),
       )
   })
-  expect(blockingRecall(db(), 'project', [older])).toEqual({
+  expect(blockingRecall(db(), 'project', [older], [older])).toEqual({
     produced: 1,
     total: 2,
     unreadable: 1,
@@ -170,7 +170,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   ]
   const before = structuredClone(notes)
   let asks = 0
-  const result = await evaluateNotePairs('project', notes, {
+  const result = await evaluateNotePairs('project', notes, notes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++

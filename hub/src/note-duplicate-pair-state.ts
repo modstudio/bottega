@@ -9,7 +9,8 @@ import {
   parseNotePairSubjectRef,
 } from './note-duplicate-question.ts'
 
-export type NoteDuplicatePairState = { existing: string; new: string }
+type NoteDuplicatePairState = { existing: string; new: string }
+export type NoteDuplicateNoteLookup = ReadonlyMap<string, { project: string; text: string }>
 export type NoteDuplicateSubject = {
   subjectRef: string
   state: NoteDuplicatePairState
@@ -29,30 +30,25 @@ function parsedState(value: string | null): NoteDuplicatePairState | null {
   }
 }
 
-export function reconstructNotePairState(
-  database: Database,
+function reconstructNotePairState(
+  notes: NoteDuplicateNoteLookup,
   subjectRef: string,
 ): NoteDuplicatePairState | null {
   const parsed = parseNotePairSubjectRef(subjectRef)
   if (!parsed) return null
   const { existingId, hash } = parsed
-  const existing = database
-    .query<{ project: string; text: string }, [string]>(
-      'SELECT project,text FROM note WHERE record_id=?',
-    )
-    .get(existingId)
+  const existing = notes.get(existingId)
   if (!existing) return null
-  const newer = database
-    .query<{ text: string }, [string, string]>(
-      'SELECT text FROM note WHERE project=? AND record_id<>? ORDER BY created_at,record_id',
-    )
-    .all(existing.project, existingId)
+  const newer = [...notes]
+    .filter(([recordId, note]) => recordId !== existingId && note.project === existing.project)
+    .map(([, note]) => note)
     .find((note) => noteTextHash(note.text) === hash)
   return newer ? { existing: existing.text, new: newer.text } : null
 }
 
 export function readNoteDuplicateSubjects(
   database: Database,
+  notes: NoteDuplicateNoteLookup,
   options: { project?: string; sources?: readonly string[] } = {},
 ): { readable: NoteDuplicateSubject[]; unreadable: number } {
   const refs = database
@@ -69,15 +65,7 @@ export function readNoteDuplicateSubjects(
     if (options.sources && !options.sources.includes(outcome.source)) continue
     if (options.project) {
       const parsed = parseNotePairSubjectRef(subjectRef)
-      if (
-        !parsed ||
-        !database
-          .query<{ present: number }, [string, string]>(
-            'SELECT 1 AS present FROM note WHERE record_id=? AND project=?',
-          )
-          .get(parsed.existingId, options.project)
-      )
-        continue
+      if (!parsed || notes.get(parsed.existingId)?.project !== options.project) continue
     }
     const stored = database
       .query<{ state_json: string | null }, [string, string]>(
@@ -86,7 +74,7 @@ export function readNoteDuplicateSubjects(
       )
       .get(NOTE_DUPLICATE_QUESTION.id, subjectRef)
     const state =
-      parsedState(stored?.state_json ?? null) ?? reconstructNotePairState(database, subjectRef)
+      parsedState(stored?.state_json ?? null) ?? reconstructNotePairState(notes, subjectRef)
     if (!state) unreadable += 1
     else readable.push({ subjectRef, state, label: outcome.label, source: outcome.source })
   }

@@ -2,13 +2,11 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
-import { db } from './db.ts'
 import { applyMigrations } from './migrations.ts'
 import {
   noteDuplicateBacktest,
   noteDuplicateHoldout,
   noteDuplicateSweep,
-  reconstructNotePairState,
 } from './note-duplicate-backtest.ts'
 import { NOTE_DUPLICATE_QUESTION, notePairSubjectRef } from './note-duplicate-question.ts'
 
@@ -23,10 +21,6 @@ const metricRow = (probability: number, label: boolean) => ({
 test('holdout assignment is deterministic', () => {
   expect(noteDuplicateHoldout('held:0123456789abcdef')).toBeTrue()
   expect(noteDuplicateHoldout('tuning:0123456789abcdef')).toBeFalse()
-})
-
-test('reconstruction counts a missing existing note as unreadable state', () => {
-  expect(reconstructNotePairState(db(), `${newRecordId()}:0123456789abcdef`)).toBeNull()
 })
 
 test('threshold sweep computes precision and recall on a fixed set', () => {

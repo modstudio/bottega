@@ -9,14 +9,13 @@ import {
 } from '../../shared/typed-question/typed-question-metrics.ts'
 import { db } from './db.ts'
 import {
+  type NoteDuplicateNoteLookup,
   type NoteDuplicateSubject,
   readNoteDuplicateSubjects,
 } from './note-duplicate-pair-state.ts'
 import { NOTE_DUPLICATE_QUESTION, NOTE_PAIR_SUBJECT_KIND } from './note-duplicate-question.ts'
 import { TYPED_QUESTION_DECLARATIONS } from './typed-question-declarations.ts'
 import { askHubTypedQuestion } from './typed-question-service.ts'
-
-export { reconstructNotePairState } from './note-duplicate-pair-state.ts'
 
 const NOTE_DUPLICATE_HOLDOUT_SHARE = 0.2
 const NOTE_DUPLICATE_SWEEP_THRESHOLDS = Array.from(
@@ -63,6 +62,17 @@ function answerRow(
   }
 }
 
+function localNoteLookup(database: Database): NoteDuplicateNoteLookup {
+  return new Map(
+    database
+      .query<{ record_id: string; project: string; text: string }, []>(
+        'SELECT record_id,project,text FROM note',
+      )
+      .all()
+      .map((note) => [note.record_id, note]),
+  )
+}
+
 export function noteDuplicateSweep(rows: readonly TypedQuestionMetricRow[]) {
   return NOTE_DUPLICATE_SWEEP_THRESHOLDS.map((threshold) => {
     const metrics = typedQuestionMetrics(rows, threshold)
@@ -92,7 +102,7 @@ export async function noteDuplicateBacktest(
     (candidate) => candidate.id === NOTE_DUPLICATE_QUESTION.id && candidate.version === version,
   )
   if (!question) throw new Error(`note_duplicate v${version} is not declared`)
-  const sourced = readNoteDuplicateSubjects(database)
+  const sourced = readNoteDuplicateSubjects(database, localNoteLookup(database))
   for (const subject of sourced.readable) {
     if (!answerRow(database, version, subject))
       await ask({
