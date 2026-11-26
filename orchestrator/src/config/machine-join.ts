@@ -159,8 +159,7 @@ export async function localRecord(
   const pair = readMachineKey(ports.env)
   const signing = readMachineSigningKey(ports.env)
   const init = credentialMachineTrustCommands({ space: selected.slug }).init
-  if (!pair || !signing)
-    throw new Error(`machine key is not initialized; run \`${init}\``)
+  if (!pair || !signing) throw new Error(`machine key is not initialized; run \`${init}\``)
   const keyId = await machineKeyId(pair.publicKey)
   const [who, registered] = await Promise.all([
     ports.client.whoami(),
