@@ -119,23 +119,6 @@ export function harnessCatalogueName(harness: string): HarnessName | null {
     : null
 }
 
-export function missingHarnessInstallPrerequisites(
-  route: HarnessInstallRoute,
-  available: Readonly<Record<string, boolean>>,
-): HarnessInstallRequirement[] {
-  return (route.requires ?? []).filter(({ command }) => !available[command])
-}
-
-export function harnessInstallPrerequisiteNotice(
-  harness: HarnessName,
-  agentNames: readonly string[],
-  missing: readonly HarnessInstallRequirement[],
-): { message: string; fix: string } {
-  return {
-    message: `${harness} is needed by enabled agent(s) ${agentNames.join(', ')}, but its install route needs ${missing.map(({ command }) => command).join(', ')}, which is not installed`,
-    fix: `sudo apt-get install -y ${missing.map(({ aptPackage }) => aptPackage).join(' ')}, then rerun ${PLATFORM_SLUG} machine setup plan`,
-  }
-}
 export function harnessInstallRoute(
   harness: HarnessName,
   platform: NodeJS.Platform,

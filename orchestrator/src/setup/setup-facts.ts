@@ -21,12 +21,12 @@ import {
 } from '../agent/cli-version.ts'
 import { localReachable } from '../agent/model-host.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import { harnessInstallPrerequisiteAvailability } from './harness-install-prerequisites.ts'
 import {
   captureHarnessMcpFacts,
   HARNESS_MCP_CATALOGUE,
   type HarnessMcpFacts,
   type HarnessName,
-  harnessInstallRoute,
   harnessMcpServers,
   type SetupCommandRunner,
   stableMcpServers,
@@ -283,18 +283,7 @@ export async function gatherSetupFacts(
       ]
     }),
   ) as SetupFactsCapture['harnesses']
-  const prerequisiteCommands = new Set(
-    KNOWN_HARNESSES.flatMap(
-      (harness) =>
-        harnessInstallRoute(harness, 'linux')?.requires?.map(({ command }) => command) ?? [],
-    ),
-  )
-  const harnessInstallPrerequisites = Object.fromEntries(
-    [...prerequisiteCommands].map((command) => [
-      command,
-      which(command, { PATH: process.env.PATH }) !== null,
-    ]),
-  )
+  const harnessInstallPrerequisites = harnessInstallPrerequisiteAvailability(process.platform)
   const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),

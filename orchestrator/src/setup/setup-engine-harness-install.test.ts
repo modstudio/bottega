@@ -61,6 +61,21 @@ test('missing goose bzip2 prerequisite gives an apt notice instead of an install
   })
 })
 
+test('unknown harness prerequisite facts still offer the install question', () => {
+  const plan = proposeSetup(
+    resolveLifecycle,
+    {
+      ...machineWithHarness('goose', null, 'linux'),
+      harnessInstallPrerequisites: {},
+    },
+    [],
+    [],
+    [agent('goose', true)],
+  )
+  expect(plan.questions.some(({ id }) => id === 'harness:goose:install')).toBe(true)
+  expect(plan.notices.some(({ message }) => message.includes('which is not installed'))).toBe(false)
+})
+
 const installCommands = {
   codex: {
     darwin: 'brew install --cask codex',

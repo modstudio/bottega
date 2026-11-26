@@ -10,6 +10,11 @@ import {
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { developerNodeNotice } from './developer-node.ts'
 import {
+  harnessInstallPrerequisiteNotice,
+  missingHarnessInstallPrerequisites,
+  neededHarnesses,
+} from './harness-install-prerequisites.ts'
+import {
   providerCredentialTrustNotices,
   type SetupCredentialTrustFact,
 } from './provider-credential-trust-notice.ts'
@@ -23,7 +28,6 @@ import {
   type HarnessName,
   harnessCatalogueName,
   harnessDocumentation,
-  harnessInstallPrerequisiteNotice,
   harnessInstallRoute,
   harnessMcpServers,
   type LegacyMcpServerName,
@@ -31,7 +35,6 @@ import {
   type McpReadback,
   type McpServer,
   manualMcpInstructions,
-  missingHarnessInstallPrerequisites,
   sameMcpRegistration,
 } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
@@ -434,7 +437,7 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
 }
 
 const UNREGISTERED_HARNESSES = [
-  { fact: 'claude', harness: 'claude-code' },
+  { fact: harnessCatalogueName('claude-code')!, harness: 'claude-code' },
   { fact: 'opencode', harness: 'opencode' },
   { fact: 'goose', harness: 'goose' },
 ] as const
@@ -479,22 +482,6 @@ function builtInAgentNotice(
     : null
 }
 
-function neededHarnesses(agents: SetupAgent[]): Array<{ harness: HarnessName; agents: string[] }> {
-  const names = new Map<HarnessName, string[]>()
-  for (const agent of agents) {
-    if (!agent.enabled) continue
-    const candidate =
-      agent.name === 'codex' || agent.name === 'grok'
-        ? agent.name
-        : harnessCatalogueName(agent.harness)
-    if (!candidate) continue
-    const agentNames = names.get(candidate) ?? []
-    agentNames.push(agent.name)
-    names.set(candidate, agentNames)
-  }
-  return [...names].map(([harness, harnessAgents]) => ({ harness, agents: harnessAgents }))
-}
-
 function proposeHarnessInstalls(
   machine: SetupFacts,
   agents: SetupAgent[],
@@ -520,10 +507,7 @@ function proposeHarnessInstalls(
     const missing = missingHarnessInstallPrerequisites(route, machine.harnessInstallPrerequisites)
     if (missing.length) {
       const notice = harnessInstallPrerequisiteNotice(harness, agentNames, missing)
-      notices.push({
-        ...notice,
-        blocking: false,
-      })
+      notices.push(notice)
       return []
     }
     const questionId = harnessInstallQuestionId(harness)

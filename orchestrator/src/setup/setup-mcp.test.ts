@@ -11,7 +11,6 @@ import {
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
-  missingHarnessInstallPrerequisites,
   mutateClaudeMcpRegistration,
   readMcpRegistration,
   reconcileClaudeMcpRegistration,
@@ -41,13 +40,6 @@ test('Linux harness routes declare curl and goose declares bzip2', () => {
     if (route.command.includes('curl')) expect(commands, harness).toContain('curl')
     if (harness === 'goose') expect(commands).toContain('bzip2')
   }
-})
-
-test('missing harness prerequisites are selected from gathered availability facts', () => {
-  const route = HARNESS_MCP_CATALOGUE.goose.install.linux
-  expect(
-    missingHarnessInstallPrerequisites(route, { curl: true, tar: true, bzip2: false }),
-  ).toEqual([{ command: 'bzip2', aptPackage: 'bzip2' }])
 })
 
 test('classifies async setup command deadline and output failures', () => {

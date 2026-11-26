@@ -8,6 +8,32 @@ type SetupModuleSpec = {
 
 export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
+    name: 'setup-facts-boundary',
+    file: 'orchestrator/src/setup/setup-facts.ts',
+    allowed: [
+      'node:fs',
+      'bun',
+      '../../../shared/install-root.ts',
+      '../../../shared/key-store-constants.ts',
+      '../../../shared/keychain.ts',
+      '../../../shared/machine-config.ts',
+      '../../../shared/record-api-url.ts',
+      '../../../shared/config-directory.ts',
+      '../agent/agent-auth.ts',
+      '../agent/cli-version.ts',
+      '../agent/model-host.ts',
+      '../sandbox/sandbox-runtime.ts',
+      './setup-mcp.ts',
+      './harness-install-prerequisites.ts',
+      './setup-schedule-policy.ts',
+      './setup-schedule-runtime.ts',
+      './setup-settings-fact.ts',
+      '../../../shared/bounded-process.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep read-only machine setup facts independent of stores, agents, routing, and CLI.',
+  },
+  {
     name: 'launchd-owners-boundary',
     file: 'orchestrator/src/setup/launchd-owners.ts',
     allowed: [
@@ -143,6 +169,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/brand.ts',
       '../../../shared/schedule-policy.ts',
       './developer-node.ts',
+      './harness-install-prerequisites.ts',
       './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
       './setup-toolchain.ts',
@@ -158,6 +185,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     ],
     reason:
       'Keep setup proposals pure and independent of stores, filesystems, commands, and processes.',
+  },
+  {
+    name: 'harness-install-prerequisites-boundary',
+    file: 'orchestrator/src/setup/harness-install-prerequisites.ts',
+    allowed: ['bun', '../../../shared/brand.ts', './setup-mcp.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep harness prerequisite facts, decisions, and notices shared by setup and doctor.',
   },
   {
     name: 'provider-credential-trust-boundary',

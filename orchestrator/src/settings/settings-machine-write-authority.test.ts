@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -203,6 +204,39 @@ test('an unregistered linked worktree names registration and rerun from its main
   ).toThrow(
     `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} project add /projects/main\`, then \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
   )
+})
+
+test('an unregistered linked worktree pulls an older main checkout before registration and rerun', () => {
+  const fixture = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-write-authority-`))
+  const main = join(fixture, 'main')
+  const running = join(fixture, 'running')
+  mkdirSync(main)
+  mkdirSync(running)
+  writeFileSync(
+    join(main, 'package.json'),
+    JSON.stringify({ name: PLATFORM_SLUG, version: '0.5.14' }),
+  )
+  writeFileSync(
+    join(running, 'package.json'),
+    JSON.stringify({ name: PLATFORM_SLUG, version: '0.5.21' }),
+  )
+  try {
+    expect(() =>
+      assertMachineHomeWriteAuthority({
+        command: 'machine settings apply',
+        targetHomes: ['/operator/.claude'],
+        runningFromRegisteredMainCheckout: false,
+        runningCopyIsDistribution: false,
+        registeredMainCheckout: null,
+        runningInstallationRoot: running,
+        binaryRepositoryRoot: main,
+      }),
+    ).toThrow(
+      `cleared by: run \`git -C ${main} pull --ff-only\`, then \`${main}/bin/${PLATFORM_SLUG} project add ${main}\`, then \`${main}/bin/${PLATFORM_SLUG} machine settings apply\``,
+    )
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
 })
 
 test('an unregistered main checkout names registration and rerun from itself', () => {

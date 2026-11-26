@@ -83,6 +83,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/project/main-checkout-invariant.ts',
       'orchestrator/src/run/run-task-linking.ts',
       'orchestrator/src/setup/developer-node.ts',
+      'orchestrator/src/setup/harness-install-prerequisites.ts',
       'orchestrator/src/setup/setup-mcp.ts',
       'orchestrator/src/health/provider-credential-trust-doctor.ts',
       'orchestrator/src/health/retrieval-doctor.ts',

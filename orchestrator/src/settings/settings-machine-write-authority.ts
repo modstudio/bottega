@@ -1,7 +1,7 @@
 // concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -40,17 +40,25 @@ function clearedBy(text: string): string {
 
 export function decideMachineHomeWriteRefusal(input: {
   command: string
-  registered: { path: string; executable: string; version: InstallationVersionRead }
+  registered: {
+    path: string
+    executable: string
+    version: InstallationVersionRead
+    beforeRerun?: string
+  }
   running: { path: string; version: InstallationVersionRead }
 }): { detail: string | null; remedy: string } {
   const remedyExecutable = input.registered.executable
+  const rerun = input.registered.beforeRerun
+    ? `run \`${input.registered.beforeRerun}\`, then \`${remedyExecutable} ${input.command}\``
+    : `run \`${remedyExecutable} ${input.command}\``
   if ('reason' in input.registered.version || 'reason' in input.running.version) {
     const reason = [input.registered.version, input.running.version]
       .flatMap((value) => ('reason' in value ? [value.reason] : []))
       .join('; ')
     return {
       detail: `could not compare versions: ${reason}`,
-      remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
+      remedy: clearedBy(rerun),
     }
   }
   try {
@@ -61,6 +69,7 @@ export function decideMachineHomeWriteRefusal(input: {
           `running installation ${input.running.path} is version ${input.running.version.version}`,
         remedy: clearedBy(
           `run \`git -C ${input.registered.path} pull --ff-only\`, then ` +
+            (input.registered.beforeRerun ? `\`${input.registered.beforeRerun}\`, then ` : '') +
             `\`${remedyExecutable} ${input.command}\``,
         ),
       }
@@ -68,27 +77,23 @@ export function decideMachineHomeWriteRefusal(input: {
   } catch (error) {
     return {
       detail: `could not compare versions: ${error instanceof Error ? error.message : String(error)}`,
-      remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
+      remedy: clearedBy(rerun),
     }
   }
   return {
     detail: null,
-    remedy: clearedBy(`run \`${remedyExecutable} ${input.command}\``),
+    remedy: clearedBy(rerun),
   }
 }
 
-function readInstallationVersion(root: string): InstallationVersionRead {
-  const manifestPath = join(root, 'package.json')
+function installationVersion(root: string): InstallationVersionRead {
   try {
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: unknown }
-    if (typeof manifest.version !== 'string' || !manifest.version.trim()) {
-      return { reason: `${manifestPath} has no version` }
-    }
-    return { version: manifest.version }
-  } catch (error) {
+    const identity = installationIdentity(root, {})
     return {
-      reason: `${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+      version: identity.kind === 'distribution' ? identity.manifest.version : identity.version,
     }
+  } catch (error) {
+    return { reason: error instanceof Error ? error.message : String(error) }
   }
 }
 
@@ -145,17 +150,20 @@ export function assertMachineHomeWriteAuthority(input: {
   const remedyExecutable = join(remedyRoot, 'bin', PLATFORM_SLUG)
   let remedy: string
   let detail: string | null = null
-  if (input.registeredMainCheckout) {
+  if (input.registeredMainCheckout || remedyRoot !== runningRoot) {
     const refusal = decideMachineHomeWriteRefusal({
       command: input.command,
       registered: {
-        path: input.registeredMainCheckout,
+        path: remedyRoot,
         executable: remedyExecutable,
-        version: readInstallationVersion(input.registeredMainCheckout),
+        version: installationVersion(remedyRoot),
+        ...(input.registeredMainCheckout
+          ? {}
+          : { beforeRerun: `${remedyExecutable} project add ${remedyRoot}` }),
       },
       running: {
         path: runningRoot,
-        version: readInstallationVersion(runningRoot),
+        version: installationVersion(runningRoot),
       },
     })
     detail = refusal.detail

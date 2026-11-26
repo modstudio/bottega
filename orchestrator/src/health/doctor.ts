@@ -67,12 +67,12 @@ import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import {
-  type HarnessName,
-  harnessCatalogueName,
+  harnessInstallPrerequisiteAvailability,
   harnessInstallPrerequisiteNotice,
-  harnessInstallRoute,
   missingHarnessInstallPrerequisites,
-} from '../setup/setup-mcp.ts'
+  neededHarnesses,
+} from '../setup/harness-install-prerequisites.ts'
+import { type HarnessName, harnessInstallRoute } from '../setup/setup-mcp.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
@@ -472,23 +472,11 @@ export function harnessInstallPrerequisiteDoctorLine(
 }
 
 function reportHarnessInstallPrerequisites(log: DoctorPresentation['log']): void {
-  const needed = new Map<HarnessName, string[]>()
-  for (const row of agentRows()) {
-    if (!row.enabled) continue
-    const harness = harnessCatalogueName(row.harness)
-    if (!harness) continue
-    needed.set(harness, [...(needed.get(harness) ?? []), row.name])
-  }
-  for (const [harness, agentNames] of needed) {
+  const available = harnessInstallPrerequisiteAvailability(process.platform)
+  for (const { harness, agents: agentNames } of neededHarnesses(agentRows())) {
     if (which(harness, { PATH: process.env.PATH })) continue
     const route = harnessInstallRoute(harness, process.platform)
     if (!route) continue
-    const available = Object.fromEntries(
-      (route.requires ?? []).map(({ command }) => [
-        command,
-        which(command, { PATH: process.env.PATH }) !== null,
-      ]),
-    )
     const missing = missingHarnessInstallPrerequisites(route, available)
     if (missing.length) log(harnessInstallPrerequisiteDoctorLine(harness, agentNames, missing))
   }
