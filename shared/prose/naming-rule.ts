@@ -70,8 +70,8 @@ export function namingFindings(
   masks: Array<{ start: number; end: number }> = maskedRanges(text),
 ): NamingFinding[] {
   const message = displayName
-    ? `Name the person: ${displayName}; where a role word is needed, use "the user".`
-    : 'Name the person who decided; where a role word is needed, use "the user".'
+    ? `Name the person when recording what they did: ${displayName}. In code and in rules about any user, say "the user".`
+    : 'Name the person when recording what they did. In code and in rules about any user, say "the user".'
   const findings: NamingFinding[] = []
   for (const match of text.matchAll(/\boperators?\b(?:['’]s\b)?/gi)) {
     const wordStart = match.index

@@ -44,13 +44,13 @@ describe('record naming rule', () => {
 
   test('names the supplied person in the remedy', () => {
     expect(namingFindings('the operator decided', 'Dana Example')[0]?.message).toBe(
-      'Name the person: Dana Example; where a role word is needed, use "the user".',
+      'Name the person when recording what they did: Dana Example. In code and in rules about any user, say "the user".',
     )
   })
 
   test('uses the generic remedy without a display name', () => {
     expect(namingFindings('the operator decided', null)[0]?.message).toBe(
-      'Name the person who decided; where a role word is needed, use "the user".',
+      'Name the person when recording what they did. In code and in rules about any user, say "the user".',
     )
   })
 
