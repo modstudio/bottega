@@ -2,8 +2,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { queryClient, trpc } from '@bottega/hub-data/client'
 import { useArticleSave, useCurrentArticle } from '@bottega/hub-data/docs/actions'
 import { useStoredDocument } from '@bottega/hub-data/docs/use-docs'
+import { EMPTY_FILTERS, SHARED_PROJECT } from '@bottega/hub-views/docs/filters'
 import { isScope } from '@bottega/hub-views/docs/scope'
-import type { DocsDoc } from '@bottega/hub-views/docs/types'
+import type { DocsDoc, DocsTreeItem } from '@bottega/hub-views/docs/types'
+import { DocsView } from '@bottega/hub-views/docs/view'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -260,4 +262,59 @@ describe('hosted conflict recovery', () => {
     )
     expect(saveRevisions).toEqual([oldRevision, newRevision])
   })
+})
+
+test('re-picking Shared for a hidden selected Shared document does not open another document', () => {
+  const selected: DocsTreeItem = {
+    ...doc,
+    id: 'shared-draft',
+    slug: 'shared-draft',
+    title: 'Shared draft',
+    scope: 'global',
+    subject: null,
+    projectName: undefined,
+    status: 'draft',
+  }
+  const visible: DocsTreeItem = { ...doc, id: 'visible', slug: 'visible' }
+  let opened = 0
+  const rendered = testing.render(
+    <DocsView
+      sourceLabel="Local store"
+      items={[visible, selected]}
+      selectedId={selected.id}
+      filters={EMPTY_FILTERS}
+      onFilters={() => {}}
+      project={SHARED_PROJECT}
+      onProject={() => {}}
+      signedIn
+      showProjectChooser
+      showDrafts={false}
+      onShowDrafts={() => {}}
+      canShowDrafts
+      canShowWorking={false}
+      showWorking={false}
+      onShowWorking={() => {}}
+      doc={{ ...selected, body: 'Shared body' }}
+      replacement={null}
+      renderLink={(_item, children) => children}
+      onSelect={() => {}}
+      onOpenFirst={() => opened++}
+      ready
+      searchQuery=""
+      onSearchQuery={() => {}}
+      searchResults={[]}
+      framed={false}
+      showHistory={false}
+      history={{ items: [], pending: false, error: null }}
+    />,
+  )
+
+  expect(rendered.getByRole('combobox', { name: 'Project' }).textContent).toContain('Shared')
+  const selectedOption = rendered.container.querySelector<HTMLElement>(
+    '[role="option"][aria-selected="true"]',
+  )
+  expect(selectedOption?.textContent).toContain('Shared')
+  Object.assign(selectedOption!.parentElement!, { hidePopover() {} })
+  testing.fireEvent.pointerUp(selectedOption!)
+  expect(opened).toBe(0)
 })

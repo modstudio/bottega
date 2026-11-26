@@ -26,9 +26,11 @@ import { editorChrome, useArticleEditor } from '@bottega/hub-views/docs/article-
 import { CreateDocDialog } from '@bottega/hub-views/docs/create-dialog'
 import { type DocFieldChange, fieldChangeReason } from '@bottega/hub-views/docs/doc-field-changes'
 import {
+  ALL_PROJECTS,
   chooserProject,
   EMPTY_FILTERS,
   type FilterSelection,
+  type ProjectSelection,
   projectSubjects,
   searchSubject,
   selectedAudience,
@@ -180,7 +182,7 @@ function useDocsSelection(
   search: { id?: string } | undefined,
   includeDrafts: boolean,
 ) {
-  const [project, setProject] = useState<string | 'all'>('all')
+  const [project, setProject] = useState<ProjectSelection>(ALL_PROJECTS)
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
   const catalog = useReorderableDocsTree(source, memberships, siblingKey, orderedIdsAfterDrag)
   useEffect(() => {
@@ -210,9 +212,9 @@ function useDocsSelection(
   }, [catalog.items, params, search?.id])
   useEffect(() => {
     if (!selected) return
-    setProject(selected.projectName ?? 'all')
+    setProject(chooserProject(selected, subjects))
     setEmptyChooserSet(true)
-  }, [selected])
+  }, [selected, subjects])
   useEffect(() => {
     if (selected || emptyChooserSet || catalog.isPending) return
     setProject(chooserProject(null, subjects))

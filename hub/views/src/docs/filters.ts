@@ -24,6 +24,10 @@ export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
 }
 
 export const DOC_DELIVERY_LABELS = { inject: 'Inject', demand: 'Demand' } as const
+export const SHARED_PROJECT_LABEL = 'Shared'
+export const SHARED_PROJECT = '' as const
+export const ALL_PROJECTS = 'all' as const
+export type ProjectSelection = typeof ALL_PROJECTS | typeof SHARED_PROJECT | (string & {})
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
 export type FilterSelection = Record<FilterKey, string | null>
@@ -37,16 +41,28 @@ export function selectedAudience(chosen: FilterSelection): DocsAudience | null {
 
 export const EMPTY_FILTERS: FilterSelection = { audience: null, scope: null, delivery: null }
 
+export function isSharedProject(item: DocsTreeItem): boolean {
+  return !item.projectName
+}
+
 export function projectSubjects(items: readonly DocsTreeItem[]): string[] {
   const names = new Set<string>()
   for (const item of items) {
-    if (item.projectName) names.add(item.projectName)
+    if (!isSharedProject(item)) names.add(item.projectName!)
   }
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
-export function inProject(items: readonly DocsTreeItem[], project: string | 'all'): DocsTreeItem[] {
-  if (project === 'all') return [...items]
+export function offersSharedProject(items: readonly DocsTreeItem[]): boolean {
+  return items.some(isSharedProject)
+}
+
+export function inProject(
+  items: readonly DocsTreeItem[],
+  project: ProjectSelection,
+): DocsTreeItem[] {
+  if (project === ALL_PROJECTS) return [...items]
+  if (project === SHARED_PROJECT) return items.filter(isSharedProject)
   return items.filter((item) => item.projectName === project)
 }
 
@@ -54,17 +70,17 @@ export function inProject(items: readonly DocsTreeItem[], project: string | 'all
 export function chooserProject(
   selected: DocsTreeItem | null,
   subjects: readonly string[],
-): string | 'all' {
-  if (selected) return selected.projectName ?? 'all'
-  return subjects[0] ?? 'all'
+): ProjectSelection {
+  if (selected) return selected.projectName || SHARED_PROJECT
+  return subjects[0] ?? ALL_PROJECTS
 }
 
 /** Search sends subject only when the chosen project is a subject for that source. */
 export function searchSubject(
-  project: string | 'all',
+  project: ProjectSelection,
   items: readonly DocsTreeItem[],
 ): string | undefined {
-  if (project === 'all') return undefined
+  if (project === ALL_PROJECTS || project === SHARED_PROJECT) return undefined
   return items.some((item) => item.subject === project) ? project : undefined
 }
 

@@ -1,11 +1,15 @@
 import { secondLevelHeadings } from '../markdown/headings.ts'
 import {
+  ALL_PROJECTS,
   activeFilterCount,
   applyFilters,
   clearStaleFilters,
   type FilterSelection,
   inProject,
+  isSharedProject,
   offeredFilters,
+  offersSharedProject,
+  type ProjectSelection,
   projectSubjects,
   selectedAudience,
 } from './filters.ts'
@@ -42,7 +46,7 @@ export function docsVisibleByKind(
 /** Whether search follows a working-document view of this catalogue. */
 export function docsSearchIncludesWorking(
   items: readonly DocsTreeItem[],
-  project: string | 'all',
+  project: ProjectSelection,
   showWorking: boolean,
 ): boolean {
   return docsVisibleByKind(inProject(items, project), showWorking).some(
@@ -65,19 +69,20 @@ export function resolveDocsReplacement(
 
 export function docsViewModel(
   items: readonly DocsTreeItem[],
-  project: string | 'all',
+  project: ProjectSelection,
   chosen: FilterSelection,
   selectedId: string | null,
   doc: DocsDoc | null,
   includeAudienceFilter = true,
   showWorking = false,
+  selectedItem: DocsTreeItem | null = null,
 ) {
   const projectItems = inProject(items, project)
   const forProject = docsVisibleByKind(projectItems, showWorking)
   const stale = clearStaleFilters(forProject, chosen)
   const structural = applyFilters(forProject, { ...stale, audience: null })
   const tree = treeForAudience(structural, selectedAudience(stale))
-  const groups = project === 'all' ? groupRootsBySubject(tree) : null
+  const groups = project === ALL_PROJECTS ? groupRootsBySubject(tree) : null
   const selected = treePath(tree, selectedId ?? '').at(-1) ?? null
   const path = selected ? treePath(tree, selected.id) : []
   const roots = groups ? groups.flatMap((group) => group.children) : tree
@@ -99,6 +104,8 @@ export function docsViewModel(
     around: selected ? neighbors(roots, selected.id) : { previous: null, next: null },
     headings: doc ? secondLevelHeadings(doc.body) : [],
     subjects: projectSubjects(items),
+    offersShared:
+      offersSharedProject(items) || Boolean(selectedItem && isSharedProject(selectedItem)),
     active: activeFilterCount(stale),
   }
 }
