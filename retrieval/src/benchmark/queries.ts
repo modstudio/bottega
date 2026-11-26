@@ -89,19 +89,19 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
     'test-processes',
     'Gate tests run in process, spawn nothing, build no repository and complete far below the per-test timing budget.',
     'scripts/check-test-spawns.ts',
-    '.agents/rules/30-tests.md',
+    '.agents/contexts/tests.md',
   ),
   rule(
     'test-placement',
     'A unit test is <module>.test.ts beside its module so both move and split together.',
     'scripts/check-test-placement.ts',
-    '.agents/rules/30-tests.md',
+    '.agents/contexts/tests.md',
   ),
   rule(
     'test-observations',
     'Assert observable effects rather than interactions.',
     'scripts/quality/check-test-substance.ts',
-    '.agents/rules/30-tests.md',
+    '.agents/contexts/tests.md',
   ),
   rule(
     'test-fixtures',
@@ -125,7 +125,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
     'comment-history',
     'Canon, documentation and comments state the current rule, constraint or behavior and what to do about it.',
     'orchestrator/src/check/check-comments.ts',
-    '.agents/rules/50-writing.md',
+    '.agents/contexts/writing-canon.md',
   ),
   rule(
     'review-consumes',
@@ -143,7 +143,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
     'suite-budget',
     'Suite time is shared and bun run check reports the budget.',
     'scripts/check-runtime.ts',
-    '.agents/rules/30-tests.md',
+    '.agents/contexts/tests.md',
   ),
 ]
 
@@ -499,7 +499,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'Where should a unit test live so it moves with its subject?',
     'canon',
     PLATFORM_SLUG,
-    '.agents/rules/30-tests.md',
+    '.agents/contexts/tests.md',
     'A unit test is `<module>.test.ts` beside its module',
   ),
   doc(
@@ -515,7 +515,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'Should documentation explain the historical sequence that produced the current rule?',
     'canon',
     PLATFORM_SLUG,
-    '.agents/rules/50-writing.md',
+    '.agents/contexts/writing-canon.md',
     'Never narrate former names, abandoned approaches, dated decisions or the sequence by which the current state arose; Git holds that record.',
   ),
   doc(
@@ -531,7 +531,7 @@ export const DOC_QUERIES: DocBenchmarkQuery[] = [
     'May a run continue while its implementation worker is waiting for a ruling?',
     'canon',
     PLATFORM_SLUG,
-    '.agents/rules/70-sessions.md',
+    '.agents/contexts/releasing.md',
     'Never continue or land a chain while its worker has an unanswered question',
   ),
 ]

@@ -7,6 +7,10 @@ always: true
 
 **User** — the human who owns this install and makes its rulings; never an agent or session, even one prompting you.
 
+**Architect** — the agent session that designs a change, rules on its questions, and judges the result; it answers to the user.
+
+**Worker** — the agent a run starts to execute a specification; it never decides, and asks the architect instead.
+
 **Run** — one bounded execution of a job by an agent, recorded for judgment.
 
 **Chain** — a root run and its turns; the root holds the outcome, last turn's state and last agent-work failure.

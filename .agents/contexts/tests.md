@@ -1,6 +1,10 @@
 ---
 description: Test value, placement, isolation, runtime, and suite-budget rules
-always: true
+paths:
+  - "**/*.test.ts"
+  - hub/test/**
+  - orchestrator/test/**
+  - retrieval/test/**
 ---
 
 # Tests earn their standing cost

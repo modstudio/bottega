@@ -37,16 +37,12 @@ results in the specification so later work does not repeat the search.
 
 ## Review rounds follow the funnel
 
-`bottega review tier` names the lenses a change still owes and whether another
-round may run; the review funnel policy
-(`review-funnel/review-funnel-policy.ts`) decides it. Dispatch exactly what it
-lists. When it lists none, the architect reads the fix and lands it. Fix real
-findings in their round; drop speculation in triage.
+`bottega review tier` is the authority on what lenses a change owes and whether another round may run.
 
 At the round ceiling the architect rules: if no finding left can cause harm,
 land with test-only fixes and file the rest.
 
-Respect the orchestration policy's review concurrency ceiling. When a gate
+When a gate
 cannot run, record why and land on the evidence available; do not spend
 another turn re-presenting an unchanged recommendation.
 
