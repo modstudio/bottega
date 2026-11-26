@@ -18,12 +18,12 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { readNoteClasses } from './note-classes.ts'
 import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
-import { evaluateNotePairs, noteEvaluationBody } from './note-evaluation.ts'
+import { evaluateNotes } from './note-evaluate.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { listProjectSlimNotes } from './note-read.ts'
-import { writeNoteEvaluationRecord } from './orch.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -52,6 +52,7 @@ type NoteOptions = {
   title?: string
   days?: string
   skipCurate?: boolean
+  revision?: string
 }
 
 const NOTE_LIST_DEFAULT_LIMIT = 50
@@ -136,6 +137,15 @@ function curatorNoteCommand(options: NoteOptions): void {
     return
   }
   console.log(`note curator ${setCuratorEnabled(Boolean(options.enable)) ? 'enabled' : 'disabled'}`)
+}
+
+async function evaluateNoteCommand(options: NoteOptions): Promise<void> {
+  open()
+  console.log(await evaluateNotes(options.project!, { skipCurate: Boolean(options.skipCurate) }))
+}
+
+async function classesNoteCommand(options: NoteOptions): Promise<void> {
+  console.log(await readNoteClasses({ project: options.project!, revision: options.revision }))
 }
 
 async function newNoteCommand(text: string, options: NoteOptions): Promise<void> {
@@ -316,18 +326,13 @@ function registerNoteMaintenanceCommands(note: Command): void {
     .description('evaluate duplicate pairs across a project note backlog')
     .requiredOption('--project <name>', 'evaluate actionable notes for this project')
     .option('--skip-curate', 'run only the pair and cluster stages')
-    .action(async (options: NoteOptions) => {
-      if (!options.skipCurate)
-        throw new Error('note evaluation curation is not built yet; retry with --skip-curate')
-      open()
-      const project = options.project!
-      const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
-      const allProjectNotes = (await listProjectSlimNotes({ project })).notes
-      const result = await evaluateNotePairs(project, notes, allProjectNotes)
-      const body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
-      await writeNoteEvaluationRecord(project, body)
-      console.log(body)
-    })
+    .action(evaluateNoteCommand)
+  note
+    .command('classes')
+    .description('rank classes from a project note evaluation')
+    .requiredOption('--project <name>', 'read the note evaluation for this project')
+    .option('--revision <id>', 'read one named document revision')
+    .action(classesNoteCommand)
   note
     .command('typed-question')
     .description('report typed-question outcomes and operating cost')

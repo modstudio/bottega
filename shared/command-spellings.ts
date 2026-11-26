@@ -232,6 +232,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'mcp ask-server',
   'mcp serve',
   'note',
+  'note classes',
   'note curate',
   'note curator',
   'note distinct',

@@ -289,6 +289,11 @@ export const RUNTIME_ASSETS: readonly RuntimeAsset[] = [
     destination: 'shared/attribution-markers.json',
     mode: 0o644,
   },
+  {
+    packagePath: 'hub/src/note-curator-reply.schema.json',
+    destination: 'hub/src/note-curator-reply.schema.json',
+    mode: 0o644,
+  },
 ]
 
 /** The ref guard entry retained as a named consumer-facing member of the runtime set. */

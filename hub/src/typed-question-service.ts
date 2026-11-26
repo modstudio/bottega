@@ -2,9 +2,12 @@
 /** Asks and records hub-owned typed questions without exposing failures to callers. */
 
 import type { Database } from 'bun:sqlite'
+import { resolveActiveSpaceCredentialValue } from '../../shared/credential-value.ts'
 import { newRecordId } from '../../shared/record-id.ts'
 import {
   askTypedQuestionClient,
+  resolveTypesafeCredential,
+  TYPESAFE_CREDENTIAL_SET_COMMAND,
   type TypedQuestionAnswer,
 } from '../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../shared/typed-question/registry.ts'
@@ -39,6 +42,21 @@ const dependencies: Dependencies = {
         .run(...values)
     })
   },
+}
+
+export async function typedQuestionCredentialAvailability(reasonPrefix: string) {
+  try {
+    const credential = await resolveTypesafeCredential(resolveActiveSpaceCredentialValue)
+    return credential.kind === 'resolved'
+      ? ({ available: true } as const)
+      : ({
+          available: false,
+          reason: `${reasonPrefix}: the typesafe/api-key credential is not configured; run ${TYPESAFE_CREDENTIAL_SET_COMMAND}`,
+        } as const)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return { available: false, reason: `${reasonPrefix}: ${message}` } as const
+  }
 }
 
 function priorAnswer(input: HubTypedQuestionInput, database: Database): TypedQuestionAnswer | null {

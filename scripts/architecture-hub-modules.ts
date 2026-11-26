@@ -1,4 +1,7 @@
+import { noteEvaluationModuleSpecs } from './architecture-note-evaluation-modules.ts'
+
 export const hubModuleSpecs = [
+  ...noteEvaluationModuleSpecs,
   {
     file: 'hub/src/orch-view.ts',
     allowed: [
@@ -638,7 +641,8 @@ export const hubModuleSpecs = [
       './db.ts',
       './note.ts',
       './note-duplicate-question.ts',
-      './note-evaluation.ts',
+      './note-classes.ts',
+      './note-evaluate.ts',
       './note-outside.ts',
       './note-promote-cli.ts',
       './note-push.ts',
@@ -654,8 +658,6 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-evaluation.ts',
     allowed: [
       'bun:sqlite',
-      '../../shared/credential-value.ts',
-      '../../shared/typed-question/client.ts',
       '../../shared/typed-question/state-identity.ts',
       './db.ts',
       './duplicate-score.ts',

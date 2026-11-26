@@ -97,6 +97,7 @@ export const typedQuestionModules = [
   ]),
   module('hub/src/typed-question-service.ts', [
     'bun:sqlite',
+    '../../shared/credential-value.ts',
     '../../shared/record-id.ts',
     '../../shared/typed-question/client.ts',
     '../../shared/typed-question/registry.ts',
@@ -126,7 +127,10 @@ export const typedQuestionModules = [
     './typed-question-declarations.ts',
     './typed-question-service.ts',
   ]),
-  module('hub/src/typed-question-declarations.ts', ['./note-duplicate-question.ts']),
+  module('hub/src/typed-question-declarations.ts', [
+    '../../shared/typed-question/registry.ts',
+    './note-duplicate-question.ts',
+  ]),
   module('hub/src/typed-question-report.ts', [
     'bun:sqlite',
     '../../shared/typed-question/typed-question-blocks.ts',
