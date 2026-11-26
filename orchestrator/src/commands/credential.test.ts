@@ -9,7 +9,11 @@ import {
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { registerCredentialCommands, validateBindingExclusivity } from './credential.ts'
+import {
+  registerCredentialCommands,
+  typedCredentialPathsForSpaces,
+  validateBindingExclusivity,
+} from './credential.ts'
 
 type ParsedResolve = {
   name: string
@@ -93,6 +97,57 @@ test('binding exclusivity refuses --project combined with --account or --space',
       '--account, --project, and --space are mutually exclusive',
     )
   }
+})
+
+test('typed credential paths include the active space and account in parallel', async () => {
+  const calls: Array<{ spaceId: string; account?: boolean }> = []
+  const pending: Array<() => void> = []
+  const paths = typedCredentialPathsForSpaces(
+    'active-space',
+    'personal-space',
+    (spaceId, filters) => {
+      calls.push({ spaceId, account: filters?.account })
+      return new Promise((resolve) => {
+        pending.push(() =>
+          resolve([
+            {
+              provider: spaceId === 'active-space' ? 'openrouter' : 'vercel',
+              name: null,
+              type: 'api-key',
+            },
+          ]),
+        )
+      })
+    },
+  )
+  expect(calls).toEqual([
+    { spaceId: 'active-space', account: undefined },
+    { spaceId: 'personal-space', account: true },
+  ])
+  pending.forEach((resolve) => {
+    resolve()
+  })
+  await expect(paths).resolves.toEqual(['openrouter/api-key', 'vercel/api-key'])
+})
+
+test('typed credential paths reject the whole lookup when either space read fails', async () => {
+  await expect(
+    typedCredentialPathsForSpaces('active-space', 'personal-space', async (spaceId) => {
+      if (spaceId === 'personal-space') throw new Error('fixture account listing unavailable')
+      return [{ provider: 'openrouter', name: null, type: 'api-key' }]
+    }),
+  ).rejects.toThrow('fixture account listing unavailable')
+})
+
+test('typed credential paths list once when the active space is personal', async () => {
+  const calls: string[] = []
+  await expect(
+    typedCredentialPathsForSpaces('personal-space', 'personal-space', async (spaceId) => {
+      calls.push(spaceId)
+      return [{ provider: 'openrouter', name: null, type: 'api-key' }]
+    }),
+  ).resolves.toEqual(['openrouter/api-key'])
+  expect(calls).toEqual(['personal-space'])
 })
 
 test('credential set refuses a missing owner before any hosted call', async () => {

@@ -355,9 +355,38 @@ export function registerCredentialCommands(program: Command): void {
     .action(resolveAction)
 }
 
-export async function accountCredentialPaths(): Promise<string[]> {
-  const { listCredentials } = await import('../config/credential-service.ts')
-  const target = await bindingAddress({ account: true })
-  const rows = await listCredentials(target.destinationSpaceId, { account: true })
+type TypedCredentialPathRow = { provider: string; name: string | null; type: string }
+type TypedCredentialMetadataList = (
+  spaceId: string,
+  filters?: { account?: boolean },
+) => Promise<readonly TypedCredentialPathRow[]>
+
+export async function typedCredentialPathsForSpaces(
+  destinationSpaceId: string,
+  personalSpaceId: string,
+  listCredentials: TypedCredentialMetadataList,
+): Promise<string[]> {
+  const rows =
+    destinationSpaceId === personalSpaceId
+      ? await listCredentials(destinationSpaceId)
+      : (
+          await Promise.all([
+            listCredentials(destinationSpaceId),
+            listCredentials(personalSpaceId, { account: true }),
+          ])
+        ).flat()
   return rows.map((row) => credentialIdentityPath(row.provider, row.name, row.type))
+}
+
+export async function typedCredentialPathsForCaller(): Promise<string[]> {
+  const { listCredentials } = await import('../config/credential-service.ts')
+  const [destination, account] = await Promise.all([
+    bindingAddress({}),
+    bindingAddress({ account: true }),
+  ])
+  return typedCredentialPathsForSpaces(
+    destination.destinationSpaceId,
+    account.destinationSpaceId,
+    listCredentials,
+  )
 }

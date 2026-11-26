@@ -481,7 +481,6 @@ function registerConfigList(config: Command): void {
     .option('--machine', 'list machine configuration values')
     .option('--json', 'write the configuration rows as JSON')
     .action(async (options) => {
-      // The sealed-config empty result below points callers to `credential list`.
       const [{ listMachineEntries }, { hostedConfigClient }, { listEntries }] = await Promise.all([
         import('../../../shared/machine-config.ts'),
         import('../config/hosted-config-call-outcome.ts'),
