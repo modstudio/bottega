@@ -221,7 +221,10 @@ function linuxManagerUnavailable(
   deps: RefreshDependencies,
 ): boolean {
   if (platform !== 'linux' || !plan.applyMaintenance) return false
-  const available = deps.scheduleUserManagerAvailable ?? scheduleUserManagerAvailable
+  // The real manager probe guards the real systemd applier; an injected applier answers for its own environment.
+  const available =
+    deps.scheduleUserManagerAvailable ??
+    (deps.applyMaintenance ? () => true : scheduleUserManagerAvailable)
   return !available(platform)
 }
 
