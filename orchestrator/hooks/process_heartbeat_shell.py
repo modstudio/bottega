@@ -2,7 +2,7 @@
 
 The heartbeat shell, the observation helpers it calls and the signal-driven reap
 all cost wall time and spawn processes, which belongs to runtime monitoring
-rather than the in-process gate: `.agents/rules/30-tests.md` keeps spawning out
+rather than the in-process gate: `.agents/contexts/tests.md` keeps spawning out
 of the gate and names signals and exit codes as runtime-monitoring work. The
 gate's own discovery (`test_*.py`) therefore never picks this file up, and
 `scripts/check-plan.ts` runs it in CI as the `orchestrator-hooks-process` job.

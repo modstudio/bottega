@@ -149,12 +149,7 @@ never queued. A synced table is written locally and pushed on a schedule. A
 machine table is state no other machine cares about. A local-only install keeps
 every table. A hosted table without a home names its task.
 
-Every table declares a lifecycle: what it is, where its authoritative copy
-lives, how long each copy is kept and what removes it. Tables declare
-`hosted`, `synced` or `machine` in
-`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming the user's ruling;
-`scripts/check-identity-inventory.ts` enforces both. Doc-store records
-`design-machine-hosted-seam` and `design-data-lifecycle` hold detail.
+Table lifecycle and identity-class rules are in `.agents/contexts/table-lifecycle.md`.
 
 ## Delegation costs nothing in judgment
 
@@ -240,6 +235,10 @@ always: true
 # Glossary
 
 **User** — the human who owns this install and makes its rulings; never an agent or session, even one prompting you.
+
+**Architect** — the agent session that designs a change, rules on its questions, and judges the result; it answers to the user.
+
+**Worker** — the agent a run starts to execute a specification; it never decides, and asks the architect instead.
 
 **Run** — one bounded execution of a job by an agent, recorded for judgment.
 
@@ -381,16 +380,15 @@ results in the specification so later work does not repeat the search.
 
 ## Review rounds follow the funnel
 
-`bottega review tier` names the lenses a change still owes and whether another
-round may run; the review funnel policy
-(`review-funnel/review-funnel-policy.ts`) decides it. Dispatch exactly what it
-lists. When it lists none, the architect reads the fix and lands it. Fix real
-findings in their round; drop speculation in triage.
+`bottega review tier` is the authority on what lenses a change owes and whether another round may run.
+Dispatch exactly what it lists. Fix real findings in their round; drop speculation in triage.
 
 At the round ceiling the architect rules: if no finding left can cause harm,
 land with test-only fixes and file the rest.
 
-Respect the orchestration policy's review concurrency ceiling. When a gate
+Respect the orchestration policy's review concurrency ceiling.
+
+When a gate
 cannot run, record why and land on the evidence available; do not spend
 another turn re-presenting an unchanged recommendation.
 
@@ -407,53 +405,6 @@ checkout.
 A fix lands with a guard that stops or flags its whole class, named in its task
 and pull request; without one it is instance patching. The guard states its
 measured time, per the caution rule.
-
----
-description: Test value, placement, isolation, runtime, and suite-budget rules
-always: true
----
-
-# Tests earn their standing cost
-
-A test is paid for on every run forever. Keep one only when it can fail for a
-subtle production defect and the defect's blast radius justifies that cost.
-
-Reject vacuous assertions that cannot fail, change detectors that restate the
-implementation, and over-isolated tests that never reach the real subject.
-Assert observable effects rather than interactions.
-`scripts/quality/check-test-substance.ts` enforces the vacuous-assertion rule.
-
-Write tests where failure is silent and expensive. Skip them where the worst
-case announces itself, and record that choice in the commit or task. Coverage
-is a diagnostic rather than a target, and the type system needs no duplicate
-test.
-
-## Keep the gate cheap
-
-Gate tests run in process, spawn nothing, build no repository and complete far
-below the per-test timing budget. Pure decisions such as routing, evidence,
-scoring, fidelity, canon injection and reply classification belong in the
-gate. Runtime monitoring and close-out reports guard teardown, reclamation,
-locks, reference guards, signals and exit codes.
-
-No test uses the CLI subprocess shape, and there is no process-boundary test
-package. `scripts/check-test-spawns.ts` enforces the spawn boundary.
-
-## Keep tests beside their subject
-
-A unit test is `<module>.test.ts` beside its module so both move and split
-together. A concern's `test/` directory contains infrastructure only, such as
-fixtures, preload, the gate runner and timing reporters. Do not create a
-mirrored test tree. `scripts/check-test-placement.ts` enforces placement.
-
-Test infrastructure may import production capabilities but must never
-re-export them as another public surface. Mutate process environment only in a
-test lifecycle hook and always restore it; never mutate it at module load.
-
-Suite time is shared and `bun run check` reports the budget. Prefer deleting a
-slow, low-value test to nursing it. Per-file and per-test timing ceilings block
-local and worker gates, where the machine is known; CI reports overruns without
-failing because shared-runner wall time varies.
 
 ---
 description: Reversible cleanup, conservative destructive defaults, liveness, claims, and visible escalation
@@ -538,44 +489,6 @@ it takes and what it caught. A guard that costs time and catches nothing is
 moved to a cheaper point or removed; it is not kept because it is process.
 
 ---
-description: Rules for current, compact, resolvable canon and documentation
-always: true
----
-
-# Writing canon
-
-## State what is
-
-Canon, documentation and comments state the current rule, constraint or
-behavior and what to do about it. Never narrate former names, abandoned
-approaches, dated decisions or the sequence by which the current state arose;
-Git holds that record. A reason explains why the rule is current without
-telling its history.
-
-## Keep canon editorial
-
-Canon holds rules, invariants, gotchas and reasons that an agent would get
-wrong without being told. Delete overviews visible in code and explanations of
-how a mechanism came to be.
-
-Do not put numerals in prose. Name a value by its constant or configuration
-key, and name a measurement by the command that reports it.
-
-When a check or configuration enforces a rule, state the rule once and name
-the enforcement. Do not restate the configuration.
-
-Do not maintain command-reference tables. Name the verb needed by a rule;
-`bottega --help` and `bottega <group> <verb> --help` own flags and usage.
-
-Every cited repository path, symbol, code name and package script must resolve
-on the tree. Find and cite the current location or drop a stale citation while
-preserving the rule.
-
-Every new canon file must have no `bottega doc canon lint` findings. Regenerate
-`scripts/quality/canon-lint.json` so it records only findings in files outside
-the change. Never add a changed file's finding to the baseline.
-
----
 description: Inbox-zero task policy and the suggestion-box lifecycle
 always: true
 ---
@@ -603,26 +516,7 @@ with a class guard.
 
 ## Suggestions are observations, not tasks
 
-File an observation with `bottega note new`. A note is one line of free text; project,
-run, branch, session, commit and any file anchor are derived at write time.
-
-Mark a repeated observation with `bottega note same`, which increments its count
-and adds a sighting. Never run scheduled text-similarity merging, because similar
-findings may be distinct; record such a pair with `bottega note distinct`.
-Repetition with cost is the promotion signal.
-
-Staleness is mechanical: an anchor vanishes when its branch is deleted or
-landed, or its run, file or line text is gone. Triage is
-a promotion, drop, merge, or keep by a non-reporter. `bottega note stale`
-annotates untriaged notes and reaps only stale, triaged, unpromoted singletons
-past the staleness window. All other disposition is human.
-
-Promotion is always a human act through `bottega note promote`; the task carries
-the note body and sightings as evidence. Scheduled work never promotes and the
-board never grows by itself.
-
-If an entry needs fields beyond text, tags and sightings, it is a task. Promote
-it instead of building another tracker inside notes.
+File an observation with `bottega note new`, mark a repeat with `bottega note same`, and make promotion a human act through `bottega note promote`; read the lifecycle record with `bottega doc show notes-lifecycle --scope project --subject bottega`.
 
 ---
 description: Conduct for dispatch, rulings, admission, and session close-out
@@ -653,13 +547,7 @@ Run `bun run check` on the reviewed branch, open the pull request with `bottega 
 
 ## Keep development on the landing branch when releasing
 
-Keep Bottega's installed copy on `main`. Run `bottega release check`, then tag and push; never check out the tag there. The pushed tag reruns the check before publishing. `package.json` must match the tag. Because the per-user store migrates only forward, an older copy refuses it.
-
-The tag publish refuses until each hosted rung is live for the tag; regenerate the tracked rungs file with `bottega release rungs --write`.
-
-Elsewhere, install a release in its own directory and update it by replacing the directory.
-
-Deploy images run `RELEASE_BUN_VERSION`; `scripts/check-bun-versions.ts` enforces it.
+Release rules are in `.agents/contexts/releasing.md`.
 
 ## Close out the session
 
