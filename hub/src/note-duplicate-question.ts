@@ -27,7 +27,7 @@ export const NOTE_PAIR_SUBJECT_KIND = 'note-pair'
 export const startNoteDuplicateCredentialResolution = startTypedQuestionCredentialResolution
 /** Hex characters of the new text's hash at the end of a note-pair subject ref. */
 const SUBJECT_REF_HASH_HEX = 16
-const NOTE_DUPLICATE_CONCURRENCY = 8
+export const NOTE_DUPLICATE_CONCURRENCY = 8
 
 export function noteTextHash(text: string): string {
   return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)
@@ -45,6 +45,15 @@ export function parseNotePairSubjectRef(
   const existingId = subjectRef.slice(0, separator)
   const hash = subjectRef.slice(separator + 1)
   return /^[0-9a-f]{16}$/.test(hash) ? { existingId, hash } : null
+}
+
+export function compareNoteFilingOrder(
+  left: { created_at: string; record_id: string },
+  right: { created_at: string; record_id: string },
+): number {
+  return (
+    left.created_at.localeCompare(right.created_at) || left.record_id.localeCompare(right.record_id)
+  )
 }
 
 type AskedNote<T> = { note: T; probability: number }
@@ -220,11 +229,7 @@ export async function recordNoteDuplicateDistinct(
   if (notes.length !== 2) throw new Error('both distinct notes must exist')
   if (notes[0]!.project !== notes[1]!.project)
     throw new Error('notes from different projects cannot be ruled distinct')
-  notes.sort(
-    (left, right) =>
-      left.created_at.localeCompare(right.created_at) ||
-      left.record_id.localeCompare(right.record_id),
-  )
+  notes.sort(compareNoteFilingOrder)
   const [existing, newer] = notes as [(typeof notes)[number], (typeof notes)[number]]
   if (await ensurePairWasAsked(existing, newer.text, ask)) {
     insertOutcomes([notePairSubjectRef(existing.record_id, newer.text)], false, 'distinct')

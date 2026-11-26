@@ -933,6 +933,28 @@ export const docGet = (
 export const docSet = (input: DocSetInput) =>
   jsonDocument<DocRow>(docArgv('set', input), { stdin: input.body })
 
+export async function writeNoteEvaluationRecord(
+  project: string,
+  body: string,
+  dependencies: { list: typeof docList; set: typeof docSet } = { list: docList, set: docSet },
+): Promise<DocRow> {
+  const slug = 'note-evaluation'
+  const current = (await dependencies.list({ scope: 'project', subject: project })).find(
+    (document) => document.slug === slug,
+  )
+  return dependencies.set({
+    scope: 'project',
+    subject: project,
+    slug,
+    title: `Note evaluation: ${project}`,
+    body,
+    reason: 'record the current note backlog evaluation',
+    delivery: 'demand',
+    kind: 'working',
+    expectedRevision: current?.revision ?? undefined,
+  })
+}
+
 export const docReorder = (input: DocReorderInput) =>
   jsonDocument<{ orderedIds: string[] }>(docReorderArgv(input))
 

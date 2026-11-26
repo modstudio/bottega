@@ -64,14 +64,14 @@ function priorAnswer(input: HubTypedQuestionInput, database: Database): TypedQue
 }
 
 /** Reuse exact evidence, otherwise fail open for every client or recording failure. */
-export async function askHubTypedQuestion(
+export async function askHubTypedQuestionWithReuse(
   input: HubTypedQuestionInput,
   deps: Dependencies = dependencies,
-): Promise<TypedQuestionAnswer | null> {
+): Promise<{ answer: TypedQuestionAnswer; reused: boolean } | null> {
   try {
     const database = deps.database()
     const prior = priorAnswer(input, database)
-    if (prior) return prior
+    if (prior) return { answer: prior, reused: true }
     const result = await deps.ask(input.question, input.state)
     if (result.kind === 'missing-key') return null
     const common = [
@@ -96,8 +96,16 @@ export async function askHubTypedQuestion(
       null,
       nowIso(),
     ])
-    return result.answer
+    return { answer: result.answer, reused: false }
   } catch {
     return null
   }
+}
+
+/** Reuse exact evidence, otherwise fail open for every client or recording failure. */
+export async function askHubTypedQuestion(
+  input: HubTypedQuestionInput,
+  deps: Dependencies = dependencies,
+): Promise<TypedQuestionAnswer | null> {
+  return (await askHubTypedQuestionWithReuse(input, deps))?.answer ?? null
 }

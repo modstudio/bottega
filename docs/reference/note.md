@@ -9,6 +9,7 @@ observations and their lifecycle
 - [bottega note curator](#bottega-note-curator)
 - [bottega note distinct](#bottega-note-distinct)
 - [bottega note drop](#bottega-note-drop)
+- [bottega note evaluate](#bottega-note-evaluate)
 - [bottega note keep](#bottega-note-keep)
 - [bottega note list](#bottega-note-list)
 - [bottega note new](#bottega-note-new)
@@ -32,6 +33,7 @@ observations and their lifecycle
 - [bottega note curator](./note.md#bottega-note-curator)
 - [bottega note distinct](./note.md#bottega-note-distinct)
 - [bottega note drop](./note.md#bottega-note-drop)
+- [bottega note evaluate](./note.md#bottega-note-evaluate)
 - [bottega note keep](./note.md#bottega-note-keep)
 - [bottega note list](./note.md#bottega-note-list)
 - [bottega note new](./note.md#bottega-note-new)
@@ -95,6 +97,21 @@ drop a note with a recorded reason
 
 - `--reason <reason>`: record why the note is dropped
 - `--project <name>`: resolve the note in this project
+
+### Related
+
+- [bottega note](./note.md#bottega-note)
+
+## bottega note evaluate
+
+**Synopsis:** `bottega note evaluate --project <name> [--skip-curate]`
+
+evaluate duplicate pairs across a project note backlog
+
+### Options
+
+- `--project <name>`: evaluate actionable notes for this project
+- `--skip-curate`: run only the pair and cluster stages
 
 ### Related
 

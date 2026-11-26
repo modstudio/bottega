@@ -236,6 +236,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'note curator',
   'note distinct',
   'note drop',
+  'note evaluate',
   'note keep',
   'note list',
   'note new',
