@@ -108,7 +108,11 @@ function moveMainForPostLanding(
   try {
     adapter.moveMain(project, mergeCommit, movesInstallation)
   } catch (cause) {
-    failure = cause instanceof Error ? cause.message : String(cause)
+    const message = cause instanceof Error ? cause.message : String(cause)
+    failure =
+      cause instanceof BoundExceededError
+        ? `merge landed as ${mergeCommit}, but the main checkout pull timed out: ${message}; re-run ${retry}`
+        : message
   }
   if (failure) {
     let detail: string

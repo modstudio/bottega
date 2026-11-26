@@ -1,7 +1,7 @@
 // concern: GitHub merge-queue adapter
 /** Reads and mutates GitHub's merge queue without owning merge policy. */
 
-import { githubCommand, githubGraphql, githubWorkflowRuns } from './github-actions.ts'
+import { githubApi, githubCommand, githubGraphql, githubWorkflowRuns } from './github-actions.ts'
 import { type FailedMergeGroupRun, failedMergeGroupRunFromRuns } from './merge-group-run.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
@@ -53,6 +53,22 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
     removalReason: typeof removalReason === 'string' ? removalReason : null,
     removedAt: typeof removedAt === 'string' ? removedAt : null,
   }
+}
+
+export function githubLandingComparison(
+  cwd: string,
+  repository: string,
+  landingBranch: string,
+  mergeCommit: string,
+): string {
+  const value = githubApi(
+    cwd,
+    `repos/${repository}/compare/${encodeURIComponent(landingBranch)}...${encodeURIComponent(mergeCommit)}`,
+  ) as { status?: unknown }
+  if (typeof value.status !== 'string') {
+    throw new Error('landing comparison returned an unexpected JSON shape')
+  }
+  return value.status.toLowerCase()
 }
 
 export function enqueuePullRequest(cwd: string, number: number, headCommit: string): void {

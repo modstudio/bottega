@@ -393,13 +393,13 @@ function alreadyLiveReleaseResult(
   deployed: string,
   live: string,
   candidateIsLiveAncestor: boolean,
-  commitsBehindTrunk: number,
+  position: ReturnType<typeof releaseTrunkPositionFacts>,
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
 ): { result: ReleaseResult; recordId: string | null } | null {
   const decision = alreadyLiveReleaseDecision({
     candidateIsLiveAncestor,
-    commitsBehindTrunk,
+    commitsBehindTrunk: position.commitsBehindTrunk,
     redeployReason,
     rollbackReason,
   })
@@ -407,30 +407,82 @@ function alreadyLiveReleaseResult(
   const newestLive = newestSuccessfulRelease(project, rung)
   const matchingRow =
     newestLive && releaseRowProvesCandidate(newestLive, deployed) ? newestLive : null
+  const outputTail = `rung ${rung} is already live at ${deployed}; nothing deployed`
+  const proof =
+    matchingRow ??
+    recordAlreadyLiveProof({
+      project,
+      rung,
+      candidate: deployed,
+      live,
+      trunk: position.trunk,
+      trunkTip: position.trunkTip,
+      commitsBehindTrunk: position.commitsBehindTrunk,
+      outputTail,
+    })
   return {
     result: {
-      id: matchingRow?.number ?? null,
+      id: proof.number,
       project,
       rung,
       branch,
       deployed,
       trunk,
-      commitsBehindTrunk: decision.landingAhead ? commitsBehindTrunk : 0,
+      commitsBehindTrunk: decision.landingAhead ? position.commitsBehindTrunk : 0,
       behindTrunkReason: null,
       liveBefore: live,
       baseline: false,
       rollback: Boolean(matchingRow?.rollback),
       rollbackReason: matchingRow?.rollback_reason ?? null,
       exitCode: 0,
-      outputTail: `rung ${rung} is already live at ${deployed}; nothing deployed`,
+      outputTail,
       liveAfter: live,
       liveMatchesCandidate: true,
       warning: matchingRow?.warning ?? null,
       alreadyLive: true,
       landingAhead: decision.landingAhead,
     },
-    recordId: matchingRow?.record_id ?? null,
+    recordId: proof.record_id,
   }
+}
+
+export function recordAlreadyLiveProof(
+  input: {
+    project: string
+    rung: string
+    candidate: string
+    live: string
+    trunk: string
+    trunkTip: string
+    commitsBehindTrunk: number
+    outputTail: string
+  },
+  database: Database = writableDb(),
+): { record_id: string; number: number } {
+  const existing = newestSuccessfulRelease(input.project, input.rung, database)
+  if (existing && releaseRowProvesCandidate(existing, input.candidate)) return existing
+  const ledger = startReleaseLedgerEntry(database, {
+    project: input.project,
+    rung: input.rung,
+    candidate: input.candidate,
+    live: input.live,
+    rollback: false,
+    reason: null,
+    trunk: input.trunk,
+    trunkTip: input.trunkTip,
+    commitsBehindTrunk: input.commitsBehindTrunk,
+    behindTrunkReason: null,
+  })
+  finishReleaseLedgerEntry(
+    database,
+    ledger.recordId,
+    { exitCode: 0, output: input.outputTail },
+    input.outputTail,
+    input.live,
+    true,
+    null,
+  )
+  return { record_id: ledger.recordId, number: ledger.number }
 }
 
 function preActionReleaseObservation(
@@ -453,7 +505,7 @@ function preActionReleaseObservation(
       candidate,
       live.commit,
       live.matchesCandidate,
-      position.commitsBehindTrunk,
+      position,
       redeployReason,
       rollbackReason,
     ),
@@ -717,7 +769,9 @@ function releaseCommandTargetAtRung(
     rollbackReason,
   )
   const existing = alreadyLiveCommandOutcome(alreadyLive)
-  if (existing) return existing
+  if (existing !== null) {
+    return existing
+  }
   const freshness = releaseTrunkFacts(
     position,
     checkoutPath,

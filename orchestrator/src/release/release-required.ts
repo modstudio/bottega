@@ -11,6 +11,7 @@ import { canDeployRungFromReleaseTree } from './release-at-commit.ts'
 import {
   releaseProofDecision,
   releaseRungCoversTarget,
+  releaseRungProvenLiveAtCandidate,
   releaseRungProofRefusal,
 } from './release-decision.ts'
 import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
@@ -20,6 +21,8 @@ import {
   releaseProject,
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
+
+const GIT_MERGE_SUBCOMMAND = 'merge'
 
 export type RequiredReleaseRung = {
   name: string
@@ -125,6 +128,10 @@ export function machineUpdateRungRefusal(input: {
   for (const rung of input.requiredRungs) {
     const proved = input.provedCommits.get(rung) ?? null
     if (
+      releaseRungProvenLiveAtCandidate({
+        liveCommit: proved,
+        liveContainsCandidate: input.liveContainsIncoming.get(rung) === true,
+      }) ||
       releaseRungCoversTarget({
         liveCommit: proved,
         liveContainsTarget: input.liveContainsIncoming.get(rung) === true,
@@ -451,8 +458,9 @@ export function moveNonInstallationMainCheckout(project: Project, mergeCommit?: 
     targetGitEnvironment(project.path),
     ' during main checkout fetch',
   )
+  const fastForwardArgs = [GIT_MERGE_SUBCOMMAND, '--ff-only', `origin/${trunk}`]
   git(
-    ['merge', '--ff-only', `origin/${trunk}`],
+    fastForwardArgs,
     project.path,
     targetGitEnvironment(project.path),
     ' during main checkout fast-forward',

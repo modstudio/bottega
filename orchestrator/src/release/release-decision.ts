@@ -486,10 +486,21 @@ export function alreadyLiveReleaseDecision(facts: {
   rollbackReason?: string
 }): { alreadyLive: boolean; landingAhead: boolean } {
   const alreadyLive =
-    facts.candidateIsLiveAncestor &&
+    releaseRungProvenLiveAtCandidate({
+      liveCommit: 'observed',
+      liveContainsCandidate: facts.candidateIsLiveAncestor,
+    }) &&
     facts.redeployReason === undefined &&
     facts.rollbackReason === undefined
   return { alreadyLive, landingAhead: alreadyLive && facts.commitsBehindTrunk > 0 }
+}
+
+/** Decide whether an observed live commit contains the requested candidate. */
+export function releaseRungProvenLiveAtCandidate(facts: {
+  liveCommit: string | null
+  liveContainsCandidate: boolean
+}): boolean {
+  return facts.liveCommit !== null && facts.liveContainsCandidate
 }
 
 /** Decide whether release evidence proves the merge is deployed on this rung. */

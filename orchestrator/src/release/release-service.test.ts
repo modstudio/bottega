@@ -6,8 +6,10 @@ import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-led
 import {
   newestSuccessfulProvenReleaseCommit,
   newestSuccessfulReleasedCommit,
+  recordAlreadyLiveProof,
   releaseProject,
 } from './release-service.ts'
+import { machineUpdateRungRefusal } from './release-required.ts'
 
 const PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000002151'
 
@@ -143,6 +145,65 @@ test('release baselines use only a live-proved successful row', () => {
     'proved-candidate',
   )
   expect(newestSuccessfulReleasedCommit('fixture', 'production', database)).toBe('proved-live')
+})
+
+test('an already-live release records one proof that clears the machine-update guard', () => {
+  using database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(PROJECT_RECORD_ID, 'fixture', '/fixture', '{}')
+  const failed = startReleaseLedgerEntry(database, {
+    project: 'fixture',
+    rung: 'production',
+    candidate: 'incoming',
+    live: 'incoming',
+    rollback: false,
+    reason: null,
+    trunk: 'main',
+    trunkTip: 'incoming',
+    commitsBehindTrunk: 0,
+    behindTrunkReason: null,
+  })
+  finishReleaseLedgerEntry(
+    database,
+    failed.recordId,
+    { exitCode: 1, output: 'probe failed' },
+    'probe failed',
+    null,
+    false,
+    null,
+  )
+  const proofInput = {
+    project: 'fixture',
+    rung: 'production',
+    candidate: 'incoming',
+    live: 'incoming',
+    trunk: 'main',
+    trunkTip: 'incoming',
+    commitsBehindTrunk: 0,
+    outputTail: 'rung production is already live at incoming; nothing deployed',
+  }
+
+  const first = recordAlreadyLiveProof(proofInput, database)
+  const second = recordAlreadyLiveProof(proofInput, database)
+  expect(second.record_id).toBe(first.record_id)
+  expect(second.number).toBe(first.number)
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) AS count FROM release_ledger').get()!
+      .count,
+  ).toBe(2)
+  expect(newestSuccessfulProvenReleaseCommit('fixture', 'production', database)).toBe('incoming')
+  expect(
+    machineUpdateRungRefusal({
+      incomingCommit: 'incoming',
+      requiredRungs: ['production'],
+      provedCommits: new Map([['production', 'incoming']]),
+      liveContainsIncoming: new Map([['production', true]]),
+      liveIsAncestorOfIncoming: new Map([['production', true]]),
+      requiredSinceLive: new Map([['production', true]]),
+      project: 'fixture',
+    }),
+  ).toBeNull()
 })
 
 test('release checkout verification is skipped when no trunk restore occurred', () => {

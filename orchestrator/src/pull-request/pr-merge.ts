@@ -33,6 +33,7 @@ import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
+  mergeLandingComparisonProvesLanded,
   type MergeQueueObservation,
   type MergeQueueState,
   type MergeQueueStep,
@@ -43,6 +44,7 @@ import {
 import {
   enqueuePullRequest,
   githubFailedMergeGroupRun,
+  githubLandingComparison,
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
@@ -138,6 +140,12 @@ export type PullRequestMergeAdapter = PullRequestReleaseDecisionAdapter & {
   ): void
   mergeCommit(cwd: string, number: number): string
   queueState(cwd: string, nodeId: string): MergeQueueObservation
+  landingComparison(
+    cwd: string,
+    repository: string,
+    landingBranch: string,
+    mergeCommit: string,
+  ): string
   enqueue(cwd: string, number: number, headCommit: string): void
   requeue(cwd: string, nodeId: string, headCommit: string): void
   failedMergeGroupRun(
@@ -379,6 +387,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   queueState(cwd, nodeId) {
     return githubMergeQueueState(cwd, nodeId)
   },
+  landingComparison(cwd, repository, landingBranch, mergeCommit) {
+    return githubLandingComparison(cwd, repository, landingBranch, mergeCommit)
+  },
   enqueue(cwd, number, headCommit) {
     enqueuePullRequest(cwd, number, headCommit)
   },
@@ -554,6 +565,7 @@ function waitForQueuedMerge(
     activeEntryObserved: false,
     dequeueObservedAt: null,
     requeuePendingSince: null,
+    closedObservedAt: null,
   }
   let requeueOutput: string | undefined
   let lastEnqueuedAt: string | null = null
@@ -572,7 +584,22 @@ function waitForQueuedMerge(
     )
     waitState = step.state
     const action = step.action
-    if (action.action === 'complete') {
+    if (action.action === 'verify-landing') {
+      if (!repository) {
+        throw new Error(
+          `refusing merge: registered repository identity is unavailable; restore the project remote, then ${PLATFORM_SLUG} pr merge ${target}`,
+        )
+      }
+      const comparison = adapter.landingComparison(
+        cwd,
+        repository,
+        pullRequest.baseBranch,
+        action.mergeCommit,
+      )
+      if (!mergeLandingComparisonProvesLanded(comparison)) {
+        adapter.wait(Math.max(0, Math.min(10_000, deadline - now)))
+        continue
+      }
       return {
         mergeCommit: action.mergeCommit,
         ...(requeueOutput ? { requeueOutput } : {}),

@@ -25,6 +25,7 @@ const initialWaitState: MergeQueueWaitState = {
   activeEntryObserved: false,
   dequeueObservedAt: null,
   requeuePendingSince: null,
+  closedObservedAt: null,
 }
 
 describe('merge-queue state', () => {
@@ -187,10 +188,10 @@ describe('merge-queue action', () => {
     expect(
       stepMergeQueueWait(42, gap.state, { state: 'merged', mergeCommit: 'merge-oid' }, 2, 120_000)
         .action,
-    ).toEqual({ action: 'complete', mergeCommit: 'merge-oid' })
+    ).toEqual({ action: 'verify-landing', mergeCommit: 'merge-oid' })
   })
 
-  test('a merged removal past confirmation reports the reason', () => {
+  test('a merged removal past confirmation keeps waiting', () => {
     const state = {
       ...initialWaitState,
       activeEntryObserved: true,
@@ -204,11 +205,7 @@ describe('merge-queue action', () => {
         1 + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
         120_000,
       ).action,
-    ).toEqual({
-      action: 'refuse',
-      refusal: expect.stringContaining('reason: merged'),
-      remedy: `${PLATFORM_SLUG} pr merge 42`,
-    })
+    ).toEqual({ action: 'wait', delay: 10_000 })
   })
 
   test('a merge-conflict dequeue reports the reason and names the clearing sequence', () => {
@@ -261,14 +258,16 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('a closed pull request refuses immediately after an active entry', () => {
+  test('a closed pull request refuses after its bounded re-poll', () => {
     const state = { ...initialWaitState, enqueueSubmitted: true, activeEntryObserved: true }
-    expect(stepMergeQueueWait(42, state, { state: 'closed' }, 0, 20_000)).toEqual({
-      state,
+    const first = stepMergeQueueWait(42, state, { state: 'closed' }, 0, 60_000)
+    expect(first.action).toEqual({ action: 'wait', delay: 10_000 })
+    expect(stepMergeQueueWait(42, first.state, { state: 'closed' }, 30_000, 60_000)).toEqual({
+      state: first.state,
       action: {
         action: 'refuse',
-        refusal: expect.stringContaining('left the merge queue without merging'),
-        remedy: expect.stringContaining('fix the dequeue reason'),
+        refusal: expect.stringContaining('closed without merging'),
+        remedy: expect.stringContaining('reopen or replace'),
       },
     })
   })

@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { startBoundedSync, startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import {
   mainCheckoutOf,
   scrubbedGitEnv,
@@ -113,11 +113,13 @@ function git(
   cwd: string,
   env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
   failureContext = '',
+  start: typeof startBoundedSync = startBoundedSync,
 ): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = runWithGitFetchRetry(['git', ...args], () => {
-    const result = startBoundedSync(['git', ...args], {
-      budget: 'git-plumbing',
+    const argv = ['git', ...args]
+    const result = start(argv, {
+      budget: budgetForArgv(argv),
       cwd,
       env,
     })
