@@ -100,7 +100,7 @@ export function namedSecretUnresolvedRefusal(
   const remedies = unresolved.map((key) => {
     const path = credentialMatches.get(key)
     return path
-      ? `${PLATFORM_SLUG} credential resolve ${path} -- <argv>`
+      ? `${PLATFORM_SLUG} credential resolve ${path} --project <name> --reveal-to-env ${key} -- <argv>`
       : `${PLATFORM_SLUG} machine config secret set ${key}`
   })
   if (credentialMatches.size !== unresolved.length)

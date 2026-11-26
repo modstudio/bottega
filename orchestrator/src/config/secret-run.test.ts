@@ -109,7 +109,9 @@ test('names that are simply not set keep the not-set refusal', () => {
 
 test('a matching typed credential replaces the duplicate config-secret remedy', () => {
   const refusal = namedSecretUnresolvedRefusal(['OPENROUTER_API_KEY'], [], ['openrouter/api-key'])
-  expect(refusal).toContain(`${PLATFORM_SLUG} credential resolve openrouter/api-key -- <argv>`)
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} credential resolve openrouter/api-key --project <name> --reveal-to-env OPENROUTER_API_KEY -- <argv>`,
+  )
   expect(refusal).not.toContain('machine config secret set OPENROUTER_API_KEY')
   expect(refusal).not.toContain('credential list')
 })
