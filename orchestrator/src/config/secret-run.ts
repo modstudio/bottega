@@ -8,6 +8,7 @@ import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-conne
 export const SECRET_RUN_WORKING_FORM = `${PLATFORM_SLUG} machine config secret run --name <KEY> [--name <KEY> ...] -- <argv...>`
 
 type SecretRunInvocation = { names: string[]; argv: string[] }
+type TypedCredentialPathLookup = () => Promise<readonly string[]>
 
 type ChildEnvironment =
   | { ok: true; env: Record<string, string | undefined> }
@@ -81,6 +82,7 @@ export function childEnvironmentForNamedSecrets(
 export function namedSecretUnresolvedRefusal(
   unresolved: readonly string[],
   sealedEmpty: readonly string[],
+  typedCredentialPaths?: readonly string[],
 ): string {
   const sealed = new Set(sealedEmpty)
   const empty = unresolved.filter((key) => sealed.has(key))
@@ -89,13 +91,46 @@ export function namedSecretUnresolvedRefusal(
     ...(empty.length ? [`${empty.join(', ')} is sealed empty`] : []),
     ...(unset.length ? [`${unset.join(', ')} not set`] : []),
   ]
-  const sets = unresolved
-    .map((key) => `${PLATFORM_SLUG} machine config secret set ${key}`)
-    .join(', ')
+  const credentialMatches = new Map(
+    unresolved.flatMap((key) => {
+      const path = matchingTypedCredentialPath(key, typedCredentialPaths ?? [])
+      return path ? [[key, path] as const] : []
+    }),
+  )
+  const remedies = unresolved.map((key) => {
+    const path = credentialMatches.get(key)
+    return path
+      ? `${PLATFORM_SLUG} credential resolve ${path} -- <argv>`
+      : `${PLATFORM_SLUG} machine config secret set ${key}`
+  })
+  if (credentialMatches.size !== unresolved.length)
+    remedies.push(`${PLATFORM_SLUG} credential list`)
   return (
     `named secret${unresolved.length === 1 ? '' : 's'} ${states.join(', ')}\n` +
-    `cleared by: ${sets}, or add it to an env file the resolver reads`
+    `cleared by: ${remedies.join(', ')}, or add it to an env file the resolver reads`
   )
+}
+
+/** Match the conventional environment name only when that typed credential is available. */
+export function matchingTypedCredentialPath(
+  secretName: string,
+  availablePaths: readonly string[],
+): string | null {
+  const match = /^([A-Z0-9]+(?:_[A-Z0-9]+)*)_API_KEY$/.exec(secretName)
+  if (!match) return null
+  const path = `${match[1]!.toLowerCase().replaceAll('_', '-')}/api-key`
+  return availablePaths.includes(path) ? path : null
+}
+
+export async function typedCredentialPathsOrUnchecked(
+  lookup?: TypedCredentialPathLookup,
+): Promise<readonly string[] | undefined> {
+  if (!lookup) return undefined
+  try {
+    return await lookup()
+  } catch {
+    return undefined
+  }
 }
 
 /** Run argv with an already-resolved child environment and inherited terminal streams. */
@@ -112,7 +147,10 @@ export async function runWithEnvironment(
   return (await spawned.exited) ?? 1
 }
 
-export async function runNamedSecrets(input: SecretRunInvocation): Promise<number> {
+export async function runNamedSecrets(
+  input: SecretRunInvocation,
+  typedCredentialPathLookup?: TypedCredentialPathLookup,
+): Promise<number> {
   assertRecordConnectionResolutionAllowed(input.names, process.env)
   let resolution: Awaited<ReturnType<typeof resolveEnvValuesWithHosted>>
   try {
@@ -123,7 +161,11 @@ export async function runNamedSecrets(input: SecretRunInvocation): Promise<numbe
     throw error
   }
   const child = childEnvironmentForNamedSecrets(input.names, resolution.values, process.env)
-  if (!child.ok)
-    throw new Error(namedSecretUnresolvedRefusal(child.unresolved, resolution.sealedEmpty))
+  if (!child.ok) {
+    const typedCredentialPaths = await typedCredentialPathsOrUnchecked(typedCredentialPathLookup)
+    throw new Error(
+      namedSecretUnresolvedRefusal(child.unresolved, resolution.sealedEmpty, typedCredentialPaths),
+    )
+  }
   return runWithEnvironment(input.argv, child.env)
 }

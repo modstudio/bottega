@@ -8,6 +8,7 @@ import {
   CREDENTIAL_SLUG_PATTERN,
   type CredentialEnvironment,
   type CredentialMode,
+  credentialIdentityPath,
 } from '../../../shared/credential.ts'
 import { credentialPayerFromScope } from '../../../shared/credential-resolution.ts'
 import {
@@ -352,4 +353,11 @@ export function registerCredentialCommands(program: Command): void {
     .option('--reveal-to-env <variable>', 'run argv with the plaintext in this variable')
     .description('show which credential would pay for a project')
     .action(resolveAction)
+}
+
+export async function accountCredentialPaths(): Promise<string[]> {
+  const { listCredentials } = await import('../config/credential-service.ts')
+  const target = await bindingAddress({ account: true })
+  const rows = await listCredentials(target.destinationSpaceId, { account: true })
+  return rows.map((row) => credentialIdentityPath(row.provider, row.name, row.type))
 }
