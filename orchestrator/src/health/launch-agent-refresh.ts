@@ -9,7 +9,10 @@ import {
 } from '../../../shared/install-root.ts'
 import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
-import { isMaintenanceScheduleLabel } from '../../../shared/schedule-policy.ts'
+import {
+  isMaintenanceScheduleLabel,
+  schedulePlatformSupported,
+} from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -110,13 +113,15 @@ type RefreshDependencies = {
 
 function distributionObservations(
   owners: readonly InstalledPlistOwner[],
-  observe: NonNullable<RefreshDependencies['observe']>,
+  observe: RefreshDependencies['observe'],
   readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>,
 ): Record<string, LaunchAgentDefinitionObservation> {
-  const observations = observe(
-    owners.filter(({ label }) => !isMaintenanceScheduleLabel(label)),
-    'distribution',
-  )
+  const observations = observe
+    ? observe(
+        owners.filter(({ label }) => !isMaintenanceScheduleLabel(label)),
+        'distribution',
+      )
+    : {}
   for (const fact of readScheduleFacts()) {
     if (!fact.installed) continue
     observations[fact.label] = {
@@ -152,21 +157,21 @@ async function applyMaintenanceRefresh(
   return skippedLabels
 }
 
-/** Refresh drifted installed definitions, then prove each named definition now matches. */
-export async function refreshLaunchAgents(
-  platform: NodeJS.Platform,
+async function refreshSupportedLaunchAgents(
+  identity: InstallationIdentity,
+  launchAgentsSupported: boolean,
   presentation: { log(value: string): void },
-  deps: RefreshDependencies = {},
+  deps: RefreshDependencies,
 ): Promise<void> {
-  if (!includesLaunchAgents(platform)) return
-  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
   const owners = await (deps.readOwners ?? installationPlistOwners)()
-  const observe = deps.observe ?? installedDefinitionObservations
+  const observe = launchAgentsSupported
+    ? (deps.observe ?? installedDefinitionObservations)
+    : undefined
   const readScheduleFacts = deps.readScheduleFacts ?? gatherScheduleSetupFacts
   const observations =
     identity.kind === 'distribution'
       ? distributionObservations(owners, observe, readScheduleFacts)
-      : observe(owners, identity.kind)
+      : observe!(owners, identity.kind)
   const requiredMaintenanceLabels = new Set(
     identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : [],
   )
@@ -195,7 +200,7 @@ export async function refreshLaunchAgents(
   const after =
     identity.kind === 'distribution'
       ? distributionObservations(owners, observe, readScheduleFacts)
-      : observe(owners, identity.kind)
+      : observe!(owners, identity.kind)
   const remaining = plan.labels.filter(
     ({ label }) =>
       !skippedLabels.has(label) &&
@@ -211,4 +216,17 @@ export async function refreshLaunchAgents(
   for (const { label } of plan.labels) {
     if (!skippedLabels.has(label)) presentation.log(`${label} re-rendered`)
   }
+}
+
+/** Refresh drifted installed definitions, then prove each named definition now matches. */
+export async function refreshLaunchAgents(
+  platform: NodeJS.Platform,
+  presentation: { log(value: string): void },
+  deps: RefreshDependencies = {},
+): Promise<void> {
+  const launchAgentsSupported = includesLaunchAgents(platform)
+  if (!launchAgentsSupported && !schedulePlatformSupported(platform)) return
+  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
+  if (identity.kind === 'checkout' && !launchAgentsSupported) return
+  return refreshSupportedLaunchAgents(identity, launchAgentsSupported, presentation, deps)
 }

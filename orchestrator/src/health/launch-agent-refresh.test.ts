@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { InstallationIdentity } from '../../../shared/install-root.ts'
+import {
+  MAINTENANCE_SCHEDULE_LABELS,
+  scheduleExpectation,
+} from '../../../shared/schedule-policy.ts'
 import type { InstalledPlistOwner } from '../setup/launchd-owners.ts'
+import { requiredMaintenanceLabels } from '../setup/setup-schedule-policy.ts'
 import type { LaunchAgentDefinitionObservation } from './launch-agent-doctor.ts'
 import { decideLaunchAgentRefresh, refreshLaunchAgents } from './launch-agent-refresh.ts'
 
@@ -179,6 +184,103 @@ const distributionIdentity: InstallationIdentity = {
     commit: 'abc1234',
   },
 }
+
+const maintenanceOwners: InstalledPlistOwner[] = MAINTENANCE_SCHEDULE_LABELS.map((label) => ({
+  label,
+  command: 'ops/install.sh',
+}))
+
+test("distribution refresh and doctor's schedule expectation use one maintenance rule", async () => {
+  for (const platform of ['darwin', 'linux'] as const) {
+    for (const level of ['record', 'full'] as const) {
+      for (const label of MAINTENANCE_SCHEDULE_LABELS) {
+        const expected = scheduleExpectation(label, platform, 'distribution', level, []).scheduled
+        let applies = 0
+        await refreshLaunchAgents(
+          platform,
+          { log: () => {} },
+          {
+            identity: distributionIdentity,
+            readOwners: async () => [{ label, command: 'ops/install.sh' }],
+            observe: () => ({}),
+            readScheduleFacts: () => [
+              {
+                label,
+                installed: applies > 0,
+                loaded: applies > 0,
+                definitionMatches: applies > 0,
+              },
+            ],
+            applyMaintenance: async () => {
+              applies += 1
+              return [{ label, status: 'applied' }]
+            },
+            requiredMaintenanceLabels: () =>
+              requiredMaintenanceLabels(
+                { modelHostAlias: '', recordTunnelApp: '', flyctlOnPath: false },
+                level,
+              ),
+            readMachineLevel: () => level,
+          },
+        )
+        expect(applies).toBe(expected ? 1 : 0)
+      }
+    }
+  }
+})
+
+test('linux distribution refresh re-applies drifted maintenance and checks re-read facts', async () => {
+  let factsRead = 0
+  let applies = 0
+  await refreshLaunchAgents(
+    'linux',
+    { log: () => {} },
+    {
+      identity: distributionIdentity,
+      readOwners: async () => [owners[1]!],
+      observe: () => {
+        throw new Error('linux refresh must not observe launchd definitions')
+      },
+      readScheduleFacts: () => [
+        {
+          label: 'com.user.orch-record-sync',
+          installed: true,
+          loaded: true,
+          definitionMatches: ++factsRead > 1,
+        },
+      ],
+      applyMaintenance: async () => {
+        applies += 1
+        return [{ label: 'com.user.orch-record-sync', status: 'applied' }]
+      },
+    },
+  )
+  expect(applies).toBe(1)
+  expect(factsRead).toBe(2)
+})
+
+test('linux record-level distribution refresh applies nothing', async () => {
+  let applies = 0
+  await refreshLaunchAgents(
+    'linux',
+    { log: () => {} },
+    {
+      identity: distributionIdentity,
+      readOwners: async () => maintenanceOwners,
+      observe: () => {
+        throw new Error('linux refresh must not observe launchd definitions')
+      },
+      readScheduleFacts: () => [],
+      applyMaintenance: async () => {
+        applies += 1
+        return []
+      },
+      requiredMaintenanceLabels: () => [],
+      readMachineLevel: () => 'record',
+    },
+  )
+  expect(applies).toBe(0)
+})
 
 test('distribution refresh installs a required missing maintenance definition', async () => {
   let applied = false
