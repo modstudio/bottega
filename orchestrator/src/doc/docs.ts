@@ -83,7 +83,6 @@ import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
-import { projectGetsPack } from './project-gets-pack.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
@@ -93,6 +92,7 @@ import {
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
+import { projectGetsPack } from './project-gets-pack.ts'
 
 export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }

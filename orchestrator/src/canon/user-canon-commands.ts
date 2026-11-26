@@ -83,6 +83,17 @@ function assertUserCanonHydrateOperator(flags: UserCanonFlags, workerProcess: ()
   )
 }
 
+function userCanonPackProjects() {
+  const hostedRead = hostedRecordOwnsReads()
+  return projects().filter((project) =>
+    projectGetsPack({
+      retiredAt: project.retiredAt,
+      declaredSpace: declaredRecordSpace(project.settings),
+      hostedRead,
+    }),
+  )
+}
+
 export async function userCanonImportCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
@@ -115,16 +126,8 @@ export async function userCanonImportCommand(
       body,
     }),
   )
-  const hostedRead = hostedRecordOwnsReads()
-  const packProjects = projects().filter((project) =>
-    projectGetsPack({
-      retiredAt: project.retiredAt,
-      declaredSpace: declaredRecordSpace(project.settings),
-      hostedRead,
-    }),
-  )
   const surroundings = await Promise.all(
-    userCanonWriteTargets(packProjects).map(async (project) => ({
+    userCanonWriteTargets(userCanonPackProjects()).map(async (project) => ({
       global,
       project: project
         ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(

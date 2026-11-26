@@ -290,6 +290,7 @@ export const docModules: DocModule[] = [
     '../../../shared/canon-frontmatter.ts',
     './doc-authoritative-read.ts',
   ]),
+  module('orchestrator/src/doc/project-gets-pack.ts', []),
   module('orchestrator/src/doc/doc-authoritative-read.ts', [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',
