@@ -28,8 +28,15 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import { isCheckoutOnlyLaunchAgentInstaller } from '../../../shared/launchd-owners.ts'
+import {
+  checkoutScheduleOwnerFacts,
+  isCheckoutOnlyLaunchAgentInstaller,
+} from '../../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
+import {
+  checkoutOnlyOwnerOwnsLabel,
+  isMaintenanceScheduleLabel,
+} from '../../../shared/schedule-policy.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -41,7 +48,6 @@ import {
   includesLaunchAgents,
   installationPlistOwners,
 } from '../setup/launchd-owners.ts'
-import { isMaintenanceScheduleLabel } from '../setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../spare/spare-decisions.ts'
 
 export type LaunchAgentLoadObservation =
@@ -71,6 +77,47 @@ export type LaunchAgentDoctorDecision = {
     remedy: string | null
   }>
   launchctlUnavailable: null | 'launchctl missing' | 'gui domain unreachable'
+}
+
+function unloadedOwnerDecision(input: {
+  owners: readonly InstalledPlistOwner[]
+  installationKind: InstallationKind | null
+  skipReasons: Readonly<Record<string, string | null>>
+  loadedLabels: ReadonlySet<string>
+}): Pick<LaunchAgentDoctorDecision, 'findings' | 'informational'> {
+  const checkoutOwners = checkoutScheduleOwnerFacts(input.owners)
+  const classified = input.owners
+    .filter(
+      ({ label }) =>
+        !isMaintenanceScheduleLabel(label) &&
+        !input.skipReasons[label] &&
+        !input.loadedLabels.has(label),
+    )
+    .map((owner) => ({
+      ...owner,
+      ownedByCheckoutInstall: checkoutOnlyOwnerOwnsLabel(
+        owner.label,
+        'darwin',
+        input.installationKind,
+        checkoutOwners,
+      ),
+    }))
+  return {
+    informational: classified
+      .filter(
+        ({ command, ownedByCheckoutInstall }) =>
+          input.installationKind !== 'checkout' &&
+          isCheckoutOnlyLaunchAgentInstaller(command) &&
+          !ownedByCheckoutInstall,
+      )
+      .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const),
+    findings: classified
+      .filter(
+        ({ command, ownedByCheckoutInstall }) =>
+          ownedByCheckoutInstall || !isCheckoutOnlyLaunchAgentInstaller(command),
+      )
+      .map(({ label, command }) => ({ label, command })),
+  }
 }
 
 export function installerRemedy(
@@ -105,10 +152,6 @@ export function decideLaunchAgentDoctor(input: {
     const reason = input.skipReasons[label]
     return reason ? [{ label, reason }] : []
   })
-  const scheduleRemedy = installerRemedy(
-    input.installationKind,
-    input.owners.find(({ label }) => isMaintenanceScheduleLabel(label))?.command ?? null,
-  )
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
   const definitionFindings: LaunchAgentDoctorDecision['definitionFindings'] = []
@@ -141,7 +184,7 @@ export function decideLaunchAgentDoctor(input: {
   }
   const schedules = input.owners
     .filter(({ label }) => isMaintenanceScheduleLabel(label))
-    .map(({ label }) => {
+    .map(({ label, command }) => {
       const loaded = observedLoadedLabels?.has(label) ?? null
       const skipReason = input.skipReasons[label] ?? null
       return {
@@ -150,7 +193,9 @@ export function decideLaunchAgentDoctor(input: {
         lastRun: input.lastRuns[label] ?? 'never',
         skipReason,
         remedy:
-          input.machineLevel === 'full' && loaded === false && !skipReason ? scheduleRemedy : null,
+          input.machineLevel === 'full' && loaded === false && !skipReason
+            ? installerRemedy(input.installationKind, command)
+            : null,
       }
     })
   if (input.loadObservation.kind === 'unavailable') {
@@ -165,24 +210,15 @@ export function decideLaunchAgentDoctor(input: {
     }
   }
   const { loadedLabels } = input.loadObservation
-  const unloaded = input.owners.filter(
-    ({ label }) => !input.skipReasons[label] && !loadedLabels.has(label),
-  )
-  const informational = unloaded
-    .filter(
-      ({ label, command }) =>
-        !isMaintenanceScheduleLabel(label) &&
-        input.installationKind !== 'checkout' &&
-        isCheckoutOnlyLaunchAgentInstaller(command),
-    )
-    .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const)
-  const informationalLabels = new Set(informational.map(({ label }) => label))
+  const unloaded = unloadedOwnerDecision({
+    owners: input.owners,
+    installationKind: input.installationKind,
+    skipReasons: input.skipReasons,
+    loadedLabels,
+  })
   return {
     skipped,
-    findings: unloaded.filter(
-      ({ label }) => !isMaintenanceScheduleLabel(label) && !informationalLabels.has(label),
-    ),
-    informational,
+    ...unloaded,
     definitionFindings,
     definitionUnverified,
     schedules,

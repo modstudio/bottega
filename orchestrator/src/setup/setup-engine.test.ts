@@ -298,7 +298,7 @@ test('shows unsupported schedules on other distribution platforms', () => {
     [],
   )
   expect(plan.notices).toContainEqual({
-    message: 'scheduled sweep and record sync are unsupported on freebsd',
+    message: 'scheduled sweep, record sync, and hub collection are unsupported on freebsd',
     fix: null,
     blocking: false,
   })

@@ -1,8 +1,6 @@
 // concern: launch-agent liveness
-/** Observes whether launch agents are installed and loaded. */
+/** Observes launch-agent loaded state and names the release-install verdict. */
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { startBoundedSync } from './bounded-process.ts'
 
 export const NOT_INSTALLED_BY_RELEASE_INSTALL = 'not installed by a release install' as const
@@ -25,9 +23,4 @@ export function launchAgentLoaded(label: string): boolean | null {
   } catch {
     return null
   }
-}
-
-/** Answer whether one launch-agent definition is installed in a user's home. */
-export function launchAgentInstalled(label: string, home: string): boolean {
-  return existsSync(join(home, 'Library', 'LaunchAgents', `${label}.plist`))
 }

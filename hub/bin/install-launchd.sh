@@ -43,6 +43,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   # the same renderer doctor uses to detect installed-definition drift.
   bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$TARGET" \
       "__INSTALL_ROOT__" "$INSTALL_ROOT" \
+      "__BOTTEGA_BIN__" "$INSTALL_ROOT/bin/bottega" \
       "__CONCERN__" "$CONCERN" "__HOME__" "$HOME" \
       "__STATE_HOME_ENV__" "$STATE_HOME_ENV" "__STATE_HOME__" "$STATE_HOME" \
       "__HUB_PORT__" "$BOTTEGA_HUB_PORT" \

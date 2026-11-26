@@ -11,7 +11,7 @@
          slower clock. The loop keeps both cadences in one process. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__INSTALL_ROOT__/bin/bottega</string>
+        <string>__BOTTEGA_BIN__</string>
         <string>record</string>
         <string>pull</string>
         <string>--watch</string>
@@ -32,10 +32,6 @@
         <string>__HOME__</string>
         <key>__STATE_HOME_ENV__</key>
         <string>__STATE_HOME__</string>
-        <!-- Hosted hub for outbox delivery after slow passes; empty disables it.
-             Filled from BOTTEGA_HOSTED_URL when hub/bin/install-launchd.sh runs. -->
-        <key>BOTTEGA_HOSTED_URL</key>
-        <string>__HUB_HOSTED_URL__</string>
     </dict>
 
     <key>WorkingDirectory</key>

@@ -75,6 +75,7 @@ ops/
 |   |-- docker-prune.sh
 |   `-- projects-morning-refresh.sh
 |-- launchd/*.plist.template
+|-- systemd/*.service, *.timer, *.path
 `-- install.sh
 ```
 

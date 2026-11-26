@@ -8,46 +8,14 @@ import {
 } from '../../../shared/launch-agent-skip.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import {
+  MAINTENANCE_SCHEDULE_LABELS,
+  type MaintenanceScheduleLabel,
+} from '../../../shared/schedule-policy.ts'
+import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
-
-export const MAINTENANCE_SCHEDULE_LABELS = [
-  'com.user.orch-sweep',
-  'com.user.orch-record-sync',
-] as const
-
-export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
-
-export const SYSTEMD_TEMPLATE_DIRECTORY = 'ops/systemd'
-export const SYSTEMD_UNIT_SUFFIXES = ['.service', '.timer', '.path'] as const
-const SYSTEMD_ACTIVATION_UNIT_SUFFIXES = ['.timer', '.path'] as const
-
-export const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> = {
-  'com.user.orch-sweep': ['orch-sweep.service', 'orch-sweep.timer'],
-  'com.user.orch-record-sync': [
-    'orch-record-sync.service',
-    'orch-record-sync.timer',
-    'orch-record-sync.path',
-  ],
-}
-
-export function systemdActivationUnits(label: MaintenanceScheduleLabel): string[] {
-  return SYSTEMD_UNITS[label].filter((name) =>
-    SYSTEMD_ACTIVATION_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)),
-  )
-}
-
-export function schedulePlatformSupported(platform: NodeJS.Platform): boolean {
-  return platform === 'darwin' || platform === 'linux'
-}
-
-const maintenanceScheduleLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
-
-export function isMaintenanceScheduleLabel(label: string): label is MaintenanceScheduleLabel {
-  return maintenanceScheduleLabels.has(label)
-}
 
 export type ScheduleSetupFact = {
   label: MaintenanceScheduleLabel
@@ -58,6 +26,7 @@ export type ScheduleSetupFact = {
 
 export type ScheduleRenderValues = {
   bottegaBin: string
+  installationRoot: string
   home: string
   stateHomeEnvironment: string
   stateHome: string
@@ -65,6 +34,7 @@ export type ScheduleRenderValues = {
 
 const maintenanceSchedulePlaceholderBuilders = {
   __BOTTEGA_BIN__: (values: ScheduleRenderValues) => values.bottegaBin,
+  __INSTALL_ROOT__: (values: ScheduleRenderValues) => values.installationRoot,
   __HOME__: (values: ScheduleRenderValues) => values.home,
   __STATE_HOME_ENV__: (values: ScheduleRenderValues) => values.stateHomeEnvironment,
   __STATE_HOME__: (values: ScheduleRenderValues) => values.stateHome,

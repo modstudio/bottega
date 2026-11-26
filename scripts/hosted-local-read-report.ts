@@ -11,9 +11,11 @@ import {
 } from '../orchestrator/src/record/install-binding.ts'
 import { hostedRecordOwnsHostedTables } from '../orchestrator/src/record/record-write-authority.ts'
 import {
+  LAUNCHD_TEMPLATE_PATHS,
   MAINTENANCE_SCHEDULE_LABELS,
+  SYSTEMD_TEMPLATE_DIRECTORY,
   SYSTEMD_UNITS,
-} from '../orchestrator/src/setup/setup-schedule-policy.ts'
+} from '../shared/schedule-policy.ts'
 import {
   HOSTED_LOCAL_SQL_ALLOWED_FILES,
   HOSTED_LOCAL_SQL_EXCLUSION_REASONS,
@@ -810,6 +812,10 @@ export function hostedLocalReadDeclarationValidation(input: {
       failures.push(
         `${name}: schedule label is not in MAINTENANCE_SCHEDULE_LABELS; use a declared maintenance schedule`,
       )
+    else if (!schedule.launchdInterval && !schedule.systemdInterval)
+      failures.push(
+        `${name}: schedule is a long-running service, not an interval schedule; a readCache refresh needs an interval schedule`,
+      )
     else if (!schedule.launchdInterval || !schedule.systemdInterval)
       failures.push(
         `${name}: schedule interval is missing from its launchd or systemd definition; define StartInterval and OnUnitActiveSec`,
@@ -855,8 +861,10 @@ function hostedLocalReadConfiguration(root: string) {
   })
   const schedules = MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const timer = SYSTEMD_UNITS[label].find((unit) => unit.endsWith('.timer'))
-    const launchd = readFileSync(resolve(root, `ops/launchd/${label}.plist.template`), 'utf8')
-    const systemd = timer ? readFileSync(resolve(root, `ops/systemd/${timer}`), 'utf8') : ''
+    const launchd = readFileSync(resolve(root, LAUNCHD_TEMPLATE_PATHS[label]), 'utf8')
+    const systemd = timer
+      ? readFileSync(resolve(root, SYSTEMD_TEMPLATE_DIRECTORY, timer), 'utf8')
+      : ''
     return {
       label,
       launchdInterval: interval(launchd, /<key>StartInterval<\/key>\s*<integer>([^<]+)<\/integer>/),

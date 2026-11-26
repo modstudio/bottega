@@ -9,16 +9,13 @@ import {
 } from '../../../shared/install-root.ts'
 import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
+import { isMaintenanceScheduleLabel } from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
 } from '../setup/launchd-owners.ts'
-import {
-  isMaintenanceScheduleLabel,
-  type ScheduleApplyResult,
-  type ScheduleSetupFact,
-} from '../setup/setup-schedule-policy.ts'
+import type { ScheduleApplyResult, ScheduleSetupFact } from '../setup/setup-schedule-policy.ts'
 import {
   applyMaintenanceSchedules,
   gatherScheduleSetupFacts,
@@ -53,6 +50,7 @@ function maintenanceDefinitionNeedsRefresh(
 export function decideLaunchAgentRefresh(input: {
   installationKind: InstallationKind
   owners: readonly InstalledPlistOwner[]
+  machineLevel: 'record' | 'full'
   observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>
   requiredMaintenanceLabels: ReadonlySet<string>
 }): LaunchAgentRefreshPlan {
@@ -107,6 +105,7 @@ type RefreshDependencies = {
   runCheckoutInstaller?: (root: string, command: string) => void
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
   requiredMaintenanceLabels?: () => readonly string[]
+  readMachineLevel?: () => 'record' | 'full'
 }
 
 function distributionObservations(
@@ -173,6 +172,7 @@ export async function refreshLaunchAgents(
   )
   const plan = decideLaunchAgentRefresh({
     installationKind: identity.kind,
+    machineLevel: deps.readMachineLevel?.() ?? 'full',
     owners,
     observations,
     requiredMaintenanceLabels,

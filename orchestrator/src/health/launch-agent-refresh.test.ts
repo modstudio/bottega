@@ -20,6 +20,7 @@ const compared = (plistMatches: boolean): LaunchAgentDefinitionObservation => ({
 test('checkout refreshes each drifted owner once in template-owner order', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'checkout',
+    machineLevel: 'full',
     owners,
     observations: {
       'hub-label': compared(false),
@@ -35,6 +36,7 @@ test('checkout refreshes each drifted owner once in template-owner order', () =>
 test('distribution refreshes maintenance drift and leaves checkout-owned drift alone', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'distribution',
+    machineLevel: 'full',
     owners,
     observations: {
       'hub-label': compared(true),
@@ -53,9 +55,31 @@ test('distribution refreshes maintenance drift and leaves checkout-owned drift a
   expect(plan.notReleaseInstalled).toEqual(['ops-label'])
 })
 
+test('record-level distribution refreshes installed drift but does not add missing schedules', () => {
+  const plan = decideLaunchAgentRefresh({
+    installationKind: 'distribution',
+    machineLevel: 'record',
+    owners: [
+      { label: 'com.user.hub-collect', command: 'hub/bin/install-launchd.sh' },
+      { label: 'com.user.orch-record-sync', command: 'ops/install.sh' },
+    ],
+    observations: { 'com.user.hub-collect': compared(false) },
+    requiredMaintenanceLabels: new Set(),
+  })
+  expect(plan.applyMaintenance).toBeTrue()
+  expect(plan.labels).toEqual([
+    {
+      label: 'com.user.hub-collect',
+      command: `${PLATFORM_SLUG} machine setup apply`,
+    },
+  ])
+  expect(plan.notReleaseInstalled).toEqual([])
+})
+
 test('distribution installs required maintenance labels with no definition', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'distribution',
+    machineLevel: 'full',
     owners,
     observations: { 'hub-label': compared(true), 'ops-label': compared(true) },
     requiredMaintenanceLabels: new Set(['com.user.orch-record-sync']),
@@ -67,6 +91,7 @@ test('distribution installs required maintenance labels with no definition', () 
 test('an unavailable comparison is unverified instead of drifted', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'checkout',
+    machineLevel: 'full',
     owners: [owners[0]!],
     observations: {
       'hub-label': {
@@ -85,6 +110,7 @@ test('an unavailable comparison is unverified instead of drifted', () => {
 test('matching definitions produce an empty refresh plan', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'checkout',
+    machineLevel: 'full',
     owners,
     observations: Object.fromEntries(owners.map(({ label }) => [label, compared(true)])),
     requiredMaintenanceLabels: new Set(),

@@ -180,10 +180,10 @@ const declaredModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/health/launch-agent-refresh.ts', [
     'node:path',
-    '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
     '../../../shared/launch-agent-liveness.ts',
     '../../../shared/launchd-owners.ts',
+    '../../../shared/schedule-policy.ts',
     '../setup/launchd-owners.ts',
     '../setup/setup-schedule-policy.ts',
     '../setup/setup-schedule-runtime.ts',

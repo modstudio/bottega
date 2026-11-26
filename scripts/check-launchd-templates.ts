@@ -2,12 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  MAINTENANCE_SCHEDULE_PLACEHOLDERS,
-  SYSTEMD_TEMPLATE_DIRECTORY,
-  SYSTEMD_UNIT_SUFFIXES,
-  SYSTEMD_UNITS,
-} from '../orchestrator/src/setup/setup-schedule-policy.ts'
+import { MAINTENANCE_SCHEDULE_PLACEHOLDERS } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -18,6 +13,12 @@ import {
   MONITOR_BACKSTOP_SECONDS,
 } from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
+import {
+  LAUNCHD_TEMPLATE_PATHS,
+  SYSTEMD_TEMPLATE_DIRECTORY,
+  SYSTEMD_UNIT_SUFFIXES,
+  SYSTEMD_UNITS,
+} from '../shared/schedule-policy.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -94,17 +95,21 @@ function rendererInvocations(script: string): string[][] {
     )
 }
 
-/** The placeholders an installer's substitution rules cover. */
-export function installerPlaceholders(script: string): Set<string> {
-  const invocations = rendererInvocations(script)
-  const rendererRules = new Set<string>()
-  for (const tokens of invocations) {
+/** The literal shell expressions paired with placeholders in renderer calls. */
+export function installerPlaceholderValues(script: string): Map<string, string> {
+  const values = new Map<string, string>()
+  for (const tokens of rendererInvocations(script)) {
     for (let index = 5; index + 1 < tokens.length; index += 2) {
       const placeholder = tokens[index]!
-      if (/^__[A-Z0-9_]+__$/.test(placeholder)) rendererRules.add(placeholder)
+      if (/^__[A-Z0-9_]+__$/.test(placeholder)) values.set(placeholder, tokens[index + 1]!)
     }
   }
-  return rendererRules
+  return values
+}
+
+/** The placeholders an installer's substitution rules cover. */
+export function installerPlaceholders(script: string): Set<string> {
+  return new Set(installerPlaceholderValues(script).keys())
 }
 
 /** Explicit installer pairs plus defaults supplied by the renderer CLI itself. */
@@ -314,6 +319,17 @@ function checkTemplate(input: {
         : installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8')),
     }),
   )
+  const policyLabel = Object.entries(LAUNCHD_TEMPLATE_PATHS).find(([, path]) => path === name)?.[0]
+  if (policyLabel) {
+    errors.push(
+      ...missingInstallRules({
+        templateName: name,
+        templateText: template,
+        installerName: 'orchestrator/src/setup/setup-schedule-policy.ts',
+        installRules: new Set(MAINTENANCE_SCHEDULE_PLACEHOLDERS),
+      }),
+    )
+  }
   let rendered = template
   const values = lintValues(concern)
   for (const placeholder of templatePlaceholders(template)) {

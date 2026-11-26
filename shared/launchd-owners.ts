@@ -1,6 +1,8 @@
 // concern: launchd installer ownership
 /** Names launchd template owners and classifies checkout-only installers. */
 
+import type { CheckoutScheduleOwnerFact } from './schedule-policy.ts'
+
 export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'hub', directory: 'launchd', command: 'hub/bin/install-launchd.sh' },
   { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
@@ -20,4 +22,14 @@ const CHECKOUT_ONLY_INSTALLERS = new Set<string>(
 /** Answer whether an owner command exists only in a source checkout. */
 export function isCheckoutOnlyLaunchAgentInstaller(command: string): boolean {
   return CHECKOUT_ONLY_INSTALLERS.has(command)
+}
+
+/** Normalize installer ownership into the plain facts schedule policy consumes. */
+export function checkoutScheduleOwnerFacts(
+  owners: readonly { label: string; command: string }[],
+): CheckoutScheduleOwnerFact[] {
+  return owners.map(({ label, command }) => ({
+    label,
+    checkoutOnly: isCheckoutOnlyLaunchAgentInstaller(command),
+  }))
 }

@@ -213,6 +213,24 @@ describe('launch agent doctor decision', () => {
     expect(schedulesFailed(record)).toBe(false)
   })
 
+  test('checkout schedule remedies name each label own installer', () => {
+    const decision = decideLaunchAgentDoctor({
+      owners: [
+        { label: 'com.user.orch-sweep', command: 'ops/install.sh' },
+        { label: 'com.user.hub-collect', command: 'hub/bin/install-launchd.sh' },
+      ],
+      installationKind: 'checkout',
+      machineLevel: 'full',
+      skipReasons: {},
+      loadObservation: { kind: 'available', loadedLabels: new Set() },
+      lastRuns: {},
+    })
+    expect(decision.schedules.map(({ label, remedy }) => ({ label, remedy }))).toEqual([
+      { label: 'com.user.orch-sweep', remedy: 'ops/install.sh' },
+      { label: 'com.user.hub-collect', remedy: 'hub/bin/install-launchd.sh' },
+    ])
+  })
+
   test('flags a missing program and a drifted installed definition with owning remedies', () => {
     const definitionOwners = [
       { label: 'com.user.ops', command: 'ops/install.sh' },

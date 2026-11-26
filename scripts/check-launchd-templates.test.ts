@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   clockParts,
   installerPlaceholders,
+  installerPlaceholderValues,
   installerRenderRules,
   launchdFieldTypeViolations,
   missingInstallRules,
@@ -64,6 +66,13 @@ describe('missingInstallRules', () => {
 })
 
 describe('the checked-in templates', () => {
+  test('the checkout collector renders its current executable path', () => {
+    const values = installerPlaceholderValues(
+      readFileSync(join(repositoryRoot, 'hub/bin/install-launchd.sh'), 'utf8'),
+    )
+    expect(values.get('__BOTTEGA_BIN__')).toBe(`$INSTALL_ROOT/bin/${PLATFORM_SLUG}`)
+  })
+
   test('every placeholder is rendered by the installer that owns the template', () => {
     const concerns = [
       { directory: 'ops/launchd', installer: 'ops/install.sh' },
@@ -99,6 +108,7 @@ describe('systemdTemplateMappingErrors', () => {
     'orch-record-sync.service',
     'orch-record-sync.timer',
     'orch-record-sync.path',
+    'hub-collect.service',
   ]
 
   test('accepts exactly the mapped units', () => {
