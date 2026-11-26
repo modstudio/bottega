@@ -77,6 +77,7 @@ export type SetupFactsCapture = {
       mcp?: HarnessMcpFacts
     }
   >
+  harnessInstallPrerequisites?: Record<string, boolean>
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
   settings?: SetupSettingsFact
@@ -110,6 +111,7 @@ export type SetupFacts = {
       mcp: HarnessMcpFacts | null
     }
   >
+  harnessInstallPrerequisites: Record<string, boolean>
   localModelHost: Awaited<ReturnType<typeof localReachable>>
   sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
   settings: SetupSettingsFact
@@ -154,6 +156,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
         },
       ]),
     ) as SetupFacts['harnesses'],
+    harnessInstallPrerequisites: capture.harnessInstallPrerequisites ?? {},
     localModelHost: capture.localModelHost,
     sandboxRuntime: capture.sandboxRuntime,
     settings: capture.settings ?? {
@@ -279,6 +282,17 @@ export async function gatherSetupFacts(
       ]
     }),
   ) as SetupFactsCapture['harnesses']
+  const prerequisiteCommands = new Set(
+    Object.values(HARNESS_MCP_CATALOGUE).flatMap(
+      ({ install }) => install?.linux?.requires?.map(({ command }) => command) ?? [],
+    ),
+  )
+  const harnessInstallPrerequisites = Object.fromEntries(
+    [...prerequisiteCommands].map((command) => [
+      command,
+      which(command, { PATH: process.env.PATH }) !== null,
+    ]),
+  )
   const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
@@ -302,6 +316,7 @@ export async function gatherSetupFacts(
       auth: ghPath ? runCommand([ghPath, 'auth', 'status', '--hostname', 'github.com']) : null,
     },
     harnesses,
+    harnessInstallPrerequisites,
     localModelHost: await localReachable(),
     sandboxRuntime: await sandboxRuntimeAvailability(),
     settings: await gatherSetupSettingsFact(),

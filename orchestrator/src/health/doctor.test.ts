@@ -14,6 +14,7 @@ import {
   canonEvalDoctorDecision,
   doctorAcpStatus,
   doctorRegisterBranchProblems,
+  harnessInstallPrerequisiteDoctorLine,
   registeredMainCheckoutDiagnosis,
   reportCheckoutRegister,
   sandboxRuntimeDoctorLine,
@@ -50,6 +51,18 @@ test('sandbox doctor reports an unknown namespace probe without blocking availab
     }),
   ).toBe(
     `sandbox        runtime available at /runtime\nsandbox probe unavailable: wrapper import failed; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`,
+  )
+})
+
+test('harness prerequisite doctor line names the same condition and apt fix as setup', () => {
+  expect(
+    harnessInstallPrerequisiteDoctorLine(
+      'goose',
+      ['goose-agent'],
+      [{ command: 'bzip2', aptPackage: 'bzip2' }],
+    ),
+  ).toBe(
+    `goose is needed by enabled agent(s) goose-agent, but its install route needs bzip2, which is not installed\n  sudo apt-get install -y bzip2, then rerun ${PLATFORM_SLUG} machine setup plan`,
   )
 })
 

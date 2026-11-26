@@ -1,7 +1,7 @@
 // concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -26,9 +26,64 @@ export function decideMachineHomeWriteAuthority(facts: {
 }): MachineHomeWriteAuthorityDecision {
   return facts.runningFromRegisteredMainCheckout ||
     facts.targetHomesUnderTemporaryDirectory ||
-    (facts.runningCopyIsDistribution && !facts.registeredMainCheckoutExists)
+    facts.runningCopyIsDistribution
     ? { action: 'allow' }
     : { action: 'refuse-not-registered-main' }
+}
+
+export type InstallationVersionRead = { version: string } | { reason: string }
+
+export function decideMachineHomeWriteRefusal(input: {
+  command: string
+  registered: { path: string; version: InstallationVersionRead }
+  running: { path: string; version: InstallationVersionRead }
+}): { detail: string | null; remedy: string } {
+  const remedyExecutable = join(input.registered.path, 'bin', PLATFORM_SLUG)
+  if ('reason' in input.registered.version || 'reason' in input.running.version) {
+    const reason = [input.registered.version, input.running.version]
+      .flatMap((value) => ('reason' in value ? [value.reason] : []))
+      .join('; ')
+    return {
+      detail: `could not compare versions: ${reason}`,
+      remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+    }
+  }
+  try {
+    if (Bun.semver.order(input.registered.version.version, input.running.version.version) < 0) {
+      return {
+        detail:
+          `registered checkout ${input.registered.path} is version ${input.registered.version.version}; ` +
+          `running installation ${input.running.path} is version ${input.running.version.version}`,
+        remedy:
+          `cleared by: run \`git -C ${input.registered.path} pull --ff-only\`, then ` +
+          `\`${remedyExecutable} ${input.command}\``,
+      }
+    }
+  } catch (error) {
+    return {
+      detail: `could not compare versions: ${error instanceof Error ? error.message : String(error)}`,
+      remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+    }
+  }
+  return {
+    detail: null,
+    remedy: `cleared by: run \`${remedyExecutable} ${input.command}\``,
+  }
+}
+
+function readInstallationVersion(root: string): InstallationVersionRead {
+  const manifestPath = join(root, 'package.json')
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: unknown }
+    if (typeof manifest.version !== 'string' || !manifest.version.trim()) {
+      return { reason: `${manifestPath} has no version` }
+    }
+    return { version: manifest.version }
+  } catch (error) {
+    return {
+      reason: `${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
 }
 
 function registeredMainCheckout(database: Database): string | null {
@@ -83,8 +138,21 @@ export function assertMachineHomeWriteAuthority(input: {
   const remedyRoot = input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
   const remedyExecutable = join(remedyRoot, 'bin', PLATFORM_SLUG)
   let remedy: string
+  let detail: string | null = null
   if (input.registeredMainCheckout) {
-    remedy = `cleared by: run \`${remedyExecutable} ${input.command}\``
+    const refusal = decideMachineHomeWriteRefusal({
+      command: input.command,
+      registered: {
+        path: input.registeredMainCheckout,
+        version: readInstallationVersion(input.registeredMainCheckout),
+      },
+      running: {
+        path: runningRoot,
+        version: readInstallationVersion(runningRoot),
+      },
+    })
+    detail = refusal.detail
+    remedy = refusal.remedy
   } else {
     remedy =
       `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then ` +
@@ -93,6 +161,7 @@ export function assertMachineHomeWriteAuthority(input: {
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from this machine's installed copy\n` +
       "invariant: A copy other than this machine's installed copy writes harness settings only under the OS temporary directory.\n" +
+      (detail ? `${detail}\n` : '') +
       remedy,
   )
 }

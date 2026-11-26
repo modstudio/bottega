@@ -67,6 +67,27 @@ test('reports a non-zero install with the exact manual command', () => {
   expect(outcome.message).toContain(route.command)
 })
 
+test('reports the last ten non-empty stdout and stderr lines within the output cap', () => {
+  const stdout = [
+    'drop-1',
+    'drop-2',
+    ...Array.from({ length: 8 }, (_, index) => `out-${index}`),
+  ].join('\n')
+  const stderr = `\n${'x'.repeat(2_050)}\nlast-error\n`
+  const outcome = installHarness(
+    'codex',
+    route,
+    () => ({ ...success, exitCode: 1, stdout, stderr }),
+    detector(null),
+  )
+  expect(outcome.message).not.toContain('drop-1')
+  expect(outcome.message).not.toContain('out-0')
+  expect(outcome.message).toContain('last-error')
+  expect(outcome.message).toEndWith(`; run by hand: ${route.command}`)
+  const appended = outcome.message.split('\n').slice(1).join('\n').split('; run by hand:')[0]
+  expect(appended.length).toBeLessThanOrEqual(2_000)
+})
+
 test('reports a timed-out install with the exact manual command', () => {
   const outcome = installHarness(
     'codex',

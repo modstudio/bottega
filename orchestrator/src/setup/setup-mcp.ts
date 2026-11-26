@@ -29,7 +29,12 @@ type HarnessMcpDescriptor = {
   documentation: string
   install?: Partial<Record<'darwin' | 'linux', HarnessInstallRoute>>
 }
-export type HarnessInstallRoute = { command: string; binDir?: string }
+export type HarnessInstallRequirement = { command: string; aptPackage: string }
+export type HarnessInstallRoute = {
+  command: string
+  binDir?: string
+  requires?: readonly HarnessInstallRequirement[]
+}
 export const HARNESS_MCP_CATALOGUE = {
   codex: {
     architectSession: true,
@@ -42,6 +47,7 @@ export const HARNESS_MCP_CATALOGUE = {
       linux: {
         command: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
         binDir: '~/.local/bin',
+        requires: [{ command: 'curl', aptPackage: 'curl' }],
       },
     },
   },
@@ -59,6 +65,7 @@ export const HARNESS_MCP_CATALOGUE = {
       linux: {
         command: 'curl -fsSL https://x.ai/cli/install.sh | bash',
         binDir: '~/.grok/bin',
+        requires: [{ command: 'curl', aptPackage: 'curl' }],
       },
     },
   },
@@ -88,11 +95,47 @@ export const HARNESS_MCP_CATALOGUE = {
         command:
           'curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash',
         binDir: '~/.local/bin',
+        requires: [
+          { command: 'curl', aptPackage: 'curl' },
+          { command: 'tar', aptPackage: 'tar' },
+          { command: 'bzip2', aptPackage: 'bzip2' },
+        ],
       },
     },
   },
 } as const satisfies Record<string, HarnessMcpDescriptor>
 export type HarnessName = keyof typeof HARNESS_MCP_CATALOGUE
+const HARNESS_CATALOGUE_NAMES = {
+  codex: 'codex',
+  grok: 'grok',
+  opencode: 'opencode',
+  goose: 'goose',
+  'claude-code': 'claude',
+} as const satisfies Record<string, HarnessName>
+
+export function harnessCatalogueName(harness: string): HarnessName | null {
+  return Object.hasOwn(HARNESS_CATALOGUE_NAMES, harness)
+    ? HARNESS_CATALOGUE_NAMES[harness as keyof typeof HARNESS_CATALOGUE_NAMES]
+    : null
+}
+
+export function missingHarnessInstallPrerequisites(
+  route: HarnessInstallRoute,
+  available: Readonly<Record<string, boolean>>,
+): HarnessInstallRequirement[] {
+  return (route.requires ?? []).filter(({ command }) => !available[command])
+}
+
+export function harnessInstallPrerequisiteNotice(
+  harness: HarnessName,
+  agentNames: readonly string[],
+  missing: readonly HarnessInstallRequirement[],
+): { message: string; fix: string } {
+  return {
+    message: `${harness} is needed by enabled agent(s) ${agentNames.join(', ')}, but its install route needs ${missing.map(({ command }) => command).join(', ')}, which is not installed`,
+    fix: `sudo apt-get install -y ${missing.map(({ aptPackage }) => aptPackage).join(' ')}, then rerun ${PLATFORM_SLUG} machine setup plan`,
+  }
+}
 export function harnessInstallRoute(
   harness: HarnessName,
   platform: NodeJS.Platform,

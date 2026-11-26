@@ -19,9 +19,11 @@ import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import {
   HARNESS_MCP_CATALOGUE,
+  harnessCatalogueName,
   type HarnessInstallRoute,
   type HarnessName,
   harnessDocumentation,
+  harnessInstallPrerequisiteNotice,
   harnessInstallRoute,
   harnessMcpServers,
   type LegacyMcpServerName,
@@ -29,6 +31,7 @@ import {
   type McpReadback,
   type McpServer,
   manualMcpInstructions,
+  missingHarnessInstallPrerequisites,
   sameMcpRegistration,
 } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
@@ -430,22 +433,8 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   return notices
 }
 
-const HARNESS_CATALOGUE_NAMES = {
-  codex: 'codex',
-  grok: 'grok',
-  opencode: 'opencode',
-  goose: 'goose',
-  'claude-code': 'claude',
-} as const satisfies Record<string, HarnessName>
-
-function harnessCatalogueName(harness: string): HarnessName | null {
-  return Object.hasOwn(HARNESS_CATALOGUE_NAMES, harness)
-    ? HARNESS_CATALOGUE_NAMES[harness as keyof typeof HARNESS_CATALOGUE_NAMES]
-    : null
-}
-
 const UNREGISTERED_HARNESSES = [
-  { fact: HARNESS_CATALOGUE_NAMES['claude-code'], harness: 'claude-code' },
+  { fact: 'claude', harness: 'claude-code' },
   { fact: 'opencode', harness: 'opencode' },
   { fact: 'goose', harness: 'goose' },
 ] as const
@@ -524,6 +513,15 @@ function proposeHarnessInstalls(
               `${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${harness} is not installed on this machine"`,
           )
           .join('; ')}`,
+        blocking: false,
+      })
+      return []
+    }
+    const missing = missingHarnessInstallPrerequisites(route, machine.harnessInstallPrerequisites)
+    if (missing.length) {
+      const notice = harnessInstallPrerequisiteNotice(harness, agentNames, missing)
+      notices.push({
+        ...notice,
         blocking: false,
       })
       return []

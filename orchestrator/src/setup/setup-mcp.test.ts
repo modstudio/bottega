@@ -5,10 +5,12 @@ import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
+  HARNESS_MCP_CATALOGUE,
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
   mutateClaudeMcpRegistration,
+  missingHarnessInstallPrerequisites,
   readMcpRegistration,
   reconcileClaudeMcpRegistration,
   registeredCommandResolves,
@@ -27,6 +29,23 @@ const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult =
   stderr,
   timedOut: false,
   error: null,
+})
+
+test('Linux harness routes declare curl and goose declares bzip2', () => {
+  for (const [harness, descriptor] of Object.entries(HARNESS_MCP_CATALOGUE)) {
+    const route = descriptor.install?.linux
+    if (!route) continue
+    const commands = route.requires?.map(({ command }) => command) ?? []
+    if (route.command.includes('curl')) expect(commands, harness).toContain('curl')
+    if (harness === 'goose') expect(commands).toContain('bzip2')
+  }
+})
+
+test('missing harness prerequisites are selected from gathered availability facts', () => {
+  const route = HARNESS_MCP_CATALOGUE.goose.install.linux
+  expect(
+    missingHarnessInstallPrerequisites(route, { curl: true, tar: true, bzip2: false }),
+  ).toEqual([{ command: 'bzip2', aptPackage: 'bzip2' }])
 })
 
 test('classifies async setup command deadline and output failures', () => {
