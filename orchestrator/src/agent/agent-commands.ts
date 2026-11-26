@@ -55,9 +55,11 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
       const results = await shareAllAgents(space)
       for (const result of results) {
         presentation.log(
-          result.error
-            ? `${result.name}: failed — ${result.error}`
-            : `${result.name}: shared with ${space}`,
+          result.skipped
+            ? `skipped: ${result.name} (${result.skipped})`
+            : result.error
+              ? `${result.name}: failed — ${result.error}`
+              : `${result.name}: shared with ${space}`,
         )
       }
       if (results.some((result) => result.error)) presentation.setExitCode(1)

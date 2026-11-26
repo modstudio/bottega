@@ -419,7 +419,7 @@ Options are documented by `--help`.
 
 **Synopsis:** `bottega agent share [args...]`
 
-share one local agent declaration with a record space, or use --all to share every enabled and disabled row
+share one local agent declaration with a record space, or use --all to share every vendor-operated enabled and disabled row; self-operated rows are skipped because their endpoints belong to this machine
 
 ### Options
 

@@ -5,7 +5,7 @@ import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { registerRecordRequestSpace } from '../record/record-api-request-space.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
-import type { AgentRow } from './agent-registry.ts'
+import { type AgentRow, addAgent, removeAgent } from './agent-registry.ts'
 import {
   listSharedAgents,
   shareAgent,
@@ -118,6 +118,39 @@ test('share all continues after a failed declaration and reports every local row
     })
     expect(results.some((result) => result.declaration !== undefined)).toBe(true)
   })
+})
+
+test('share all skips self-operated rows while sharing vendor-operated rows', async () => {
+  const selfOperatedName = 'self-operated-share-fixture'
+  addAgent(selfOperatedName, {
+    harness: 'goose',
+    backend: 'vllm',
+    model: 'fixture/model',
+    baseUrl: 'http://127.0.0.1:9001/v1',
+  })
+  try {
+    await withHostedRecord(async () => {
+      const upserted: string[] = []
+      const client = {
+        whoami: async () => ({ personalSpaceId: null, memberships: [] }),
+        upsertSpaceAgent: async (declaration: RecordSpaceAgent) => {
+          upserted.push(declaration.name)
+          return declaration
+        },
+      } as unknown as RecordApiClient
+
+      const results = await shareAllAgents('shared-agents', client)
+
+      expect(upserted).toContain('codex')
+      expect(upserted).not.toContain(selfOperatedName)
+      expect(results.find(({ name }) => name === selfOperatedName)).toEqual({
+        name: selfOperatedName,
+        skipped: 'self-operated: its endpoint belongs to this machine',
+      })
+    })
+  } finally {
+    removeAgent(selfOperatedName)
+  }
 })
 
 test('unshare withdraws a declaration without requiring a local agent row', async () => {

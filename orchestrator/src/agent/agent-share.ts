@@ -35,7 +35,12 @@ export async function shareAgent(
   return client.upsertSpaceAgent(declaration, await destination(client, space))
 }
 
-export type ShareAllResult = { name: string; declaration?: RecordSpaceAgent; error?: string }
+export type ShareAllResult = {
+  name: string
+  declaration?: RecordSpaceAgent
+  error?: string
+  skipped?: string
+}
 
 export async function shareAllAgents(
   space: string,
@@ -46,6 +51,13 @@ export async function shareAllAgents(
   const target = await destination(client, space)
   const results: ShareAllResult[] = []
   for (const row of agentRows()) {
+    if (row.operated_by === 'self') {
+      results.push({
+        name: row.name,
+        skipped: 'self-operated: its endpoint belongs to this machine',
+      })
+      continue
+    }
     try {
       results.push({
         name: row.name,
