@@ -99,7 +99,7 @@ const authorOption = (command: Command) =>
 const promotionOptions = (command: Command) =>
   authorOption(command).option(
     '--from-operator',
-    "record Shmuel Barkin's override of landing-branch containment",
+    "record the user's override of landing-branch containment",
   )
 const spaceOption = (command: Command) =>
   command.option('--space <slug>', 'write to this record space')

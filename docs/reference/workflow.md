@@ -197,7 +197,7 @@ promote a draft step catalogue version to production
 - `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
-- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
+- `--from-operator`: record the user's override of landing-branch containment
 - `--json`: print JSON output
 
 ### Related
@@ -602,7 +602,7 @@ promote a draft workflow version to production
 - `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
-- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
+- `--from-operator`: record the user's override of landing-branch containment
 - `--json`: print JSON output
 
 ### Related
@@ -620,7 +620,7 @@ promote newest workflow drafts that match a project workflow tree
 - `--cwd <value>`: select the project workflow tree
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
-- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
+- `--from-operator`: record the user's override of landing-branch containment
 
 ### Related
 

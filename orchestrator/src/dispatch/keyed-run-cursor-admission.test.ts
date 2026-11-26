@@ -95,7 +95,7 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by Shmuel Barkin: Operator emergency.',
+      warning: 'unbound run turn overridden by the user: Operator emergency.',
     })
   })
 
@@ -440,7 +440,7 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
     })
   })
 
@@ -525,7 +525,7 @@ describe('keyed run cursor admission', () => {
 
     expect(decision).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
     })
     expect(reads).toBe(0)
   })

@@ -8,6 +8,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { workflowImportBase } from './workflow-import-branch.ts'
 import {
   hostedWorkflowRepositoryFixture,
@@ -207,7 +208,7 @@ test('workflow promote refuses an unlanded HEAD and records an operator override
       )
       .get(),
   ).toEqual({
-    author: 'Shmuel Barkin',
-    reason: 'override by Shmuel Barkin: emergency workflow repair',
+    author: resolvedRulingPersonName(true),
+    reason: `override by ${resolvedRulingPersonName(true)}: emergency workflow repair`,
   })
 })

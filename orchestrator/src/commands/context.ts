@@ -196,7 +196,7 @@ export function register(program: Command): void {
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption(
       '--kind <kind>',
-      "ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives",
+      "ruling — the user's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives",
     )
     .requiredOption('--source <source>', 'item source')
     .requiredOption('--id <id>', 'stable item id')

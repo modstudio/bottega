@@ -4,15 +4,15 @@ import type { HistoryEntry } from './history-model'
 import { TaskHistory } from './task-history'
 
 const now = new Date('2026-10-16T15:00:00')
-const shmuel = 'Shmuel'
+const dana = 'Dana'
 const entries: HistoryEntry[] = [
-  { kind: 'status', id: 's1', at: '2026-10-15T09:12:00', from: null, to: 'open', actor: shmuel },
+  { kind: 'status', id: 's1', at: '2026-10-15T09:12:00', from: null, to: 'open', actor: dana },
   {
     kind: 'comment',
     id: 'c1',
     at: '2026-10-15T09:20:00',
     body: 'Starship borrows the **history feed** layout; keep our tokens and square corners.',
-    actor: shmuel,
+    actor: dana,
     canEdit: true,
     canDelete: true,
   },
@@ -22,7 +22,7 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T08:40:00',
     from: 'open',
     to: 'active',
-    actor: shmuel,
+    actor: dana,
     agent: 'Claude',
   },
   {
@@ -34,7 +34,7 @@ const entries: HistoryEntry[] = [
     job: 'understand',
     endedAt: '2026-10-16T08:50:00',
     running: false,
-    actor: shmuel,
+    actor: dana,
   },
   {
     kind: 'status',
@@ -42,7 +42,7 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T11:02:00',
     from: 'active',
     to: 'review',
-    actor: shmuel,
+    actor: dana,
     agent: 'Claude',
   },
   {
@@ -51,7 +51,7 @@ const entries: HistoryEntry[] = [
     at: '2026-10-16T11:05:00',
     from: 'review',
     to: 'active',
-    actor: shmuel,
+    actor: dana,
     agent: 'Claude',
   },
   {
@@ -63,14 +63,14 @@ const entries: HistoryEntry[] = [
     job: 'implement',
     endedAt: null,
     running: true,
-    actor: shmuel,
+    actor: dana,
   },
   {
     kind: 'comment',
     id: 'c2',
     at: '2026-10-16T14:45:00',
     body: 'Phase 4 is running; the page waits on its `TaskDetail` contract.',
-    actor: shmuel,
+    actor: dana,
     agent: 'Claude',
     canEdit: true,
     canDelete: true,

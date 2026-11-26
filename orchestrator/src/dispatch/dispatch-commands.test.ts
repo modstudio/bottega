@@ -351,7 +351,7 @@ test('an attributed unbound override detaches and records its warning on the run
   expect(warnings).toEqual([
     {
       runId,
-      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
     },
   ])
 })

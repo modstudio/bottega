@@ -123,7 +123,7 @@ export const ORCH_DO_OPTIONS = [
     value: 'required',
     description: 'record why the operator permits a keyed run without a task cursor',
   },
-  { flags: '--from-operator', description: 'confirm the override came from Shmuel Barkin' },
+  { flags: '--from-operator', description: "confirm the override came from the user" },
   { flags: '--carry', description: 'include visible uncommitted checkout changes' },
   { flags: '--quiet', description: 'suppress collection guidance and followed output' },
   { flags: '--probe', description: 'exclude the run from routing evidence' },

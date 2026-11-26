@@ -48,6 +48,6 @@ export function decideWorkflowPromotionAdmission(input: {
     verdict: 'refuse',
     message:
       `refusing workflow promotion: ${condition}; ` +
-      `land the workflow change by pull request, or obtain Shmuel Barkin's override and rerun with --from-operator`,
+      `land the workflow change by pull request, or obtain the user's override and rerun with --from-operator`,
   }
 }

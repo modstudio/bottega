@@ -5,6 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { flagValue } from '../cli/args.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { decideWorkflowPromotionAdmission } from './workflow-promotion-admission.ts'
 
 export type PromotionContainsHead = (
@@ -47,7 +48,7 @@ export function admittedWorkflowPromotion(input: {
     fromOperator,
     reason: flagValue(input.argv, 'reason'),
     author: flagValue(input.argv, 'author'),
-    operatorName: fromOperator ? 'Shmuel Barkin' : null,
+    operatorName: resolvedRulingPersonName(fromOperator),
   })
   if (decision.verdict === 'refuse') throw new Error(decision.message)
   return decision

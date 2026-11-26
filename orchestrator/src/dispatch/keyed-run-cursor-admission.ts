@@ -50,7 +50,7 @@ export function keyedCursorOption(value: string | undefined): number | undefined
 
 const OVERRIDE_OPTION = '--override-unbound'
 const OVERRIDE_REMEDY = `${OVERRIDE_OPTION} "<reason>" --from-operator`
-const OVERRIDE_PREFIX = 'unbound run turn overridden by Shmuel Barkin: '
+const OVERRIDE_PREFIX = 'unbound run turn overridden by the user: '
 
 const composeRemedy = (project: string | null, key: string): string => {
   const projectName = project ?? '<project>'

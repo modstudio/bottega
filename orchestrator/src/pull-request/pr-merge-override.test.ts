@@ -185,7 +185,7 @@ test("merge honors create's triage override for the same patch after a rebase", 
   const database = db()
   recordTriageOverrideForChange(
     changeAt(recordedHead),
-    { overrideReason: 'Shmuel Barkin accepts the reviewed risk', fromOperator: true },
+    { overrideReason: 'Dana Example accepts the reviewed risk', fromOperator: true },
     database,
   )
   const ceilingOverrideId = newRecordId()

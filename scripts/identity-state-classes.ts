@@ -30,14 +30,14 @@ type MachineStateFileDeclaration = {
 export type StateClassDeclaration = TableStateClassDeclaration | MachineStateFileDeclaration
 
 const PORTABLE_RULING =
-  'Shmuel Barkin, 2026-11-01: all work is portable; machine only for state another machine would never care about'
-const LABEL_RULING = 'Shmuel Barkin, DEV-1214/15 option (a): machine-scoped labels'
+  'the user, 2026-11-01: all work is portable; machine only for state another machine would never care about'
+const LABEL_RULING = 'the user, DEV-1214/15 option (a): machine-scoped labels'
 const DEV_2234_MACHINE_RULING =
-  'Shmuel Barkin, DEV-2234 ruling 6: planned tables split by who acts; machine resources are machine'
+  'the user, DEV-2234 ruling 6: planned tables split by who acts; machine resources are machine'
 const QUESTION_REFERENCE_MACHINE_RULING =
-  'Shmuel Barkin, q6436: local question references are machine state'
+  'the user, q6436: local question references are machine state'
 const QUESTION_DELIVERY_PENDING_MACHINE_RULING =
-  'Shmuel Barkin, chat 2026-11-16: pending question delivery is machine state'
+  'the user, chat 2026-11-16: pending question delivery is machine state'
 
 const synced = (
   store: StateClassStore,
@@ -222,7 +222,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'orchestrator',
     'hosted_call_outcome',
     "This machine's hosted-call outcomes",
-    "Shmuel Barkin's ruling on DEV-2036 (2026-11-02): a local machine table",
+    "the user's ruling on DEV-2036 (2026-11-02): a local machine table",
   ),
   synced('orchestrator', 'landing', 'Outbox source for landing'),
   synced('orchestrator', 'landing_override', 'Outbox source for landing override'),
@@ -381,7 +381,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'orchestrator',
     'record_local_by_design',
     "This store's explicit local-authority mark",
-    'Shmuel Barkin, DEV-2477: deliberately local stores carry a store-level local-by-design mark',
+    'the user, DEV-2477: deliberately local stores carry a store-level local-by-design mark',
   ),
   synced('orchestrator', 'release_ledger', 'Outbox source for releases'),
   machine(
@@ -425,7 +425,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'orchestrator',
     'session_close_out',
     "This machine's completed session cleanup handoff",
-    "Shmuel Barkin's approved DEV-2227/1 design, decision 6: close-out records are machine",
+    "the user's approved DEV-2227/1 design, decision 6: close-out records are machine",
   ),
   machine(
     'orchestrator',

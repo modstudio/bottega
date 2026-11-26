@@ -108,13 +108,13 @@ test('local identity uses the stored machine display name', () => {
     <RailFooterIdentity
       hosted={false}
       email={null}
-      machineDisplayName="Shmuel's Mac"
+      machineDisplayName="Dana's Mac"
       onSignOut={() => {}}
     />,
   )
 
   expect(html).toContain('Local')
-  expect(html).toContain('Shmuel&#x27;s Mac')
+  expect(html).toContain('Dana&#x27;s Mac')
   expect(html).not.toContain('Sign out</button>')
 })
 
