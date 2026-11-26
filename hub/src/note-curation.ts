@@ -2,27 +2,26 @@
 /** Runs bounded schema-backed curator pages and validates their proposals. */
 
 import { z } from 'zod'
-import type { NoteEvaluationCluster } from './note-evaluation.ts'
 import {
   type ClassProposal,
   type CuratorNote,
   type NoteProposal,
   packCuratorPages,
-  rankNoteClasses,
   type RankedClass,
+  rankNoteClasses,
   type SeedClass,
 } from './note-curation-decisions.ts'
-import {
-  type CuratorRunReply,
-  dispatchNoteEvaluationCurator,
-} from './note-curator-orch.ts'
+import { type CuratorRunReply, dispatchNoteEvaluationCurator } from './note-curator-orch.ts'
+import type { NoteEvaluationCluster } from './note-evaluation.ts'
 
 const CURATOR_PAGE_CONCURRENCY = 2
 
 const ClassProposalSchema = z.union([
   z.object({ seed: z.string().min(1) }).strict(),
   z
-    .object({ proposed: z.object({ name: z.string().min(1), definition: z.string().min(1) }).strict() })
+    .object({
+      proposed: z.object({ name: z.string().min(1), definition: z.string().min(1) }).strict(),
+    })
     .strict(),
 ])
 const CuratorReplySchema = z
@@ -126,7 +125,12 @@ async function curatePage(
     const referenced = /^r[1-9][0-9]*/.exec(error)?.[0]
     return {
       kind: 'failed',
-      failure: { page: pageNumber, labels: page.map(({ label }) => label), runId: runId ?? referenced ?? null, error },
+      failure: {
+        page: pageNumber,
+        labels: page.map(({ label }) => label),
+        runId: runId ?? referenced ?? null,
+        error,
+      },
     }
   }
 }
@@ -145,7 +149,9 @@ async function mapPages(
       results[index] = await curatePage(pages[index]!, index + 2, cwd, seed, dispatch)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CURATOR_PAGE_CONCURRENCY, pages.length) }, worker))
+  await Promise.all(
+    Array.from({ length: Math.min(CURATOR_PAGE_CONCURRENCY, pages.length) }, worker),
+  )
   return results
 }
 
@@ -186,4 +192,3 @@ export async function curateEvaluationNotes(
     ranking: rankNoteClasses(allNotes, proposals, seed),
   }
 }
-

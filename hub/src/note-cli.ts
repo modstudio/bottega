@@ -18,22 +18,17 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
-import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
+import { readNoteClasses } from './note-classes.ts'
 import { readLiveSeedClasses, runNoteClassPass } from './note-classification.ts'
-import { rankNoteClasses } from './note-curation-decisions.ts'
 import { curateEvaluationNotes } from './note-curation.ts'
-import {
-  appendCurationRecord,
-  formatClassRanking,
-  NOTE_EVALUATION_RECORD_SLUG,
-  parseCurationRecord,
-} from './note-evaluation-record.ts'
+import { rankNoteClasses } from './note-curation-decisions.ts'
+import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
 import { evaluateNotePairs, noteEvaluationBody } from './note-evaluation.ts'
-import { readNoteEvaluationRevision } from './note-curator-orch.ts'
+import { appendCurationRecord } from './note-evaluation-record.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { listProjectSlimNotes } from './note-read.ts'
-import { docList, writeNoteEvaluationRecord } from './orch.ts'
+import { writeNoteEvaluationRecord } from './orch.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -147,6 +142,37 @@ function curatorNoteCommand(options: NoteOptions): void {
     return
   }
   console.log(`note curator ${setCuratorEnabled(Boolean(options.enable)) ? 'enabled' : 'disabled'}`)
+}
+
+async function evaluateNoteCommand(options: NoteOptions): Promise<void> {
+  open()
+  const project = options.project!
+  const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
+  const allProjectNotes = (await listProjectSlimNotes({ project })).notes
+  const result = await evaluateNotePairs(project, notes, allProjectNotes)
+  let body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
+  if (!options.skipCurate) {
+    const seed = await readLiveSeedClasses()
+    const classPass = await runNoteClassPass(notes, seed)
+    const registered = projects().find((candidate) => candidate.name === project)
+    if (!registered) throw new Error(`unknown project '${project}'`)
+    const curation = await curateEvaluationNotes(
+      registered.path,
+      notes,
+      classPass.remaining,
+      result.clusters,
+      seed,
+    )
+    const proposals = [...classPass.proposals, ...curation.proposals]
+    const ranking = rankNoteClasses(notes, proposals, seed)
+    body = appendCurationRecord(body, classPass, curation, proposals, ranking)
+  }
+  await writeNoteEvaluationRecord(project, body)
+  console.log(body)
+}
+
+async function classesNoteCommand(options: NoteOptions): Promise<void> {
+  console.log(await readNoteClasses({ project: options.project!, revision: options.revision }))
 }
 
 async function newNoteCommand(text: string, options: NoteOptions): Promise<void> {
@@ -327,56 +353,13 @@ function registerNoteMaintenanceCommands(note: Command): void {
     .description('evaluate duplicate pairs across a project note backlog')
     .requiredOption('--project <name>', 'evaluate actionable notes for this project')
     .option('--skip-curate', 'run only the pair and cluster stages')
-    .action(async (options: NoteOptions) => {
-      open()
-      const project = options.project!
-      const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
-      const allProjectNotes = (await listProjectSlimNotes({ project })).notes
-      const result = await evaluateNotePairs(project, notes, allProjectNotes)
-      let body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
-      if (!options.skipCurate) {
-        const seed = await readLiveSeedClasses()
-        const classPass = await runNoteClassPass(notes, seed)
-        const registered = projects().find((candidate) => candidate.name === project)
-        if (!registered) throw new Error(`unknown project '${project}'`)
-        const curation = await curateEvaluationNotes(
-          registered.path,
-          notes,
-          classPass.remaining,
-          result.clusters,
-          seed,
-        )
-        const proposals = [...classPass.proposals, ...curation.proposals]
-        const ranking = rankNoteClasses(notes, proposals, seed)
-        body = appendCurationRecord(body, classPass, curation, proposals, ranking)
-      }
-      await writeNoteEvaluationRecord(project, body)
-      console.log(body)
-    })
+    .action(evaluateNoteCommand)
   note
     .command('classes')
     .description('rank classes from a project note evaluation')
     .requiredOption('--project <name>', 'read the note evaluation for this project')
     .option('--revision <id>', 'read one named document revision')
-    .action(async (options: NoteOptions) => {
-      const project = options.project!
-      const current = (await docList({ scope: 'project', subject: project })).find(
-        (document) => document.slug === NOTE_EVALUATION_RECORD_SLUG,
-      )
-      if (!current)
-        throw new Error(
-          `no note evaluation record for ${project}; run ${PLATFORM_SLUG} note evaluate --project ${project}`,
-        )
-      const document = options.revision
-        ? await readNoteEvaluationRevision(project, options.revision)
-        : current
-      const data = parseCurationRecord(document.body)
-      if (!data)
-        throw new Error(
-          `note evaluation revision has no class ranking; run ${PLATFORM_SLUG} note evaluate --project ${project}`,
-        )
-      console.log(formatClassRanking(data))
-    })
+    .action(classesNoteCommand)
   note
     .command('typed-question')
     .description('report typed-question outcomes and operating cost')

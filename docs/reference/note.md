@@ -5,6 +5,7 @@
 observations and their lifecycle
 
 - [bottega note](#bottega-note)
+- [bottega note classes](#bottega-note-classes)
 - [bottega note curate](#bottega-note-curate)
 - [bottega note curator](#bottega-note-curator)
 - [bottega note distinct](#bottega-note-distinct)
@@ -29,6 +30,7 @@ observations and their lifecycle
 
 ### Related
 
+- [bottega note classes](./note.md#bottega-note-classes)
 - [bottega note curate](./note.md#bottega-note-curate)
 - [bottega note curator](./note.md#bottega-note-curator)
 - [bottega note distinct](./note.md#bottega-note-distinct)
@@ -43,6 +45,21 @@ observations and their lifecycle
 - [bottega note same](./note.md#bottega-note-same)
 - [bottega note stale](./note.md#bottega-note-stale)
 - [bottega note typed-question](./note.md#bottega-note-typed-question)
+
+## bottega note classes
+
+**Synopsis:** `bottega note classes --project <name> [--revision <id>]`
+
+rank classes from a project note evaluation
+
+### Options
+
+- `--project <name>`: read the note evaluation for this project
+- `--revision <id>`: read one named document revision
+
+### Related
+
+- [bottega note](./note.md#bottega-note)
 
 ## bottega note curate
 

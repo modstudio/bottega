@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { CuratorNote, SeedClass } from './note-curation-decisions.ts'
 import { curateEvaluationNotes } from './note-curation.ts'
+import type { CuratorNote, SeedClass } from './note-curation-decisions.ts'
 
 const seed: SeedClass[] = [{ code: 'C1', name: 'One', definition: 'one' }]
 const note = (label: string, text = label): CuratorNote => ({
@@ -22,7 +22,15 @@ test('invalid replies fail only their page and cross-page duplicate references a
       : {
           runId: 'r2',
           reply: {
-            proposals: [{ label: 'B', class: { seed: 'C1' }, duplicate_of: 'A', still_holds: 'yes', reason: 'fit' }],
+            proposals: [
+              {
+                label: 'B',
+                class: { seed: 'C1' },
+                duplicate_of: 'A',
+                still_holds: 'yes',
+                reason: 'fit',
+              },
+            ],
           },
         }
   })

@@ -2,8 +2,8 @@
 /** Formats and reads the machine portion of a note evaluation document. */
 
 import type { NoteClassPass } from './note-classification.ts'
-import type { NoteProposal, RankedClass } from './note-curation-decisions.ts'
 import type { FailedCuratorPage, NoteCurationResult } from './note-curation.ts'
+import type { NoteProposal, RankedClass } from './note-curation-decisions.ts'
 
 export const NOTE_EVALUATION_RECORD_SLUG = 'note-evaluation'
 const DATA_FENCE = 'note-evaluation-json'
@@ -55,7 +55,9 @@ export function appendCurationRecord(
 }
 
 export function parseCurationRecord(body: string): NoteEvaluationRecordData | null {
-  const match = new RegExp(`\\n\\\`\\\`\\\`${DATA_FENCE}\\n([\\s\\S]*?)\\n\\\`\\\`\\\`(?:\\n|$)`).exec(body)
+  const match = new RegExp(
+    `\\n\\\`\\\`\\\`${DATA_FENCE}\\n([\\s\\S]*?)\\n\\\`\\\`\\\`(?:\\n|$)`,
+  ).exec(body)
   if (!match) return null
   try {
     const data = JSON.parse(match[1]!) as NoteEvaluationRecordData

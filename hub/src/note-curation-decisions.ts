@@ -7,9 +7,7 @@ const CURATOR_PAGE_CHARACTERS = 40_000
 
 export type CuratorNote = EvaluationNote & { sightings: number }
 export type SeedClass = { code: string; name: string; definition: string }
-export type ClassProposal =
-  | { seed: string }
-  | { proposed: { name: string; definition: string } }
+export type ClassProposal = { seed: string } | { proposed: { name: string; definition: string } }
 export type NoteProposal = {
   label: string
   class: ClassProposal

@@ -1,12 +1,12 @@
 // concern: note curator orchestrator adapter
 /** Dispatches schema-bound curator runs and reads their validated replies. */
 
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { z } from 'zod'
 import { startBounded } from '../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { runtimeAssetPath } from '../../shared/runtime-assets.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import { resolveOrchExecutable } from './orch-project-register.ts'
-import type { DocRow } from './orch.ts'
 
 export type CuratorRunReply = { runId: string; reply: unknown }
 
@@ -18,8 +18,11 @@ async function run(args: string[], stdin?: string): Promise<string> {
     stdin,
   })
   if (result.exitCode !== 0) {
-    const output = result.stderr.trim() || result.stdout.trim() || `${PLATFORM_SLUG} exited ${result.exitCode}`
-    throw new Error(`${output}; cleared by: apply that refusal's remedy, then retry ${PLATFORM_SLUG} note evaluate`)
+    const output =
+      result.stderr.trim() || result.stdout.trim() || `${PLATFORM_SLUG} exited ${result.exitCode}`
+    throw new Error(
+      `${output}; cleared by: apply that refusal's remedy, then retry ${PLATFORM_SLUG} note evaluate`,
+    )
   }
   return result.stdout.trim()
 }
@@ -48,7 +51,7 @@ export async function dispatchNoteEvaluationCurator(
 export async function readNoteEvaluationRevision(
   project: string,
   revision: string,
-): Promise<DocRow> {
+): Promise<{ body: string }> {
   const result = await run([
     'doc',
     'revision',
@@ -58,5 +61,5 @@ export async function readNoteEvaluationRevision(
     revision,
     '--json',
   ])
-  return JSON.parse(result) as DocRow
+  return z.object({ body: z.string() }).passthrough().parse(JSON.parse(result))
 }

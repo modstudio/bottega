@@ -1,20 +1,17 @@
 // concern: note classification
 /** Reads the live class seed and performs the fail-open Jev class pass. */
 
-import { resolveActiveSpaceCredentialValue } from '../../shared/credential-value.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { resolveActiveSpaceCredentialValue } from '../../shared/credential-value.ts'
 import {
   resolveTypesafeCredential,
   TYPESAFE_CREDENTIAL_SET_COMMAND,
 } from '../../shared/typed-question/client.ts'
-import type { TaskRow } from './task-row.ts'
-import { NOTE_DUPLICATE_CONCURRENCY } from './note-duplicate-question.ts'
 import type { CuratorNote, NoteProposal, SeedClass } from './note-curation-decisions.ts'
+import { NOTE_DUPLICATE_CONCURRENCY } from './note-duplicate-question.ts'
 import { listTasks } from './task.ts'
-import {
-  NOTE_CLASS_ACCEPT_CONFIDENCE,
-  NOTE_CLASS_QUESTION,
-} from './typed-question-declarations.ts'
+import type { TaskRow } from './task-row.ts'
+import { NOTE_CLASS_ACCEPT_CONFIDENCE, NOTE_CLASS_QUESTION } from './typed-question-declarations.ts'
 import { askHubTypedQuestionWithReuse } from './typed-question-service.ts'
 
 const NOTE_CLASS_EPIC = 'DEV-2079'
@@ -26,7 +23,8 @@ export function seedClassesFromTasks(tasks: readonly TaskRow[]): SeedClass[] {
   return tasks
     .flatMap((task) => {
       const title = task.title?.match(CLASS_TITLE)
-      if (!title || (task.status_category !== 'open' && task.status_category !== 'active')) return []
+      if (!title || (task.status_category !== 'open' && task.status_category !== 'active'))
+        return []
       const definition = NOTE_CLASS_QUESTION.criteria[title[1]!]
       return definition
         ? [{ code: title[1]!, name: title[2]!, definition }]

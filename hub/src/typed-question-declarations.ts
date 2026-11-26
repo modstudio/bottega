@@ -1,8 +1,8 @@
 // concern: typed-question-declarations
 /** Declares every hub-owned typed-question version retained for reports and backtests. */
 
-import { NOTE_DUPLICATE_QUESTION } from './note-duplicate-question.ts'
 import type { ChoiceQuestion } from '../../shared/typed-question/registry.ts'
+import { NOTE_DUPLICATE_QUESTION } from './note-duplicate-question.ts'
 
 export const NOTE_CLASS_QUESTION: ChoiceQuestion = {
   id: 'note_class',

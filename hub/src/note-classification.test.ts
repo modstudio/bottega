@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
-import type { TaskRow } from './task-row.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { runNoteClassPass, seedClassesFromTasks, seedMismatch } from './note-classification.ts'
 import type { CuratorNote } from './note-curation-decisions.ts'
+import type { TaskRow } from './task-row.ts'
 
 const task = (code: string): TaskRow => ({
   record_id: code,
   external_id: null,
   key: `DEV-${code.slice(1)}`,
-  project: 'bottega',
+  project: PLATFORM_SLUG,
   title: `Class ${code}: Class ${code}`,
   status: 'open',
   status_category: 'open',
@@ -25,13 +26,22 @@ const task = (code: string): TaskRow => ({
   retired_reason: null,
 })
 const note: CuratorNote = {
-  record_id: 'note-1', label: 'bottega#1', project: 'bottega', text: 'note', sightings: 1, created_at: '2026-01-01',
+  record_id: 'note-1',
+  label: `${PLATFORM_SLUG}#1`,
+  project: PLATFORM_SLUG,
+  text: 'note',
+  sightings: 1,
+  created_at: '2026-01-01',
 }
 
 test('live class task rows determine the seed and a new class skips Jev with the remedy', () => {
   const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task))
   expect(seedMismatch(seed)).toBeNull()
-  expect(seedMismatch(seedClassesFromTasks([...['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task), task('C9')]))).toContain('declare a new note_class version')
+  expect(
+    seedMismatch(
+      seedClassesFromTasks([...['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task), task('C9')]),
+    ),
+  ).toContain('declare a new note_class version')
 })
 
 test('only a confident seed choice keeps a note off curator pages', async () => {
@@ -54,7 +64,10 @@ test('missing credential asks and records nothing and sends every note to curati
   const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task))
   let asks = 0
   const result = await runNoteClassPass([note], seed, {
-    credential: async () => ({ available: false, reason: 'Jev class pass obtained no answers: missing' }),
+    credential: async () => ({
+      available: false,
+      reason: 'Jev class pass obtained no answers: missing',
+    }),
     ask: async () => {
       asks++
       return null
