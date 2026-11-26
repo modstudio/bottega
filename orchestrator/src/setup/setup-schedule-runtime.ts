@@ -19,7 +19,10 @@ import {
   gatherScheduleLingerFact as gatherSystemdScheduleLingerFact,
   gatherSystemdScheduleSetupFacts,
   gatherScheduleUserFact as gatherSystemdScheduleUserFact,
+  systemdUserManagerAvailable,
 } from './setup-systemd-schedules.ts'
+
+export { systemdUserManagerAvailable }
 
 function scheduleValues(): ScheduleRenderValues {
   const identity = runningInstallationIdentity(import.meta.dir, process.env)

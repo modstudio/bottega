@@ -55,6 +55,12 @@ function commandSucceeded(argv: string[]): boolean {
   return startBoundedSync(argv, { budget: 'process-table' }).exitCode === 0
 }
 
+/** Report whether this session can reach its systemd user manager. */
+export function systemdUserManagerAvailable(): boolean {
+  const systemctl = systemctlPath()
+  return systemctl !== null && commandSucceeded([systemctl, '--user', 'show-environment'])
+}
+
 function activeUnit(systemctl: string | null, name: string): boolean {
   return systemctl !== null && commandSucceeded([systemctl, '--user', 'is-active', name])
 }
@@ -63,8 +69,7 @@ function activeUnit(systemctl: string | null, name: string): boolean {
 export function gatherSystemdScheduleSetupFacts(values: ScheduleRenderValues): ScheduleSetupFact[] {
   const directory = systemdUnitDirectory(values)
   const systemctl = systemctlPath()
-  const managerAvailable =
-    systemctl !== null && commandSucceeded([systemctl, '--user', 'show-environment'])
+  const managerAvailable = systemdUserManagerAvailable()
   return MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const expected = renderedUnits(label, values)
     const installed = expected.every(({ name }) => existsSync(join(directory, name)))
@@ -102,7 +107,7 @@ export function gatherScheduleUserFact(): string {
 
 function requireSystemdUserManager(): string {
   const systemctl = systemctlPath()
-  if (systemctl && commandSucceeded([systemctl, '--user', 'show-environment'])) return systemctl
+  if (systemctl && systemdUserManagerAvailable()) return systemctl
   throw new Error(
     'systemd user manager is unavailable; run setup from a login session that has a systemd user manager',
   )

@@ -12,6 +12,7 @@ import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
 import {
   isMaintenanceScheduleLabel,
   schedulePlatformSupported,
+  systemdActivationUnits,
 } from '../../../shared/schedule-policy.ts'
 import {
   type InstalledPlistOwner,
@@ -22,6 +23,7 @@ import type { ScheduleApplyResult, ScheduleSetupFact } from '../setup/setup-sche
 import {
   applyMaintenanceSchedules,
   gatherScheduleSetupFacts,
+  systemdUserManagerAvailable,
 } from '../setup/setup-schedule-runtime.ts'
 import {
   installedDefinitionObservations,
@@ -109,9 +111,11 @@ type RefreshDependencies = {
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
   requiredMaintenanceLabels?: () => readonly string[]
   readMachineLevel?: () => 'record' | 'full'
+  systemdUserManagerAvailable?: () => boolean
 }
 
 function distributionObservations(
+  platform: NodeJS.Platform,
   owners: readonly InstalledPlistOwner[],
   observe: RefreshDependencies['observe'],
   readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>,
@@ -127,7 +131,10 @@ function distributionObservations(
     observations[fact.label] = {
       programPath: null,
       programExists: true,
-      comparison: { kind: 'compared', plistMatches: fact.loaded && fact.definitionMatches },
+      comparison: {
+        kind: 'compared',
+        plistMatches: fact.definitionMatches && (platform === 'linux' || fact.loaded),
+      },
     }
   }
   return observations
@@ -157,12 +164,20 @@ async function applyMaintenanceRefresh(
   return skippedLabels
 }
 
-async function refreshSupportedLaunchAgents(
+type SupportedRefresh = {
+  owners: InstalledPlistOwner[]
+  observe: RefreshDependencies['observe']
+  readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>
+  requiredMaintenanceLabels: Set<string>
+  plan: LaunchAgentRefreshPlan
+}
+
+async function planSupportedRefresh(
+  platform: NodeJS.Platform,
   identity: InstallationIdentity,
   launchAgentsSupported: boolean,
-  presentation: { log(value: string): void },
   deps: RefreshDependencies,
-): Promise<void> {
+): Promise<SupportedRefresh> {
   const owners = await (deps.readOwners ?? installationPlistOwners)()
   const observe = launchAgentsSupported
     ? (deps.observe ?? installedDefinitionObservations)
@@ -170,26 +185,125 @@ async function refreshSupportedLaunchAgents(
   const readScheduleFacts = deps.readScheduleFacts ?? gatherScheduleSetupFacts
   const observations =
     identity.kind === 'distribution'
-      ? distributionObservations(owners, observe, readScheduleFacts)
+      ? distributionObservations(platform, owners, observe, readScheduleFacts)
       : observe!(owners, identity.kind)
   const requiredMaintenanceLabels = new Set(
     identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : [],
   )
-  const plan = decideLaunchAgentRefresh({
-    installationKind: identity.kind,
-    machineLevel: deps.readMachineLevel?.() ?? 'full',
+  return {
     owners,
-    observations,
+    observe,
+    readScheduleFacts,
     requiredMaintenanceLabels,
-  })
+    plan: decideLaunchAgentRefresh({
+      installationKind: identity.kind,
+      machineLevel: deps.readMachineLevel?.() ?? 'full',
+      owners,
+      observations,
+      requiredMaintenanceLabels,
+    }),
+  }
+}
+
+function logPlanNotices(
+  plan: LaunchAgentRefreshPlan,
+  presentation: { log(value: string): void },
+): void {
   for (const { label, detail } of plan.unverified) {
     presentation.log(`${label} unverified — ${detail}`)
   }
   for (const label of plan.notReleaseInstalled) {
     presentation.log(`${label} ${NOT_INSTALLED_BY_RELEASE_INSTALL}`)
   }
+}
+
+function linuxManagerUnavailable(
+  platform: NodeJS.Platform,
+  plan: LaunchAgentRefreshPlan,
+  deps: RefreshDependencies,
+): boolean {
+  if (platform !== 'linux' || !plan.applyMaintenance) return false
+  const available =
+    deps.systemdUserManagerAvailable ??
+    (deps.applyMaintenance ? () => true : systemdUserManagerAvailable)
+  return !available()
+}
+
+function readAfterApply(
+  platform: NodeJS.Platform,
+  identity: InstallationIdentity,
+  refresh: SupportedRefresh,
+): {
+  observations: Record<string, LaunchAgentDefinitionObservation>
+  facts: ScheduleSetupFact[]
+} {
+  if (identity.kind !== 'distribution') {
+    return { observations: refresh.observe!(refresh.owners, identity.kind), facts: [] }
+  }
+  const facts = refresh.readScheduleFacts()
+  return {
+    observations: distributionObservations(platform, refresh.owners, refresh.observe, () => facts),
+    facts,
+  }
+}
+
+function assertRefreshCompleted(
+  plan: LaunchAgentRefreshPlan,
+  observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>,
+  requiredMaintenanceLabels: ReadonlySet<string>,
+  skippedLabels: ReadonlySet<string>,
+): void {
+  const remaining = plan.labels.filter(
+    ({ label }) =>
+      !skippedLabels.has(label) &&
+      maintenanceDefinitionNeedsRefresh(label, observations[label], requiredMaintenanceLabels),
+  )
+  if (remaining.length === 0) return
+  throw new Error(
+    remaining
+      .map(({ label, command }) => `${label} definition still drifted; run ${command}`)
+      .join('\n'),
+  )
+}
+
+function logInactiveLinuxUnits(
+  platform: NodeJS.Platform,
+  plan: LaunchAgentRefreshPlan,
+  facts: readonly ScheduleSetupFact[],
+  skippedLabels: ReadonlySet<string>,
+  presentation: { log(value: string): void },
+): void {
+  if (platform !== 'linux') return
+  const factsByLabel = new Map(facts.map((fact) => [fact.label, fact]))
+  for (const { label } of plan.labels) {
+    if (!isMaintenanceScheduleLabel(label) || skippedLabels.has(label)) continue
+    const fact = factsByLabel.get(label)
+    if (!fact?.installed || !fact.definitionMatches || fact.loaded) continue
+    for (const unit of systemdActivationUnits(label)) {
+      presentation.log(`${unit} installed but not active; run systemctl --user status ${unit}`)
+    }
+  }
+}
+
+async function refreshSupportedLaunchAgents(
+  platform: NodeJS.Platform,
+  identity: InstallationIdentity,
+  launchAgentsSupported: boolean,
+  presentation: { log(value: string): void },
+  deps: RefreshDependencies,
+): Promise<void> {
+  const refresh = await planSupportedRefresh(platform, identity, launchAgentsSupported, deps)
+  const { plan } = refresh
+  logPlanNotices(plan, presentation)
   const runInstaller = deps.runCheckoutInstaller ?? runCheckoutInstaller
   for (const command of plan.checkoutCommands) runInstaller(identity.root, command)
+  if (linuxManagerUnavailable(platform, plan, deps)) {
+    const setupRemedy = installerRemedy('distribution', null)!
+    presentation.log(
+      `systemd user manager unavailable in this session; maintenance schedules not installed; run ${setupRemedy} from a login session`,
+    )
+    return
+  }
   const skippedLabels = plan.applyMaintenance
     ? await applyMaintenanceRefresh(
         deps.applyMaintenance ?? applyMaintenanceSchedules,
@@ -197,22 +311,9 @@ async function refreshSupportedLaunchAgents(
       )
     : new Set<string>()
   if (plan.labels.length === 0) return
-  const after =
-    identity.kind === 'distribution'
-      ? distributionObservations(owners, observe, readScheduleFacts)
-      : observe!(owners, identity.kind)
-  const remaining = plan.labels.filter(
-    ({ label }) =>
-      !skippedLabels.has(label) &&
-      maintenanceDefinitionNeedsRefresh(label, after[label], requiredMaintenanceLabels),
-  )
-  if (remaining.length > 0) {
-    throw new Error(
-      remaining
-        .map(({ label, command }) => `${label} definition still drifted; run ${command}`)
-        .join('\n'),
-    )
-  }
+  const after = readAfterApply(platform, identity, refresh)
+  assertRefreshCompleted(plan, after.observations, refresh.requiredMaintenanceLabels, skippedLabels)
+  logInactiveLinuxUnits(platform, plan, after.facts, skippedLabels, presentation)
   for (const { label } of plan.labels) {
     if (!skippedLabels.has(label)) presentation.log(`${label} re-rendered`)
   }
@@ -228,5 +329,5 @@ export async function refreshLaunchAgents(
   if (!launchAgentsSupported && !schedulePlatformSupported(platform)) return
   const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
   if (identity.kind === 'checkout' && !launchAgentsSupported) return
-  return refreshSupportedLaunchAgents(identity, launchAgentsSupported, presentation, deps)
+  return refreshSupportedLaunchAgents(platform, identity, launchAgentsSupported, presentation, deps)
 }
