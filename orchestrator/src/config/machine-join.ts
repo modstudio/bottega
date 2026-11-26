@@ -404,7 +404,9 @@ export async function machineJoin(
   const code = generatePairingCode(allocated.nameplate)
   const formatted = formatPairingCode(code)
   ports.output?.(formatted)
-  ports.output?.(`on an approved machine run: \`${machineApproveCommand(selected.slug, formatted)}\``)
+  ports.output?.(
+    `on an approved machine run: \`${machineApproveCommand(selected.slug, formatted)}\``,
+  )
   const party = startMachineJoin(code, selected.spaceId, allocated.expiresAt, 'joiner')
   const ownSide = sideText(party.side)
   await ports.client.postMachineJoinMessage(

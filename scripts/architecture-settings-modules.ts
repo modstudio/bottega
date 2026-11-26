@@ -168,6 +168,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-log-keys.ts',
     './config-service.ts',
     './data-key-access.ts',
+    './machine-trust-refusal.ts',
     './trust-log-append.ts',
   ]),
   module('orchestrator/src/config/config-service-trust-log.fixture.ts', [
