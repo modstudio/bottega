@@ -291,6 +291,12 @@ export const docModules: DocModule[] = [
     './doc-authoritative-read.ts',
   ]),
   module('orchestrator/src/doc/project-gets-pack.ts', []),
+  module('orchestrator/src/doc/pack-projects.ts', [
+    '../project/declared-record-space.ts',
+    '../project/projects.ts',
+    '../record/record-write-authority.ts',
+    './project-gets-pack.ts',
+  ]),
   module('orchestrator/src/doc/doc-authoritative-read.ts', [
     '../../../shared/brand.ts',
     '../../../shared/doc-sections.ts',

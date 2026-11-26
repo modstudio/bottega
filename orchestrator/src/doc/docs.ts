@@ -24,7 +24,6 @@ import {
 } from '../canon/pack-content.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import {
   type Project,
   projectAt,
@@ -33,7 +32,7 @@ import {
   projectsIncludingRetired,
 } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
-import { applyRecordReadAuthority, hostedRecordOwnsReads } from '../record/record-read-authority.ts'
+import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import {
   assertLocalArticleDelivery,
@@ -92,7 +91,7 @@ import {
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
-import { projectGetsPack } from './project-gets-pack.ts'
+import { packProjects } from './pack-projects.ts'
 
 export type { Doc, DocRevision }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
@@ -267,19 +266,10 @@ async function assertPackSize(input: PackSizeInput): Promise<void> {
     input.scope === 'canon' ||
     (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
   if (!measuresPack) return
-  const hostedRead = hostedRecordOwnsReads()
   const registered = projectsIncludingRetired()
   const addressesOneProject =
     input.scope === 'project' || (input.scope === 'canon' && input.subject !== null)
-  const projectRows = addressesOneProject
-    ? registered
-    : registered.filter((project) =>
-        projectGetsPack({
-          retiredAt: project.retiredAt,
-          declaredSpace: declaredRecordSpace(project.settings),
-          hostedRead,
-        }),
-      )
+  const projectRows = addressesOneProject ? registered : packProjects(registered)
   const projectsToCheck = affectedPackProjects(
     input,
     projectRows.map((project) => ({ ...project, subject: project.name })),

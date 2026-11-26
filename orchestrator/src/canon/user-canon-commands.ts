@@ -12,10 +12,8 @@ import {
 } from '../doc/doc-authoritative-read.ts'
 import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { signedInDocOwner } from '../doc/docs.ts'
-import { projectGetsPack } from '../doc/project-gets-pack.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
-import { projects } from '../project/projects.ts'
-import { hostedRecordOwnsReads } from '../record/record-read-authority.ts'
+import { packProjects } from '../doc/pack-projects.ts'
+import { projectsIncludingRetired } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { assertCurrentMachineHomeWriteAuthority } from '../settings/settings-machine-write-authority.ts'
 import { planCanonImport } from './canon-import-policy.ts'
@@ -83,17 +81,6 @@ function assertUserCanonHydrateOperator(flags: UserCanonFlags, workerProcess: ()
   )
 }
 
-function userCanonPackProjects() {
-  const hostedRead = hostedRecordOwnsReads()
-  return projects().filter((project) =>
-    projectGetsPack({
-      retiredAt: project.retiredAt,
-      declaredSpace: declaredRecordSpace(project.settings),
-      hostedRead,
-    }),
-  )
-}
-
 export async function userCanonImportCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
@@ -127,7 +114,7 @@ export async function userCanonImportCommand(
     }),
   )
   const surroundings = await Promise.all(
-    userCanonWriteTargets(userCanonPackProjects()).map(async (project) => ({
+    userCanonWriteTargets(packProjects(projectsIncludingRetired())).map(async (project) => ({
       global,
       project: project
         ? (await listDocs({ scope: 'canon', subject: project.name, status: 'current' })).map(
