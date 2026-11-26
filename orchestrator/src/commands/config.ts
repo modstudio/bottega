@@ -16,6 +16,7 @@ import {
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
 import type { getConfigEntry, setConfigEntry } from '../config/config-service.ts'
+import type { TypedCredentialPathLookup } from '../config/secret-run.ts'
 import type { pinnedConfigDestination } from '../config/secret-write-target.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -503,7 +504,10 @@ function registerConfigList(config: Command): void {
     })
 }
 
-export function register(program: Command): void {
+export function register(
+  program: Command,
+  typedCredentialPathLookup?: TypedCredentialPathLookup,
+): void {
   const config = program.command('config').description('manage scoped configuration values')
   registerMachineCommands(config)
   registerConfigGet(config)
@@ -527,8 +531,13 @@ export function register(program: Command): void {
     .command('list')
     .description('list sealed configuration keys')
     .action(async () => {
-      const { listSecrets } = await import('../config/config-service.ts')
-      for (const row of await listSecrets()) log(`${row.scope}\t${row.key}\t${row.updatedAt}`)
+      const [{ listSecrets }, { pinnedConfigSpaceId }] = await Promise.all([
+        import('../config/config-service.ts'),
+        import('../config/secret-write-target.ts'),
+      ])
+      const output = secretListPresentation(await listSecrets(), pinnedConfigSpaceId())
+      for (const line of output.stdout) log(line)
+      for (const line of output.stderr) console.error(line)
     })
   secret
     .command('delete <key>')
@@ -545,8 +554,28 @@ export function register(program: Command): void {
     .passThroughOptions()
     .action(async (_options, command: Command) => {
       const { parseSecretRunArgs, runNamedSecrets } = await import('../config/secret-run.ts')
-      process.exitCode = await runNamedSecrets(parseSecretRunArgs(rawArgv(command).slice(3)))
+      process.exitCode = await runNamedSecrets(
+        parseSecretRunArgs(rawArgv(command).slice(3)),
+        typedCredentialPathLookup,
+      )
     })
+}
+
+export function secretListPresentation(
+  rows: readonly { scope: string; key: string; updatedAt: string }[],
+  space = '<unknown>',
+): { stdout: string[]; stderr: string[] } {
+  if (rows.length === 0)
+    return {
+      stdout: [],
+      stderr: [
+        `no config secrets in space ${space} (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
+      ],
+    }
+  return {
+    stdout: rows.map((row) => `${row.scope}\t${row.key}\t${row.updatedAt}`),
+    stderr: [],
+  }
 }
 
 export async function deleteSelectedConfig(

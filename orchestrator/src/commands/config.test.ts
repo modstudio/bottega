@@ -26,6 +26,7 @@ import {
   configWriteTarget,
   deleteSelectedConfig,
   register,
+  secretListPresentation,
 } from './config.ts'
 
 const row = {
@@ -52,6 +53,26 @@ const operatorInventory = {
 
 test('config list --json presents the structured rows', () => {
   expect(JSON.parse(configListPresentation([row], true)[0]!)).toEqual([row])
+})
+
+test('an empty secret list points to typed credentials without writing stdout', () => {
+  expect(secretListPresentation([], 'fixture-space')).toEqual({
+    stdout: [],
+    stderr: [
+      `no config secrets in space fixture-space (environment default); typed provider credentials: ${PLATFORM_SLUG} credential list`,
+    ],
+  })
+})
+
+test('a non-empty secret list keeps its existing stdout rows without a note', () => {
+  expect(
+    secretListPresentation([
+      { scope: 'user', key: 'FIXTURE_SECRET', updatedAt: '2026-11-26T12:00:00.000Z' },
+    ]),
+  ).toEqual({
+    stdout: ['user\tFIXTURE_SECRET\t2026-11-26T12:00:00.000Z'],
+    stderr: [],
+  })
 })
 
 test('config set JSON for hosted and machine homes parses with the hub consumer contracts', async () => {

@@ -9,7 +9,11 @@ import {
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { registerCredentialCommands, validateBindingExclusivity } from './credential.ts'
+import {
+  registerCredentialCommands,
+  typedCredentialPathsForSpaces,
+  validateBindingExclusivity,
+} from './credential.ts'
 
 type ParsedResolve = {
   name: string
@@ -93,6 +97,45 @@ test('binding exclusivity refuses --project combined with --account or --space',
       '--account, --project, and --space are mutually exclusive',
     )
   }
+})
+
+test('typed credential paths include the active space and account in parallel', async () => {
+  await expect(
+    typedCredentialPathsForSpaces('active-space', 'personal-space', async (spaceId) => [
+      {
+        provider: spaceId === 'active-space' ? 'openrouter' : 'vercel',
+        name: null,
+        type: 'api-key',
+        mode: 'default',
+      },
+    ]),
+  ).resolves.toEqual([
+    { path: 'openrouter/api-key', mode: 'default' },
+    { path: 'vercel/api-key', mode: 'default' },
+  ])
+})
+
+test('typed credential paths reject the whole lookup when either space read fails', async () => {
+  await expect(
+    typedCredentialPathsForSpaces('active-space', 'personal-space', async (spaceId) => {
+      if (spaceId === 'personal-space') throw new Error('fixture account listing unavailable')
+      return [{ provider: 'openrouter', name: null, type: 'api-key', mode: 'default' }]
+    }),
+  ).rejects.toThrow('fixture account listing unavailable')
+})
+
+test('typed credential paths list once when the active space is personal', async () => {
+  let read = 0
+  await expect(
+    typedCredentialPathsForSpaces('personal-space', 'personal-space', async () => [
+      {
+        provider: ++read === 1 ? 'openrouter' : 'vercel',
+        name: null,
+        type: 'api-key',
+        mode: 'default',
+      },
+    ]),
+  ).resolves.toEqual([{ path: 'openrouter/api-key', mode: 'default' }])
 })
 
 test('credential set refuses a missing owner before any hosted call', async () => {

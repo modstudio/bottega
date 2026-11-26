@@ -7,7 +7,9 @@ import {
   CREDENTIAL_MODES,
   CREDENTIAL_SLUG_PATTERN,
   type CredentialEnvironment,
+  type CredentialMetadataFields,
   type CredentialMode,
+  credentialIdentityPath,
 } from '../../../shared/credential.ts'
 import { credentialPayerFromScope } from '../../../shared/credential-resolution.ts'
 import {
@@ -352,4 +354,48 @@ export function registerCredentialCommands(program: Command): void {
     .option('--reveal-to-env <variable>', 'run argv with the plaintext in this variable')
     .description('show which credential would pay for a project')
     .action(resolveAction)
+}
+
+type TypedCredentialMetadataList = (
+  spaceId: string,
+  filters?: { account?: boolean },
+) => Promise<
+  readonly (Pick<CredentialMetadataFields, 'provider' | 'name' | 'type'> & {
+    mode: CredentialMode
+  })[]
+>
+
+export async function typedCredentialPathsForSpaces(
+  destinationSpaceId: string,
+  personalSpaceId: string,
+  listCredentials: TypedCredentialMetadataList,
+): Promise<Array<{ path: string; mode: CredentialMode }>> {
+  const rows =
+    destinationSpaceId === personalSpaceId
+      ? await listCredentials(destinationSpaceId)
+      : (
+          await Promise.all([
+            listCredentials(destinationSpaceId),
+            listCredentials(personalSpaceId, { account: true }),
+          ])
+        ).flat()
+  return rows.map((row) => ({
+    path: credentialIdentityPath(row.provider, row.name, row.type),
+    mode: row.mode,
+  }))
+}
+
+export async function typedCredentialPathsForCaller(): Promise<
+  Array<{ path: string; mode: CredentialMode }>
+> {
+  const { listCredentials } = await import('../config/credential-service.ts')
+  const [destination, account] = await Promise.all([
+    bindingAddress({}),
+    bindingAddress({ account: true }),
+  ])
+  return typedCredentialPathsForSpaces(
+    destination.destinationSpaceId,
+    account.destinationSpaceId,
+    listCredentials,
+  )
 }
