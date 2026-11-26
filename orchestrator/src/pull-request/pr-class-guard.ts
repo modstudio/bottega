@@ -5,8 +5,8 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
-  classMeasurementSucceeded,
   checkoutRelativePath,
+  classMeasurementSucceeded,
   creditedMeasurementCommands,
   measuredCountFromOutput,
 } from '../workflow/workflow-class-measured-floor.ts'
