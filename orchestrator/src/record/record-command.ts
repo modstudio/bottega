@@ -6,7 +6,7 @@ import { readMachineValue } from '../../../shared/machine-config.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
-import { db, openReadOnlyDatabase } from '../database/db.ts'
+import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
   migratePostgres,
@@ -70,17 +70,23 @@ type Presentation = { log(value: string): void; exitCode?(code: number): void }
 export function recordOutboxShowCommand(
   rowId: number,
   presentation: Presentation,
-  database = db(),
+  database?: Parameters<typeof readOutboxRow>[0],
 ): void {
-  const row = readOutboxRow(database, rowId)
-  if (!row) {
-    throw new Error(
-      `orchestrator outbox row ${rowId} does not exist; run \`${PLATFORM_SLUG} record outbox\` to list existing rows`,
-    )
+  const owned = database === undefined
+  const conn = database ?? openReadOnlyDatabase()
+  try {
+    const row = readOutboxRow(conn, rowId)
+    if (!row) {
+      throw new Error(
+        `orchestrator outbox row ${rowId} does not exist; run \`${PLATFORM_SLUG} record outbox\` to list existing rows`,
+      )
+    }
+    const report = reportOutboxRow(row, outboxPayloadForRecordSync(conn, row))
+    presentation.log(JSON.stringify(report))
+    if (report.fields === null) presentation.exitCode?.(2)
+  } finally {
+    if (owned) conn.close()
   }
-  const report = reportOutboxRow(row, outboxPayloadForRecordSync(database, row))
-  presentation.log(JSON.stringify(report))
-  if (report.fields === null) presentation.exitCode?.(2)
 }
 
 function recordUrl(): string {

@@ -601,7 +601,9 @@ function registerOutboxCommands(record: Command): void {
   const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
   outbox
     .command('show')
-    .description('show an outbox row without printing payload values')
+    .description(
+      'show an outbox entry: for a hub entry, any values kept after a hosted delete; for an orchestrator row, its state and payload field sizes, never values',
+    )
     .argument('<row-id>')
     .action((rowId) => showOutboxCommand(String(rowId)))
   outbox

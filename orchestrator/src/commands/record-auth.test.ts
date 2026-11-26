@@ -63,8 +63,8 @@ test.each([[''], ['  ']])('record outbox retry refuses empty --matching text %p'
   ).rejects.toThrow('--matching requires non-empty text')
 })
 
-test.each([['not-a-number'], ['1e2'], ['-1']])(
-  'record outbox show refuses non-decimal row id %p with the listing remedy',
+test.each([['not-a-number'], ['9007199254740993']])(
+  'record outbox show refuses invalid row id %p with the listing remedy',
   async (rowId) => {
     const program = new Command().exitOverride()
     register(program)

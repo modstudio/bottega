@@ -76,7 +76,7 @@ export type {
   RecordSyncResult,
 } from './record-sync-types.ts'
 
-const PENDING_OUTBOX_COUNT_SQL = `SELECT count(*) AS count FROM outbox
+export const PENDING_OUTBOX_COUNT_SQL = `SELECT count(*) AS count FROM outbox
   WHERE ${PENDING_OUTBOX_PREDICATE_SQL}`
 
 /** Whether this environment names a hosted record endpoint for synchronization. */

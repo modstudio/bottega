@@ -23,7 +23,7 @@ export type QuarantinedOutboxRow = {
 
 export type QuarantinedOutboxRowSummary = Omit<QuarantinedOutboxRow, 'payload'>
 
-const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,payload,quarantine_reason,attempts,quarantined_at
+export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,payload,quarantine_reason,attempts,quarantined_at
   FROM outbox WHERE ${QUARANTINED_UNRETIRED_OUTBOX_PREDICATE_SQL} ORDER BY id`
 
 type OutboxIdentity = {

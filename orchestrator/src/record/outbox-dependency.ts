@@ -34,7 +34,7 @@ export type QuarantinedParentHoldAccumulator = Map<
 
 type PendingOutboxRowWithPayload = { row: OutboxRow; payload: Payload }
 
-const PENDING_OUTBOX_ROWS_WITH_PAYLOAD_SQL = `SELECT id,kind,row_id,payload FROM outbox
+export const PENDING_OUTBOX_ROWS_WITH_PAYLOAD_SQL = `SELECT id,kind,row_id,payload FROM outbox
   WHERE ${PENDING_OUTBOX_PREDICATE_SQL} ORDER BY id`
 
 function pendingOutboxRowsWithPayload(database: Database): PendingOutboxRowWithPayload[] {
