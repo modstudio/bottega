@@ -12,12 +12,11 @@ import { rootRunRecordId } from '../run/run-root-record.ts'
 import { checkKeyedRunCursorAdmission, type KeyedRunTurn } from './keyed-run-cursor-admission.ts'
 
 /** Read the calling harness identity and its open keyed workflow cursors. */
-export function harnessCursorAdapter(overridePersonName: string | null = null) {
+export function harnessCursorAdapter() {
   const caller = classifyCaller(process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
   return {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
-    overridePersonName,
     readOpenCursors: async (session: string) =>
       (await openQuestionStages(db(), session)).map((cursor) => ({
         recordId: cursor.record_id,
@@ -48,7 +47,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
   const facts = inheritedRunFacts(rootId)
   const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
   const fromOperator = input.turn === 'answer' ? false : input.fromOperator
-  const adapter = harnessCursorAdapter(input.overridePersonName)
+  const adapter = harnessCursorAdapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
       turn: input.turn,
@@ -60,7 +59,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,
       fromOperator,
-      overridePersonName: adapter.overridePersonName,
+      overridePersonName: input.overridePersonName,
       cursor: input.turn === 'answer' ? undefined : input.cursor,
     },
     adapter.readOpenCursors,

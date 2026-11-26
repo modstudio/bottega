@@ -34,6 +34,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-identifier.ts',
     './question-mutation.ts',
     './question-vocabulary.ts',
+    './ruling-attribution.ts',
     './ruling-file-text.ts',
     './run-answer.ts',
     './run-control.ts',

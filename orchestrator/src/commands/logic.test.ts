@@ -384,6 +384,7 @@ test('continue admits the later turn and records an attributed override on its c
       recordKeyedTurnOverride: (runId, warning) => {
         if (warning) warnings.push({ runId, warning })
       },
+      resolvedRulingPersonName: (fromOperator) => (fromOperator ? 'Dana Example' : null),
     },
   })
 
@@ -406,7 +407,7 @@ test('continue admits the later turn and records an attributed override on its c
       turn: 'continue',
       overrideReason: 'operator approved',
       fromOperator: true,
-      overridePersonName: null,
+      overridePersonName: 'Dana Example',
       cursor: undefined,
     },
   ])

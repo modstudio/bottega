@@ -41,6 +41,7 @@ import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-i
 import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
+import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import {
   continueRun,
@@ -58,6 +59,7 @@ export type ContinueCommandDependencies = {
   admitKeyedTurn?: typeof admitKeyedTurn
   recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
   renewTaskClaim?: typeof renewTaskClaim
+  resolvedRulingPersonName?: typeof resolvedRulingPersonName
 }
 
 const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
@@ -73,6 +75,7 @@ type KeyedTurnCommandDependencies = {
   recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
   answerRun?: typeof answerRun
   retryRun?: typeof retryRun
+  resolvedRulingPersonName?: typeof resolvedRulingPersonName
 }
 
 const defaultKeyedTurnOptions: KeyedTurnCommandOptions = { fromOperator: false }
@@ -232,7 +235,9 @@ export async function retryCommand(
     runId: id,
     turn: 'retry',
     ...admission,
-    overridePersonName: null,
+    overridePersonName: (dependencies.resolvedRulingPersonName ?? resolvedRulingPersonName)(
+      admission.fromOperator,
+    ),
   })
   const resumedId = await (dependencies.retryRun ?? retryRun)(
     id,
@@ -367,7 +372,9 @@ export async function continueCommand(
     runId: id,
     turn: 'continue',
     ...admission,
-    overridePersonName: null,
+    overridePersonName: (dependencies.resolvedRulingPersonName ?? resolvedRulingPersonName)(
+      admission.fromOperator,
+    ),
   })
   const reportDetached = reportsBeforeFollow(flags)
     ? async (childId: string, jobName: string) => {

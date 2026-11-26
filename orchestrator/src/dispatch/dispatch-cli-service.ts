@@ -731,8 +731,10 @@ export async function doCommand(
       resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
-      harnessCursorAdapter: (fromOperator) =>
-        harnessCursorAdapter(resolvedRulingPersonName(fromOperator)),
+      harnessCursorAdapter: (fromOperator) => ({
+        ...harnessCursorAdapter(),
+        overridePersonName: resolvedRulingPersonName(fromOperator),
+      }),
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,
