@@ -24,9 +24,16 @@ import {
 } from '../canon/pack-content.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
+import {
+  type Project,
+  projectAt,
+  projectByName,
+  projects,
+  projectsIncludingRetired,
+} from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
-import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
+import { applyRecordReadAuthority, hostedRecordOwnsReads } from '../record/record-read-authority.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import {
   assertLocalArticleDelivery,
@@ -76,6 +83,7 @@ import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
+import { projectGetsPack } from './project-gets-pack.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
@@ -259,10 +267,19 @@ async function assertPackSize(input: PackSizeInput): Promise<void> {
     input.scope === 'canon' ||
     (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
   if (!measuresPack) return
-  const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
-    name: string
-    path: string
-  }[]
+  const hostedRead = hostedRecordOwnsReads()
+  const registered = projectsIncludingRetired()
+  const addressesOneProject =
+    input.scope === 'project' || (input.scope === 'canon' && input.subject !== null)
+  const projectRows = addressesOneProject
+    ? registered
+    : registered.filter((project) =>
+        projectGetsPack({
+          retiredAt: project.retiredAt,
+          declaredSpace: declaredRecordSpace(project.settings),
+          hostedRead,
+        }),
+      )
   const projectsToCheck = affectedPackProjects(
     input,
     projectRows.map((project) => ({ ...project, subject: project.name })),

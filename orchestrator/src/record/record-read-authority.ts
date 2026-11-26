@@ -13,6 +13,13 @@ function currentRecordReadDecision(
   return decideRecordRead(currentRecordAuthorityFacts(database, environment))
 }
 
+/** Does the hosted record own authoritative reads for hosted tables now? */
+export function hostedRecordOwnsReads(database: Database = db()): boolean {
+  const decision = currentRecordReadDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted'
+}
+
 export function applyRecordReadAuthority<T>(
   actions: { local(): T | Promise<T>; hosted(): T | Promise<T> },
   database: Database = db(),
