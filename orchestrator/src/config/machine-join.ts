@@ -5,6 +5,12 @@ import { type ConfigClient, ConfigClientError } from '../../../shared/config-cli
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { CpaceRefusal } from '../../../shared/cpace.ts'
 import {
+  credentialMachineTrustCommands,
+  machineAnchorCommand,
+  machineApproveCommand,
+  machineJoinCommand,
+} from '../../../shared/credential-machine-trust.ts'
+import {
   decodeMachineJoinDone,
   decodeMachineJoinRecord,
   encodeMachineJoinDone,
@@ -73,22 +79,27 @@ export function registeredKeyAgrees(
   )
 }
 
-function wrapFailureRemedy(key: TrustLogKey): string {
-  return `\`${PLATFORM_SLUG} machine config machine trust ${key.keyId} ${encoded(key.publicKey)} --yes\``
+function wrapFailureRemedy(key: TrustLogKey, spaceSlug: string): string {
+  const trust = credentialMachineTrustCommands({
+    space: spaceSlug,
+    keyId: key.keyId,
+    publicKey: encoded(key.publicKey),
+  }).trust
+  return `\`${trust} --yes\``
 }
 
 export function unanchoredApprovalNotice(slug: string): string {
-  return `space ${slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${slug}\` from your own terminal`
+  return `space ${slug} is not anchored; run \`${machineAnchorCommand(slug)}\` from your own terminal`
 }
 
-function expirationRefusal(): Error {
-  return new Error(`pairing code expired; start again with \`${PLATFORM_SLUG} machine join\``)
+function expirationRefusal(spaceSlug: string): Error {
+  return new Error(`pairing code expired; start again with \`${machineJoinCommand(spaceSlug)}\``)
 }
 
-function relayRefusal(error: unknown): never {
+function relayRefusal(error: unknown, spaceSlug: string): never {
   if (error instanceof ConfigClientError && error.status === 410)
     throw new Error(
-      `the pairing exchange failed or expired; start again with \`${PLATFORM_SLUG} machine join\` on the new machine`,
+      `the pairing exchange failed or expired; start again with \`${machineJoinCommand(spaceSlug)}\` on the new machine`,
     )
   throw error
 }
@@ -114,16 +125,18 @@ async function poll(
   side: string,
   expiresAt: string,
   phases: readonly string[],
-  destination: { destinationSpaceId: string },
+  selected: SelectedSpace,
 ): Promise<Map<string, RelayMessage>> {
   const found = new Map<string, RelayMessage>()
   while (found.size !== phases.length) {
-    if (now(ports.at) >= new Date(expiresAt).getTime()) throw expirationRefusal()
+    if (now(ports.at) >= new Date(expiresAt).getTime()) throw expirationRefusal(selected.slug)
     let mailbox: Awaited<ReturnType<ConfigClient['readMachineJoinMessages']>>
     try {
-      mailbox = await ports.client.readMachineJoinMessages(nameplate, side, destination)
+      mailbox = await ports.client.readMachineJoinMessages(nameplate, side, {
+        destinationSpaceId: selected.spaceId,
+      })
     } catch (error) {
-      relayRefusal(error)
+      relayRefusal(error, selected.slug)
     }
     for (const message of mailbox.messages)
       if (phases.includes(message.phase) && !found.has(message.phase))
@@ -145,10 +158,8 @@ export async function localRecord(
 }> {
   const pair = readMachineKey(ports.env)
   const signing = readMachineSigningKey(ports.env)
-  if (!pair || !signing)
-    throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
+  const init = credentialMachineTrustCommands({ space: selected.slug }).init
+  if (!pair || !signing) throw new Error(`machine key is not initialized; run \`${init}\``)
   const keyId = await machineKeyId(pair.publicKey)
   const [who, registered] = await Promise.all([
     ports.client.whoami(),
@@ -162,9 +173,7 @@ export async function localRecord(
     label: listed?.label ?? '',
   }
   if (listed?.userId !== who.user.id || !registeredKeyAgrees(listed, own))
-    throw new Error(
-      `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
+    throw new Error(`machine key is not registered for this user; run \`${init}\``)
   return {
     ownUserId: who.user.id,
     own,
@@ -184,8 +193,8 @@ async function burn(
     .catch(() => undefined)
 }
 
-const mismatch = () =>
-  new Error(`the pairing code did not match; start again with \`${PLATFORM_SLUG} machine join\``)
+const mismatch = (spaceSlug: string) =>
+  new Error(`the pairing code did not match; start again with \`${machineJoinCommand(spaceSlug)}\``)
 
 async function loadVerifiedTrustLog(ports: Ports, selected: SelectedSpace) {
   return verifiedTrustLogForSpace(ports.client, selected.spaceId, ports.env)
@@ -204,7 +213,7 @@ async function finishMachineJoinSession(
   } catch (error) {
     if (error instanceof CpaceRefusal) {
       await burn(ports, selected, nameplate, ownSide)
-      throw mismatch()
+      throw mismatch(selected.slug)
     }
     throw error
   }
@@ -244,7 +253,7 @@ async function verifiedApprover(
     !verifyMachineJoinTag(session, 'approver', confirmation.body.slice(0, MACHINE_JOIN_TAG_BYTES))
   ) {
     await burn(ports, selected, nameplate, ownSide)
-    throw mismatch()
+    throw mismatch(selected.slug)
   }
   const approver = decodeMachineJoinRecord(
     openMachineJoinMessage(
@@ -266,7 +275,7 @@ async function verifiedApprover(
   ) {
     await burn(ports, selected, nameplate, ownSide)
     throw new Error(
-      `the approving machine is not trusted by the space machine trust log; run \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+      `the approving machine is not trusted by the space machine trust log; run \`${machineApproveCommand(selected.slug)}\` from a machine the trust log already trusts`,
     )
   }
   return approver
@@ -307,7 +316,7 @@ async function acceptDone(
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
   if (!wrapped)
     throw new Error(
-      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run ${wrapFailureRemedy(own)}`,
+      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run ${wrapFailureRemedy(own, selected.slug)}`,
     )
 }
 
@@ -321,7 +330,7 @@ async function verifiedJoiner(
 ): Promise<TrustLogKey> {
   if (!verifyMachineJoinTag(session, 'joiner', confirm.body.slice(0, MACHINE_JOIN_TAG_BYTES))) {
     await burn(ports, selected, nameplate, ownSide)
-    throw mismatch()
+    throw mismatch(selected.slug)
   }
   const joiner = decodeMachineJoinRecord(
     openMachineJoinMessage(
@@ -363,7 +372,7 @@ async function approveAndWrap(
         { kind: 'add', ...joiner },
         {
           action: `running ${PLATFORM_SLUG} machine approve`,
-          retry: `\`${PLATFORM_SLUG} machine approve\``,
+          retry: `\`${machineApproveCommand(selected.slug)}\``,
         },
         { at: now(ports.at), env: ports.env },
       )
@@ -382,7 +391,7 @@ async function approveAndWrap(
       return {
         head,
         failure: new Error(
-          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with ${wrapFailureRemedy(joiner)}`,
+          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with ${wrapFailureRemedy(joiner, selected.slug)}`,
           { cause: error },
         ),
       }
@@ -403,7 +412,9 @@ export async function machineJoin(
   const code = generatePairingCode(allocated.nameplate)
   const formatted = formatPairingCode(code)
   ports.output?.(formatted)
-  ports.output?.(`on an approved machine run: \`${PLATFORM_SLUG} machine approve ${formatted}\``)
+  ports.output?.(
+    `on an approved machine run: \`${machineApproveCommand(selected.slug, formatted)}\``,
+  )
   const party = startMachineJoin(code, selected.spaceId, allocated.expiresAt, 'joiner')
   const ownSide = sideText(party.side)
   await ports.client.postMachineJoinMessage(
@@ -419,7 +430,7 @@ export async function machineJoin(
     ownSide,
     allocated.expiresAt,
     ['pake-b', 'confirm-b'],
-    destination,
+    selected,
   )
   const pake = incoming.get('pake-b')!
   const confirmation = incoming.get('confirm-b')!
@@ -456,7 +467,7 @@ export async function machineJoin(
     destination,
   )
   const done = (
-    await poll(ports, allocated.nameplate, ownSide, allocated.expiresAt, ['done'], destination)
+    await poll(ports, allocated.nameplate, ownSide, allocated.expiresAt, ['done'], selected)
   ).get('done')!
   await acceptDone(done, session, selected, allocated.nameplate, approver, record, ports)
   return { label: approver.label, keyId: approver.keyId }
@@ -473,7 +484,7 @@ export async function machineApprove(
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial && !initial.keys.has(record.keyId))
     throw new Error(
-      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${PLATFORM_SLUG} machine approve\``,
+      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${machineApproveCommand(selected.slug)}\``,
     )
   const side = crypto.getRandomValues(new Uint8Array(16))
   const ownSide = sideText(side)
@@ -481,11 +492,11 @@ export async function machineApprove(
   try {
     first = await ports.client.readMachineJoinMessages(code.nameplate, ownSide, destination)
   } catch (error) {
-    relayRefusal(error)
+    relayRefusal(error, selected.slug)
   }
   const pakeA =
     first.messages.find((message) => message.phase === 'pake-a') ??
-    (await poll(ports, code.nameplate, ownSide, first.expiresAt, ['pake-a'], destination)).get(
+    (await poll(ports, code.nameplate, ownSide, first.expiresAt, ['pake-a'], selected)).get(
       'pake-a',
     )!
   const party = startMachineJoin(code, selected.spaceId, first.expiresAt, 'approver', side)
@@ -512,7 +523,7 @@ export async function machineApprove(
     destination,
   )
   const confirm = (
-    await poll(ports, code.nameplate, ownSide, first.expiresAt, ['confirm-a'], destination)
+    await poll(ports, code.nameplate, ownSide, first.expiresAt, ['confirm-a'], selected)
   ).get('confirm-a')!
   const joiner = await verifiedJoiner(confirm, session, selected, code.nameplate, ownSide, ports)
   const approved = await approveAndWrap(joiner, record, selected, initial, ports)

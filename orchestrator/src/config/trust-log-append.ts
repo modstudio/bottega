@@ -1,8 +1,8 @@
 // concern: authenticated machine trust-log append
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { credentialMachineTrustCommands } from '../../../shared/credential-machine-trust.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import {
   bytesEqual,
@@ -74,7 +74,7 @@ export async function appendSignedTrustLogEntry(
   const signing = readMachineSigningKey(ports.env)
   if (!signing)
     throw new Error(
-      `machine signing key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\` before retrying ${wording.retry}`,
+      `machine signing key is not initialized; run \`${credentialMachineTrustCommands({ space: '<slug>' }).init}\` before retrying ${wording.retry}`,
     )
   const trustedOwnKey = state.keys.get(ownKeyId)!
   if (!bytesEqual(trustedOwnKey.signingPublicKey, signing.publicKey))

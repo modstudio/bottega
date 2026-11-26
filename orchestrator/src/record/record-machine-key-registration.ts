@@ -2,6 +2,7 @@
 /** Owns hosted machine-key listing and idempotent registration. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { credentialMachineTrustCommands } from '../../../shared/credential-machine-trust.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
@@ -100,7 +101,7 @@ export async function registerMachineKey(
         !Buffer.from(bytes(row.signing_public_key)).equals(Buffer.from(input.signingPublicKey))
       ) {
         throw new ConfigServiceError(
-          `machine key ${input.keyId} is already registered with a different signing key; have an owner revoke this machine key from an approved machine, then run \`${PLATFORM_SLUG} machine config machine init\` again to replace both keys`,
+          `machine key ${input.keyId} is already registered with a different signing key; have an owner revoke this machine key from an approved machine, then run \`${credentialMachineTrustCommands({ space: '<slug>' }).init}\` again to replace both keys`,
           409,
         )
       }

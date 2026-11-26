@@ -112,6 +112,7 @@ export const projectModules: ProjectModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/credential-machine-trust.ts',
     '../../../shared/git.ts',
     '../../../shared/hosted-config-space.ts',
     '../../../shared/machine-config.ts',

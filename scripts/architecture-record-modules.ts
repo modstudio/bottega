@@ -843,6 +843,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-machine-key-registration.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/credential-machine-trust.ts',
     '../../../shared/machine-key-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-timestamp.ts',

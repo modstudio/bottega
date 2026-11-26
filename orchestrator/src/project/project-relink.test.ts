@@ -462,7 +462,7 @@ describe('record sign-in machine key claim failure', () => {
       'signed in a@example.test',
       'active record space none',
       `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
-      `projects checked out under ${resolve(readMachineValue('projects.clone_root'))} are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init`,
+      `projects checked out under ${resolve(readMachineValue('projects.clone_root'))} are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init --space <slug>`,
       'no local task-flow or question history to upload',
       'local docs 0, revisions 0, scores 0, voids 0, deleted 0',
       'hosted docs 0, revisions 0, scores 0, voids 0',

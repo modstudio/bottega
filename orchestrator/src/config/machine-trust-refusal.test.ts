@@ -83,7 +83,7 @@ test('anchored trust checks the local key before the target key', () => {
       'named-space',
     ),
   ).toBe(
-    `this machine's key ${local} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `this machine's key ${local} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named-space\` with the code it prints`,
   )
   expect(
     anchoredTrustRefusal(
@@ -92,7 +92,7 @@ test('anchored trust checks the local key before the target key', () => {
       'named-space',
     ),
   ).toBe(
-    `the space's machine trust log does not list ${target}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+    `the space's machine trust log does not list ${target}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code> --space named-space\` with the code it prints`,
   )
   expect(
     anchoredTrustRefusal(

@@ -178,7 +178,7 @@ test('anchor reports genesis contention, follows an existing log, and refuses an
       randomSeed: () => new Uint8Array(32).fill(8),
     }),
   ).rejects.toThrow(
-    `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor\` again to add your pinned keys`,
+    `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor --space fixture\` again to add your pinned keys`,
   )
 
   const entries: Uint8Array[] = []

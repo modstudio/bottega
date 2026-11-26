@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
+import { credentialMachineTrustCommands } from '../../shared/credential-machine-trust.ts'
 import { KEYSTORE_ENV } from '../../shared/key-store-constants.ts'
 import { withDatabaseForMigrationStep } from '../src/database/db.ts'
 import { signInCommand } from '../src/record/record-auth-command.ts'
@@ -54,7 +55,9 @@ export function registerPostgresSignInProofs(input: {
         `signed in ${input.repair.email}`,
         expect.stringMatching(/^active record space user-\S+$/),
         expect.stringMatching(
-          /^projects checked out under \S+ are registered once this machine is initialized: \S+ machine config machine init$/,
+          new RegExp(
+            `^projects checked out under \\S+ are registered once this machine is initialized: ${credentialMachineTrustCommands({ space: '<slug>' }).init.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`,
+          ),
         ),
         'no local task-flow or question history to upload',
         'local docs 0, revisions 0, scores 0, voids 0, deleted 0',

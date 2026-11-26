@@ -4,6 +4,7 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { credentialMachineTrustCommands } from '../../../shared/credential-machine-trust.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
@@ -134,7 +135,7 @@ export async function registerCheckedOutHostedProjects(
     return [
       {
         status: 'missing',
-        message: `projects checked out under ${dependencies.readCloneRoot()} are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init`,
+        message: `projects checked out under ${dependencies.readCloneRoot()} are registered once this machine is initialized: ${credentialMachineTrustCommands({ space: '<slug>' }).init}`,
       },
     ]
   }
