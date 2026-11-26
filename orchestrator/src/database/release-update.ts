@@ -124,10 +124,11 @@ const RELEASE_UPDATE_DATABASE_OVERRIDE_ENVS = [
   HUB_DATABASE_ENV,
 ] as const
 
-function databaseOverrideFreeEnvironment(
+export function databaseOverrideFreeEnvironment(
   additions: Record<string, string> = {},
+  source: Record<string, string | undefined> = process.env,
 ): Record<string, string | undefined> {
-  const env = { ...process.env, ...additions }
+  const env = { ...source, ...additions }
   for (const name of RELEASE_UPDATE_DATABASE_OVERRIDE_ENVS) delete env[name]
   return env
 }

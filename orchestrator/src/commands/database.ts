@@ -25,6 +25,39 @@ export function registerDatabaseCommands(
       ),
     )
   program
+    .command('post-update <path-kind> [checkout-path] [branch] [before-pull]', { hidden: true })
+    .allowExcessArguments(false)
+    .action(
+      async (
+        pathKind: string,
+        checkoutPath: string | undefined,
+        branch: string | undefined,
+        beforePull: string | undefined,
+      ) => {
+        const postUpdate = await import('../database/post-update-steps.ts')
+        if (pathKind === 'distribution') {
+          if (checkoutPath || branch || beforePull) {
+            throw new Error('machine post-update distribution takes no checkout arguments')
+          }
+          return postUpdate.postUpdateCommand(presentation, { path: 'distribution' })
+        }
+        if (pathKind !== 'checkout') {
+          throw new Error('machine post-update path must be checkout or distribution')
+        }
+        if (!checkoutPath || !branch || !beforePull) {
+          throw new Error(
+            'machine post-update checkout requires checkout path, branch and pre-pull commit',
+          )
+        }
+        return postUpdate.postUpdateCommand(presentation, {
+          path: 'checkout',
+          checkout: checkoutPath,
+          branch,
+          beforePull,
+        })
+      },
+    )
+  program
     .command('migrate')
     .description('apply pending orchestrator store migrations')
     .option('--backfill-spec-sha', 'backfill missing run specification hashes')
