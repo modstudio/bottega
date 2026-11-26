@@ -55,7 +55,11 @@ import {
   type MergeabilityDecision,
   type MergeabilityFacts,
 } from './mergeability-decision.ts'
-import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
+import {
+  acceptedOperatorOverride,
+  decideTriageOverride,
+  type TriageOverrideAttribution,
+} from './override-decision.ts'
 import { pullRequestReleaseDecisionAtHead } from './pr-release-admission.ts'
 import { pullRequestReleaseNotice } from './pr-release-notice.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
@@ -678,22 +682,6 @@ type CreatePullRequestOptions = {
   body?: string
 }
 
-export function operatorOverrideForPullRequestCreate(
-  options: CreatePullRequestOptions,
-): { reason: string } | undefined {
-  if (options.overrideReason === undefined) return undefined
-  const decision = decideTriageOverride({
-    overrideReason: options.overrideReason,
-    ceilingRuling: options.ceilingRuling,
-    fromOperator: Boolean(options.fromOperator),
-    commandName: PLATFORM_SLUG,
-  })
-  if (decision.kind === 'refuse') throw new Error(decision.reason)
-  return decision.kind === 'accept' && decision.attribution === 'operator'
-    ? { reason: decision.reason }
-    : undefined
-}
-
 function createPullRequestAdmittedChange(
   args: string[],
   options: CreatePullRequestOptions,
@@ -846,7 +834,12 @@ export async function createPullRequest(
 ): Promise<{ output: string; overrideId: string | null }> {
   const change = preparePullRequestCreate(options, cwd)
   const database = db()
-  const operatorOverride = operatorOverrideForPullRequestCreate(options)
+  const operatorOverride = acceptedOperatorOverride({
+    overrideReason: options.overrideReason,
+    ceilingRuling: options.ceilingRuling,
+    fromOperator: Boolean(options.fromOperator),
+    commandName: PLATFORM_SLUG,
+  })
   const classGuardNotice = await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,

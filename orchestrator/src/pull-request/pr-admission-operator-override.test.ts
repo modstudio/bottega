@@ -1,20 +1,27 @@
 import { expect, test } from 'bun:test'
-import { operatorOverrideForPullRequestCreate } from './pr-admission.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { acceptedOperatorOverride } from './override-decision.ts'
 
 test('only an accepted current operator override reaches pull request creation policy floors', () => {
   expect(
-    operatorOverrideForPullRequestCreate({
+    acceptedOperatorOverride({
       overrideReason: 'operator ruling',
       fromOperator: true,
+      commandName: PLATFORM_SLUG,
     }),
   ).toEqual({ reason: 'operator ruling' })
   expect(
-    operatorOverrideForPullRequestCreate({
+    acceptedOperatorOverride({
       ceilingRuling: 'architect ceiling ruling',
       fromOperator: true,
+      commandName: PLATFORM_SLUG,
     }),
   ).toBeUndefined()
-  expect(() => operatorOverrideForPullRequestCreate({ overrideReason: 'operator ruling' })).toThrow(
-    'refusing triage override without operator attribution',
-  )
+  expect(() =>
+    acceptedOperatorOverride({
+      overrideReason: 'operator ruling',
+      fromOperator: false,
+      commandName: PLATFORM_SLUG,
+    }),
+  ).toThrow('refusing triage override without operator attribution')
 })

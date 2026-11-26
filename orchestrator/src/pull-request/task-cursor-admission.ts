@@ -229,7 +229,7 @@ export async function assertPullRequestTaskCursorAdmission(
   })
   if (classGuard.kind === 'refuse') throw new Error(classGuard.message)
   if (classGuard.kind === 'overridden') {
-    return `class guard admitted by operator override: ${classGuard.refusal}`
+    return `class guard admitted by operator override (${classGuard.reason}): ${classGuard.refusal}`
   }
   return undefined
 }

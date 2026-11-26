@@ -59,7 +59,13 @@ test('every class guard refusal yields to an operator override', () => {
     })
   }
   const source = readFileSync(new URL('./pr-class-guard.ts', import.meta.url), 'utf8')
-  expect(refusalMessages.size).toBe(source.match(/classGuardRefusal\(\s*input,/g)?.length ?? 0)
+  const refusalHelper = source.slice(
+    source.indexOf('function classGuardRefusal'),
+    source.indexOf('\n}\n\nexport type ClassGuardDecision') + 2,
+  )
+  expect(refusalMessages.size).toBe(cases.length)
+  expect(source.match(/kind:\s*'refuse'/g)?.length ?? 0).toBe(1)
+  expect(refusalHelper.match(/kind:\s*'refuse'/g)?.length ?? 0).toBe(1)
 })
 test('allows grep count zero with its no-match exit', () =>
   expect(

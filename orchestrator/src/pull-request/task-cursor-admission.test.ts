@@ -181,18 +181,22 @@ test('the adapter reads the harness cursors before admitting a keyed branch', as
 })
 
 test('the adapter refuses a keyed branch when the harness has no cursor', async () => {
-  await expect(
+  const admission = (command: 'pr create' | 'pr merge', operatorOverride?: { reason: string }) =>
     assertPullRequestTaskCursorAdmission(
       {
-        command: 'pr merge',
+        command,
         project,
         branch: 'DEV-2387-change',
         env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
         checkoutRoots: [],
+        operatorOverride,
       },
       async () => [],
-    ),
-  ).rejects.toThrow(`${PLATFORM_SLUG} workflow compose ship-task`)
+    )
+  await expect(admission('pr merge')).rejects.toThrow(`${PLATFORM_SLUG} workflow compose ship-task`)
+  await expect(admission('pr create', { reason: 'operator ruling' })).rejects.toThrow(
+    `${PLATFORM_SLUG} workflow compose ship-task`,
+  )
 })
 
 test('the adapter enforces the class guard from a held fix-defect cursor', async () => {
@@ -276,7 +280,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
   try {
     await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
     await expect(admission('Summary', { reason: 'operator ruling' })).resolves.toBe(
-      'class guard admitted by operator override: fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
+      'class guard admitted by operator override (operator ruling): fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
     )
     await expect(
       admission('Summary\nClass guard: architecture check (before 3, after 0)'),
@@ -302,21 +306,6 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         branch: 'DEV-2387-change',
       }),
     ).rejects.toThrow(`run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`)
-    await expect(
-      assertPullRequestTaskCursorAdmission(
-        {
-          command: 'pr merge',
-          project,
-          branch: 'DEV-2387-change',
-          env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
-          database,
-          body: 'Summary',
-          checkoutRoots: [project.path],
-          operatorOverride: { reason: 'operator ruling' },
-        },
-        async () => [{ ...held, actions: ['pr-create', 'pr-merge'] }],
-      ),
-    ).resolves.toBeUndefined()
   } finally {
     rmSync(temp, { recursive: true, force: true })
   }

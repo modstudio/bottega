@@ -20,10 +20,8 @@ export type ClassGuardExec = {
   createdAt: string
 }
 
-export type ClassGuardDecision =
-  | { kind: 'allow' }
-  | { kind: 'refuse'; message: string }
-  | { kind: 'overridden'; refusal: string; reason: string }
+type AllowedClassGuardDecision = { kind: 'allow' }
+type OverriddenClassGuardDecision = { kind: 'overridden'; refusal: string; reason: string }
 
 type PullRequestClassGuardInput = {
   body: string
@@ -36,11 +34,20 @@ type PullRequestClassGuardInput = {
   operatorOverride?: { reason: string }
 }
 
-function classGuardRefusal(input: PullRequestClassGuardInput, message: string): ClassGuardDecision {
+function classGuardRefusal(input: PullRequestClassGuardInput, message: string) {
   return input.operatorOverride
-    ? { kind: 'overridden', refusal: message, reason: input.operatorOverride.reason }
-    : { kind: 'refuse', message }
+    ? ({
+        kind: 'overridden',
+        refusal: message,
+        reason: input.operatorOverride.reason,
+      } satisfies OverriddenClassGuardDecision)
+    : { kind: 'refuse' as const, message }
 }
+
+export type ClassGuardDecision =
+  | AllowedClassGuardDecision
+  | OverriddenClassGuardDecision
+  | ReturnType<typeof classGuardRefusal>
 
 const rerun = (cwd: string, command: string) =>
   `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(cwd)} -- ${command}`

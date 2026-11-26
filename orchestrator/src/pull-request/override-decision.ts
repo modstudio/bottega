@@ -120,3 +120,17 @@ export function decideTriageOverride(input: TriageOverrideInput): TriageOverride
   }
   return { kind: 'accept', reason, attribution: 'operator', missingLenses: [] }
 }
+
+export function acceptedOperatorOverride(input: {
+  overrideReason?: string
+  ceilingRuling?: string
+  fromOperator: boolean
+  commandName: string
+}): { reason: string } | undefined {
+  if (input.overrideReason === undefined) return undefined
+  const decision = decideTriageOverride(input)
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
+  return decision.kind === 'accept' && decision.attribution === 'operator'
+    ? { reason: decision.reason }
+    : undefined
+}
