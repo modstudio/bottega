@@ -2,11 +2,6 @@
 /** Generates and evaluates bounded note pairs, then clusters their answers. */
 
 import type { Database } from 'bun:sqlite'
-import { resolveActiveSpaceCredentialValue } from '../../shared/credential-value.ts'
-import {
-  resolveTypesafeCredential,
-  TYPESAFE_CREDENTIAL_SET_COMMAND,
-} from '../../shared/typed-question/client.ts'
 import { db } from './db.ts'
 import { duplicateTokenSet } from './duplicate-score.ts'
 import { rankDuplicateCandidates } from './note-duplicate-candidates.ts'
@@ -19,7 +14,10 @@ import {
   notePairSubjectRef,
   noteTextHash,
 } from './note-duplicate-question.ts'
-import { askHubTypedQuestionWithReuse } from './typed-question-service.ts'
+import {
+  askHubTypedQuestionWithReuse,
+  typedQuestionCredentialAvailability,
+} from './typed-question-service.ts'
 
 export type EvaluationNote = {
   record_id: string
@@ -333,21 +331,6 @@ export async function evaluateNotePairs(
   }
 }
 
-async function credentialAvailability() {
-  try {
-    const credential = await resolveTypesafeCredential(resolveActiveSpaceCredentialValue)
-    return credential.kind === 'resolved'
-      ? ({ available: true } as const)
-      : ({
-          available: false,
-          reason: `no answers obtained: the typesafe/api-key credential is not configured; run ${TYPESAFE_CREDENTIAL_SET_COMMAND}`,
-        } as const)
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return { available: false, reason: `no answers obtained: ${message}` } as const
-  }
-}
-
 export async function answerEvaluationPair(
   pair: EvaluationPair,
   ask = askHubTypedQuestionWithReuse,
@@ -415,7 +398,7 @@ function isTopCandidate(
 }
 
 const defaultDependencies: Dependencies = {
-  credential: credentialAvailability,
+  credential: () => typedQuestionCredentialAvailability('no answers obtained'),
   answerPair: (pair) => answerEvaluationPair(pair),
   positiveSubjects: (project, actionableNotes, allProjectNotes) =>
     blockingRecall(db(), project, actionableNotes, allProjectNotes),

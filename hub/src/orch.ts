@@ -93,6 +93,7 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
+import { NOTE_EVALUATION_RECORD_SLUG } from './note-evaluation-identity.ts'
 import {
   type DocListFilters,
   type DocReorderInput,
@@ -938,14 +939,13 @@ export async function writeNoteEvaluationRecord(
   body: string,
   dependencies: { list: typeof docList; set: typeof docSet } = { list: docList, set: docSet },
 ): Promise<DocRow> {
-  const slug = 'note-evaluation'
   const current = (await dependencies.list({ scope: 'project', subject: project })).find(
-    (document) => document.slug === slug,
+    (document) => document.slug === NOTE_EVALUATION_RECORD_SLUG,
   )
   return dependencies.set({
     scope: 'project',
     subject: project,
-    slug,
+    slug: NOTE_EVALUATION_RECORD_SLUG,
     title: `Note evaluation: ${project}`,
     body,
     reason: 'record the current note backlog evaluation',

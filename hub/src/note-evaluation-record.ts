@@ -4,9 +4,9 @@
 import type { NoteClassPass } from './note-classification.ts'
 import type { FailedCuratorPage, NoteCurationResult } from './note-curation.ts'
 import type { NoteProposal, RankedClass } from './note-curation-decisions.ts'
+import { NOTE_EVALUATION_RECORD_SLUG } from './note-evaluation-identity.ts'
 
-export const NOTE_EVALUATION_RECORD_SLUG = 'note-evaluation'
-const DATA_FENCE = 'note-evaluation-json'
+const DATA_FENCE = `${NOTE_EVALUATION_RECORD_SLUG}-json`
 
 export type NoteEvaluationRecordData = {
   jev: Pick<NoteClassPass, 'ran' | 'status' | 'answers'>

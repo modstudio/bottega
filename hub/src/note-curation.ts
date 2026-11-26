@@ -7,8 +7,6 @@ import {
   type CuratorNote,
   type NoteProposal,
   packCuratorPages,
-  type RankedClass,
-  rankNoteClasses,
   type SeedClass,
 } from './note-curation-decisions.ts'
 import { type CuratorRunReply, dispatchNoteEvaluationCurator } from './note-curator-orch.ts'
@@ -52,7 +50,6 @@ export type NoteCurationResult = {
   failedPages: FailedCuratorPage[]
   invalidEntries: number
   stopped: string | null
-  ranking: RankedClass[]
 }
 
 function curatorPrompt(seed: readonly SeedClass[], notes: readonly CuratorNote[]): string {
@@ -157,15 +154,13 @@ async function mapPages(
 
 export async function curateEvaluationNotes(
   cwd: string,
-  allNotes: readonly CuratorNote[],
   notes: readonly CuratorNote[],
   clusters: readonly NoteEvaluationCluster[],
   seed: readonly SeedClass[],
   dispatch: Dispatch = dispatchNoteEvaluationCurator,
 ): Promise<NoteCurationResult> {
   const pages = packCuratorPages(notes, clusters)
-  if (!pages.length)
-    return { proposals: [], failedPages: [], invalidEntries: 0, stopped: null, ranking: [] }
+  if (!pages.length) return { proposals: [], failedPages: [], invalidEntries: 0, stopped: null }
   const first = await curatePage(pages[0]!, 1, cwd, seed, dispatch)
   if (first.kind === 'failed') {
     const refusal = first.failure.runId === null ? first.failure.error : null
@@ -175,7 +170,6 @@ export async function curateEvaluationNotes(
         failedPages: [first.failure],
         invalidEntries: 0,
         stopped: refusal,
-        ranking: [],
       }
   }
   const rest = await mapPages(pages.slice(1), cwd, seed, dispatch)
@@ -189,6 +183,5 @@ export async function curateEvaluationNotes(
       0,
     ),
     stopped: null,
-    ranking: rankNoteClasses(allNotes, proposals, seed),
   }
 }

@@ -15,7 +15,7 @@ const note = (label: string, text = label): CuratorNote => ({
 test('invalid replies fail only their page and cross-page duplicate references are dropped', async () => {
   const notes = [note('A', 'a'.repeat(40_001)), note('B', 'b'.repeat(40_001))]
   let call = 0
-  const result = await curateEvaluationNotes('/tmp/alpha', notes, notes, [], seed, async () => {
+  const result = await curateEvaluationNotes('/tmp/alpha', notes, [], seed, async () => {
     call++
     return call === 1
       ? { runId: 'r1', reply: { wrong: [] } }
@@ -42,7 +42,7 @@ test('invalid replies fail only their page and cross-page duplicate references a
 test('a refused first dispatch stops without dispatching another page', async () => {
   const notes = [note('A'), note('B')]
   let calls = 0
-  const result = await curateEvaluationNotes('/tmp/alpha', notes, notes, [], seed, async () => {
+  const result = await curateEvaluationNotes('/tmp/alpha', notes, [], seed, async () => {
     calls++
     throw new Error('open a keyless workflow cursor, then retry')
   })

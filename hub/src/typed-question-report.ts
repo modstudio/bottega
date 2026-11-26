@@ -11,6 +11,12 @@ import { db } from './db.ts'
 import { noteDuplicateLabel } from './note-duplicate-question.ts'
 import { TYPED_QUESTION_DECLARATIONS } from './typed-question-declarations.ts'
 
+export function typedQuestionLabelResolver(questionId: string, database: Database) {
+  return questionId === 'note_duplicate'
+    ? (subjectRef: string) => noteDuplicateLabel(database, subjectRef)
+    : null
+}
+
 export function hubTypedQuestionReport(
   options: { days?: number },
   database: Database = db(),
@@ -28,7 +34,7 @@ export function hubTypedQuestionReport(
       (question) => question.id === questionId && question.version === questionVersion,
     )
     return {
-      label: declared ? (subjectRef) => noteDuplicateLabel(database, subjectRef) : null,
+      label: declared ? typedQuestionLabelResolver(declared.id, database) : null,
       threshold: declared?.threshold ?? null,
     }
   })

@@ -19,16 +19,11 @@ import {
   staleNotes,
 } from './note.ts'
 import { readNoteClasses } from './note-classes.ts'
-import { readLiveSeedClasses, runNoteClassPass } from './note-classification.ts'
-import { curateEvaluationNotes } from './note-curation.ts'
-import { rankNoteClasses } from './note-curation-decisions.ts'
 import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
-import { evaluateNotePairs, noteEvaluationBody } from './note-evaluation.ts'
-import { appendCurationRecord } from './note-evaluation-record.ts'
+import { evaluateNotes } from './note-evaluate.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { listProjectSlimNotes } from './note-read.ts'
-import { writeNoteEvaluationRecord } from './orch.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -146,29 +141,7 @@ function curatorNoteCommand(options: NoteOptions): void {
 
 async function evaluateNoteCommand(options: NoteOptions): Promise<void> {
   open()
-  const project = options.project!
-  const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
-  const allProjectNotes = (await listProjectSlimNotes({ project })).notes
-  const result = await evaluateNotePairs(project, notes, allProjectNotes)
-  let body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
-  if (!options.skipCurate) {
-    const seed = await readLiveSeedClasses()
-    const classPass = await runNoteClassPass(notes, seed)
-    const registered = projects().find((candidate) => candidate.name === project)
-    if (!registered) throw new Error(`unknown project '${project}'`)
-    const curation = await curateEvaluationNotes(
-      registered.path,
-      notes,
-      classPass.remaining,
-      result.clusters,
-      seed,
-    )
-    const proposals = [...classPass.proposals, ...curation.proposals]
-    const ranking = rankNoteClasses(notes, proposals, seed)
-    body = appendCurationRecord(body, classPass, curation, proposals, ranking)
-  }
-  await writeNoteEvaluationRecord(project, body)
-  console.log(body)
+  console.log(await evaluateNotes(options.project!, { skipCurate: Boolean(options.skipCurate) }))
 }
 
 async function classesNoteCommand(options: NoteOptions): Promise<void> {

@@ -2,7 +2,6 @@
 /** Dispatches schema-bound curator runs and reads their validated replies. */
 
 import { readFile } from 'node:fs/promises'
-import { z } from 'zod'
 import { startBounded } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { runtimeAssetPath } from '../../shared/runtime-assets.ts'
@@ -11,7 +10,7 @@ import { resolveOrchExecutable } from './orch-project-register.ts'
 
 export type CuratorRunReply = { runId: string; reply: unknown }
 
-export function selectReplyArtifactPath(manifest: string): string {
+function selectReplyArtifactPath(manifest: string): string {
   const replyPath = manifest
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -55,20 +54,4 @@ export async function dispatchNoteEvaluationCurator(
     const message = cause instanceof Error ? cause.message : String(cause)
     throw new Error(`${reference}: ${message}`)
   }
-}
-
-export async function readNoteEvaluationRevision(
-  project: string,
-  revision: string,
-): Promise<{ body: string }> {
-  const result = await run([
-    'doc',
-    'revision',
-    'project',
-    project,
-    'note-evaluation',
-    revision,
-    '--json',
-  ])
-  return z.object({ body: z.string() }).passthrough().parse(JSON.parse(result))
 }

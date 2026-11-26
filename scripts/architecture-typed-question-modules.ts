@@ -97,6 +97,7 @@ export const typedQuestionModules = [
   ]),
   module('hub/src/typed-question-service.ts', [
     'bun:sqlite',
+    '../../shared/credential-value.ts',
     '../../shared/record-id.ts',
     '../../shared/typed-question/client.ts',
     '../../shared/typed-question/registry.ts',

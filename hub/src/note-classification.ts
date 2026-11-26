@@ -2,18 +2,16 @@
 /** Reads the live class seed and performs the fail-open Jev class pass. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { resolveActiveSpaceCredentialValue } from '../../shared/credential-value.ts'
-import {
-  resolveTypesafeCredential,
-  TYPESAFE_CREDENTIAL_SET_COMMAND,
-} from '../../shared/typed-question/client.ts'
 import type { CuratorNote, NoteProposal, SeedClass } from './note-curation-decisions.ts'
 import { NOTE_DUPLICATE_CONCURRENCY } from './note-duplicate-question.ts'
 import { mapConcurrent } from './note-evaluation.ts'
 import { listTasks } from './task.ts'
 import type { TaskRow } from './task-row.ts'
 import { NOTE_CLASS_ACCEPT_CONFIDENCE, NOTE_CLASS_QUESTION } from './typed-question-declarations.ts'
-import { askHubTypedQuestionWithReuse } from './typed-question-service.ts'
+import {
+  askHubTypedQuestionWithReuse,
+  typedQuestionCredentialAvailability,
+} from './typed-question-service.ts'
 
 const NOTE_CLASS_EPIC = 'DEV-2079'
 const NOTE_CLASS_SUBJECT_KIND = 'note'
@@ -126,22 +124,7 @@ export async function runNoteClassPass(
   }
 }
 
-async function credentialAvailability() {
-  try {
-    const credential = await resolveTypesafeCredential(resolveActiveSpaceCredentialValue)
-    return credential.kind === 'resolved'
-      ? ({ available: true } as const)
-      : ({
-          available: false,
-          reason: `Jev class pass obtained no answers: the typesafe/api-key credential is not configured; run ${TYPESAFE_CREDENTIAL_SET_COMMAND}`,
-        } as const)
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return { available: false, reason: `Jev class pass obtained no answers: ${message}` } as const
-  }
-}
-
 const defaultDependencies: ClassPassDependencies = {
-  credential: credentialAvailability,
+  credential: () => typedQuestionCredentialAvailability('Jev class pass obtained no answers'),
   ask: askHubTypedQuestionWithReuse,
 }

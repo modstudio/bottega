@@ -3,17 +3,14 @@ export const noteEvaluationModuleSpecs = [
     file: 'hub/src/note-classes.ts',
     allowed: [
       '../../shared/brand.ts',
-      './note-curator-orch.ts',
+      './note-evaluation-reader.ts',
       './note-evaluation-record.ts',
-      './orch.ts',
     ],
   },
   {
     file: 'hub/src/note-classification.ts',
     allowed: [
       '../../shared/brand.ts',
-      '../../shared/credential-value.ts',
-      '../../shared/typed-question/client.ts',
       './note-curation-decisions.ts',
       './note-duplicate-question.ts',
       './note-evaluation.ts',
@@ -22,6 +19,24 @@ export const noteEvaluationModuleSpecs = [
       './typed-question-declarations.ts',
       './typed-question-service.ts',
     ],
+  },
+  {
+    file: 'hub/src/note-evaluate.ts',
+    allowed: [
+      './note-classification.ts',
+      './note-curation-decisions.ts',
+      './note-curation.ts',
+      './note-evaluation-record.ts',
+      './note-evaluation.ts',
+      './note-read.ts',
+      './orch.ts',
+      './projects.ts',
+    ],
+  },
+  { file: 'hub/src/note-evaluation-identity.ts', allowed: [] },
+  {
+    file: 'hub/src/note-evaluation-reader.ts',
+    allowed: ['./note-evaluation-identity.ts', './orch-doc-revision.ts', './orch.ts'],
   },
   {
     file: 'hub/src/note-curation-decisions.ts',
@@ -45,11 +60,15 @@ export const noteEvaluationModuleSpecs = [
       '../../shared/runtime-assets.ts',
       '../../shared/self-spawn.ts',
       './orch-project-register.ts',
-      'zod',
     ],
   },
   {
     file: 'hub/src/note-evaluation-record.ts',
-    allowed: ['./note-classification.ts', './note-curation-decisions.ts', './note-curation.ts'],
+    allowed: [
+      './note-classification.ts',
+      './note-curation-decisions.ts',
+      './note-curation.ts',
+      './note-evaluation-identity.ts',
+    ],
   },
 ] as const
