@@ -189,7 +189,7 @@ export async function machineRecover(selected: SelectedSpace, ports: RecoverPort
   )
   if (!state)
     throw new Error(
-      `space ${selected.slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${selected.slug}\``,
+      `space ${selected.slug} is not anchored; run \`${machineAnchorCommand(selected.slug)}\``,
     )
   const { own } = await localRecord(selected, ports)
   if (state.keys.has(own.keyId)) {

@@ -6,6 +6,7 @@ import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { CpaceRefusal } from '../../../shared/cpace.ts'
 import {
   credentialMachineTrustCommands,
+  machineAnchorCommand,
   machineApproveCommand,
   machineJoinCommand,
 } from '../../../shared/credential-machine-trust.ts'
@@ -88,7 +89,7 @@ function wrapFailureRemedy(key: TrustLogKey, spaceSlug: string): string {
 }
 
 export function unanchoredApprovalNotice(slug: string): string {
-  return `space ${slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${slug}\` from your own terminal`
+  return `space ${slug} is not anchored; run \`${machineAnchorCommand(slug)}\` from your own terminal`
 }
 
 function expirationRefusal(spaceSlug: string): Error {
@@ -157,10 +158,9 @@ export async function localRecord(
 }> {
   const pair = readMachineKey(ports.env)
   const signing = readMachineSigningKey(ports.env)
+  const init = credentialMachineTrustCommands({ space: selected.slug }).init
   if (!pair || !signing)
-    throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
+    throw new Error(`machine key is not initialized; run \`${init}\``)
   const keyId = await machineKeyId(pair.publicKey)
   const [who, registered] = await Promise.all([
     ports.client.whoami(),
@@ -174,9 +174,7 @@ export async function localRecord(
     label: listed?.label ?? '',
   }
   if (listed?.userId !== who.user.id || !registeredKeyAgrees(listed, own))
-    throw new Error(
-      `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
+    throw new Error(`machine key is not registered for this user; run \`${init}\``)
   return {
     ownUserId: who.user.id,
     own,

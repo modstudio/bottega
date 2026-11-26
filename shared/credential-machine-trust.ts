@@ -23,6 +23,7 @@ export type CouldNotCheckCredentialMachineTrustFacts = {
 
 export type CredentialMachine = { keyId: string; publicKey: Uint8Array }
 
+/** `machine <verb>` commands use standalone builders; `machine config machine <verb>` commands use credentialMachineTrustCommands. */
 export const machineApproveCommand = (space: string, code = '<code>'): string =>
   `${PLATFORM_SLUG} machine approve ${code} --space ${space}`
 
