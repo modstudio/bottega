@@ -274,7 +274,7 @@ export const ROUTES = (
     {
       ...route('agent share', 'orch', 'agent share'),
       description:
-        'share one local agent declaration with a record space, or use --all to share every enabled and disabled row',
+        'share one local agent declaration with a record space, or use --all to share every vendor-operated enabled and disabled row; self-operated rows are skipped because their endpoints belong to this machine',
       options: [
         { flags: '--all', description: 'share every local agent declaration' },
         { flags: '--space <slug>', description: 'select the destination record space' },

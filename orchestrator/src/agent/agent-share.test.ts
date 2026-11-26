@@ -5,6 +5,7 @@ import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { registerRecordRequestSpace } from '../record/record-api-request-space.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
+import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { type AgentRow, addAgent, removeAgent } from './agent-registry.ts'
 import {
   listSharedAgents,
