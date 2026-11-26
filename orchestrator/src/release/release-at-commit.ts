@@ -1,7 +1,10 @@
 // concern: lifecycle-backed release checkout
-/** Provisions, deploys from, and releases one checkout at an exact commit. */
+/** Ensures the requested commit is present in the registered checkout, fetching origin's landing branch and rung branch when absent, then provisions, deploys from, and releases one checkout at that commit. */
 
 import { randomUUID } from 'node:crypto'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import type { GitRefObservation } from '../git/git-environment.ts'
+import { git, observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import {
   type CheckoutReleaseTarget,
@@ -20,9 +23,19 @@ export type ReleaseAtCommitReport = {
 
 export type ReleaseAtCommitDependencies = {
   resolve(project: string, rung: string, commit: string): CheckoutReleaseTarget
+  ensureCommit(
+    project: Pick<Project, 'path' | 'settings'>,
+    commit: string,
+    rungBranch: string,
+  ): void
   deploy(target: CheckoutReleaseTarget, path: string, commit: string): ReleaseResult
   id(): string
   now(): number
+}
+
+type EnsureCommitGitRunner = {
+  observe(cwd: string, ref: string): GitRefObservation
+  fetch(args: string[], cwd: string, env: NodeJS.ProcessEnv): void
 }
 
 type ReleaseTreeRemovalResult =
@@ -37,9 +50,76 @@ export type ReleaseTreeLifecycle = {
 
 const releaseAtCommitDependencies: ReleaseAtCommitDependencies = {
   resolve: resolveCheckoutReleaseTarget,
+  ensureCommit,
   deploy: releaseProjectFromCheckout,
   id: randomUUID,
   now: Date.now,
+}
+
+const ensureCommitGitRunner: EnsureCommitGitRunner = {
+  observe: observeGitRef,
+  fetch: (args, cwd, env) => {
+    git(args, cwd, env)
+  },
+}
+
+function commitIsPresent(
+  observation: GitRefObservation,
+  commit: string,
+  cwd: string,
+  afterFetch = false,
+): boolean {
+  if (observation.outcome === 'present') return true
+  if (observation.outcome === 'failed') {
+    const phase = afterFetch ? ' after fetching' : ''
+    throw new Error(
+      `could not verify commit ${commit} in checkout ${cwd}${phase}: ${observation.detail}`,
+    )
+  }
+  return false
+}
+
+export function ensureCommitWithGit(
+  project: Pick<Project, 'path' | 'settings'>,
+  commit: string,
+  rungBranch: string,
+  runner: EnsureCommitGitRunner,
+): void {
+  const cwd = project.path
+  const env = targetGitEnvironment(cwd)
+  const ref = `${commit}^{commit}`
+  if (commitIsPresent(runner.observe(cwd, ref), commit, cwd)) return
+
+  const trunk = project.settings.trunk
+  if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+
+  const branches = rungBranch && rungBranch !== trunk ? [trunk, rungBranch] : [trunk]
+  const remedy = `git -C ${cwd} fetch origin ${branches.join(' ')}, then rerun`
+  for (const branch of branches) {
+    try {
+      runner.fetch(['fetch', 'origin', branch], cwd, env)
+    } catch (cause) {
+      if (cause instanceof BoundExceededError) throw cause
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(
+        `commit ${commit} is absent from checkout ${cwd}; fetch of origin's ${branch} failed: ${detail}; run ${remedy}`,
+      )
+    }
+  }
+
+  if (!commitIsPresent(runner.observe(cwd, ref), commit, cwd, true)) {
+    throw new Error(
+      `commit ${commit} is not on origin's ${branches.join(' or ')} after fetching in checkout ${cwd}; run ${remedy}`,
+    )
+  }
+}
+
+function ensureCommit(
+  project: Pick<Project, 'path' | 'settings'>,
+  commit: string,
+  rungBranch: string,
+): void {
+  ensureCommitWithGit(project, commit, rungBranch, ensureCommitGitRunner)
 }
 
 /** The single capability predicate shared by merge ordering and machine update. */
@@ -67,6 +147,7 @@ export async function releaseAtCommit(input: {
   const target = dependencies.resolve(input.project, input.rung, input.commit)
   const provisionStarted = dependencies.now()
   const treeName = `release-${input.rung}-${dependencies.id()}`
+  dependencies.ensureCommit(target.project, input.commit, target.selected.branch)
   const path = input.lifecycle.create(target.project.path, treeName, input.commit)
   const provisionMs = dependencies.now() - provisionStarted
   let result: ReleaseResult | undefined

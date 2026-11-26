@@ -72,6 +72,8 @@ export const releaseModules = [
     file: 'orchestrator/src/release/release-at-commit.ts',
     allowed: [
       'node:crypto',
+      'shared/call-budgets.ts',
+      'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/release/release-service.ts',
       'orchestrator/src/worktree/worktree-create.ts',
