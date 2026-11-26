@@ -107,7 +107,12 @@ type ProbeCandidates = {
 }
 
 function probeNames(input: ProbeCandidates): string[] {
-  return [...input.existingProbeNames, ...input.registrations.map((agent) => agent.name)].sort()
+  return [
+    ...input.existingProbeNames,
+    ...input.registrations
+      .filter((agent) => agent.mutation.enabled !== false)
+      .map((agent) => agent.name),
+  ].sort()
 }
 
 /** Probe-with-project table: unprobed local rows and accepted registrations are offered together. */

@@ -242,6 +242,7 @@ function readSetupState(): {
       declarationAgents: rows.map((row) => ({
         ...agentRowDeclaration(row),
         enabled: Boolean(row.enabled),
+        disabledReason: row.disabled_reason,
         probedAt: row.probed_at,
       })),
     }
@@ -271,11 +272,16 @@ export async function addDeclaredAgentsToPlan(
       : []
   })
   const declaredNames = new Set(read.agents.map(({ name }) => name))
+  const enabledDeclaredNames = new Set(
+    read.agents.filter(({ enabled }) => enabled).map(({ name }) => name),
+  )
   const declaredLocal = localAgents.filter(({ name }) => declaredNames.has(name))
   const current = projectAmong(process.cwd(), registeredProjects)
   const projectPath = (current ?? registeredProjects[0])?.path ?? null
   const existingProbeNames = declaredLocal
-    .filter(({ enabled, probedAt }) => enabled && probedAt === null)
+    .filter(({ name, enabled, probedAt }) =>
+      Boolean(enabledDeclaredNames.has(name) && enabled && probedAt === null),
+    )
     .map(({ name }) => name)
   plan.agentDeclarations = {
     registrations,

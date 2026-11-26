@@ -92,3 +92,15 @@ test('probe tables include only never-probed rows and pending registrations', ()
   )
   expect(probesWithoutProject({ existingProbeNames, registrations })).toEqual(['new', 'worker'])
 })
+
+test('probe tables exclude pending disabled registrations', () => {
+  expect(
+    probesWithProject({
+      existingProbeNames: [],
+      registrations: [
+        { name: 'disabled', mutation: { harness: 'grok', enabled: false, reason: 'retired' } },
+      ],
+      projectPath: '/project',
+    }),
+  ).toEqual([])
+})

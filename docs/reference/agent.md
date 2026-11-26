@@ -311,13 +311,14 @@ list jobs and their capability requirements
 
 ## bottega agent list
 
-**Synopsis:** `bottega agent list [--json]`
+**Synopsis:** `bottega agent list [--json] [--space <slug>]`
 
-list agents and their readiness
+list local agents or one space's shared declarations
 
 ### Options
 
 - `--json`: write agent capabilities as JSON
+- `--space <slug>`: list shared declarations in this record space
 
 ### Related
 
@@ -418,7 +419,7 @@ Options are documented by `--help`.
 
 **Synopsis:** `bottega agent share [args...]`
 
-inspect and change agent registrations
+share one or every local agent declaration with a record space
 
 ### Options
 
