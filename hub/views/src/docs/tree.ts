@@ -1,3 +1,4 @@
+import { SHARED_PROJECT_LABEL } from './filters.ts'
 import type { DocsAudience, DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 function byPositionThenTitle(a: DocsTreeItem, b: DocsTreeItem) {
@@ -150,7 +151,7 @@ export function groupRootsBySubject(roots: readonly TreeNode[]): DocsTreeGroup[]
   const groups: DocsTreeGroup[] = [...named.keys()]
     .sort((a, b) => a.localeCompare(b))
     .map((heading) => ({ heading, children: named.get(heading)! }))
-  if (shared.length) groups.push({ heading: 'Shared', children: shared })
+  if (shared.length) groups.push({ heading: SHARED_PROJECT_LABEL, children: shared })
   return groups
 }
 

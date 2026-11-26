@@ -6,6 +6,8 @@ import {
   type FilterSelection,
   inProject,
   offeredFilters,
+  offersSharedProject,
+  type ProjectSelection,
   projectSubjects,
   selectedAudience,
 } from './filters.ts'
@@ -42,7 +44,7 @@ export function docsVisibleByKind(
 /** Whether search follows a working-document view of this catalogue. */
 export function docsSearchIncludesWorking(
   items: readonly DocsTreeItem[],
-  project: string | 'all',
+  project: ProjectSelection,
   showWorking: boolean,
 ): boolean {
   return docsVisibleByKind(inProject(items, project), showWorking).some(
@@ -65,7 +67,7 @@ export function resolveDocsReplacement(
 
 export function docsViewModel(
   items: readonly DocsTreeItem[],
-  project: string | 'all',
+  project: ProjectSelection,
   chosen: FilterSelection,
   selectedId: string | null,
   doc: DocsDoc | null,
@@ -99,6 +101,7 @@ export function docsViewModel(
     around: selected ? neighbors(roots, selected.id) : { previous: null, next: null },
     headings: doc ? secondLevelHeadings(doc.body) : [],
     subjects: projectSubjects(items),
+    offersShared: offersSharedProject(items),
     active: activeFilterCount(stale),
   }
 }

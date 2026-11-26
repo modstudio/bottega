@@ -17,6 +17,9 @@ import {
   DOC_AUDIENCE_LABELS,
   type FilterSelection,
   type OfferedFilter,
+  type ProjectSelection,
+  SHARED_PROJECT,
+  SHARED_PROJECT_LABEL,
   selectedAudience,
 } from './filters.ts'
 import { docsViewModel, docsVisibleByStatus } from './model.ts'
@@ -33,8 +36,8 @@ export type DocsViewProps = {
   selectedId: string | null
   filters: FilterSelection
   onFilters: (filters: FilterSelection) => void
-  project: string | 'all'
-  onProject: (project: string | 'all') => void
+  project: ProjectSelection
+  onProject: (project: ProjectSelection) => void
   signedIn: boolean
   showProjectChooser: boolean
   showDrafts: boolean
@@ -78,9 +81,10 @@ export type DocsViewProps = {
 
 type DocsControlsProps = {
   showProjectChooser: boolean
-  project: string | 'all'
-  onProject: (project: string | 'all') => void
+  project: ProjectSelection
+  onProject: (project: ProjectSelection) => void
   subjects: readonly string[]
+  offersShared: boolean
   offered: OfferedFilter[]
   chosen: FilterSelection
   onFilters: (next: FilterSelection) => void
@@ -102,17 +106,21 @@ type DocsControlsProps = {
 function ProjectSelect({
   project,
   subjects,
+  offersShared,
   onProject,
   size,
-}: Pick<DocsControlsProps, 'project' | 'subjects' | 'onProject'> & { size?: 'sm' }) {
+}: Pick<DocsControlsProps, 'project' | 'subjects' | 'offersShared' | 'onProject'> & {
+  size?: 'sm'
+}) {
   return (
     <Select
       label="Project"
       size={size}
       value={project}
-      onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+      onChange={onProject}
       options={[
         ...subjects.map((name) => ({ value: name, label: name })),
+        ...(offersShared ? [{ value: SHARED_PROJECT, label: SHARED_PROJECT_LABEL }] : []),
         { value: 'all', label: 'All projects' },
       ]}
     />
@@ -377,7 +385,7 @@ function DocsViewControls({
     | 'signedIn'
     | 'onOpenFirst'
   >) {
-  const selectProject = (next: string | 'all') => {
+  const selectProject = (next: ProjectSelection) => {
     onProject(next)
     if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
     const first = docsViewModel(
@@ -397,6 +405,7 @@ function DocsViewControls({
       project={project}
       onProject={selectProject}
       subjects={model.subjects}
+      offersShared={model.offersShared}
       offered={model.offered}
       chosen={model.stale}
       onFilters={onFilters}
@@ -419,7 +428,7 @@ function useDocsNavigationModel(
   items: readonly Docs.DocsTreeItem[],
   showDrafts: boolean,
   selectedId: string | null,
-  project: string | 'all',
+  project: ProjectSelection,
   chosen: FilterSelection,
   doc: Docs.DocsDoc | null,
   signedIn: boolean,

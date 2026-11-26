@@ -8,7 +8,9 @@ import {
   EMPTY_FILTERS,
   inProject,
   offeredFilters,
+  offersSharedProject,
   projectSubjects,
+  SHARED_PROJECT,
   searchSubject,
 } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -107,6 +109,13 @@ test('project chooser lists project names, not every subject', () => {
   expect(projectSubjects(docs)).toEqual(['atlas', 'starship'])
   expect(inProject(docs, 'atlas').map((row) => row.id)).toEqual(['1', '2'])
   expect(inProject(docs, 'all')).toHaveLength(docs.length)
+  expect(offersSharedProject(docs)).toBeTrue()
+  expect(offersSharedProject(docs.slice(0, 3))).toBeFalse()
+  const emptyProject = item({ id: '6', title: 'Empty project', projectName: '' })
+  expect(inProject([...docs, emptyProject], SHARED_PROJECT).map((row) => row.id)).toEqual([
+    '4',
+    '6',
+  ])
   const withAgent = [
     ...docs,
     item({ id: '5', title: 'Agent', scope: 'agent', subject: 'writer', audiences: ['technical'] }),
@@ -114,14 +123,15 @@ test('project chooser lists project names, not every subject', () => {
   expect(projectSubjects(withAgent)).toEqual(['atlas', 'starship'])
 })
 
-test('opening a document chooses its project, or All projects when it has none', () => {
+test('opening a document chooses its project, or Shared when it has none', () => {
   expect(chooserProject(docs[0]!, ['atlas', 'starship'])).toBe('atlas')
-  expect(chooserProject(docs[3]!, ['atlas', 'starship'])).toBe('all')
+  expect(chooserProject(docs[3]!, ['atlas', 'starship'])).toBe(SHARED_PROJECT)
 })
 
 test('search sends subject only when the chosen project is a subject on the source', () => {
   expect(searchSubject('atlas', docs)).toBe('atlas')
   expect(searchSubject('all', docs)).toBeUndefined()
+  expect(searchSubject(SHARED_PROJECT, docs)).toBeUndefined()
   expect(searchSubject('missing', docs)).toBeUndefined()
 })
 

@@ -24,6 +24,9 @@ export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
 }
 
 export const DOC_DELIVERY_LABELS = { inject: 'Inject', demand: 'Demand' } as const
+export const SHARED_PROJECT_LABEL = 'Shared'
+export const SHARED_PROJECT = '__shared__' as const
+export type ProjectSelection = string | 'all' | typeof SHARED_PROJECT
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
 export type FilterSelection = Record<FilterKey, string | null>
@@ -45,8 +48,16 @@ export function projectSubjects(items: readonly DocsTreeItem[]): string[] {
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
-export function inProject(items: readonly DocsTreeItem[], project: string | 'all'): DocsTreeItem[] {
+export function offersSharedProject(items: readonly DocsTreeItem[]): boolean {
+  return items.some((item) => !item.projectName)
+}
+
+export function inProject(
+  items: readonly DocsTreeItem[],
+  project: ProjectSelection,
+): DocsTreeItem[] {
   if (project === 'all') return [...items]
+  if (project === SHARED_PROJECT) return items.filter((item) => !item.projectName)
   return items.filter((item) => item.projectName === project)
 }
 
@@ -54,17 +65,17 @@ export function inProject(items: readonly DocsTreeItem[], project: string | 'all
 export function chooserProject(
   selected: DocsTreeItem | null,
   subjects: readonly string[],
-): string | 'all' {
-  if (selected) return selected.projectName ?? 'all'
+): ProjectSelection {
+  if (selected) return selected.projectName || SHARED_PROJECT
   return subjects[0] ?? 'all'
 }
 
 /** Search sends subject only when the chosen project is a subject for that source. */
 export function searchSubject(
-  project: string | 'all',
+  project: ProjectSelection,
   items: readonly DocsTreeItem[],
 ): string | undefined {
-  if (project === 'all') return undefined
+  if (project === 'all' || project === SHARED_PROJECT) return undefined
   return items.some((item) => item.subject === project) ? project : undefined
 }
 

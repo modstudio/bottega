@@ -85,13 +85,11 @@ export function registerSignedDocSearchRoute<E extends Env>(
   app: Hono<E>,
   deps: SignedDocSearchRouteDeps,
   routes: {
-    scope(context: Context<E>): Tenant | null
+    scope(context: Context<E>, acrossReadableSpaces?: boolean): Tenant | null
     noSpace(context: Context<E>): Response
   },
 ): void {
   app.get('/v1/docs/search', async (context) => {
-    const tenant = routes.scope(context)
-    if (!tenant) return routes.noSpace(context)
     const query = z
       .object({
         q: z.string().default(''),
@@ -113,6 +111,8 @@ export function registerSignedDocSearchRoute<E extends Env>(
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc search query' }, 400)
+    const tenant = routes.scope(context, Boolean(query.data.acrossReadableSpaces))
+    if (!tenant) return routes.noSpace(context)
     const input: RecordDocSearchInput = {
       query: query.data.q,
       scope: query.data.scope,

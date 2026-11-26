@@ -29,7 +29,9 @@ import {
   chooserProject,
   EMPTY_FILTERS,
   type FilterSelection,
+  type ProjectSelection,
   projectSubjects,
+  SHARED_PROJECT,
   searchSubject,
   selectedAudience,
 } from '@bottega/hub-views/docs/filters'
@@ -180,7 +182,7 @@ function useDocsSelection(
   search: { id?: string } | undefined,
   includeDrafts: boolean,
 ) {
-  const [project, setProject] = useState<string | 'all'>('all')
+  const [project, setProject] = useState<ProjectSelection>('all')
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
   const catalog = useReorderableDocsTree(source, memberships, siblingKey, orderedIdsAfterDrag)
   useEffect(() => {
@@ -210,7 +212,7 @@ function useDocsSelection(
   }, [catalog.items, params, search?.id])
   useEffect(() => {
     if (!selected) return
-    setProject(selected.projectName ?? 'all')
+    setProject(selected.projectName || SHARED_PROJECT)
     setEmptyChooserSet(true)
   }, [selected])
   useEffect(() => {

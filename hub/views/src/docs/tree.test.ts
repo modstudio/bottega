@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
-import { applyFilters, EMPTY_FILTERS } from './filters.ts'
+import { applyFilters, EMPTY_FILTERS, SHARED_PROJECT_LABEL } from './filters.ts'
 import {
   breadcrumb,
   buildDocTree,
@@ -120,7 +120,10 @@ test('an agent subject is not a project group', () => {
     item({ id: 'a', title: 'Agent', scope: 'agent', subject: 'writer' }),
     item({ id: 'p', title: 'Product', subject: 'atlas' }),
   ])
-  expect(groupRootsBySubject(tree).map((group) => group.heading)).toEqual(['atlas', 'Shared'])
+  expect(groupRootsBySubject(tree).map((group) => group.heading)).toEqual([
+    'atlas',
+    SHARED_PROJECT_LABEL,
+  ])
 })
 
 test('All projects groups roots by subject, Shared last, and does not regroup a single project', () => {
