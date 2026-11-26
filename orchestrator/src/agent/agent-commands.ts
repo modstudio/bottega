@@ -297,25 +297,26 @@ export function agentReadinessPresentation(facts: {
   return 'ready'
 }
 
+async function spaceAgentsCommand(space: string, presentation: Presentation): Promise<void> {
+  const declarations = await listSharedAgents(space)
+  if (!declarations.length) {
+    presentation.log(`space ${space} has no agent declarations`)
+    return
+  }
+  for (const declaration of declarations) {
+    const state = declaration.enabled ? 'enabled' : `disabled — ${declaration.disabledReason}`
+    presentation.log(
+      `${declaration.name} harness=${declaration.harness} model=${declaration.model} ${state}`,
+    )
+  }
+}
+
 export async function agentsCommand(
   json: boolean,
   presentation: Presentation,
   space?: string,
 ): Promise<void> {
-  if (space) {
-    const declarations = await listSharedAgents(space)
-    if (!declarations.length) {
-      presentation.log(`space ${space} has no agent declarations`)
-      return
-    }
-    for (const declaration of declarations) {
-      const state = declaration.enabled ? 'enabled' : `disabled — ${declaration.disabledReason}`
-      presentation.log(
-        `${declaration.name} harness=${declaration.harness} model=${declaration.model} ${state}`,
-      )
-    }
-    return
-  }
+  if (space) return spaceAgentsCommand(space, presentation)
   const payload = await agentsPayload()
   if (json) {
     presentation.log(JSON.stringify(payload))
