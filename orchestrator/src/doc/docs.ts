@@ -161,7 +161,7 @@ async function authoritativeInjectedDocsForPack(
 type PackSizeInput = {
   scope: string
   subject: string | null
-  owner?: string
+  owner?: string | null
   slug: string
   title: string
   body: string

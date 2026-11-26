@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { listDocs } from '../../test/fixtures/doc-local-read.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -22,6 +23,62 @@ describe('projectGetsPack', () => {
   ] as const)('%s', (_label, retiredAt, declaredSpace, hostedRead, expected) => {
     expect(projectGetsPack({ retiredAt, declaredSpace, hostedRead })).toBe(expected)
   })
+})
+
+test('owned canon can share a project canon slug while global canon still collides', async () => {
+  const owner = '01990000-0000-7000-8000-000000000094'
+  const slug = '.agents/rules/shared-owner-path.md'
+  const body = '---\ndescription: Shared owner path\n---\n\nKeep this rule current.\n'
+  const collectCanonLintInput = () => ({
+    files: [],
+    codexProjectDoc: true,
+    trackedPaths: [],
+    packageScripts: [],
+    sourceTexts: [],
+  })
+  upsertProject({
+    name: 'shared-owner-project',
+    path: process.cwd(),
+    canon: true,
+    recordId: newRecordId(),
+    stack: null,
+    settings: {},
+  })
+  await setDoc({
+    scope: 'canon',
+    subject: 'shared-owner-project',
+    slug,
+    title: 'Project shared path',
+    body,
+    reason: 'seed project canon at the owned path',
+    allowCanonBootstrap: true,
+    collectCanonLintInput,
+  })
+
+  const owned = await setDoc({
+    scope: 'canon',
+    subject: null,
+    owner,
+    slug,
+    title: 'User shared path',
+    body,
+    reason: 'store user canon at the project path',
+    allowCanonBootstrap: true,
+    collectCanonLintInput,
+  })
+
+  expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(owned)
+  await expect(
+    setDoc({
+      scope: 'canon',
+      subject: null,
+      slug,
+      title: 'Global shared path',
+      body,
+      reason: 'prove global canon still collides',
+      collectCanonLintInput,
+    }),
+  ).rejects.toThrow('refusing canon path collision')
 })
 
 describe('hosted user canon pack measurement', () => {

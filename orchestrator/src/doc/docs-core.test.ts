@@ -213,55 +213,6 @@ describe('scoped operator docs', () => {
     expect(listDocRevisions('canon', null, created.slug, owner)).toHaveLength(1)
   })
 
-  test('owned canon can share a project canon slug while global canon still collides', async () => {
-    const owner = '01990000-0000-7000-8000-000000000094'
-    const slug = '.agents/rules/shared-owner-path.md'
-    const body = '---\ndescription: Shared owner path\n---\n\nKeep this rule current.\n'
-    const collectCanonLintInput = () => ({
-      files: [],
-      codexProjectDoc: true,
-      trackedPaths: [],
-      packageScripts: [],
-      sourceTexts: [],
-    })
-    upsertFixtureProject('known', process.cwd(), true)
-    await writeDoc({
-      scope: 'canon',
-      subject: 'known',
-      slug,
-      title: 'Project shared path',
-      body,
-      reason: 'seed project canon at the owned path',
-      allowCanonBootstrap: true,
-      collectCanonLintInput,
-    })
-
-    const owned = await writeDoc({
-      scope: 'canon',
-      subject: null,
-      owner,
-      slug,
-      title: 'User shared path',
-      body,
-      reason: 'store user canon at the project path',
-      allowCanonBootstrap: true,
-      collectCanonLintInput,
-    })
-
-    expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(owned)
-    await expect(
-      writeDoc({
-        scope: 'canon',
-        subject: null,
-        slug,
-        title: 'Global shared path',
-        body,
-        reason: 'prove global canon still collides',
-        collectCanonLintInput,
-      }),
-    ).rejects.toThrow('refusing canon path collision')
-  })
-
   test('canon updates compare the exposed hosted revision in both local write checks', async () => {
     const created = await writeDoc({
       scope: 'canon',
