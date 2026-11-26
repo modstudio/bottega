@@ -19,7 +19,7 @@ const task = (code: string): TaskRow => ({
   opened_at: null,
   closed_at: null,
   updated_at: null,
-  source: 'hub',
+  source: 'local',
   first_seen: '2026-01-01',
   last_seen: '2026-01-01',
   next_document_number: 1,
