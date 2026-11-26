@@ -20,9 +20,7 @@ async function run(args: string[], stdin?: string): Promise<string> {
   if (result.exitCode !== 0) {
     const output =
       result.stderr.trim() || result.stdout.trim() || `${PLATFORM_SLUG} exited ${result.exitCode}`
-    throw new Error(
-      `${output}; cleared by: apply that refusal's remedy, then retry ${PLATFORM_SLUG} note evaluate`,
-    )
+    throw new Error(output)
   }
   return result.stdout.trim()
 }
