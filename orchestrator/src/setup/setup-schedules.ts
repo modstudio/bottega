@@ -7,6 +7,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
+import { launchAgentLoaded } from '../../../shared/launch-agent-liveness.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import {
   LAUNCHD_TEMPLATE_PATHS,
@@ -17,18 +18,13 @@ import {
 import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { plistStandardOutPath } from './launchd-owners.ts'
 import {
+  type LongRunningScheduleRestartResult,
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   type ScheduleApplyResult,
   type ScheduleRenderValues,
   type ScheduleSetupFact,
 } from './setup-schedule-policy.ts'
-
-export type LongRunningLaunchdRestartResult = {
-  label: (typeof LONG_RUNNING_MAINTENANCE_LABELS)[number]
-  status: 'restarted' | 'inactive' | 'unreachable'
-  command: string
-}
 
 function renderedSchedule(label: MaintenanceScheduleLabel, values: ScheduleRenderValues): string {
   const identity = installationIdentity(import.meta.dir, {})
@@ -58,17 +54,19 @@ function runLaunchctl(argv: string[]): void {
 }
 
 /** Signal loaded long-running launch agents so KeepAlive respawns the installed binary. */
-export function restartLongRunningLaunchdSchedules(deps: {
-  loaded: (label: string) => boolean | null
-  run?: (argv: string[]) => void
-  launchctl?: string
-  uid?: number
-}): LongRunningLaunchdRestartResult[] {
+export function restartLongRunningLaunchdSchedules(
+  deps: {
+    loaded?: (label: string) => boolean | null
+    run?: (argv: string[]) => void
+    launchctl?: string
+    uid?: number
+  } = {},
+): LongRunningScheduleRestartResult[] {
   const launchctl = deps.launchctl ?? launchctlPath() ?? 'launchctl'
   const uid = deps.uid ?? process.getuid?.()
   return LONG_RUNNING_MAINTENANCE_LABELS.map((label) => {
     const command = `${launchctl} kill SIGTERM gui/${uid ?? '<uid>'}/${label}`
-    const state = deps.loaded(label)
+    const state = (deps.loaded ?? launchAgentLoaded)(label)
     if (state === null || uid === undefined) return { label, status: 'unreachable', command }
     if (!state) return { label, status: 'inactive', command }
     const argv = [launchctl, 'kill', 'SIGTERM', `gui/${uid}/${label}`]

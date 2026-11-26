@@ -8,6 +8,7 @@ import {
 } from '../../../shared/launch-agent-skip.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import {
+  type LONG_RUNNING_MAINTENANCE_LABELS,
   MAINTENANCE_SCHEDULE_LABELS,
   type MaintenanceScheduleLabel,
 } from '../../../shared/schedule-policy.ts'
@@ -58,6 +59,12 @@ export type ScheduleApplyResult = {
   label: MaintenanceScheduleLabel
   status: 'applied' | 'unchanged' | 'skipped'
   reason?: string
+}
+
+export type LongRunningScheduleRestartResult = {
+  label: (typeof LONG_RUNNING_MAINTENANCE_LABELS)[number]
+  status: 'restarted' | 'inactive' | 'unreachable'
+  command: string
 }
 
 export type MaintenanceSchedulePlanItem = {

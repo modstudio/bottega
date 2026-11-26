@@ -7,6 +7,7 @@ import {
   installationBuildId,
   installRoot,
   runningInstallationIdentity,
+  runningInstallationKind,
 } from '../../shared/install-root.ts'
 import {
   type PidRecordIdentity,
@@ -114,7 +115,8 @@ function readInstallHead(): RevisionRead {
   }
 }
 
-function readRunningRevision(): RevisionRead {
+/** Read the revision embedded in the running process, or checkout HEAD for a checkout process. */
+function readRunningProcessRevision(): RevisionRead {
   try {
     const identity = runningInstallationIdentity(import.meta.dir, process.env)
     if (identity.kind === 'distribution') {
@@ -126,7 +128,8 @@ function readRunningRevision(): RevisionRead {
   return readInstallHead()
 }
 
-function readInstalledRevision(): RevisionRead {
+/** Read the build revision of the designated installed distribution, or checkout HEAD. */
+function readInstalledBuildRevision(): RevisionRead {
   try {
     const identity = runningInstallationIdentity(import.meta.dir, process.env)
     if (identity.kind === 'checkout') return readInstallHead()
@@ -225,8 +228,8 @@ export type RevisionMonitorAdapters = {
 }
 
 const revisionMonitorAdapters: RevisionMonitorAdapters = {
-  readHead: readRunningRevision,
-  installationKind: () => runningInstallationIdentity(import.meta.dir, process.env).kind,
+  readHead: readRunningProcessRevision,
+  installationKind: () => runningInstallationKind(import.meta.dir, process.env),
   writeIdentity,
   processStartTime,
   now: Date.now,
@@ -345,7 +348,7 @@ export function formatServiceRevisionDoctorDecision(
 }
 
 export function formatServiceRevisionDoctor(collectExpectation: ScheduleExpectation): string[] {
-  const current = readInstalledRevision()
+  const current = readInstalledBuildRevision()
   return (['serve', 'collect'] as const).map((service) => {
     const recorded = readIdentity(service)
     const expectation = service === 'collect' ? collectExpectation : SCHEDULED_BY_THIS_INSTALL

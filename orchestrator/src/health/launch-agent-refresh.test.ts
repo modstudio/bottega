@@ -467,33 +467,31 @@ test('distribution refresh logs a skipped maintenance label without reporting dr
   expect(lines).toEqual(['com.user.orch-record-sync skipped — disabled by machine policy'])
 })
 
-test('distribution refresh restarts every declared long-running label on both platforms only', async () => {
-  for (const platform of ['linux', 'darwin'] as const) {
-    for (const kind of ['distribution', 'checkout'] as const) {
-      const restarted: string[] = []
-      const identity: InstallationIdentity =
-        kind === 'distribution'
-          ? distributionIdentity
-          : { kind: 'checkout', root: '/checkout', version: 'development' }
-      await refreshLaunchAgents(
-        platform,
-        { log: () => {} },
-        {
-          identity,
-          readOwners: async () => [],
-          observe: () => ({}),
-          readScheduleFacts: () => [],
-          scheduleUserManagerAvailable: () => true,
-          restartLongRunning: true,
-          restartLongRunningMaintenance: () =>
-            LONG_RUNNING_MAINTENANCE_LABELS.map((label) => {
-              restarted.push(label)
-              return { label, status: 'restarted', command: `restart ${label}` }
-            }),
-        },
-      )
-      expect(restarted).toEqual(kind === 'distribution' ? [...LONG_RUNNING_MAINTENANCE_LABELS] : [])
-    }
+test('darwin refresh restarts declared long-running labels only for a distribution', async () => {
+  for (const identity of [
+    distributionIdentity,
+    { kind: 'checkout', root: '/checkout', version: 'development' } as const,
+  ]) {
+    const restarted: string[] = []
+    await refreshLaunchAgents(
+      'darwin',
+      { log: () => {} },
+      {
+        identity,
+        readOwners: async () => [],
+        observe: () => ({}),
+        readScheduleFacts: () => [],
+        restartLongRunning: true,
+        restartLongRunningMaintenance: () =>
+          LONG_RUNNING_MAINTENANCE_LABELS.map((label) => {
+            restarted.push(label)
+            return { label, status: 'restarted', command: `restart ${label}` }
+          }),
+      },
+    )
+    expect(restarted).toEqual(
+      identity.kind === 'distribution' ? [...LONG_RUNNING_MAINTENANCE_LABELS] : [],
+    )
   }
 })
 
@@ -502,9 +500,10 @@ test('darwin distribution refresh skips inactive services and logs unreachable g
     ['inactive', []],
     [
       'unreachable',
-      [
-        'com.user.hub-collect could not be restarted because the launchd gui domain is unreachable; run launchctl kill SIGTERM gui/501/com.user.hub-collect from a login session',
-      ],
+      LONG_RUNNING_MAINTENANCE_LABELS.map(
+        (label) =>
+          `${label} could not be restarted because the launchd gui domain is unreachable; run launchctl kill SIGTERM gui/501/${label} from a login session`,
+      ),
     ],
   ] as const) {
     const lines: string[] = []
@@ -517,13 +516,12 @@ test('darwin distribution refresh skips inactive services and logs unreachable g
         observe: () => ({}),
         readScheduleFacts: () => [],
         restartLongRunning: true,
-        restartLongRunningMaintenance: () => [
-          {
-            label: 'com.user.hub-collect',
+        restartLongRunningMaintenance: () =>
+          LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({
+            label,
             status,
-            command: 'launchctl kill SIGTERM gui/501/com.user.hub-collect',
-          },
-        ],
+            command: `launchctl kill SIGTERM gui/501/${label}`,
+          })),
       },
     )
     expect(lines).toEqual([...expectedLines])

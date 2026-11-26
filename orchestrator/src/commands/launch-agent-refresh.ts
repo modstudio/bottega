@@ -10,6 +10,7 @@ import { requiredMaintenanceLabels } from '../setup/setup-schedule-policy.ts'
 export function registerLaunchAgentRefreshCommand(
   program: Command,
   presentation: { log(value: string): void },
+  refresh: typeof refreshLaunchAgents = refreshLaunchAgents,
 ): void {
   program
     .command('launch-agents', { hidden: true })
@@ -17,7 +18,7 @@ export function registerLaunchAgentRefreshCommand(
     .addOption(new Option('--restart-long-running').hideHelp())
     .allowExcessArguments(false)
     .action((options: { restartLongRunning?: boolean }) =>
-      refreshLaunchAgents(process.platform, presentation, {
+      refresh(process.platform, presentation, {
         restartLongRunning: options.restartLongRunning === true,
         readMachineLevel: () => readMachineValue('machine.level') as MachineLevel,
         requiredMaintenanceLabels: () =>

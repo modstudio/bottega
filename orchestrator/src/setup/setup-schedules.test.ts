@@ -142,8 +142,9 @@ test('systemd schedule units render every placeholder and preserve intervals and
 
 test('distribution restart adapters issue the ruled command for every long-running label', () => {
   const systemdCommands: string[][] = []
-  restartLongRunningSystemdSchedules({
+  const systemdResults = restartLongRunningSystemdSchedules({
     systemctl: '/usr/bin/systemctl',
+    active: () => true,
     run: (systemctl, args) => systemdCommands.push([systemctl, '--user', ...args]),
   })
   expect(systemdCommands).toEqual(
@@ -152,6 +153,9 @@ test('distribution restart adapters issue the ruled command for every long-runni
         .filter((unit) => unit.endsWith('.service'))
         .map((unit) => ['/usr/bin/systemctl', '--user', 'try-restart', unit]),
     ),
+  )
+  expect(systemdResults.map(({ label, status }) => ({ label, status }))).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'restarted' })),
   )
 
   const launchdCommands: string[][] = []
@@ -171,6 +175,20 @@ test('distribution restart adapters issue the ruled command for every long-runni
   )
   expect(results.map(({ label, status }) => ({ label, status }))).toEqual(
     LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'restarted' })),
+  )
+})
+
+test('systemd restart skips inactive or absent long-running units', () => {
+  const commands: string[][] = []
+  const results = restartLongRunningSystemdSchedules({
+    systemctl: '/usr/bin/systemctl',
+    active: () => false,
+    run: (systemctl, args) => commands.push([systemctl, ...args]),
+  })
+
+  expect(commands).toEqual([])
+  expect(results.map(({ label, status }) => ({ label, status }))).toEqual(
+    LONG_RUNNING_MAINTENANCE_LABELS.map((label) => ({ label, status: 'inactive' })),
   )
 })
 

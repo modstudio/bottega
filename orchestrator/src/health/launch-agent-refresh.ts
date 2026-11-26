@@ -7,10 +7,7 @@ import {
   type InstallationKind,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
-import {
-  launchAgentLoaded,
-  NOT_INSTALLED_BY_RELEASE_INSTALL,
-} from '../../../shared/launch-agent-liveness.ts'
+import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
 import {
   isMaintenanceScheduleLabel,
@@ -236,22 +233,18 @@ function linuxManagerUnavailable(
 }
 
 function restartLongRunningAfterRefresh(
-  platform: NodeJS.Platform,
   identity: InstallationIdentity,
   presentation: { log(value: string): void },
   deps: RefreshDependencies,
 ): void {
   if (!deps.restartLongRunning || identity.kind !== 'distribution') return
-  const restart =
-    deps.restartLongRunningMaintenance ??
-    (() => restartLongRunningMaintenanceSchedules(launchAgentLoaded))
+  const restart = deps.restartLongRunningMaintenance ?? restartLongRunningMaintenanceSchedules
   const results = restart()
   for (const result of results) {
-    if (platform === 'darwin' && result.status === 'unreachable') {
+    if (result.status === 'unreachable') {
       presentation.log(
         `${result.label} could not be restarted because the launchd gui domain is unreachable; run ${result.command} from a login session`,
       )
-      return
     }
   }
 }
@@ -340,7 +333,7 @@ async function refreshSupportedLaunchAgents(
         presentation,
       )
     : new Set<string>()
-  restartLongRunningAfterRefresh(platform, identity, presentation, deps)
+  restartLongRunningAfterRefresh(identity, presentation, deps)
   if (plan.labels.length === 0) return
   const after = readAfterApply(platform, identity, refresh)
   assertRefreshCompleted(plan, after.observations, refresh.requiredMaintenanceLabels, skippedLabels)

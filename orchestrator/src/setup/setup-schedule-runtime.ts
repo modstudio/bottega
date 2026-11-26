@@ -6,6 +6,7 @@ import { runningInstallationIdentity } from '../../../shared/install-root.ts'
 import { schedulePlatformSupported } from '../../../shared/schedule-policy.ts'
 import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type {
+  LongRunningScheduleRestartResult,
   ScheduleApplyResult,
   ScheduleRenderValues,
   ScheduleSetupFact,
@@ -24,11 +25,7 @@ import {
   systemdUserManagerAvailable,
 } from './setup-systemd-schedules.ts'
 
-export type LongRunningScheduleRestartResult = {
-  label: string
-  status: 'restarted' | 'inactive' | 'unreachable'
-  command: string
-}
+export type { LongRunningScheduleRestartResult } from './setup-schedule-policy.ts'
 
 export function scheduleUserManagerAvailable(platform: NodeJS.Platform): boolean {
   return platform === 'linux' ? systemdUserManagerAvailable() : true
@@ -72,15 +69,12 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
 }
 
 /** Restart active long-running maintenance services through the current platform adapter. */
-export function restartLongRunningMaintenanceSchedules(
-  launchdLoaded: (label: string) => boolean | null,
-): LongRunningScheduleRestartResult[] {
+export function restartLongRunningMaintenanceSchedules(): LongRunningScheduleRestartResult[] {
   switch (process.platform) {
     case 'darwin':
-      return restartLongRunningLaunchdSchedules({ loaded: launchdLoaded })
+      return restartLongRunningLaunchdSchedules()
     case 'linux':
-      restartLongRunningSystemdSchedules()
-      return []
+      return restartLongRunningSystemdSchedules()
     default:
       return []
   }

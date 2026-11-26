@@ -104,11 +104,15 @@ function runWorkflowSync(cwd: string, since: string): void {
   }
 }
 
-function runLaunchAgentsRefreshVerb(binary: string, restartLongRunning: boolean): void {
+export function runLaunchAgentsRefreshVerb(
+  binary: string,
+  restartLongRunning: boolean,
+  spawn: typeof startBoundedSync = startBoundedSync,
+): void {
   const argv = [binary, 'machine', 'launch-agents', 'refresh']
   if (restartLongRunning) argv.push('--restart-long-running')
   const command = argv.join(' ')
-  const result = startBoundedSync(argv, {
+  const result = spawn(argv, {
     budget: 'machine-update',
   })
   process.stdout.write(result.stdout)

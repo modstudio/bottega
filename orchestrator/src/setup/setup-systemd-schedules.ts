@@ -19,6 +19,7 @@ import {
 } from '../../../shared/schedule-policy.ts'
 import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
+  type LongRunningScheduleRestartResult,
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   type ScheduleApplyResult,
@@ -124,14 +125,25 @@ function runSystemctl(systemctl: string, args: string[]): void {
 
 /** Restart every active long-running release-owned service after a distribution update. */
 export function restartLongRunningSystemdSchedules(
-  deps: { systemctl?: string; run?: (systemctl: string, args: string[]) => void } = {},
-): void {
+  deps: {
+    systemctl?: string
+    active?: (systemctl: string, unit: string) => boolean
+    run?: (systemctl: string, args: string[]) => void
+  } = {},
+): LongRunningScheduleRestartResult[] {
   const systemctl = deps.systemctl ?? requireSystemdUserManager()
-  for (const label of LONG_RUNNING_MAINTENANCE_LABELS) {
-    for (const unit of SYSTEMD_UNITS[label].filter((name) => name.endsWith('.service'))) {
-      ;(deps.run ?? runSystemctl)(systemctl, ['try-restart', unit])
-    }
-  }
+  return LONG_RUNNING_MAINTENANCE_LABELS.flatMap((label) =>
+    SYSTEMD_UNITS[label]
+      .filter((name) => name.endsWith('.service'))
+      .map((unit) => {
+        const command = `systemctl --user try-restart ${unit}`
+        if (!(deps.active ?? activeUnit)(systemctl, unit)) {
+          return { label, status: 'inactive', command }
+        }
+        ;(deps.run ?? runSystemctl)(systemctl, ['try-restart', unit])
+        return { label, status: 'restarted', command }
+      }),
+  )
 }
 
 async function writeChangedUnits(
