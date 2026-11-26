@@ -106,7 +106,7 @@ type SparseGroup = {
   notes: EvaluationNote[]
   size: number
   internalSum: number
-  neighbours: Map<number, number>
+  neighbors: Map<number, number>
 }
 
 type LinkCandidate = {
@@ -182,7 +182,7 @@ function sparseGroups(
   const groups = new Map<number, SparseGroup>(
     notes.map((note, index) => [
       index,
-      { id: index, order: index, notes: [note], size: 1, internalSum: 0, neighbours: new Map() },
+      { id: index, order: index, notes: [note], size: 1, internalSum: 0, neighbors: new Map() },
     ]),
   )
   const noteGroup = new Map(notes.map((note, index) => [note.record_id, index]))
@@ -193,10 +193,10 @@ function sparseGroups(
     if (left === undefined || right === undefined || left === right) continue
     groups
       .get(left)!
-      .neighbours.set(right, (groups.get(left)!.neighbours.get(right) ?? 0) + pair.probability)
+      .neighbors.set(right, (groups.get(left)!.neighbors.get(right) ?? 0) + pair.probability)
     groups
       .get(right)!
-      .neighbours.set(left, (groups.get(right)!.neighbours.get(left) ?? 0) + pair.probability)
+      .neighbors.set(left, (groups.get(right)!.neighbors.get(left) ?? 0) + pair.probability)
   }
   return groups
 }
@@ -204,7 +204,7 @@ function sparseGroups(
 function candidateHeap(groups: ReadonlyMap<number, SparseGroup>): CandidateHeap {
   const heap = new CandidateHeap()
   for (const group of groups.values()) {
-    for (const [otherId, sum] of group.neighbours) {
+    for (const [otherId, sum] of group.neighbors) {
       const other = groups.get(otherId)!
       if (group.order < other.order) pushGroupCandidate(heap, group, other, sum)
     }
@@ -222,16 +222,16 @@ function mergeSparseGroups(
   left.notes.push(...right.notes)
   left.internalSum += right.internalSum + sum
   left.size += right.size
-  left.neighbours.delete(right.id)
-  for (const [neighbourId, rightSum] of right.neighbours) {
-    if (neighbourId === left.id) continue
-    const neighbour = groups.get(neighbourId)
-    if (!neighbour) continue
-    const combined = (left.neighbours.get(neighbourId) ?? 0) + rightSum
-    left.neighbours.set(neighbourId, combined)
-    neighbour.neighbours.delete(right.id)
-    neighbour.neighbours.set(left.id, combined)
-    pushGroupCandidate(heap, left, neighbour, combined)
+  left.neighbors.delete(right.id)
+  for (const [neighborId, rightSum] of right.neighbors) {
+    if (neighborId === left.id) continue
+    const neighbor = groups.get(neighborId)
+    if (!neighbor) continue
+    const combined = (left.neighbors.get(neighborId) ?? 0) + rightSum
+    left.neighbors.set(neighborId, combined)
+    neighbor.neighbors.delete(right.id)
+    neighbor.neighbors.set(left.id, combined)
+    pushGroupCandidate(heap, left, neighbor, combined)
   }
   groups.delete(right.id)
 }
@@ -247,7 +247,7 @@ function joinSparseGroups(
     const left = groups.get(best.left)
     const right = groups.get(best.right)
     if (!left || !right) continue
-    const sum = left.neighbours.get(right.id)
+    const sum = left.neighbors.get(right.id)
     if (sum === undefined || sum / (left.size * right.size) !== best.score) continue
     if (best.score < threshold) return
     mergeSparseGroups(groups, heap, left, right, sum)
