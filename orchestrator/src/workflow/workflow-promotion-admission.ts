@@ -27,7 +27,7 @@ export function decideWorkflowPromotionAdmission(input: {
     if (!operatorName) {
       return {
         verdict: 'refuse',
-        message: 'workflow promotion --from-operator requires the overriding operator identity',
+        message: "workflow promotion --from-operator requires the overriding user's identity",
       }
     }
     return {
@@ -48,6 +48,6 @@ export function decideWorkflowPromotionAdmission(input: {
     verdict: 'refuse',
     message:
       `refusing workflow promotion: ${condition}; ` +
-      `land the workflow change by pull request, or obtain Shmuel Barkin's override and rerun with --from-operator`,
+      `land the workflow change by pull request, or obtain the user's override and rerun with --from-operator`,
   }
 }

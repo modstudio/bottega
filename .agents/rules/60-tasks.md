@@ -11,8 +11,8 @@ board must show what is happening.
 
 A defect is filed as a note, not fixed alone. Triage dedupes it and attaches
 it, as evidence, to the existing task for its class; it is fixed when its class
-is fixed. Two cases are fixed on arrival: a regression from work in flight, and
-a defect that is costing sessions now. A board request about a note follows the
+is fixed. Nothing is fixed on arrival; classes are fixed in batches, ranked by
+notes and sightings. A board request about a note follows the
 same triage.
 
 Triage drops a note whose cause goes away once its project plugs into Bottega,

@@ -193,7 +193,7 @@ test('answer admission refusal leaves the question open and does not answer the 
       undefined,
       {
         admitKeyedTurn: async (input) => {
-          expect(input).toEqual({ runId: root, turn: 'answer' })
+          expect(input).toEqual({ runId: root, turn: 'answer', overridePersonName: null })
           throw new Error('refusing unbound keyed answer')
         },
         answerRun: async () => {
@@ -233,8 +233,8 @@ test('retry admission refusal leaves the question open and does not retry the ru
           expect(input).toEqual({
             runId: root,
             turn: 'retry',
-            overrideReason: undefined,
             fromOperator: false,
+            overridePersonName: null,
           })
           throw new Error('refusing unbound keyed retry')
         },

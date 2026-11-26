@@ -30,7 +30,11 @@ import {
 } from './workflow-tree-store.ts'
 import { workflowTreeSyncCommands } from './workflow-tree-sync-command.ts'
 
-type TreeCommandOptions = { cwd?: string; promotionContainsHead?: PromotionContainsHead }
+type TreeCommandOptions = {
+  cwd?: string
+  promotionContainsHead?: PromotionContainsHead
+  promotionOperatorName?: string | null
+}
 type TreePresentation = {
   log(value: string): void
   error(value: string): void
@@ -138,6 +142,7 @@ export async function promoteTreeCommand(
     argv,
     root,
     project,
+    operatorName: options.promotionOperatorName ?? null,
     containsHead: options.promotionContainsHead,
   })
   const reason = admitted.reason

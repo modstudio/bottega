@@ -109,7 +109,10 @@ describe('a keyed run-start dispatch under a held cursor writes its current step
             mcp: undefined,
             agentHarness: null,
           }),
-          harnessCursorAdapter,
+          harnessCursorAdapter: (fromOperator: boolean) => ({
+            ...harnessCursorAdapter(),
+            overridePersonName: fromOperator ? 'Dana Example' : null,
+          }),
           lookupTaskKey: async () => ({ state: 'found' }),
           recordRunWarning: () => {},
           earlierReviewRejections: noEarlierReviewRejections,
@@ -164,6 +167,7 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
         }),
         harnessCursorAdapter: () => ({
           harnessSession: 'session-fixture',
+          overridePersonName: null,
           readOpenCursors: async () => [],
         }),
         detach: async () => {
@@ -238,7 +242,10 @@ describe('an unkeyed dispatch refuses writing work and binds non-writing work to
         mcp: undefined,
         agentHarness: null,
       }),
-      harnessCursorAdapter,
+      harnessCursorAdapter: (fromOperator: boolean) => ({
+        ...harnessCursorAdapter(),
+        overridePersonName: fromOperator ? 'Dana Example' : null,
+      }),
       lookupTaskKey: async () => ({ state: 'found' as const }),
       recordRunWarning: () => {},
       earlierReviewRejections: noEarlierReviewRejections,
@@ -330,6 +337,7 @@ test('an attributed unbound override detaches and records its warning on the run
       }),
       harnessCursorAdapter: () => ({
         harnessSession: 'session-fixture',
+        overridePersonName: 'Dana Example',
         readOpenCursors: async () => [],
       }),
       lookupTaskKey: async () => ({ state: 'found' }),
@@ -351,7 +359,7 @@ test('an attributed unbound override detaches and records its warning on the run
   expect(warnings).toEqual([
     {
       runId,
-      warning: 'unbound run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Dana Example: Emergency dispatch approved.',
     },
   ])
 })

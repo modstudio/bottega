@@ -54,7 +54,7 @@ function invertAnswerContextKinds<
 /** The context kind written for each answer shape, derived from the store's shape policy. */
 export const ANSWER_CONTEXT_KINDS = invertAnswerContextKinds(CONTEXT_ITEM_RECORD_NAMES)
 
-/** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
+/** A ruling names where the user gave it: a question, a board message, or the chat on a date. */
 const RULING_SOURCE = /^(q\d+|board:[0-9a-f-]{36}|chat \d{4}-\d{2}-\d{2})$/
 
 export type ContextProfile = 'epic' | 'task' | 'session'

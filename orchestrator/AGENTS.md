@@ -6,7 +6,7 @@ Route work to external agents, record what each run cost and how good it was, an
 
 ## Belongs here
 
-Run lifecycle, disposable worktrees, the worker contract and escalation, routing and scoring, review lenses, the project register, operator docs, the canon store and hydrator, the MCP surface, and the hooks that bind those to a harness.
+Run lifecycle, disposable worktrees, the worker contract and escalation, routing and scoring, review lenses, the project register, user docs, the canon store and hydrator, the MCP surface, and the hooks that bind those to a harness.
 
 ## Does not belong here
 

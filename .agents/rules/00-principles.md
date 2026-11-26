@@ -34,7 +34,7 @@ every table. A hosted table without a home names its task.
 Every table declares a lifecycle: what it is, where its authoritative copy
 lives, how long each copy is kept and what removes it. Tables declare
 `hosted`, `synced` or `machine` in
-`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming Shmuel Barkin's ruling;
+`scripts/identity-state-classes.ts` or `shared/identity-state-classes.ts`, machine ones naming the user's ruling;
 `scripts/check-identity-inventory.ts` enforces both. Doc-store records
 `design-machine-hosted-seam` and `design-data-lifecycle` hold detail.
 
@@ -64,8 +64,7 @@ job shape, stack and review lens. Do not route from a generic benchmark,
 marketing claim or global model average. Strength on one kind of work must not
 hide weakness on another.
 
-Every judgment is routing evidence, including failure. The evidence improves
-without a separate maintenance process because ordinary review supplies it.
+Every judgment is routing evidence, including failure.
 
 ## The platform is deliberately opinionated
 
@@ -78,7 +77,8 @@ before the next run routes.
 These invariants are product behavior, not configuration: models vary, so
 the process stays rigid enough to produce a consistent outcome. A project
 customizes a workflow only where its needs differ, such as review lenses for
-its stack, and never works around one.
+its stack, and never works around one. A Bottega defect never stops work: the
+user's override passes any refusal until its class is fixed.
 
 ## Canon binds and may be replaced
 

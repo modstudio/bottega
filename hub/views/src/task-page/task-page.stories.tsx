@@ -11,13 +11,13 @@ import type { TaskPageDoc } from './task-rail'
 
 const now = new Date('2026-10-18T15:00:00')
 const entries: HistoryEntry[] = [
-  { kind: 'status', id: 's1', at: '2026-10-17T09:12:00', from: null, to: 'open', actor: 'Shmuel' },
+  { kind: 'status', id: 's1', at: '2026-10-17T09:12:00', from: null, to: 'open', actor: 'Dana' },
   {
     kind: 'comment',
     id: 'c1',
     at: '2026-10-17T09:20:00',
     body: 'Open the task as a page; the sheet is too narrow for the description.',
-    actor: 'Shmuel',
+    actor: 'Dana',
     canEdit: true,
     canDelete: true,
   },
@@ -27,7 +27,7 @@ const entries: HistoryEntry[] = [
     at: '2026-10-18T08:40:00',
     from: 'open',
     to: 'active',
-    actor: 'Shmuel',
+    actor: 'Dana',
     agent: 'Claude',
   },
   {
@@ -113,7 +113,7 @@ function Page({
       body={body}
       keyLine={[
         { key: 'status', icon: <CircleDotDashed size={14} aria-hidden />, content: 'Active' },
-        { key: 'assignee', icon: <UserRound size={14} aria-hidden />, content: 'Shmuel' },
+        { key: 'assignee', icon: <UserRound size={14} aria-hidden />, content: 'Dana' },
         {
           key: 'updated',
           icon: <CalendarDays size={14} aria-hidden />,
@@ -123,7 +123,7 @@ function Page({
       figures={figures}
       details={[
         { label: 'Status', value: 'Active' },
-        { label: 'Assignee', value: 'Shmuel' },
+        { label: 'Assignee', value: 'Dana' },
         { label: 'Parent', value: '—' },
         { label: 'Source', value: 'hub' },
         { label: 'Updated', value: '2 hours ago' },

@@ -360,6 +360,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       heldCursors: [],
       overrideReason: undefined,
       fromOperator: false,
+      overridePersonName: null,
     }),
   ).toEqual({ kind: 'allow' })
 })

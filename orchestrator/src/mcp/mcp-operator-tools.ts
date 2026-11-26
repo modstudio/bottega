@@ -148,7 +148,11 @@ function registerAnswerQuestionsTool(
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
       const run = await resolve(run_record_id, identityContext(db()), 'run')
-      const admission = await admitKeyedTurn({ runId: run.recordId, turn: 'answer' })
+      const admission = await admitKeyedTurn({
+        runId: run.recordId,
+        turn: 'answer',
+        overridePersonName: null,
+      })
       repairAskingTurns(db(), new Date().toISOString())
       const report = await answerRun(
         run.recordId,
