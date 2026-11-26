@@ -3,12 +3,12 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { CpaceRefusal } from '../../../shared/cpace.ts'
 import {
   credentialMachineTrustCommands,
   machineApproveCommand,
   machineJoinCommand,
 } from '../../../shared/credential-machine-trust.ts'
-import { CpaceRefusal } from '../../../shared/cpace.ts'
 import {
   decodeMachineJoinDone,
   decodeMachineJoinRecord,
@@ -124,17 +124,18 @@ async function poll(
   side: string,
   expiresAt: string,
   phases: readonly string[],
-  destination: { destinationSpaceId: string },
-  spaceSlug: string,
+  selected: SelectedSpace,
 ): Promise<Map<string, RelayMessage>> {
   const found = new Map<string, RelayMessage>()
   while (found.size !== phases.length) {
-    if (now(ports.at) >= new Date(expiresAt).getTime()) throw expirationRefusal(spaceSlug)
+    if (now(ports.at) >= new Date(expiresAt).getTime()) throw expirationRefusal(selected.slug)
     let mailbox: Awaited<ReturnType<ConfigClient['readMachineJoinMessages']>>
     try {
-      mailbox = await ports.client.readMachineJoinMessages(nameplate, side, destination)
+      mailbox = await ports.client.readMachineJoinMessages(nameplate, side, {
+        destinationSpaceId: selected.spaceId,
+      })
     } catch (error) {
-      relayRefusal(error, spaceSlug)
+      relayRefusal(error, selected.slug)
     }
     for (const message of mailbox.messages)
       if (phases.includes(message.phase) && !found.has(message.phase))
@@ -432,8 +433,7 @@ export async function machineJoin(
     ownSide,
     allocated.expiresAt,
     ['pake-b', 'confirm-b'],
-    destination,
-    selected.slug,
+    selected,
   )
   const pake = incoming.get('pake-b')!
   const confirmation = incoming.get('confirm-b')!
@@ -470,15 +470,7 @@ export async function machineJoin(
     destination,
   )
   const done = (
-    await poll(
-      ports,
-      allocated.nameplate,
-      ownSide,
-      allocated.expiresAt,
-      ['done'],
-      destination,
-      selected.slug,
-    )
+    await poll(ports, allocated.nameplate, ownSide, allocated.expiresAt, ['done'], selected)
   ).get('done')!
   await acceptDone(done, session, selected, allocated.nameplate, approver, record, ports)
   return { label: approver.label, keyId: approver.keyId }
@@ -507,17 +499,7 @@ export async function machineApprove(
   }
   const pakeA =
     first.messages.find((message) => message.phase === 'pake-a') ??
-    (
-      await poll(
-        ports,
-        code.nameplate,
-        ownSide,
-        first.expiresAt,
-        ['pake-a'],
-        destination,
-        selected.slug,
-      )
-    ).get(
+    (await poll(ports, code.nameplate, ownSide, first.expiresAt, ['pake-a'], selected)).get(
       'pake-a',
     )!
   const party = startMachineJoin(code, selected.spaceId, first.expiresAt, 'approver', side)
@@ -544,15 +526,7 @@ export async function machineApprove(
     destination,
   )
   const confirm = (
-    await poll(
-      ports,
-      code.nameplate,
-      ownSide,
-      first.expiresAt,
-      ['confirm-a'],
-      destination,
-      selected.slug,
-    )
+    await poll(ports, code.nameplate, ownSide, first.expiresAt, ['confirm-a'], selected)
   ).get('confirm-a')!
   const joiner = await verifiedJoiner(confirm, session, selected, code.nameplate, ownSide, ports)
   const approved = await approveAndWrap(joiner, record, selected, initial, ports)
