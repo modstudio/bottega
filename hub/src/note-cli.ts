@@ -19,9 +19,11 @@ import {
   staleNotes,
 } from './note.ts'
 import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
+import { evaluateNotePairs, noteEvaluationBody } from './note-evaluation.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { listProjectSlimNotes } from './note-read.ts'
+import { writeNoteEvaluationRecord } from './orch.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -49,6 +51,7 @@ type NoteOptions = {
   task?: string
   title?: string
   days?: string
+  skipCurate?: boolean
 }
 
 const NOTE_LIST_DEFAULT_LIMIT = 50
@@ -308,6 +311,22 @@ function registerNoteReferenceCommands(note: Command): void {
 }
 
 function registerNoteMaintenanceCommands(note: Command): void {
+  note
+    .command('evaluate')
+    .description('evaluate duplicate pairs across a project note backlog')
+    .requiredOption('--project <name>', 'evaluate actionable notes for this project')
+    .option('--skip-curate', 'run only the pair and cluster stages')
+    .action(async (options: NoteOptions) => {
+      if (!options.skipCurate)
+        throw new Error('note evaluation curation is not built yet; retry with --skip-curate')
+      open()
+      const project = options.project!
+      const notes = (await listProjectSlimNotes({ project, actionable: true })).notes
+      const result = await evaluateNotePairs(notes)
+      const body = noteEvaluationBody(project, new Date().toISOString(), notes.length, result)
+      await writeNoteEvaluationRecord(project, body)
+      console.log(body)
+    })
   note
     .command('typed-question')
     .description('report typed-question outcomes and operating cost')

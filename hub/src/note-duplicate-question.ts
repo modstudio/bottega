@@ -27,7 +27,7 @@ export const NOTE_PAIR_SUBJECT_KIND = 'note-pair'
 export const startNoteDuplicateCredentialResolution = startTypedQuestionCredentialResolution
 /** Hex characters of the new text's hash at the end of a note-pair subject ref. */
 const SUBJECT_REF_HASH_HEX = 16
-const NOTE_DUPLICATE_CONCURRENCY = 8
+export const NOTE_DUPLICATE_CONCURRENCY = 8
 
 export function noteTextHash(text: string): string {
   return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)
