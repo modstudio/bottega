@@ -23,6 +23,18 @@ export type CouldNotCheckCredentialMachineTrustFacts = {
 
 export type CredentialMachine = { keyId: string; publicKey: Uint8Array }
 
+export const machineApproveCommand = (space: string, code = '<code>'): string =>
+  `${PLATFORM_SLUG} machine approve ${code} --space ${space}`
+
+export const machineJoinCommand = (space: string): string =>
+  `${PLATFORM_SLUG} machine join --space ${space}`
+
+export const machineAnchorCommand = (space: string): string =>
+  `${PLATFORM_SLUG} machine anchor --space ${space}`
+
+export const machineRecoverCommand = (space: string): string =>
+  `${PLATFORM_SLUG} machine recover --space ${space}`
+
 /** Keep every machine credential-trust command spelling in one place. */
 export function credentialMachineTrustCommands(input: {
   space: string

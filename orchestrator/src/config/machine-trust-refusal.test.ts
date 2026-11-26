@@ -4,22 +4,9 @@ import {
   credentialMachineTrustFacts,
   credentialMachineTrustSteps,
 } from '../../../shared/credential-machine-trust.ts'
-import {
-  anchoredTrustRefusal,
-  machineApproveCommand,
-  machineTrustRefusal,
-} from './machine-trust-refusal.ts'
+import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
-
-test('machine approve command names its code and space', () => {
-  expect(machineApproveCommand('named-space')).toBe(
-    `${PLATFORM_SLUG} machine approve <code> --space named-space`,
-  )
-  expect(machineApproveCommand('named-space', '123-word-word')).toBe(
-    `${PLATFORM_SLUG} machine approve 123-word-word --space named-space`,
-  )
-})
 
 test('credential trust repair orders registration before trust and omits completed steps', () => {
   const facts = {

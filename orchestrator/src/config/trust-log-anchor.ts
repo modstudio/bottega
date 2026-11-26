@@ -6,6 +6,11 @@ import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import {
+  machineAnchorCommand,
+  machineJoinCommand,
+  machineRecoverCommand,
+} from '../../../shared/credential-machine-trust.ts'
 import { readTrustList, type TrustList } from '../../../shared/trust-list.ts'
 import {
   bytesEqual,
@@ -58,7 +63,7 @@ function decideAnchor(
   if (state && !state.keys.has(own.keyId))
     return {
       action: 'refuse',
-      message: `this machine is not trusted by the space machine trust log; run \`${PLATFORM_SLUG} machine join --space ${slug}\``,
+      message: `this machine is not trusted by the space machine trust log; run \`${machineJoinCommand(slug)}\``,
     }
   const keys = Object.entries(pins).flatMap(([keyId, pin]) => {
     if (keyId === own.keyId || state?.keys.has(keyId)) return []
@@ -95,8 +100,8 @@ async function append(
 ): Promise<{ entries: Uint8Array[]; state: TrustState }> {
   const conflictMessage =
     action === 'genesis'
-      ? `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor\` again to add your pinned keys`
-      : `machine trust log changed while running ${PLATFORM_SLUG} machine ${action}; retry \`${PLATFORM_SLUG} machine ${action}\``
+      ? `another machine anchored this space; discard the words shown and run \`${machineAnchorCommand(selected.slug)}\` again to add your pinned keys`
+      : `machine trust log changed while running ${PLATFORM_SLUG} machine ${action}; retry \`${action === 'anchor' ? machineAnchorCommand(selected.slug) : machineRecoverCommand(selected.slug)}\``
   return appendTrustLogEntryWithSigner(
     ports.client,
     selected.spaceId,

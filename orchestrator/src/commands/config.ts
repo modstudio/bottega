@@ -3,6 +3,7 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigDestination, ConfigScope } from '../../../shared/config-client.ts'
+import { credentialMachineTrustCommands } from '../../../shared/credential-machine-trust.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY } from '../../../shared/machine-config.ts'
@@ -340,7 +341,7 @@ function registerMachineIdentityCommands(machine: Command): void {
       log(keyId)
       await adoption.reportCheckedOutHostedProjects(
         { log },
-        `${PLATFORM_SLUG} machine config machine init`,
+        credentialMachineTrustCommands({ space: selected.slug }).init,
       )
     })
   machine

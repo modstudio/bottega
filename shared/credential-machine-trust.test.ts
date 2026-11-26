@@ -1,8 +1,13 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import {
+  credentialMachineTrustCommands,
   credentialMachineTrustFacts,
   credentialMachineTrustSteps,
+  machineAnchorCommand,
+  machineApproveCommand,
+  machineJoinCommand,
+  machineRecoverCommand,
   missingDataKeyWrapRemedy,
   spaceHasNoDataKeyRemedy,
 } from './credential-machine-trust.ts'
@@ -20,6 +25,27 @@ const facts = (
   machineRows: ReturnType<typeof row>[],
   trust: Readonly<Record<string, unknown>> = {},
 ) => credentialMachineTrustFacts({ space, signedInUserId, machine, machineRows, trust })
+
+test('space-scoped machine command builders always name the space', () => {
+  expect(machineApproveCommand(space)).toBe(
+    `${PLATFORM_SLUG} machine approve <code> --space studio`,
+  )
+  expect(machineApproveCommand(space, '123-word-word')).toBe(
+    `${PLATFORM_SLUG} machine approve 123-word-word --space studio`,
+  )
+  expect(machineJoinCommand(space)).toBe(`${PLATFORM_SLUG} machine join --space studio`)
+  expect(machineAnchorCommand(space)).toBe(`${PLATFORM_SLUG} machine anchor --space studio`)
+  expect(machineRecoverCommand(space)).toBe(`${PLATFORM_SLUG} machine recover --space studio`)
+  expect(credentialMachineTrustCommands({ space }).init).toBe(
+    `${PLATFORM_SLUG} machine config machine init --space studio`,
+  )
+  expect(credentialMachineTrustCommands({ space }).register).toBe(
+    `${PLATFORM_SLUG} machine config machine register --space studio`,
+  )
+  expect(credentialMachineTrustCommands({ space }).trust).toBe(
+    `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space studio`,
+  )
+})
 
 test('an unregistered credential machine is told to register and then trust this key', () => {
   expect(missingDataKeyWrapRemedy(facts([]))).toContain(

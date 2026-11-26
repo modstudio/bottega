@@ -53,7 +53,7 @@ test('sign-in explains that machine initialization registers checkouts when no s
   ).resolves.toEqual([
     {
       status: 'missing',
-      message: `projects checked out under /projects are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init`,
+      message: `projects checked out under /projects are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init --space <slug>`,
     },
   ])
 })
