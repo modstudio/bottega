@@ -63,6 +63,7 @@ type Dependencies = {
   positiveSubjects(
     project: string,
     actionableNotes: readonly EvaluationNote[],
+    allProjectNotes: readonly EvaluationNote[],
   ): {
     produced: number
     total: number
@@ -294,10 +295,11 @@ async function mapConcurrent<T, R>(
 export async function evaluateNotePairs(
   project: string,
   actionableNotes: readonly EvaluationNote[],
+  allProjectNotes: readonly EvaluationNote[],
   dependencies: Dependencies = defaultDependencies,
 ): Promise<NoteEvaluationResult> {
   const pairs = generateEvaluationPairs(actionableNotes)
-  const recall = dependencies.positiveSubjects(project, actionableNotes)
+  const recall = dependencies.positiveSubjects(project, actionableNotes, allProjectNotes)
   const credential = await dependencies.credential()
   if (!credential.available) {
     return {
@@ -365,9 +367,10 @@ export function blockingRecall(
   database: Database,
   project: string,
   actionableNotes: readonly EvaluationNote[],
+  allProjectNotes: readonly EvaluationNote[],
 ): { produced: number; total: number; unreadable: number } {
   const noteLookup = new Map(
-    actionableNotes.map((note) => [note.record_id, { project: note.project, text: note.text }]),
+    allProjectNotes.map((note) => [note.record_id, { project: note.project, text: note.text }]),
   )
   const subjects = readNoteDuplicateSubjects(database, noteLookup, { project })
   const positives = subjects.readable.filter((subject) => subject.label)
@@ -414,7 +417,8 @@ function isTopCandidate(
 const defaultDependencies: Dependencies = {
   credential: credentialAvailability,
   answerPair: (pair) => answerEvaluationPair(pair),
-  positiveSubjects: (project, actionableNotes) => blockingRecall(db(), project, actionableNotes),
+  positiveSubjects: (project, actionableNotes, allProjectNotes) =>
+    blockingRecall(db(), project, actionableNotes, allProjectNotes),
 }
 
 export function noteEvaluationBody(

@@ -114,7 +114,7 @@ function outcome(subjectRef: string, source: string): void {
   })
 }
 
-test('blocking recall counts reachable positives and excludes unreadable positives', () => {
+test('blocking recall includes non-actionable existing notes and excludes unreadable positives', () => {
   const older = note('project#1', '2026-01-01T00:00:00Z', 'shared stored pair older')
   const newer = note('project#2', '2026-01-02T00:00:00Z', 'shared stored pair newer')
   const included = notePairSubjectRef(older.record_id, newer.text)
@@ -173,7 +173,9 @@ test('blocking recall counts reachable positives and excludes unreadable positiv
         nowIso(),
       )
   })
-  expect(blockingRecall(db(), 'project', [older, missedExisting, ...distractors])).toEqual({
+  const actionableNotes = [missedExisting, ...distractors]
+  const allProjectNotes = [older, ...actionableNotes]
+  expect(blockingRecall(db(), 'project', actionableNotes, allProjectNotes)).toEqual({
     produced: 1,
     total: 2,
     unreadable: 1,
@@ -205,7 +207,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   ]
   const before = structuredClone(notes)
   let asks = 0
-  const result = await evaluateNotePairs('project', notes, {
+  const result = await evaluateNotePairs('project', notes, notes, {
     credential: async () => ({ available: false, reason: 'no answers obtained: missing key' }),
     answerPair: async () => {
       asks++
@@ -226,7 +228,7 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
 })
 
 test('zero candidate pairs are reported without a typed-question service failure', async () => {
-  const result = await evaluateNotePairs('project', [], {
+  const result = await evaluateNotePairs('project', [], [], {
     credential: async () => ({ available: true }),
     answerPair: async () => null,
     positiveSubjects: () => ({ produced: 0, total: 0, unreadable: 0 }),
@@ -244,11 +246,11 @@ test('pairs asked excludes reused answers and includes failed asks', async () =>
     credential: async () => ({ available: true as const }),
     positiveSubjects: () => ({ produced: 0, total: 0, unreadable: 0 }),
   }
-  const reused = await evaluateNotePairs('project', notes, {
+  const reused = await evaluateNotePairs('project', notes, notes, {
     ...dependencies,
     answerPair: async () => ({ probability: 0.9, reused: true }),
   })
-  const failed = await evaluateNotePairs('project', notes, {
+  const failed = await evaluateNotePairs('project', notes, notes, {
     ...dependencies,
     answerPair: async () => null,
   })
