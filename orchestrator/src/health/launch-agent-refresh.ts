@@ -23,7 +23,7 @@ import type { ScheduleApplyResult, ScheduleSetupFact } from '../setup/setup-sche
 import {
   applyMaintenanceSchedules,
   gatherScheduleSetupFacts,
-  systemdUserManagerAvailable,
+  scheduleUserManagerAvailable,
 } from '../setup/setup-schedule-runtime.ts'
 import {
   installedDefinitionObservations,
@@ -111,21 +111,19 @@ type RefreshDependencies = {
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
   requiredMaintenanceLabels?: () => readonly string[]
   readMachineLevel?: () => 'record' | 'full'
-  systemdUserManagerAvailable?: () => boolean
+  scheduleUserManagerAvailable?: (platform: NodeJS.Platform) => boolean
 }
 
 function distributionObservations(
   platform: NodeJS.Platform,
   owners: readonly InstalledPlistOwner[],
-  observe: RefreshDependencies['observe'],
+  observe: NonNullable<RefreshDependencies['observe']>,
   readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>,
 ): Record<string, LaunchAgentDefinitionObservation> {
-  const observations = observe
-    ? observe(
-        owners.filter(({ label }) => !isMaintenanceScheduleLabel(label)),
-        'distribution',
-      )
-    : {}
+  const observations = observe(
+    owners.filter(({ label }) => !isMaintenanceScheduleLabel(label)),
+    'distribution',
+  )
   for (const fact of readScheduleFacts()) {
     if (!fact.installed) continue
     observations[fact.label] = {
@@ -166,7 +164,7 @@ async function applyMaintenanceRefresh(
 
 type SupportedRefresh = {
   owners: InstalledPlistOwner[]
-  observe: RefreshDependencies['observe']
+  observe: NonNullable<RefreshDependencies['observe']>
   readScheduleFacts: NonNullable<RefreshDependencies['readScheduleFacts']>
   requiredMaintenanceLabels: Set<string>
   plan: LaunchAgentRefreshPlan
@@ -181,12 +179,12 @@ async function planSupportedRefresh(
   const owners = await (deps.readOwners ?? installationPlistOwners)()
   const observe = launchAgentsSupported
     ? (deps.observe ?? installedDefinitionObservations)
-    : undefined
+    : () => ({})
   const readScheduleFacts = deps.readScheduleFacts ?? gatherScheduleSetupFacts
   const observations =
     identity.kind === 'distribution'
       ? distributionObservations(platform, owners, observe, readScheduleFacts)
-      : observe!(owners, identity.kind)
+      : observe(owners, identity.kind)
   const requiredMaintenanceLabels = new Set(
     identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : [],
   )
@@ -223,10 +221,8 @@ function linuxManagerUnavailable(
   deps: RefreshDependencies,
 ): boolean {
   if (platform !== 'linux' || !plan.applyMaintenance) return false
-  const available =
-    deps.systemdUserManagerAvailable ??
-    (deps.applyMaintenance ? () => true : systemdUserManagerAvailable)
-  return !available()
+  const available = deps.scheduleUserManagerAvailable ?? scheduleUserManagerAvailable
+  return !available(platform)
 }
 
 function readAfterApply(
@@ -238,7 +234,7 @@ function readAfterApply(
   facts: ScheduleSetupFact[]
 } {
   if (identity.kind !== 'distribution') {
-    return { observations: refresh.observe!(refresh.owners, identity.kind), facts: [] }
+    return { observations: refresh.observe(refresh.owners, identity.kind), facts: [] }
   }
   const facts = refresh.readScheduleFacts()
   return {

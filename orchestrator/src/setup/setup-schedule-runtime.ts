@@ -22,7 +22,9 @@ import {
   systemdUserManagerAvailable,
 } from './setup-systemd-schedules.ts'
 
-export { systemdUserManagerAvailable }
+export function scheduleUserManagerAvailable(platform: NodeJS.Platform): boolean {
+  return platform === 'linux' ? systemdUserManagerAvailable() : true
+}
 
 function scheduleValues(): ScheduleRenderValues {
   const identity = runningInstallationIdentity(import.meta.dir, process.env)
