@@ -166,7 +166,11 @@ export function registerSpaceAgentServiceProof(input: {
       (await readRecordSpaceAgents(spaceA)).filter(({ name }) => name === changed.name),
     ).toEqual([changed])
 
-    const { enabled: _enabled, disabledReason: _disabledReason, ...legacyChanged } = {
+    const {
+      enabled: _enabled,
+      disabledReason: _disabledReason,
+      ...legacyChanged
+    } = {
       ...changed,
       model: 'service-proof-model-legacy-write',
     }

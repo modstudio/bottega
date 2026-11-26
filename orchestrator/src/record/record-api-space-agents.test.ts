@@ -115,7 +115,9 @@ test('space agent route validates stated enablement and preserves omitted fields
     body: JSON.stringify({ ...legacy, disabledReason: 'ambiguous' }),
   })
   expect(reasonWithoutEnabled.status).toBe(400)
-  expect(await reasonWithoutEnabled.text()).toContain('disabledReason requires enabled to be stated')
+  expect(await reasonWithoutEnabled.text()).toContain(
+    'disabledReason requires enabled to be stated',
+  )
 
   const compatible = await app.request('/v1/space-agents', {
     method: 'PUT',

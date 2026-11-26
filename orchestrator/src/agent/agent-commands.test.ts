@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { candidates, pick } from '../route/route.ts'
 import {
   agentCommand,
@@ -10,7 +11,6 @@ import {
   agentsCommand,
   spaceAgentPresentation,
 } from './agent-commands.ts'
-import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { refreshAgents, removeAgent } from './agent-registry.ts'
 
 test('agent presentation distinguishes installation, probe, disabled, and ready states', () => {

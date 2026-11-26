@@ -5,7 +5,6 @@ import { canonicalJson } from '../../../shared/canonical-json.ts'
 import { type AgentMutation, BACKENDS, HARNESSES, TRANSPORTS } from '../agent/agent-registry.ts'
 import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import { AGENT_BILLINGS } from '../transport/vendor-usage.ts'
-import type { SetupAgent } from './setup-engine.ts'
 
 export type DeclaredAgentRegistration = {
   name: string
@@ -13,6 +12,14 @@ export type DeclaredAgentRegistration = {
 }
 
 export type LocalAgentDeclaration = RecordSpaceAgent & { probedAt: string | null }
+
+type ProjectedSetupAgent = {
+  name: string
+  harness: string
+  enabled: number | boolean
+  probePassed: number | boolean
+  provider?: string | null
+}
 
 export type MissingDeclarationDecision =
   | { kind: 'register'; registration: DeclaredAgentRegistration }
@@ -78,10 +85,10 @@ export function spaceDisablesLocalAgent(
 }
 
 export function setupAgentsWithDeclarations(
-  agents: SetupAgent[],
+  agents: ProjectedSetupAgent[],
   localAgents: LocalAgentDeclaration[],
   declarations: RecordSpaceAgent[] | null,
-): SetupAgent[] {
+): ProjectedSetupAgent[] {
   if (declarations === null) return agents
   const projected = agents.map((agent) => ({ ...agent }))
   const localByName = new Map(localAgents.map((agent) => [agent.name, agent]))
@@ -91,7 +98,7 @@ export function setupAgentsWithDeclarations(
     const existing = projectedByName.get(declaration.name)
     if (existing && spaceDisablesLocalAgent(declaration, local)) existing.enabled = false
     if (!existing && missingDeclaration(declaration, local).kind === 'register') {
-      const added: SetupAgent = {
+      const added: ProjectedSetupAgent = {
         name: declaration.name,
         harness: declaration.harness,
         enabled: declaration.enabled,

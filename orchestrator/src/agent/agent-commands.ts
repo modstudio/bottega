@@ -17,7 +17,6 @@ import {
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
 import { listSharedAgents, shareAgent, shareAllAgents, unshareAgent } from './agent-share.ts'
-import type { RecordSpaceAgent } from '../record/record-space-agents.ts'
 import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
@@ -309,7 +308,7 @@ async function spaceAgentsCommand(
 
 export function spaceAgentPresentation(
   space: string,
-  declarations: RecordSpaceAgent[],
+  declarations: Awaited<ReturnType<typeof listSharedAgents>>,
   json: boolean,
 ): string[] {
   if (json) return [JSON.stringify(declarations)]
