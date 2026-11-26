@@ -238,17 +238,23 @@ function postUpdateArgv(binary: string, input: PostUpdateInput): string[] {
   return argv
 }
 
-/** Hand post-update work to the installed binary and preserve its output. */
-export function handoffPostUpdateSteps(input: {
+type HandoffPostUpdateBase = {
   binary: string
-  path: PostUpdateInput
   presentation: Presentation
-  targetVersion?: string
   spawn?: SpawnPostUpdate
   environment?: Record<string, string | undefined>
-}): void {
-  if (input.path.path === 'distribution') {
-    const decision = postUpdateHandoffDecision(input.targetVersion!)
+}
+
+export type HandoffPostUpdateInput = HandoffPostUpdateBase &
+  (
+    | { path: Extract<PostUpdateInput, { path: 'checkout' }> }
+    | { path: Extract<PostUpdateInput, { path: 'distribution' }>; targetVersion: string }
+  )
+
+/** Hand post-update work to the installed binary and preserve its output. */
+export function handoffPostUpdateSteps(input: HandoffPostUpdateInput): void {
+  if ('targetVersion' in input) {
+    const decision = postUpdateHandoffDecision(input.targetVersion)
     if (decision.action === 'skip') {
       input.presentation.log(decision.message)
       return

@@ -54,7 +54,7 @@ import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationJournal, migrationState, storeJournalPosition } from './migrations.ts'
-import { handoffPostUpdateSteps, type PostUpdateInput } from './post-update-steps.ts'
+import { type HandoffPostUpdateInput, handoffPostUpdateSteps } from './post-update-steps.ts'
 import { migrateInstalledBinary, prepareReleaseUpdate } from './release-update.ts'
 import {
   decideCurrentReleaseUpdate,
@@ -210,12 +210,7 @@ type UpdateDependencies = {
   afterDrainPromoted?: () => void
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
-  handoffPostUpdate?: (input: {
-    binary: string
-    path: PostUpdateInput
-    presentation: Presentation
-    targetVersion?: string
-  }) => void
+  handoffPostUpdate?: (input: HandoffPostUpdateInput) => void
   project?: (cwd: string, database: import('bun:sqlite').Database) => ReleaseGuardProject | null
   requiredRungRefusal?: (project: ReleaseGuardProject, branch: string) => string | null
 }
