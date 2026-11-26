@@ -181,18 +181,22 @@ test('the adapter reads the harness cursors before admitting a keyed branch', as
 })
 
 test('the adapter refuses a keyed branch when the harness has no cursor', async () => {
-  await expect(
+  const admission = (command: 'pr create' | 'pr merge', operatorOverride?: { reason: string }) =>
     assertPullRequestTaskCursorAdmission(
       {
-        command: 'pr merge',
+        command,
         project,
         branch: 'DEV-2387-change',
         env: { CLAUDE_CODE_SESSION_ID: 'session-a' },
         checkoutRoots: [],
+        operatorOverride,
       },
       async () => [],
-    ),
-  ).rejects.toThrow(`${PLATFORM_SLUG} workflow compose ship-task`)
+    )
+  await expect(admission('pr merge')).rejects.toThrow(`${PLATFORM_SLUG} workflow compose ship-task`)
+  await expect(admission('pr create', { reason: 'operator ruling' })).rejects.toThrow(
+    `${PLATFORM_SLUG} workflow compose ship-task`,
+  )
 })
 
 test('the adapter enforces the class guard from a held fix-defect cursor', async () => {
@@ -240,7 +244,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
     closed,
     args: JSON.stringify({ worktree }),
   }
-  const admission = (body: string) =>
+  const admission = (body: string, operatorOverride?: { reason: string }) =>
     assertPullRequestTaskCursorAdmission(
       {
         command: 'pr create',
@@ -250,6 +254,7 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
         database,
         body,
         checkoutRoots: [project.path],
+        operatorOverride,
       },
       async () => [held],
     )
@@ -274,6 +279,9 @@ test('the adapter enforces the class guard from a held fix-defect cursor', async
 
   try {
     await expect(admission('Summary')).rejects.toThrow('Class guard: <guard name>')
+    await expect(admission('Summary', { reason: 'operator ruling' })).resolves.toBe(
+      'class guard admitted by operator override (operator ruling): fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
+    )
     await expect(
       admission('Summary\nClass guard: architecture check (before 3, after 0)'),
     ).resolves.toBeUndefined()

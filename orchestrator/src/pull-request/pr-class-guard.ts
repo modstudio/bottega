@@ -20,7 +20,34 @@ export type ClassGuardExec = {
   createdAt: string
 }
 
-export type ClassGuardDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
+type AllowedClassGuardDecision = { kind: 'allow' }
+type OverriddenClassGuardDecision = { kind: 'overridden'; refusal: string; reason: string }
+
+type PullRequestClassGuardInput = {
+  body: string
+  measurement?: ClassGuardMeasurement
+  implementClosedAt?: string
+  execs: readonly ClassGuardExec[]
+  worktree?: string
+  checkoutRoots: readonly string[]
+  measurementCwd?: string
+  operatorOverride?: { reason: string }
+}
+
+function classGuardRefusal(input: PullRequestClassGuardInput, message: string) {
+  return input.operatorOverride
+    ? ({
+        kind: 'overridden',
+        refusal: message,
+        reason: input.operatorOverride.reason,
+      } satisfies OverriddenClassGuardDecision)
+    : { kind: 'refuse' as const, message }
+}
+
+export type ClassGuardDecision =
+  | AllowedClassGuardDecision
+  | OverriddenClassGuardDecision
+  | ReturnType<typeof classGuardRefusal>
 
 const rerun = (cwd: string, command: string) =>
   `${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(cwd)} -- ${command}`
@@ -45,43 +72,33 @@ function measurementRerunCwd(input: {
   return directory === '.' ? input.worktree : join(input.worktree, directory)
 }
 
-export function decidePullRequestClassGuard(input: {
-  body: string
-  measurement?: ClassGuardMeasurement
-  implementClosedAt?: string
-  execs: readonly ClassGuardExec[]
-  worktree?: string
-  checkoutRoots: readonly string[]
-  measurementCwd?: string
-}): ClassGuardDecision {
+export function decidePullRequestClassGuard(input: PullRequestClassGuardInput): ClassGuardDecision {
   const measurement = input.measurement
   if (!measurement) return { kind: 'allow' }
   const line = input.body.split(/\r?\n/).find((candidate) => candidate.startsWith('Class guard:'))
   if (!line)
-    return {
-      kind: 'refuse',
-      message:
-        'fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
-    }
+    return classGuardRefusal(
+      input,
+      'fix-defect pull request body is missing `Class guard: <guard name> (before <N>, after <M>)`',
+    )
   const parsed = /^Class guard:\s*(.*?)\s*\(before (\d+), after (\d+)\)$/.exec(line)
   if (!parsed)
-    return {
-      kind: 'refuse',
-      message:
-        'the Class guard line must be exactly `Class guard: <guard name> (before <N>, after <M>)`',
-    }
+    return classGuardRefusal(
+      input,
+      'the Class guard line must be exactly `Class guard: <guard name> (before <N>, after <M>)`',
+    )
   if (!parsed[1]?.trim())
-    return { kind: 'refuse', message: 'the Class guard line is missing the guard name' }
+    return classGuardRefusal(input, 'the Class guard line is missing the guard name')
   if (Number(parsed[2]) !== measurement.count)
-    return {
-      kind: 'refuse',
-      message: `the Class guard before count must equal the measure-class count ${measurement.count}`,
-    }
+    return classGuardRefusal(
+      input,
+      `the Class guard before count must equal the measure-class count ${measurement.count}`,
+    )
   if (!input.worktree)
-    return {
-      kind: 'refuse',
-      message: `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
-    }
+    return classGuardRefusal(
+      input,
+      `the Class guard rerun location cannot be established; compose the fix-defect cursor with \`--arg worktree=<path>\`, or run \`${PLATFORM_SLUG} pr create\` from the branch's worktree`,
+    )
   const worktree = input.worktree
   const creditedCommands = creditedMeasurementCommands(measurement.command, input.checkoutRoots)
   const rerunCommand = creditedCommands.at(-1)!
@@ -98,17 +115,17 @@ export function decidePullRequestClassGuard(input: {
   )
   const afterExec = matchingExecs.find((entry) => entry.cwd === rerunCwd)
   if (!afterExec)
-    return {
-      kind: 'refuse',
-      message: matchingExecs.length
+    return classGuardRefusal(
+      input,
+      matchingExecs.length
         ? `the Class guard post-implement measurement did not run in worktree ${worktree}; run \`${rerun(rerunCwd, rerunCommand)}\``
         : `the Class guard has no successful post-implement measurement; run \`${rerun(rerunCwd, rerunCommand)}\``,
-    }
+    )
   const afterCount = measuredCountFromOutput(afterExec.output)
   if (afterCount === null || Number(parsed[3]) !== afterCount)
-    return {
-      kind: 'refuse',
-      message: `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(rerunCwd, rerunCommand)}\` and update the line`,
-    }
+    return classGuardRefusal(
+      input,
+      `the Class guard after count must equal the post-implement measurement${afterCount === null ? '' : ` ${afterCount}`}; rerun \`${rerun(rerunCwd, rerunCommand)}\` and update the line`,
+    )
   return { kind: 'allow' }
 }

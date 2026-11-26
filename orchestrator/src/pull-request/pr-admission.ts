@@ -55,7 +55,11 @@ import {
   type MergeabilityDecision,
   type MergeabilityFacts,
 } from './mergeability-decision.ts'
-import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
+import {
+  acceptedOperatorOverride,
+  decideTriageOverride,
+  type TriageOverrideAttribution,
+} from './override-decision.ts'
 import { pullRequestReleaseDecisionAtHead } from './pr-release-admission.ts'
 import { pullRequestReleaseNotice } from './pr-release-notice.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
@@ -830,7 +834,13 @@ export async function createPullRequest(
 ): Promise<{ output: string; overrideId: string | null }> {
   const change = preparePullRequestCreate(options, cwd)
   const database = db()
-  await assertPullRequestTaskCursorAdmission({
+  const operatorOverride = acceptedOperatorOverride({
+    overrideReason: options.overrideReason,
+    ceilingRuling: options.ceilingRuling,
+    fromOperator: Boolean(options.fromOperator),
+    commandName: PLATFORM_SLUG,
+  })
+  const classGuardNotice = await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,
     branch: change.branch,
@@ -838,14 +848,19 @@ export async function createPullRequest(
     cwd,
     database,
     checkoutRoots: registeredCheckoutRoots(database),
+    operatorOverride,
   })
-  return createPullRequestAdmittedChange(
+  const created = createPullRequestAdmittedChange(
     args,
     options,
     cwd,
     change,
     await activeReviewFunnelPolicy(),
   )
+  return {
+    ...created,
+    output: [created.output, classGuardNotice].filter(Boolean).join('\n'),
+  }
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {
