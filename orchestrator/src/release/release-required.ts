@@ -11,8 +11,8 @@ import { canDeployRungFromReleaseTree } from './release-at-commit.ts'
 import {
   releaseProofDecision,
   releaseRungCoversTarget,
-  releaseRungProvenLiveAtCandidate,
   releaseRungProofRefusal,
+  releaseRungProvenLiveAtCandidate,
 } from './release-decision.ts'
 import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {

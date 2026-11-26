@@ -50,7 +50,7 @@ const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', '
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
 export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
 export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
-export const MERGE_QUEUE_CLOSED_REPOLL_MS = 30 * 1000
+const MERGE_QUEUE_CLOSED_REPOLL_MS = 30 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 function failedMergeQueueStep(
@@ -175,6 +175,38 @@ function removalClaimsMerged(reason: string): boolean {
   return reason.toLowerCase() === 'merged'
 }
 
+function closedMergeQueueStep(
+  number: number,
+  state: MergeQueueWaitState,
+  now: number,
+  deadline: number,
+  retry: string,
+): MergeQueueStep {
+  const closedObservedAt = state.closedObservedAt ?? now
+  const observed = { ...state, closedObservedAt }
+  if (now - closedObservedAt < MERGE_QUEUE_CLOSED_REPOLL_MS && now < deadline) {
+    return {
+      state: observed,
+      action: {
+        action: 'wait',
+        delay: Math.min(
+          MERGE_QUEUE_POLL_MS,
+          deadline - now,
+          MERGE_QUEUE_CLOSED_REPOLL_MS - (now - closedObservedAt),
+        ),
+      },
+    }
+  }
+  return {
+    state: observed,
+    action: {
+      action: 'refuse',
+      refusal: `pull request #${number} was closed without merging`,
+      remedy: `reopen or replace the pull request, then ${retry}`,
+    },
+  }
+}
+
 function dequeueRefusal(
   number: number,
   reason: string,
@@ -216,29 +248,7 @@ export function stepMergeQueueWait(
     return { state, action: { action: 'verify-landing', mergeCommit: queue.mergeCommit } }
   }
   if (queue.state === 'closed') {
-    const closedObservedAt = state.closedObservedAt ?? now
-    state = { ...state, closedObservedAt }
-    if (now - closedObservedAt < MERGE_QUEUE_CLOSED_REPOLL_MS && now < deadline) {
-      return {
-        state,
-        action: {
-          action: 'wait',
-          delay: Math.min(
-            MERGE_QUEUE_POLL_MS,
-            deadline - now,
-            MERGE_QUEUE_CLOSED_REPOLL_MS - (now - closedObservedAt),
-          ),
-        },
-      }
-    }
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} was closed without merging`,
-        remedy: `reopen or replace the pull request, then ${retry}`,
-      },
-    }
+    return closedMergeQueueStep(number, state, now, deadline, retry)
   }
   if (queue.state === 'failed') {
     return failedMergeQueueStep(number, state, now, deadline)

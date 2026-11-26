@@ -36,7 +36,6 @@ import {
   type MergeQueueStep,
   mergeQueueEnqueueFailureRemedy,
 } from './merge-queue-decision.ts'
-import { driveMergeQueueWait } from './merge-queue-wait.ts'
 import {
   enqueuePullRequest,
   githubFailedMergeGroupRun,
@@ -44,6 +43,7 @@ import {
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
+import { driveMergeQueueWait } from './merge-queue-wait.ts'
 import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
   type AdmissionWithTriage,

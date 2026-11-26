@@ -5,11 +5,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
-  mergeLandingComparisonProvesLanded,
   type MergeQueueObservation,
   type MergeQueueState,
   type MergeQueueStep,
   type MergeQueueWaitState,
+  mergeLandingComparisonProvesLanded,
   stepMergeQueueWait,
 } from './merge-queue-decision.ts'
 
@@ -21,9 +21,53 @@ type QueuePullRequest = {
 
 export type MergeQueueWaitAdapter = {
   queueState(cwd: string, nodeId: string): MergeQueueObservation
-  landingComparison(cwd: string, repository: string, landingBranch: string, mergeCommit: string): string
+  landingComparison(
+    cwd: string,
+    repository: string,
+    landingBranch: string,
+    mergeCommit: string,
+  ): string
   now(): number
   wait(milliseconds: number): void
+}
+
+type QueueWaitInput = Parameters<typeof driveMergeQueueWait>[0]
+
+function performMergeQueueAction(
+  input: QueueWaitInput,
+  action: MergeQueueStep['action'],
+  state: MergeQueueState,
+  now: number,
+  deadline: number,
+  enqueuedAt: string | null,
+  requeueOutput: string | undefined,
+): { complete: string } | { requeueOutput: string | undefined } {
+  if (action.action === 'verify-landing') {
+    if (!input.repository) {
+      throw new Error(
+        `refusing merge: registered repository identity is unavailable; restore the project remote, then ${PLATFORM_SLUG} pr merge ${input.target}`,
+      )
+    }
+    const comparison = input.adapter.landingComparison(
+      input.cwd,
+      input.repository,
+      input.pullRequest.baseBranch,
+      action.mergeCommit,
+    )
+    if (mergeLandingComparisonProvesLanded(comparison)) return { complete: action.mergeCommit }
+    if (now >= deadline) {
+      throw new Error(
+        `refusing merge: GitHub reports pull request #${input.pullRequest.number} merged as ${action.mergeCommit}, but the landing branch does not yet contain it; re-run ${PLATFORM_SLUG} pr merge ${input.target}`,
+      )
+    }
+    input.adapter.wait(Math.min(10_000, deadline - now))
+    return { requeueOutput }
+  }
+  if (action.action === 'refuse') input.refuse(action, state, enqueuedAt)
+  if (action.action === 'enqueue') input.enqueue()
+  else if (action.action === 'requeue') requeueOutput = input.requeue(enqueuedAt)
+  else input.adapter.wait(action.delay)
+  return { requeueOutput }
 }
 
 export function driveMergeQueueWait(input: {
@@ -54,11 +98,7 @@ export function driveMergeQueueWait(input: {
   while (true) {
     const observation = input.adapter.queueState(input.cwd, input.pullRequest.nodeId)
     if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
-    const state = interpretMergeQueue(
-      observation,
-      lastEnqueuedAt,
-      waitState.enqueueSubmittedAt,
-    )
+    const state = interpretMergeQueue(observation, lastEnqueuedAt, waitState.enqueueSubmittedAt)
     const now = input.adapter.now()
     const step = stepMergeQueueWait(
       input.pullRequest.number,
@@ -69,42 +109,21 @@ export function driveMergeQueueWait(input: {
       input.pullRequest.baseBranch,
     )
     waitState = step.state
-    const action = step.action
-    if (action.action === 'verify-landing') {
-      if (!input.repository) {
-        throw new Error(
-          `refusing merge: registered repository identity is unavailable; restore the project remote, then ${PLATFORM_SLUG} pr merge ${input.target}`,
-        )
-      }
-      const comparison = input.adapter.landingComparison(
-        input.cwd,
-        input.repository,
-        input.pullRequest.baseBranch,
-        action.mergeCommit,
-      )
-      if (!mergeLandingComparisonProvesLanded(comparison)) {
-        if (now >= deadline) {
-          throw new Error(
-            `refusing merge: GitHub reports pull request #${input.pullRequest.number} merged as ${action.mergeCommit}, but the landing branch does not yet contain it; re-run ${PLATFORM_SLUG} pr merge ${input.target}`,
-          )
-        }
-        input.adapter.wait(Math.min(10_000, deadline - now))
-        continue
-      }
+    const result = performMergeQueueAction(
+      input,
+      step.action,
+      state,
+      now,
+      deadline,
+      lastEnqueuedAt,
+      requeueOutput,
+    )
+    if ('complete' in result) {
       return {
-        mergeCommit: action.mergeCommit,
+        mergeCommit: result.complete,
         ...(requeueOutput ? { requeueOutput } : {}),
       }
     }
-    if (action.action === 'refuse') input.refuse(action, state, lastEnqueuedAt)
-    if (action.action === 'enqueue') {
-      input.enqueue()
-      continue
-    }
-    if (action.action === 'requeue') {
-      requeueOutput = input.requeue(lastEnqueuedAt)
-      continue
-    }
-    input.adapter.wait(action.delay)
+    requeueOutput = result.requeueOutput
   }
 }

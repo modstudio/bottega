@@ -32,6 +32,7 @@ describe('git environment', () => {
     ['clone', 'git-network'],
     ['checkout', 'git-ref-move'],
     ['switch', 'git-ref-move'],
+    ['pull', 'git-ref-move'],
     ['merge', 'git-ref-move'],
     ['rebase', 'git-ref-move'],
     ['rev-parse', 'git-plumbing'],

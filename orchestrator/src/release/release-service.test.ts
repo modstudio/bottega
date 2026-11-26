@@ -3,13 +3,13 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
 import { verifiedReleaseCheckoutRestore } from './release-checkout.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
+import { machineUpdateRungRefusal } from './release-required.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
   newestSuccessfulReleasedCommit,
   recordAlreadyLiveProof,
   releaseProject,
 } from './release-service.ts'
-import { machineUpdateRungRefusal } from './release-required.ts'
 
 const PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000002151'
 
