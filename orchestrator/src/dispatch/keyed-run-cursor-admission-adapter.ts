@@ -9,14 +9,16 @@ import { projectByRecordId } from '../project/project-read.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { inheritedRunFacts } from '../run/run-claim-inheritance.ts'
 import { rootRunRecordId } from '../run/run-root-record.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { checkKeyedRunCursorAdmission, type KeyedRunTurn } from './keyed-run-cursor-admission.ts'
 
 /** Read the calling harness identity and its open keyed workflow cursors. */
-export function harnessCursorAdapter() {
+export function harnessCursorAdapter(fromOperator = false) {
   const caller = classifyCaller(process.env)
   const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
   return {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
+    overridePersonName: resolvedRulingPersonName(fromOperator),
     readOpenCursors: async (session: string) =>
       (await openQuestionStages(db(), session)).map((cursor) => ({
         recordId: cursor.record_id,
@@ -45,7 +47,8 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
   const rootId = rootRunRecordId(input.runId)
   const facts = inheritedRunFacts(rootId)
   const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
-  const adapter = harnessCursorAdapter()
+  const fromOperator = input.turn === 'answer' ? false : input.fromOperator
+  const adapter = harnessCursorAdapter(fromOperator)
   const decision = await checkKeyedRunCursorAdmission(
     {
       turn: input.turn,
@@ -56,7 +59,8 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
       rootCursorRecordId: facts.cursor_record_id,
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,
-      fromOperator: input.turn === 'answer' ? false : input.fromOperator,
+      fromOperator,
+      overridePersonName: adapter.overridePersonName,
       cursor: input.turn === 'answer' ? undefined : input.cursor,
     },
     adapter.readOpenCursors,

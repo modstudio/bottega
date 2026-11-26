@@ -12,6 +12,8 @@ export type NamingFinding = {
   suggestions: string[]
 }
 
+export const NAMING_GUIDANCE = 'In code and in rules about any user, say "the user".'
+
 const PROGRAMMING_QUALIFIERS = [
   'sql',
   'comparison',
@@ -70,8 +72,8 @@ export function namingFindings(
   masks: Array<{ start: number; end: number }> = maskedRanges(text),
 ): NamingFinding[] {
   const message = displayName
-    ? `Name the person when recording what they did: ${displayName}. In code and in rules about any user, say "the user".`
-    : 'Name the person when recording what they did. In code and in rules about any user, say "the user".'
+    ? `Name the person when recording what they did: ${displayName}. ${NAMING_GUIDANCE}`
+    : `Name the person when recording what they did. ${NAMING_GUIDANCE}`
   const findings: NamingFinding[] = []
   for (const match of text.matchAll(/\boperators?\b(?:['’]s\b)?/gi)) {
     const wordStart = match.index

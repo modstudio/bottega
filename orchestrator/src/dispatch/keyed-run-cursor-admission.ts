@@ -31,6 +31,7 @@ export type KeyedRunCursorAdmissionInput = {
   cursor?: number
   overrideReason: string | undefined
   fromOperator: boolean
+  overridePersonName: string | null
 }
 
 export type KeyedRunCursorAdmission =
@@ -50,7 +51,6 @@ export function keyedCursorOption(value: string | undefined): number | undefined
 
 const OVERRIDE_OPTION = '--override-unbound'
 const OVERRIDE_REMEDY = `${OVERRIDE_OPTION} "<reason>" --from-operator`
-const OVERRIDE_PREFIX = 'unbound run turn overridden by the user: '
 
 const composeRemedy = (project: string | null, key: string): string => {
   const projectName = project ?? '<project>'
@@ -192,7 +192,10 @@ function decideOverride(input: KeyedRunCursorAdmissionInput): KeyedRunCursorAdmi
         OVERRIDE_REMEDY,
     }
   }
-  return { kind: 'allow-with-override', warning: `${OVERRIDE_PREFIX}${reason}` }
+  return {
+    kind: 'allow-with-override',
+    warning: `unbound run turn overridden by ${input.overridePersonName ?? 'the user'}: ${reason}`,
+  }
 }
 
 function decideUnkeyedCursorAdmission(

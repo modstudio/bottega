@@ -60,4 +60,19 @@ describe('workflow promotion admission', () => {
         'workflow promotion --from-operator requires a non-empty reason; rerun with --reason "<reason>" --from-operator',
     })
   })
+
+  test("refuses an override without the overriding user's identity", () => {
+    expect(
+      decideWorkflowPromotionAdmission({
+        landingBranch: 'main',
+        landingBranchContainsHead: false,
+        fromOperator: true,
+        reason: 'restore production immediately',
+        operatorName: null,
+      }),
+    ).toEqual({
+      verdict: 'refuse',
+      message: "workflow promotion --from-operator requires the overriding user's identity",
+    })
+  })
 })

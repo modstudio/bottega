@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { namingFindings } from './naming-rule.ts'
+import { NAMING_GUIDANCE, namingFindings } from './naming-rule.ts'
 
 describe('record naming rule', () => {
   test.each(['the operator said', 'Operator rulings', "operator's call", 'ask the operators'])(
@@ -44,13 +44,13 @@ describe('record naming rule', () => {
 
   test('names the supplied person in the remedy', () => {
     expect(namingFindings('the operator decided', 'Dana Example')[0]?.message).toBe(
-      'Name the person when recording what they did: Dana Example. In code and in rules about any user, say "the user".',
+      `Name the person when recording what they did: Dana Example. ${NAMING_GUIDANCE}`,
     )
   })
 
   test('uses the generic remedy without a display name', () => {
     expect(namingFindings('the operator decided', null)[0]?.message).toBe(
-      'Name the person when recording what they did. In code and in rules about any user, say "the user".',
+      `Name the person when recording what they did. ${NAMING_GUIDANCE}`,
     )
   })
 

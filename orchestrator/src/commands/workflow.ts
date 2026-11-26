@@ -1,14 +1,12 @@
 // concern: cli
 /** Registers workflow command adapters. Must not own workflow decisions. */
 
-import { userInfo } from 'node:os'
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
-import { cachedSignedInRecordUser } from '../record/record-session.ts'
-import { rulingPersonName } from '../run/ruling-attribution.ts'
+import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import { classAuditCommand } from '../workflow/workflow-class-audit-command.ts'
@@ -109,7 +107,7 @@ const spaceOption = (command: Command) =>
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
 const promotionOperatorName = (fromOperator: boolean): string | null =>
-  rulingPersonName(fromOperator, cachedSignedInRecordUser(db())?.name ?? null, userInfo().username)
+  resolvedRulingPersonName(fromOperator)
 const withPromotionOperator = (
   handlerOptions: WorkflowCommandOptions,
   options: OptionValues,

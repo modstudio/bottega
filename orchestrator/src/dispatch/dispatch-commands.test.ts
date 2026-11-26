@@ -164,6 +164,7 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
         }),
         harnessCursorAdapter: () => ({
           harnessSession: 'session-fixture',
+          overridePersonName: null,
           readOpenCursors: async () => [],
         }),
         detach: async () => {
@@ -330,6 +331,7 @@ test('an attributed unbound override detaches and records its warning on the run
       }),
       harnessCursorAdapter: () => ({
         harnessSession: 'session-fixture',
+        overridePersonName: 'Dana Example',
         readOpenCursors: async () => [],
       }),
       lookupTaskKey: async () => ({ state: 'found' }),
@@ -351,7 +353,7 @@ test('an attributed unbound override detaches and records its warning on the run
   expect(warnings).toEqual([
     {
       runId,
-      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Dana Example: Emergency dispatch approved.',
     },
   ])
 })

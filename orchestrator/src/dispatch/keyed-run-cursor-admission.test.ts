@@ -24,6 +24,7 @@ const base = {
   }>,
   overrideReason: undefined,
   fromOperator: false,
+  overridePersonName: null,
 }
 
 const keylessCursor = (
@@ -92,10 +93,11 @@ describe('keyed run cursor admission', () => {
         key: undefined,
         overrideReason: 'Operator emergency.',
         fromOperator: true,
+        overridePersonName: 'Dana Example',
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by the user: Operator emergency.',
+      warning: 'unbound run turn overridden by Dana Example: Operator emergency.',
     })
   })
 
@@ -437,10 +439,11 @@ describe('keyed run cursor admission', () => {
         ...base,
         overrideReason: 'Emergency dispatch approved.',
         fromOperator: true,
+        overridePersonName: 'Dana Example',
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Dana Example: Emergency dispatch approved.',
     })
   })
 
@@ -450,6 +453,19 @@ describe('keyed run cursor admission', () => {
     ).toEqual({
       kind: 'refuse',
       message: expect.stringContaining('--override-unbound "<reason>" --from-operator'),
+    })
+  })
+
+  test('an attributed override without a resolved person name records the user', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        overrideReason: 'Emergency dispatch approved.',
+        fromOperator: true,
+      }),
+    ).toEqual({
+      kind: 'allow-with-override',
+      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
     })
   })
 
@@ -516,6 +532,7 @@ describe('keyed run cursor admission', () => {
         ...(({ heldCursors: _heldCursors, ...input }) => input)(base),
         overrideReason: 'Emergency dispatch approved.',
         fromOperator: true,
+        overridePersonName: 'Dana Example',
       },
       async () => {
         reads += 1
@@ -525,7 +542,7 @@ describe('keyed run cursor admission', () => {
 
     expect(decision).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound run turn overridden by the user: Emergency dispatch approved.',
+      warning: 'unbound run turn overridden by Dana Example: Emergency dispatch approved.',
     })
     expect(reads).toBe(0)
   })
