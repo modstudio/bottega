@@ -31,16 +31,12 @@ import {
 import type { FailedMergeGroupRun } from './merge-group-run.ts'
 import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
-  interpretMergeQueue,
-  MERGE_QUEUE_WAIT_MS,
-  mergeLandingComparisonProvesLanded,
   type MergeQueueObservation,
   type MergeQueueState,
   type MergeQueueStep,
-  type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
-  stepMergeQueueWait,
 } from './merge-queue-decision.ts'
+import { driveMergeQueueWait } from './merge-queue-wait.ts'
 import {
   enqueuePullRequest,
   githubFailedMergeGroupRun,
@@ -558,74 +554,27 @@ function waitForQueuedMerge(
   adapter: PullRequestMergeAdapter,
   target: string,
 ): { mergeCommit: string; requeueOutput?: string } {
-  const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
-  let waitState: MergeQueueWaitState = {
-    enqueueSubmitted: false,
-    enqueueSubmittedAt: null,
-    activeEntryObserved: false,
-    dequeueObservedAt: null,
-    requeuePendingSince: null,
-    closedObservedAt: null,
-  }
-  let requeueOutput: string | undefined
-  let lastEnqueuedAt: string | null = null
-  while (true) {
-    const observation = adapter.queueState(cwd, pullRequest.nodeId)
-    if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
-    const state = interpretMergeQueue(observation, lastEnqueuedAt, waitState.enqueueSubmittedAt)
-    const now = adapter.now()
-    const step = stepMergeQueueWait(
-      pullRequest.number,
-      waitState,
-      state,
-      now,
-      deadline,
-      pullRequest.baseBranch,
-    )
-    waitState = step.state
-    const action = step.action
-    if (action.action === 'verify-landing') {
-      if (!repository) {
-        throw new Error(
-          `refusing merge: registered repository identity is unavailable; restore the project remote, then ${PLATFORM_SLUG} pr merge ${target}`,
-        )
-      }
-      const comparison = adapter.landingComparison(
-        cwd,
-        repository,
-        pullRequest.baseBranch,
-        action.mergeCommit,
-      )
-      if (!mergeLandingComparisonProvesLanded(comparison)) {
-        adapter.wait(Math.max(0, Math.min(10_000, deadline - now)))
-        continue
-      }
-      return {
-        mergeCommit: action.mergeCommit,
-        ...(requeueOutput ? { requeueOutput } : {}),
-      }
-    }
-    if (action.action === 'refuse') {
-      throwMergeQueueRefusal(action, state, pullRequest, cwd, repository, lastEnqueuedAt, adapter)
-    }
-    if (action.action === 'enqueue') {
-      enqueueForMergeQueue(pullRequest, cwd, adapter, target)
-      continue
-    }
-    if (action.action === 'requeue') {
+  return driveMergeQueueWait({
+    pullRequest,
+    cwd,
+    repository,
+    target,
+    adapter,
+    refuse: (action, state, enqueuedAt) =>
+      throwMergeQueueRefusal(action, state, pullRequest, cwd, repository, enqueuedAt, adapter),
+    enqueue: () => enqueueForMergeQueue(pullRequest, cwd, adapter, target),
+    requeue: (enqueuedAt) => {
       const evidence = failedMergeGroupRun(
         pullRequest,
         cwd,
         repository,
-        lastEnqueuedAt,
+        enqueuedAt,
         adapter,
       ).evidence
       requeueForMergeQueue(pullRequest, cwd, adapter, evidence, target)
-      requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
-      continue
-    }
-    adapter.wait(action.delay)
-  }
+      return `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
+    },
+  })
 }
 
 function throwMergeQueueRefusal(
