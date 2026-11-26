@@ -275,9 +275,9 @@ queue an outbox row for another delivery attempt
 
 ## bottega record outbox show
 
-**Synopsis:** `bottega record outbox show <id>`
+**Synopsis:** `bottega record outbox show <row-id>`
 
-show an entry and any values kept after a hosted delete
+show an outbox entry: for a hub entry, any values kept after a hosted delete; for an orchestrator row, its state and payload field sizes, never values
 
 ### Related
 

@@ -41,7 +41,7 @@ import {
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
-import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL, utf8Bytes } from './outbox-read.ts'
 import { retireSupersededQuarantinedOutboxRows } from './outbox-supersession.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
@@ -58,6 +58,7 @@ import {
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
+import { withholdReviewFunnelDecisionHistory } from './record-sync-review-funnel-decision.ts'
 import { RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import type {
   BlockedOutboxRow,
@@ -200,8 +201,6 @@ type PreparedOutboxRow = {
   payloadBytes: number
 }
 
-const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength
-
 function planBatchRow(
   candidate: PreparedOutboxRow,
   input: {
@@ -280,8 +279,7 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
       return leftPhase - rightPhase || leftId - rightId
     })
     .map((row) => {
-      const parsed = parsedPayload(row.payload)
-      const payload = payloadWithProjectIdentity(local, row, parsed)
+      const payload = outboxPayloadForRecordSync(local, row)
       return {
         row,
         parsed: parsedPayload(payload),
@@ -331,19 +329,25 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
   )
 }
 
-function payloadWithProjectIdentity(
-  local: Database,
-  row: OutboxRow,
-  parsed: Payload | null,
-): string {
-  if (!parsed || parsed.projectId != null || parsed.projectName == null) return row.payload
-  const projectId = sourceProjectRecordId(local, row)
-  if (projectId === undefined) return row.payload
-  return JSON.stringify({
-    ...parsed,
-    projectId,
-    ...(projectId ? {} : { projectName: null }),
-  })
+/** Returns the exact payload string whose UTF-8 size the sync limit checks. */
+export function outboxPayloadForRecordSync(local: Database, row: OutboxRow): string {
+  const parsed = parsedPayload(row.payload)
+  if (!parsed) return row.payload
+  let prepared = parsed
+  if (parsed.projectId == null && parsed.projectName != null) {
+    const projectId = sourceProjectRecordId(local, row)
+    if (projectId !== undefined) {
+      prepared = {
+        ...parsed,
+        projectId,
+        ...(projectId ? {} : { projectName: null }),
+      }
+    }
+  }
+  if (row.kind === 'review_funnel_decision') {
+    prepared = withholdReviewFunnelDecisionHistory(prepared)
+  }
+  return prepared === parsed ? row.payload : JSON.stringify(prepared)
 }
 
 function quarantineOversizedRow(input: {

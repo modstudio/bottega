@@ -13,6 +13,7 @@ import { closeDatabaseForFixture, DB_PATH, registerOpenHooks } from '../database
 import {
   recordAuditSecretsCommand,
   recordMigrateCommand,
+  recordOutboxShowCommand,
   recordSpaceMemberRemoveCommand,
   recordSpaceMoveProjectCommand,
   renderPublicDocDesignationList,
@@ -29,6 +30,18 @@ const project = {
   retiredAt: null,
   settings: { space: 'source' },
 }
+
+test('record outbox show refuses an unknown row with the listing remedy', () => {
+  using database = new Database(':memory:')
+  database.exec(`CREATE TABLE outbox (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, synced_at TEXT,
+    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT
+  )`)
+  expect(() => recordOutboxShowCommand(8, { log: () => {} }, database)).toThrow(
+    `orchestrator outbox row 8 does not exist; run \`${PLATFORM_SLUG} record outbox\``,
+  )
+})
 
 function memberRemovalClient(configAccess: boolean, events: string[]) {
   const client = createMemoryRecordApiClient()

@@ -63,6 +63,19 @@ test.each([[''], ['  ']])('record outbox retry refuses empty --matching text %p'
   ).rejects.toThrow('--matching requires non-empty text')
 })
 
+test.each([['not-a-number'], ['9007199254740993']])(
+  'record outbox show refuses invalid row id %p with the listing remedy',
+  async (rowId) => {
+    const program = new Command().exitOverride()
+    register(program)
+    await expect(
+      program.parseAsync(['node', PLATFORM_SLUG, 'record', 'outbox', 'show', rowId]),
+    ).rejects.toThrow(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``,
+    )
+  },
+)
+
 test.each([
   ['intake set', ['record', 'space', 'intake', 'set', 'fixture']],
   ['intake pause', ['record', 'space', 'intake', 'pause']],

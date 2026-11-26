@@ -44,6 +44,10 @@ export const recordSyncModules: RecordSyncModule[] = [
     '../../../shared/record-sync-limits.ts',
   ]),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
+  module('orchestrator/src/record/record-sync-review-funnel-decision.ts', [
+    'node:crypto',
+    './record-sync-contract.ts',
+  ]),
   module('orchestrator/src/record/record-sync-results.ts', [
     'bun:sqlite',
     '../database/db.ts',

@@ -18,6 +18,7 @@ import {
   HOSTED_SECRET_AUDIT_UNAVAILABLE_COLUMNS,
   renderHostedSecretAudit,
 } from './hosted-secret-audit.ts'
+import { readOutboxRow, reportOutboxRow } from './outbox-read.ts'
 import {
   redactSyncedOutbox,
   renderSyncedRedaction,
@@ -61,9 +62,32 @@ import {
 } from './record-space.ts'
 import { ensureAllSpaceBuiltIns } from './record-space-built-ins.ts'
 import { moveRecordProjectSpace } from './record-space-move.ts'
+import { outboxPayloadForRecordSync } from './record-sync.ts'
 import { recordTunnelFailure } from './record-tunnel-error.ts'
 
 type Presentation = { log(value: string): void; exitCode?(code: number): void }
+
+export function recordOutboxShowCommand(
+  rowId: number,
+  presentation: Presentation,
+  database?: Parameters<typeof readOutboxRow>[0],
+): void {
+  const owned = database === undefined
+  const conn = database ?? openReadOnlyDatabase()
+  try {
+    const row = readOutboxRow(conn, rowId)
+    if (!row) {
+      throw new Error(
+        `orchestrator outbox row ${rowId} does not exist; run \`${PLATFORM_SLUG} record outbox\` to list existing rows`,
+      )
+    }
+    const report = reportOutboxRow(row, outboxPayloadForRecordSync(conn, row))
+    presentation.log(JSON.stringify(report))
+    if (report.fields === null) presentation.exitCode?.(2)
+  } finally {
+    if (owned) conn.close()
+  }
+}
 
 function recordUrl(): string {
   const url = process.env.BOTTEGA_RECORD_URL

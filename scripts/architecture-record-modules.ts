@@ -572,6 +572,7 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',
+    './outbox-read.ts',
     './outbox-secret-audit.ts',
     './outbox-redaction.ts',
     './hosted-secret-audit.ts',
@@ -583,6 +584,7 @@ export const recordModules: RecordModule[] = [
     './record-space.ts',
     './record-space-built-ins.ts',
     './record-tunnel-error.ts',
+    './record-sync.ts',
   ]),
   module('orchestrator/src/record/record-tunnel-error.ts', [
     '../../../shared/brand.ts',

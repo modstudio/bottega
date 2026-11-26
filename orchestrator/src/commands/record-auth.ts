@@ -24,7 +24,12 @@ import { promptHidden } from './hidden-prompt.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
-const presentation = { log }
+const presentation = {
+  log,
+  exitCode: (code: number) => {
+    process.exitCode = code
+  },
+}
 
 type RecordCommands = typeof import('../record/record-command.ts')
 type RecordCommandName = {
@@ -49,6 +54,7 @@ function lazyRecordCommand<Name extends RecordCommandName>(name: Name) {
 const recordAuditSecretsCommand = lazyRecordCommand('recordAuditSecretsCommand')
 const recordDoctorCommand = lazyRecordCommand('recordDoctorCommand')
 const recordMigrateCommand = lazyRecordCommand('recordMigrateCommand')
+const recordOutboxShowCommand = lazyRecordCommand('recordOutboxShowCommand')
 const recordPublicDocClearCommand = lazyRecordCommand('recordPublicDocClearCommand')
 const recordPublicDocDesignateCommand = lazyRecordCommand('recordPublicDocDesignateCommand')
 const recordPublicDocListCommand = lazyRecordCommand('recordPublicDocListCommand')
@@ -76,6 +82,21 @@ const recordSpaceMemberRemoveCommand = lazyRecordCommand('recordSpaceMemberRemov
 const recordSpaceMoveProjectCommand = lazyRecordCommand('recordSpaceMoveProjectCommand')
 const recordSpaceSwitchCommand = lazyRecordCommand('recordSpaceSwitchCommand')
 const recordSpaceUnhideCommand = lazyRecordCommand('recordSpaceUnhideCommand')
+
+async function showOutboxCommand(rowId: string): Promise<void> {
+  if (!/^\d+$/.test(rowId)) {
+    throw new Error(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\` to list them`,
+    )
+  }
+  const parsed = Number(rowId)
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\` to list them`,
+    )
+  }
+  await recordOutboxShowCommand(parsed, presentation)
+}
 
 export function httpAddress(value: string): string {
   if (!isHttpAddress(value)) throw new Error('address must be an http or https URL')
@@ -578,6 +599,13 @@ async function retryOutboxCommand(
 
 function registerOutboxCommands(record: Command): void {
   const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
+  outbox
+    .command('show')
+    .description(
+      'show an outbox entry: for a hub entry, any values kept after a hosted delete; for an orchestrator row, its state and payload field sizes, never values',
+    )
+    .argument('<row-id>')
+    .action((rowId) => showOutboxCommand(String(rowId)))
   outbox
     .command('retry')
     .description('queue an outbox row for another delivery attempt')
