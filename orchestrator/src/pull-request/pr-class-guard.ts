@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
   checkoutRelativePath,
+  classMeasurementSucceeded,
   creditedMeasurementCommands,
   measuredCountFromOutput,
 } from '../workflow/workflow-class-measured-floor.ts'
@@ -92,7 +93,7 @@ export function decidePullRequestClassGuard(input: {
   const matchingExecs = input.execs.filter(
     (entry) =>
       creditedCommands.includes(entry.command) &&
-      entry.exitCode === 0 &&
+      classMeasurementSucceeded(entry) &&
       (!input.implementClosedAt || entry.createdAt >= input.implementClosedAt),
   )
   const afterExec = matchingExecs.find((entry) => entry.cwd === rerunCwd)

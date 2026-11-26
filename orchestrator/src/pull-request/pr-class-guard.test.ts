@@ -23,6 +23,15 @@ const base = {
 
 test('allows a matching class guard', () =>
   expect(decidePullRequestClassGuard(base)).toEqual({ kind: 'allow' }))
+test('allows grep count zero with its no-match exit', () =>
+  expect(
+    decidePullRequestClassGuard({
+      ...base,
+      measurement: { ...base.measurement, count: 2 },
+      body: 'Class guard: g (before 2, after 0)',
+      execs: [{ ...base.execs[0]!, exitCode: 1 }],
+    }),
+  ).toEqual({ kind: 'allow' }))
 test('refuses a post-implement measurement from the main checkout and names the worktree', () => {
   const decision = decidePullRequestClassGuard({
     ...base,
