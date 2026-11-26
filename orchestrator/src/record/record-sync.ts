@@ -57,6 +57,7 @@ import {
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
+import { withholdReviewFunnelDecisionHistory } from './record-sync-review-funnel-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
 import { RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import type {
@@ -331,14 +332,22 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
 /** Returns the exact payload string whose UTF-8 size the sync limit checks. */
 export function outboxPayloadForRecordSync(local: Database, row: OutboxRow): string {
   const parsed = parsedPayload(row.payload)
-  if (!parsed || parsed.projectId != null || parsed.projectName == null) return row.payload
-  const projectId = sourceProjectRecordId(local, row)
-  if (projectId === undefined) return row.payload
-  return JSON.stringify({
-    ...parsed,
-    projectId,
-    ...(projectId ? {} : { projectName: null }),
-  })
+  if (!parsed) return row.payload
+  let prepared = parsed
+  if (parsed.projectId == null && parsed.projectName != null) {
+    const projectId = sourceProjectRecordId(local, row)
+    if (projectId !== undefined) {
+      prepared = {
+        ...parsed,
+        projectId,
+        ...(projectId ? {} : { projectName: null }),
+      }
+    }
+  }
+  if (row.kind === 'review_funnel_decision') {
+    prepared = withholdReviewFunnelDecisionHistory(prepared)
+  }
+  return prepared === parsed ? row.payload : JSON.stringify(prepared)
 }
 
 function quarantineOversizedRow(input: {

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { measureOutboxPayload, readOutboxRow, reportOutboxRow, utf8Bytes } from './outbox-read.ts'
 import { outboxPayloadForRecordSync } from './record-sync.ts'
 import { planRecordSyncBatch } from './record-sync-batch.ts'
+import { RECORD_SYNC_MAX_PAYLOAD_BYTES } from './record-sync-contract.ts'
 
 const STAMP = '2026-11-26T12:00:00.000Z'
 
@@ -130,6 +131,41 @@ test('row report measures the same project identity payload that sync checks', (
     projectName: null,
   })
   expect(report.payloadBytes).toBe(utf8Bytes(syncPayload))
+})
+
+test('row report measures a review funnel decision after sync withholds its history', () => {
+  const stored = JSON.stringify({
+    id: 'decision-record',
+    projectId: 'project-record',
+    projectName: 'fixture',
+    facts: {
+      branchReviews: Array.from({ length: 2_000 }, (_, index) => ({
+        id: index,
+        evidence: 'x'.repeat(600),
+      })),
+      rounds: Array.from({ length: 2_000 }, (_, index) => ({ id: index })),
+    },
+    withheldFields: null,
+  })
+  using database = outbox(stored)
+  const row = readOutboxRow(database, 7)
+  if (!row) throw new Error('missing fixture row')
+  const prepared = outboxPayloadForRecordSync(database, row)
+  const report = reportOutboxRow(row, prepared)
+
+  expect(utf8Bytes(stored)).toBeGreaterThan(RECORD_SYNC_MAX_PAYLOAD_BYTES)
+  expect(report.payloadBytes).toBe(utf8Bytes(prepared))
+  expect(report.payloadBytes).toBeLessThan(RECORD_SYNC_MAX_PAYLOAD_BYTES)
+})
+
+test('sync preparation leaves other kinds byte-for-byte unchanged', () => {
+  const stored = '{ "id": "run-record", "projectId": "project-record" }'
+  using database = outbox(stored)
+  database.query("UPDATE outbox SET kind='run'").run()
+  const row = readOutboxRow(database, 7)
+  if (!row) throw new Error('missing fixture row')
+
+  expect(outboxPayloadForRecordSync(database, row)).toBe(stored)
 })
 
 test('outbox read returns no row for an unknown id', () => {
