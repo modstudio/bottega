@@ -81,7 +81,7 @@ test('owned canon can share a project canon slug while global canon still collid
   ).rejects.toThrow('refusing canon path collision')
 })
 
-describe('hosted user canon pack measurement', () => {
+describe('hosted canon pack measurement', () => {
   const userId = '01990000-0000-7000-8000-000000000001'
   const personalSpaceId = '01990000-0000-7000-8000-000000000002'
   const projectSpaceId = '01990000-0000-7000-8000-000000000003'
@@ -101,7 +101,7 @@ describe('hosted user canon pack measurement', () => {
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   })
 
-  test('a user canon write does not measure hosted project packs', async () => {
+  function installHostedProjects(): Array<string | null | undefined> {
     upsertProject({
       name: 'retired-space-less',
       path: '/w/retired-space-less',
@@ -144,6 +144,30 @@ describe('hosted user canon pack measurement', () => {
         return memory.listDocs(query, destination)
       },
     })
+
+    return reads
+  }
+
+  test('a global canon write measures live projects with spaces and skips retired projects', async () => {
+    const reads = installHostedProjects()
+
+    const written = await setDoc({
+      scope: 'canon',
+      subject: null,
+      slug: '.agents/rules/global-pack.md',
+      title: 'Global pack',
+      body: '---\ndescription: Global pack\n---\n\nGlobal rule.\n',
+      reason: 'prove hosted global canon pack targets',
+      allowCanonBootstrap: true,
+    })
+
+    expect(written.owner).toBeNull()
+    expect(reads).not.toContain('retired-space-less')
+    expect(reads).toContain('live-with-space')
+  })
+
+  test('a user canon write makes no project pack reads', async () => {
+    const reads = installHostedProjects()
 
     const written = await setDoc({
       scope: 'canon',
