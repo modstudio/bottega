@@ -4,6 +4,7 @@ import { collectCanonLintInput as productionCanonLintInput } from '../canon/cano
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
+import { hostedDocSpaceId } from './doc-authoritative-read.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
@@ -55,6 +56,8 @@ export async function removeStoredDoc(
         doc.scope,
         doc.subject,
         contextTaskOwner(context.contextTask),
+        undefined,
+        hostedDocSpaceId(doc),
       )
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined

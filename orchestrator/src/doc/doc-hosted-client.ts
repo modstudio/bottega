@@ -70,6 +70,7 @@ export async function hostedDocClient(
   subject: string | null,
   suppliedOwner?: RecordWriteOwner,
   database?: Database,
+  suppliedDestinationSpaceId?: string,
 ): Promise<HostedDocClient> {
   const client = recordApiClient(undefined, undefined, database)
   const projectName = docWriteProjectName(scope, subject)
@@ -101,6 +102,8 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   })
+  if (suppliedDestinationSpaceId)
+    return bindDestination({ destinationSpaceId: suppliedDestinationSpaceId })
   if (!seededSpaceId) return bindDestination(await recordWriteDestination(client, owner, database))
 
   let destinationRead: ReturnType<typeof recordWriteDestination> | undefined

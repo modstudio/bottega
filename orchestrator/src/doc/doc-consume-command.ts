@@ -2,7 +2,7 @@
 /** Applies and presents one document consume, delegating resume handoff through a port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDoc } from './doc-authoritative-read.ts'
+import { readDocForWrite } from './doc-authoritative-read.ts'
 import { type ConsumedDoc, consumeDoc, type Doc } from './docs.ts'
 
 type PreparedConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
@@ -31,7 +31,7 @@ export async function handleDocConsumeCommand(input: {
     throw new Error(
       `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
     )
-  const selected = await readDoc(input.scope, input.subject, slug)
+  const selected = await readDocForWrite(input.scope, input.subject, slug)
   const finishHandoff = await input.handoff.prepare(selected)
   const result = await consumeDoc(
     input.scope,

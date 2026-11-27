@@ -554,6 +554,7 @@ async function handleSetDocCommand(
     )
   }
   const scope = address.scope
+  const subject = readDocSubject(flags, address)
   const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
@@ -572,6 +573,7 @@ async function handleSetDocCommand(
       {
         ...address,
         scope,
+        subject,
         slug,
         title,
         body,
@@ -659,7 +661,7 @@ async function handleStatusDocCommand(
   }
   const result = await setDocStatus(
     address.scope,
-    address.subject,
+    readDocSubject(flags, address),
     slug,
     status,
     flags.flag('replacement'),
@@ -764,11 +766,12 @@ async function handleRemoveDocCommand(
       `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
     )
   const scope = address.scope
+  const subject = readDocSubject(flags, address)
   const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
   const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
     removeDoc(
       scope,
-      address.subject,
+      subject,
       slug,
       {
         reason,
@@ -783,9 +786,7 @@ async function handleRemoveDocCommand(
   presentation.log(
     flags.has('json')
       ? JSON.stringify({ removed, tree: canonTree?.root })
-      : removed
-        ? `removed ${address.scope}/${address.subject ?? '_'}/${slug}`
-        : `no ${address.scope} doc "${slug}"`,
+      : `removed ${address.scope}/${subject ?? '_'}/${slug}`,
   )
   return true
 }

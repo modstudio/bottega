@@ -38,6 +38,7 @@ import {
   hasCanonImportHistory,
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
+import { docReadsAcrossReadableSpaces } from './doc-space-selection.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
@@ -45,6 +46,11 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+const HOSTED_DOC_SPACE = Symbol('hosted-doc-space')
+
+export function hostedDocSpaceId(doc: Doc): string | undefined {
+  return (doc as Doc & { [HOSTED_DOC_SPACE]?: string })[HOSTED_DOC_SPACE]
+}
 
 /**
  * A hosted address has canon import history when any hosted canon row exists there,
@@ -147,7 +153,7 @@ function resolvedFilters(filters: DocListFilters): DocListFilters {
 
 function docFromHosted(row: HostedRow): Doc {
   const body = String(row.body ?? '')
-  return {
+  const doc: Doc = {
     record_id: String(row.id),
     scope: String(row.scope) as Doc['scope'],
     subject: row.subject == null ? null : String(row.subject),
@@ -178,6 +184,13 @@ function docFromHosted(row: HostedRow): Doc {
     updated_at: String(row.updatedAt),
     revision: row.latestRevisionId == null ? null : String(row.latestRevisionId),
   }
+  const space = hostedRowSpace(row)
+  if (space)
+    Object.defineProperty(doc, HOSTED_DOC_SPACE, {
+      value: space.id,
+      enumerable: false,
+    })
+  return doc
 }
 
 async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
@@ -187,6 +200,11 @@ async function hostedRows(filters: DocListFilters, database?: Database): Promise
     undefined,
     database,
   )
+  const acrossReadableSpaces = docReadsAcrossReadableSpaces({
+    scope: filters.scope,
+    subject: filters.subject,
+    owner: filters.owner,
+  })
   const page = await listAllHostedDocs(client.listDocs, {
     scope: filters.scope,
     subject: filters.subject,
@@ -196,8 +214,7 @@ async function hostedRows(filters: DocListFilters, database?: Database): Promise
     status: filters.status as Doc['status'] | undefined,
     delivery: filters.delivery,
     kind: filters.kind as Doc['kind'] | undefined,
-    acrossReadableSpaces:
-      filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
+    acrossReadableSpaces,
     frontmatterOnly: filters.frontmatterOnly,
   })
   if (page.unreadable.length)
@@ -246,16 +263,31 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
     )
 }
 
-async function hostedSingleDoc(filters: DocListFilters & { slug: string }): Promise<Doc | null> {
+function hostedRowSpace(row: HostedRow): { id: string; label: string } | null {
+  const id = row.spaceId ?? row.space_id
+  if (id == null) return null
+  const name = row.spaceName ?? row.space_name
+  return { id: String(id), label: name == null ? String(id) : String(name) }
+}
+
+async function hostedSingleDoc(
+  filters: DocListFilters & { slug: string },
+  refuseSpaceDuplicates = false,
+): Promise<Doc | null> {
   const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
+  const acrossReadableSpaces = docReadsAcrossReadableSpaces({
+    scope: filters.scope,
+    subject: filters.subject,
+    owner: filters.owner,
+  })
   const page = await client.listDocs({
     scope: filters.scope,
     subject: filters.subject,
     slug: filters.slug,
     owner: filters.owner,
     audience: filters.audience as DocAudience | undefined,
-    acrossReadableSpaces: filters.subject === undefined,
-    limit: filters.subject === undefined ? 2 : 1,
+    acrossReadableSpaces,
+    limit: acrossReadableSpaces ? 2 : 1,
   })
   if (page.unreadable?.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
@@ -276,6 +308,18 @@ async function hostedSingleDoc(filters: DocListFilters & { slug: string }): Prom
     if (subjects.length > 1)
       throw new Error(
         `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match subjects: ${subjects.join(', ')}; pass subject`,
+      )
+  }
+  if (refuseSpaceDuplicates && acrossReadableSpaces && page.items.length > 1) {
+    const spaces = page.items.map(hostedRowSpace)
+    if (spaces.some((space) => space === null))
+      throw new Error(
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match in readable spaces; pass --subject to select one`,
+      )
+    const distinct = [...new Map(spaces.map((space) => [space!.id, space!.label])).values()]
+    if (distinct.length > 1)
+      throw new Error(
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match spaces: ${distinct.join(', ')}; pass --subject to select one`,
       )
   }
   return docs[0] ?? null
@@ -334,6 +378,24 @@ export function readDoc(
     hosted: () =>
       withReadRemedy(() =>
         hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner }),
+      ),
+  })
+}
+
+export function readDocForWrite(
+  scope: string,
+  subject: string | null | undefined,
+  slug: string,
+  owner: string | null = null,
+): Promise<Doc | null> {
+  return applyRecordReadAuthority({
+    local: () => getDocStore(scope, subject, slug, owner),
+    hosted: () =>
+      withReadRemedy(() =>
+        hostedSingleDoc(
+          { scope, ...(subject !== undefined ? { subject } : {}), slug, owner },
+          true,
+        ),
       ),
   })
 }

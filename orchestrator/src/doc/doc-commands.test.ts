@@ -9,7 +9,7 @@ import {
   listDocRevisions,
   readDocRevision,
 } from '../../test/fixtures/doc-local-read.ts'
-import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -537,10 +537,34 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test(`${PLATFORM_SLUG} doc rm --json reports whether a row was removed`, async () => {
+  test(`${PLATFORM_SLUG} doc rm refuses when no row was removed`, async () => {
     await setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
-    expect(await removeDoc('global', null, 'gone')).toBe(true)
-    expect(await removeDoc('global', null, 'gone')).toBe(false)
+    const removed = await command([
+      'doc',
+      'rm',
+      'gone',
+      '--scope',
+      'global',
+      '--reason',
+      'remove fixture',
+      '--json',
+    ])
+    expect(removed.code).toBe(0)
+    expect(JSON.parse(removed.out)).toMatchObject({ removed: true })
+    const missing = await command([
+      'doc',
+      'rm',
+      'gone',
+      '--scope',
+      'global',
+      '--reason',
+      'exercise refusal',
+      '--json',
+    ])
+    expect(missing.code).toBe(1)
+    expect(missing.err).toContain(
+      `no global/_ doc "gone" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,
+    )
   })
 
   test(`${PLATFORM_SLUG} doc set --json round-trips a body with quote, backtick and newline`, async () => {

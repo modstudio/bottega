@@ -322,7 +322,7 @@ function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>
           setDoc({
             scope,
-            subject: subject ?? null,
+            subject,
             slug,
             title,
             body,
@@ -375,7 +375,7 @@ function registerSetDocStatusTool(server: McpServer): void {
       if (refusal) throw new Error(refusal)
       return text(
         await withMcpDocWriteRemedy(() =>
-          setDocStatus(scope, subject ?? null, slug, status, replacement, {
+          setDocStatus(scope, subject, slug, status, replacement, {
             reason,
             author,
             expectedRevision: expected_revision,
@@ -410,7 +410,7 @@ function registerRemoveDocTool(server: McpServer, ports: DocToolPorts): void {
       const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>
-          removeDoc(scope, subject ?? null, slug, {
+          removeDoc(scope, subject, slug, {
             reason,
             author,
             expectedRevision: expected_revision,
