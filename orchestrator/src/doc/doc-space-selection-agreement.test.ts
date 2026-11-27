@@ -7,8 +7,8 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs } from './doc-authoritative-read.ts'
-import { consumeDoc, removeDoc, setDoc, setDocStatus } from './docs.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
+import { consumeDoc, removeDoc, setDoc, setDocStatus } from './docs.ts'
 
 type HostedRow = Record<string, unknown> & { id: string; spaceId: string }
 
@@ -163,11 +163,11 @@ test('a subject-taking write requires a subject while the same read still finds 
   const row = {
     ...hostedRow('team-space', 'Team docs'),
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
   }
   installHostedRows([row])
 
-  expect((await readDoc('project', undefined, 'remote-global'))?.subject).toBe('bottega')
+  expect((await readDoc('project', undefined, 'remote-global'))?.subject).toBe(PLATFORM_SLUG)
   await expect(
     removeDoc('project', undefined, 'remote-global', { reason: 'missing subject refusal' }),
   ).rejects.toThrow('project document writes require --subject')

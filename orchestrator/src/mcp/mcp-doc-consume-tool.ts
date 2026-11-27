@@ -5,10 +5,10 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { readDocForWrite } from '../doc/doc-authoritative-read.ts'
 import type { ConsumeDocHandoff } from '../doc/doc-consume-command.ts'
+import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 import { consumeDoc } from '../doc/docs.ts'
 import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
-import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],

@@ -121,7 +121,8 @@ export async function publishReferenceDocs(
   const expected = new Set(ordered.map((file) => pageSlug(file, indexFile)))
   const removed = (await readDocsForWrite({ scope: 'project', subject: PLATFORM_SLUG }))
     .filter(
-      ({ doc }) => doc?.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
+      ({ doc }) =>
+        doc?.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
     )
     .sort((left, right) => left.doc!.position - right.doc!.position)
   for (const target of removed) {

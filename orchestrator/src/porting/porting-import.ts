@@ -1,6 +1,6 @@
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { readDocsForWrite } from '../doc/doc-authoritative-read.ts'
-import { importDoc, removeReadDoc } from '../doc/docs.ts'
+import { importDoc, removeReadDoc, validateReadDocRemoval } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
 import * as porting from './porting.ts'
@@ -1013,7 +1013,7 @@ export async function applyImport(
       )
     : []
   if (options.replace) {
-    for (const target of owned) await removeReadDoc(target, context)
+    for (const target of owned) validateReadDocRemoval(target, context)
   }
   writeTransaction(() => {
     const counts = db()
@@ -1057,6 +1057,9 @@ export async function applyImport(
     for (const row of plan.refs) porting.setLedgerRefLocal(row)
     for (const row of plan.doctrine) porting.addDoctrineRuleLocal(row.number, row.title, row.body)
   })
+  if (options.replace) {
+    for (const target of owned) await removeReadDoc(target, context)
+  }
   for (const row of plan.docs)
     await importDoc({
       ...row,

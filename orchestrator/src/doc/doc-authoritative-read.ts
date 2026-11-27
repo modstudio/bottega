@@ -5,8 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { projectByRecordId } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import {
@@ -39,7 +41,6 @@ import {
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import { docReadsAcrossReadableSpaces } from './doc-space-selection.ts'
-import { readableDocSpaceSlugs } from './doc-write-space.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
@@ -266,11 +267,13 @@ async function hostedSingleDoc(
   const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
     destinationSpaceId: selectedSpace?.spaceId,
   })
-  const acrossReadableSpaces = !selectedSpace && docReadsAcrossReadableSpaces({
-    scope: filters.scope,
-    subject: filters.subject,
-    owner: filters.owner,
-  })
+  const acrossReadableSpaces =
+    !selectedSpace &&
+    docReadsAcrossReadableSpaces({
+      scope: filters.scope,
+      subject: filters.subject,
+      owner: filters.owner,
+    })
   const page = await client.listDocs({
     scope: filters.scope,
     subject: filters.subject,
@@ -307,7 +310,8 @@ async function hostedSingleDoc(
       throw new Error(
         `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match in readable spaces; pass --space <slug> to select one`,
       )
-    const slugs = await readableDocSpaceSlugs()
+    const memberships = parseRecordSpaceMemberships((await recordApiClient().whoami()).memberships)
+    const slugs = new Map(memberships.map(({ spaceId, slug }) => [spaceId, slug]))
     const distinct = [
       ...new Map(spaces.map((space) => [space!.id, slugs.get(space!.id) ?? space!.label])).values(),
     ]
@@ -353,15 +357,16 @@ export function readDocsForWrite(
         const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
           database,
         })
+        const acrossReadableSpaces = docReadsAcrossReadableSpaces({
+          scope: filters.scope,
+          subject: filters.subject,
+          owner: filters.owner,
+        })
         const page = await listAllHostedDocs(client.listDocs, {
           scope: filters.scope,
           subject: filters.subject,
           owner: filters.owner,
-          acrossReadableSpaces: docReadsAcrossReadableSpaces({
-            scope: filters.scope,
-            subject: filters.subject,
-            owner: filters.owner,
-          }),
+          acrossReadableSpaces,
         })
         if (page.unreadable.length)
           throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
@@ -411,8 +416,16 @@ export function readDoc(
   return applyRecordReadAuthority({
     local: () => getDocStore(scope, subject, slug, owner),
     hosted: () =>
-      withReadRemedy(async () =>
-        (await hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner })).doc,
+      withReadRemedy(
+        async () =>
+          (
+            await hostedSingleDoc({
+              scope,
+              ...(subject !== undefined ? { subject } : {}),
+              slug,
+              owner,
+            })
+          ).doc,
       ),
   })
 }

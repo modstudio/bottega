@@ -11,6 +11,7 @@ import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 import { hostedDocWriteIdentity, type resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { hostedDocWriteDestination } from './doc-write-space.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
 
@@ -26,15 +27,10 @@ function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
   if (refusal) throw new Error(refusal)
 }
 
-/** The shared removal body after the caller's context-drop ownership guard. */
-export async function removeStoredDoc(
-  target: DocWriteTarget,
-  context: DocRemovalContext,
-  identity: ReturnType<typeof resolvedDocWriteIdentity>,
-): Promise<boolean> {
+export function validateStoredDocRemoval(target: DocWriteTarget, context: DocRemovalContext): Doc {
   const { doc } = target
   if (!doc) throw new Error('cannot remove an absent document')
-  const { scope, subject, owner, slug } = doc
+  const { scope, subject, slug } = doc
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     {
@@ -51,14 +47,23 @@ export async function removeStoredDoc(
     assertCanonRemovalAllowed(doc, context)
   }
   assertLocalDocRemovalAllowed(doc)
+  return doc
+}
+
+/** The shared removal body after the caller's context-drop ownership guard. */
+export async function removeStoredDoc(
+  target: DocWriteTarget,
+  context: DocRemovalContext,
+  identity: ReturnType<typeof resolvedDocWriteIdentity>,
+): Promise<boolean> {
+  const doc = validateStoredDocRemoval(target, context)
+  const { scope, subject, owner, slug } = doc
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
-      if (!target.spaceId)
-        throw new Error(`refusing hosted write for ${scope}/${subject ?? '_'}/${slug}: the read target names no space`)
       const client = await hostedDocClient(doc.scope, doc.subject, {
         owner: contextTaskOwner(context.contextTask),
-        destinationSpaceId: target.spaceId,
+        destinationSpaceId: hostedDocWriteDestination(target, `${scope}/${subject ?? '_'}/${slug}`),
       })
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined

@@ -21,6 +21,7 @@ export const docBoundarySpecs = [
       './doc-set-source-files.ts',
       './local-doc-order.ts',
       './docs.ts',
+      './doc-write-space.ts',
     ],
     reason:
       'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
@@ -59,8 +60,6 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/doc-prose.ts',
         // Write path: removal records a local revision and tombstone.
         'orchestrator/src/doc/doc-remove.ts',
-        // Write path: restore compares the local current row with the selected revision.
-        'orchestrator/src/doc/doc-restore-state.ts',
         // Store implementation: revision rows map through document store types.
         'orchestrator/src/doc/doc-revision-store.ts',
         // search out of scope (note 01a20248)

@@ -4,7 +4,7 @@
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import type { DocWriteSpace } from './doc-authoritative-read.ts'
+import type { DocWriteSpace, DocWriteTarget } from './doc-authoritative-read.ts'
 
 export async function resolveDocWriteSpace(
   verb: string,
@@ -21,7 +21,8 @@ export async function resolveDocWriteSpace(
   return { spaceId: destination.spaceId, slug: destination.slug }
 }
 
-export async function readableDocSpaceSlugs(): Promise<Map<string, string>> {
-  const memberships = parseRecordSpaceMemberships((await recordApiClient().whoami()).memberships)
-  return new Map(memberships.map(({ spaceId, slug }) => [spaceId, slug]))
+export function hostedDocWriteDestination(target: DocWriteTarget, address: string) {
+  if (target.doc && !target.spaceId)
+    throw new Error(`refusing hosted write for ${address}: the read target names no space`)
+  return target.spaceId
 }

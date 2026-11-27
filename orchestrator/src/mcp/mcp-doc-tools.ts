@@ -25,11 +25,12 @@ import {
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
-  readDocForWrite,
   readDocRevision as getDocRevision,
+  readDocForWrite,
   readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
+import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   removeDoc,
@@ -43,7 +44,6 @@ import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
-import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -331,33 +331,37 @@ function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
       })
       const doc = await withMcpDocWriteRemedy(() =>
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>
-          setDoc({
-            scope,
-            subject,
-            slug,
-            title,
-            body,
-            delivery,
-            audiences,
-            parentSlug: parent,
-            position,
-            featured,
-            status,
-            kind,
-            form,
-            articleSubject: article_subject,
-            relatedSubjects: related_subjects,
-            sourceFiles: source_files,
-            checkedAgainstCommit: checked_against_commit,
-            summary,
-            replacementSlug: replacement,
-            forceInject: force_inject,
-            reason,
-            author,
-            expectedRevision: expected_revision,
-            canonTree,
-            collectCanonLintInput: ports.collectCanonLintInput,
-          }, selectedSpace, target),
+          setDoc(
+            {
+              scope,
+              subject,
+              slug,
+              title,
+              body,
+              delivery,
+              audiences,
+              parentSlug: parent,
+              position,
+              featured,
+              status,
+              kind,
+              form,
+              articleSubject: article_subject,
+              relatedSubjects: related_subjects,
+              sourceFiles: source_files,
+              checkedAgainstCommit: checked_against_commit,
+              summary,
+              replacementSlug: replacement,
+              forceInject: force_inject,
+              reason,
+              author,
+              expectedRevision: expected_revision,
+              canonTree,
+              collectCanonLintInput: ports.collectCanonLintInput,
+            },
+            selectedSpace,
+            target,
+          ),
         ),
       )
       return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
@@ -382,17 +386,36 @@ function registerSetDocStatusTool(server: McpServer): void {
         space: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ scope, subject, slug, status, replacement, reason, author, expected_revision, space }) => {
+    async ({
+      scope,
+      subject,
+      slug,
+      status,
+      replacement,
+      reason,
+      author,
+      expected_revision,
+      space,
+    }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
       const selectedSpace = await resolveDocWriteSpace('set_doc_status', space)
       return text(
         await withMcpDocWriteRemedy(() =>
-          setDocStatus(scope, subject, slug, status, replacement, {
-            reason,
-            author,
-            expectedRevision: expected_revision,
-          }, null, selectedSpace),
+          setDocStatus(
+            scope,
+            subject,
+            slug,
+            status,
+            replacement,
+            {
+              reason,
+              author,
+              expectedRevision: expected_revision,
+            },
+            null,
+            selectedSpace,
+          ),
         ),
       )
     },

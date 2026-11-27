@@ -1,7 +1,7 @@
 // concern: document-rewrite-payload
 /** Preserves every stored field shared by metadata-only document rewrites. */
 
-import type { Doc } from './doc-read-store.ts'
+import type { Doc } from './doc-authoritative-read.ts'
 
 export function docRewritePayload(current: Doc) {
   return {

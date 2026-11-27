@@ -15,12 +15,33 @@ export const privateDocImports = [
   {
     source: 'orchestrator/src/doc/doc-remove.ts',
     name: 'removeStoredDoc',
-    importer: 'orchestrator/src/doc/docs.ts',
+    importer: 'orchestrator/src/doc/doc-removal-service.ts',
   },
 ] as const
 
 export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-space-selection.ts', []),
+  module('orchestrator/src/doc/doc-write-space.ts', [
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-space-owner-destination.ts',
+    '../record/record-api-client.ts',
+    './doc-authoritative-read.ts',
+  ]),
+  module('orchestrator/src/doc/doc-write-miss.ts', [
+    '../../../shared/brand.ts',
+    './doc-authoritative-read.ts',
+    './doc-space-selection.ts',
+  ]),
+  module('orchestrator/src/doc/doc-rewrite-payload.ts', ['./doc-authoritative-read.ts']),
+  module('orchestrator/src/doc/doc-removal-service.ts', [
+    '../../../shared/docs.ts',
+    '../database/db.ts',
+    './doc-authoritative-read.ts',
+    './doc-remove.ts',
+    './doc-write-guard.ts',
+    './doc-write-identity.ts',
+    './doc-write-miss.ts',
+  ]),
   module('orchestrator/src/doc/doc-order-service.ts', [
     '../record/record-write-authority.ts',
     './doc-authoritative-read.ts',
@@ -33,6 +54,7 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     './doc-article-fields.ts',
     './doc-authoritative-read.ts',
+    './doc-rewrite-payload.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/doc/doc-write-tree.ts', [
@@ -67,6 +89,7 @@ export const docModules: DocModule[] = [
     'bun:sqlite',
     '../../../shared/context-item-vocabulary.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/record-space-membership.ts',
     '../database/db.ts',
   ]),
   module('orchestrator/src/doc/context-item-hosted-client.ts', [
@@ -150,6 +173,7 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
     './doc-write-guard.ts',
     './doc-write-identity.ts',
+    './doc-write-space.ts',
     './local-doc-tree-service.ts',
     './local-doc-write.ts',
   ]),
@@ -198,11 +222,6 @@ export const docModules: DocModule[] = [
     '../secret-scan/secret-scan.ts',
     '../secret-scan/secret-scan-decision.ts',
   ]),
-  module('orchestrator/src/doc/doc-restore-state.ts', [
-    './doc-read-store.ts',
-    './doc-reference-write.ts',
-    './doc-revision-store.ts',
-  ]),
   module('orchestrator/src/doc/resume-brief-author.ts', [
     'bun:sqlite',
     '../database/db.ts',
@@ -216,6 +235,7 @@ export const docModules: DocModule[] = [
     '../../../shared/brand.ts',
     './doc-authoritative-read.ts',
     './docs.ts',
+    './doc-write-space.ts',
   ]),
   module('orchestrator/src/doc/doc-command-mentions.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-hosted-write-operation.ts', [
@@ -320,6 +340,7 @@ export const docModules: DocModule[] = [
     '../../../shared/record-id.ts',
     '../identity/doc-revision-identity.ts',
     '../record/record-read-authority.ts',
+    '../record/record-api-client.ts',
     '../subject/subjects.ts',
     '../project/projects.ts',
     './doc-hosted-client.ts',

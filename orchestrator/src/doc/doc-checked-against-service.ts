@@ -19,9 +19,13 @@ export async function setDocCheckedAgainst(
   const current = target.doc
   if (!current)
     throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
-  return setDoc({
-    ...docRewritePayload(current),
-    checkedAgainstCommit: commit,
-    ...context,
-  }, undefined, target)
+  return setDoc(
+    {
+      ...docRewritePayload(current),
+      checkedAgainstCommit: commit,
+      ...context,
+    },
+    undefined,
+    target,
+  )
 }

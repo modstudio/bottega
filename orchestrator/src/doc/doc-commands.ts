@@ -28,18 +28,19 @@ import {
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
-  readDocForWrite,
   readDocs as authoritativeDocs,
   type DocListFilters,
   type DocRevision,
   type DocRevisionMetadata,
   docForAudience,
+  readDocForWrite,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
 import { reorderDocs } from './doc-order-service.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
+import { resolveDocWriteSpace } from './doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
   docSubjects,
@@ -56,7 +57,6 @@ import {
   summarizeDocLint,
   validateDocAddressFilter,
 } from './docs.ts'
-import { resolveDocWriteSpace } from './doc-write-space.ts'
 
 const DOC_KEYWORD_LIST_LIMIT = 50
 
@@ -789,16 +789,13 @@ async function handleRemoveDocCommand(
   }
   const canonTree = commandDocWriteTree(scope, target.doc!.subject, flags, presentation, ports)
   const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
-    removeReadDoc(
-      target,
-      {
-        reason,
-        author: flags.flag('author'),
-        expectedRevision: flags.flag('expect'),
-        canonTree,
-        collectCanonLintInput: ports.collectCanonLintInput,
-      },
-    ),
+    removeReadDoc(target, {
+      reason,
+      author: flags.flag('author'),
+      expectedRevision: flags.flag('expect'),
+      canonTree,
+      collectCanonLintInput: ports.collectCanonLintInput,
+    }),
   )
   presentation.log(
     flags.has('json')

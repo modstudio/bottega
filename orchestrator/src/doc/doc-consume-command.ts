@@ -3,8 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readDocForWrite } from './doc-authoritative-read.ts'
-import { type ConsumedDoc, consumeDoc, type Doc } from './docs.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
+import { type ConsumedDoc, consumeDoc, type Doc } from './docs.ts'
 
 type PreparedConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
 export type ConsumeDocHandoff = {
