@@ -7,7 +7,11 @@ import { NOTE_DUPLICATE_CONCURRENCY } from './note-duplicate-question.ts'
 import { mapConcurrent } from './note-evaluation.ts'
 import { listTasks } from './task.ts'
 import type { TaskRow } from './task-row.ts'
-import { NOTE_CLASS_ACCEPT_CONFIDENCE, NOTE_CLASS_QUESTION } from './typed-question-declarations.ts'
+import {
+  NOTE_CLASS_ACCEPT_CONFIDENCE,
+  NOTE_CLASS_QUESTION,
+  TYPED_QUESTION_DECLARATIONS,
+} from './typed-question-declarations.ts'
 import {
   askHubTypedQuestionWithReuse,
   typedQuestionCredentialAvailability,
@@ -19,15 +23,19 @@ const NOTE_CLASS_SUBJECT_KIND = 'note'
 const CLASS_TITLE = /^Class (C[1-9][0-9]*): (.+)$/
 
 export function seedClassesFromTasks(tasks: readonly TaskRow[]): SeedClass[] {
-  return tasks
-    .flatMap((task) => {
-      const title = task.title?.match(CLASS_TITLE)
-      if (!title || (task.status_category !== 'open' && task.status_category !== 'active'))
-        return []
-      const definition = NOTE_CLASS_QUESTION.criteria[title[1]!]
+  const liveClasses = tasks.flatMap((task) => {
+    const title = task.title?.match(CLASS_TITLE)
+    return title && (task.status_category === 'open' || task.status_category === 'active')
+      ? [{ task, code: title[1]!, name: title[2]! }]
+      : []
+  })
+  const question = selectNoteClassQuestion(liveClasses.map(({ code }) => code))
+  return liveClasses
+    .flatMap(({ task, code, name }) => {
+      const definition = (question ?? NOTE_CLASS_QUESTION).criteria[code]
       return definition
-        ? [{ code: title[1]!, name: title[2]!, definition }]
-        : [{ code: title[1]!, name: title[2]!, definition: task.body?.trim() || title[2]! }]
+        ? [{ code, name, definition }]
+        : [{ code, name, definition: task.body?.trim() || name }]
     })
     .sort((left, right) => left.code.localeCompare(right.code))
 }
@@ -49,18 +57,35 @@ export type NoteClassPass = {
   remaining: CuratorNote[]
 }
 
-function optionCodes(): string[] {
-  return Object.keys(NOTE_CLASS_QUESTION.criteria)
+function optionCodes(criteria: Readonly<Record<string, string>>): string[] {
+  return Object.keys(criteria)
     .filter((code) => code !== 'none')
     .sort()
 }
 
-export function seedMismatch(seed: readonly SeedClass[]): string | null {
-  const seedCodes = seed.map(({ code }) => code).sort()
-  const declared = optionCodes()
-  return seedCodes.join(',') === declared.join(',')
-    ? null
-    : `Jev class pass skipped: seed ${seedCodes.join(',')} differs from note_class v${NOTE_CLASS_QUESTION.version} options ${declared.join(',')}; declare a new note_class version`
+const NOTE_CLASS_QUESTIONS = TYPED_QUESTION_DECLARATIONS.filter(
+  (question): question is typeof NOTE_CLASS_QUESTION =>
+    question.id === 'note_class' && question.type === 'choice',
+)
+
+export function selectNoteClassQuestion(seedCodes: readonly string[]) {
+  const seed = [...new Set(seedCodes)].sort().join(',')
+  return NOTE_CLASS_QUESTIONS.filter(
+    (question) => optionCodes(question.criteria).join(',') === seed,
+  ).reduce<(typeof NOTE_CLASS_QUESTIONS)[number] | undefined>(
+    (selected, question) =>
+      !selected || question.version > selected.version ? question : selected,
+    undefined,
+  )
+}
+
+function classPassRefusal(seed: readonly SeedClass[]): string {
+  const seedCodes = [...new Set(seed.map(({ code }) => code))].sort()
+  const declarations = [...NOTE_CLASS_QUESTIONS]
+    .sort((left, right) => left.version - right.version)
+    .map((question) => `v${question.version} ${optionCodes(question.criteria).join(',')}`)
+    .join('; ')
+  return `Jev class pass skipped: seed ${seedCodes.join(',')} matches no declared note_class version (${declarations}); declare a new note_class version`
 }
 
 export async function runNoteClassPass(
@@ -68,9 +93,15 @@ export async function runNoteClassPass(
   seed: readonly SeedClass[],
   dependencies: ClassPassDependencies = defaultDependencies,
 ): Promise<NoteClassPass> {
-  const mismatch = seedMismatch(seed)
-  if (mismatch)
-    return { ran: false, status: mismatch, answers: 0, proposals: [], remaining: [...notes] }
+  const question = selectNoteClassQuestion(seed.map(({ code }) => code))
+  if (!question)
+    return {
+      ran: false,
+      status: classPassRefusal(seed),
+      answers: 0,
+      proposals: [],
+      remaining: [...notes],
+    }
   const credential = await dependencies.credential()
   if (!credential.available)
     return {
@@ -83,7 +114,7 @@ export async function runNoteClassPass(
   const seedCodes = new Set(seed.map(({ code }) => code))
   const results = await mapConcurrent(notes, NOTE_DUPLICATE_CONCURRENCY, (note) =>
     dependencies.ask({
-      question: NOTE_CLASS_QUESTION,
+      question,
       subjectKind: NOTE_CLASS_SUBJECT_KIND,
       subjectRef: note.record_id,
       state: note.text,
@@ -107,7 +138,7 @@ export async function runNoteClassPass(
         class: { seed: answer.choice },
         duplicate_of: null,
         still_holds: 'unsure',
-        reason: `note_class v${NOTE_CLASS_QUESTION.version} confidence ${answer.confidence.toFixed(3)}`,
+        reason: `note_class v${question.version} confidence ${answer.confidence.toFixed(3)}`,
         source: 'jev',
       })
     } else remaining.push(note)
