@@ -31,7 +31,7 @@ export const NOTE_CLASS_QUESTION: ChoiceQuestion = {
   criteria: {
     ...NOTE_CLASS_V1_CRITERIA,
     C9: 'Merge verbs that fail after the merge landed: after GitHub has merged a pull request, the merge verb still exits nonzero or refuses, so a rerun repeats or contradicts work already done.',
-    none: NOTE_CLASS_NONE,
+    none: NOTE_CLASS_NONE!,
   },
 }
 
