@@ -23,9 +23,9 @@ import { db } from '../database/db.ts'
 import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
+import { removeDoc as deleteDoc } from './doc-removal-service.ts'
 import {
   consumeDoc as consumeDocument,
-  removeDoc as deleteDoc,
   docsForRun,
   exportDocs,
   importDocs as readDocs,

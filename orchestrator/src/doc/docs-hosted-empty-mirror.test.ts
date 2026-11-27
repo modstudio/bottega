@@ -14,12 +14,12 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import { readDocRevision, readDocs } from './doc-authoritative-read.ts'
+import { removeDoc } from './doc-removal-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import {
   consumeDoc,
   importDocs,
   readOpenResumes,
-  removeDoc,
   restoreDoc,
   setDoc,
   setDocStatus,

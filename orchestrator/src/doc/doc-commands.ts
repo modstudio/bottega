@@ -38,8 +38,10 @@ import {
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
 import { reorderDocs } from './doc-order-service.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
+import { docWriteMissRefusal } from './doc-write-miss.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
@@ -48,8 +50,6 @@ import {
   importDocs,
   lintStoredDoc,
   readOpenResumes,
-  removeDoc,
-  removeReadDoc,
   restoreDoc,
   setDocStatus,
   signedInDocOwner,
@@ -783,10 +783,8 @@ async function handleRemoveDocCommand(
   const subject = readDocSubject(flags, address)
   const selectedSpace = await resolveDocWriteSpace('doc rm', flags.flag('space'))
   const target = await readDocForWrite(scope, subject, slug, address.owner, selectedSpace)
-  if (!target.doc) {
-    await removeDoc(scope, subject, slug, { reason }, address.owner, selectedSpace)
-    throw new Error('document removal unexpectedly returned after a missing-row refusal')
-  }
+  if (!target.doc)
+    throw new Error(docWriteMissRefusal(scope, subject, slug, address.owner, selectedSpace))
   const canonTree = commandDocWriteTree(scope, target.doc!.subject, flags, presentation, ports)
   const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
     removeReadDoc(target, {
@@ -911,7 +909,6 @@ async function restoreDocCommand(
       suppliedRead: hosted
         ? {
             revision: hosted.revision(revision),
-            current: await authoritativeDoc(scope, subject, slug, owner),
           }
         : undefined,
     },

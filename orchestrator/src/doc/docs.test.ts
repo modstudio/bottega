@@ -160,7 +160,9 @@ test('setDocCheckedAgainst refuses an absent document with the listing remedy', 
     setDocCheckedAgainst('project', 'drifted', 'missing', checkedCommit, {
       reason: 'record the checked commit',
     }),
-  ).rejects.toThrow(`no project doc "missing"; use ${PLATFORM_SLUG} doc list --scope project`)
+  ).rejects.toThrow(
+    `no project/drifted doc "missing" in the active space; use ${PLATFORM_SLUG} doc list --scope project to see what exists`,
+  )
 })
 
 test('restore with a supplied authoritative read still refuses a generated reference document', async () => {
@@ -188,7 +190,7 @@ test('restore with a supplied authoritative read still refuses a generated refer
   await expect(
     restoreDoc('project', 'reference-project', 'reference-restore', revisionId, {
       reason: 'attempt a hand restore',
-      suppliedRead: { current, revision },
+      suppliedRead: { revision },
     }),
   ).rejects.toThrow('refusing hand write of a generated reference document')
 })

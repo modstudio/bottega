@@ -1,8 +1,8 @@
 import { getContextItem } from '../../src/doc/context-item-store.ts'
 import { setContextItem } from '../../src/doc/context-service.ts'
+import { removeDoc as deleteDoc } from '../../src/doc/doc-removal-service.ts'
 import {
   consumeDoc as consumeDocument,
-  removeDoc as deleteDoc,
   importDocs as readDocs,
   setDoc as writeDoc,
 } from '../../src/doc/docs.ts'

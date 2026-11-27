@@ -34,9 +34,9 @@ export const docModules: DocModule[] = [
   ]),
   module('orchestrator/src/doc/doc-rewrite-payload.ts', ['./doc-authoritative-read.ts']),
   module('orchestrator/src/doc/doc-removal-service.ts', [
-    '../../../shared/docs.ts',
     '../database/db.ts',
     './doc-authoritative-read.ts',
+    './doc-read-store.ts',
     './doc-remove.ts',
     './doc-write-guard.ts',
     './doc-write-identity.ts',
@@ -51,10 +51,10 @@ export const docModules: DocModule[] = [
     './local-doc-order.ts',
   ]),
   module('orchestrator/src/doc/doc-checked-against-service.ts', [
-    '../../../shared/brand.ts',
     './doc-article-fields.ts',
     './doc-authoritative-read.ts',
     './doc-rewrite-payload.ts',
+    './doc-write-miss.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/doc/doc-write-tree.ts', [
@@ -234,6 +234,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-consume-command.ts', [
     '../../../shared/brand.ts',
     './doc-authoritative-read.ts',
+    './doc-removal-service.ts',
     './docs.ts',
     './doc-write-space.ts',
   ]),
@@ -269,6 +270,7 @@ export const docModules: DocModule[] = [
     '../../../shared/git.ts',
     '../../../shared/git-path-list.ts',
     './doc-authoritative-read.ts',
+    './doc-removal-service.ts',
     './docs.ts',
     './doc-generator.ts',
     '../../../shared/bounded-process.ts',
@@ -402,6 +404,7 @@ export const docModules: DocModule[] = [
     '../database/db.ts',
     '../../../shared/context-item-vocabulary.ts',
     '../jobs/jobs.ts',
+    './doc-read-store.ts',
   ]),
   module('orchestrator/src/doc/local-doc-tree-service.ts', [
     '../../../shared/brand.ts',

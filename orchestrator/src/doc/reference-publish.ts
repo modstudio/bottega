@@ -8,7 +8,8 @@ import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { readDoc, readDocsForWrite } from './doc-authoritative-read.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { removeReadDoc, setDoc } from './docs.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
+import { setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {
   slug: string
@@ -122,7 +123,9 @@ export async function publishReferenceDocs(
   const removed = (await readDocsForWrite({ scope: 'project', subject: PLATFORM_SLUG }))
     .filter(
       ({ doc }) =>
-        doc?.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
+        doc?.form === 'reference' &&
+        (doc.parent_slug === 'cli' || doc.parent_record_id === currentIndex.record_id) &&
+        !expected.has(doc.slug),
     )
     .sort((left, right) => left.doc!.position - right.doc!.position)
   for (const target of removed) {

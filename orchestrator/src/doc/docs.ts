@@ -65,7 +65,13 @@ import {
   type PackBudgetProjection,
 } from './doc-pack-budget-read.ts'
 import { assertDocProse } from './doc-prose.ts'
-import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
+import {
+  type Doc,
+  type DocRevision,
+  getDocStore,
+  listDocsStore,
+  validDocScope,
+} from './doc-read-store.ts'
 import {
   assertLocalReferenceRestore,
   assertLocalReferenceWrite,
@@ -293,15 +299,9 @@ async function assertPackSize(input: PackSizeInput): Promise<void> {
   }
 }
 
-function validScope(scope: string): asserts scope is DocScope {
-  if (!DOC_SCOPES.includes(scope as DocScope)) {
-    throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
-  }
-}
-
 export function validateDocAddressFilter(filter: { scope?: string; subject?: string }): void {
   if (filter.scope === undefined) return
-  validScope(filter.scope)
+  validDocScope(filter.scope)
   if (filter.subject === undefined) return
   validateDocSubject(filter.scope, filter.subject)
 }
@@ -654,8 +654,6 @@ export async function importDoc(
   return setDocWithOp(input, 'import')
 }
 
-export { removeDoc, removeReadDoc, validateReadDocRemoval } from './doc-removal-service.ts'
-
 /**
  * Consuming a resume changes metadata inside a body whose exact text is the
  * recovery artifact. Patch only the three named fields instead of parsing and
@@ -875,7 +873,7 @@ export async function restoreDoc(
   subject: string | null,
   slug: string,
   revisionId: string,
-  context: DocWriteContext & { suppliedRead?: { revision: DocRevision; current: Doc | null } },
+  context: DocWriteContext & { suppliedRead?: { revision: DocRevision } },
   owner: string | null = null,
 ): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')

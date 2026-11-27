@@ -49,6 +49,7 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+type HostedDocRow = { doc: Doc; row: HostedRow }
 export type DocWriteSpace = { spaceId: string; slug: string }
 export type DocWriteTarget = {
   doc: Doc | null
@@ -191,7 +192,10 @@ function docFromHosted(row: HostedRow): Doc {
   }
 }
 
-async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
+async function hostedDocRows(
+  filters: DocListFilters,
+  database?: Database,
+): Promise<HostedDocRow[]> {
   const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
     database,
   })
@@ -214,7 +218,16 @@ async function hostedRows(filters: DocListFilters, database?: Database): Promise
   })
   if (page.unreadable.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
-  return filterAndOrderDocs(page.items.map(docFromHosted), filters)
+  const pairs = page.items.map((row) => ({ doc: docFromHosted(row), row }))
+  const rowsByDoc = new Map(pairs.map((pair) => [pair.doc, pair.row]))
+  return filterAndOrderDocs(
+    pairs.map(({ doc }) => doc),
+    filters,
+  ).map((doc) => ({ doc, row: rowsByDoc.get(doc)! }))
+}
+
+async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
+  return (await hostedDocRows(filters, database)).map(({ doc }) => doc)
 }
 
 function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[] {
@@ -362,33 +375,17 @@ export function readDocsForWrite(
         currentRevision: doc.revision,
       })),
     hosted: () =>
-      withReadRemedy(async () => {
-        const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
-          database,
-        })
-        const acrossReadableSpaces = docReadsAcrossReadableSpaces({
-          scope: filters.scope,
-          subject: filters.subject,
-          owner: filters.owner,
-        })
-        const page = await listAllHostedDocs(client.listDocs, {
-          scope: filters.scope,
-          subject: filters.subject,
-          owner: filters.owner,
-          acrossReadableSpaces,
-        })
-        if (page.unreadable.length)
-          throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
-        return page.items.map((row) => {
+      withReadRemedy(async () =>
+        (await hostedDocRows(filters, database)).map(({ doc, row }) => {
           const space = hostedRowSpace(row)
           return {
-            doc: docFromHosted(row),
+            doc,
             spaceId: space?.id,
             currentRevision: String(row.latestRevisionId ?? row.latest_revision_id ?? '') || null,
             ...(space ? { spaceSlug: space.label } : {}),
           }
-        })
-      }),
+        }),
+      ),
   }
   return database
     ? applyRecordReadAuthority<DocWriteTarget[]>(actions, database)

@@ -5,7 +5,8 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { applyMigrations } from './database/migrations.ts'
 import { importCanon } from './doc/canon-import.ts'
-import { consumeDoc, importDoc, importDocs, removeDoc, restoreDoc, setDoc } from './doc/docs.ts'
+import { removeDoc } from './doc/doc-removal-service.ts'
+import { consumeDoc, importDoc, importDocs, restoreDoc, setDoc } from './doc/docs.ts'
 import { workerStoreWriteRefusal } from './worker-store-write.ts'
 import {
   forkStepCatalogue,

@@ -8,7 +8,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from '../workflow/step-catalogue.ts'
-import { removeDoc } from './docs.ts'
+import { removeDoc } from './doc-removal-service.ts'
 
 const targetSlug = 'removal-target.md'
 const targetBody = '---\ndescription: Removal target\n---\n\n# Target\n'

@@ -30,11 +30,11 @@ import {
   readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
+import { removeReadDoc } from '../doc/doc-removal-service.ts'
+import { docWriteMissRefusal } from '../doc/doc-write-miss.ts'
 import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
-  removeDoc,
-  removeReadDoc,
   setDoc,
   setDocStatus,
   signedInDocOwner,
@@ -447,7 +447,7 @@ function registerRemoveDocTool(server: McpServer, ports: DocToolPorts): void {
       const selectedSpace = await resolveDocWriteSpace('remove_doc', space)
       const target = await readDocForWrite(scope, subject, slug, null, selectedSpace)
       if (!target.doc)
-        return text(await removeDoc(scope, subject, slug, { reason }, null, selectedSpace))
+        throw new Error(docWriteMissRefusal(scope, subject, slug, null, selectedSpace))
       const canonTree = ports.selectDocWriteTree({ scope, subject: target.doc.subject, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>

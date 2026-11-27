@@ -1,6 +1,7 @@
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { readDocsForWrite } from '../doc/doc-authoritative-read.ts'
-import { importDoc, removeReadDoc, validateReadDocRemoval } from '../doc/docs.ts'
+import { removeReadDoc, validateReadDocRemoval } from '../doc/doc-removal-service.ts'
+import { importDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
 import * as porting from './porting.ts'

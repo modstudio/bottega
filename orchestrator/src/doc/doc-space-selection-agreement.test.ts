@@ -7,8 +7,9 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs, readDocsForWrite } from './doc-authoritative-read.ts'
+import { removeDoc, removeReadDoc } from './doc-removal-service.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
-import { consumeDoc, removeDoc, removeReadDoc, setDoc, setDocStatus } from './docs.ts'
+import { consumeDoc, setDoc, setDocStatus } from './docs.ts'
 
 type HostedRow = Record<string, unknown> & { id: string; spaceId: string }
 

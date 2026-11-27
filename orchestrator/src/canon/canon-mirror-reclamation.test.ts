@@ -3,7 +3,8 @@ import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'no
 import { join } from 'node:path'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { removeDoc, setDoc } from '../doc/docs.ts'
+import { removeDoc } from '../doc/doc-removal-service.ts'
+import { setDoc } from '../doc/docs.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
 import {
