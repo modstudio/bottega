@@ -391,8 +391,11 @@ async function shell(
     )
     return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
-    await resetSandbox()
-    rmSync(temporaryDirectory, { recursive: true, force: true })
+    try {
+      await resetSandbox()
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true })
+    }
   }
 }
 
