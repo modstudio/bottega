@@ -22,8 +22,6 @@ import {
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
 
-const GIT_MERGE_SUBCOMMAND = 'merge'
-
 export type RequiredReleaseRung = {
   name: string
   branch: string
@@ -458,9 +456,8 @@ export function moveNonInstallationMainCheckout(project: Project, mergeCommit?: 
     targetGitEnvironment(project.path),
     ' during main checkout fetch',
   )
-  const fastForwardArgs = [GIT_MERGE_SUBCOMMAND, '--ff-only', `origin/${trunk}`]
   git(
-    fastForwardArgs,
+    ['merge', '--ff-only', `origin/${trunk}`],
     project.path,
     targetGitEnvironment(project.path),
     ' during main checkout fast-forward',

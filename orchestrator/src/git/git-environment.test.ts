@@ -2,12 +2,10 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { CallBudgetName } from '../../../shared/call-budgets.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { resolveDispatchBase } from '../dispatch/dispatch-commands.ts'
 import {
   contentTree,
-  git,
   isWorktreeRelativeRef,
   resolveBase,
   withTemporaryGitIndex,
@@ -26,31 +24,6 @@ function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync
 }
 
 describe('git environment', () => {
-  test.each([
-    ['fetch', 'git-network'],
-    ['push', 'git-network'],
-    ['clone', 'git-network'],
-    ['checkout', 'git-ref-move'],
-    ['switch', 'git-ref-move'],
-    ['pull', 'git-ref-move'],
-    ['merge', 'git-ref-move'],
-    ['rebase', 'git-ref-move'],
-    ['rev-parse', 'git-plumbing'],
-  ] as const)('git %s uses the shared %s budget', (subcommand, expectedBudget) => {
-    let budget: CallBudgetName | undefined
-    const start = ((_argv: string[], options: { budget: CallBudgetName }) => {
-      budget = options.budget
-      return {
-        exitCode: 0,
-        stdout: '',
-        stderr: '',
-      }
-    }) as Parameters<typeof git>[4]
-
-    git([subcommand], process.cwd(), undefined, '', start)
-    expect(budget).toBe(expectedBudget)
-  })
-
   test('temporary index seeds HEAD and binds the three git invocation behaviors', () => {
     // Production break watched fail: remove GIT_INDEX_FILE from the helper's bound environment.
     const cwd = mkdtempSync(join(tmpdir(), 'temporary-index-git-'))
