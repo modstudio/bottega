@@ -54,6 +54,10 @@ test('selects v1 or v2 when the seed exactly matches that version', () => {
   expect(selectNoteClassQuestion(['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9'])?.version).toBe(2)
 })
 
+test('a duplicated seed code matches no declared version', () => {
+  expect(selectNoteClassQuestion(['C1', 'C1', 'C2', 'C4', 'C5', 'C6', 'C7'])).toBeUndefined()
+})
+
 test('every declared note_class version selects itself from its option set', () => {
   for (const question of noteClassQuestions)
     expect(selectNoteClassQuestion(questionCodes(question))?.version).toBe(question.version)

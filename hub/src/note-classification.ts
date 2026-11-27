@@ -32,6 +32,7 @@ export function seedClassesFromTasks(tasks: readonly TaskRow[]): SeedClass[] {
   const question = selectNoteClassQuestion(liveClasses.map(({ code }) => code))
   return liveClasses
     .flatMap(({ task, code, name }) => {
+      // The newest declaration is the intentional fallback when no version matches the seed.
       const definition = (question ?? NOTE_CLASS_QUESTION).criteria[code]
       return definition
         ? [{ code, name, definition }]
@@ -69,7 +70,7 @@ const NOTE_CLASS_QUESTIONS = TYPED_QUESTION_DECLARATIONS.filter(
 )
 
 export function selectNoteClassQuestion(seedCodes: readonly string[]) {
-  const seed = [...new Set(seedCodes)].sort().join(',')
+  const seed = [...seedCodes].sort().join(',')
   return NOTE_CLASS_QUESTIONS.filter(
     (question) => optionCodes(question.criteria).join(',') === seed,
   ).reduce<(typeof NOTE_CLASS_QUESTIONS)[number] | undefined>(
@@ -147,8 +148,8 @@ export async function runNoteClassPass(
     ran: true,
     status:
       notes.length > 0 && answers === 0
-        ? 'Jev class pass obtained no answers: the typed-question service returned no answers'
-        : `Jev class pass obtained ${answers}/${notes.length} answers`,
+        ? `Jev class pass obtained no answers: the typed-question service returned no answers (note_class v${question.version})`
+        : `Jev class pass obtained ${answers}/${notes.length} answers (note_class v${question.version})`,
     answers,
     proposals,
     remaining,
