@@ -272,7 +272,12 @@ test('missing credential obtains no answers and leaves notes unchanged', async (
   expect(asks).toBe(0)
   expect(storedState()).toEqual(beforeNotes)
   expect(answerCount()).toBe(beforeAnswers)
-  const body = noteEvaluationBody(project, 'now', actionableNotes.length, result)
+  const body = noteEvaluationBody(
+    project,
+    actionableNotes.length,
+    '2026-11-26T19:00:00.000Z',
+    result,
+  )
   expect(body).not.toContain('no duplicates')
 })
 
@@ -283,7 +288,9 @@ test('zero candidate pairs are reported without a typed-question service failure
     positiveSubjects: () => ({ produced: 0, total: 0, unreadable: 0 }),
   })
   expect(result).toMatchObject({ pairsAsked: 0, answerFailure: null })
-  expect(noteEvaluationBody('project', 'now', 0, result)).toContain('No candidate pairs to ask.')
+  expect(noteEvaluationBody('project', 0, '2026-11-26T19:00:00.000Z', result)).toContain(
+    'No candidate pairs to ask.',
+  )
 })
 
 test('pairs asked excludes reused answers and includes failed asks', async () => {

@@ -5,7 +5,12 @@ import { readLiveSeedClasses, runNoteClassPass } from './note-classification.ts'
 import { curateEvaluationNotes } from './note-curation.ts'
 import { rankNoteClasses } from './note-curation-decisions.ts'
 import { evaluateNotePairs, noteEvaluationBody } from './note-evaluation.ts'
-import { appendCurationRecord } from './note-evaluation-record.ts'
+import {
+  appendCurationRecord,
+  appendEvaluationRecordData,
+  formatNoteEvaluationSummary,
+  noteEvaluationBaseData,
+} from './note-evaluation-record.ts'
 import { listProjectSlimNotes } from './note-read.ts'
 import { writeNoteEvaluationRecord } from './orch.ts'
 import { projects } from './projects.ts'
@@ -39,9 +44,9 @@ const dependencies: Dependencies = {
 
 export async function evaluateNotes(
   project: string,
-  options: { skipCurate: boolean },
+  options: { skipCurate: boolean; emit(summary: string): void },
   deps: Dependencies = dependencies,
-): Promise<string> {
+): Promise<void> {
   const registered = deps.registeredProject(project)
   if (!registered) throw new Error(`unknown project '${project}'`)
   const [actionable, all] = await Promise.all([
@@ -50,15 +55,28 @@ export async function evaluateNotes(
   ])
   const notes = actionable.notes
   const result = await deps.evaluatePairs(project, notes, all.notes)
-  let body = noteEvaluationBody(project, deps.now(), notes.length, result)
+  const at = deps.now()
+  const baseData = noteEvaluationBaseData(result)
+  const baseBody = noteEvaluationBody(project, notes.length, at, result)
+  let body = appendEvaluationRecordData(baseBody, baseData)
+  let summary = formatNoteEvaluationSummary({ project, noteCount: notes.length, at, result })
   if (!options.skipCurate) {
     const seed = await deps.readSeed()
     const classPass = await deps.classPass(notes, seed)
     const curation = await deps.curate(registered.path, classPass.remaining, result.clusters, seed)
     const proposals = [...classPass.proposals, ...curation.proposals]
     const ranking = deps.rank(notes, proposals, seed)
-    body = deps.appendRecord(body, classPass, curation, proposals, ranking)
+    body = deps.appendRecord(baseBody, baseData, classPass, curation, proposals, ranking)
+    summary = formatNoteEvaluationSummary({
+      project,
+      noteCount: notes.length,
+      at,
+      result,
+      classPass,
+      curation,
+      ranking,
+    })
   }
+  options.emit(summary)
   await deps.writeRecord(project, body)
-  return body
 }

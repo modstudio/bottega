@@ -69,6 +69,7 @@ export const noteEvaluationModuleSpecs = [
       './note-curation-decisions.ts',
       './note-curation.ts',
       './note-evaluation-identity.ts',
+      './note-evaluation.ts',
     ],
   },
 ] as const

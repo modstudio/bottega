@@ -32,10 +32,11 @@ test('evaluation records one ranking containing Jev and curator proposals', asyn
   const notes = [jevNote, curatorNote]
   const seed: SeedClass[] = [{ code: 'C1', name: 'One', definition: 'one' }]
   let recorded = ''
+  let emitted = ''
   let rankCalls = 0
   await evaluateNotes(
     'alpha',
-    { skipCurate: false },
+    { skipCurate: false, emit: (summary) => (emitted = summary) },
     {
       registeredProject: () => ({ path: '/tmp/alpha' }),
       listNotes: async () => ({ notes, total: notes.length }),
@@ -90,15 +91,64 @@ test('evaluation records one ranking containing Jev and curator proposals', asyn
         recorded = body
         return {} as never
       },
-      now: () => '2026-11-26T00:00:00.000Z',
+      now: () => '2026-11-26T19:00:00.000Z',
     },
   )
   expect(rankCalls).toBe(1)
+  expect(recorded).toContain('Run time: 2026-11-26T19:00:00.000Z')
+  expect(emitted).toContain('Run time: 2026-11-26T19:00:00.000Z')
+  expect(emitted).toContain('proposed P1')
   expect(
     parseCurationRecord(recorded)
       ?.ranking.flatMap((item) => item.notes)
       .sort(),
   ).toEqual(['alpha#1', 'alpha#2'])
+})
+
+test('evaluation emits the curation stop reason before a record write refusal', async () => {
+  const stop = 'curation refused for DEV-9999 on 2026-11-26'
+  let emitted = ''
+  await expect(
+    evaluateNotes(
+      'alpha',
+      { skipCurate: false, emit: (summary) => (emitted = summary) },
+      {
+        registeredProject: () => ({ path: '/tmp/alpha' }),
+        listNotes: async () => ({ notes: [note('alpha#1')], total: 1 }),
+        evaluatePairs: async () => ({
+          generatedPairs: 0,
+          pairsAsked: 0,
+          answeredPairs: 0,
+          reusedAnswers: 0,
+          newAnswers: 0,
+          answerFailure: null,
+          recall: { produced: 0, total: 0, unreadable: 0, fraction: null },
+          clusters: [],
+        }),
+        readSeed: async () => [],
+        classPass: async (notes) => ({
+          ran: false,
+          status: 'Jev class pass skipped',
+          answers: 0,
+          proposals: [],
+          remaining: [...notes],
+        }),
+        curate: async () => ({
+          proposals: [],
+          failedPages: [{ page: 1, labels: ['alpha#1'], runId: null, error: stop }],
+          invalidEntries: 0,
+          stopped: stop,
+        }),
+        rank: () => [],
+        appendRecord: appendCurationRecord,
+        writeRecord: async () => {
+          expect(emitted).toContain(stop)
+          throw new Error('doc lint refused the record')
+        },
+        now: () => '2026-11-26T19:00:00.000Z',
+      },
+    ),
+  ).rejects.toThrow('doc lint refused the record')
 })
 
 test('evaluation leaves stored notes and task rows unchanged while producing proposals', async () => {
@@ -214,7 +264,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
   try {
     await evaluateNotes(
       project,
-      { skipCurate: false },
+      { skipCurate: false, emit: () => {} },
       {
         registeredProject: (name) =>
           projects().find((candidate) => candidate.name === name) ?? null,
@@ -273,7 +323,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
           recorded = body
           return {} as never
         },
-        now: () => '2026-11-26T00:00:00.000Z',
+        now: () => '2026-11-26T19:00:00.000Z',
       },
     )
 

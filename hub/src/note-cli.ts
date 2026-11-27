@@ -141,7 +141,10 @@ function curatorNoteCommand(options: NoteOptions): void {
 
 async function evaluateNoteCommand(options: NoteOptions): Promise<void> {
   open()
-  console.log(await evaluateNotes(options.project!, { skipCurate: Boolean(options.skipCurate) }))
+  await evaluateNotes(options.project!, {
+    skipCurate: Boolean(options.skipCurate),
+    emit: (summary) => console.log(summary),
+  })
 }
 
 async function classesNoteCommand(options: NoteOptions): Promise<void> {
