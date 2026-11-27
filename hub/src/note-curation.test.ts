@@ -49,3 +49,38 @@ test('a refused first dispatch stops without dispatching another page', async ()
   expect(calls).toBe(1)
   expect(result.stopped).toContain('keyless workflow cursor')
 })
+
+test('curator class replies accept exactly one seed or proposed branch', async () => {
+  const replies = [
+    { seed: 'C1' },
+    { proposed: { name: 'New class', definition: 'A new defect class.' } },
+    { seed: 'C1', proposed: { name: 'New class', definition: 'A new defect class.' } },
+    {},
+  ]
+  const results = await Promise.all(
+    replies.map((classReply) =>
+      curateEvaluationNotes('/tmp/alpha', [note('A')], [], seed, async () => ({
+        runId: 'r1',
+        reply: {
+          proposals: [
+            {
+              label: 'A',
+              class: classReply,
+              duplicate_of: null,
+              still_holds: 'yes',
+              reason: 'fit',
+            },
+          ],
+        },
+      })),
+    ),
+  )
+  expect(
+    results.map(({ proposals, failedPages }) => [proposals.length, failedPages.length]),
+  ).toEqual([
+    [1, 0],
+    [1, 0],
+    [0, 1],
+    [0, 1],
+  ])
+})

@@ -181,7 +181,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
 
   const noteIds = Array.from({ length: 5 }, () => newRecordId())
   const epicId = newRecordId()
-  const classCodes = ['C1', 'C2', 'C4', 'C5', 'C6', 'C7']
+  const classCodes = ['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9']
   writeTransaction((database) => {
     const insertNote = database.query(
       `INSERT INTO note
