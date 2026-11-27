@@ -191,6 +191,9 @@
     "shared/record-remedies.ts#recordUnreachableRefusal": {
       "test": "shared/record-remedies.test.ts: hosted-record unreachable refusal names the origin, outcome, and doctor remedy"
     },
+    "shared/record-remedies.ts#RECORD_DOCTOR_REMEDY": {
+      "test": "shared/record-remedies.test.ts: the record doctor command clears an unclassified hosted response failure"
+    },
     "orchestrator/src/config/credential-service.ts#projectRecordIdentityRefusal": {
       "test": "orchestrator/src/config/credential-service.test.ts: project credential address refuses missing record identity with project push remedy"
     },

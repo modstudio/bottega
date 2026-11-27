@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
-import { recordUnreachableRefusal } from './record-remedies.ts'
+import { RECORD_DOCTOR_REMEDY, recordUnreachableRefusal } from './record-remedies.ts'
+
+test('the record doctor command clears an unclassified hosted response failure', () => {
+  expect(RECORD_DOCTOR_REMEDY).toBe(`cleared by: ${PLATFORM_SLUG} record doctor`)
+})
 
 test('hosted-record unreachable refusal names the origin, outcome, and doctor remedy', () => {
   for (const [outcome, statement] of [
