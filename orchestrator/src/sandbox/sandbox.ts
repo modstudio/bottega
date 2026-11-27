@@ -731,7 +731,7 @@ export async function sandboxLaunchArgv(
   profile: SandboxRuntimeConfig,
   bin: string,
   argv: string[],
-  temporaryDirectory?: string,
+  temporaryDirectory: string,
   environment: ConfigEnvironment = process.env,
 ): Promise<string[]> {
   ensureHubLoginTokenDirectory(environment)
@@ -740,8 +740,8 @@ export async function sandboxLaunchArgv(
   return launchWithSandboxRuntime(config, command, temporaryDirectory, environment)
 }
 
-/** Bind one run's optional temp directory into repeated SRT launches. */
-export function srtLauncher(profile: SandboxRuntimeConfig, temporaryDirectory?: string) {
+/** Bind one run's temp directory into repeated SRT launches. */
+export function srtLauncher(profile: SandboxRuntimeConfig, temporaryDirectory: string) {
   return (bin: string, argv: string[]) => sandboxLaunchArgv(profile, bin, argv, temporaryDirectory)
 }
 

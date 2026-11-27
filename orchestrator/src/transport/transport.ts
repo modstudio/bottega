@@ -266,7 +266,7 @@ export type TransportStartOpts = {
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
   recipeEnvironment?: ArgvOpts['recipeEnvironment']
   tempEnvironment?: Record<string, string>
-  srt?: { profile: SandboxRuntimeConfig; runtimeDir: string; temporaryDirectory?: string }
+  srt?: { profile: SandboxRuntimeConfig; runtimeDir: string; temporaryDirectory: string }
   /** ACP binary. CLI uses `agent.bin`. */
   bin?: string
   /** First turn vs resumeArgv. Session may exist on a first grok turn too. */
@@ -283,7 +283,7 @@ export function srtScope(
   return {
     profile,
     runtimeDir: runTemp.runtimeDir,
-    ...(runTemp.directory ? { temporaryDirectory: runTemp.directory } : {}),
+    temporaryDirectory: runTemp.directory,
   }
 }
 

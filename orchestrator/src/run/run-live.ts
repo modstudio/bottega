@@ -194,12 +194,12 @@ function recordConfiguredAsk(input: {
 }
 
 function brokerConfinement(
-  input: Pick<LiveInput, 'writingAcp'>,
+  input: Pick<LiveInput, 'writingAcp' | 'scratchDir'>,
   profile: SandboxSelection['profile'],
 ): BrokerConfinement {
   if (!input.writingAcp) return { kind: 'host' }
   if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
-  return { kind: 'srt', profile }
+  return { kind: 'srt', profile, temporaryDirectory: input.scratchDir }
 }
 
 function endpointAsk(loopback: AskLoopback | null) {

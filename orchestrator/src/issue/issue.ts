@@ -381,11 +381,18 @@ async function shell(
     workerEnvironment: input.workerEnvironment,
   })
   if (input.orchStore) plan.env.BOTTEGA_ORCHESTRATOR_DB = input.orchStore
+  const temporaryDirectory = mkdtempSync(join(input.sandboxHome, 'tmp-'))
   try {
-    const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
+    const launch = await sandboxLaunchArgv(
+      plan.profile,
+      plan.argv[0],
+      plan.argv.slice(1),
+      temporaryDirectory,
+    )
     return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
     await resetSandbox()
+    rmSync(temporaryDirectory, { recursive: true, force: true })
   }
 }
 

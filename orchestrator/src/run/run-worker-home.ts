@@ -36,10 +36,7 @@ import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { childEnv } from './run-process.ts'
 
-export function readOnlyRunTempEnvironment(
-  privateTemp: string | undefined,
-): Record<string, string> {
-  if (!privateTemp) return {}
+export function runTempEnvironment(privateTemp: string): Record<string, string> {
   return {
     TMPDIR: privateTemp,
     TMP: privateTemp,
@@ -48,8 +45,8 @@ export function readOnlyRunTempEnvironment(
   }
 }
 
-export function runTemp(runtimeDir: string, directory: string | undefined) {
-  return { runtimeDir, directory, environment: readOnlyRunTempEnvironment(directory) }
+export function runTemp(runtimeDir: string, directory: string) {
+  return { runtimeDir, directory, environment: runTempEnvironment(directory) }
 }
 
 function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {

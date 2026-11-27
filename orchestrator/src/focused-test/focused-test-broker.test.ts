@@ -23,11 +23,12 @@ test('a writing ACP focused-test broker launches with the run writer profile unc
   const profiles: SandboxRuntimeConfig[] = []
   expect(
     await focusedTestBrokerLaunchArgv(
-      { kind: 'srt', profile: writer },
+      { kind: 'srt', profile: writer, temporaryDirectory: '/scratch' },
       'bun',
       ['test', 'one.test.ts'],
-      async (profile, bin, argv) => {
+      async (profile, bin, argv, temporaryDirectory) => {
         profiles.push(profile)
+        expect(temporaryDirectory).toBe('/scratch')
         return ['srt', bin, ...argv]
       },
     ),

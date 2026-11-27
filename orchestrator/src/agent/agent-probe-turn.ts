@@ -9,7 +9,9 @@ import { writableDb } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { prepareRunTemp } from '../run/run-temp.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { runTempDir } from '../run-owned-paths.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
@@ -164,6 +166,7 @@ function startProbeTransport(
   cwd: string,
   scratchDir: string,
 ) {
+  if (input.writing) prepareRunTemp(input.writing.runtimeDir)
   return input.transport.start({
     agent: input.agent,
     cwd,
@@ -180,7 +183,13 @@ function startProbeTransport(
     home: input.writing?.workerHomeDir,
     session: input.session,
     ...(input.writing
-      ? { srt: { profile: input.writing.profile, runtimeDir: input.writing.runtimeDir } }
+      ? {
+          srt: {
+            profile: input.writing.profile,
+            runtimeDir: input.writing.runtimeDir,
+            temporaryDirectory: runTempDir(input.writing.runtimeDir),
+          },
+        }
       : {}),
     mcp: input.mcp ?? false,
     projectMcpSelection: input.mcp

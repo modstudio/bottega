@@ -587,7 +587,7 @@ export async function run(
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
-  const runTemp = workerHome.runTemp(runtimeDir, writesJob ? undefined : tempDir(runtimeDir))
+  const runTemp = workerHome.runTemp(runtimeDir, tempDir(runtimeDir))
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...runTemp.environment,

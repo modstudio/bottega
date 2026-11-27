@@ -27,7 +27,7 @@ import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import {
   prepareClaimedWorkerMcpConfig,
   prepareWorkerHomeLaunch,
-  readOnlyRunTempEnvironment,
+  runTempEnvironment,
   workerChildEnvironment,
 } from './run-worker-home.ts'
 
@@ -44,16 +44,15 @@ test('a workflow probe pins the worker hub store beneath the configured state ho
   })
 })
 
-test('every read-only launch uses its run-owned temp while a writer is unchanged', () => {
+test('every launch uses its run-owned temp', () => {
   const runtimeDir = '/runs/sandbox-root'
   const privateTemp = join(runtimeDir, 'tmp')
-  expect(readOnlyRunTempEnvironment(privateTemp)).toEqual({
+  expect(runTempEnvironment(privateTemp)).toEqual({
     TMPDIR: privateTemp,
     TMP: privateTemp,
     TEMP: privateTemp,
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  expect(readOnlyRunTempEnvironment(undefined)).toEqual({})
 })
 
 test('a writer gets cwd-discovered MCP configuration and a reader does not', () => {

@@ -1,11 +1,10 @@
-// concern: read-only run temp
-/** Prepares the private temp directory required by a read-only run. */
+// concern: run temp
+/** Prepares the private temp directory required by a run. */
 
 import { lstatSync, mkdirSync } from 'node:fs'
 import { runTempDir } from '../run-owned-paths.ts'
 
-export function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
-  if (writesJob) return
+export function prepareRunTemp(runtimeDir: string): void {
   const path = runTempDir(runtimeDir)
   try {
     const stat = lstatSync(path)

@@ -388,7 +388,7 @@ export async function gateBrokerLaunchArgv(
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, 'sh', ['-c', command])
   return decision.kind === 'srt'
-    ? launchSandbox(decision.profile, decision.bin, decision.argv)
+    ? launchSandbox(decision.profile, decision.bin, decision.argv, confinement.temporaryDirectory)
     : decision.argv
 }
 

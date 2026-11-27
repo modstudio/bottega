@@ -161,7 +161,7 @@ export async function focusedTestBrokerLaunchArgv(
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, command, argv)
   return decision.kind === 'srt'
-    ? launchSandbox(decision.profile, decision.bin, decision.argv)
+    ? launchSandbox(decision.profile, decision.bin, decision.argv, confinement.temporaryDirectory)
     : decision.argv
 }
 

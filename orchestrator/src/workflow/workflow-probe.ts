@@ -132,6 +132,7 @@ async function sandboxedRunner(
         probeSandboxProfileForCwd({ allowWriteDir: scratch, cwd, database }),
         command[0]!,
         command.slice(1),
+        scratch,
       )
     } catch (error) {
       throw new Error(

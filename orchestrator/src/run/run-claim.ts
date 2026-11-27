@@ -99,7 +99,6 @@ import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { errorTail } from './run-process.ts'
-import { prepareReadOnlyRunTemp } from './run-read-only-temp.ts'
 import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
@@ -108,6 +107,7 @@ import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
+import { prepareRunTemp } from './run-temp.ts'
 
 type ClaimOptions = {
   binding?: RunWorkflowBinding
@@ -631,7 +631,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * A run must write its own terminal state for setup as well as for the agent. */
   let cwd: string
   try {
-    prepareReadOnlyRunTemp(writesJob, runtimeDir)
+    prepareRunTemp(runtimeDir)
     await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':
