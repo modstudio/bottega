@@ -702,7 +702,7 @@ export function registerHostedConfigProofs(
         dekId: DEK_A,
         wraps: [wrapFor('PPPPPPPPPPPPPPPPPPPPPP')],
       }),
-    ).resolves.toBeUndefined()
+    ).resolves.toBe(1)
 
     const version = Math.max(...(await listDataKeys(serviceTenant)).map((key) => key.version)) + 1
     await expect(

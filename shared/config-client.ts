@@ -15,7 +15,7 @@ import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { tracedRecordFetch } from './record-call-trace.ts'
-import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
+import { RECORD_DOCTOR_REMEDY, RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
 import { RECORD_WHOAMI_ROUTE } from './record-routes.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
@@ -23,6 +23,27 @@ import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './reco
 export const CURRENT_DATA_KEY_PATH = '/v1/config/data-keys/current'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
+
+function configClientErrorMessage(
+  reason: ConfigClientErrorReason,
+  route: string,
+  status?: number,
+  details?: { url?: string; contentType?: string; error?: string; remedy?: string },
+): string {
+  const refusal = [details?.error, details?.remedy].filter(Boolean).join('; ')
+  if (reason === 'not-configured')
+    return `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
+  if (reason === 'unreachable')
+    return `hosted config route ${route} is unreachable${refusal ? `: ${refusal}` : ''}`
+  if (status === 401)
+    return `hosted config route ${route} returned HTTP 401; ${RECORD_SIGN_IN_REMEDY}`
+  if (details?.url && details.contentType) {
+    if (status !== undefined && (status < 200 || status >= 300))
+      return `hosted config route ${route} returned HTTP ${status} (content type ${details.contentType}); ${RECORD_DOCTOR_REMEDY}`
+    return `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON`
+  }
+  return `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`
+}
 
 export class ConfigClientError extends Error {
   readonly reason: ConfigClientErrorReason
@@ -36,16 +57,7 @@ export class ConfigClientError extends Error {
     status?: number,
     details?: { url?: string; contentType?: string; error?: string; remedy?: string },
   ) {
-    const refusal = [details?.error, details?.remedy].filter(Boolean).join('; ')
-    super(
-      reason === 'not-configured'
-        ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
-        : reason === 'unreachable'
-          ? `hosted config route ${route} is unreachable${refusal ? `: ${refusal}` : ''}`
-          : details?.url && details.contentType
-            ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
-            : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
-    )
+    super(configClientErrorMessage(reason, route, status, details))
     this.name = 'ConfigClientError'
     this.reason = reason
     this.route = route
@@ -53,6 +65,27 @@ export class ConfigClientError extends Error {
     this.error = details?.error
     this.remedy = details?.remedy
   }
+}
+
+async function configResponseBody<T>(response: Response, route: string, url: string): Promise<T> {
+  if (response.status === 401) throw new ConfigClientError('response', route, response.status)
+  const body = await jsonBody(response, url)
+  if (!body.ok)
+    throw new ConfigClientError('response', route, response.status, {
+      url: body.url,
+      contentType: body.contentType,
+    })
+  if (!response.ok) {
+    const refusal =
+      body.value && typeof body.value === 'object' && !Array.isArray(body.value)
+        ? (body.value as Record<string, unknown>)
+        : {}
+    throw new ConfigClientError('response', route, response.status, {
+      error: typeof refusal.error === 'string' ? refusal.error : undefined,
+      remedy: typeof refusal.remedy === 'string' ? refusal.remedy : undefined,
+    })
+  }
+  return body.value as T
 }
 
 export type ConfigScope = 'user' | 'space'
@@ -486,23 +519,7 @@ function createConfigClient(
       const response = storedToken
         ? await sendWithStoredRecordSessionToken(send, { signal: init.signal ?? signal })
         : await send(token)
-      const body = await jsonBody(response, `${baseUrl}${route}`)
-      if (!body.ok)
-        throw new ConfigClientError('response', route, response.status, {
-          url: body.url,
-          contentType: body.contentType,
-        })
-      if (!response.ok) {
-        const refusal =
-          body.value && typeof body.value === 'object' && !Array.isArray(body.value)
-            ? (body.value as Record<string, unknown>)
-            : {}
-        throw new ConfigClientError('response', route, response.status, {
-          error: typeof refusal.error === 'string' ? refusal.error : undefined,
-          remedy: typeof refusal.remedy === 'string' ? refusal.remedy : undefined,
-        })
-      }
-      return body.value as T
+      return configResponseBody<T>(response, route, `${baseUrl}${route}`)
     }
     const method = init.method?.toUpperCase() ?? 'GET'
     if (method !== 'GET') {

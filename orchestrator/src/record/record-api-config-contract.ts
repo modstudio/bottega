@@ -76,7 +76,7 @@ export type RecordConfigRouteDeps = {
   createDataKey(
     input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
   ): Promise<{ id: string; version: number }>
-  addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<void>
+  addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<number>
   retireDataKey(input: Tenant & { dekId: string }): Promise<void>
   deleteDataKeyWraps(input: Tenant & { recipientKeyId: string }): Promise<void>
   listMachineKeys(input: Tenant): Promise<MachineKey[]>

@@ -29,7 +29,6 @@ import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from
 
 export { refuseSettingsBody }
 
-export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
 

@@ -225,6 +225,7 @@ function release(): void {
         DROP DATABASE IF EXISTS run_task_reference_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_owner_migration WITH (FORCE);
         DROP DATABASE IF EXISTS config_access_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS config_wraps WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
         DROP DATABASE IF EXISTS routing_evidence_migration WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
@@ -349,6 +350,7 @@ try {
     CREATE DATABASE run_task_reference_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE run_owner_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE config_access_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE config_wraps OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_author_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
@@ -376,6 +378,7 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'run_task_reference_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'run_owner_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'config_access_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'config_wraps')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_author_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
@@ -409,6 +412,8 @@ try {
   const runTaskReferenceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/run_task_reference_migration`
   const runOwnerMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/run_owner_migration`
   const configAccessMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/config_access_migration`
+  const configWrapsSetupUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/config_wraps`
+  const configWrapsUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/config_wraps`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
   const docAuthorMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_author_migration`
@@ -622,6 +627,15 @@ try {
     { BOTTEGA_TEST_RECORD_POOL_URL: actorUrl },
   )
   if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
+
+  const configWraps = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-config-wraps-postgres.test.ts'],
+    {
+      BOTTEGA_TEST_RECORD_CONFIG_WRAPS_URL: configWrapsUrl,
+      BOTTEGA_TEST_RECORD_CONFIG_WRAPS_SETUP_URL: configWrapsSetupUrl,
+    },
+  )
+  if (configWraps !== 0) throw new EarlyExit(configWraps)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
