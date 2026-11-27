@@ -166,8 +166,7 @@ function startProbeTransport(
   cwd: string,
   scratchDir: string,
 ) {
-  const temporaryDirectory = input.writing ? writingRunTempDir(input.writing.scratchDir) : undefined
-  if (temporaryDirectory) prepareRunTemp(temporaryDirectory)
+  if (input.writing) prepareRunTemp(writingRunTempDir(input.writing.scratchDir))
   return input.transport.start({
     agent: input.agent,
     cwd,
@@ -188,7 +187,7 @@ function startProbeTransport(
           srt: {
             profile: input.writing.profile,
             runtimeDir: input.writing.runtimeDir,
-            temporaryDirectory,
+            temporaryDirectory: writingRunTempDir(input.writing.scratchDir),
           },
         }
       : {}),
