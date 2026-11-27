@@ -9,7 +9,9 @@ import { writableDb } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { prepareRunTemp } from '../run/run-temp.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { writingRunTempDir } from '../run-owned-paths.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
@@ -19,7 +21,7 @@ import type {
   TransportHandle,
   TransportResult,
 } from '../transport/transport.ts'
-import { withTransportDeadline } from '../transport/transport.ts'
+import { srtScope, withTransportDeadline } from '../transport/transport.ts'
 import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
@@ -164,6 +166,10 @@ function startProbeTransport(
   cwd: string,
   scratchDir: string,
 ) {
+  const writingTemporaryDirectory = input.writing
+    ? writingRunTempDir(input.writing.scratchDir)
+    : null
+  if (writingTemporaryDirectory) prepareRunTemp(writingTemporaryDirectory)
   return input.transport.start({
     agent: input.agent,
     cwd,
@@ -180,7 +186,12 @@ function startProbeTransport(
     home: input.writing?.workerHomeDir,
     session: input.session,
     ...(input.writing
-      ? { srt: { profile: input.writing.profile, runtimeDir: input.writing.runtimeDir } }
+      ? {
+          srt: srtScope(input.writing.profile, {
+            runtimeDir: input.writing.runtimeDir,
+            directory: writingTemporaryDirectory!,
+          }),
+        }
       : {}),
     mcp: input.mcp ?? false,
     projectMcpSelection: input.mcp

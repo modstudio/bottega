@@ -382,7 +382,12 @@ async function shell(
   })
   if (input.orchStore) plan.env.BOTTEGA_ORCHESTRATOR_DB = input.orchStore
   try {
-    const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
+    const launch = await sandboxLaunchArgv(
+      plan.profile,
+      plan.argv[0],
+      plan.argv.slice(1),
+      input.sandboxHome,
+    )
     return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
     await resetSandbox()

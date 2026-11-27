@@ -9,6 +9,12 @@ export function runScratchDir(id: string, runsDir: string): string {
 export const runHarnessStateDir = (runtimeDir: string): string => join(runtimeDir, 'harness')
 export const runWorkerHomeDir = (runtimeDir: string): string => join(runtimeDir, 'home')
 export const runTempDir = (runtimeDir: string): string => join(runtimeDir, 'tmp')
+export const writingRunTempDir = (scratchDir: string): string => join(scratchDir, 'tmp')
+export const runTemporaryDirectory = (
+  writesJob: boolean,
+  runtimeDir: string,
+  scratchDir: string,
+): string => (writesJob ? writingRunTempDir(scratchDir) : runTempDir(runtimeDir))
 export const runCheckpointHooksDir = (runtimeDir: string): string =>
   join(runtimeDir, 'checkpoint-hooks')
 

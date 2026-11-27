@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
@@ -196,6 +196,45 @@ test("a probe turn's environment reaches transport start and overrides the agent
   })
 
   expect(startedEnvironment.PROBE_OVERRIDE).toBe('turn')
+})
+
+test('a writing probe prepares and carries its writer temp directory before transport start', async () => {
+  const scratch = mkdtempSync(join(dir, 'writing-probe-temp-'))
+  const writingScratch = join(scratch, 'writing')
+  const temporaryDirectory = join(writingScratch, 'tmp')
+  const base = probeTransport()
+  let startedSrt: Parameters<AgentTransport['start']>[0]['srt']
+  let existedAtStart = false
+  try {
+    await runProbeTurn({
+      name: 'grok',
+      scratch,
+      agent: BUILTIN_AGENTS.grok!,
+      transport: {
+        ...base,
+        start: async (options) => {
+          startedSrt = options.srt
+          existedAtStart = existsSync(temporaryDirectory)
+          return base.start(options)
+        },
+      },
+      id: 'writing-temp',
+      prompt: 'probe',
+      writing: {
+        cwd: join(scratch, 'repo'),
+        scratchDir: writingScratch,
+        runtimeDir: join(scratch, 'runtime'),
+        harnessStateDir: join(scratch, 'runtime', 'harness'),
+        workerHomeDir: join(scratch, 'runtime', 'home'),
+        profile: {} as never,
+      },
+    })
+
+    expect(startedSrt?.temporaryDirectory).toBe(temporaryDirectory)
+    expect(existedAtStart).toBe(true)
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
 })
 
 test('a provider probe turn records the credential that paid for it', async () => {

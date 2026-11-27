@@ -52,7 +52,7 @@ import {
 import * as rt from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
-import { runTempDir as tempDir } from '../run-owned-paths.ts'
+import { runTemporaryDirectory as tempDir } from '../run-owned-paths.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import {
@@ -587,7 +587,7 @@ export async function run(
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
-  const runTemp = workerHome.runTemp(runtimeDir, writesJob ? undefined : tempDir(runtimeDir))
+  const runTemp = workerHome.runTemp(runtimeDir, tempDir(writesJob, runtimeDir, scratchDir))
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...runTemp.environment,

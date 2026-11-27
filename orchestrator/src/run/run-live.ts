@@ -94,10 +94,10 @@ import {
   type RunWallDeadlineFacts,
 } from './run-wall-deadline.ts'
 import {
-  type BrokerConfinement,
   closeWorkerExecutionBrokers,
   startWorkerExecutionBrokers,
   type WorkerExecutionBrokers,
+  workerBrokerConfinement,
 } from './run-worker-brokers.ts'
 
 function readReplyFile(path: string): string | null {
@@ -191,15 +191,6 @@ function recordConfiguredAsk(input: {
   } catch {
     // Configuration evidence is best effort and must never prevent launch.
   }
-}
-
-function brokerConfinement(
-  input: Pick<LiveInput, 'writingAcp'>,
-  profile: SandboxSelection['profile'],
-): BrokerConfinement {
-  if (!input.writingAcp) return { kind: 'host' }
-  if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
-  return { kind: 'srt', profile }
 }
 
 function endpointAsk(loopback: AskLoopback | null) {
@@ -692,7 +683,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
-      confinement: brokerConfinement(input, sandboxSelection.profile),
+      confinement: workerBrokerConfinement(input, sandboxSelection.profile),
       onExecutionStart: checkpointSchedule.executionStarted,
       onExecutionFinish: checkpointSchedule.executionFinished,
       onGateStart: (at) => {

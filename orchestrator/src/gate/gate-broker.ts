@@ -387,9 +387,14 @@ export async function gateBrokerLaunchArgv(
   launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, 'sh', ['-c', command])
-  return decision.kind === 'srt'
-    ? launchSandbox(decision.profile, decision.bin, decision.argv)
-    : decision.argv
+  if (decision.kind === 'host') return decision.argv
+  if (confinement.kind !== 'srt') throw new Error('srt gate broker launch requires srt confinement')
+  return launchSandbox(
+    decision.profile,
+    decision.bin,
+    decision.argv,
+    confinement.temporaryDirectory,
+  )
 }
 
 async function spawnGateChild(input: {

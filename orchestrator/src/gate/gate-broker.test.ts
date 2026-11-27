@@ -80,10 +80,11 @@ test('a writing ACP gate broker launches with the run writer profile unchanged',
   const profiles: SandboxRuntimeConfig[] = []
   expect(
     await gateBrokerLaunchArgv(
-      { kind: 'srt', profile: writer },
+      { kind: 'srt', profile: writer, temporaryDirectory: '/scratch' },
       'bun run check',
-      async (profile, bin, argv) => {
+      async (profile, bin, argv, temporaryDirectory) => {
         profiles.push(profile)
+        expect(temporaryDirectory).toBe('/scratch')
         return ['srt', bin, ...argv]
       },
     ),

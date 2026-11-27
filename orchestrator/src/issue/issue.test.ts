@@ -280,6 +280,18 @@ describe('filed issue coordinator inputs', () => {
     expect(lens).not.toContain('seed:')
   })
 
+  test('the filed-issue shell launches with its sandbox home as the temp directory', () => {
+    const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
+    const shell = source.slice(
+      source.indexOf('async function shell('),
+      source.indexOf('\nfunction argv(', source.indexOf('async function shell(')),
+    )
+
+    expect(shell).toMatch(
+      /sandboxLaunchArgv\(\s*plan\.profile,\s*plan\.argv\[0\],\s*plan\.argv\.slice\(1\),\s*input\.sandboxHome,?\s*\)/,
+    )
+  })
+
   test('validates tracker-new stdout with the target project key standard', () => {
     const project = {
       settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } },

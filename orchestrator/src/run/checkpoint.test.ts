@@ -1,13 +1,23 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { git } from '../git/git-environment.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { writingRunTempDir } from '../run-owned-paths.ts'
+import { checkpointRun, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 
 const temporary = mkdtempSync(join(tmpdir(), 'orch-checkpoint-'))
 const branch = 'DEV-835-checkpoint-test'
@@ -188,5 +198,35 @@ test('a writing ACP checkpoint uses its recorded gitdir and never runs authored 
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toContain('fresh.ts')
   } finally {
     database.close()
+  }
+})
+
+test('failed idle preservation excludes the run temp when it contains a unix socket', async () => {
+  const parent = mkdtempSync(join(temporary, 'preservation-socket-'))
+  const scratchDir = join(parent, 'scratch')
+  const temporaryDirectory = writingRunTempDir(scratchDir)
+  const socketPath = join(temporaryDirectory, 'worker.sock')
+  mkdirSync(temporaryDirectory, { recursive: true })
+  writeFileSync(join(scratchDir, 'ordinary.txt'), 'preserve me\n')
+  const server = createServer()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(socketPath, resolve)
+    })
+
+    const result = recordFailedIdlePreservation({
+      runId: newRecordId(),
+      scratchDir,
+      worktree: null,
+      error: 'fixture failure',
+    })
+
+    expect(existsSync(result.snapshotDir)).toBe(true)
+    expect(readFileSync(join(result.snapshotDir, 'ordinary.txt'), 'utf8')).toBe('preserve me\n')
+    expect(existsSync(join(result.snapshotDir, 'tmp'))).toBe(false)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    rmSync(parent, { recursive: true, force: true })
   }
 })

@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { decideEndpointApiKey } from '../agent/endpoint-api-key.ts'
-import { readOnlyRunTempEnvironment } from '../run/run-worker-home.ts'
+import { runTempEnvironment } from '../run/run-worker-home.ts'
 import {
   ACP_PILOT_TASK,
   acpRuntimeGaps,
@@ -61,9 +61,9 @@ import {
   resolveAcpEditLocations,
 } from './transport-acp.ts'
 
-test('ACP children receive the read-only run temp environment and writers receive none', () => {
+test('ACP children receive the run temp environment', () => {
   const privateTemp = '/runs/sandbox-root/tmp'
-  const childEnvironment = (privateTemp: string | undefined) =>
+  const childEnvironment = (privateTemp: string) =>
     acpEnvironment({
       agent: AGENTS.codex!,
       cwd: '/tmp',
@@ -71,7 +71,7 @@ test('ACP children receive the read-only run temp environment and writers receiv
       prompt: 'test',
       outPath: '/tmp/out',
       startedAt: 0,
-      recipeEnvironment: readOnlyRunTempEnvironment(privateTemp),
+      recipeEnvironment: runTempEnvironment(privateTemp),
     })
 
   expect(childEnvironment(privateTemp)).toMatchObject({
@@ -80,10 +80,6 @@ test('ACP children receive the read-only run temp environment and writers receiv
     TEMP: privateTemp,
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  const writer = childEnvironment(undefined)
-  for (const name of ['TMPDIR', 'TMP', 'TEMP', 'CLAUDE_CODE_TMPDIR']) {
-    expect(writer).not.toHaveProperty(name)
-  }
 })
 
 test.each([
@@ -128,6 +124,7 @@ test('goose points every XDG state directory at the confined harness state', () 
     srt: {
       profile: {} as never,
       runtimeDir: '/tmp/runs/sandbox-root',
+      temporaryDirectory: '/tmp/runs/sandbox-root/tmp',
     },
   })
 

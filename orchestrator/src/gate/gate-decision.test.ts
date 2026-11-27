@@ -65,7 +65,10 @@ test('both writing ACP broker command shapes retain the real writer profile', ()
     },
   }
   expect(
-    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'sh', ['-c', 'bun run check']),
+    decideBrokerLaunch({ kind: 'srt', profile: writer, temporaryDirectory: '/scratch' }, 'sh', [
+      '-c',
+      'bun run check',
+    ]),
   ).toEqual({
     kind: 'srt',
     profile: writer,
@@ -73,7 +76,10 @@ test('both writing ACP broker command shapes retain the real writer profile', ()
     argv: ['-c', 'bun run check'],
   })
   expect(
-    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'bun', ['test', 'one.test.ts']),
+    decideBrokerLaunch({ kind: 'srt', profile: writer, temporaryDirectory: '/scratch' }, 'bun', [
+      'test',
+      'one.test.ts',
+    ]),
   ).toEqual({
     kind: 'srt',
     profile: writer,
