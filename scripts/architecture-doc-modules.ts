@@ -338,6 +338,7 @@ export const docModules: DocModule[] = [
     '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/record-space-membership.ts',
     '../identity/doc-revision-identity.ts',
     '../record/record-read-authority.ts',
     '../record/record-api-client.ts',

@@ -442,6 +442,24 @@ describe('port importer', () => {
     expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
     expect(listDoctrineRules()).toHaveLength(1)
   })
+  test('a removal refusal leaves the existing port tables intact', async () => {
+    const original = planImport(fixture(), registered())
+    await applyImport(original)
+    const priorPairs = listPairs()
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'port-child-guard',
+      title: 'Removal guard',
+      body: 'Keeps the importer-owned parent from being removed.',
+      parentSlug: 'port-category-map',
+    })
+
+    await expect(applyImport(planImport(fixture(), projects()), { replace: true })).rejects.toThrow(
+      'has children',
+    )
+    expect(listPairs()).toEqual(priorPairs)
+  })
 })
 
 describe('worker port import refusal', () => {

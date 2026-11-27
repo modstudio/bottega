@@ -172,3 +172,21 @@ test('a subject-taking write requires a subject while the same read still finds 
     removeDoc('project', undefined, 'remote-global', { reason: 'missing subject refusal' }),
   ).rejects.toThrow('project document writes require --subject')
 })
+
+test('an existing hosted write refuses when its read row names no space', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const row = hostedRow('team-space', 'Team docs')
+  delete (row as Partial<HostedRow>).spaceId
+  installHostedRows([row])
+
+  await expect(
+    setDoc({
+      scope: 'global',
+      subject: undefined,
+      slug: 'remote-global',
+      title: 'No destination',
+      body: 'This write must not fall back to the active space.',
+      reason: 'exercise missing target guard',
+    }),
+  ).rejects.toThrow('the read target names no space')
+})

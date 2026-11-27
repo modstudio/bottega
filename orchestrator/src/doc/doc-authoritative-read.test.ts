@@ -493,6 +493,8 @@ test('checked-against updates preserve the authoritative hosted body instead of 
         hostedRow({
           scope: 'project',
           subject: 'checked-project',
+          spaceId: 'checked-space-id',
+          spaceName: 'checked-space',
           slug: 'checked-hosted',
           title: 'Hosted title',
           kind: 'article',
