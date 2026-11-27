@@ -889,7 +889,7 @@ export async function restoreDoc(
   }
   const target = await readDocForWrite(scope, subject, slug, owner)
   const current = target.doc
-  const expectedCurrent = current?.revision ?? null
+  const expectedCurrent = target.currentRevision ?? current?.revision ?? null
   assertLocalReferenceRestore(current, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },

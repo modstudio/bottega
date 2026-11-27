@@ -32,6 +32,8 @@ const restoredRevisionId = '01990000-0000-7000-8000-000000000103'
 
 const hostedRow = (overrides: Record<string, unknown> = {}) => ({
   id: docId,
+  spaceId: 'personal-space',
+  spaceName: 'personal-space',
   scope: 'global',
   subject: null,
   owner: null,

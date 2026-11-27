@@ -338,7 +338,7 @@ describe('scoped operator docs', () => {
     ).toEqual(['case-a', 'case-b', 'case-c', 'case-d'])
   })
 
-  test('consuming a resume brief with no subject resolves its project the way get does', async () => {
+  test('consuming a resume brief with no subject refuses and names --subject', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -355,11 +355,11 @@ describe('scoped operator docs', () => {
       body: resumeBody('open'),
     })
 
-    const consumed = await consumeDoc('resume', undefined, 'subjectless-consume')
-    expect(consumed.subject).toBe('known')
-    expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
+    await expect(consumeDoc('resume', undefined, 'subjectless-consume')).rejects.toThrow(
+      'resume document writes require --subject',
+    )
     await expect(consumeDoc('resume', null, 'subjectless-consume')).rejects.toThrow(
-      'no resume doc "subjectless-consume"',
+      'no resume/_ doc "subjectless-consume" in the active space',
     )
   })
 

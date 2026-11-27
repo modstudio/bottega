@@ -35,6 +35,7 @@ import {
 } from './doc-read-store.ts'
 import {
   type CanonImportPlanAddress,
+  currentDocRevision,
   diffStoredDocRevisions,
   getStoredDocRevision,
   hasCanonImportHistory,
@@ -49,7 +50,12 @@ export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
 export type DocWriteSpace = { spaceId: string; slug: string }
-export type DocWriteTarget = { doc: Doc | null; spaceId: string | undefined; spaceSlug?: string }
+export type DocWriteTarget = {
+  doc: Doc | null
+  spaceId: string | undefined
+  spaceSlug?: string
+  currentRevision?: string | null
+}
 
 /**
  * A hosted address has canon import history when any hosted canon row exists there,
@@ -353,6 +359,7 @@ export function readDocsForWrite(
       listDocsStore(resolvedFilters(localFilters), database).map((doc) => ({
         doc,
         spaceId: undefined,
+        currentRevision: doc.revision,
       })),
     hosted: () =>
       withReadRemedy(async () => {
@@ -377,6 +384,7 @@ export function readDocsForWrite(
           return {
             doc: docFromHosted(row),
             spaceId: space?.id,
+            currentRevision: String(row.latestRevisionId ?? row.latest_revision_id ?? '') || null,
             ...(space ? { spaceSlug: space.label } : {}),
           }
         })
@@ -446,7 +454,11 @@ export async function readDocForWrite(
   if (subject === undefined && SUBJECT_REQUIRED_WRITE_SCOPES.has(scope))
     throw new Error(`${scope} document writes require --subject`)
   return applyRecordReadAuthority<DocWriteTarget>({
-    local: () => ({ doc: getDocStore(scope, subject, slug, owner), spaceId: undefined }),
+    local: () => ({
+      doc: getDocStore(scope, subject, slug, owner),
+      spaceId: undefined,
+      currentRevision: currentDocRevision(scope, subject, slug, owner),
+    }),
     hosted: async () => {
       const result = await withReadRemedy(() =>
         hostedSingleDoc(
@@ -459,6 +471,7 @@ export async function readDocForWrite(
       return {
         doc: result.doc,
         spaceId: selectedSpace?.spaceId ?? space?.id,
+        currentRevision: result.doc?.revision ?? null,
         ...(selectedSpace?.slug || space?.label
           ? { spaceSlug: selectedSpace?.slug ?? space!.label }
           : {}),
