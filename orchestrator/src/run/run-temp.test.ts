@@ -10,8 +10,14 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runTempDir } from '../run-owned-paths.ts'
-import { resetSandbox, type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import type { Project } from '../project/projects.ts'
+import { runTempDir, writingRunTempDir } from '../run-owned-paths.ts'
+import {
+  resetSandbox,
+  sandboxLaunchArgv,
+  writerProfile,
+  writingAcpWritableRoots,
+} from '../sandbox/sandbox.ts'
 import { srtLibrary } from '../sandbox/sandbox-runtime.ts'
 import { prepareRunTemp } from './run-temp.ts'
 
@@ -19,28 +25,29 @@ test('run temp is private and refuses paths that are not real directories', () =
   const root = mkdtempSync(join(tmpdir(), 'run-temp-claim-'))
   try {
     const readerRuntime = join(root, 'reader')
-    prepareRunTemp(readerRuntime)
-    const readerTemp = join(readerRuntime, 'tmp')
+    const readerTemp = runTempDir(readerRuntime)
+    prepareRunTemp(readerTemp)
     const readerStat = lstatSync(readerTemp)
     expect(readerStat.isDirectory()).toBe(true)
     expect(readerStat.isSymbolicLink()).toBe(false)
     expect(readerStat.mode & 0o777).toBe(0o700)
 
-    const writerRuntime = join(root, 'writer')
-    prepareRunTemp(writerRuntime)
-    expect(existsSync(join(writerRuntime, 'tmp'))).toBe(true)
+    const writerScratch = join(root, 'writer')
+    const writerTemp = writingRunTempDir(writerScratch)
+    prepareRunTemp(writerTemp)
+    expect(existsSync(writerTemp)).toBe(true)
 
     const symlinkRuntime = join(root, 'symlink')
     mkdirSync(symlinkRuntime)
     symlinkSync(readerTemp, join(symlinkRuntime, 'tmp'))
-    expect(() => prepareRunTemp(symlinkRuntime)).toThrow(
+    expect(() => prepareRunTemp(join(symlinkRuntime, 'tmp'))).toThrow(
       'is not a real directory; remedy: remove it and retry the run',
     )
 
     const fileRuntime = join(root, 'file')
     mkdirSync(fileRuntime)
     writeFileSync(join(fileRuntime, 'tmp'), '')
-    expect(() => prepareRunTemp(fileRuntime)).toThrow(
+    expect(() => prepareRunTemp(join(fileRuntime, 'tmp'))).toThrow(
       'is not a real directory; remedy: remove it and retry the run',
     )
   } finally {
@@ -65,23 +72,35 @@ describe('confined run temp', () => {
     'a confined writer can create a file in its existing run temp when the fallback is missing',
     async () => {
       const root = mkdtempSync(join(tmpdir(), 'run-temp-launch-'))
+      const worktree = join(root, 'worktree')
+      const scratchDir = join(root, 'scratch')
       const runtimeDir = join(root, 'runtime')
-      const temporaryDirectory = runTempDir(runtimeDir)
-      const profile: SandboxRuntimeConfig = {
-        network: {
-          allowedDomains: [],
-          deniedDomains: [],
-          allowUnixSockets: [],
-          allowLocalBinding: false,
-        },
-        filesystem: {
-          denyRead: [],
-          allowWithinDeny: [],
-          allowWrite: [runtimeDir],
-          denyWrite: [],
-        },
+      mkdirSync(worktree, { recursive: true })
+      mkdirSync(scratchDir, { recursive: true })
+      const project: Project = {
+        recordId: '01990000-0000-7000-8000-000000001214',
+        name: 'fixture',
+        path: worktree,
+        stack: 'node',
+        canon: true,
+        retiredAt: null,
+        settings: {},
       }
-      prepareRunTemp(runtimeDir)
+      const temporaryDirectory = writingRunTempDir(scratchDir)
+      const profile = writerProfile({
+        worktree,
+        runtimeDir,
+        scratchDir,
+        askAddress: join(scratchDir, 'ask.sock'),
+        project,
+        registeredProjects: [project],
+        agent: 'codex',
+        socketDenyPaths: [],
+      })
+      expect(profile.filesystem.allowWrite).toEqual(
+        writingAcpWritableRoots(worktree, scratchDir, runtimeDir),
+      )
+      prepareRunTemp(temporaryDirectory)
       try {
         const environment = { ...process.env, CLAUDE_TMPDIR: fallback }
         const launch = await sandboxLaunchArgv(

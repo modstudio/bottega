@@ -2,10 +2,7 @@
 /** Prepares the private temp directory required by a run. */
 
 import { lstatSync, mkdirSync } from 'node:fs'
-import { runTempDir } from '../run-owned-paths.ts'
-
-export function prepareRunTemp(runtimeDir: string): void {
-  const path = runTempDir(runtimeDir)
+export function prepareRunTemp(path: string): void {
   try {
     const stat = lstatSync(path)
     if (!stat.isDirectory() || stat.isSymbolicLink()) {

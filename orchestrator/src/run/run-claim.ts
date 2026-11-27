@@ -41,7 +41,7 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import { runOwnedPaths } from '../run-owned-paths.ts'
+import { runOwnedPaths, runTemporaryDirectory } from '../run-owned-paths.ts'
 import { confinedLaunchCwd as decideCwd } from '../sandbox/confined-launch-cwd.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
@@ -631,7 +631,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * A run must write its own terminal state for setup as well as for the agent. */
   let cwd: string
   try {
-    prepareRunTemp(runtimeDir)
+    prepareRunTemp(runTemporaryDirectory(writesJob, runtimeDir, scratchDir))
     await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':
