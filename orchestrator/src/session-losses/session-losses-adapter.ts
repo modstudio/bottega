@@ -243,7 +243,7 @@ function stateDirectory(): string {
   return directory
 }
 
-const judgeSchema = {
+export const judgeSchema = {
   type: 'object',
   additionalProperties: false,
   required: ['verdicts'],

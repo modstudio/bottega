@@ -13,7 +13,7 @@
         "properties": {
           "label": { "type": "string", "minLength": 1 },
           "class": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "object",
                 "additionalProperties": false,

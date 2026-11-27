@@ -11,6 +11,7 @@ import { appendCurationRecord, parseCurationRecord } from './note-evaluation-rec
 import { listProjectSlimNotes } from './note-read.ts'
 import { installProjectRegisterReader } from './project-register-reader.ts'
 import { projects, refreshProjects } from './projects.ts'
+import { NOTE_CLASS_QUESTION } from './typed-question-declarations.ts'
 
 const note = (label: string) => ({
   record_id: label,
@@ -181,7 +182,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
 
   const noteIds = Array.from({ length: 5 }, () => newRecordId())
   const epicId = newRecordId()
-  const classCodes = ['C1', 'C2', 'C4', 'C5', 'C6', 'C7']
+  const classCodes = Object.keys(NOTE_CLASS_QUESTION.criteria).filter((code) => code !== 'none')
   writeTransaction((database) => {
     const insertNote = database.query(
       `INSERT INTO note
@@ -331,7 +332,11 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
     expect(taskRows()).toEqual(beforeTasks)
     expect(taskRows()).toHaveLength(beforeTasks.length)
     expect(dispatches).toBe(1)
-    expect(parseCurationRecord(recorded)?.ranking.length).toBeGreaterThan(0)
+    const parsed = parseCurationRecord(recorded)
+    expect(parsed?.ranking.length).toBeGreaterThan(0)
+    expect(parsed?.proposals).toContainEqual(
+      expect.objectContaining({ label: `${project}#1`, source: 'jev' }),
+    )
   } finally {
     installProjectRegisterReader(() => originalProjects)
     refreshProjects()

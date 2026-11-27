@@ -60,7 +60,7 @@ export function seedMismatch(seed: readonly SeedClass[]): string | null {
   const declared = optionCodes()
   return seedCodes.join(',') === declared.join(',')
     ? null
-    : `Jev class pass skipped: seed ${seedCodes.join(',')} differs from note_class v1 options ${declared.join(',')}; declare a new note_class version`
+    : `Jev class pass skipped: seed ${seedCodes.join(',')} differs from note_class v${NOTE_CLASS_QUESTION.version} options ${declared.join(',')}; declare a new note_class version`
 }
 
 export async function runNoteClassPass(
@@ -107,7 +107,7 @@ export async function runNoteClassPass(
         class: { seed: answer.choice },
         duplicate_of: null,
         still_holds: 'unsure',
-        reason: `note_class v1 confidence ${answer.confidence.toFixed(3)}`,
+        reason: `note_class v${NOTE_CLASS_QUESTION.version} confidence ${answer.confidence.toFixed(3)}`,
         source: 'jev',
       })
     } else remaining.push(note)

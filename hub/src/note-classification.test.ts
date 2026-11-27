@@ -35,17 +35,17 @@ const note: CuratorNote = {
 }
 
 test('live class task rows determine the seed and a new class skips Jev with the remedy', () => {
-  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task))
+  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9'].map(task))
   expect(seedMismatch(seed)).toBeNull()
   expect(
     seedMismatch(
-      seedClassesFromTasks([...['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task), task('C9')]),
+      seedClassesFromTasks([...['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9'].map(task), task('C10')]),
     ),
   ).toContain('declare a new note_class version')
 })
 
 test('only a confident seed choice keeps a note off curator pages', async () => {
-  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task))
+  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9'].map(task))
   for (const [answer, assigned] of [
     [{ choice: 'C1', confidence: 0.9, probabilities: {} }, true],
     [{ choice: 'C1', confidence: 0.7, probabilities: {} }, false],
@@ -61,7 +61,7 @@ test('only a confident seed choice keeps a note off curator pages', async () => 
 })
 
 test('missing credential asks and records nothing and sends every note to curation', async () => {
-  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7'].map(task))
+  const seed = seedClassesFromTasks(['C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'C9'].map(task))
   let asks = 0
   const result = await runNoteClassPass([note], seed, {
     credential: async () => ({

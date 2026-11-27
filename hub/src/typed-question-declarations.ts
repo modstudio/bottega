@@ -4,7 +4,7 @@
 import type { ChoiceQuestion } from '../../shared/typed-question/registry.ts'
 import { NOTE_DUPLICATE_QUESTION } from './note-duplicate-question.ts'
 
-export const NOTE_CLASS_QUESTION: ChoiceQuestion = {
+const NOTE_CLASS_QUESTION_V1: ChoiceQuestion = {
   id: 'note_class',
   version: 1,
   type: 'choice',
@@ -22,6 +22,23 @@ export const NOTE_CLASS_QUESTION: ChoiceQuestion = {
   },
 }
 
+const { none: NOTE_CLASS_NONE, ...NOTE_CLASS_V1_CRITERIA } = NOTE_CLASS_QUESTION_V1.criteria
+
+// note_class v2 is based on the retained v1 declaration.
+export const NOTE_CLASS_QUESTION: ChoiceQuestion = {
+  ...NOTE_CLASS_QUESTION_V1,
+  version: 2,
+  criteria: {
+    ...NOTE_CLASS_V1_CRITERIA,
+    C9: 'Merge verbs that fail after the merge landed: after GitHub has merged a pull request, the merge verb still exits nonzero or refuses, so a rerun repeats or contradicts work already done.',
+    none: NOTE_CLASS_NONE!,
+  },
+}
+
 export const NOTE_CLASS_ACCEPT_CONFIDENCE = 0.8
 
-export const TYPED_QUESTION_DECLARATIONS = [NOTE_DUPLICATE_QUESTION, NOTE_CLASS_QUESTION] as const
+export const TYPED_QUESTION_DECLARATIONS = [
+  NOTE_DUPLICATE_QUESTION,
+  NOTE_CLASS_QUESTION_V1,
+  NOTE_CLASS_QUESTION,
+] as const

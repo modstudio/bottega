@@ -47,6 +47,13 @@ import { checkOpenRouterKeyBudget, openRouterProbeBudget } from './openrouter-ke
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
 
+export const AGENT_PROBE_REGISTRATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['status'],
+  properties: { status: { type: 'string', enum: ['ok'] } },
+}
+
 export function registrationProbeRequirements(declaredJobs: string[] | null): {
   tool: boolean
   schema: boolean
@@ -420,15 +427,7 @@ function registrationProbeScratch(): { scratch: string; schemaPath: string } {
   mkdirSync(join(scratch, 'repo'))
   writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
   const schemaPath = join(scratch, 'schema.json')
-  writeFileSync(
-    schemaPath,
-    JSON.stringify({
-      type: 'object',
-      additionalProperties: false,
-      required: ['status'],
-      properties: { status: { type: 'string', enum: ['ok'] } },
-    }),
-  )
+  writeFileSync(schemaPath, JSON.stringify(AGENT_PROBE_REGISTRATION_SCHEMA))
   return { scratch, schemaPath }
 }
 
