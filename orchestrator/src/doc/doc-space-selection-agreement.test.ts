@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -96,7 +97,7 @@ test('remove refuses a cross-space miss with the address, search extent, and rem
   await expect(
     removeDoc('global', undefined, 'missing-global', { reason: 'exercise missing refusal' }),
   ).rejects.toThrow(
-    'no global/_ doc "missing-global" in every readable space; use bottega doc list --scope global to see what exists',
+    `no global/_ doc "missing-global" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,
   )
 })
 

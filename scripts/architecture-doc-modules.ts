@@ -20,6 +20,21 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-space-selection.ts', []),
+  module('orchestrator/src/doc/doc-order-service.ts', [
+    '../record/record-write-authority.ts',
+    './doc-authoritative-read.ts',
+    './doc-hosted-client.ts',
+    './doc-order.ts',
+    './doc-write-guard.ts',
+    './local-doc-order.ts',
+  ]),
+  module('orchestrator/src/doc/doc-checked-against-service.ts', [
+    '../../../shared/brand.ts',
+    './doc-article-fields.ts',
+    './doc-authoritative-read.ts',
+    './docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-write-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',
@@ -127,6 +142,7 @@ export const docModules: DocModule[] = [
     './context-item-hosted-client.ts',
     './context-item-store.ts',
     './doc-article-fields.ts',
+    './doc-authoritative-read.ts',
     './doc-hosted-client.ts',
     './doc-read-store.ts',
     './doc-reference-write.ts',
@@ -311,6 +327,7 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     './doc-revision-store.ts',
     './doc-resume-frontmatter.ts',
+    './doc-space-selection.ts',
   ]),
   module('orchestrator/src/doc/doc-history-source.ts', []),
   module('orchestrator/src/doc/doc-hosted-history.ts', [

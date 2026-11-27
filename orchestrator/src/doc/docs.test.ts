@@ -5,8 +5,9 @@ import { getDoc, listDocRevisions, readDocRevision } from '../../test/fixtures/d
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
+import { setDocCheckedAgainst } from './doc-checked-against-service.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { restoreDoc, setDoc, setDocCheckedAgainst } from './docs.ts'
+import { restoreDoc, setDoc } from './docs.ts'
 
 test('an addressed revision read refuses an id from another document with the history remedy', async () => {
   await setDoc({

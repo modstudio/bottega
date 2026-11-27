@@ -36,6 +36,7 @@ import {
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
+import { reorderDocs } from './doc-order-service.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
@@ -46,7 +47,6 @@ import {
   lintStoredDoc,
   readOpenResumes,
   removeDoc,
-  reorderDocs,
   restoreDoc,
   setDocStatus,
   signedInDocOwner,

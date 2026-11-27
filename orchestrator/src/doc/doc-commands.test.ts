@@ -539,28 +539,11 @@ describe('scoped operator docs', () => {
 
   test(`${PLATFORM_SLUG} doc rm refuses when no row was removed`, async () => {
     await setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
-    const removed = await command([
-      'doc',
-      'rm',
-      'gone',
-      '--scope',
-      'global',
-      '--reason',
-      'remove fixture',
-      '--json',
-    ])
+    const args = ['doc', 'rm', 'gone', '--scope', 'global', '--reason', 'remove fixture', '--json']
+    const removed = await command(args)
     expect(removed.code).toBe(0)
     expect(JSON.parse(removed.out)).toMatchObject({ removed: true })
-    const missing = await command([
-      'doc',
-      'rm',
-      'gone',
-      '--scope',
-      'global',
-      '--reason',
-      'exercise refusal',
-      '--json',
-    ])
+    const missing = await command(args)
     expect(missing.code).toBe(1)
     expect(missing.err).toContain(
       `no global/_ doc "gone" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,

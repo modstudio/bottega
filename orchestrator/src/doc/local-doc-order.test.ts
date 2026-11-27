@@ -6,7 +6,7 @@ import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { reorderDocs } from './docs.ts'
+import { reorderDocs } from './doc-order-service.ts'
 
 test('reorder refuses an id list that is not the complete current sibling set', async () => {
   const parent = await setDoc({

@@ -61,7 +61,6 @@ import {
 } from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
 import {
   authoritativePackBudgetProjection,
   type PackBudgetProjection,
@@ -87,7 +86,6 @@ import {
 } from './doc-subjects.ts'
 import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
-import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
@@ -591,25 +589,6 @@ export async function setDoc(input: DocSetInput): Promise<Doc & { writeWarnings?
   return setResolvedDoc(resolvedInput, prior, owner)
 }
 
-export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: string[] }> {
-  assertWorkerDocStoreWriteAllowed('reorderDocs')
-  return applyRecordWriteAuthority({
-    local: () => executeLocalDocOrder(input),
-    hosted: async () => {
-      const siblings = (await readDocs({ scope: input.scope, subject: input.subject })).filter(
-        (doc) => doc.parent_record_id === input.parentId,
-      )
-      const refusal = docOrderRefusal(
-        siblings.map((row) => row.record_id),
-        input.orderedIds,
-      )
-      if (refusal) throw new Error(refusal)
-      const client = await hostedDocClient(input.scope, input.subject)
-      return client.reorderDocs(input)
-    },
-  })
-}
-
 export async function setDocStatus(
   scope: string,
   subject: string | null | undefined,
@@ -642,39 +621,6 @@ export async function setDocStatus(
     current,
     owner,
   )
-}
-
-/**
- * Record the commit a document was checked against, leaving every other field
- * as the stored document has it. `commit` is normalized by the article-field
- * rules, which own its shape and its article-only restriction.
- */
-export async function setDocCheckedAgainst(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  commit: string,
-  context: DocWriteContext,
-  owner: string | null = null,
-): Promise<Doc> {
-  const current = await readDoc(scope, subject, slug, owner)
-  if (!current)
-    throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
-  return setDoc({
-    scope: current.scope,
-    subject: current.subject,
-    owner: current.owner,
-    slug: current.slug,
-    title: current.title,
-    body: current.body,
-    delivery: current.delivery,
-    audiences: current.audiences,
-    parentSlug: current.parent_slug,
-    position: current.position,
-    featured: current.featured,
-    checkedAgainstCommit: commit,
-    ...context,
-  })
 }
 
 export async function importDoc(
