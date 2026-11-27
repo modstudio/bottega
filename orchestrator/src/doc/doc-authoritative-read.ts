@@ -39,6 +39,7 @@ import {
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import { docReadsAcrossReadableSpaces } from './doc-space-selection.ts'
+import { readableDocSpaceSlugs } from './doc-write-space.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
@@ -46,11 +47,8 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
-const HOSTED_DOC_SPACE = Symbol('hosted-doc-space')
-
-export function hostedDocSpaceId(doc: Doc): string | undefined {
-  return (doc as Doc & { [HOSTED_DOC_SPACE]?: string })[HOSTED_DOC_SPACE]
-}
+export type DocWriteSpace = { spaceId: string; slug: string }
+export type DocWriteTarget = { doc: Doc | null; spaceId: string | undefined; spaceSlug?: string }
 
 /**
  * A hosted address has canon import history when any hosted canon row exists there,
@@ -153,7 +151,7 @@ function resolvedFilters(filters: DocListFilters): DocListFilters {
 
 function docFromHosted(row: HostedRow): Doc {
   const body = String(row.body ?? '')
-  const doc: Doc = {
+  return {
     record_id: String(row.id),
     scope: String(row.scope) as Doc['scope'],
     subject: row.subject == null ? null : String(row.subject),
@@ -184,22 +182,12 @@ function docFromHosted(row: HostedRow): Doc {
     updated_at: String(row.updatedAt),
     revision: row.latestRevisionId == null ? null : String(row.latestRevisionId),
   }
-  const space = hostedRowSpace(row)
-  if (space)
-    Object.defineProperty(doc, HOSTED_DOC_SPACE, {
-      value: space.id,
-      enumerable: false,
-    })
-  return doc
 }
 
 async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
-  const client = await hostedDocClient(
-    filters.scope ?? 'global',
-    filters.subject ?? null,
-    undefined,
+  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
     database,
-  )
+  })
   const acrossReadableSpaces = docReadsAcrossReadableSpaces({
     scope: filters.scope,
     subject: filters.subject,
@@ -273,9 +261,12 @@ function hostedRowSpace(row: HostedRow): { id: string; label: string } | null {
 async function hostedSingleDoc(
   filters: DocListFilters & { slug: string },
   refuseSpaceDuplicates = false,
-): Promise<Doc | null> {
-  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
-  const acrossReadableSpaces = docReadsAcrossReadableSpaces({
+  selectedSpace?: DocWriteSpace,
+): Promise<{ doc: Doc | null; row: HostedRow | null }> {
+  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
+    destinationSpaceId: selectedSpace?.spaceId,
+  })
+  const acrossReadableSpaces = !selectedSpace && docReadsAcrossReadableSpaces({
     scope: filters.scope,
     subject: filters.subject,
     owner: filters.owner,
@@ -314,15 +305,18 @@ async function hostedSingleDoc(
     const spaces = page.items.map(hostedRowSpace)
     if (spaces.some((space) => space === null))
       throw new Error(
-        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match in readable spaces; pass --subject to select one`,
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match in readable spaces; pass --space <slug> to select one`,
       )
-    const distinct = [...new Map(spaces.map((space) => [space!.id, space!.label])).values()]
+    const slugs = await readableDocSpaceSlugs()
+    const distinct = [
+      ...new Map(spaces.map((space) => [space!.id, slugs.get(space!.id) ?? space!.label])).values(),
+    ]
     if (distinct.length > 1)
       throw new Error(
-        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match spaces: ${distinct.join(', ')}; pass --subject to select one`,
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match spaces: ${distinct.join(', ')}; retry with ${distinct.map((slug) => `--space ${slug}`).join(' or ')}`,
       )
   }
-  return docs[0] ?? null
+  return { doc: docs[0] ?? null, row: page.items[0] ?? null }
 }
 
 function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
@@ -339,6 +333,47 @@ export function readDocs(filters: DocListFilters = {}, database?: Database): Pro
   const actions = {
     local: () => listDocsStore(resolvedFilters(localFilters), database),
     hosted: () => withReadRemedy(() => hostedRows(filters, database)),
+  }
+  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
+}
+
+export function readDocsForWrite(
+  filters: DocListFilters = {},
+  database?: Database,
+): Promise<DocWriteTarget[]> {
+  const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
+  const actions = {
+    local: () =>
+      listDocsStore(resolvedFilters(localFilters), database).map((doc) => ({
+        doc,
+        spaceId: undefined,
+      })),
+    hosted: () =>
+      withReadRemedy(async () => {
+        const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
+          database,
+        })
+        const page = await listAllHostedDocs(client.listDocs, {
+          scope: filters.scope,
+          subject: filters.subject,
+          owner: filters.owner,
+          acrossReadableSpaces: docReadsAcrossReadableSpaces({
+            scope: filters.scope,
+            subject: filters.subject,
+            owner: filters.owner,
+          }),
+        })
+        if (page.unreadable.length)
+          throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
+        return page.items.map((row) => {
+          const space = hostedRowSpace(row)
+          return {
+            doc: docFromHosted(row),
+            spaceId: space?.id,
+            ...(space ? { spaceSlug: space.label } : {}),
+          }
+        })
+      }),
   }
   return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
 }
@@ -376,27 +411,42 @@ export function readDoc(
   return applyRecordReadAuthority({
     local: () => getDocStore(scope, subject, slug, owner),
     hosted: () =>
-      withReadRemedy(() =>
-        hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner }),
+      withReadRemedy(async () =>
+        (await hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner })).doc,
       ),
   })
 }
 
-export function readDocForWrite(
+const SUBJECT_REQUIRED_WRITE_SCOPES = new Set(['project', 'agent', 'job', 'stack', 'resume'])
+
+export async function readDocForWrite(
   scope: string,
   subject: string | null | undefined,
   slug: string,
   owner: string | null = null,
-): Promise<Doc | null> {
+  selectedSpace?: DocWriteSpace,
+): Promise<DocWriteTarget> {
+  if (subject === undefined && SUBJECT_REQUIRED_WRITE_SCOPES.has(scope))
+    throw new Error(`${scope} document writes require --subject`)
   return applyRecordReadAuthority({
-    local: () => getDocStore(scope, subject, slug, owner),
-    hosted: () =>
-      withReadRemedy(() =>
+    local: () => ({ doc: getDocStore(scope, subject, slug, owner), spaceId: undefined }),
+    hosted: async () => {
+      const result = await withReadRemedy(() =>
         hostedSingleDoc(
           { scope, ...(subject !== undefined ? { subject } : {}), slug, owner },
           true,
+          selectedSpace,
         ),
-      ),
+      )
+      const space = result.row ? hostedRowSpace(result.row) : null
+      return {
+        doc: result.doc,
+        spaceId: selectedSpace?.spaceId ?? space?.id,
+        ...(selectedSpace?.slug || space?.label
+          ? { spaceSlug: selectedSpace?.slug ?? space!.label }
+          : {}),
+      }
+    },
   })
 }
 
@@ -411,7 +461,7 @@ export function readDocForAudience(
     local: () => getDocForAudienceStore(scope, subject, slug, audience, owner),
     hosted: () =>
       withReadRemedy(async () => {
-        const doc = await hostedSingleDoc({
+        const { doc } = await hostedSingleDoc({
           scope,
           ...(subject !== undefined ? { subject } : {}),
           slug,
@@ -461,7 +511,7 @@ async function hostedRevisionRead(
   slug: string,
   owner: string | null,
 ): Promise<AuthoritativeDocHistory | null> {
-  const doc = await hostedSingleDoc({ scope, subject, slug, owner })
+  const { doc } = await hostedSingleDoc({ scope, subject, slug, owner })
   if (!doc) return null
   const revisions = (await (
     await hostedDocClient(scope, subject)

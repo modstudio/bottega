@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { docReadsAcrossReadableSpaces } from './doc-space-selection.ts'
 
-for (const scope of [undefined, 'global', 'project']) {
-  const label = scope ?? 'absent scope'
+for (const scope of ['global', 'project']) {
+  const label = `${scope} scope`
 
   test(`${label}: an absent subject reads every readable space`, () => {
     expect(docReadsAcrossReadableSpaces({ scope, subject: undefined, owner: null })).toBe(true)

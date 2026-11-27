@@ -4,7 +4,7 @@ import { collectCanonLintInput as productionCanonLintInput } from '../canon/cano
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
-import { hostedDocSpaceId } from './doc-authoritative-read.ts'
+import type { DocWriteTarget } from './doc-authoritative-read.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
@@ -28,10 +28,12 @@ function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
 
 /** The shared removal body after the caller's context-drop ownership guard. */
 export async function removeStoredDoc(
-  doc: Doc,
+  target: DocWriteTarget,
   context: DocRemovalContext,
   identity: ReturnType<typeof resolvedDocWriteIdentity>,
 ): Promise<boolean> {
+  const { doc } = target
+  if (!doc) throw new Error('cannot remove an absent document')
   const { scope, subject, owner, slug } = doc
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
@@ -52,13 +54,12 @@ export async function removeStoredDoc(
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
-      const client = await hostedDocClient(
-        doc.scope,
-        doc.subject,
-        contextTaskOwner(context.contextTask),
-        undefined,
-        hostedDocSpaceId(doc),
-      )
+      if (!target.spaceId)
+        throw new Error(`refusing hosted write for ${scope}/${subject ?? '_'}/${slug}: the read target names no space`)
+      const client = await hostedDocClient(doc.scope, doc.subject, {
+        owner: contextTaskOwner(context.contextTask),
+        destinationSpaceId: target.spaceId,
+      })
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined
       if (!recordId) {

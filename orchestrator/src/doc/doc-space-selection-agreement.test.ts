@@ -8,6 +8,7 @@ import {
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs } from './doc-authoritative-read.ts'
 import { consumeDoc, removeDoc, setDoc, setDocStatus } from './docs.ts'
+import { resolveDocWriteSpace } from './doc-write-space.ts'
 
 type HostedRow = Record<string, unknown> & { id: string; spaceId: string }
 
@@ -108,7 +109,7 @@ test('remove refuses the same global address in two spaces and names both', asyn
   await expect(
     removeDoc('global', undefined, 'remote-global', { reason: 'exercise ambiguity refusal' }),
   ).rejects.toThrow(
-    'several global docs "remote-global" match spaces: Personal, Team docs; pass --subject to select one',
+    'several global docs "remote-global" match spaces: Personal, Team docs; retry with --space Personal or --space Team docs',
   )
   await expect(
     setDoc({
@@ -119,15 +120,55 @@ test('remove refuses the same global address in two spaces and names both', asyn
       body: 'Do not write this.',
       reason: 'exercise set ambiguity refusal',
     }),
-  ).rejects.toThrow('match spaces: Personal, Team docs; pass --subject')
+  ).rejects.toThrow('retry with --space Personal or --space Team docs')
   await expect(
     setDocStatus('global', undefined, 'remote-global', 'archived', null, {
       reason: 'exercise status ambiguity refusal',
     }),
-  ).rejects.toThrow('match spaces: Personal, Team docs; pass --subject')
+  ).rejects.toThrow('retry with --space Personal or --space Team docs')
   await expect(
     consumeDoc('global', undefined, 'remote-global', {
       reason: 'exercise consume ambiguity refusal',
     }),
-  ).rejects.toThrow('match spaces: Personal, Team docs; pass --subject')
+  ).rejects.toThrow('retry with --space Personal or --space Team docs')
+})
+
+test('a named space selects one duplicate and an unknown slug names the space list', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const personal = hostedRow('personal-space', 'Personal')
+  const team = hostedRow('team-space', 'Team docs')
+  const fixture = installHostedRows([personal, team])
+
+  const selected = await resolveDocWriteSpace('doc rm', 'Team docs')
+  expect(selected).toEqual({ spaceId: 'team-space', slug: 'Team docs' })
+  expect(
+    await removeDoc(
+      'global',
+      undefined,
+      'remote-global',
+      { reason: 'select one duplicate' },
+      null,
+      selected,
+    ),
+  ).toBe(true)
+  expect(fixture.deletes).toEqual([{ id: team.id, destination: 'team-space' }])
+
+  await expect(resolveDocWriteSpace('doc rm', 'mistyped')).rejects.toThrow(
+    `${PLATFORM_SLUG} record space list`,
+  )
+})
+
+test('a subject-taking write requires a subject while the same read still finds the row', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const row = {
+    ...hostedRow('team-space', 'Team docs'),
+    scope: 'project',
+    subject: 'bottega',
+  }
+  installHostedRows([row])
+
+  expect((await readDoc('project', undefined, 'remote-global'))?.subject).toBe('bottega')
+  await expect(
+    removeDoc('project', undefined, 'remote-global', { reason: 'missing subject refusal' }),
+  ).rejects.toThrow('project document writes require --subject')
 })

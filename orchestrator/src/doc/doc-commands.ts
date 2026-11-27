@@ -28,6 +28,7 @@ import {
   readDoc as authoritativeDoc,
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
+  readDocForWrite,
   readDocs as authoritativeDocs,
   type DocListFilters,
   type DocRevision,
@@ -47,6 +48,7 @@ import {
   lintStoredDoc,
   readOpenResumes,
   removeDoc,
+  removeReadDoc,
   restoreDoc,
   setDocStatus,
   signedInDocOwner,
@@ -54,6 +56,7 @@ import {
   summarizeDocLint,
   validateDocAddressFilter,
 } from './docs.ts'
+import { resolveDocWriteSpace } from './doc-write-space.ts'
 
 const DOC_KEYWORD_LIST_LIMIT = 50
 
@@ -555,7 +558,15 @@ async function handleSetDocCommand(
   }
   const scope = address.scope
   const subject = readDocSubject(flags, address)
-  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
+  const selectedSpace = await resolveDocWriteSpace('doc set', flag('space'))
+  const target = await readDocForWrite(scope, subject, slug, address.owner, selectedSpace)
+  const canonTree = commandDocWriteTree(
+    scope,
+    target.doc?.subject ?? subject ?? address.subject,
+    flags,
+    presentation,
+    ports,
+  )
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY
@@ -587,6 +598,8 @@ async function handleSetDocCommand(
         collectCanonLintInput: ports.collectCanonLintInput,
       },
       sourceFileUpdate,
+      selectedSpace,
+      target,
     ),
   )
   const root = repoRootForDoc(doc, canonTree?.root)
@@ -671,6 +684,7 @@ async function handleStatusDocCommand(
       expectedRevision: flags.flag('expect'),
     },
     address.owner,
+    await resolveDocWriteSpace('doc status', flags.flag('space')),
   )
   if (flags.has('json')) presentation.log(JSON.stringify(result))
   else
@@ -767,12 +781,16 @@ async function handleRemoveDocCommand(
     )
   const scope = address.scope
   const subject = readDocSubject(flags, address)
-  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
+  const selectedSpace = await resolveDocWriteSpace('doc rm', flags.flag('space'))
+  const target = await readDocForWrite(scope, subject, slug, address.owner, selectedSpace)
+  if (!target.doc) {
+    await removeDoc(scope, subject, slug, { reason }, address.owner, selectedSpace)
+    throw new Error('document removal unexpectedly returned after a missing-row refusal')
+  }
+  const canonTree = commandDocWriteTree(scope, target.doc!.subject, flags, presentation, ports)
   const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
-    removeDoc(
-      scope,
-      subject,
-      slug,
+    removeReadDoc(
+      target,
       {
         reason,
         author: flags.flag('author'),
@@ -780,7 +798,6 @@ async function handleRemoveDocCommand(
         canonTree,
         collectCanonLintInput: ports.collectCanonLintInput,
       },
-      address.owner,
     ),
   )
   presentation.log(

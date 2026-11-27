@@ -68,10 +68,13 @@ function assertFullBodyWrite(value: unknown): void {
 export async function hostedDocClient(
   scope: string,
   subject: string | null,
-  suppliedOwner?: RecordWriteOwner,
-  database?: Database,
-  suppliedDestinationSpaceId?: string,
+  options: {
+    owner?: RecordWriteOwner
+    database?: Database
+    destinationSpaceId?: string
+  } = {},
 ): Promise<HostedDocClient> {
+  const { owner: suppliedOwner, database, destinationSpaceId } = options
   const client = recordApiClient(undefined, undefined, database)
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName, database)?.recordId ?? null) : null
@@ -102,8 +105,7 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   })
-  if (suppliedDestinationSpaceId)
-    return bindDestination({ destinationSpaceId: suppliedDestinationSpaceId })
+  if (destinationSpaceId) return bindDestination({ destinationSpaceId })
   if (!seededSpaceId) return bindDestination(await recordWriteDestination(client, owner, database))
 
   let destinationRead: ReturnType<typeof recordWriteDestination> | undefined

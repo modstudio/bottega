@@ -1,6 +1,6 @@
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { readDocs } from '../doc/doc-authoritative-read.ts'
-import { importDoc, removeDoc } from '../doc/docs.ts'
+import { readDocsForWrite } from '../doc/doc-authoritative-read.ts'
+import { importDoc, removeReadDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { portImportAuthority } from './port-import-authority.ts'
 import * as porting from './porting.ts'
@@ -1004,12 +1004,17 @@ export async function applyImport(
     reason: `port import from ${options.sourceLabel ?? 'source corpus'}`,
   }
   const owned = options.replace
-    ? (await readDocs()).filter(
-        (doc) =>
-          (doc.scope === 'global' && GLOBAL_PORT_DOC_SLUGS.includes(doc.slug)) ||
-          (doc.scope === 'project' && PROJECT_PORT_DOC_SLUGS.includes(doc.slug)),
+    ? (await readDocsForWrite()).filter(({ doc }) =>
+        Boolean(
+          doc &&
+            ((doc.scope === 'global' && GLOBAL_PORT_DOC_SLUGS.includes(doc.slug)) ||
+              (doc.scope === 'project' && PROJECT_PORT_DOC_SLUGS.includes(doc.slug))),
+        ),
       )
     : []
+  if (options.replace) {
+    for (const target of owned) await removeReadDoc(target, context)
+  }
   writeTransaction(() => {
     const counts = db()
       .query(`SELECT
@@ -1052,9 +1057,6 @@ export async function applyImport(
     for (const row of plan.refs) porting.setLedgerRefLocal(row)
     for (const row of plan.doctrine) porting.addDoctrineRuleLocal(row.number, row.title, row.body)
   })
-  if (options.replace) {
-    for (const doc of owned) await removeDoc(doc.scope, doc.subject, doc.slug, context)
-  }
   for (const row of plan.docs)
     await importDoc({
       ...row,
