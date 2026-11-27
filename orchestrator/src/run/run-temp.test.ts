@@ -18,8 +18,11 @@ import {
   writerProfile,
   writingAcpWritableRoots,
 } from '../sandbox/sandbox.ts'
-import { srtLibrary } from '../sandbox/sandbox-runtime.ts'
+import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { prepareRunTemp } from './run-temp.ts'
+
+const sandboxRuntime = await sandboxRuntimeAvailability()
+const confinedLaunchSkip = sandboxRuntime.available ? '' : ` (skipped: ${sandboxRuntime.condition})`
 
 test('run temp is private and refuses paths that are not real directories', () => {
   const root = mkdtempSync(join(tmpdir(), 'run-temp-claim-'))
@@ -68,8 +71,8 @@ describe('confined run temp', () => {
     rmSync(fallback, { recursive: true, force: true })
   })
 
-  test.skipIf(!existsSync(srtLibrary()))(
-    'a confined writer can create a file in its existing run temp when the fallback is missing',
+  test.skipIf(!sandboxRuntime.available)(
+    `a confined writer can create a file in its existing run temp when the fallback is missing${confinedLaunchSkip}`,
     async () => {
       const root = mkdtempSync(join(tmpdir(), 'run-temp-launch-'))
       const worktree = join(root, 'worktree')
