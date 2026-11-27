@@ -39,10 +39,14 @@ function runSchemaPaths(): string[] {
   const schemas = new Set<string>()
   for (const path of trackedProductionTypeScript()) {
     const text = readFileSync(resolve(ROOT, path), 'utf8')
+    if (!text.includes('--schema')) continue
     const literals = stringLiterals(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true))
     if (!literals.includes('--schema')) continue
     for (const literal of literals) {
-      if (literal.endsWith('.schema.json')) schemas.add(resolve(ROOT, literal))
+      const lastSegment = literal.split('/').at(-1) ?? ''
+      if (literal.endsWith('.schema.json') && lastSegment.length > '.schema.json'.length) {
+        schemas.add(resolve(ROOT, literal))
+      }
     }
   }
   return [...schemas].sort()
