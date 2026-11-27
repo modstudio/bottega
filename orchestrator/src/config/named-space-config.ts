@@ -151,7 +151,7 @@ export async function machineTrustInSpace(
   selectedSpace: { spaceId: string; slug: string },
   client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
-): Promise<void> {
+): Promise<number> {
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
@@ -185,7 +185,7 @@ export async function machineTrustInSpace(
       trusted,
       [keyId],
     )
-    await client.addWraps(
+    const result = await client.addWraps(
       current.id,
       [
         {
@@ -197,6 +197,7 @@ export async function machineTrustInSpace(
       ],
       space.destination,
     )
+    return result.added
   } catch (error) {
     if (!isNotFound(error)) throw error
     throw new Error(

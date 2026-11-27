@@ -786,12 +786,12 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!dekId.success || !body.success)
       return context.json({ error: 'invalid data key wraps' }, 422)
     try {
-      await deps.addDataKeyWraps({
+      const added = await deps.addDataKeyWraps({
         ...active,
         dekId: dekId.data,
         wraps: body.data.wraps.map(inputConfigWrap),
       })
-      return context.json({ added: body.data.wraps.length })
+      return context.json({ added })
     } catch (error) {
       return writeError(context, error)
     }

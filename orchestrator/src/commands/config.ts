@@ -380,11 +380,12 @@ function registerMachineTrustCommands(machine: Command): void {
     .option('--label <label>', 'label stored for the trusted machine')
     .option('--yes', 'trust the machine without interactive confirmation')
     .action(async (keyId, publicKey, options) => {
-      const [{ createInterface }, { hostedConfigClient }, { trustMachine }] = await Promise.all([
-        import('node:readline/promises'),
-        import('../config/hosted-config-call-outcome.ts'),
-        import('../config/machine-trust.ts'),
-      ])
+      const [{ createInterface }, { hostedConfigClient }, { machineTrustLines, trustMachine }] =
+        await Promise.all([
+          import('node:readline/promises'),
+          import('../config/hosted-config-call-outcome.ts'),
+          import('../config/machine-trust.ts'),
+        ])
       const label = options.label ?? keyId
       if (!options.yes) {
         if (!process.stdin.isTTY)
@@ -402,8 +403,8 @@ function registerMachineTrustCommands(machine: Command): void {
         options.space,
         client,
       )
-      await trustMachine(keyId, publicKey, label, selected, client)
-      log(keyId)
+      const added = await trustMachine(keyId, publicKey, label, selected, client)
+      for (const line of machineTrustLines(added, keyId)) log(line)
     })
   machine
     .command('revoke <keyId>')

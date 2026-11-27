@@ -197,6 +197,29 @@ test('config client refuses a non-JSON response with its source and response fac
   )
 })
 
+test('config client reserves the sign-in remedy for 401 responses', async () => {
+  const serverError = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () =>
+      new Response('internal error', {
+        status: 500,
+        headers: { 'content-type': 'text/plain' },
+      }),
+    'test',
+  )
+  const unauthorized = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => new Response('not JSON', { status: 401 }),
+    'test',
+  )
+
+  await expect(serverError.whoami()).rejects.toThrow(
+    'hosted config route /v1/whoami returned HTTP 500 (content type text/plain)',
+  )
+  await expect(serverError.whoami()).rejects.not.toThrow('missing or expired')
+  await expect(unauthorized.whoami()).rejects.toThrow('record session is missing or expired')
+})
+
 test('response diagnostics remove URL credentials, queries, and fragments', async () => {
   const errors: string[] = []
   for (const url of [

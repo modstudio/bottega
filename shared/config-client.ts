@@ -15,7 +15,7 @@ import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { tracedRecordFetch } from './record-call-trace.ts'
-import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
+import { RECORD_DOCTOR_REMEDY, RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
 import { RECORD_WHOAMI_ROUTE } from './record-routes.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
@@ -42,9 +42,13 @@ export class ConfigClientError extends Error {
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
           ? `hosted config route ${route} is unreachable${refusal ? `: ${refusal}` : ''}`
-          : details?.url && details.contentType
-            ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
-            : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
+          : status === 401
+            ? `hosted config route ${route} returned HTTP 401; ${RECORD_SIGN_IN_REMEDY}`
+            : details?.url && details.contentType
+              ? status !== undefined && (status < 200 || status >= 300)
+                ? `hosted config route ${route} returned HTTP ${status} (content type ${details.contentType}); ${RECORD_DOCTOR_REMEDY}`
+                : `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON`
+              : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
     )
     this.name = 'ConfigClientError'
     this.reason = reason
@@ -486,6 +490,7 @@ function createConfigClient(
       const response = storedToken
         ? await sendWithStoredRecordSessionToken(send, { signal: init.signal ?? signal })
         : await send(token)
+      if (response.status === 401) throw new ConfigClientError('response', route, response.status)
       const body = await jsonBody(response, `${baseUrl}${route}`)
       if (!body.ok)
         throw new ConfigClientError('response', route, response.status, {

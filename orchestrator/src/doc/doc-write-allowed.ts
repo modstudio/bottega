@@ -2,6 +2,7 @@
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RECORD_DOCTOR_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   type DocKind,
@@ -29,7 +30,7 @@ import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from
 
 export { refuseSettingsBody }
 
-export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
+export const RECORD_WRITE_REMEDY = RECORD_DOCTOR_REMEDY
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
 

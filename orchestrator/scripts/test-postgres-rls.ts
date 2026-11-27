@@ -623,6 +623,14 @@ try {
   )
   if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
 
+  const configWraps = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-config-wraps-postgres.test.ts'],
+    {
+      BOTTEGA_TEST_RECORD_CONFIG_WRAPS_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+    },
+  )
+  if (configWraps !== 0) throw new EarlyExit(configWraps)
+
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {

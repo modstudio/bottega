@@ -13,16 +13,19 @@ export function trustUsesPinnedSpace(
   return pinnedSpaceId === selectedSpaceId
 }
 
+export function machineTrustLines(added: number, keyId: string): string[] {
+  return [...(added === 0 ? ['already trusted'] : []), keyId]
+}
+
 export async function trustMachine(
   keyId: string,
   publicKey: string,
   label: string,
   selected: { spaceId: string; slug: string },
   client: ConfigClient,
-): Promise<void> {
+): Promise<number> {
   if (trustUsesPinnedSpace(readHostedConfigIdentity()?.spaceId ?? null, selected.spaceId)) {
-    await machineTrust(keyId, publicKey, label, selected, client)
-    return
+    return machineTrust(keyId, publicKey, label, selected, client)
   }
-  await machineTrustInSpace(keyId, publicKey, label, selected, client)
+  return machineTrustInSpace(keyId, publicKey, label, selected, client)
 }

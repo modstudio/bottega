@@ -94,7 +94,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     listDataKeys: async () => [],
     getDataKey: async () => null,
     createDataKey: async () => ({ id: 'x', version: 1 }),
-    addDataKeyWraps: async () => undefined,
+    addDataKeyWraps: async () => 0,
     retireDataKey: async () => undefined,
     deleteDataKeyWraps: async () => undefined,
     listMachineKeys: async () => [],

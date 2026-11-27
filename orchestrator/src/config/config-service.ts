@@ -307,7 +307,7 @@ export async function machineTrust(
       destination,
       env,
     )
-    if (rotated) return
+    if (rotated) return 1
     const wrapped = await wrapDataKey({
       dek,
       wrapContext: { spaceId: selected.spaceId, dekId: current.id, dekVersion: current.version },
@@ -315,7 +315,7 @@ export async function machineTrust(
       senderPublicKey: bytes(sender.public_key),
       recipientPublicKey: bytes(recipient.public_key),
     })
-    await client.addWraps(
+    const result = await client.addWraps(
       current.id,
       [
         {
@@ -327,8 +327,10 @@ export async function machineTrust(
       ],
       destination,
     )
+    return result.added
   } catch (error) {
     if (!isNotFound(error)) throw error
+    return 1
   }
 }
 

@@ -673,16 +673,21 @@ export function assertRegisteredWrapSenders(
 async function insertWraps(
   tx: SQL,
   input: { spaceId: string; dekId: string; wraps: ConfigWrapInput[] },
-): Promise<void> {
+): Promise<number> {
+  let added = 0
   for (const wrap of input.wraps) {
-    await tx`
+    const rows = await tx`
       INSERT INTO secret_dek_wrap
         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
       VALUES
         (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.dekId}::uuid, ${wrap.recipientKeyId},
          ${wrap.senderKeyId}, ${wrap.enc}, ${wrap.ciphertext}, now())
+      ON CONFLICT ON CONSTRAINT secret_dek_wrap_space_dek_recipient_sender_unique DO NOTHING
+      RETURNING id
     `
+    added += rows.length
   }
+  return added
 }
 
 export async function createDataKey(
@@ -745,7 +750,7 @@ export async function createDataKey(
 
 export async function addDataKeyWraps(
   input: ConfigTenant & { dekId: string; wraps: ConfigWrapInput[] },
-): Promise<void> {
+): Promise<number> {
   return tenant(input, async (tx) => {
     const rows = await tx`
       SELECT id FROM secret_dek WHERE space_id=${input.spaceId}::uuid AND id=${input.dekId}::uuid
@@ -757,7 +762,7 @@ export async function addDataKeyWraps(
       )
     }
     await validateWrapKeys(tx, input)
-    await insertWraps(tx, input)
+    return insertWraps(tx, input)
   })
 }
 
