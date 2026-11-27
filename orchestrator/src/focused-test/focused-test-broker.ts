@@ -160,9 +160,15 @@ export async function focusedTestBrokerLaunchArgv(
   launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, command, argv)
-  return decision.kind === 'srt'
-    ? launchSandbox(decision.profile, decision.bin, decision.argv, confinement.temporaryDirectory)
-    : decision.argv
+  if (decision.kind === 'host') return decision.argv
+  if (confinement.kind !== 'srt')
+    throw new Error('srt focused-test broker launch requires srt confinement')
+  return launchSandbox(
+    decision.profile,
+    decision.bin,
+    decision.argv,
+    confinement.temporaryDirectory,
+  )
 }
 
 async function spawnFocusedTestChild(input: {

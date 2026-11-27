@@ -15,14 +15,13 @@ import { writingRunTempDir } from '../run-owned-paths.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
-import { srtScope } from '../transport/transport.ts'
 import type {
   AgentTransport,
   NormalizedEvent,
   TransportHandle,
   TransportResult,
 } from '../transport/transport.ts'
-import { withTransportDeadline } from '../transport/transport.ts'
+import { srtScope, withTransportDeadline } from '../transport/transport.ts'
 import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'

@@ -166,7 +166,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
     runId,
     scratchDir: scratch,
     environment: { BOTTEGA_MAIN_CHECKOUT: root },
-    confinement: { kind: 'host', temporaryDirectory: '/scratch' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {
@@ -260,7 +260,7 @@ test('records the worker gate head before synthetic index preparation fails', as
     runId,
     scratchDir: scratch,
     environment: { BOTTEGA_MAIN_CHECKOUT: root },
-    confinement: { kind: 'host', temporaryDirectory: '/scratch' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => {
       renameSync(baseObject, hiddenBaseObject)
       try {
@@ -340,7 +340,7 @@ test('broker refuses a merge in progress before the gate runs', async () => {
     runId,
     scratchDir: scratch,
     environment: { BOTTEGA_MAIN_CHECKOUT: root },
-    confinement: { kind: 'host', temporaryDirectory: '/scratch' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {
@@ -578,7 +578,7 @@ test('an occupied gate log path fails the execution without following the path',
     runId,
     scratchDir: scratch,
     environment: { BOTTEGA_MAIN_CHECKOUT: '/main/checkout' },
-    confinement: { kind: 'host', temporaryDirectory: '/scratch' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
     onExecutionStart: () => {
       checkpointSchedule.executionStarted()
