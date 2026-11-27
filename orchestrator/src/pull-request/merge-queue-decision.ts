@@ -210,6 +210,26 @@ function closedMergeQueueStep(
   }
 }
 
+function mergedWithoutCommitStep(
+  number: number,
+  state: MergeQueueWaitState,
+  now: number,
+  deadline: number,
+  retry: string,
+): MergeQueueStep {
+  return {
+    state,
+    action:
+      now < deadline
+        ? { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+        : {
+            action: 'refuse',
+            refusal: `GitHub reports pull request #${number} merged but has published no merge commit`,
+            remedy: `re-run ${retry}`,
+          },
+  }
+}
+
 function dequeueRefusal(
   number: number,
   reason: string,
@@ -251,17 +271,7 @@ export function stepMergeQueueWait(
     return { state, action: { action: 'verify-landing', mergeCommit: queue.mergeCommit } }
   }
   if (queue.state === 'merged-without-commit') {
-    return {
-      state,
-      action:
-        now < deadline
-          ? { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
-          : {
-              action: 'refuse',
-              refusal: `GitHub reports pull request #${number} merged but has published no merge commit`,
-              remedy: `re-run ${retry}`,
-            },
-    }
+    return mergedWithoutCommitStep(number, state, now, deadline, retry)
   }
   if (queue.state === 'closed') {
     return closedMergeQueueStep(number, state, now, deadline, retry)
@@ -344,7 +354,11 @@ export function stepMergeQueueLanding(
       remedy: `restore the project remote, then ${retry}`,
     }
   }
-  if (comparison && 'status' in comparison && mergeLandingComparisonProvesLanded(comparison.status)) {
+  if (
+    comparison &&
+    'status' in comparison &&
+    mergeLandingComparisonProvesLanded(comparison.status)
+  ) {
     return { action: 'complete', mergeCommit }
   }
   if (now < deadline) {

@@ -72,7 +72,7 @@ function adapter(input: {
   checks?: PullRequestCheck[]
 }): PullRequestMergeAdapter {
   return {
-    repository: () => input.repository === undefined ? 'example/repository' : input.repository,
+    repository: () => (input.repository === undefined ? 'example/repository' : input.repository),
     view: () => pullRequest,
     releaseDecision: () => ({ decided: true, required: [], rungs: [], error: null }),
     checks: () =>
@@ -244,7 +244,9 @@ test('a non-proving landing comparison refuses with landed wording at the deadli
           },
         }),
       ),
-  ).toThrow(/GitHub reports pull request #42 merged as queued-merge-oid.*last status: ahead.*re-run/)
+  ).toThrow(
+    /GitHub reports pull request #42 merged as queued-merge-oid.*last status: ahead.*re-run/,
+  )
 })
 
 test('a throwing landing comparison is retried until behind', async () => {

@@ -7,8 +7,8 @@ import {
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueState,
   type MergeQueueWaitState,
-  mergeQueueEnqueueFailureRemedy,
   mergeLandingComparisonProvesLanded,
+  mergeQueueEnqueueFailureRemedy,
   stepMergeQueueLanding,
 } from './merge-queue-decision.ts'
 
