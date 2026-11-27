@@ -13,8 +13,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import { readDocRevision, readDocs } from './doc-authoritative-read.ts'
-import { removeDoc } from './doc-removal-service.ts'
+import { readDocForWrite, readDocRevision, readDocs } from './doc-authoritative-read.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import {
   consumeDoc,
@@ -360,9 +360,11 @@ test('doc rm deletes the hosted row when the local mirror is empty', async () =>
     }),
   )
 
-  expect(await removeDoc('global', null, 'hosted-only', { reason: 'remove hosted fixture' })).toBe(
-    true,
-  )
+  expect(
+    await removeReadDoc(await readDocForWrite('global', null, 'hosted-only'), {
+      reason: 'remove hosted fixture',
+    }),
+  ).toBe(true)
   expect(deletes).toContainEqual({ id: docId, expectedRevision: revisionId })
 })
 

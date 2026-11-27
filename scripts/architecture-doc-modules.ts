@@ -36,11 +36,9 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-removal-service.ts', [
     '../database/db.ts',
     './doc-authoritative-read.ts',
-    './doc-read-store.ts',
     './doc-remove.ts',
     './doc-write-guard.ts',
     './doc-write-identity.ts',
-    './doc-write-miss.ts',
   ]),
   module('orchestrator/src/doc/doc-order-service.ts', [
     '../record/record-write-authority.ts',

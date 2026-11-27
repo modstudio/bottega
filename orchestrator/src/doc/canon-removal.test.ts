@@ -8,14 +8,26 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from '../workflow/step-catalogue.ts'
-import { removeDoc } from './doc-removal-service.ts'
+import { readDocForWrite } from './doc-authoritative-read.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
+import type { DocRemovalContext } from './doc-remove.ts'
 
 const targetSlug = 'removal-target.md'
 const targetBody = '---\ndescription: Removal target\n---\n\n# Target\n'
 const citation = `Read [the target](${targetSlug}).\n`
 
+async function removeTarget(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  context: DocRemovalContext,
+  owner: string | null = null,
+) {
+  return removeReadDoc(await readDocForWrite(scope, subject, slug, owner), context)
+}
+
 describe('stored canon removal preflight', () => {
-  test('removeDoc supplies shared workflow step bodies to the decision', async () => {
+  test('removeReadDoc supplies shared workflow step bodies to the decision', async () => {
     const target = await setDoc({
       scope: 'canon',
       subject: null,
@@ -48,7 +60,7 @@ describe('stored canon removal preflight', () => {
     promoteStepCatalogueLocal(draft.n, 'publish test workflow citation', 'test')
 
     await expect(
-      removeDoc('canon', null, targetSlug, {
+      removeTarget('canon', null, targetSlug, {
         reason: 'test removal',
         expectedRevision: target.revision!,
       }),
@@ -77,7 +89,7 @@ describe('stored canon removal preflight', () => {
     })
 
     await expect(
-      removeDoc(
+      removeTarget(
         'canon',
         null,
         targetSlug,
@@ -119,7 +131,7 @@ describe('stored canon removal preflight', () => {
       .run(targetRevisionId, targetRecordId, targetSlug, targetBody)
 
     await expect(
-      removeDoc('canon', null, targetSlug, {
+      removeTarget('canon', null, targetSlug, {
         reason: 'test global removal',
         expectedRevision: targetRevisionId,
         collectCanonLintInput: () => ({

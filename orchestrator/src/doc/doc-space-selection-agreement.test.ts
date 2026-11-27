@@ -8,7 +8,7 @@ import {
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs, readDocsForWrite } from './doc-authoritative-read.ts'
 import { docCommand } from './doc-commands.ts'
-import { removeDoc, removeReadDoc } from './doc-removal-service.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
 import { consumeDoc, setDoc, setDocStatus } from './docs.ts'
 
@@ -82,6 +82,35 @@ afterEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
+function removeCommand(scope: string, slug: string, subject?: string, space?: string) {
+  const args = ['doc', 'rm', slug, '--scope', scope, '--reason', 'test removal']
+  const values = new Map([
+    ['scope', scope],
+    ['reason', 'test removal'],
+    ...(subject ? ([['subject', subject]] as const) : []),
+    ...(space ? ([['space', space]] as const) : []),
+  ])
+  return docCommand(
+    'rm',
+    args,
+    { has: (name) => values.has(name), flag: (name) => values.get(name) },
+    {
+      log: () => undefined,
+      error: () => undefined,
+      write: () => undefined,
+      stdinText: async () => '',
+      stdinIsTTY: false,
+      cwd: () => process.cwd(),
+    },
+    {
+      selectDocWriteTree: () => undefined,
+      collectCanonLintInput: undefined as never,
+      consumeResumeHandoff: undefined as never,
+      revisionHistory: async () => null,
+    },
+  )
+}
+
 test('unscoped list, scoped global list, show, and remove agree across readable spaces', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const remote = hostedRow('team-space', 'Team docs')
@@ -90,9 +119,7 @@ test('unscoped list, scoped global list, show, and remove agree across readable 
   expect((await readDocs()).map(({ slug }) => slug)).toContain('remote-global')
   expect((await readDocs({ scope: 'global' })).map(({ slug }) => slug)).toContain('remote-global')
   expect((await readDoc('global', undefined, 'remote-global'))?.record_id).toBe(remote.id)
-  expect(
-    await removeDoc('global', undefined, 'remote-global', { reason: 'remove agreement fixture' }),
-  ).toBe(true)
+  await removeCommand('global', 'remote-global')
   expect(fixture.deletes).toEqual([{ id: remote.id, destination: 'team-space' }])
   expect(fixture.rows()).toEqual([])
 })
@@ -117,9 +144,7 @@ test('remove refuses a cross-space miss with the address, search extent, and rem
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installHostedRows([])
 
-  await expect(
-    removeDoc('global', undefined, 'missing-global', { reason: 'exercise missing refusal' }),
-  ).rejects.toThrow(
+  await expect(removeCommand('global', 'missing-global')).rejects.toThrow(
     `no global/_ doc "missing-global" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,
   )
 })
@@ -127,32 +152,9 @@ test('remove refuses a cross-space miss with the address, search extent, and rem
 test('the rm command refuses a hosted miss after one authoritative read', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const fixture = installHostedRows([])
-  const args = ['doc', 'rm', 'missing-global', '--scope', 'global', '--reason', 'miss']
-  const values = new Map([
-    ['scope', 'global'],
-    ['reason', 'miss'],
-  ])
-  await expect(
-    docCommand(
-      'rm',
-      args,
-      { has: (name) => values.has(name), flag: (name) => values.get(name) },
-      {
-        log: () => undefined,
-        error: () => undefined,
-        write: () => undefined,
-        stdinText: async () => '',
-        stdinIsTTY: false,
-        cwd: () => process.cwd(),
-      },
-      {
-        selectDocWriteTree: () => undefined,
-        collectCanonLintInput: undefined as never,
-        consumeResumeHandoff: undefined as never,
-        revisionHistory: async () => null,
-      },
-    ),
-  ).rejects.toThrow('no global/_ doc "missing-global" in every readable space')
+  await expect(removeCommand('global', 'missing-global')).rejects.toThrow(
+    'no global/_ doc "missing-global" in every readable space',
+  )
   expect(fixture.reads()).toBe(1)
 })
 
@@ -160,9 +162,7 @@ test('remove refuses the same global address in two spaces and names both', asyn
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installHostedRows([hostedRow('personal-space', 'Personal'), hostedRow('team-space', 'Team docs')])
 
-  await expect(
-    removeDoc('global', undefined, 'remote-global', { reason: 'exercise ambiguity refusal' }),
-  ).rejects.toThrow(
+  await expect(removeCommand('global', 'remote-global')).rejects.toThrow(
     'several global docs "remote-global" match spaces: Personal, Team docs; retry with --space Personal or --space Team docs',
   )
   await expect(
@@ -195,16 +195,7 @@ test('a named space selects one duplicate and an unknown slug names the space li
 
   const selected = await resolveDocWriteSpace('doc rm', 'Team docs')
   expect(selected).toEqual({ spaceId: 'team-space', slug: 'Team docs' })
-  expect(
-    await removeDoc(
-      'global',
-      undefined,
-      'remote-global',
-      { reason: 'select one duplicate' },
-      null,
-      selected,
-    ),
-  ).toBe(true)
+  await removeCommand('global', 'remote-global', undefined, 'Team docs')
   expect(fixture.deletes).toEqual([{ id: team.id, destination: 'team-space' }])
 
   await expect(resolveDocWriteSpace('doc rm', 'mistyped')).rejects.toThrow(
@@ -222,9 +213,9 @@ test('a subject-taking write requires a subject while the same read still finds 
   installHostedRows([row])
 
   expect((await readDoc('project', undefined, 'remote-global'))?.subject).toBe(PLATFORM_SLUG)
-  await expect(
-    removeDoc('project', undefined, 'remote-global', { reason: 'missing subject refusal' }),
-  ).rejects.toThrow('project document writes require --subject')
+  await expect(removeCommand('project', 'remote-global')).rejects.toThrow(
+    'project document writes require --subject',
+  )
 })
 
 test('an existing hosted write refuses when its read row names no space', async () => {

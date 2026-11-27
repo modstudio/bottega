@@ -23,7 +23,6 @@ import { db } from '../database/db.ts'
 import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
-import { removeDoc as deleteDoc } from './doc-removal-service.ts'
 import {
   consumeDoc as consumeDocument,
   docsForRun,
@@ -99,7 +98,7 @@ describe('scoped operator docs', () => {
       reason: 'consume local document',
       expectedRevision: updated.revision!,
     })
-    await deleteDoc('global', null, created.slug, {
+    await removeDoc('global', null, created.slug, {
       reason: 'remove local document',
       expectedRevision: consumed.revision!,
     })
@@ -291,7 +290,7 @@ describe('scoped operator docs', () => {
           expectedRevision: created.revision!,
         }),
       () =>
-        deleteDoc('global', null, created.slug, {
+        removeDoc('global', null, created.slug, {
           reason: 'stale remove',
           expectedRevision: created.revision!,
         }),
@@ -319,7 +318,7 @@ describe('scoped operator docs', () => {
     })
     db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(created.record_id)
     await expect(
-      deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
+      removeDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(
       "this row's latest revision is missing, so its revision cannot be checked\n" +
         'cleared by: repair the document revision state, then retry the write',
@@ -471,7 +470,7 @@ describe('scoped operator docs', () => {
     })
     await consumeDoc('global', null, 'revision-life', { author: 'consumer', reason: 'finish it' })
     const beforeDelete = getDoc('global', null, 'revision-life')!
-    await deleteDoc('global', null, 'revision-life', { author: 'deleter', reason: 'remove it' })
+    await removeDoc('global', null, 'revision-life', { author: 'deleter', reason: 'remove it' })
     await Bun.sleep(2)
     const restored = await restoreDoc(
       'global',
@@ -631,7 +630,7 @@ describe('scoped operator docs', () => {
     await expect(consumeDocument('global', null, 'missing', { reason: '' })).rejects.toThrow(
       'reason is required',
     )
-    await expect(deleteDoc('global', null, 'missing', { reason: '\t' })).rejects.toThrow(
+    await expect(removeDoc('global', null, 'missing', { reason: '\t' })).rejects.toThrow(
       'reason is required',
     )
     await expect(readDocs('/missing', { reason: ' ' })).rejects.toThrow('reason is required')

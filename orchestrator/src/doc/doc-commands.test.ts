@@ -9,7 +9,7 @@ import {
   listDocRevisions,
   readDocRevision,
 } from '../../test/fixtures/doc-local-read.ts'
-import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { consumeDoc, removeDoc as deleteDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -35,7 +35,6 @@ import {
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
-import { removeDoc as deleteDoc } from './doc-removal-service.ts'
 import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 import { docSubjects, restoreDoc, setDoc as writeDoc } from './docs.ts'
