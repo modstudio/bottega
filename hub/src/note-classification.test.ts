@@ -8,7 +8,7 @@ import {
 import type { CuratorNote } from './note-curation-decisions.ts'
 import type { TaskRow } from './task-row.ts'
 import {
-  NOTE_CLASS_QUESTION,
+  type NOTE_CLASS_QUESTION,
   TYPED_QUESTION_DECLARATIONS,
 } from './typed-question-declarations.ts'
 
@@ -63,7 +63,7 @@ test('live class task rows use the selected version definitions', () => {
   for (const question of noteClassQuestions) {
     const seed = seedClassesFromTasks(questionCodes(question).map(task))
     expect(seed.map(({ definition }) => definition)).toEqual(
-      questionCodes(question).map((code) => question.criteria[code]),
+      questionCodes(question).map((code) => question.criteria[code]!),
     )
   }
 })
