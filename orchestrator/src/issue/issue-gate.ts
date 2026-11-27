@@ -174,7 +174,7 @@ export async function runIssueGate(
         ...workerGitConfigEnvironment(fixRun.worktree, true, 'issue-worker'),
         ...trackedWorkerEnvironment(true, true, fixRun.worktree, fixRun.record_id),
       }),
-      confinement: { kind: 'host' },
+      confinement: { kind: 'host', temporaryDirectory: scratchDir },
       onExecutionFinish: ({ executionRecordId }) => {
         if (executionRecordId === inserted.recordId) finish()
       },

@@ -125,6 +125,7 @@ test('goose points every XDG state directory at the confined harness state', () 
     srt: {
       profile: {} as never,
       runtimeDir: '/tmp/runs/sandbox-root',
+      temporaryDirectory: '/tmp/runs/sandbox-root/tmp',
     },
   })
 

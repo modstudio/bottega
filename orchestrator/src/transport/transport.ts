@@ -46,7 +46,7 @@ export type TransportName = 'cli' | 'acp'
 
 export type RunTempScope = {
   runtimeDir: string
-  directory: string | undefined
+  directory: string
   environment: Record<string, string>
 }
 

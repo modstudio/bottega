@@ -197,7 +197,7 @@ function brokerConfinement(
   input: Pick<LiveInput, 'writingAcp' | 'scratchDir'>,
   profile: SandboxSelection['profile'],
 ): BrokerConfinement {
-  if (!input.writingAcp) return { kind: 'host' }
+  if (!input.writingAcp) return { kind: 'host', temporaryDirectory: input.scratchDir }
   if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
   return { kind: 'srt', profile, temporaryDirectory: input.scratchDir }
 }
