@@ -621,16 +621,18 @@ describe('release checkout outcome', () => {
 
 describe('already-live release decision', () => {
   test.each([
-    ['candidate is observed live', true, 0, undefined, undefined, true, false],
-    ['landing branch is ahead', true, 2, undefined, undefined, true, true],
-    ['candidate is not observed live', false, 0, undefined, undefined, false, false],
-    ['redeploy was requested', true, 0, 'repair deploy', undefined, false, false],
-    ['rollback was requested', true, 0, undefined, 'deliberate rollback', false, false],
+    ['candidate is observed live', 'live', true, 0, undefined, undefined, true, false],
+    ['landing branch is ahead', 'live', true, 2, undefined, undefined, true, true],
+    ['candidate is not observed live', 'live', false, 0, undefined, undefined, false, false],
+    ['live commit is unknown', null, true, 0, undefined, undefined, false, false],
+    ['redeploy was requested', 'live', true, 0, 'repair deploy', undefined, false, false],
+    ['rollback was requested', 'live', true, 0, undefined, 'deliberate rollback', false, false],
   ] as const)(
     '%s',
-    (_label, candidateIsLiveAncestor, commitsBehindTrunk, redeployReason, rollbackReason, alreadyLive, landingAhead) => {
+    (_label, liveCommit, candidateIsLiveAncestor, commitsBehindTrunk, redeployReason, rollbackReason, alreadyLive, landingAhead) => {
       expect(
         alreadyLiveReleaseDecision({
+          liveCommit,
           candidateIsLiveAncestor,
           commitsBehindTrunk,
           redeployReason,

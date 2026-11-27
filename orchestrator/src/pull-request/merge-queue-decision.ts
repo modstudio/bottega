@@ -14,6 +14,7 @@ export type MergeQueueObservation = {
 
 export type MergeQueueState =
   | { state: 'merged'; mergeCommit: string }
+  | { state: 'merged-without-commit' }
   | { state: 'queued' }
   | { state: 'dequeued'; reason: string }
   | { state: 'closed' }
@@ -21,6 +22,7 @@ export type MergeQueueState =
   | { state: 'unknown'; detail: string }
 
 type MergeQueueAction =
+  | { action: 'complete'; mergeCommit: string }
   | { action: 'verify-landing'; mergeCommit: string }
   | { action: 'enqueue' }
   | { action: 'requeue' }
@@ -142,6 +144,7 @@ export function interpretMergeQueue(
   if (pullRequestState === 'MERGED' && observation.mergeCommit) {
     return { state: 'merged', mergeCommit: observation.mergeCommit }
   }
+  if (pullRequestState === 'MERGED') return { state: 'merged-without-commit' }
   if (pullRequestState === 'CLOSED') return { state: 'closed' }
   if (pullRequestState === 'OPEN' && entryState === 'UNMERGEABLE') return { state: 'failed' }
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
@@ -247,6 +250,19 @@ export function stepMergeQueueWait(
   if (queue.state === 'merged') {
     return { state, action: { action: 'verify-landing', mergeCommit: queue.mergeCommit } }
   }
+  if (queue.state === 'merged-without-commit') {
+    return {
+      state,
+      action:
+        now < deadline
+          ? { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+          : {
+              action: 'refuse',
+              refusal: `GitHub reports pull request #${number} merged but has published no merge commit`,
+              remedy: `re-run ${retry}`,
+            },
+    }
+  }
   if (queue.state === 'closed') {
     return closedMergeQueueStep(number, state, now, deadline, retry)
   }
@@ -307,6 +323,43 @@ export function stepMergeQueueWait(
 /** Decide whether GitHub's comparison proves the merge commit is on the landing branch. */
 export function mergeLandingComparisonProvesLanded(status: string): boolean {
   return status === 'identical' || status === 'behind'
+}
+
+export type MergeLandingComparison = { status: string } | { error: string }
+
+/** Decide whether a merged pull request has been confirmed on its landing branch. */
+export function stepMergeQueueLanding(
+  number: number,
+  mergeCommit: string,
+  repositoryAvailable: boolean,
+  comparison: MergeLandingComparison | null,
+  now: number,
+  deadline: number,
+): MergeQueueAction {
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  if (!repositoryAvailable) {
+    return {
+      action: 'refuse',
+      refusal: 'registered repository identity is unavailable',
+      remedy: `restore the project remote, then ${retry}`,
+    }
+  }
+  if (comparison && 'status' in comparison && mergeLandingComparisonProvesLanded(comparison.status)) {
+    return { action: 'complete', mergeCommit }
+  }
+  if (now < deadline) {
+    return { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+  }
+  const detail = comparison
+    ? 'error' in comparison
+      ? `last error: ${comparison.error}`
+      : `last status: ${comparison.status}`
+    : 'comparison was unavailable'
+  return {
+    action: 'refuse',
+    refusal: `GitHub reports pull request #${number} merged as ${mergeCommit}, but the landing check could not be confirmed (${detail})`,
+    remedy: `re-run ${retry}`,
+  }
 }
 
 export function mergeQueueEnqueueFailureRemedy(number: number, message: string): string {

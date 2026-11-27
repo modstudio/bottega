@@ -480,27 +480,22 @@ export function forwardReleaseDecision(facts: {
 
 /** Skip only when this candidate is the rung's newest confirmed-live release. */
 export function alreadyLiveReleaseDecision(facts: {
+  liveCommit: string | null
   candidateIsLiveAncestor: boolean
   commitsBehindTrunk: number
   redeployReason?: string
   rollbackReason?: string
 }): { alreadyLive: boolean; landingAhead: boolean } {
   const alreadyLive =
-    releaseRungProvenLiveAtCandidate({
-      liveCommit: 'observed',
-      liveContainsCandidate: facts.candidateIsLiveAncestor,
+    releaseRungCoversTarget({
+      liveCommit: facts.liveCommit,
+      liveContainsTarget: facts.candidateIsLiveAncestor,
+      targetContainsLive: false,
+      requiredSinceLive: false,
     }) &&
     facts.redeployReason === undefined &&
     facts.rollbackReason === undefined
   return { alreadyLive, landingAhead: alreadyLive && facts.commitsBehindTrunk > 0 }
-}
-
-/** Decide whether an observed live commit contains the requested candidate. */
-export function releaseRungProvenLiveAtCandidate(facts: {
-  liveCommit: string | null
-  liveContainsCandidate: boolean
-}): boolean {
-  return facts.liveCommit !== null && facts.liveContainsCandidate
 }
 
 /** Decide whether release evidence proves the merge is deployed on this rung. */

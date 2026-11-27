@@ -192,18 +192,39 @@ test('an already-live release records one proof that clears the machine-update g
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM release_ledger').get()!
       .count,
   ).toBe(2)
-  expect(newestSuccessfulProvenReleaseCommit('fixture', 'production', database)).toBe('incoming')
+  const provedCommit = newestSuccessfulProvenReleaseCommit('fixture', 'production', database)
+  expect(provedCommit).toBe('incoming')
   expect(
     machineUpdateRungRefusal({
       incomingCommit: 'incoming',
       requiredRungs: ['production'],
-      provedCommits: new Map([['production', 'incoming']]),
+      provedCommits: new Map([['production', provedCommit]]),
       liveContainsIncoming: new Map([['production', true]]),
       liveIsAncestorOfIncoming: new Map([['production', true]]),
       requiredSinceLive: new Map([['production', true]]),
       project: 'fixture',
     }),
   ).toBeNull()
+})
+
+test('the machine-update guard names a missing release proof when no proof row exists', () => {
+  using database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(PROJECT_RECORD_ID, 'fixture', '/fixture', '{}')
+  const provedCommit = newestSuccessfulProvenReleaseCommit('fixture', 'production', database)
+  expect(provedCommit).toBeNull()
+  expect(
+    machineUpdateRungRefusal({
+      incomingCommit: 'incoming',
+      requiredRungs: ['production'],
+      provedCommits: new Map([['production', provedCommit]]),
+      liveContainsIncoming: new Map([['production', true]]),
+      liveIsAncestorOfIncoming: new Map([['production', true]]),
+      requiredSinceLive: new Map([['production', true]]),
+      project: 'fixture',
+    }),
+  ).toContain('has not proved incoming commit incoming live')
 })
 
 test('release checkout verification is skipped when no trunk restore occurred', () => {

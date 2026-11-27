@@ -1,7 +1,6 @@
 // concern: merge-queue wait adapter
 /** Repeatedly gathers forge observations while pure merge-queue decisions own policy. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
@@ -9,7 +8,7 @@ import {
   type MergeQueueState,
   type MergeQueueStep,
   type MergeQueueWaitState,
-  mergeLandingComparisonProvesLanded,
+  stepMergeQueueLanding,
   stepMergeQueueWait,
 } from './merge-queue-decision.ts'
 
@@ -43,25 +42,40 @@ function performMergeQueueAction(
   requeueOutput: string | undefined,
 ): { complete: string } | { requeueOutput: string | undefined } {
   if (action.action === 'verify-landing') {
-    if (!input.repository) {
-      throw new Error(
-        `refusing merge: registered repository identity is unavailable; restore the project remote, then ${PLATFORM_SLUG} pr merge ${input.target}`,
-      )
+    let comparison: { status: string } | { error: string } | null = null
+    if (input.repository) {
+      try {
+        comparison = {
+          status: input.adapter.landingComparison(
+            input.cwd,
+            input.repository,
+            input.pullRequest.baseBranch,
+            action.mergeCommit,
+          ),
+        }
+      } catch (cause) {
+        comparison = { error: cause instanceof Error ? cause.message : String(cause) }
+      }
     }
-    const comparison = input.adapter.landingComparison(
-      input.cwd,
-      input.repository,
-      input.pullRequest.baseBranch,
-      action.mergeCommit,
+    return performMergeQueueAction(
+      input,
+      stepMergeQueueLanding(
+        input.pullRequest.number,
+        action.mergeCommit,
+        input.repository !== null,
+        comparison,
+        now,
+        deadline,
+      ),
+      state,
+      now,
+      deadline,
+      enqueuedAt,
+      requeueOutput,
     )
-    if (mergeLandingComparisonProvesLanded(comparison)) return { complete: action.mergeCommit }
-    if (now >= deadline) {
-      throw new Error(
-        `refusing merge: GitHub reports pull request #${input.pullRequest.number} merged as ${action.mergeCommit}, but the landing branch does not yet contain it; re-run ${PLATFORM_SLUG} pr merge ${input.target}`,
-      )
-    }
-    input.adapter.wait(Math.min(10_000, deadline - now))
-    return { requeueOutput }
+  }
+  if (action.action === 'complete') {
+    return { complete: action.mergeCommit }
   }
   if (action.action === 'refuse') input.refuse(action, state, enqueuedAt)
   if (action.action === 'enqueue') input.enqueue()

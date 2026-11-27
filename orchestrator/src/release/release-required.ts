@@ -12,7 +12,6 @@ import {
   releaseProofDecision,
   releaseRungCoversTarget,
   releaseRungProofRefusal,
-  releaseRungProvenLiveAtCandidate,
 } from './release-decision.ts'
 import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {
@@ -126,10 +125,6 @@ export function machineUpdateRungRefusal(input: {
   for (const rung of input.requiredRungs) {
     const proved = input.provedCommits.get(rung) ?? null
     if (
-      releaseRungProvenLiveAtCandidate({
-        liveCommit: proved,
-        liveContainsCandidate: input.liveContainsIncoming.get(rung) === true,
-      }) ||
       releaseRungCoversTarget({
         liveCommit: proved,
         liveContainsTarget: input.liveContainsIncoming.get(rung) === true,

@@ -111,7 +111,7 @@ function moveMainForPostLanding(
     const message = cause instanceof Error ? cause.message : String(cause)
     failure =
       cause instanceof BoundExceededError
-        ? `merge landed as ${mergeCommit}, but the main checkout pull timed out: ${message}; re-run ${retry}`
+        ? `merge landed as ${mergeCommit}, but ${message}`
         : message
   }
   if (failure) {
