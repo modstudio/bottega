@@ -138,20 +138,20 @@ test('issue verification rejects a nonzero gate completed by the worker broker',
   }
 })
 
-test('issue verification prepares a dedicated broker temporary directory', async () => {
+test('issue verification uses host confinement without preparing a broker temp directory', async () => {
   const fixture = issueGateRun('issue-gate-temp', 'true')
-  let temporaryDirectory: string | undefined
+  let confinement: unknown
   try {
     await runIssueGate(fixture.run, fixture.scratch, {
       startBroker: (input) => {
-        temporaryDirectory = input.confinement.temporaryDirectory
+        confinement = input.confinement
         return { close: async () => {} }
       },
       wait: async () => false,
     })
 
-    expect(temporaryDirectory).toBe(join(fixture.scratch, 'tmp'))
-    expect(existsSync(temporaryDirectory!)).toBe(true)
+    expect(confinement).toEqual({ kind: 'host' })
+    expect(existsSync(join(fixture.scratch, 'tmp'))).toBe(false)
   } finally {
     rmSync(fixture.main, { recursive: true, force: true })
     rmSync(fixture.scratch, { recursive: true, force: true })

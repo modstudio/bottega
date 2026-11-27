@@ -15,6 +15,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent, recordRunWarning } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { writingRunTempDir } from '../run-owned-paths.ts'
 import {
   type ResumedOperation,
   renderCheckpointResumeContext,
@@ -296,7 +297,11 @@ export function recordFailedIdlePreservation(input: {
   const snapshotDir = join(dirname(input.scratchDir), 'preservation')
   try {
     if (existsSync(snapshotDir)) rmSync(snapshotDir, { recursive: true, force: true })
-    cpSync(input.scratchDir, snapshotDir, { recursive: true })
+    const temporaryDirectory = writingRunTempDir(input.scratchDir)
+    cpSync(input.scratchDir, snapshotDir, {
+      recursive: true,
+      filter: (source) => source !== temporaryDirectory,
+    })
   } catch {
     /* the event log and the note are the minimum */
   }

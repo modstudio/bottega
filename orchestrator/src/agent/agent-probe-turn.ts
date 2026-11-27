@@ -15,6 +15,7 @@ import { writingRunTempDir } from '../run-owned-paths.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
+import { srtScope } from '../transport/transport.ts'
 import type {
   AgentTransport,
   NormalizedEvent,
@@ -166,7 +167,10 @@ function startProbeTransport(
   cwd: string,
   scratchDir: string,
 ) {
-  if (input.writing) prepareRunTemp(writingRunTempDir(input.writing.scratchDir))
+  const writingTemporaryDirectory = input.writing
+    ? writingRunTempDir(input.writing.scratchDir)
+    : null
+  if (writingTemporaryDirectory) prepareRunTemp(writingTemporaryDirectory)
   return input.transport.start({
     agent: input.agent,
     cwd,
@@ -184,11 +188,10 @@ function startProbeTransport(
     session: input.session,
     ...(input.writing
       ? {
-          srt: {
-            profile: input.writing.profile,
+          srt: srtScope(input.writing.profile, {
             runtimeDir: input.writing.runtimeDir,
-            temporaryDirectory: writingRunTempDir(input.writing.scratchDir),
-          },
+            directory: writingTemporaryDirectory!,
+          }),
         }
       : {}),
     mcp: input.mcp ?? false,

@@ -19,7 +19,6 @@ test('the composed CLI child environment scopes temp to every launch', () => {
   const runtimeDir = '/runs/sandbox-root'
   const privateTemp = runTempDir(runtimeDir)
   const reader = cliChildEnvironment({ PATH: '/bin' }, runTempEnvironment(privateTemp))
-  const writer = cliChildEnvironment({ PATH: '/bin' }, runTempEnvironment(privateTemp))
 
   expect(reader).toMatchObject({
     TMPDIR: privateTemp,
@@ -27,7 +26,6 @@ test('the composed CLI child environment scopes temp to every launch', () => {
     TEMP: privateTemp,
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  expect(writer).toMatchObject(reader)
   const profile = {} as never
   expect(srtScope(profile, { runtimeDir, directory: privateTemp })?.temporaryDirectory).toBe(
     privateTemp,

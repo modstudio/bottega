@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startBounded, startBoundedSync } from '../../../shared/bounded-process.ts'
@@ -381,21 +381,16 @@ async function shell(
     workerEnvironment: input.workerEnvironment,
   })
   if (input.orchStore) plan.env.BOTTEGA_ORCHESTRATOR_DB = input.orchStore
-  const temporaryDirectory = mkdtempSync(join(input.sandboxHome, 'tmp-'))
   try {
     const launch = await sandboxLaunchArgv(
       plan.profile,
       plan.argv[0],
       plan.argv.slice(1),
-      temporaryDirectory,
+      input.sandboxHome,
     )
     return await runFiledIssueCommand(launch, cwd, plan.env)
   } finally {
-    try {
-      await resetSandbox()
-    } finally {
-      rmSync(temporaryDirectory, { recursive: true, force: true })
-    }
+    await resetSandbox()
   }
 }
 

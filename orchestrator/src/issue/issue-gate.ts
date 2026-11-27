@@ -13,7 +13,6 @@ import {
 import { workerGitConfigEnvironment } from '../run/run-git-guard.ts'
 import { runTestWorkerEnvironment } from '../run/run-test-workers.ts'
 import type { RunResult } from '../run/run-types.ts'
-import { workerBrokerConfinement } from '../run/run-worker-brokers.ts'
 import { trackedWorkerEnvironment } from '../run/run-worker-home.ts'
 
 export type IssueGateResult = {
@@ -175,7 +174,7 @@ export async function runIssueGate(
         ...workerGitConfigEnvironment(fixRun.worktree, true, 'issue-worker'),
         ...trackedWorkerEnvironment(true, true, fixRun.worktree, fixRun.record_id),
       }),
-      confinement: workerBrokerConfinement({ writingAcp: false, scratchDir }, null),
+      confinement: { kind: 'host' },
       onExecutionFinish: ({ executionRecordId }) => {
         if (executionRecordId === inserted.recordId) finish()
       },

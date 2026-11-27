@@ -80,7 +80,6 @@ test('ACP children receive the run temp environment', () => {
     TEMP: privateTemp,
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  expect(childEnvironment(privateTemp)).toHaveProperty('TMPDIR', privateTemp)
 })
 
 test.each([

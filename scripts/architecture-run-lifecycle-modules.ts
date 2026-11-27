@@ -707,6 +707,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-process.ts',
     './run-temp.ts',
     './run-test-workers.ts',
+    './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-child-priority.ts', ['node:os']),
   module('orchestrator/src/run/run-test-workers.ts', ['node:os']),

@@ -14,6 +14,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { registerLiveGate } from './run-process.ts'
 import { prepareRunTemp } from './run-temp.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
+import { runTempEnvironment } from './run-worker-home.ts'
 
 export type WorkerExecutionBrokers = { gate: GateBroker; focusedTests: FocusedTestBroker | null }
 export type BrokerConfinement = GateBrokerConfinement<SandboxRuntimeConfig>
@@ -22,11 +23,27 @@ export function workerBrokerConfinement(
   input: { writingAcp: boolean; scratchDir: string },
   profile: SandboxRuntimeConfig | null,
 ): BrokerConfinement {
+  if (!input.writingAcp) return { kind: 'host' }
+  if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
   const temporaryDirectory = writingRunTempDir(input.scratchDir)
   prepareRunTemp(temporaryDirectory)
-  if (!input.writingAcp) return { kind: 'host', temporaryDirectory }
-  if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
   return { kind: 'srt', profile, temporaryDirectory }
+}
+
+export function workerBrokerEnvironment(input: {
+  environment: Record<string, string>
+  scratchDir: string
+  confinement: BrokerConfinement
+}): Record<string, string> {
+  return {
+    ...runTestWorkerEnvironment(input.environment),
+    ...(input.confinement.kind === 'srt'
+      ? {
+          ...runTempEnvironment(input.confinement.temporaryDirectory),
+          BUN_INSTALL_CACHE_DIR: join(input.scratchDir, 'bun-cache'),
+        }
+      : {}),
+  }
 }
 
 export function startWorkerExecutionBrokers(input: {
@@ -43,17 +60,7 @@ export function startWorkerExecutionBrokers(input: {
   onGateFinish: (at: string) => void
 }): WorkerExecutionBrokers | null {
   if (!input.repoJob || !input.worktree) return null
-  const environment = {
-    ...runTestWorkerEnvironment(input.environment),
-    ...(input.confinement.kind === 'srt'
-      ? {
-          TMPDIR: input.confinement.temporaryDirectory,
-          TMP: input.confinement.temporaryDirectory,
-          TEMP: input.confinement.temporaryDirectory,
-          BUN_INSTALL_CACHE_DIR: join(input.scratchDir, 'bun-cache'),
-        }
-      : {}),
-  }
+  const environment = workerBrokerEnvironment(input)
   return {
     gate: startGateBroker({
       runId: input.runId,

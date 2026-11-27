@@ -20,7 +20,7 @@ export function parseGateInput(
 }
 
 export type BrokerConfinement<Profile = unknown> =
-  | { kind: 'host'; temporaryDirectory: string }
+  | { kind: 'host' }
   | { kind: 'srt'; profile: Profile; temporaryDirectory: string }
 
 export type BrokerLaunchDecision<Profile = unknown> =
