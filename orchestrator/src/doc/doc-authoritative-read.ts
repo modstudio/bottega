@@ -454,11 +454,16 @@ export async function readDocForWrite(
   if (subject === undefined && SUBJECT_REQUIRED_WRITE_SCOPES.has(scope))
     throw new Error(`${scope} document writes require --subject`)
   return applyRecordReadAuthority<DocWriteTarget>({
-    local: () => ({
-      doc: getDocStore(scope, subject, slug, owner),
-      spaceId: undefined,
-      currentRevision: currentDocRevision(scope, subject, slug, owner),
-    }),
+    local: () => {
+      const doc = getDocStore(scope, subject, slug, owner)
+      return {
+        doc,
+        spaceId: undefined,
+        currentRevision:
+          doc?.revision ??
+          (subject === undefined ? null : currentDocRevision(scope, subject, slug, owner)),
+      }
+    },
     hosted: async () => {
       const result = await withReadRemedy(() =>
         hostedSingleDoc(
