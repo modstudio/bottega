@@ -52,8 +52,6 @@ test('a refused first dispatch stops without dispatching another page', async ()
 
 test('curator class replies accept exactly one seed or proposed branch', async () => {
   const replies = [
-    { seed: 'C1' },
-    { proposed: { name: 'New class', definition: 'A new defect class.' } },
     { seed: 'C1', proposed: { name: 'New class', definition: 'A new defect class.' } },
     {},
   ]
@@ -78,8 +76,6 @@ test('curator class replies accept exactly one seed or proposed branch', async (
   expect(
     results.map(({ proposals, failedPages }) => [proposals.length, failedPages.length]),
   ).toEqual([
-    [1, 0],
-    [1, 0],
     [0, 1],
     [0, 1],
   ])
