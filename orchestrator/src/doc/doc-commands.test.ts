@@ -10,10 +10,6 @@ import {
   readDocRevision,
 } from '../../test/fixtures/doc-local-read.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
-import {
-  createMemoryRecordApiClient,
-  installRecordApiClient,
-} from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -39,8 +35,8 @@ import {
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
-import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { removeDoc as deleteDoc } from './doc-removal-service.ts'
+import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 import { docSubjects, restoreDoc, setDoc as writeDoc } from './docs.ts'
 
@@ -553,38 +549,6 @@ describe('scoped operator docs', () => {
     expect(missing.err).toContain(
       `no global/_ doc "gone" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,
     )
-  })
-
-  test(`${PLATFORM_SLUG} doc rm refuses a hosted miss after one authoritative read`, async () => {
-    const priorUrl = process.env.BOTTEGA_RECORD_API_URL
-    let reads = 0
-    const client = createMemoryRecordApiClient()
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-    installRecordApiClient({
-      ...client,
-      listDocs: async () => {
-        reads++
-        return { items: [], nextCursor: null }
-      },
-    })
-    try {
-      const result = await command([
-        'doc',
-        'rm',
-        'missing-hosted',
-        '--scope',
-        'global',
-        '--reason',
-        'exercise one-read miss',
-      ])
-      expect(result.code).toBe(1)
-      expect(result.err).toContain('no global/_ doc "missing-hosted" in every readable space')
-      expect(reads).toBe(1)
-    } finally {
-      if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-      else process.env.BOTTEGA_RECORD_API_URL = priorUrl
-      installRecordApiClient(createMemoryRecordApiClient())
-    }
   })
 
   test(`${PLATFORM_SLUG} doc set --json round-trips a body with quote, backtick and newline`, async () => {

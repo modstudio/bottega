@@ -7,6 +7,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs, readDocsForWrite } from './doc-authoritative-read.ts'
+import { docCommand } from './doc-commands.ts'
 import { removeDoc, removeReadDoc } from './doc-removal-service.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
 import { consumeDoc, setDoc, setDocStatus } from './docs.ts'
@@ -36,6 +37,7 @@ const hostedRow = (spaceId: string, spaceName: string): HostedRow => ({
 
 function installHostedRows(initial: HostedRow[]) {
   let rows = [...initial]
+  let reads = 0
   const deletes: Array<{ id: string; destination: string }> = []
   const memory = createMemoryRecordApiClient()
   installRecordApiClient({
@@ -49,27 +51,30 @@ function installHostedRows(initial: HostedRow[]) {
         { space_id: 'team-space', slug: 'Team docs', permission: 'write' },
       ],
     }),
-    listDocs: async (query, destination) => ({
-      items: rows
-        .filter((row) => query.scope === undefined || row.scope === query.scope)
-        .filter((row) => query.subject === undefined || row.subject === query.subject)
-        .filter((row) => query.slug === undefined || row.slug === query.slug)
-        .filter(
-          (row) =>
-            query.acrossReadableSpaces ||
-            destination?.destinationSpaceId === undefined ||
-            row.spaceId === destination.destinationSpaceId,
-        )
-        .slice(0, query.limit),
-      nextCursor: null,
-    }),
+    listDocs: async (query, destination) => {
+      reads++
+      return {
+        items: rows
+          .filter((row) => query.scope === undefined || row.scope === query.scope)
+          .filter((row) => query.subject === undefined || row.subject === query.subject)
+          .filter((row) => query.slug === undefined || row.slug === query.slug)
+          .filter(
+            (row) =>
+              query.acrossReadableSpaces ||
+              destination?.destinationSpaceId === undefined ||
+              row.spaceId === destination.destinationSpaceId,
+          )
+          .slice(0, query.limit),
+        nextCursor: null,
+      }
+    },
     deleteDoc: async (id, _input, destination) => {
       deletes.push({ id, destination: destination.destinationSpaceId })
       rows = rows.filter((row) => row.id !== id)
       return { id, revisionId: newRecordId() }
     },
   } satisfies RecordApiClient)
-  return { deletes, rows: () => rows }
+  return { deletes, reads: () => reads, rows: () => rows }
 }
 
 afterEach(() => {
@@ -117,6 +122,38 @@ test('remove refuses a cross-space miss with the address, search extent, and rem
   ).rejects.toThrow(
     `no global/_ doc "missing-global" in every readable space; use ${PLATFORM_SLUG} doc list --scope global to see what exists`,
   )
+})
+
+test('the rm command refuses a hosted miss after one authoritative read', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const fixture = installHostedRows([])
+  const args = ['doc', 'rm', 'missing-global', '--scope', 'global', '--reason', 'miss']
+  const values = new Map([
+    ['scope', 'global'],
+    ['reason', 'miss'],
+  ])
+  await expect(
+    docCommand(
+      'rm',
+      args,
+      { has: (name) => values.has(name), flag: (name) => values.get(name) },
+      {
+        log: () => undefined,
+        error: () => undefined,
+        write: () => undefined,
+        stdinText: async () => '',
+        stdinIsTTY: false,
+        cwd: () => process.cwd(),
+      },
+      {
+        selectDocWriteTree: () => undefined,
+        collectCanonLintInput: undefined as never,
+        consumeResumeHandoff: undefined as never,
+        revisionHistory: async () => null,
+      },
+    ),
+  ).rejects.toThrow('no global/_ doc "missing-global" in every readable space')
+  expect(fixture.reads()).toBe(1)
 })
 
 test('remove refuses the same global address in two spaces and names both', async () => {

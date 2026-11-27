@@ -29,17 +29,12 @@ import {
   readDocForWrite,
   readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
-import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { removeReadDoc } from '../doc/doc-removal-service.ts'
+import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { docWriteMissRefusal } from '../doc/doc-write-miss.ts'
 import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
-import {
-  setDoc,
-  setDocStatus,
-  signedInDocOwner,
-  storedDocWarnings,
-} from '../doc/docs.ts'
+import { setDoc, setDocStatus, signedInDocOwner, storedDocWarnings } from '../doc/docs.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'

@@ -25,8 +25,8 @@ test('reference publish compares and revises hosted pages when the local mirror 
   const taskId = '01990000-0000-7000-8000-000000000402'
   const indexRevision = '01990000-0000-7000-8000-000000000403'
   const taskRevision = '01990000-0000-7000-8000-000000000404'
-    const staleId = '01990000-0000-7000-8000-000000000405'
-    const ownedStaleId = '01990000-0000-7000-8000-000000000406'
+  const staleId = '01990000-0000-7000-8000-000000000405'
+  const ownedStaleId = '01990000-0000-7000-8000-000000000406'
   try {
     mkdirSync(join(root, 'docs/reference'), { recursive: true })
     const indexFile = 'docs/reference/index.md'

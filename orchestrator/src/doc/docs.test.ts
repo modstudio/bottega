@@ -171,7 +171,7 @@ test('restore with a supplied authoritative read still refuses a generated refer
     name: 'reference-project',
     path: '/tmp/reference-project',
   })
-  const current = await setDoc({
+  await setDoc({
     scope: 'project',
     subject: 'reference-project',
     slug: 'reference-restore',

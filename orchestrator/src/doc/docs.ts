@@ -8,7 +8,6 @@ import { assertDocSections } from '../../../shared/doc-sections.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
-  DOC_SCOPES,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
