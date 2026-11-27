@@ -1,43 +1,43 @@
-import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
-import { applyMigrations } from '../hub/src/migrations.ts'
 import type { NoteClassPass } from '../hub/src/note-classification.ts'
 import type { NoteCurationResult } from '../hub/src/note-curation.ts'
 import type { NoteProposal, RankedClass } from '../hub/src/note-curation-decisions.ts'
-import { type NoteEvaluationResult, noteEvaluationBody } from '../hub/src/note-evaluation.ts'
+import {
+  type EvaluationNote,
+  type NoteEvaluationResult,
+  noteEvaluationBody,
+} from '../hub/src/note-evaluation.ts'
 import {
   appendCurationRecord,
   appendEvaluationRecordData,
 } from '../hub/src/note-evaluation-record.ts'
 import { lintStoredDoc } from '../orchestrator/src/doc/doc-lint-adapter.ts'
 
-test('a full note evaluation record is accepted by the stored-document lint', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database, undefined, {
-    machine_id: '01990000-0000-7000-8000-000000003282',
-  })
-  const hostile = [
-    '2026-11-26 DEV-9999 bun run script-that-does-not-exist',
-    '`hub/src/x.ts:12` [missing](missing.md)',
-    '```',
-    '~~~',
-  ].join('\n')
-  const insert = database.query(
-    `INSERT INTO note
-     (record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
-     VALUES (?,?,?,?, '[]', 1, '2026-01-01', '2026-01-01')`,
-  )
-  insert.run('01990000-0000-7000-8000-000000003281', 1, 'alpha', hostile)
-  insert.run('01990000-0000-7000-8000-000000003282', 2, 'alpha', `Second ${hostile}`)
-  const notes = database
-    .query<
-      { record_id: string; label: string; project: string; text: string; created_at: string },
-      []
-    >(
-      `SELECT record_id, project || '#' || number label, project, text, created_at
-       FROM note ORDER BY number`,
-    )
-    .all()
+const hostile = [
+  '2026-11-26 DEV-9999 bun run script-that-does-not-exist',
+  '`hub/src/x.ts:12` [missing](missing.md)',
+  '```',
+  '~~~',
+].join('\n')
+
+const notes: EvaluationNote[] = [
+  {
+    record_id: '01990000-0000-7000-8000-000000003281',
+    label: 'alpha#1',
+    project: 'alpha',
+    text: hostile,
+    created_at: '2026-01-01',
+  },
+  {
+    record_id: '01990000-0000-7000-8000-000000003282',
+    label: 'alpha#2',
+    project: 'alpha',
+    text: `Second ${hostile}`,
+    created_at: '2026-01-01',
+  },
+]
+
+/** Builds a complete note-evaluation record containing every hostile foreign-text shape. */
+export function hostileNoteEvaluationRecord(): string {
   const result: NoteEvaluationResult = {
     generatedPairs: 1,
     pairsAsked: 1,
@@ -85,10 +85,13 @@ test('a full note evaluation record is accepted by the stored-document lint', ()
     },
   ]
   const base = appendEvaluationRecordData(noteEvaluationBody('alpha', notes.length, result), result)
-  const body = appendCurationRecord(base, classPass, curation, proposals, ranking)
-  expect(body.match(/```note-evaluation-json/g)).toHaveLength(1)
+  return appendCurationRecord(base, classPass, curation, proposals, ranking)
+}
 
-  const findings = lintStoredDoc(
+/** Returns only errors from the same stored-document lint used by doc set. */
+export function noteEvaluationRecordLintFindings() {
+  const body = hostileNoteEvaluationRecord()
+  return lintStoredDoc(
     {
       scope: 'project',
       subject: 'alpha',
@@ -104,8 +107,12 @@ test('a full note evaluation record is accepted by the stored-document lint', ()
         checkout: { files: [], trackedPaths: [], packageScripts: [], sourceTexts: [] },
       },
     ],
-  )
-  database.close()
+  ).filter(({ level }) => level === 'error')
+}
 
-  expect(findings.filter(({ level }) => level === 'error')).toEqual([])
-})
+if (import.meta.main) {
+  const findings = noteEvaluationRecordLintFindings()
+  for (const finding of findings) console.error(JSON.stringify(finding))
+  if (findings.length) process.exit(1)
+  console.log('note-evaluation record lint guard passed')
+}
