@@ -407,8 +407,33 @@ const defaultDependencies: Dependencies = {
 export function noteEvaluationBody(
   project: string,
   noteCount: number,
+  at: string,
   result: NoteEvaluationResult,
 ): string {
+  const lines = noteEvaluationHeaderLines(project, noteCount, result, 'record')
+  lines.splice(1, 0, '', `Run time: ${at}`)
+  if (!result.generatedPairs) lines.push('', 'No candidate pairs to ask.')
+  lines.push('', '## Duplicate clusters')
+  if (!result.clusters.length) lines.push('', 'No scored clusters were obtained.')
+  for (const [index, cluster] of result.clusters.entries()) {
+    lines.push(
+      '',
+      `### ${index + 1}. ${cluster.notes.length} notes, mean ${cluster.meanProbability.toFixed(3)}`,
+    )
+    for (const note of cluster.notes) lines.push('', `- ${note.label}`)
+  }
+  return lines.join('\n')
+}
+
+export type NoteEvaluationSurface = 'record' | 'stdout'
+
+/** Builds the shared evaluation header while applying each output surface's foreign-text policy. */
+export function noteEvaluationHeaderLines(
+  project: string,
+  noteCount: number,
+  result: NoteEvaluationResult,
+  surface: NoteEvaluationSurface,
+): string[] {
   const recall = `${result.recall.produced}/${result.recall.total} (${
     result.recall.fraction === null ? 'n/a' : result.recall.fraction.toFixed(3)
   })`
@@ -421,16 +446,12 @@ export function noteEvaluationBody(
     `Answers: ${result.answeredPairs} (${result.reusedAnswers} reused, ${result.newAnswers} new)`,
     `Blocking recall: ${recall}; ${result.recall.unreadable} unreadable positives excluded`,
   ]
-  if (!result.generatedPairs) lines.push('', 'No candidate pairs to ask.')
-  if (result.answerFailure) lines.push('', 'Duplicate answers were not obtained.')
-  lines.push('', '## Duplicate clusters')
-  if (!result.clusters.length) lines.push('', 'No scored clusters were obtained.')
-  for (const [index, cluster] of result.clusters.entries()) {
+  if (result.answerFailure) {
     lines.push(
-      '',
-      `### ${index + 1}. ${cluster.notes.length} notes, mean ${cluster.meanProbability.toFixed(3)}`,
+      surface === 'record'
+        ? 'Duplicate answers were not obtained.'
+        : `Duplicate answers: ${result.answerFailure}`,
     )
-    for (const note of cluster.notes) lines.push('', `- ${note.label}`)
   }
-  return lines.join('\n')
+  return lines
 }

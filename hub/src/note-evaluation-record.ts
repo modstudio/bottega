@@ -4,13 +4,17 @@
 import type { NoteClassPass } from './note-classification.ts'
 import type { FailedCuratorPage, NoteCurationResult } from './note-curation.ts'
 import type { NoteProposal, RankedClass } from './note-curation-decisions.ts'
-import type { NoteEvaluationResult } from './note-evaluation.ts'
+import {
+  type NoteEvaluationResult,
+  type NoteEvaluationSurface,
+  noteEvaluationHeaderLines,
+} from './note-evaluation.ts'
 import { NOTE_EVALUATION_RECORD_SLUG } from './note-evaluation-identity.ts'
 
 const DATA_FENCE = `${NOTE_EVALUATION_RECORD_SLUG}-json`
 const DATA_BLOCK = new RegExp(`\n\`\`\`${DATA_FENCE}\n([\\s\\S]*?)\n\`\`\`(?:\n|$)`)
 
-type NoteEvaluationBaseData = {
+export type NoteEvaluationBaseData = {
   clusters: Array<{
     meanProbability: number
     notes: Array<{ label: string; text: string }>
@@ -31,6 +35,7 @@ export type NoteEvaluationRecordData = NoteEvaluationBaseData & {
 type SummaryInput = {
   project: string
   noteCount: number
+  at: string
   result: NoteEvaluationResult
   classPass?: NoteClassPass
   curation?: NoteCurationResult
@@ -58,11 +63,14 @@ function recordData(body: string): unknown {
   }
 }
 
-export function appendEvaluationRecordData(
-  body: string,
+export function appendEvaluationRecordData(body: string, data: NoteEvaluationBaseData): string {
+  return `${body}\n\n${dataFence(data)}`
+}
+
+export function noteEvaluationBaseData(
   result: Pick<NoteEvaluationResult, 'clusters' | 'recall' | 'answerFailure'>,
-): string {
-  const data: NoteEvaluationBaseData = {
+): NoteEvaluationBaseData {
+  return {
     clusters: result.clusters.map((cluster) => ({
       meanProbability: cluster.meanProbability,
       notes: cluster.notes.map(({ label, text }) => ({ label, text })),
@@ -70,7 +78,6 @@ export function appendEvaluationRecordData(
     recall: result.recall,
     answerFailure: result.answerFailure,
   }
-  return `${body}\n\n${dataFence(data)}`
 }
 
 function jevRecordLine(classPass: NoteClassPass): string {
@@ -81,18 +88,58 @@ function jevRecordLine(classPass: NoteClassPass): string {
   return 'Jev class pass obtained no answers: 0 answers.'
 }
 
+function classEvaluationLines(
+  classPass: NoteClassPass,
+  curation: NoteCurationResult,
+  surface: NoteEvaluationSurface,
+): string[] {
+  const lines = [
+    surface === 'record' ? jevRecordLine(classPass) : classPass.status,
+    `Curator proposals: ${curation.proposals.length}`,
+    `Failed pages: ${curation.failedPages.length}`,
+    `Invalid entries: ${curation.invalidEntries}`,
+  ]
+  if (curation.stopped) {
+    lines.push(
+      surface === 'record' ? 'Curation stopped: yes' : `Curation stopped: ${curation.stopped}`,
+    )
+  }
+  if (surface === 'stdout') {
+    for (const failure of curation.failedPages) {
+      lines.push(
+        `Failed page ${failure.page} (${failure.labels.join(', ')}), run ${failure.runId ?? 'none'}: ${failure.error}`,
+      )
+    }
+  }
+  return lines
+}
+
+function rankedClassLine(
+  item: RankedClass,
+  index: number,
+  proposedIndex: number,
+  surface: NoteEvaluationSurface,
+): string {
+  const identity = item.proposed
+    ? surface === 'record'
+      ? `proposed P${proposedIndex}`
+      : `proposed P${proposedIndex} ${item.key}: ${item.name}`
+    : surface === 'record'
+      ? item.key
+      : `${item.key}: ${item.name}`
+  return `${index + 1}. ${identity} — ${item.noteCount} notes, ${item.sightings} sightings (${item.notes.join(', ')})`
+}
+
 export function appendCurationRecord(
   body: string,
+  base: NoteEvaluationBaseData,
   classPass: NoteClassPass,
   curation: NoteCurationResult,
   proposals: NoteProposal[],
   ranking: RankedClass[],
 ): string {
-  const base = recordData(body)
-  if (!base || typeof base !== 'object')
-    throw new Error('note evaluation record is missing its S1 data block')
   const data: NoteEvaluationRecordData = {
-    ...(base as NoteEvaluationBaseData),
+    ...base,
     jev: { ran: classPass.ran, status: classPass.status, answers: classPass.answers },
     proposals,
     failedPages: curation.failedPages,
@@ -101,24 +148,18 @@ export function appendCurationRecord(
     ranking,
   }
   const lines = [
-    body.replace(DATA_BLOCK, ''),
+    body,
     '',
     '## Class evaluation',
     '',
-    jevRecordLine(classPass),
-    `Curator proposals: ${curation.proposals.length}`,
-    `Failed pages: ${curation.failedPages.length}`,
-    `Invalid entries: ${curation.invalidEntries}`,
+    ...classEvaluationLines(classPass, curation, 'record'),
   ]
-  if (curation.stopped) lines.push('Curation stopped: yes')
   lines.push('', '## Ranked classes', '')
   if (!ranking.length) lines.push('No class ranking was obtained.')
   let proposedIndex = 0
   for (const [index, item] of ranking.entries()) {
-    const identity = item.proposed ? `proposed P${++proposedIndex}` : `${item.key}: ${item.name}`
-    lines.push(
-      `${index + 1}. ${identity} — ${item.noteCount} notes, ${item.sightings} sightings (${item.notes.join(', ')})`,
-    )
+    if (item.proposed) proposedIndex++
+    lines.push(rankedClassLine(item, index, proposedIndex, 'record'))
   }
   lines.push('', dataFence(data))
   return lines.join('\n')
@@ -131,49 +172,28 @@ export function parseCurationRecord(body: string): NoteEvaluationRecordData | nu
 
 export function formatNoteEvaluationSummary(input: SummaryInput): string {
   const { result } = input
-  const recall = `${result.recall.produced}/${result.recall.total} (${
-    result.recall.fraction === null ? 'n/a' : result.recall.fraction.toFixed(3)
-  })`
-  const lines = [
-    `# Note evaluation: ${input.project}`,
-    `Actionable notes: ${input.noteCount}`,
-    `Candidate pairs: ${result.generatedPairs}`,
-    `Pairs asked: ${result.pairsAsked}`,
-    `Answers: ${result.answeredPairs} (${result.reusedAnswers} reused, ${result.newAnswers} new)`,
-    `Blocking recall: ${recall}; ${result.recall.unreadable} unreadable positives excluded`,
-  ]
-  if (result.answerFailure) lines.push(`Duplicate answers: ${result.answerFailure}`)
+  const lines = noteEvaluationHeaderLines(input.project, input.noteCount, result, 'stdout')
+  lines.splice(1, 0, `Run time: ${input.at}`)
   for (const [index, cluster] of result.clusters.entries()) {
     lines.push(`Cluster ${index + 1}: ${cluster.meanProbability.toFixed(3)}`)
     for (const note of cluster.notes) lines.push(`- ${note.label}: ${note.text}`)
   }
-  if (input.classPass) lines.push(input.classPass.status)
-  if (input.curation) {
-    lines.push(
-      `Curator proposals: ${input.curation.proposals.length}`,
-      `Failed pages: ${input.curation.failedPages.length}`,
-      `Invalid entries: ${input.curation.invalidEntries}`,
-    )
-    if (input.curation.stopped) lines.push(`Curation stopped: ${input.curation.stopped}`)
-    for (const failure of input.curation.failedPages) {
-      lines.push(
-        `Failed page ${failure.page} (${failure.labels.join(', ')}), run ${failure.runId ?? 'none'}: ${failure.error}`,
-      )
-    }
-  }
+  if (input.classPass && input.curation)
+    lines.push(...classEvaluationLines(input.classPass, input.curation, 'stdout'))
+  let proposedIndex = 0
   for (const [index, item] of (input.ranking ?? []).entries()) {
-    lines.push(
-      `${index + 1}. ${item.proposed ? 'proposed ' : ''}${item.key}: ${item.name} — ${item.noteCount} notes, ${item.sightings} sightings (${item.notes.join(', ')})`,
-    )
+    if (item.proposed) proposedIndex++
+    lines.push(rankedClassLine(item, index, proposedIndex, 'stdout'))
   }
   return lines.join('\n')
 }
 
 export function formatClassRanking(data: NoteEvaluationRecordData): string {
+  let proposedIndex = 0
   return data.ranking
-    .map(
-      (item, index) =>
-        `${index + 1}. ${item.proposed ? 'proposed ' : ''}${item.key}: ${item.name} — ${item.noteCount} notes, ${item.sightings} sightings\n   ${item.notes.join(', ')}`,
-    )
+    .map((item, index) => {
+      if (item.proposed) proposedIndex++
+      return rankedClassLine(item, index, proposedIndex, 'stdout')
+    })
     .join('\n')
 }

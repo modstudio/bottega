@@ -32,10 +32,11 @@ test('evaluation records one ranking containing Jev and curator proposals', asyn
   const notes = [jevNote, curatorNote]
   const seed: SeedClass[] = [{ code: 'C1', name: 'One', definition: 'one' }]
   let recorded = ''
+  let emitted = ''
   let rankCalls = 0
   await evaluateNotes(
     'alpha',
-    { skipCurate: false, emit: () => {} },
+    { skipCurate: false, emit: (summary) => (emitted = summary) },
     {
       registeredProject: () => ({ path: '/tmp/alpha' }),
       listNotes: async () => ({ notes, total: notes.length }),
@@ -90,9 +91,13 @@ test('evaluation records one ranking containing Jev and curator proposals', asyn
         recorded = body
         return {} as never
       },
+      now: () => '2026-11-26T19:00:00.000Z',
     },
   )
   expect(rankCalls).toBe(1)
+  expect(recorded).toContain('Run time: 2026-11-26T19:00:00.000Z')
+  expect(emitted).toContain('Run time: 2026-11-26T19:00:00.000Z')
+  expect(emitted).toContain('proposed P1')
   expect(
     parseCurationRecord(recorded)
       ?.ranking.flatMap((item) => item.notes)
@@ -140,6 +145,7 @@ test('evaluation emits the curation stop reason before a record write refusal', 
           expect(emitted).toContain(stop)
           throw new Error('doc lint refused the record')
         },
+        now: () => '2026-11-26T19:00:00.000Z',
       },
     ),
   ).rejects.toThrow('doc lint refused the record')
@@ -317,6 +323,7 @@ test('evaluation leaves stored notes and task rows unchanged while producing pro
           recorded = body
           return {} as never
         },
+        now: () => '2026-11-26T19:00:00.000Z',
       },
     )
 

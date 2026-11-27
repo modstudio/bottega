@@ -1,14 +1,13 @@
 import { expect, test } from 'bun:test'
 import { readNoteClasses } from './note-classes.ts'
-import { appendCurationRecord, appendEvaluationRecordData } from './note-evaluation-record.ts'
+import { appendCurationRecord, noteEvaluationBaseData } from './note-evaluation-record.ts'
 
-const evaluationBody = () =>
-  appendEvaluationRecordData('# evaluation', {
+const evaluationData = () =>
+  noteEvaluationBaseData({
     clusters: [],
     recall: { produced: 0, total: 0, unreadable: 0, fraction: null },
     answerFailure: null,
   })
-
 test('note classes refuses without an evaluation record and names the evaluation remedy', async () => {
   await expect(readNoteClasses({ project: 'alpha' }, async () => null)).rejects.toThrow(
     'note evaluate --project alpha',
@@ -18,7 +17,8 @@ test('note classes refuses without an evaluation record and names the evaluation
 test('note classes reads the named revision and refuses a revision without ranking', async () => {
   let requested = ''
   const body = appendCurationRecord(
-    evaluationBody(),
+    '# evaluation',
+    evaluationData(),
     { ran: true, status: 'ran', answers: 1, proposals: [], remaining: [] },
     { proposals: [], failedPages: [], invalidEntries: 0, stopped: null },
     [],
@@ -51,7 +51,8 @@ test('note classes reads the named revision and refuses a revision without ranki
 
 test('note classes refuses an evaluation that obtained no class ranking', async () => {
   const body = appendCurationRecord(
-    evaluationBody(),
+    '# evaluation',
+    evaluationData(),
     {
       ran: false,
       status: 'Jev class pass obtained no answers: missing credential',

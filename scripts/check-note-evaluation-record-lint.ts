@@ -6,10 +6,7 @@ import {
   type NoteEvaluationResult,
   noteEvaluationBody,
 } from '../hub/src/note-evaluation.ts'
-import {
-  appendCurationRecord,
-  appendEvaluationRecordData,
-} from '../hub/src/note-evaluation-record.ts'
+import { appendCurationRecord, noteEvaluationBaseData } from '../hub/src/note-evaluation-record.ts'
 import { lintStoredDoc } from '../orchestrator/src/doc/doc-lint-adapter.ts'
 
 const hostile = [
@@ -36,8 +33,8 @@ const notes: EvaluationNote[] = [
   },
 ]
 
-/** Builds a complete note-evaluation record containing every hostile foreign-text shape. */
-export function hostileNoteEvaluationRecord(): string {
+/** Builds a complete record covering hostile note, answer, curator, proposal, and seed text. */
+function hostileNoteEvaluationRecord(): string {
   const result: NoteEvaluationResult = {
     generatedPairs: 1,
     pairsAsked: 1,
@@ -83,14 +80,32 @@ export function hostileNoteEvaluationRecord(): string {
       sightings: 1,
       notes: [notes[0]!.label],
     },
+    {
+      key: 'C5',
+      name: hostile,
+      definition: hostile,
+      proposed: false,
+      noteCount: 1,
+      sightings: 1,
+      notes: [notes[1]!.label],
+    },
   ]
-  const base = appendEvaluationRecordData(noteEvaluationBody('alpha', notes.length, result), result)
-  return appendCurationRecord(base, classPass, curation, proposals, ranking)
+  const base = noteEvaluationBaseData(result)
+  return appendCurationRecord(
+    noteEvaluationBody('alpha', notes.length, '2026-11-26T19:00:00.000Z', result),
+    base,
+    classPass,
+    curation,
+    proposals,
+    ranking,
+  )
 }
 
 /** Returns only errors from the same stored-document lint used by doc set. */
-export function noteEvaluationRecordLintFindings() {
+function noteEvaluationRecordLintFindings() {
   const body = hostileNoteEvaluationRecord()
+  if (body.match(/```note-evaluation-json/g)?.length !== 1)
+    throw new Error('note-evaluation record must contain exactly one data fence')
   return lintStoredDoc(
     {
       scope: 'project',
