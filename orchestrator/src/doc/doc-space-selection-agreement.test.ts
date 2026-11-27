@@ -6,9 +6,9 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import { readDoc, readDocs } from './doc-authoritative-read.ts'
+import { readDoc, readDocs, readDocsForWrite } from './doc-authoritative-read.ts'
 import { resolveDocWriteSpace } from './doc-write-space.ts'
-import { consumeDoc, removeDoc, setDoc, setDocStatus } from './docs.ts'
+import { consumeDoc, removeDoc, removeReadDoc, setDoc, setDocStatus } from './docs.ts'
 
 type HostedRow = Record<string, unknown> & { id: string; spaceId: string }
 
@@ -86,6 +86,22 @@ test('unscoped list, scoped global list, show, and remove agree across readable 
   expect((await readDoc('global', undefined, 'remote-global'))?.record_id).toBe(remote.id)
   expect(
     await removeDoc('global', undefined, 'remote-global', { reason: 'remove agreement fixture' }),
+  ).toBe(true)
+  expect(fixture.deletes).toEqual([{ id: remote.id, destination: 'team-space' }])
+  expect(fixture.rows()).toEqual([])
+})
+
+test('removeReadDoc deletes a hosted row in the space where it was read', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const remote = hostedRow('team-space', 'Team docs')
+  const fixture = installHostedRows([remote])
+  const target = (await readDocsForWrite({ scope: 'global' })).find(
+    ({ doc }) => doc?.slug === 'remote-global',
+  )
+
+  expect(target).toEqual(expect.objectContaining({ spaceId: 'team-space' }))
+  expect(
+    await removeReadDoc(target!, { reason: 'remove the row from the space where it was read' }),
   ).toBe(true)
   expect(fixture.deletes).toEqual([{ id: remote.id, destination: 'team-space' }])
   expect(fixture.rows()).toEqual([])
