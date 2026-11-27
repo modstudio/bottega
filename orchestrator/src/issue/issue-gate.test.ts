@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -132,6 +132,26 @@ test('issue verification rejects a nonzero gate completed by the worker broker',
     ).toEqual({
       exit_code: 1,
     })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification prepares a dedicated broker temporary directory', async () => {
+  const fixture = issueGateRun('issue-gate-temp', 'true')
+  let temporaryDirectory: string | undefined
+  try {
+    await runIssueGate(fixture.run, fixture.scratch, {
+      startBroker: (input) => {
+        temporaryDirectory = input.confinement.temporaryDirectory
+        return { close: async () => {} }
+      },
+      wait: async () => false,
+    })
+
+    expect(temporaryDirectory).toBe(join(fixture.scratch, 'tmp'))
+    expect(existsSync(temporaryDirectory!)).toBe(true)
   } finally {
     rmSync(fixture.main, { recursive: true, force: true })
     rmSync(fixture.scratch, { recursive: true, force: true })
