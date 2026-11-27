@@ -3,11 +3,11 @@
 import {
   type HostedRequestSafety,
   RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_DOCTOR_REMEDY,
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
 import { revisionConflictBodySchema } from '../doc/doc-revision-conflict.ts'
-import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import {
   RecordApiRequestError,
   responseCode,
@@ -31,7 +31,7 @@ export function recordApiUnreachable(
 function recordApiServerError(message: string, status: number): RecordApiRequestError {
   const fallback = recordApiStatus(status)
   const statusMessage = message === fallback ? message : `${fallback}: ${message}`
-  return new RecordApiRequestError(`${statusMessage}\n${RECORD_WRITE_REMEDY}`, 'server', status)
+  return new RecordApiRequestError(`${statusMessage}\n${RECORD_DOCTOR_REMEDY}`, 'server', status)
 }
 
 export function recordApiError(
