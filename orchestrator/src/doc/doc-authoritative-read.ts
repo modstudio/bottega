@@ -338,7 +338,9 @@ export function readDocs(filters: DocListFilters = {}, database?: Database): Pro
     local: () => listDocsStore(resolvedFilters(localFilters), database),
     hosted: () => withReadRemedy(() => hostedRows(filters, database)),
   }
-  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
+  return database
+    ? applyRecordReadAuthority<Doc[]>(actions, database)
+    : applyRecordReadAuthority<Doc[]>(actions)
 }
 
 export function readDocsForWrite(
@@ -380,7 +382,9 @@ export function readDocsForWrite(
         })
       }),
   }
-  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
+  return database
+    ? applyRecordReadAuthority<DocWriteTarget[]>(actions, database)
+    : applyRecordReadAuthority<DocWriteTarget[]>(actions)
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
@@ -413,7 +417,7 @@ export function readDoc(
   slug: string,
   owner: string | null = null,
 ): Promise<Doc | null> {
-  return applyRecordReadAuthority({
+  return applyRecordReadAuthority<Doc | null>({
     local: () => getDocStore(scope, subject, slug, owner),
     hosted: () =>
       withReadRemedy(
@@ -441,7 +445,7 @@ export async function readDocForWrite(
 ): Promise<DocWriteTarget> {
   if (subject === undefined && SUBJECT_REQUIRED_WRITE_SCOPES.has(scope))
     throw new Error(`${scope} document writes require --subject`)
-  return applyRecordReadAuthority({
+  return applyRecordReadAuthority<DocWriteTarget>({
     local: () => ({ doc: getDocStore(scope, subject, slug, owner), spaceId: undefined }),
     hosted: async () => {
       const result = await withReadRemedy(() =>
