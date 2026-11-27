@@ -67,10 +67,12 @@ function adapter(input: {
   wait?: (milliseconds: number) => void
   now?: () => number
   landingState?: () => { remoteLandingTip: string; mergeBase: string }
+  landingComparison?: () => string
+  repository?: string | null
   checks?: PullRequestCheck[]
 }): PullRequestMergeAdapter {
   return {
-    repository: () => 'example/repository',
+    repository: () => (input.repository === undefined ? 'example/repository' : input.repository),
     view: () => pullRequest,
     releaseDecision: () => ({ decided: true, required: [], rungs: [], error: null }),
     checks: () =>
@@ -115,6 +117,7 @@ function adapter(input: {
         removalReason: state.removalReason ?? null,
       }
     },
+    landingComparison: input.landingComparison ?? (() => 'identical'),
     enqueue: (enqueueCwd, number, headCommit) => input.enqueue?.(enqueueCwd, number, headCommit),
     requeue: (requeueCwd, nodeId, headCommit) => input.requeue?.(requeueCwd, nodeId, headCommit),
     failedMergeGroupRun: (...args) =>
@@ -200,6 +203,136 @@ test('an already-queued pull request is only waited for', async () => {
     headBranch: 'DEV-1358-queue',
   })
   expect(enqueued).toBe(false)
+})
+
+test('a non-proving landing comparison is retried until identical', async () => {
+  registerProject(['ci'])
+  const comparisons = ['diverged', 'identical']
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        landingComparison: () => comparisons.shift()!,
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+  expect(comparisons).toEqual([])
+})
+
+test('a non-proving landing comparison refuses with landed wording at the deadline', async () => {
+  registerProject(['ci'])
+  let clock = 0
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+            { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+          ],
+          landingComparison: () => 'ahead',
+          now: () => clock,
+          wait: () => {
+            clock = MERGE_QUEUE_WAIT_MS
+          },
+        }),
+      ),
+  ).toThrow(
+    /GitHub reports pull request #42 merged as queued-merge-oid.*last status: ahead.*re-run/,
+  )
+})
+
+test('a throwing landing comparison is retried until behind', async () => {
+  registerProject(['ci'])
+  let comparisons = 0
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        landingComparison: () => {
+          comparisons += 1
+          if (comparisons === 1) throw new Error('temporary compare failure')
+          return 'behind'
+        },
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+  expect(comparisons).toBe(2)
+})
+
+test('a throwing landing comparison refuses with its error at the deadline', async () => {
+  registerProject(['ci'])
+  let clock = 0
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+            { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+          ],
+          landingComparison: () => {
+            throw new Error('temporary compare failure')
+          },
+          now: () => clock,
+          wait: () => {
+            clock = MERGE_QUEUE_WAIT_MS
+          },
+        }),
+      ),
+  ).toThrow(/merged as queued-merge-oid.*last error: temporary compare failure.*re-run/)
+})
+
+test('a merged pull request waits for GitHub to publish its merge commit', async () => {
+  registerProject(['ci'])
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'MERGED', mergeCommit: null, entryState: null },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+})
+
+test('a merged pull request without a published merge commit refuses at the deadline', async () => {
+  registerProject(['ci'])
+  let clock = 0
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'MERGED', mergeCommit: null, entryState: null },
+            { pullRequestState: 'MERGED', mergeCommit: null, entryState: null },
+          ],
+          now: () => clock,
+          wait: () => {
+            clock = MERGE_QUEUE_WAIT_MS
+          },
+        }),
+      ),
+  ).toThrow(/reports pull request #42 merged but has published no merge commit.*re-run/)
 })
 
 test('a failed first observation makes one requeue call with the node id and head', async () => {
@@ -414,40 +547,40 @@ test('a merged removal completes when pull-request state catches up inside confi
   ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
 })
 
-test('a merged removal past confirmation refuses and reports the reason', async () => {
+test('a merged removal past confirmation keeps polling until GitHub reports MERGED', async () => {
   registerProject(['ci'])
   let clock = 0
   let waits = 0
   expect(
-    async () =>
-      await mergePullRequest(
-        '42',
-        cwd,
-        adapter({
-          queueStates: [
-            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-            {
-              pullRequestState: 'OPEN',
-              mergeCommit: null,
-              entryState: null,
-              removalReason: 'merged',
-            },
-            {
-              pullRequestState: 'OPEN',
-              mergeCommit: null,
-              entryState: null,
-              removalReason: 'merged',
-            },
-          ],
-          now: () => clock,
-          wait: () => {
-            waits += 1
-            if (waits === 2) clock = MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merged',
           },
-          failedMergeGroupRun: () => null,
-        }),
-      ),
-  ).toThrow('dequeued without a failed check (reason: merged)')
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merged',
+          },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        now: () => clock,
+        wait: () => {
+          waits += 1
+          if (waits === 2) clock = MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+        },
+        failedMergeGroupRun: () => null,
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
 })
 
 test('a stale merge-conflict removal from before this enqueue does not refuse', async () => {
@@ -534,8 +667,9 @@ test('a failed-checks dequeue keeps the failed-check remedy and appends run evid
   )
 })
 
-test('a closed pull request refuses immediately after an established queue', async () => {
+test('a closed pull request refuses after the bounded re-poll', async () => {
   registerProject(['ci'])
+  let clock = 0
   expect(
     async () =>
       await mergePullRequest(
@@ -545,10 +679,32 @@ test('a closed pull request refuses immediately after an established queue', asy
           queueStates: [
             { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
             { pullRequestState: 'CLOSED', mergeCommit: null, entryState: null },
+            { pullRequestState: 'CLOSED', mergeCommit: null, entryState: null },
           ],
+          now: () => clock,
+          wait: () => {
+            clock += 30_000
+          },
         }),
       ),
-  ).toThrow('left the merge queue without merging')
+  ).toThrow('closed without merging')
+})
+
+test('a closed observation completes when the bounded re-fetch reports MERGED', async () => {
+  registerProject(['ci'])
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          { pullRequestState: 'CLOSED', mergeCommit: null, entryState: null },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
 })
 
 test('an enqueue failure reports the queue operation and its specific remedy', async () => {

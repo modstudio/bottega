@@ -7,7 +7,9 @@ import {
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueState,
   type MergeQueueWaitState,
+  mergeLandingComparisonProvesLanded,
   mergeQueueEnqueueFailureRemedy,
+  stepMergeQueueLanding,
 } from './merge-queue-decision.ts'
 
 const stepMergeQueueWait = (
@@ -25,6 +27,7 @@ const initialWaitState: MergeQueueWaitState = {
   activeEntryObserved: false,
   dequeueObservedAt: null,
   requeuePendingSince: null,
+  closedObservedAt: null,
 }
 
 describe('merge-queue state', () => {
@@ -44,10 +47,7 @@ describe('merge-queue state', () => {
         entryState: null,
         enqueuedAt: null,
       }),
-    ).toEqual({
-      state: 'unknown',
-      detail: 'pull request state MERGED, queue entry none, merge commit none',
-    })
+    ).toEqual({ state: 'merged-without-commit' })
   })
 
   test.each(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])(
@@ -187,10 +187,10 @@ describe('merge-queue action', () => {
     expect(
       stepMergeQueueWait(42, gap.state, { state: 'merged', mergeCommit: 'merge-oid' }, 2, 120_000)
         .action,
-    ).toEqual({ action: 'complete', mergeCommit: 'merge-oid' })
+    ).toEqual({ action: 'verify-landing', mergeCommit: 'merge-oid' })
   })
 
-  test('a merged removal past confirmation reports the reason', () => {
+  test('a merged removal past confirmation keeps waiting', () => {
     const state = {
       ...initialWaitState,
       activeEntryObserved: true,
@@ -204,10 +204,21 @@ describe('merge-queue action', () => {
         1 + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
         120_000,
       ).action,
+    ).toEqual({ action: 'wait', delay: 10_000 })
+  })
+
+  test('a merged pull request waits for its commit until the deadline', () => {
+    expect(
+      stepMergeQueueWait(42, initialWaitState, { state: 'merged-without-commit' }, 1, 20_000)
+        .action,
+    ).toEqual({ action: 'wait', delay: 10_000 })
+    expect(
+      stepMergeQueueWait(42, initialWaitState, { state: 'merged-without-commit' }, 20_000, 20_000)
+        .action,
     ).toEqual({
       action: 'refuse',
-      refusal: expect.stringContaining('reason: merged'),
-      remedy: `${PLATFORM_SLUG} pr merge 42`,
+      refusal: expect.stringContaining('merged but has published no merge commit'),
+      remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
     })
   })
 
@@ -261,14 +272,16 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('a closed pull request refuses immediately after an active entry', () => {
+  test('a closed pull request refuses after its bounded re-poll', () => {
     const state = { ...initialWaitState, enqueueSubmitted: true, activeEntryObserved: true }
-    expect(stepMergeQueueWait(42, state, { state: 'closed' }, 0, 20_000)).toEqual({
-      state,
+    const first = stepMergeQueueWait(42, state, { state: 'closed' }, 0, 60_000)
+    expect(first.action).toEqual({ action: 'wait', delay: 10_000 })
+    expect(stepMergeQueueWait(42, first.state, { state: 'closed' }, 30_000, 60_000)).toEqual({
+      state: first.state,
       action: {
         action: 'refuse',
-        refusal: expect.stringContaining('left the merge queue without merging'),
-        remedy: expect.stringContaining('fix the dequeue reason'),
+        refusal: expect.stringContaining('closed without merging'),
+        remedy: expect.stringContaining('reopen or replace'),
       },
     })
   })
@@ -361,6 +374,40 @@ describe('merge-queue action', () => {
         refusal: expect.stringContaining('did not merge within'),
         remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
       },
+    })
+  })
+})
+
+describe('merge landing verification', () => {
+  test.each([
+    ['identical', true],
+    ['behind', true],
+    ['ahead', false],
+    ['diverged', false],
+  ] as const)('%s comparison proves landing: %s', (status, provesLanding) => {
+    expect(mergeLandingComparisonProvesLanded(status)).toBe(provesLanding)
+  })
+
+  test('the pure landing step completes, waits, and refuses from observed facts', () => {
+    expect(stepMergeQueueLanding(42, 'merge-oid', true, { status: 'behind' }, 0, 10_000)).toEqual({
+      action: 'complete',
+      mergeCommit: 'merge-oid',
+    })
+    expect(stepMergeQueueLanding(42, 'merge-oid', true, { status: 'ahead' }, 0, 10_000)).toEqual({
+      action: 'wait',
+      delay: 10_000,
+    })
+    expect(
+      stepMergeQueueLanding(42, 'merge-oid', true, { error: 'compare failed' }, 10_000, 10_000),
+    ).toEqual({
+      action: 'refuse',
+      refusal: expect.stringMatching(/merged as merge-oid.*last error: compare failed/),
+      remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
+    })
+    expect(stepMergeQueueLanding(42, 'merge-oid', false, null, 0, 10_000)).toEqual({
+      action: 'refuse',
+      refusal: 'registered repository identity is unavailable',
+      remedy: expect.stringContaining('restore the project remote'),
     })
   })
 })

@@ -14,6 +14,7 @@ export type MergeQueueObservation = {
 
 export type MergeQueueState =
   | { state: 'merged'; mergeCommit: string }
+  | { state: 'merged-without-commit' }
   | { state: 'queued' }
   | { state: 'dequeued'; reason: string }
   | { state: 'closed' }
@@ -22,6 +23,7 @@ export type MergeQueueState =
 
 type MergeQueueAction =
   | { action: 'complete'; mergeCommit: string }
+  | { action: 'verify-landing'; mergeCommit: string }
   | { action: 'enqueue' }
   | { action: 'requeue' }
   | { action: 'wait'; delay: number }
@@ -38,6 +40,7 @@ export type MergeQueueWaitState = {
   activeEntryObserved: boolean
   dequeueObservedAt: number | null
   requeuePendingSince: number | null
+  closedObservedAt: number | null
 }
 
 export type MergeQueueStep = {
@@ -49,6 +52,7 @@ const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', '
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
 export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
 export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
+const MERGE_QUEUE_CLOSED_REPOLL_MS = 30 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 function failedMergeQueueStep(
@@ -101,6 +105,7 @@ function observedMergeQueueState(
       activeEntryObserved: true,
       dequeueObservedAt: null,
       requeuePendingSince: null,
+      closedObservedAt: null,
     }
   }
   if (queue.state === 'dequeued' && previous.requeuePendingSince !== null) {
@@ -139,6 +144,7 @@ export function interpretMergeQueue(
   if (pullRequestState === 'MERGED' && observation.mergeCommit) {
     return { state: 'merged', mergeCommit: observation.mergeCommit }
   }
+  if (pullRequestState === 'MERGED') return { state: 'merged-without-commit' }
   if (pullRequestState === 'CLOSED') return { state: 'closed' }
   if (pullRequestState === 'OPEN' && entryState === 'UNMERGEABLE') return { state: 'failed' }
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
@@ -168,6 +174,67 @@ function confirmedDequeueReason(
     : null
 }
 
+function removalClaimsMerged(reason: string): boolean {
+  return reason.toLowerCase() === 'merged'
+}
+
+export function mergedWithoutCommitRefusal(
+  number: number,
+): Extract<MergeQueueAction, { action: 'refuse' }> {
+  return {
+    action: 'refuse',
+    refusal: `GitHub reports pull request #${number} merged but has published no merge commit`,
+    remedy: `once GitHub has published the merge commit, re-run ${PLATFORM_SLUG} pr merge ${number}`,
+  }
+}
+
+function closedMergeQueueStep(
+  number: number,
+  state: MergeQueueWaitState,
+  now: number,
+  deadline: number,
+  retry: string,
+): MergeQueueStep {
+  const closedObservedAt = state.closedObservedAt ?? now
+  const observed = { ...state, closedObservedAt }
+  if (now - closedObservedAt < MERGE_QUEUE_CLOSED_REPOLL_MS && now < deadline) {
+    return {
+      state: observed,
+      action: {
+        action: 'wait',
+        delay: Math.min(
+          MERGE_QUEUE_POLL_MS,
+          deadline - now,
+          MERGE_QUEUE_CLOSED_REPOLL_MS - (now - closedObservedAt),
+        ),
+      },
+    }
+  }
+  return {
+    state: observed,
+    action: {
+      action: 'refuse',
+      refusal: `pull request #${number} was closed without merging`,
+      remedy: `reopen or replace the pull request, then ${retry}`,
+    },
+  }
+}
+
+function mergedWithoutCommitStep(
+  number: number,
+  state: MergeQueueWaitState,
+  now: number,
+  deadline: number,
+): MergeQueueStep {
+  return {
+    state,
+    action:
+      now < deadline
+        ? { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+        : mergedWithoutCommitRefusal(number),
+  }
+}
+
 function dequeueRefusal(
   number: number,
   reason: string,
@@ -182,7 +249,7 @@ function dequeueRefusal(
       source: 'failed-check',
     }
   }
-  const reasonRefusesOnItsOwn = !['unknown', 'merged'].includes(reason.toLowerCase())
+  const reasonRefusesOnItsOwn = reason.toLowerCase() !== 'unknown' && !removalClaimsMerged(reason)
   return {
     action: 'refuse',
     refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
@@ -206,17 +273,13 @@ export function stepMergeQueueWait(
 
   const retry = `${PLATFORM_SLUG} pr merge ${number}`
   if (queue.state === 'merged') {
-    return { state, action: { action: 'complete', mergeCommit: queue.mergeCommit } }
+    return { state, action: { action: 'verify-landing', mergeCommit: queue.mergeCommit } }
+  }
+  if (queue.state === 'merged-without-commit') {
+    return mergedWithoutCommitStep(number, state, now, deadline)
   }
   if (queue.state === 'closed') {
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} left the merge queue without merging`,
-        remedy: `fix the dequeue reason, then ${retry}`,
-      },
-    }
+    return closedMergeQueueStep(number, state, now, deadline, retry)
   }
   if (queue.state === 'failed') {
     return failedMergeQueueStep(number, state, now, deadline)
@@ -245,7 +308,7 @@ export function stepMergeQueueWait(
     queue.state === 'dequeued' &&
     (state.activeEntryObserved || (state.enqueueSubmitted && queue.reason !== 'unknown')) &&
     queue.reason !== 'unknown' &&
-    queue.reason.toLowerCase() !== 'merged'
+    !removalClaimsMerged(queue.reason)
   ) {
     return { state, action: dequeueRefusal(number, queue.reason, landingBranch) }
   }
@@ -254,11 +317,13 @@ export function stepMergeQueueWait(
     return { state, action: { action: 'enqueue' } }
   }
   const confirmedReason = confirmedDequeueReason(queue, state, now)
-  if (confirmedReason !== null) {
+  if (confirmedReason !== null && !removalClaimsMerged(confirmedReason)) {
     return { state, action: dequeueRefusal(number, confirmedReason, landingBranch) }
   }
   const dequeueConfirmationRemaining =
-    queue.state === 'dequeued' && state.dequeueObservedAt !== null
+    queue.state === 'dequeued' &&
+    !removalClaimsMerged(queue.reason) &&
+    state.dequeueObservedAt !== null
       ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - state.dequeueObservedAt)
       : Number.POSITIVE_INFINITY
   return {
@@ -267,6 +332,52 @@ export function stepMergeQueueWait(
       action: 'wait',
       delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now, dequeueConfirmationRemaining),
     },
+  }
+}
+
+/** Decide whether GitHub's comparison proves the merge commit is on the landing branch. */
+export function mergeLandingComparisonProvesLanded(status: string): boolean {
+  return status === 'identical' || status === 'behind'
+}
+
+export type MergeLandingComparison = { status: string } | { error: string }
+
+/** Decide whether a merged pull request has been confirmed on its landing branch. */
+export function stepMergeQueueLanding(
+  number: number,
+  mergeCommit: string,
+  repositoryAvailable: boolean,
+  comparison: MergeLandingComparison | null,
+  now: number,
+  deadline: number,
+): MergeQueueAction {
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  if (!repositoryAvailable) {
+    return {
+      action: 'refuse',
+      refusal: 'registered repository identity is unavailable',
+      remedy: `restore the project remote, then ${retry}`,
+    }
+  }
+  if (
+    comparison &&
+    'status' in comparison &&
+    mergeLandingComparisonProvesLanded(comparison.status)
+  ) {
+    return { action: 'complete', mergeCommit }
+  }
+  if (now < deadline) {
+    return { action: 'wait', delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now) }
+  }
+  const detail = comparison
+    ? 'error' in comparison
+      ? `last error: ${comparison.error}`
+      : `last status: ${comparison.status}`
+    : 'comparison was unavailable'
+  return {
+    action: 'refuse',
+    refusal: `GitHub reports pull request #${number} merged as ${mergeCommit}, but the landing check could not be confirmed (${detail})`,
+    remedy: `re-run ${retry}`,
   }
 }
 

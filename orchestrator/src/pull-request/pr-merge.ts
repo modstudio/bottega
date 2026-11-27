@@ -31,21 +31,19 @@ import {
 import type { FailedMergeGroupRun } from './merge-group-run.ts'
 import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
-  interpretMergeQueue,
-  MERGE_QUEUE_WAIT_MS,
-  type MergeQueueObservation,
   type MergeQueueState,
   type MergeQueueStep,
-  type MergeQueueWaitState,
+  mergedWithoutCommitRefusal,
   mergeQueueEnqueueFailureRemedy,
-  stepMergeQueueWait,
 } from './merge-queue-decision.ts'
 import {
   enqueuePullRequest,
   githubFailedMergeGroupRun,
+  githubLandingComparison,
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
+import { driveMergeQueueWait, type MergeQueueWaitAdapter } from './merge-queue-wait.ts'
 import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
   type AdmissionWithTriage,
@@ -84,79 +82,77 @@ export type PullRequestMergeCommandOutcome = PullRequestMergeOutcome & {
   headBranch: string
 }
 
-export type PullRequestMergeAdapter = PullRequestReleaseDecisionAdapter & {
-  repository(project: Project): string | null
-  view(cwd: string, target: string): PullRequestMergeFacts
-  taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
-  releasePreflight?(input: Parameters<typeof runReleasePreflight>[0]): Promise<void>
-  checks(cwd: string, number: number): PullRequestCheck[]
-  landingState(
-    cwd: string,
-    headCommit: string,
-    landingBranch: string,
-  ): { remoteLandingTip: string; mergeBase: string }
-  hasCommit(cwd: string, headCommit: string): boolean
-  admission(
-    cwd: string,
-    headCommit: string,
-    headBranch: string,
-    database: Database,
-  ):
-    | Promise<{ change: PullRequestChange; decision: PullRequestAdmission }>
-    | {
-        change: PullRequestChange
-        decision: PullRequestAdmission
-      }
-  recordAdmission(
-    change: PullRequestChange,
-    decision: AdmissionWithTriage,
-    prNumber: number,
-    database: Database,
-  ): string | null
-  postMergeChange(
-    cwd: string,
-    headCommit: string,
-    headBranch: string,
-    database: Database,
-  ): PullRequestChange
-  recordLandings?(
-    change: PullRequestChange,
-    pullRequest: PullRequestMergeFacts,
-    database: Database,
-  ): void
-  recordCi?(
-    change: PullRequestChange,
-    pullRequest: PullRequestMergeFacts,
-    database: Database,
-  ): string | undefined
-  merge(
-    cwd: string,
-    number: number,
-    method: 'squash' | 'merge' | 'rebase',
-    subject: string,
-    headCommit: string,
-  ): void
-  mergeCommit(cwd: string, number: number): string
-  queueState(cwd: string, nodeId: string): MergeQueueObservation
-  enqueue(cwd: string, number: number, headCommit: string): void
-  requeue(cwd: string, nodeId: string, headCommit: string): void
-  failedMergeGroupRun(
-    cwd: string,
-    repository: string,
-    baseBranch: string,
-    pullRequestNumber: number,
-    enqueuedAt: string,
-  ): FailedMergeGroupRun | null
-  now(): number
-  wait(milliseconds: number): void
-  shipCleanup?(
-    project: string,
-    branch: string,
-    prNumber: number,
-    database: Database,
-  ): Promise<ShipCleanupReport> | ShipCleanupReport
-  postLanding?: PullRequestPostLandingAdapter
-}
+export type PullRequestMergeAdapter = PullRequestReleaseDecisionAdapter &
+  MergeQueueWaitAdapter & {
+    repository(project: Project): string | null
+    view(cwd: string, target: string): PullRequestMergeFacts
+    taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
+    releasePreflight?(input: Parameters<typeof runReleasePreflight>[0]): Promise<void>
+    checks(cwd: string, number: number): PullRequestCheck[]
+    landingState(
+      cwd: string,
+      headCommit: string,
+      landingBranch: string,
+    ): { remoteLandingTip: string; mergeBase: string }
+    hasCommit(cwd: string, headCommit: string): boolean
+    admission(
+      cwd: string,
+      headCommit: string,
+      headBranch: string,
+      database: Database,
+    ):
+      | Promise<{ change: PullRequestChange; decision: PullRequestAdmission }>
+      | {
+          change: PullRequestChange
+          decision: PullRequestAdmission
+        }
+    recordAdmission(
+      change: PullRequestChange,
+      decision: AdmissionWithTriage,
+      prNumber: number,
+      database: Database,
+    ): string | null
+    postMergeChange(
+      cwd: string,
+      headCommit: string,
+      headBranch: string,
+      database: Database,
+    ): PullRequestChange
+    recordLandings?(
+      change: PullRequestChange,
+      pullRequest: PullRequestMergeFacts,
+      database: Database,
+    ): void
+    recordCi?(
+      change: PullRequestChange,
+      pullRequest: PullRequestMergeFacts,
+      database: Database,
+    ): string | undefined
+    merge(
+      cwd: string,
+      number: number,
+      method: 'squash' | 'merge' | 'rebase',
+      subject: string,
+      headCommit: string,
+    ): void
+    mergeCommit(cwd: string, number: number): string
+    enqueue(cwd: string, number: number, headCommit: string): void
+    requeue(cwd: string, nodeId: string, headCommit: string): void
+    failedMergeGroupRun(
+      cwd: string,
+      repository: string,
+      baseBranch: string,
+      pullRequestNumber: number,
+      enqueuedAt: string,
+    ): FailedMergeGroupRun | null
+    shipCleanup?(
+      project: string,
+      branch: string,
+      prNumber: number,
+      database: Database,
+    ): Promise<ShipCleanupReport> | ShipCleanupReport
+    postLanding?: PullRequestPostLandingAdapter
+  }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
@@ -379,6 +375,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   queueState(cwd, nodeId) {
     return githubMergeQueueState(cwd, nodeId)
   },
+  landingComparison(cwd, repository, landingBranch, mergeCommit) {
+    return githubLandingComparison(cwd, repository, landingBranch, mergeCommit)
+  },
   enqueue(cwd, number, headCommit) {
     enqueuePullRequest(cwd, number, headCommit)
   },
@@ -547,58 +546,27 @@ function waitForQueuedMerge(
   adapter: PullRequestMergeAdapter,
   target: string,
 ): { mergeCommit: string; requeueOutput?: string } {
-  const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
-  let waitState: MergeQueueWaitState = {
-    enqueueSubmitted: false,
-    enqueueSubmittedAt: null,
-    activeEntryObserved: false,
-    dequeueObservedAt: null,
-    requeuePendingSince: null,
-  }
-  let requeueOutput: string | undefined
-  let lastEnqueuedAt: string | null = null
-  while (true) {
-    const observation = adapter.queueState(cwd, pullRequest.nodeId)
-    if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
-    const state = interpretMergeQueue(observation, lastEnqueuedAt, waitState.enqueueSubmittedAt)
-    const now = adapter.now()
-    const step = stepMergeQueueWait(
-      pullRequest.number,
-      waitState,
-      state,
-      now,
-      deadline,
-      pullRequest.baseBranch,
-    )
-    waitState = step.state
-    const action = step.action
-    if (action.action === 'complete') {
-      return {
-        mergeCommit: action.mergeCommit,
-        ...(requeueOutput ? { requeueOutput } : {}),
-      }
-    }
-    if (action.action === 'refuse') {
-      throwMergeQueueRefusal(action, state, pullRequest, cwd, repository, lastEnqueuedAt, adapter)
-    }
-    if (action.action === 'enqueue') {
-      enqueueForMergeQueue(pullRequest, cwd, adapter, target)
-      continue
-    }
-    if (action.action === 'requeue') {
+  return driveMergeQueueWait({
+    pullRequest,
+    cwd,
+    repository,
+    target,
+    adapter,
+    refuse: (action, state, enqueuedAt) =>
+      throwMergeQueueRefusal(action, state, pullRequest, cwd, repository, enqueuedAt, adapter),
+    enqueue: () => enqueueForMergeQueue(pullRequest, cwd, adapter, target),
+    requeue: (enqueuedAt) => {
       const evidence = failedMergeGroupRun(
         pullRequest,
         cwd,
         repository,
-        lastEnqueuedAt,
+        enqueuedAt,
         adapter,
       ).evidence
       requeueForMergeQueue(pullRequest, cwd, adapter, evidence, target)
-      requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
-      continue
-    }
-    adapter.wait(action.delay)
-  }
+      return `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
+    },
+  })
 }
 
 function throwMergeQueueRefusal(
@@ -657,6 +625,25 @@ function throwMergeQueueRefusal(
         text: action.remedy,
       }),
     ).replace('\n', '; '),
+  )
+}
+
+function refuseMergedPullRequestWithoutCommit(
+  pullRequest: PullRequestMergeFacts,
+  input: {
+    cwd: string
+    adapter: PullRequestMergeAdapter
+    project: Project
+  },
+): never {
+  throwMergeQueueRefusal(
+    mergedWithoutCommitRefusal(pullRequest.number),
+    { state: 'merged-without-commit' },
+    pullRequest,
+    input.cwd,
+    input.adapter.repository(input.project),
+    null,
+    input.adapter,
   )
 }
 
@@ -906,8 +893,7 @@ async function completeMerge(input: {
   await input.adapter.taskCursorAdmission?.(input.project, pullRequest.headBranch, input.database)
   try {
     if (pullRequest.state === 'MERGED') {
-      if (!pullRequest.mergeCommit)
-        throw new Error('merged pull request lookup returned no merge commit')
+      if (!pullRequest.mergeCommit) refuseMergedPullRequestWithoutCommit(pullRequest, input)
       mergeCommit = pullRequest.mergeCommit
       admittedChange = input.adapter.postMergeChange(
         input.cwd,

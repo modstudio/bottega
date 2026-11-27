@@ -990,7 +990,7 @@ test('a bounded move failure after main changed fences and does not hand off', a
 
   expect(outcome.exitCode).toBe(20)
   expect(outcome.output).toContain(
-    'main moved from before and the move did not complete: machine update exceeded its machine-update deadline bound',
+    'main moved from before and the move did not complete: merge landed as merge-commit, but machine update exceeded its machine-update deadline bound of 1200000 ms; declare a larger named budget in shared/call-budgets.ts if the call legitimately needs more',
   )
   expect(events).toEqual(['fence'])
 })

@@ -108,7 +108,11 @@ function moveMainForPostLanding(
   try {
     adapter.moveMain(project, mergeCommit, movesInstallation)
   } catch (cause) {
-    failure = cause instanceof Error ? cause.message : String(cause)
+    const message = cause instanceof Error ? cause.message : String(cause)
+    failure =
+      cause instanceof BoundExceededError
+        ? `merge landed as ${mergeCommit}, but ${message}`
+        : message
   }
   if (failure) {
     let detail: string

@@ -480,13 +480,19 @@ export function forwardReleaseDecision(facts: {
 
 /** Skip only when this candidate is the rung's newest confirmed-live release. */
 export function alreadyLiveReleaseDecision(facts: {
+  liveCommit: string | null
   candidateIsLiveAncestor: boolean
   commitsBehindTrunk: number
   redeployReason?: string
   rollbackReason?: string
 }): { alreadyLive: boolean; landingAhead: boolean } {
   const alreadyLive =
-    facts.candidateIsLiveAncestor &&
+    releaseRungCoversTarget({
+      liveCommit: facts.liveCommit,
+      liveContainsTarget: facts.candidateIsLiveAncestor,
+      targetContainsLive: false,
+      requiredSinceLive: false,
+    }) &&
     facts.redeployReason === undefined &&
     facts.rollbackReason === undefined
   return { alreadyLive, landingAhead: alreadyLive && facts.commitsBehindTrunk > 0 }

@@ -133,6 +133,7 @@ export function adapter(
         entryState: null,
         enqueuedAt: null,
       })),
+    landingComparison: () => 'identical',
     enqueue: () => input.enqueue?.(),
     requeue: () => {},
     failedMergeGroupRun: () => null,

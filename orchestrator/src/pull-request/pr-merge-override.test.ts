@@ -172,6 +172,7 @@ function adapterFor(
       entryState: null,
       enqueuedAt: null,
     }),
+    landingComparison: () => 'identical',
     enqueue: () => {},
     requeue: () => {},
     failedMergeGroupRun: () => null,
