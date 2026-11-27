@@ -1,7 +1,7 @@
 export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/merge-queue-wait.ts',
-    allowed: ['../../../shared/brand.ts', './merge-queue-decision.ts'],
+    allowed: ['./merge-queue-decision.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/task-cursor-admission.ts',
