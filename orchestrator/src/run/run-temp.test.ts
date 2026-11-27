@@ -101,6 +101,7 @@ describe('confined run temp', () => {
         writingAcpWritableRoots(worktree, scratchDir, runtimeDir),
       )
       prepareRunTemp(temporaryDirectory)
+      expect(existsSync(temporaryDirectory)).toBe(true)
       try {
         const environment = { ...process.env, CLAUDE_TMPDIR: fallback }
         const launch = await sandboxLaunchArgv(
