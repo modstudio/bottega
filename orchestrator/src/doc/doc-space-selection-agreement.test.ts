@@ -5,6 +5,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { upsertProject } from '../project/projects.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { readDoc, readDocs, readDocsForWrite } from './doc-authoritative-read.ts'
 import { docCommand } from './doc-commands.ts'
@@ -138,6 +139,35 @@ test('removeReadDoc deletes a hosted row in the space where it was read', async 
   ).toBe(true)
   expect(fixture.deletes).toEqual([{ id: remote.id, destination: 'team-space' }])
   expect(fixture.rows()).toEqual([])
+})
+
+test('readDocsForWrite excludes an owned twin when owner is absent', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  upsertProject({
+    recordId: newRecordId(),
+    name: PLATFORM_SLUG,
+    path: process.cwd(),
+    settings: { space: 'Team docs' },
+  })
+  const unowned = {
+    ...hostedRow('team-space', 'Team docs'),
+    scope: 'project',
+    subject: PLATFORM_SLUG,
+    slug: 'reference-twin',
+    form: 'reference',
+    parent_slug: 'cli',
+  }
+  const owned = {
+    ...unowned,
+    id: newRecordId(),
+    owner: 'another-user',
+    latestRevisionId: newRecordId(),
+  }
+  installHostedRows([unowned, owned])
+
+  const targets = await readDocsForWrite({ scope: 'project', subject: PLATFORM_SLUG })
+
+  expect(targets.map(({ doc }) => doc?.record_id)).toEqual([unowned.id])
 })
 
 test('remove refuses a cross-space miss with the address, search extent, and remedy', async () => {
