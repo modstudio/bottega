@@ -21,7 +21,11 @@ test('reports a cached customer article made stale by a command removal', async 
     identity: { author: 'test', reason: 'fixture predates command removal', session: null },
     recordId: newRecordId(),
   } as const
-  const stale = commitDocSet({ ...input, revisionId: newRecordId() })
+  const stale = commitDocSet({
+    ...input,
+    revisionId: newRecordId(),
+    revisionPolicy: 'enforce',
+  })
 
   expect(await staleCustomerGuideCommandConditions()).toContainEqual(
     expect.objectContaining({
@@ -38,6 +42,7 @@ test('reports a cached customer article made stale by a command removal', async 
     body: `Run \`${PLATFORM_SLUG} task show DEV-1353\`.`,
     expectedRevision: stale.revision!,
     revisionId: newRecordId(),
+    revisionPolicy: 'enforce',
   })
   expect(
     (await staleCustomerGuideCommandConditions()).filter(

@@ -103,6 +103,7 @@ export async function removeStoredDoc(
         identity,
         ...context,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   })

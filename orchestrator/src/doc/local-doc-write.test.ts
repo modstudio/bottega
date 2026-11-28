@@ -259,10 +259,10 @@ test('set and restore repair the project id on an existing document', () => {
     identity: { author: 'test', reason: 'repair project id', session: null },
     recordId: newRecordId(),
   }
-  const created = commitDocSet({ ...input, revisionId: newRecordId() })
+  const created = commitDocSet({ ...input, revisionId: newRecordId(), revisionPolicy: 'enforce' })
 
   db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
-  commitDocSet({ ...input, revisionId: newRecordId() })
+  commitDocSet({ ...input, revisionId: newRecordId(), revisionPolicy: 'enforce' })
   expect(
     db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
   ).toEqual({
@@ -270,7 +270,7 @@ test('set and restore repair the project id on an existing document', () => {
   })
 
   db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
-  commitDocRestore({ ...input, revisionId: newRecordId() })
+  commitDocRestore({ ...input, revisionId: newRecordId(), revisionPolicy: 'enforce' })
   expect(
     db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
   ).toEqual({

@@ -94,8 +94,8 @@ import { localDocumentLifecycle } from './local-doc-status.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
+  commitDocRestore,
   commitDocSet,
-  commitHostedDocRestore,
   executeLocalDocConsume,
   executeLocalDocRestore,
   executeLocalDocSet,
@@ -556,7 +556,6 @@ async function writeDocWithOp(
       }
       return commitDocSet({
         ...input,
-        expectedRevision: mirrored?.revision ?? undefined,
         owner,
         projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
@@ -567,6 +566,7 @@ async function writeDocWithOp(
         identity,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   })
@@ -753,6 +753,7 @@ export async function consumeDoc(
         ...context,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   })
@@ -1015,7 +1016,7 @@ export async function restoreDoc(
         ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
       })
-      return commitHostedDocRestore({
+      return commitDocRestore({
         scope,
         subject,
         owner,
@@ -1033,6 +1034,7 @@ export async function restoreDoc(
         ...context,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))
