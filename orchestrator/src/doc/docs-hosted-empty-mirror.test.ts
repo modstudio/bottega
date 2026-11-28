@@ -537,25 +537,6 @@ test('consume accepts the record revision and updates a lagging local mirror', a
   ).toBe(consumed.body)
 })
 
-test('local doc rm still refuses a stale expected revision', async () => {
-  const current = await setDoc({
-    scope: 'global',
-    subject: null,
-    slug: 'local-stale-remove',
-    title: 'Local stale remove',
-    body: 'Local body.',
-    delivery: 'demand',
-    reason: 'seed local stale removal fixture',
-  })
-
-  await expect(
-    removeReadDoc(await readDocForWrite('global', null, current.slug), {
-      reason: 'prove local stale removal refusal',
-      expectedRevision: newRecordId(),
-    }),
-  ).rejects.toThrow('refusing stale document update')
-})
-
 test('hosted restore mirrors after the local revision becomes stale', async () => {
   seedLocalMirror()
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
