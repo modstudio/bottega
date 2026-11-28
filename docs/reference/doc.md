@@ -323,7 +323,7 @@ search a project's code for a query
 
 ## bottega doc consume
 
-**Synopsis:** `bottega doc consume [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
+**Synopsis:** `bottega doc consume [slug] [--scope <value>] [--subject <value>] [--user] [--space <slug>] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
 mark a resume brief consumed and hand its author's owed runs to the consuming session
 
@@ -332,6 +332,7 @@ mark a resume brief consumed and hand its author's owed runs to the consuming se
 - `--scope <value>`: select the document scope
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
+- `--space <slug>`: select a record space by id or slug
 - `--reason <value>`: record the reason for the change
 - `--author <value>`: record the revision author
 - `--expect <revision>`: require the current revision
@@ -799,7 +800,7 @@ show one document revision
 
 ## bottega doc rm
 
-**Synopsis:** `bottega doc rm [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
+**Synopsis:** `bottega doc rm [slug] [--scope <value>] [--subject <value>] [--user] [--space <slug>] [--cwd <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
 remove a document
 
@@ -808,6 +809,7 @@ remove a document
 - `--scope <value>`: select the document scope
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
+- `--space <slug>`: select a record space by id or slug
 - `--cwd <value>`: use this working directory
 - `--reason <value>`: record the reason for the change
 - `--author <value>`: record the revision author
@@ -839,7 +841,7 @@ search documents semantically
 
 ## bottega doc set
 
-**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--summary <text>] [--no-summary] [--force-inject <value>] [--json]`
+**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--space <slug>] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--summary <text>] [--no-summary] [--force-inject <value>] [--json]`
 
 create or revise a document
 
@@ -848,6 +850,7 @@ create or revise a document
 - `--scope <value>`: select the document scope
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
+- `--space <slug>`: select a record space by id or slug
 - `--cwd <value>`: use this working directory
 - `--title <value>`: set the title
 - `--file <value>`: read the body from a file
@@ -903,7 +906,7 @@ show a document with its metadata
 
 ## bottega doc status
 
-**Synopsis:** `bottega doc status [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--status <value>] [--replacement <slug>] [--json]`
+**Synopsis:** `bottega doc status [slug] [--scope <value>] [--subject <value>] [--user] [--space <slug>] [--reason <value>] [--author <value>] [--expect <revision>] [--status <value>] [--replacement <slug>] [--json]`
 
 change a document status
 
@@ -912,6 +915,7 @@ change a document status
 - `--scope <value>`: select the document scope
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
+- `--space <slug>`: select a record space by id or slug
 - `--reason <value>`: record the reason for the change
 - `--author <value>`: record the revision author
 - `--expect <revision>`: require the current revision

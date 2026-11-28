@@ -33,6 +33,8 @@ function installHostedSettings(requests: RecordDocUpsertInput[]) {
       items: [
         {
           id: docId,
+          spaceId: 'personal-space',
+          spaceName: 'personal-space',
           scope: 'settings',
           subject: null,
           owner,

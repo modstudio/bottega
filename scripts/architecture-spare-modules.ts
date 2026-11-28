@@ -28,7 +28,7 @@ export const spareModules: SpareModule[] = [
     '../agent/agent-registry.ts',
     '../database/db.ts',
     '../doc/doc-authoritative-read.ts',
-    '../doc/docs.ts',
+    '../doc/doc-checked-against-service.ts',
     '../mcp/hub-notes.ts',
     '../project/projects.ts',
     '../workflow/task-read-port.ts',

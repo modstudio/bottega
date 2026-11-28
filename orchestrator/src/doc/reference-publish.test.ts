@@ -51,6 +51,8 @@ test('reference publish compares and revises hosted pages when the local mirror 
       form: 'reference',
       position: 0,
       featured: false,
+      spaceId: 'personal-space',
+      spaceName: 'personal',
       createdAt: '2026-11-22T00:00:00.000Z',
       updatedAt: '2026-11-22T00:00:00.000Z',
       ...overrides,

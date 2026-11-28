@@ -5,8 +5,9 @@ import { getDoc, listDocRevisions, readDocRevision } from '../../test/fixtures/d
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
+import { setDocCheckedAgainst } from './doc-checked-against-service.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { restoreDoc, setDoc, setDocCheckedAgainst } from './docs.ts'
+import { restoreDoc, setDoc } from './docs.ts'
 
 test('an addressed revision read refuses an id from another document with the history remedy', async () => {
   await setDoc({
@@ -159,7 +160,9 @@ test('setDocCheckedAgainst refuses an absent document with the listing remedy', 
     setDocCheckedAgainst('project', 'drifted', 'missing', checkedCommit, {
       reason: 'record the checked commit',
     }),
-  ).rejects.toThrow(`no project doc "missing"; use ${PLATFORM_SLUG} doc list --scope project`)
+  ).rejects.toThrow(
+    `no project/drifted doc "missing" in the active space; use ${PLATFORM_SLUG} doc list --scope project to see what exists`,
+  )
 })
 
 test('restore with a supplied authoritative read still refuses a generated reference document', async () => {
@@ -168,7 +171,7 @@ test('restore with a supplied authoritative read still refuses a generated refer
     name: 'reference-project',
     path: '/tmp/reference-project',
   })
-  const current = await setDoc({
+  await setDoc({
     scope: 'project',
     subject: 'reference-project',
     slug: 'reference-restore',
@@ -187,7 +190,7 @@ test('restore with a supplied authoritative read still refuses a generated refer
   await expect(
     restoreDoc('project', 'reference-project', 'reference-restore', revisionId, {
       reason: 'attempt a hand restore',
-      suppliedRead: { current, revision },
+      suppliedRead: { revision },
     }),
   ).rejects.toThrow('refusing hand write of a generated reference document')
 })

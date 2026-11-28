@@ -1,10 +1,11 @@
 // concern: doc-subjects
 /** Lists and renders valid document subjects from the local register and static catalogues. */
 
-import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
+import { DOC_SCOPE_SUBJECT_KIND, type DocScope } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { validDocScope } from './doc-read-store.ts'
 
 export function taskContextHolder(recordId: string): string {
   return `task:${recordId}`
@@ -72,9 +73,7 @@ export function validateDocSubject(scope: DocScope, subject: string): void {
 }
 
 export function validateHistoricDocAddress(scope: string, slug: string): asserts scope is DocScope {
-  if (!DOC_SCOPES.includes(scope as DocScope)) {
-    throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
-  }
+  validDocScope(scope)
   if (scope === 'canon') {
     if (!slug || slug.startsWith('/') || slug.includes('..')) {
       throw new Error('invalid canon slug; use a repository-relative canon mirror path')

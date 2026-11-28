@@ -5,8 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocAudience, effectiveDocSummary } from '../../../shared/docs.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { parseDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { projectByRecordId } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordReadAuthority } from '../record/record-read-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import {
@@ -33,11 +35,13 @@ import {
 } from './doc-read-store.ts'
 import {
   type CanonImportPlanAddress,
+  currentDocRevision,
   diffStoredDocRevisions,
   getStoredDocRevision,
   hasCanonImportHistory,
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
+import { docReadsAcrossReadableSpaces } from './doc-space-selection.ts'
 
 export type AuthoritativeDocHistory = ReturnType<typeof hostedDocRevisionRead>
 export type { Doc, DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
@@ -45,6 +49,14 @@ export { docForAudience } from './doc-read-store.ts'
 export type { DocListFilters }
 
 type HostedRow = Record<string, unknown>
+type HostedDocRow = { doc: Doc; row: HostedRow }
+export type DocWriteSpace = { spaceId: string; slug: string }
+export type DocWriteTarget = {
+  doc: Doc | null
+  spaceId: string | undefined
+  spaceSlug?: string
+  currentRevision?: string | null
+}
 
 /**
  * A hosted address has canon import history when any hosted canon row exists there,
@@ -180,13 +192,18 @@ function docFromHosted(row: HostedRow): Doc {
   }
 }
 
-async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
-  const client = await hostedDocClient(
-    filters.scope ?? 'global',
-    filters.subject ?? null,
-    undefined,
+async function hostedDocRows(
+  filters: DocListFilters,
+  database?: Database,
+): Promise<HostedDocRow[]> {
+  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
     database,
-  )
+  })
+  const acrossReadableSpaces = docReadsAcrossReadableSpaces({
+    scope: filters.scope,
+    subject: filters.subject,
+    owner: filters.owner,
+  })
   const page = await listAllHostedDocs(client.listDocs, {
     scope: filters.scope,
     subject: filters.subject,
@@ -196,13 +213,21 @@ async function hostedRows(filters: DocListFilters, database?: Database): Promise
     status: filters.status as Doc['status'] | undefined,
     delivery: filters.delivery,
     kind: filters.kind as Doc['kind'] | undefined,
-    acrossReadableSpaces:
-      filters.scope === undefined || (filters.scope === 'project' && filters.subject == null),
+    acrossReadableSpaces,
     frontmatterOnly: filters.frontmatterOnly,
   })
   if (page.unreadable.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
-  return filterAndOrderDocs(page.items.map(docFromHosted), filters)
+  const pairs = page.items.map((row) => ({ doc: docFromHosted(row), row }))
+  const rowsByDoc = new Map(pairs.map((pair) => [pair.doc, pair.row]))
+  return filterAndOrderDocs(
+    pairs.map(({ doc }) => doc),
+    filters,
+  ).map((doc) => ({ doc, row: rowsByDoc.get(doc)! }))
+}
+
+async function hostedRows(filters: DocListFilters, database?: Database): Promise<Doc[]> {
+  return (await hostedDocRows(filters, database)).map(({ doc }) => doc)
 }
 
 function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[] {
@@ -246,16 +271,36 @@ function filterAndOrderDocs(rows: readonly Doc[], filters: DocListFilters): Doc[
     )
 }
 
-async function hostedSingleDoc(filters: DocListFilters & { slug: string }): Promise<Doc | null> {
-  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null)
+function hostedRowSpace(row: HostedRow): { id: string; label: string } | null {
+  const id = row.spaceId ?? row.space_id
+  if (id == null) return null
+  const name = row.spaceName ?? row.space_name
+  return { id: String(id), label: name == null ? String(id) : String(name) }
+}
+
+async function hostedSingleDoc(
+  filters: DocListFilters & { slug: string },
+  refuseSpaceDuplicates = false,
+  selectedSpace?: DocWriteSpace,
+): Promise<{ doc: Doc | null; row: HostedRow | null }> {
+  const client = await hostedDocClient(filters.scope ?? 'global', filters.subject ?? null, {
+    destinationSpaceId: selectedSpace?.spaceId,
+  })
+  const acrossReadableSpaces =
+    !selectedSpace &&
+    docReadsAcrossReadableSpaces({
+      scope: filters.scope,
+      subject: filters.subject,
+      owner: filters.owner,
+    })
   const page = await client.listDocs({
     scope: filters.scope,
     subject: filters.subject,
     slug: filters.slug,
     owner: filters.owner,
     audience: filters.audience as DocAudience | undefined,
-    acrossReadableSpaces: filters.subject === undefined,
-    limit: filters.subject === undefined ? 2 : 1,
+    acrossReadableSpaces,
+    limit: acrossReadableSpaces ? 2 : 1,
   })
   if (page.unreadable?.length)
     throw new Error(page.unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '))
@@ -278,7 +323,23 @@ async function hostedSingleDoc(filters: DocListFilters & { slug: string }): Prom
         `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match subjects: ${subjects.join(', ')}; pass subject`,
       )
   }
-  return docs[0] ?? null
+  if (refuseSpaceDuplicates && acrossReadableSpaces && page.items.length > 1) {
+    const spaces = page.items.map(hostedRowSpace)
+    if (spaces.some((space) => space === null))
+      throw new Error(
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match in readable spaces; pass --space <slug> to select one`,
+      )
+    const memberships = parseRecordSpaceMemberships((await recordApiClient().whoami()).memberships)
+    const slugs = new Map(memberships.map(({ spaceId, slug }) => [spaceId, slug]))
+    const distinct = [
+      ...new Map(spaces.map((space) => [space!.id, slugs.get(space!.id) ?? space!.label])).values(),
+    ]
+    if (distinct.length > 1)
+      throw new Error(
+        `several ${filters.scope} docs ${JSON.stringify(filters.slug)} match spaces: ${distinct.join(', ')}; retry with ${distinct.map((slug) => `--space ${slug}`).join(' or ')}`,
+      )
+  }
+  return { doc: docs[0] ?? null, row: page.items[0] ?? null }
 }
 
 function withReadRemedy<T>(read: () => Promise<T>): Promise<T> {
@@ -296,7 +357,39 @@ export function readDocs(filters: DocListFilters = {}, database?: Database): Pro
     local: () => listDocsStore(resolvedFilters(localFilters), database),
     hosted: () => withReadRemedy(() => hostedRows(filters, database)),
   }
-  return database ? applyRecordReadAuthority(actions, database) : applyRecordReadAuthority(actions)
+  return database
+    ? applyRecordReadAuthority<Doc[]>(actions, database)
+    : applyRecordReadAuthority<Doc[]>(actions)
+}
+
+export function readDocsForWrite(
+  filters: DocListFilters = {},
+  database?: Database,
+): Promise<DocWriteTarget[]> {
+  const { frontmatterOnly: _frontmatterOnly, ...localFilters } = filters
+  const actions = {
+    local: () =>
+      listDocsStore(resolvedFilters(localFilters), database).map((doc) => ({
+        doc,
+        spaceId: undefined,
+        currentRevision: doc.revision,
+      })),
+    hosted: () =>
+      withReadRemedy(async () =>
+        (await hostedDocRows(filters, database)).map(({ doc, row }) => {
+          const space = hostedRowSpace(row)
+          return {
+            doc,
+            spaceId: space?.id,
+            currentRevision: String(row.latestRevisionId ?? row.latest_revision_id ?? '') || null,
+            ...(space ? { spaceSlug: space.label } : {}),
+          }
+        }),
+      ),
+  }
+  return database
+    ? applyRecordReadAuthority<DocWriteTarget[]>(actions, database)
+    : applyRecordReadAuthority<DocWriteTarget[]>(actions)
 }
 
 export async function readDocMetadata(filters: DocListFilters = {}): Promise<DocMetadata[]> {
@@ -329,12 +422,63 @@ export function readDoc(
   slug: string,
   owner: string | null = null,
 ): Promise<Doc | null> {
-  return applyRecordReadAuthority({
+  return applyRecordReadAuthority<Doc | null>({
     local: () => getDocStore(scope, subject, slug, owner),
     hosted: () =>
-      withReadRemedy(() =>
-        hostedSingleDoc({ scope, ...(subject !== undefined ? { subject } : {}), slug, owner }),
+      withReadRemedy(
+        async () =>
+          (
+            await hostedSingleDoc({
+              scope,
+              ...(subject !== undefined ? { subject } : {}),
+              slug,
+              owner,
+            })
+          ).doc,
       ),
+  })
+}
+
+const SUBJECT_REQUIRED_WRITE_SCOPES = new Set(['project', 'agent', 'job', 'stack', 'resume'])
+
+export async function readDocForWrite(
+  scope: string,
+  subject: string | null | undefined,
+  slug: string,
+  owner: string | null = null,
+  selectedSpace?: DocWriteSpace,
+): Promise<DocWriteTarget> {
+  if (subject === undefined && SUBJECT_REQUIRED_WRITE_SCOPES.has(scope))
+    throw new Error(`${scope} document writes require --subject`)
+  return applyRecordReadAuthority<DocWriteTarget>({
+    local: () => {
+      const doc = getDocStore(scope, subject, slug, owner)
+      return {
+        doc,
+        spaceId: undefined,
+        currentRevision:
+          doc?.revision ??
+          (subject === undefined ? null : currentDocRevision(scope, subject, slug, owner)),
+      }
+    },
+    hosted: async () => {
+      const result = await withReadRemedy(() =>
+        hostedSingleDoc(
+          { scope, ...(subject !== undefined ? { subject } : {}), slug, owner },
+          true,
+          selectedSpace,
+        ),
+      )
+      const space = result.row ? hostedRowSpace(result.row) : null
+      return {
+        doc: result.doc,
+        spaceId: selectedSpace?.spaceId ?? space?.id,
+        currentRevision: result.doc?.revision ?? null,
+        ...(selectedSpace?.slug || space?.label
+          ? { spaceSlug: selectedSpace?.slug ?? space!.label }
+          : {}),
+      }
+    },
   })
 }
 
@@ -349,7 +493,7 @@ export function readDocForAudience(
     local: () => getDocForAudienceStore(scope, subject, slug, audience, owner),
     hosted: () =>
       withReadRemedy(async () => {
-        const doc = await hostedSingleDoc({
+        const { doc } = await hostedSingleDoc({
           scope,
           ...(subject !== undefined ? { subject } : {}),
           slug,
@@ -399,7 +543,7 @@ async function hostedRevisionRead(
   slug: string,
   owner: string | null,
 ): Promise<AuthoritativeDocHistory | null> {
-  const doc = await hostedSingleDoc({ scope, subject, slug, owner })
+  const { doc } = await hostedSingleDoc({ scope, subject, slug, owner })
   if (!doc) return null
   const revisions = (await (
     await hostedDocClient(scope, subject)

@@ -4,12 +4,14 @@ import { collectCanonLintInput as productionCanonLintInput } from '../canon/cano
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
+import type { DocWriteTarget } from './doc-authoritative-read.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 import { hostedDocWriteIdentity, type resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { hostedDocWriteDestination } from './doc-write-space.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
 
@@ -25,13 +27,10 @@ function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
   if (refusal) throw new Error(refusal)
 }
 
-/** The shared removal body after the caller's context-drop ownership guard. */
-export async function removeStoredDoc(
-  doc: Doc,
-  context: DocRemovalContext,
-  identity: ReturnType<typeof resolvedDocWriteIdentity>,
-): Promise<boolean> {
-  const { scope, subject, owner, slug } = doc
+export function validateStoredDocRemoval(target: DocWriteTarget, context: DocRemovalContext): Doc {
+  const { doc } = target
+  if (!doc) throw new Error('cannot remove an absent document')
+  const { scope, subject, slug } = doc
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     {
@@ -48,14 +47,24 @@ export async function removeStoredDoc(
     assertCanonRemovalAllowed(doc, context)
   }
   assertLocalDocRemovalAllowed(doc)
+  return doc
+}
+
+/** The shared removal body after the caller's context-drop ownership guard. */
+export async function removeStoredDoc(
+  target: DocWriteTarget,
+  context: DocRemovalContext,
+  identity: ReturnType<typeof resolvedDocWriteIdentity>,
+): Promise<boolean> {
+  const doc = validateStoredDocRemoval(target, context)
+  const { scope, subject, owner, slug } = doc
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
-      const client = await hostedDocClient(
-        doc.scope,
-        doc.subject,
-        contextTaskOwner(context.contextTask),
-      )
+      const client = await hostedDocClient(doc.scope, doc.subject, {
+        owner: contextTaskOwner(context.contextTask),
+        destinationSpaceId: hostedDocWriteDestination(target, `${scope}/${subject ?? '_'}/${slug}`),
+      })
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined
       if (!recordId) {

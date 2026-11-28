@@ -16,10 +16,14 @@ export const docBoundarySpecs = [
       './doc-consume-command.ts',
       './doc-authoritative-read.ts',
       './doc-history-source.ts',
+      './doc-order-service.ts',
+      './doc-removal-service.ts',
+      './doc-write-miss.ts',
       '../identity/doc-revision-identity.ts',
       './doc-set-source-files.ts',
       './local-doc-order.ts',
       './docs.ts',
+      './doc-write-space.ts',
     ],
     reason:
       'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
@@ -58,8 +62,6 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/doc-prose.ts',
         // Write path: removal records a local revision and tombstone.
         'orchestrator/src/doc/doc-remove.ts',
-        // Write path: restore compares the local current row with the selected revision.
-        'orchestrator/src/doc/doc-restore-state.ts',
         // Store implementation: revision rows map through document store types.
         'orchestrator/src/doc/doc-revision-store.ts',
         // search out of scope (note 01a20248)
@@ -72,6 +74,8 @@ export function docLocalReadStoreAuthorityRule(exact: (path: string) => string) 
         'orchestrator/src/doc/local-doc-tree-service.ts',
         // Write path: local mutation implementation reads the rows it changes.
         'orchestrator/src/doc/local-doc-write.ts',
+        // Address validation: reuses the document store's canonical scope guard.
+        'orchestrator/src/doc/doc-subjects.ts',
         // Write path: resume authorship follows revisions created by resume mutations.
         'orchestrator/src/doc/resume-brief-author.ts',
         // Write path: derives the identity attached to a local revision mutation.

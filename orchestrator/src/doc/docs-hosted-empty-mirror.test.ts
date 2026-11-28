@@ -13,13 +13,13 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient, RecordDocUpsertInput } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import { readDocRevision, readDocs } from './doc-authoritative-read.ts'
+import { readDocForWrite, readDocRevision, readDocs } from './doc-authoritative-read.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import {
   consumeDoc,
   importDocs,
   readOpenResumes,
-  removeDoc,
   restoreDoc,
   setDoc,
   setDocStatus,
@@ -32,6 +32,8 @@ const restoredRevisionId = '01990000-0000-7000-8000-000000000103'
 
 const hostedRow = (overrides: Record<string, unknown> = {}) => ({
   id: docId,
+  spaceId: 'personal-space',
+  spaceName: 'personal-space',
   scope: 'global',
   subject: null,
   owner: null,
@@ -358,9 +360,11 @@ test('doc rm deletes the hosted row when the local mirror is empty', async () =>
     }),
   )
 
-  expect(await removeDoc('global', null, 'hosted-only', { reason: 'remove hosted fixture' })).toBe(
-    true,
-  )
+  expect(
+    await removeReadDoc(await readDocForWrite('global', null, 'hosted-only'), {
+      reason: 'remove hosted fixture',
+    }),
+  ).toBe(true)
   expect(deletes).toContainEqual({ id: docId, expectedRevision: revisionId })
 })
 

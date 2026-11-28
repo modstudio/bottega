@@ -5,7 +5,9 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { applyMigrations } from './database/migrations.ts'
 import { importCanon } from './doc/canon-import.ts'
-import { consumeDoc, importDoc, importDocs, removeDoc, restoreDoc, setDoc } from './doc/docs.ts'
+import { readDocForWrite } from './doc/doc-authoritative-read.ts'
+import { removeReadDoc } from './doc/doc-removal-service.ts'
+import { consumeDoc, importDoc, importDocs, restoreDoc, setDoc } from './doc/docs.ts'
 import { workerStoreWriteRefusal } from './worker-store-write.ts'
 import {
   forkStepCatalogue,
@@ -101,10 +103,12 @@ describe('worker shared-text store writes', () => {
       }),
     ).rejects.toThrow(refusal)
     await expect(
-      removeDoc('global', null, created.slug, {
-        reason: 'worker fixture',
-        expectedRevision: created.revision!,
-      }),
+      readDocForWrite('global', null, created.slug).then((target) =>
+        removeReadDoc(target, {
+          reason: 'worker fixture',
+          expectedRevision: created.revision!,
+        }),
+      ),
     ).rejects.toThrow(refusal)
     await expect(
       consumeDoc('global', null, created.slug, { reason: 'worker fixture' }),

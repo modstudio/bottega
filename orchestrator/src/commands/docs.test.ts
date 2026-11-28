@@ -102,6 +102,19 @@ test('registered doc reorder accepts parent and repeatable slug handles', async 
   expect(result.firstLine).not.toContain('unknown option')
 })
 
+test('the four doc write verbs accept a record space selector', async () => {
+  const invocations = [
+    ['doc', 'set', 'example', '--space', 'missing-space'],
+    ['doc', 'status', 'example', '--space', 'missing-space'],
+    ['doc', 'consume', 'example', '--space', 'missing-space'],
+    ['doc', 'rm', 'example', '--space', 'missing-space'],
+  ]
+  for (const invocation of invocations) {
+    const result = await runRegisteredCommand(invocation)
+    expect(result.firstLine).not.toContain("unknown option '--space'")
+  }
+})
+
 test('the real project program parses purge confirmation', async () => {
   const result = await runRegisteredCommand(['project', 'purge', 'demo', '--confirm', 'demo'])
   expect(result.firstLine).not.toContain("unknown option '--confirm'")

@@ -6,9 +6,10 @@ import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { readDoc, readDocs } from './doc-authoritative-read.ts'
+import { readDoc, readDocsForWrite } from './doc-authoritative-read.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
-import { removeDoc, setDoc } from './docs.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
+import { setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {
   slug: string
@@ -119,17 +120,18 @@ export async function publishReferenceDocs(
     results.push({ slug, disposition: existing ? 'updated' : 'created' })
   }
   const expected = new Set(ordered.map((file) => pageSlug(file, indexFile)))
-  const removed = (await readDocs({ scope: 'project', subject: PLATFORM_SLUG }))
+  const removed = (await readDocsForWrite({ scope: 'project', subject: PLATFORM_SLUG }))
     .filter(
-      (doc) => doc.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
+      ({ doc }) =>
+        doc?.form === 'reference' && doc.parent_slug === 'cli' && !expected.has(doc.slug),
     )
-    .sort((left, right) => left.position - right.position)
-  for (const doc of removed) {
-    await removeDoc('project', PLATFORM_SLUG, doc.slug, {
+    .sort((left, right) => left.doc!.position - right.doc!.position)
+  for (const target of removed) {
+    await removeReadDoc(target, {
       reason: 'remove stale generated command reference',
       generator: REFERENCE_GENERATOR,
     })
-    results.push({ slug: doc.slug, disposition: 'removed' })
+    results.push({ slug: target.doc!.slug, disposition: 'removed' })
   }
   return results
 }

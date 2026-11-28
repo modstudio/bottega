@@ -82,7 +82,8 @@ export function undeclaredProjectSpaceRefusal(project: string): string {
 export function recordSpaceMembershipRefusal(space: string): string {
   return (
     `the signed-in user is not a member of record space ${space}; ` +
-    `an invitation from a member of that space is needed; list invitations with ` +
+    `list the spaces you belong to with \`${PLATFORM_SLUG} record space list\`; ` +
+    `if the space is not there, an invitation from a member of that space is needed; list invitations with ` +
     `\`${PLATFORM_SLUG} record space invitations\`, then accept one with ` +
     `\`${PLATFORM_SLUG} record space accept <invitation-id>\``
   )

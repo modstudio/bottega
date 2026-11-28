@@ -33,11 +33,16 @@ import {
   type DocRevision,
   type DocRevisionMetadata,
   docForAudience,
+  readDocForWrite,
 } from './doc-authoritative-read.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import type { DocHistoryPresentation } from './doc-history-source.ts'
+import { reorderDocs } from './doc-order-service.ts'
+import { removeReadDoc } from './doc-removal-service.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
+import { docWriteMissRefusal } from './doc-write-miss.ts'
+import { resolveDocWriteSpace } from './doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
   docSubjects,
@@ -45,8 +50,6 @@ import {
   importDocs,
   lintStoredDoc,
   readOpenResumes,
-  removeDoc,
-  reorderDocs,
   restoreDoc,
   setDocStatus,
   signedInDocOwner,
@@ -554,7 +557,16 @@ async function handleSetDocCommand(
     )
   }
   const scope = address.scope
-  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
+  const subject = readDocSubject(flags, address)
+  const selectedSpace = await resolveDocWriteSpace('doc set', flag('space'))
+  const target = await readDocForWrite(scope, subject, slug, address.owner, selectedSpace)
+  const canonTree = commandDocWriteTree(
+    scope,
+    target.doc?.subject ?? subject ?? address.subject,
+    flags,
+    presentation,
+    ports,
+  )
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY
@@ -572,6 +584,7 @@ async function handleSetDocCommand(
       {
         ...address,
         scope,
+        subject,
         slug,
         title,
         body,
@@ -585,6 +598,8 @@ async function handleSetDocCommand(
         collectCanonLintInput: ports.collectCanonLintInput,
       },
       sourceFileUpdate,
+      selectedSpace,
+      target,
     ),
   )
   const root = repoRootForDoc(doc, canonTree?.root)
@@ -659,7 +674,7 @@ async function handleStatusDocCommand(
   }
   const result = await setDocStatus(
     address.scope,
-    address.subject,
+    readDocSubject(flags, address),
     slug,
     status,
     flags.flag('replacement'),
@@ -669,6 +684,7 @@ async function handleStatusDocCommand(
       expectedRevision: flags.flag('expect'),
     },
     address.owner,
+    await resolveDocWriteSpace('doc status', flags.flag('space')),
   )
   if (flags.has('json')) presentation.log(JSON.stringify(result))
   else
@@ -764,28 +780,25 @@ async function handleRemoveDocCommand(
       `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
     )
   const scope = address.scope
-  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
+  const subject = readDocSubject(flags, address)
+  const selectedSpace = await resolveDocWriteSpace('doc rm', flags.flag('space'))
+  const target = await readDocForWrite(scope, subject, slug, address.owner, selectedSpace)
+  if (!target.doc)
+    throw new Error(docWriteMissRefusal(scope, subject, slug, address.owner, selectedSpace))
+  const canonTree = commandDocWriteTree(scope, target.doc!.subject, flags, presentation, ports)
   const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
-    removeDoc(
-      scope,
-      address.subject,
-      slug,
-      {
-        reason,
-        author: flags.flag('author'),
-        expectedRevision: flags.flag('expect'),
-        canonTree,
-        collectCanonLintInput: ports.collectCanonLintInput,
-      },
-      address.owner,
-    ),
+    removeReadDoc(target, {
+      reason,
+      author: flags.flag('author'),
+      expectedRevision: flags.flag('expect'),
+      canonTree,
+      collectCanonLintInput: ports.collectCanonLintInput,
+    }),
   )
   presentation.log(
     flags.has('json')
       ? JSON.stringify({ removed, tree: canonTree?.root })
-      : removed
-        ? `removed ${address.scope}/${address.subject ?? '_'}/${slug}`
-        : `no ${address.scope} doc "${slug}"`,
+      : `removed ${address.scope}/${subject ?? '_'}/${slug}`,
   )
   return true
 }
@@ -896,7 +909,6 @@ async function restoreDocCommand(
       suppliedRead: hosted
         ? {
             revision: hosted.revision(revision),
-            current: await authoritativeDoc(scope, subject, slug, owner),
           }
         : undefined,
     },

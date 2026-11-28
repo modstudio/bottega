@@ -18,7 +18,8 @@ import {
   readDocRevisions,
   readDocs,
 } from './doc-authoritative-read.ts'
-import { reorderDocs, setDocCheckedAgainst } from './docs.ts'
+import { setDocCheckedAgainst } from './doc-checked-against-service.ts'
+import { reorderDocs } from './doc-order-service.ts'
 
 afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
@@ -492,6 +493,8 @@ test('checked-against updates preserve the authoritative hosted body instead of 
         hostedRow({
           scope: 'project',
           subject: 'checked-project',
+          spaceId: 'checked-space-id',
+          spaceName: 'checked-space',
           slug: 'checked-hosted',
           title: 'Hosted title',
           kind: 'article',

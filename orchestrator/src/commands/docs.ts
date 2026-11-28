@@ -200,6 +200,7 @@ const docSpecs: readonly Spec[] = [
     'create or revise a document',
     [
       ...address,
+      o('--space <slug>'),
       o('--cwd <value>'),
       o('--title <value>'),
       o('--file <value>'),
@@ -233,7 +234,14 @@ const docSpecs: readonly Spec[] = [
   [
     'status [slug]',
     'change a document status',
-    [...address, ...revision, o('--status <value>'), o('--replacement <slug>'), ...json],
+    [
+      ...address,
+      o('--space <slug>'),
+      ...revision,
+      o('--status <value>'),
+      o('--replacement <slug>'),
+      ...json,
+    ],
   ],
   [
     'reorder',
@@ -243,9 +251,13 @@ const docSpecs: readonly Spec[] = [
   [
     'consume [slug]',
     "mark a resume brief consumed and hand its author's owed runs to the consuming session",
-    [...address, ...revision, ...json],
+    [...address, o('--space <slug>'), ...revision, ...json],
   ],
-  ['rm [slug]', 'remove a document', [...address, o('--cwd <value>'), ...revision, ...json]],
+  [
+    'rm [slug]',
+    'remove a document',
+    [...address, o('--space <slug>'), o('--cwd <value>'), ...revision, ...json],
+  ],
   ['subjects', 'list document subjects', json],
   ['export [dir]', 'export documents to a directory', []],
   [

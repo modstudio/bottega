@@ -22,7 +22,11 @@ export type CanonMirrorRevisionSnapshot = {
 export async function canonMirrorRevisionSnapshot(
   project: string,
 ): Promise<CanonMirrorRevisionSnapshot> {
-  const rows = await readDocs({ scope: 'canon' })
+  const [globalRowsForSubject, projectRowsForSubject] = await Promise.all([
+    readDocs({ scope: 'canon', subject: null }),
+    readDocs({ scope: 'canon', subject: project }),
+  ])
+  const rows = [...globalRowsForSubject, ...projectRowsForSubject]
   const revisions = await Promise.all(
     rows
       .filter(({ subject, revision }) => revision && (subject === project || subject === null))

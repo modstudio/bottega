@@ -3,7 +3,9 @@ import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'no
 import { join } from 'node:path'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { removeDoc, setDoc } from '../doc/docs.ts'
+import { readDocForWrite } from '../doc/doc-authoritative-read.ts'
+import { removeReadDoc } from '../doc/doc-removal-service.ts'
+import { setDoc } from '../doc/docs.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
 import {
@@ -261,7 +263,7 @@ test('a generated path newer than its contributors is deleted without refusal', 
       allowCanonBootstrap: true,
     })
     const entry = getDoc('canon', 'cm-generated-delete', 'AGENTS.md')!
-    await removeDoc('canon', 'cm-generated-delete', 'AGENTS.md', {
+    await removeReadDoc(await readDocForWrite('canon', 'cm-generated-delete', 'AGENTS.md'), {
       reason: 'fixture retire generated contributor',
       expectedRevision: entry.revision!,
       canonRemovalDecision: 'already-decided-next-set',

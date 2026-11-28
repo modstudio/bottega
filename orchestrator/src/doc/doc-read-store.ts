@@ -227,7 +227,7 @@ function docTreeSelect(database: Database): { columns: string; join: string; pos
       }
 }
 
-function validScope(scope: string): void {
+export function validDocScope(scope: string): asserts scope is DocScope {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
   }
@@ -263,12 +263,12 @@ function scopeFilter(
     throw new Error('use scope or scopes, not both')
   }
   if (filters.scope !== undefined) {
-    validScope(filters.scope)
+    validDocScope(filters.scope)
     where.push('d.scope = ?')
     values.push(filters.scope)
   }
   if (filters.scopes === undefined) return
-  for (const scope of filters.scopes) validScope(scope)
+  for (const scope of filters.scopes) validDocScope(scope)
   where.push(
     filters.scopes.length === 0 ? '0' : `d.scope IN (${filters.scopes.map(() => '?').join(', ')})`,
   )
@@ -307,7 +307,7 @@ export function getDocStore(
   owner: string | null = null,
   database: Database = db(),
 ): Doc | null {
-  validScope(scope)
+  validDocScope(scope)
   if (subject === undefined) {
     const matches = database
       .query<{ subject: string | null }, [string, string | null, string]>(

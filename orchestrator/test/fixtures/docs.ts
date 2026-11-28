@@ -1,8 +1,12 @@
 import { getContextItem } from '../../src/doc/context-item-store.ts'
 import { setContextItem } from '../../src/doc/context-service.ts'
+import { readDocForWrite } from '../../src/doc/doc-authoritative-read.ts'
+import { removeReadDoc } from '../../src/doc/doc-removal-service.ts'
+import type { DocRemovalContext } from '../../src/doc/doc-remove.ts'
+import { resolvedDocWriteIdentity } from '../../src/doc/doc-write-identity.ts'
+import { docWriteMissRefusal } from '../../src/doc/doc-write-miss.ts'
 import {
   consumeDoc as consumeDocument,
-  removeDoc as deleteDoc,
   importDocs as readDocs,
   setDoc as writeDoc,
 } from '../../src/doc/docs.ts'
@@ -46,12 +50,17 @@ export const consumeDoc = (
   slug: string,
   context: { reason: string; author?: string } = { reason: 'test consume' },
 ) => consumeDocument(scope, subject, slug, context)
-export const removeDoc = (
+export const removeDoc = async (
   scope: string,
-  subject: string | null,
+  subject: string | null | undefined,
   slug: string,
-  context: Parameters<typeof deleteDoc>[3] = { reason: 'test delete' },
-) => deleteDoc(scope, subject, slug, context)
+  context: DocRemovalContext = { reason: 'test delete' },
+) => {
+  resolvedDocWriteIdentity(context)
+  const target = await readDocForWrite(scope, subject, slug)
+  if (!target.doc) throw new Error(docWriteMissRefusal(scope, subject, slug, null))
+  return removeReadDoc(target, context)
+}
 export const importDocs = (dir: string, context = { reason: 'test import' }) =>
   readDocs(dir, context)
 

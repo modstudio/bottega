@@ -281,7 +281,7 @@ const DOC_REVISION_LOCAL_ONLY_SITES: readonly B2ReasonedSite[] = [
     functionName: 'currentDocRevision',
     expectedSites: 1,
     detail:
-      'doc-restore-state reaches this helper only through restoreReadState local-authoritative handling, while the hosted mirror calls commitHostedDocRestore without a local comparison',
+      'local-doc-write reaches this helper only while committing a local restore; hosted restore uses the record API revision selected by readDocForWrite',
   },
   {
     file: 'orchestrator/src/doc/doc-revision-store.ts',

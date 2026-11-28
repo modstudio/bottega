@@ -4,12 +4,10 @@
  * Subject-bearing facts name one subject; resume briefs use the project and epic slug.
  */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
-  DOC_SCOPES,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -44,7 +42,13 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
-import { readDoc, readDocRevision, readDocs } from './doc-authoritative-read.ts'
+import {
+  type DocWriteSpace,
+  type DocWriteTarget,
+  readDocForWrite,
+  readDocRevision,
+  readDocs,
+} from './doc-authoritative-read.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
@@ -55,22 +59,26 @@ import {
 } from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { type DocOrderInput, docOrderRefusal } from './doc-order.ts'
 import {
   authoritativePackBudgetProjection,
   type PackBudgetProjection,
 } from './doc-pack-budget-read.ts'
 import { assertDocProse } from './doc-prose.ts'
-import { type Doc, type DocRevision, getDocStore, listDocsStore } from './doc-read-store.ts'
+import {
+  type Doc,
+  type DocRevision,
+  getDocStore,
+  listDocsStore,
+  validDocScope,
+} from './doc-read-store.ts'
 import {
   assertLocalReferenceRestore,
   assertLocalReferenceWrite,
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
-import { type DocRemovalContext, removeStoredDoc } from './doc-remove.ts'
-import { referenceRestoreState } from './doc-restore-state.ts'
 import * as rw from './doc-resume-write.ts'
+import { docRewritePayload } from './doc-rewrite-payload.ts'
 import { addSecretScanWarning, defaultDocSecretScanner, scanDocBody } from './doc-secret-scan.ts'
 import {
   docSubjects,
@@ -80,7 +88,8 @@ import {
 } from './doc-subjects.ts'
 import { docTreeWriteFields } from './doc-tree-write.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
-import { executeLocalDocOrder } from './local-doc-order.ts'
+import { docWriteMissRefusal } from './doc-write-miss.ts'
+import { hostedDocWriteDestination } from './doc-write-space.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
@@ -289,15 +298,9 @@ async function assertPackSize(input: PackSizeInput): Promise<void> {
   }
 }
 
-function validScope(scope: string): asserts scope is DocScope {
-  if (!DOC_SCOPES.includes(scope as DocScope)) {
-    throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
-  }
-}
-
 export function validateDocAddressFilter(filter: { scope?: string; subject?: string }): void {
   if (filter.scope === undefined) return
-  validScope(filter.scope)
+  validDocScope(filter.scope)
   if (filter.subject === undefined) return
   validateDocSubject(filter.scope, filter.subject)
 }
@@ -422,13 +425,29 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
 
 async function docWriteState(
   input: DocWriteInput,
-): Promise<{ owner: string | null; prior: Doc | null }> {
+): Promise<{ owner: string | null; target: DocWriteTarget }> {
   const owner = input.owner ?? null
-  return { owner, prior: await readDoc(input.scope, input.subject, input.slug, owner) }
+  return { owner, target: await readDocForWrite(input.scope, input.subject, input.slug, owner) }
 }
 
-const hostedDocWriteClient = (input: DocWriteInput) =>
-  hostedDocClient(input.scope, input.subject, contextTaskOwner(input.contextTask))
+const hostedDocWriteClient = (input: DocWriteInput, target: DocWriteTarget) =>
+  hostedDocClient(input.scope, input.subject, {
+    owner: contextTaskOwner(input.contextTask),
+    destinationSpaceId: hostedDocWriteDestination(
+      target,
+      `${input.scope}/${input.subject ?? '_'}/${input.slug}`,
+    ),
+  })
+
+const hostedExistingDocClient = (
+  scope: string,
+  subject: string | null,
+  slug: string,
+  target: DocWriteTarget,
+) =>
+  hostedDocClient(scope, subject, {
+    destinationSpaceId: hostedDocWriteDestination(target, `${scope}/${subject ?? '_'}/${slug}`),
+  })
 
 function assertDocAddressWriteAllowed(input: DocWriteInput): void {
   writableDb()
@@ -451,10 +470,23 @@ function assertHostedDocCompatible(
   if (refusal) throw new Error(refusal)
 }
 
-async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
-  const [secretScan, identity] = docWritePrelude(input)
-  const { owner, prior } = await docWriteState(input)
+async function resolvedDocWriteState(
+  input: DocWriteInput,
+  supplied?: { owner: string | null; target: DocWriteTarget },
+) {
+  const { owner, target } = supplied ?? (await docWriteState(input))
+  const prior = target.doc
   assertDocWriteRevisionForAuthority(input, prior?.revision ?? null, prior === null)
+  return { owner, target, prior }
+}
+
+async function writeDocWithOp(
+  input: DocWriteInput,
+  requestedOp?: 'import',
+  suppliedState?: { owner: string | null; target: DocWriteTarget },
+): Promise<WrittenDoc> {
+  const [secretScan, identity] = docWritePrelude(input)
+  const { owner, target, prior } = await resolvedDocWriteState(input, suppliedState)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
@@ -481,7 +513,7 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
         identity,
       }),
     hosted: async () => {
-      const client = await hostedDocWriteClient(input)
+      const client = await hostedDocWriteClient(input, target)
       const hostedInput: Parameters<typeof client.upsertDoc>[0] = {
         scope: input.scope,
         subject: input.subject,
@@ -541,99 +573,70 @@ async function writeDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Pro
   return addSecretScanWarning(addCanonWriteWarnings(written, canonWarnings), input, secretScan)
 }
 
-async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<WrittenDoc> {
+async function setDocWithOp(
+  input: DocWriteInput,
+  requestedOp?: 'import',
+  suppliedState?: { owner: string | null; target: DocWriteTarget },
+): Promise<WrittenDoc> {
   assertDocAddressWriteAllowed(input)
-  return writeDocWithOp(input, requestedOp)
+  return writeDocWithOp(input, requestedOp, suppliedState)
 }
 
-export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
+type DocSetInput = Omit<DocWriteInput, 'subject'> & { subject: string | null | undefined }
+
+async function setResolvedDoc(
+  input: DocWriteInput,
+  target: DocWriteTarget,
+  owner: string | null,
+): Promise<WrittenDoc> {
+  const prior = target.doc
   await assertSetDocAllowed(input)
-  const prior = await readDoc(input.scope, input.subject, input.slug, input.owner ?? null)
   const refusal = rw.resumeConsumptionWriteRefusal(input, prior?.body ?? null)
   if (refusal) throw new Error(refusal)
-  return setDocWithOp(input)
+  return setDocWithOp(input, undefined, { owner, target })
 }
 
-export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: string[] }> {
-  assertWorkerDocStoreWriteAllowed('reorderDocs')
-  return applyRecordWriteAuthority({
-    local: () => executeLocalDocOrder(input),
-    hosted: async () => {
-      const siblings = (await readDocs({ scope: input.scope, subject: input.subject })).filter(
-        (doc) => doc.parent_record_id === input.parentId,
-      )
-      const refusal = docOrderRefusal(
-        siblings.map((row) => row.record_id),
-        input.orderedIds,
-      )
-      if (refusal) throw new Error(refusal)
-      const client = await hostedDocClient(input.scope, input.subject)
-      return client.reorderDocs(input)
-    },
-  })
+export async function setDoc(
+  input: DocSetInput,
+  selectedSpace?: DocWriteSpace,
+  suppliedTarget?: DocWriteTarget,
+): Promise<Doc & { writeWarnings?: string[] }> {
+  assertWorkerDocStoreWriteAllowed('setDoc')
+  const owner = input.owner ?? null
+  const target =
+    suppliedTarget ??
+    (await readDocForWrite(input.scope, input.subject, input.slug, owner, selectedSpace))
+  const prior = target.doc
+  const resolvedInput: DocWriteInput = {
+    ...input,
+    subject: prior?.subject ?? input.subject ?? null,
+  }
+  return setResolvedDoc(resolvedInput, target, owner)
 }
 
 export async function setDocStatus(
   scope: string,
-  subject: string | null,
+  subject: string | null | undefined,
   slug: string,
   status: DocStatus,
   replacementSlug: string | null | undefined,
   context: DocWriteContext,
   owner: string | null = null,
+  selectedSpace?: DocWriteSpace,
 ): Promise<Doc> {
-  const current = await readDoc(scope, subject, slug, owner)
-  if (!current)
-    throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
-  return setDoc({
-    scope: current.scope,
-    subject: current.subject,
-    owner: current.owner,
-    slug: current.slug,
-    title: current.title,
-    body: current.body,
-    delivery: current.delivery,
-    audiences: current.audiences,
-    parentSlug: current.parent_slug,
-    position: current.position,
-    featured: current.featured,
-    status,
-    replacementSlug,
-    ...context,
-  })
-}
-
-/**
- * Record the commit a document was checked against, leaving every other field
- * as the stored document has it. `commit` is normalized by the article-field
- * rules, which own its shape and its article-only restriction.
- */
-export async function setDocCheckedAgainst(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  commit: string,
-  context: DocWriteContext,
-  owner: string | null = null,
-): Promise<Doc> {
-  const current = await readDoc(scope, subject, slug, owner)
-  if (!current)
-    throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
-  return setDoc({
-    scope: current.scope,
-    subject: current.subject,
-    owner: current.owner,
-    slug: current.slug,
-    title: current.title,
-    body: current.body,
-    delivery: current.delivery,
-    audiences: current.audiences,
-    parentSlug: current.parent_slug,
-    position: current.position,
-    featured: current.featured,
-    checkedAgainstCommit: commit,
-    ...context,
-  })
+  const target = await readDocForWrite(scope, subject, slug, owner, selectedSpace)
+  const current = target.doc
+  if (!current) throw new Error(docWriteMissRefusal(scope, subject, slug, owner, selectedSpace))
+  return setResolvedDoc(
+    {
+      ...docRewritePayload(current),
+      status,
+      replacementSlug,
+      ...context,
+    },
+    target,
+    owner,
+  )
 }
 
 export async function importDoc(
@@ -650,22 +653,6 @@ export async function importDoc(
   return setDocWithOp(input, 'import')
 }
 
-export async function removeDoc(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  context: DocRemovalContext,
-  owner: string | null = null,
-): Promise<boolean> {
-  assertWorkerDocStoreWriteAllowed('removeDoc')
-  writableDb()
-  validScope(scope)
-  const identity = resolvedDocWriteIdentity(context)
-  const doc = await readDoc(scope, subject, slug, owner)
-  if (!doc) return false
-  return removeStoredDoc(doc, context, identity)
-}
-
 /**
  * Consuming a resume changes metadata inside a body whose exact text is the
  * recovery artifact. Patch only the three named fields instead of parsing and
@@ -677,14 +664,19 @@ export async function consumeDoc(
   requestedSubject: string | null | undefined,
   slug: string,
   context: DocWriteContext,
-  suppliedDoc?: Doc | null,
+  suppliedTarget?: DocWriteTarget,
+  selectedSpace?: DocWriteSpace,
 ): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = suppliedDoc === undefined ? await readDoc(scope, requestedSubject, slug) : suppliedDoc
-  if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+  const target =
+    suppliedTarget === undefined
+      ? await readDocForWrite(scope, requestedSubject, slug, null, selectedSpace)
+      : suppliedTarget
+  const doc = target.doc
+  if (!doc) throw new Error(docWriteMissRefusal(scope, requestedSubject, slug, null, selectedSpace))
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
   let patched: { body: string; alreadyConsumed: boolean }
@@ -715,7 +707,7 @@ export async function consumeDoc(
         ...context,
       }),
     hosted: async () => {
-      const client = await hostedDocClient(doc.scope, doc.subject)
+      const client = await hostedExistingDocClient(doc.scope, doc.subject, doc.slug, target)
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision ?? doc.revision ?? undefined
       if (!recordId) {
@@ -829,13 +821,15 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
   resolvedDocWriteIdentity(context)
   const writeWarnings: string[] = []
   const count = await importDocFiles(dir, async (doc) => {
+    const target = await readDocForWrite(doc.scope, doc.subject, doc.slug)
     const written = await setDocWithOp(
       {
         ...doc,
         ...context,
-        expectedRevision: (await readDoc(doc.scope, doc.subject, doc.slug))?.revision ?? undefined,
+        expectedRevision: target.doc?.revision ?? undefined,
       },
       'import',
+      { owner: null, target },
     )
     writeWarnings.push(...(written.writeWarnings ?? []))
   })
@@ -855,22 +849,6 @@ function isAddressRevision(
     revision.owner === owner &&
     revision.slug === slug
   )
-}
-
-async function restoreReadState(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  owner: string | null,
-  revision: DocRevision,
-): Promise<readonly [string | null, Doc | null]> {
-  return applyRecordReadAuthority({
-    local: () => referenceRestoreState(scope, subject, slug, owner, revision),
-    hosted: async () => {
-      const live = await readDoc(scope, subject, slug, owner)
-      return [live?.revision ?? null, live] as const
-    },
-  })
 }
 
 async function restoredParentSlug(
@@ -894,7 +872,7 @@ export async function restoreDoc(
   subject: string | null,
   slug: string,
   revisionId: string,
-  context: DocWriteContext & { suppliedRead?: { revision: DocRevision; current: Doc | null } },
+  context: DocWriteContext & { suppliedRead?: { revision: DocRevision } },
   owner: string | null = null,
 ): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
@@ -906,9 +884,9 @@ export async function restoreDoc(
   if (!revision || !isAddressRevision(revision, scope, subject, owner, slug)) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const [expectedCurrent, current] = context.suppliedRead
-    ? [context.suppliedRead.current?.revision ?? null, context.suppliedRead.current]
-    : await restoreReadState(scope, subject, slug, owner, revision)
+  const target = await readDocForWrite(scope, subject, slug, owner)
+  const current = target.doc
+  const expectedCurrent = target.currentRevision ?? current?.revision ?? null
   assertLocalReferenceRestore(current, revision)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },
@@ -982,7 +960,7 @@ export async function restoreDoc(
         ...context,
       }),
     hosted: async () => {
-      const client = await hostedDocClient(scope, subject)
+      const client = await hostedExistingDocClient(scope, subject, slug, target)
       let recordId = current?.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {

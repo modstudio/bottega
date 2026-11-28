@@ -26,17 +26,15 @@ import {
   readDocForAudience as authoritativeDocForAudience,
   readDocMetadata as authoritativeDocMetadata,
   readDocRevision as getDocRevision,
+  readDocForWrite,
   readDocRevisions,
 } from '../doc/doc-authoritative-read.ts'
+import { removeReadDoc } from '../doc/doc-removal-service.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
+import { docWriteMissRefusal } from '../doc/doc-write-miss.ts'
+import { resolveDocWriteSpace } from '../doc/doc-write-space.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
-import {
-  removeDoc,
-  setDoc,
-  setDocStatus,
-  signedInDocOwner,
-  storedDocWarnings,
-} from '../doc/docs.ts'
+import { setDoc, setDocStatus, signedInDocOwner, storedDocWarnings } from '../doc/docs.ts'
 import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
@@ -280,6 +278,7 @@ const setDocInputSchema = z.object({
   author: z.string().trim().min(1).optional(),
   expected_revision: z.string().trim().min(1).optional(),
   cwd: z.string().trim().min(1).optional(),
+  space: z.string().trim().min(1).optional(),
 })
 
 function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
@@ -314,39 +313,50 @@ function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
       author,
       expected_revision,
       cwd,
+      space,
     }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
+      const selectedSpace = await resolveDocWriteSpace('set_doc', space)
+      const target = await readDocForWrite(scope, subject, slug, null, selectedSpace)
+      const canonTree = ports.selectDocWriteTree({
+        scope,
+        subject: target.doc?.subject ?? subject ?? null,
+        cwd,
+      })
       const doc = await withMcpDocWriteRemedy(() =>
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>
-          setDoc({
-            scope,
-            subject: subject ?? null,
-            slug,
-            title,
-            body,
-            delivery,
-            audiences,
-            parentSlug: parent,
-            position,
-            featured,
-            status,
-            kind,
-            form,
-            articleSubject: article_subject,
-            relatedSubjects: related_subjects,
-            sourceFiles: source_files,
-            checkedAgainstCommit: checked_against_commit,
-            summary,
-            replacementSlug: replacement,
-            forceInject: force_inject,
-            reason,
-            author,
-            expectedRevision: expected_revision,
-            canonTree,
-            collectCanonLintInput: ports.collectCanonLintInput,
-          }),
+          setDoc(
+            {
+              scope,
+              subject,
+              slug,
+              title,
+              body,
+              delivery,
+              audiences,
+              parentSlug: parent,
+              position,
+              featured,
+              status,
+              kind,
+              form,
+              articleSubject: article_subject,
+              relatedSubjects: related_subjects,
+              sourceFiles: source_files,
+              checkedAgainstCommit: checked_against_commit,
+              summary,
+              replacementSlug: replacement,
+              forceInject: force_inject,
+              reason,
+              author,
+              expectedRevision: expected_revision,
+              canonTree,
+              collectCanonLintInput: ports.collectCanonLintInput,
+            },
+            selectedSpace,
+            target,
+          ),
         ),
       )
       return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
@@ -368,18 +378,39 @@ function registerSetDocStatusTool(server: McpServer): void {
         reason: z.string().trim().min(1),
         author: z.string().trim().min(1).optional(),
         expected_revision: z.string().trim().min(1).optional(),
+        space: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ scope, subject, slug, status, replacement, reason, author, expected_revision }) => {
+    async ({
+      scope,
+      subject,
+      slug,
+      status,
+      replacement,
+      reason,
+      author,
+      expected_revision,
+      space,
+    }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
+      const selectedSpace = await resolveDocWriteSpace('set_doc_status', space)
       return text(
         await withMcpDocWriteRemedy(() =>
-          setDocStatus(scope, subject ?? null, slug, status, replacement, {
-            reason,
-            author,
-            expectedRevision: expected_revision,
-          }),
+          setDocStatus(
+            scope,
+            subject,
+            slug,
+            status,
+            replacement,
+            {
+              reason,
+              author,
+              expectedRevision: expected_revision,
+            },
+            null,
+            selectedSpace,
+          ),
         ),
       )
     },
@@ -402,15 +433,20 @@ function registerRemoveDocTool(server: McpServer, ports: DocToolPorts): void {
         author: z.string().trim().min(1).optional(),
         expected_revision: z.string().trim().min(1).optional(),
         cwd: z.string().trim().min(1).optional(),
+        space: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
+    async ({ scope, subject, slug, reason, author, expected_revision, cwd, space }) => {
       const refusal = decideMcpDocWrite('remove_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
+      const selectedSpace = await resolveDocWriteSpace('remove_doc', space)
+      const target = await readDocForWrite(scope, subject, slug, null, selectedSpace)
+      if (!target.doc)
+        throw new Error(docWriteMissRefusal(scope, subject, slug, null, selectedSpace))
+      const canonTree = ports.selectDocWriteTree({ scope, subject: target.doc.subject, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
         withDocWriteTreeRemedy(canonTree, 'cwd', () =>
-          removeDoc(scope, subject ?? null, slug, {
+          removeReadDoc(target, {
             reason,
             author,
             expectedRevision: expected_revision,

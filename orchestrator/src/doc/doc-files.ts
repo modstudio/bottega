@@ -3,7 +3,6 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import {
   DOC_KINDS,
-  DOC_SCOPES,
   DOC_STATUSES,
   type DocAudiences,
   type DocKind,
@@ -11,7 +10,7 @@ import {
   type DocStatus,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
-import type { Doc } from './doc-read-store.ts'
+import { type Doc, validDocScope } from './doc-read-store.ts'
 import { importedDocDelivery } from './doc-write-allowed.ts'
 
 type ImportedDoc = {
@@ -123,12 +122,8 @@ export async function importDocFiles(
   let count = 0
   for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
     if (!scopeEntry.isDirectory()) continue
-    if (!DOC_SCOPES.includes(scopeEntry.name as DocScope)) {
-      throw new Error(
-        `unknown doc scope "${scopeEntry.name}"; valid scopes: ${DOC_SCOPES.join(', ')}`,
-      )
-    }
-    const scope = scopeEntry.name as DocScope
+    validDocScope(scopeEntry.name)
+    const scope = scopeEntry.name
     for (const subjectEntry of readdirSync(join(dir, scope), { withFileTypes: true })) {
       if (!subjectEntry.isDirectory()) continue
       count += await importSubjectFiles(dir, scope, subjectEntry.name, write)

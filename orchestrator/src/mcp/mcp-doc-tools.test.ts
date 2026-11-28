@@ -4,6 +4,10 @@ import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { getDoc } from '../../test/fixtures/doc-local-read.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { registerDocTools, rethrowMcpDocWriteError } from './mcp-doc-tools.ts'
@@ -267,4 +271,39 @@ test('remove_doc refuses an existing canon row without expected_revision', async
         're-read with get_doc and re-apply the edit',
     )
   })
+})
+
+test('remove_doc refuses a hosted miss after one authoritative read', async () => {
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  let reads = 0
+  const recordClient = createMemoryRecordApiClient()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    ...recordClient,
+    listDocs: async () => {
+      reads++
+      return { items: [], nextCursor: null }
+    },
+  })
+  try {
+    await withDocClient(async (client) => {
+      const result = await client.callTool({
+        name: 'remove_doc',
+        arguments: {
+          scope: 'global',
+          slug: 'missing-hosted',
+          reason: 'exercise one-read MCP miss',
+        },
+      })
+      expect(result.isError).toBe(true)
+      expect((result.content as { text: string }[])[0]!.text).toContain(
+        'no global/_ doc "missing-hosted" in every readable space',
+      )
+    })
+    expect(reads).toBe(1)
+  } finally {
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+    installRecordApiClient(createMemoryRecordApiClient())
+  }
 })
