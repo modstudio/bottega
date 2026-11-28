@@ -532,7 +532,8 @@ test('consume accepts the record revision and updates a lagging local mirror', a
   expect(consumed.already_consumed).toBe(false)
   expect(consumed.body).toContain('status: consumed')
   expect(
-    db().query<{ body: string }, [string]>('SELECT body FROM doc WHERE record_id=?').get(docId)?.body,
+    db().query<{ body: string }, [string]>('SELECT body FROM doc WHERE record_id=?').get(docId)
+      ?.body,
   ).toBe(consumed.body)
 })
 

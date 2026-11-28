@@ -852,6 +852,18 @@ function isAddressRevision(
   )
 }
 
+function restoredRevisionWriteFields(revision: DocRevision) {
+  return {
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    status: revision.status,
+    kind: revision.kind,
+    ...localRevisionArticleFields(revision),
+    replacementSlug: revision.replacement_slug,
+  }
+}
+
 async function restoredParentSlug(
   scope: string,
   subject: string | null,
@@ -939,8 +951,7 @@ export async function restoreDoc(
   )
   assertStoredDocBodyCommands(revision, tree.audiences)
   return applyRecordWriteAuthority({
-    // A removed local document has no live row retaining its document UUID. Restore mints a
-    // new document UUID while its revision history remains continuous by address.
+    // A removed local document needs a new UUID; its history remains continuous by address.
     local: () =>
       executeLocalDocRestore({
         scope,
@@ -949,14 +960,8 @@ export async function restoreDoc(
         slug,
         liveRecordId: current?.record_id,
         projectId,
-        title: revision.title,
-        body: revision.body,
-        delivery: revision.delivery,
+        ...restoredRevisionWriteFields(revision),
         ...tree,
-        status: revision.status,
-        kind: revision.kind,
-        ...localRevisionArticleFields(revision),
-        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
       }),
@@ -1022,14 +1027,8 @@ export async function restoreDoc(
         owner,
         slug,
         projectId,
-        title: revision.title,
-        body: revision.body,
-        delivery: revision.delivery,
+        ...restoredRevisionWriteFields(revision),
         ...tree,
-        status: revision.status,
-        kind: revision.kind,
-        ...localRevisionArticleFields(revision),
-        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
         recordId: hosted.id,
