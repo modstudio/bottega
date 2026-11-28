@@ -61,6 +61,35 @@ function hostedClient(overrides: Partial<RecordApiClient> = {}): RecordApiClient
   }
 }
 
+function seedLocalMirror(
+  overrides: Partial<{
+    scope: string
+    subject: string | null
+    title: string
+    body: string
+  }> = {},
+): string {
+  const localRevision = newRecordId()
+  commitDocSet({
+    scope: overrides.scope ?? 'global',
+    subject: overrides.subject ?? null,
+    owner: null,
+    slug: 'hosted-only',
+    projectId: null,
+    title: overrides.title ?? 'Stale local title',
+    body: overrides.body ?? 'Stale local body.',
+    delivery: 'demand',
+    audiences: ['technical'],
+    parentId: null,
+    position: 0,
+    identity: { author: 'fixture', reason: 'seed stale local mirror', session: null },
+    recordId: docId,
+    revisionId: localRevision,
+    revisionPolicy: 'enforce',
+  })
+  return localRevision
+}
+
 afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
@@ -368,6 +397,49 @@ test('doc rm deletes the hosted row when the local mirror is empty', async () =>
   expect(deletes).toContainEqual({ id: docId, expectedRevision: revisionId })
 })
 
+test('doc rm accepts the record revision when the local mirror revision is older', async () => {
+  seedLocalMirror()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient(
+    hostedClient({
+      deleteDoc: async (id, input) => {
+        expect(input.expectedRevision).toBe(revisionId)
+        return { id, revisionId: restoredRevisionId }
+      },
+    }),
+  )
+
+  const removed = await removeReadDoc(await readDocForWrite('global', null, 'hosted-only'), {
+    reason: 'remove stale mirror fixture',
+    expectedRevision: revisionId,
+  })
+
+  expect(removed).toBe(true)
+  expect(db().query('SELECT record_id FROM doc WHERE record_id=?').get(docId)).toBeNull()
+})
+
+test('doc rm accepts the record revision when the local mirror has no revision', async () => {
+  seedLocalMirror()
+  db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(docId)
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient(
+    hostedClient({
+      deleteDoc: async (id, input) => {
+        expect(input.expectedRevision).toBe(revisionId)
+        return { id, revisionId: restoredRevisionId }
+      },
+    }),
+  )
+
+  const removed = await removeReadDoc(await readDocForWrite('global', null, 'hosted-only'), {
+    reason: 'remove revisionless mirror fixture',
+    expectedRevision: revisionId,
+  })
+
+  expect(removed).toBe(true)
+  expect(db().query('SELECT record_id FROM doc WHERE record_id=?').get(docId)).toBeNull()
+})
+
 test('consume reaches the hosted resume when the local mirror is empty', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   upsertProject({
@@ -412,24 +484,61 @@ test('consume reaches the hosted resume when the local mirror is empty', async (
   expect(consumes).toContainEqual({ id: docId, expectedRevision: revisionId })
 })
 
-test('hosted restore mirrors after the local revision becomes stale', async () => {
-  const staleLocalRevision = newRecordId()
-  commitDocSet({
-    scope: 'global',
-    subject: null,
-    owner: null,
-    slug: 'hosted-only',
-    projectId: null,
-    title: 'Stale local title',
-    body: 'Stale local body.',
-    delivery: 'demand',
-    audiences: ['technical'],
-    parentId: null,
-    position: 0,
-    identity: { author: 'fixture', reason: 'seed stale local mirror', session: null },
-    recordId: docId,
-    revisionId: staleLocalRevision,
+test('consume accepts the record revision and updates a lagging local mirror', async () => {
+  const body = [
+    '---',
+    'status: open',
+    'epic: DEV-1',
+    'project: fixture',
+    'written: 2026-11-22T00:00:00.000Z',
+    '---',
+    '',
+    'NEXT ACTION: continue.',
+  ].join('\n')
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'fixture',
+    path: '/tmp/fixture',
+    settings: { space: 'personal-space' },
   })
+  seedLocalMirror({ scope: 'resume', subject: 'fixture', body })
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient(
+    hostedClient({
+      whoami: async () => ({
+        user: { id: 'user-a', name: 'Fixture', email: 'fixture@example.test' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write', role: 'owner' },
+        ],
+      }),
+      listDocs: async () => ({
+        items: [hostedRow({ scope: 'resume', subject: 'fixture', body })],
+        nextCursor: null,
+      }),
+      consumeDoc: async (id, input) => {
+        expect(input.expectedRevision).toBe(revisionId)
+        return { id, revisionId: restoredRevisionId, alreadyConsumed: false }
+      },
+    }),
+  )
+
+  const consumed = await consumeDoc('resume', 'fixture', 'hosted-only', {
+    reason: 'consume stale mirror fixture',
+    expectedRevision: revisionId,
+  })
+
+  expect(consumed.already_consumed).toBe(false)
+  expect(consumed.body).toContain('status: consumed')
+  expect(
+    db().query<{ body: string }, [string]>('SELECT body FROM doc WHERE record_id=?').get(docId)
+      ?.body,
+  ).toBe(consumed.body)
+})
+
+test('hosted restore mirrors after the local revision becomes stale', async () => {
+  seedLocalMirror()
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const revision: RecordDocRevision = {
     id: restoredRevisionId,

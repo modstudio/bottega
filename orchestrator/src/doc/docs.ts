@@ -94,8 +94,8 @@ import { localDocumentLifecycle } from './local-doc-status.ts'
 import { localParentRecordId, localRestoredParentSlug } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
+  commitDocRestore,
   commitDocSet,
-  commitHostedDocRestore,
   executeLocalDocConsume,
   executeLocalDocRestore,
   executeLocalDocSet,
@@ -556,7 +556,6 @@ async function writeDocWithOp(
       }
       return commitDocSet({
         ...input,
-        expectedRevision: mirrored?.revision ?? undefined,
         owner,
         projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
@@ -567,6 +566,7 @@ async function writeDocWithOp(
         identity,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   })
@@ -753,6 +753,7 @@ export async function consumeDoc(
         ...context,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   })
@@ -851,6 +852,18 @@ function isAddressRevision(
   )
 }
 
+function restoredRevisionWriteFields(revision: DocRevision) {
+  return {
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    status: revision.status,
+    kind: revision.kind,
+    ...localRevisionArticleFields(revision),
+    replacementSlug: revision.replacement_slug,
+  }
+}
+
 async function restoredParentSlug(
   scope: string,
   subject: string | null,
@@ -938,8 +951,7 @@ export async function restoreDoc(
   )
   assertStoredDocBodyCommands(revision, tree.audiences)
   return applyRecordWriteAuthority({
-    // A removed local document has no live row retaining its document UUID. Restore mints a
-    // new document UUID while its revision history remains continuous by address.
+    // A removed local document needs a new UUID; its history remains continuous by address.
     local: () =>
       executeLocalDocRestore({
         scope,
@@ -948,14 +960,8 @@ export async function restoreDoc(
         slug,
         liveRecordId: current?.record_id,
         projectId,
-        title: revision.title,
-        body: revision.body,
-        delivery: revision.delivery,
+        ...restoredRevisionWriteFields(revision),
         ...tree,
-        status: revision.status,
-        kind: revision.kind,
-        ...localRevisionArticleFields(revision),
-        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
       }),
@@ -1015,24 +1021,19 @@ export async function restoreDoc(
         ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
       })
-      return commitHostedDocRestore({
+      return commitDocRestore({
         scope,
         subject,
         owner,
         slug,
         projectId,
-        title: revision.title,
-        body: revision.body,
-        delivery: revision.delivery,
+        ...restoredRevisionWriteFields(revision),
         ...tree,
-        status: revision.status,
-        kind: revision.kind,
-        ...localRevisionArticleFields(revision),
-        replacementSlug: revision.replacement_slug,
         identity,
         ...context,
         recordId: hosted.id,
         revisionId: hosted.revisionId,
+        revisionPolicy: 'record-accepted',
       })
     },
   }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))

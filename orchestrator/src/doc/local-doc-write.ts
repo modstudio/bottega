@@ -23,6 +23,7 @@ import {
 import type { DocRevisionOp } from './doc-write-allowed.ts'
 
 type WriteIdentity = { author: string; reason: string; session: string | null }
+export type DocCommitRevisionPolicy = 'enforce' | 'record-accepted'
 type Address = {
   scope: string
   subject: string | null
@@ -109,13 +110,22 @@ export function executeLocalDocSet(input: SetInput & { prior: Doc | null }): Doc
     ...input,
     recordId: input.prior?.record_id ?? newRecordId(),
     revisionId: newRecordId(),
+    revisionPolicy: 'enforce',
   })
 }
 
-export function commitDocSet(input: SetInput & { recordId: string; revisionId: string }): Doc {
+export function commitDocSet(
+  input: SetInput & {
+    recordId: string
+    revisionId: string
+    revisionPolicy: DocCommitRevisionPolicy
+  },
+): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    assertLocalRevisionWrite(input, existing?.revision ?? null, existing === null)
+    if (input.revisionPolicy === 'enforce') {
+      assertLocalRevisionWrite(input, existing?.revision ?? null, existing === null)
+    }
     const at = nowIso()
     if (existing) {
       db()
@@ -198,14 +208,18 @@ type RemoveInput = Address & { expectedRevision?: string; identity: WriteIdentit
 
 export function executeLocalDocRemove(input: RemoveInput & { doc: Doc }): boolean {
   newRecordId()
-  return commitDocRemove({ ...input, revisionId: newRecordId() })
+  return commitDocRemove({ ...input, revisionId: newRecordId(), revisionPolicy: 'enforce' })
 }
 
-export function commitDocRemove(input: RemoveInput & { revisionId: string }): boolean {
+export function commitDocRemove(
+  input: RemoveInput & { revisionId: string; revisionPolicy: DocCommitRevisionPolicy },
+): boolean {
   return writeTransaction(() => {
     const existing = getDoc(input)
     if (!existing) throw new Error(`no ${input.scope} doc "${input.slug}"`)
-    assertLocalRevisionWrite(input, existing.revision, false)
+    if (input.revisionPolicy === 'enforce') {
+      assertLocalRevisionWrite(input, existing.revision, false)
+    }
     const at = nowIso()
     insertLocalRevision(existing, 'delete', input.identity, at, input.revisionId)
     // Preserve the deletion snapshot before removing its live parent. The declared SET NULL
@@ -229,16 +243,23 @@ export function executeLocalDocConsume(input: ConsumeInput & { doc: Doc }): Doc 
     ...input,
     recordId: input.doc.record_id ?? newRecordId(),
     revisionId: newRecordId(),
+    revisionPolicy: 'enforce',
   })
 }
 
 export function commitDocConsume(
-  input: ConsumeInput & { recordId: string; revisionId: string },
+  input: ConsumeInput & {
+    recordId: string
+    revisionId: string
+    revisionPolicy: DocCommitRevisionPolicy
+  },
 ): Doc & { already_consumed: false } {
   return writeTransaction(() => {
     const existing = getDoc(input)
     if (!existing) throw new Error(`no ${input.scope} doc "${input.slug}"`)
-    assertLocalRevisionWrite(input, existing.revision, false)
+    if (input.revisionPolicy === 'enforce') {
+      assertLocalRevisionWrite(input, existing.revision, false)
+    }
     db()
       .query('UPDATE doc SET body=?, updated_at=? WHERE record_id=?')
       .run(input.body, input.consumedAt, existing.record_id)
@@ -277,28 +298,20 @@ export function executeLocalDocRestore(
     ...input,
     recordId: input.liveRecordId ?? newRecordId(),
     revisionId: newRecordId(),
+    revisionPolicy: 'enforce',
   })
 }
 
 export function commitDocRestore(
-  input: RestoreInput & { recordId: string; revisionId: string },
-): Doc {
-  return commitDocRestoreMirror(input, true)
-}
-
-export function commitHostedDocRestore(
-  input: RestoreInput & { recordId: string; revisionId: string },
-): Doc {
-  return commitDocRestoreMirror(input, false)
-}
-
-function commitDocRestoreMirror(
-  input: RestoreInput & { recordId: string; revisionId: string },
-  enforceLocalRevisionPolicy: boolean,
+  input: RestoreInput & {
+    recordId: string
+    revisionId: string
+    revisionPolicy: DocCommitRevisionPolicy
+  },
 ): Doc {
   return writeTransaction(() => {
     const existing = getDoc(input)
-    if (enforceLocalRevisionPolicy) {
+    if (input.revisionPolicy === 'enforce') {
       assertLocalRevisionWrite(
         input,
         currentDocRevision(input.scope, input.subject, input.slug, input.owner),

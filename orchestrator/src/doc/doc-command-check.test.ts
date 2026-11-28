@@ -65,7 +65,11 @@ describe('customer guide command write check', () => {
       identity: { author: 'test', reason: 'seed historical fixture', session: null },
       recordId: newRecordId(),
     } as const
-    const seeded = commitDocSet({ ...input, revisionId: newRecordId() })
+    const seeded = commitDocSet({
+      ...input,
+      revisionId: newRecordId(),
+      revisionPolicy: 'enforce',
+    })
     const known = await setDoc({
       ...article,
       slug: input.slug,
